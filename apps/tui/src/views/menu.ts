@@ -60,7 +60,7 @@ export class MenuView implements View {
   render(ctx: ViewContext): string[] {
     const lines: string[] = []
     lines.push('')
-    lines.push(' ' + ansi.bold + 'Caracal' + ansi.reset + ansi.dim + '  Inspect and manage the OSS stack.' + ansi.reset)
+    lines.push(' ' + ansi.bold + 'Caracal' + ansi.reset + ansi.dim + '  Manage the OSS stack interactively.' + ansi.reset)
     lines.push('')
     const zone = this.zoneId ? ansi.fg(76) + this.zoneId + ansi.reset : ansi.fg(214) + '(no zone selected)' + ansi.reset
     lines.push(' zone: ' + zone)
@@ -94,7 +94,11 @@ export class MenuView implements View {
       app.setStatus('zone required — press z to set one or pick Zones first', 'error')
       return
     }
-    app.push(e.open({ client: this.client, zoneId: this.zoneId ?? '' }))
+    app.push(e.open({
+      client: this.client,
+      zoneId: this.zoneId ?? '',
+      onZoneSelect: (id, slug) => { this.setZone(id); app.setStatus(`zone set to ${slug}`) },
+    }))
   }
 
   private async promptZone(app: App): Promise<void> {

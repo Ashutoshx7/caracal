@@ -83,14 +83,51 @@ export async function appCommand(argv: string[], cfg?: CliConfig): Promise<void>
           expires_in: flagInt(flags, 'expires-in'),
         }))
       }
+      case 'help':
+      case '--help':
+      case '-h':
       default:
-        return usage('app <list|get|create|patch|delete|dcr> [...]')
+        return help()
     }
   } catch (err) {
     fail(err)
   }
 }
 
+function help(): void {
+  process.stdout.write(
+    [
+      'Usage: caracal app <verb> [options]',
+      '',
+      'Verbs:',
+      '  list                    List applications in a zone',
+      '  get <id>                Fetch an application by ID as JSON',
+      '  create                  Register a new application',
+      '    --name <n>              Application name (required)',
+      '    --method managed|dcr    Registration method (default: managed)',
+      '    --credential-type <t>   token | password | public-key | url | public',
+      '    --client-secret <s>     Pre-set a client secret',
+      '    --traits a,b            Comma-separated trait list',
+      '    --consent               Enable consent requirement',
+      '  patch <id>              Update an application',
+      '    --name, --credential-type, --client-secret, --traits, --consent=true|false',
+      '  delete <id>             Permanently delete an application',
+      '  dcr                     Dynamic client registration (DCR)',
+      '    --name <n>              Application name (required)',
+      '    --credential-type <t>   Credential type',
+      '    --client-secret <s>     Client secret',
+      '    --traits a,b            Trait list',
+      '    --expires-in <s>        Token TTL in seconds',
+      '',
+      'Flags:',
+      '  --zone <id>             Zone selector (or CARACAL_ZONE_ID)',
+      '  --json                  Emit raw JSON',
+      '  --help, -h              Show this help',
+      '',
+    ].join('\n'),
+  )
+  process.exit(0)
+}
 function usage(line: string): void {
   process.stderr.write(`Usage: caracal ${line}\n`)
   process.exit(1)

@@ -57,14 +57,41 @@ export async function grantCommand(argv: string[], cfg?: CliConfig): Promise<voi
         process.stdout.write(`revoked ${id}\n`)
         return
       }
+      case 'help':
+      case '--help':
+      case '-h':
       default:
-        return usage('grant <list|get|create|revoke> [...]')
+        return help()
     }
   } catch (err) {
     fail(err)
   }
 }
 
+function help(): void {
+  process.stdout.write(
+    [
+      'Usage: caracal grant <verb> [options]',
+      '',
+      'Verbs:',
+      '  list                    List grants in a zone',
+      '  get <id>                Fetch a grant by ID as JSON',
+      '  create                  Issue a new grant',
+      '    --app <id>              Application ID (required)',
+      '    --user <id>             User/subject ID (required)',
+      '    --resource <id>         Resource ID (required)',
+      '    --scopes a,b            Comma-separated scopes (required)',
+      '  revoke <id>             Revoke a grant (alias: delete)',
+      '',
+      'Flags:',
+      '  --zone <id>             Zone selector (or CARACAL_ZONE_ID)',
+      '  --json                  Emit raw JSON',
+      '  --help, -h              Show this help',
+      '',
+    ].join('\n'),
+  )
+  process.exit(0)
+}
 function usage(line: string): void {
   process.stderr.write(`Usage: caracal ${line}\n`)
   process.exit(1)

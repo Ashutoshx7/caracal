@@ -40,12 +40,36 @@ export async function auditCommand(argv: string[], cfg?: CliConfig): Promise<voi
         return printTable(rows, ['occurred_at', 'event_type', 'decision', 'evaluation_status', 'request_id', 'id'])
       }
       default:
-        process.stderr.write('Usage: caracal audit tail [--zone …] [--since iso8601] [--until iso8601] [--request-id …] [--decision allow|deny|partial] [--event-type …] [--limit N]\n')
-        process.exit(1)
+        return auditHelp()
     }
   } catch (err) {
     fail(err)
   }
+}
+
+function auditHelp(): void {
+  process.stdout.write(
+    [
+      'Usage: caracal audit tail [options]',
+      '',
+      'Fetch recent audit events for a zone. Add --limit and --since to page results.',
+      '',
+      'Flags:',
+      '  --zone <id>                Zone selector (or CARACAL_ZONE_ID)',
+      '  --since <iso8601>          Return events after this timestamp',
+      '  --until <iso8601>          Return events before this timestamp',
+      '  --request-id <id>          Filter by request ID',
+      '  --decision allow|deny|partial  Filter by policy decision',
+      '  --event-type <type>        Filter by event type',
+      '  --limit N                  Maximum number of rows (default: 100)',
+      '  --json                     Emit raw JSON',
+      '  --help, -h                 Show this help',
+      '',
+      'See also: caracal explain <request_id>  — show full diagnostics for one request',
+      '',
+    ].join('\n'),
+  )
+  process.exit(0)
 }
 
 export async function explainCommand(argv: string[], cfg?: CliConfig): Promise<void> {
