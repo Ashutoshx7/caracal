@@ -2,6 +2,9 @@
   "name": "caracal",
   "private": true,
   "packageManager": "pnpm@10.28.0",
+  "bin": {
+    "caracal": "apps/cli/bin/caracal-workspace.mjs"
+  },
   "scripts": {
     "caracal": "node apps/cli/bin/caracal-workspace.mjs",
     "test": "pnpm run test:typescript && pnpm run test:go && pnpm run test:python",

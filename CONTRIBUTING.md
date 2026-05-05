@@ -22,9 +22,17 @@ pnpm caracal up
 pnpm caracal init
 ```
 
-`caracal up` builds and starts the full local stack (postgres, redis, init, sts, api, gateway, audit, coordinator). The API applies database migrations on boot. `caracal init` provisions the local zone via `POST /v1/local/bootstrap` and writes the resolved `caracal.toml` (an existing local file first, otherwise `~/.config/caracal/caracal.toml`) with a freshly generated client secret.
+`caracal up` builds and starts the full local stack (postgres, redis, init, sts, api, gateway, audit, coordinator). The API applies database migrations on boot. `caracal init` provisions the local zone via `POST /v1/local/bootstrap` and writes `caracal.toml` in the repo root (or `~/.config/caracal/caracal.toml` if no local file exists) with a freshly generated client secret.
 
-Use `pnpm caracal status` to probe `/health` on every service. Use `pnpm caracal down` to stop the stack, or `pnpm caracal down -v` to also wipe volumes.
+### Skip the `pnpm` prefix
+
+All `pnpm caracal <cmd>` invocations below can be shortened to bare `caracal <cmd>` after linking the CLI globally once:
+
+```bash
+pnpm link --global
+```
+
+To unlink: `pnpm unlink --global caracal`.
 
 ## Repository Layout
 
@@ -37,6 +45,32 @@ Use `pnpm caracal status` to probe `/health` on every service. Use `pnpm caracal
 - `packages/caracalai-*` — public SDKs (TypeScript, Go, Python)
 - `infra/docker` — Compose orchestration; `infra/postgres/migrations` — SQL migrations applied by the API at boot
 - `tests/{typescript,go,python,shared}` — co-located test trees
+
+## Stack Commands
+
+```bash
+pnpm caracal up              # Build images and start all services
+pnpm caracal up --build      # Force rebuild even with cached layers
+pnpm caracal down            # Stop all services
+pnpm caracal down -v         # Stop and wipe all volumes (fresh state)
+pnpm caracal status          # Probe /health on every service
+pnpm caracal init            # Provision local zone and write caracal.toml
+pnpm caracal init --force    # Re-provision and rotate the client secret
+pnpm caracal --help          # Show all commands and options
+```
+
+Run a command with `RESOURCE_TOKEN` injected (useful for testing MCP flows):
+
+```bash
+pnpm caracal run -- printenv RESOURCE_TOKEN
+pnpm caracal run -- node -e 'console.log(process.env.RESOURCE_TOKEN)'
+```
+
+Read a resolved credential:
+
+```bash
+pnpm caracal credential read <resource-name>
+```
 
 Per-directory rules live in each directory's `instructions.md`. Read those before making changes inside a directory.
 

@@ -14,9 +14,23 @@ import { upCommand, downCommand, statusCommand } from './commands/stack.ts'
 import { checkMcpGovernance } from './mcp.ts'
 import type { CliConfig } from './config.ts'
 
-function usage(): void {
-  process.stderr.write(
-    'Usage: caracal <up | down | status | init [flags] | run <cmd...> | credential read <resource>>\n',
+function usage(out: NodeJS.WriteStream = process.stderr): void {
+  out.write(
+    [
+      'Usage: caracal <command> [options]',
+      '',
+      'Commands:',
+      '  up                       Build and start the local stack',
+      '  down [-v]                Stop the stack; -v also removes volumes',
+      '  status                   Probe /health on every service',
+      '  init [--force]           Provision the local zone and write caracal.toml',
+      '  run [--] <cmd...>        Run a command with RESOURCE_TOKEN injected into env',
+      '  credential read <res>    Print the resolved credential for a resource',
+      '',
+      'Options:',
+      '  --help, -h               Show this help',
+      '',
+    ].join('\n'),
   )
 }
 
@@ -52,8 +66,8 @@ const argv = process.argv.slice(2)
 const cliArgs = argv[0] === '--' ? argv.slice(1) : argv
 const [command, ...rest] = cliArgs
 
-if (!command) {
-  usage()
+if (!command || command === '--help' || command === '-h') {
+  usage(process.stdout)
   process.exit(0)
 }
 
@@ -67,10 +81,9 @@ if (command === 'init') {
   await statusCommand()
 } else if (command === 'run') {
   const cfg = loadConfig()
-  const runArgs = rest[0] === '--' ? rest.slice(1) : rest
-  const [cmd] = runArgs
+  const [cmd] = rest
   if (cmd) checkMcpGovernance(cmd, cfg)
-  await runCommand(runArgs, cfg)
+  await runCommand(rest, cfg)
 } else if (command === 'credential' && rest[0] === 'read') {
   const cfg = loadConfig()
   await credentialReadCommand(rest[1] ?? '', cfg)
