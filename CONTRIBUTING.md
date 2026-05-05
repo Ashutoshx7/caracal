@@ -38,6 +38,7 @@ To unlink: `pnpm unlink --global caracal`.
 
 - `apps/api` — admin / management plane (Fastify, TypeScript)
 - `apps/cli` — `caracal` command (TypeScript, Node 24, optional Bun build)
+- `apps/tui` — `caracal-tui` interactive terminal UI (TypeScript, Node 24, optional Bun build)
 - `services/sts`, `services/gateway`, `services/audit` — Go services
 - `apps/agent-coordinator` — TypeScript coordinator with embedded Go relay
 - `packages/shared` — shared Go libraries
@@ -72,6 +73,69 @@ Read a resolved credential:
 pnpm caracal credential read <resource-name>
 ```
 
+## Terminal UI (`apps/tui`)
+
+A read-only TUI lives alongside the CLI for interactively inspecting zones, applications, resources, providers, policies, policy-sets, grants, sessions, agents, and a live audit tail. Mutation flows stay in the CLI.
+
+### Run from the repo
+
+The TUI is a workspace package (`@caracalai/tui`). After `pnpm install`:
+
+```bash
+# 1. Stack must be running and provisioned
+pnpm caracal up
+pnpm caracal init
+
+# 2. Export the admin token (read it back from the local env file)
+export CARACAL_ADMIN_TOKEN=$(grep ^CARACAL_ADMIN_TOKEN infra/docker/.env | cut -d= -f2)
+
+# 3. Launch via Node 24 native type-stripping
+node apps/tui/bin/caracal-tui.mjs
+# or, equivalently:
+pnpm --filter @caracalai/tui dev
+```
+
+### Configuration
+
+The TUI shares the CLI's resolution chain.
+
+| Variable                      | Default                  | Required for                        |
+| ----------------------------- | ------------------------ | ----------------------------------- |
+| `CARACAL_ADMIN_TOKEN`         | —                        | every view; refuses to launch otherwise |
+| `CARACAL_API_URL`             | `http://localhost:3000`  | all admin views                     |
+| `CARACAL_COORDINATOR_URL`     | `http://localhost:4000`  | the agents view                     |
+| `CARACAL_COORDINATOR_TOKEN`   | —                        | the agents view                     |
+| `CARACAL_ZONE_ID`             | `zone_id` from `caracal.toml` | every zone-scoped view         |
+
+`caracal.toml` is discovered the same way as in the CLI: `$CARACAL_CONFIG`, then cwd / `$PWD` / `$INIT_CWD/caracal.toml`, then `$XDG_CONFIG_HOME/caracal/caracal.toml`.
+
+### Key bindings
+
+| Key                  | Action                                  |
+| -------------------- | --------------------------------------- |
+| `0`–`9`              | Open menu item by number                |
+| `j` / `k` or `↑`/`↓` | Move cursor                             |
+| `Enter`              | Drill into the selected row             |
+| `h` / `←` / `Esc`    | Go back one view                        |
+| `r`                  | Reload the current view                 |
+| `g` / `G`            | Jump to top / bottom                    |
+| `p`                  | Pause / resume audit tail               |
+| `d`                  | Cycle audit decision filter             |
+| `z`                  | Pick zone (from the menu)               |
+| `q` / `Ctrl-C`       | Quit (restores terminal)                |
+
+### Tests, typecheck, build
+
+```bash
+pnpm --filter @caracalai/tui typecheck
+pnpm --filter @caracalai/tui test
+pnpm --filter @caracalai/tui build      # bun build --compile, all 5 targets
+```
+
+The TUI is implemented with `node:tty` + ANSI escapes only — no React, Ink, or blessed. Lifecycle is `App` → view stack with `init(app)` / `dispose()` hooks; the audit view's poll timer must be cleared in `dispose`. See [apps/tui/instructions.md](apps/tui/instructions.md) for the full directory contract.
+
+End users get the TUI via `install.sh` / `install.ps1` (set `CARACAL_SKIP_TUI=1` to opt out). Release builds five `caracal-tui-*` binaries alongside the CLI binaries — see the Releases section below.
+
 Per-directory rules live in each directory's `instructions.md`. Read those before making changes inside a directory.
 
 ## Tests
@@ -95,6 +159,7 @@ Per-package tests:
 ```bash
 pnpm --dir apps/api test
 pnpm --dir apps/cli test
+pnpm --dir apps/tui test
 go test ./services/sts/...
 ```
 
@@ -124,9 +189,9 @@ Releases are fully automated by [`.github/workflows/release.yml`](.github/workfl
 1. Confirm `main` is green.
 2. Tag with semantic version: `git tag -a v0.1.1 -m "v0.1.1" && git push origin v0.1.1`.
 3. The workflow runs `pnpm test`, then in parallel:
-   - Stamps `apps/cli/src/runtime/version.ts` and `apps/cli/package.json` with the tag, regenerates `src/runtime/embedded.ts` via the `prebuild` hook, and builds five CLI binaries with `bun build --compile` (linux/darwin × x64/arm64 and windows-x64).
+   - Stamps `apps/cli/src/runtime/version.ts` and `apps/cli/package.json` with the tag, regenerates `src/runtime/embedded.ts` via the `prebuild` hook, and builds five CLI binaries plus five matching `caracal-tui-*` binaries with `bun build --compile` (linux/darwin × x64/arm64 and windows-x64).
    - Builds and pushes five multi-arch (linux/amd64, linux/arm64) container images to GHCR with provenance + SBOM: `ghcr.io/garudex-labs/caracal-{api,sts,gateway,audit,coordinator}` tagged `vX.Y.Z`, `vX.Y`, and `latest`.
-4. A GitHub Release is created with auto-generated notes and attaches every binary, `SHA256SUMS`, `install.sh`, and `install.ps1`.
+4. A GitHub Release is created with auto-generated notes and attaches every binary (CLI + TUI), `SHA256SUMS`, `install.sh`, and `install.ps1`.
 
 End users install via `curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.sh | sh`. Pin a version with `CARACAL_VERSION=v0.1.1` before the pipe.
 

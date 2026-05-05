@@ -130,6 +130,19 @@ caracal run -- <cmd...>
 caracal credential read <resource>
 ```
 
+### Inspect with the Terminal UI
+
+A read-only TUI ships next to `caracal` for interactively browsing zones, applications, resources, providers, policies, policy-sets, grants, sessions, agents, and a live audit tail.
+
+```bash
+export CARACAL_ADMIN_TOKEN=<your admin token>   # the installer prints this; or read it from infra/docker/.env
+caracal-tui
+```
+
+Useful environment variables: `CARACAL_API_URL` (default `http://localhost:3000`), `CARACAL_COORDINATOR_URL` (default `http://localhost:4000`), `CARACAL_COORDINATOR_TOKEN` (only required for the agents view), `CARACAL_ZONE_ID` (or set `zone_id` in `caracal.toml`). Inside the TUI: `j`/`k` or arrows to move, `Enter` to drill in, `h`/`Esc` to go back, `r` to reload, `p` to pause the audit tail, `d` to cycle the decision filter, `q` to quit.
+
+Skip installing the TUI by piping the installer with `CARACAL_SKIP_TUI=1`.
+
 ### Develop from source
 
 For contributing, building from source, and running the stack against local code, see [CONTRIBUTING.md](CONTRIBUTING.md).
