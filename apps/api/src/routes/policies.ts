@@ -66,6 +66,7 @@ export const policiesRoutes: FastifyPluginAsync = async (fastify) => {
     const policyId = uuidv7()
     const versionId = uuidv7()
     const contentSHA = sha256(body.content)
+    const createdBy = req.actor.name
 
     const client = await fastify.db.connect()
     try {
@@ -73,13 +74,13 @@ export const policiesRoutes: FastifyPluginAsync = async (fastify) => {
       await client.query(
         `INSERT INTO policies (id, zone_id, name, description, owner_type, created_by)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        [policyId, zoneId, body.name, body.description ?? null, body.owner_type ?? 'customer', body.created_by],
+        [policyId, zoneId, body.name, body.description ?? null, body.owner_type ?? 'customer', createdBy],
       )
       const { rows } = await client.query(
         `INSERT INTO policy_versions (id, policy_id, version, content, content_sha256, schema_version, created_by)
          VALUES ($1, $2, 1, $3, $4, $5, $6)
          RETURNING id, policy_id, version, content_sha256, schema_version, created_at`,
-        [versionId, policyId, body.content, contentSHA, body.schema_version, body.created_by],
+        [versionId, policyId, body.content, contentSHA, body.schema_version, createdBy],
       )
       await client.query('COMMIT')
       return reply.code(201).send({ id: policyId, zone_id: zoneId, name: body.name, description: body.description ?? null, version: rows[0] })
@@ -115,7 +116,7 @@ export const policiesRoutes: FastifyPluginAsync = async (fastify) => {
       `INSERT INTO policy_versions (id, policy_id, version, content, content_sha256, schema_version, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, policy_id, version, content_sha256, schema_version, created_at`,
-      [versionId, id, nextVersion, body.content, contentSHA, body.schema_version, body.created_by],
+      [versionId, id, nextVersion, body.content, contentSHA, body.schema_version, req.actor.name],
     )
     return reply.code(201).send(rows[0])
   })

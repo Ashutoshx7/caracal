@@ -104,7 +104,7 @@ export interface AuthPluginOptions {
   protectedPrefix?: string
 }
 
-export const adminAuthPlugin: FastifyPluginAsync<AuthPluginOptions> = fp(async (fastify, opts) => {
+const adminAuthImpl: FastifyPluginAsync<AuthPluginOptions> = async (fastify, opts) => {
   const prefix = opts.protectedPrefix ?? '/v1/'
 
   fastify.addHook('preHandler', async (req, reply) => {
@@ -132,4 +132,6 @@ export const adminAuthPlugin: FastifyPluginAsync<AuthPluginOptions> = fp(async (
       req.log.warn({ err, tokenId: actor.id }, 'failed to update admin_tokens.last_used_at')
     })
   })
-}, { name: 'admin-auth' })
+}
+
+export const adminAuthPlugin = fp(adminAuthImpl, { name: 'admin-auth' })

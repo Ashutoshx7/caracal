@@ -15,13 +15,11 @@ const MANIFEST_MAX_ENTRIES = 256
 const PolicySetBody = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
-  created_by: z.string().default('api'),
 })
 
 const PolicySetVersionBody = z.object({
   manifest: z.array(z.object({ policy_version_id: z.string().min(1) })).min(1).max(MANIFEST_MAX_ENTRIES),
   schema_version: z.string().default('2026-03-16'),
-  created_by: z.string().default('api'),
 })
 
 const ActivateBody = z.object({
@@ -69,7 +67,7 @@ export const policySetsRoutes: FastifyPluginAsync = async (fastify) => {
         `INSERT INTO policy_sets (id, zone_id, name, description, created_by)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING id, zone_id, name, description, created_at`,
-        [id, zoneId, body.name, body.description ?? null, body.created_by],
+        [id, zoneId, body.name, body.description ?? null, req.actor.name],
       )
       await client.query(
         `INSERT INTO policy_set_bindings (zone_id, policy_set_id)
@@ -116,7 +114,7 @@ export const policySetsRoutes: FastifyPluginAsync = async (fastify) => {
         `INSERT INTO policy_set_versions (id, policy_set_id, version, manifest_json, manifest_sha256, schema_version, created_by)
          VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)
          RETURNING id, policy_set_id, version, manifest_sha256, schema_version, created_at`,
-        [versionId, id, nextVersion, manifestJSON, manifestSHA, body.schema_version, body.created_by],
+        [versionId, id, nextVersion, manifestJSON, manifestSHA, body.schema_version, req.actor.name],
       )
       await client.query('COMMIT')
       return reply.code(201).send(rows[0])
