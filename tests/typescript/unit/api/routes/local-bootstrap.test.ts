@@ -10,7 +10,9 @@ import { buildRouteApp } from '../../../../shared/test-utils/typescript/fastify.
 describe('POST /v1/local/bootstrap', () => {
   it('returns existing bootstrap metadata without rotating when force is false', async () => {
     const { app, db } = buildRouteApp(localBootstrapRoutes)
-    db.query.mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 'zone1' }] })
+    db.query
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 'zone1' }] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ dek_id: 'local' }] })
 
     await app.ready()
     const res = await app.inject({ method: 'POST', url: '/v1/local/bootstrap', payload: {} })
@@ -23,6 +25,20 @@ describe('POST /v1/local/bootstrap', () => {
       app_client_secret: null,
       rotated: false,
     })
+    expect(db.connect).not.toHaveBeenCalled()
+  })
+
+  it('refuses to overwrite a zone whose signing key was sealed under a real KEK', async () => {
+    const { app, db } = buildRouteApp(localBootstrapRoutes)
+    db.query
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 'zone1' }] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ dek_id: 'kek-prod-1' }] })
+
+    await app.ready()
+    const res = await app.inject({ method: 'POST', url: '/v1/local/bootstrap', payload: { force: true } })
+
+    expect(res.statusCode).toBe(409)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'zone_not_local_bootstrap' })
     expect(db.connect).not.toHaveBeenCalled()
   })
 
