@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/garudex-labs/caracal/shared/config"
@@ -18,7 +19,7 @@ import (
 
 const (
 	lifecycleStream = "caracal.agents.lifecycle"
-	consumerGroup   = "agent-coordinator"
+	consumerGroup   = "agent-coordinator-relay"
 	consumerName    = "relay-0"
 )
 
@@ -64,7 +65,7 @@ func (c *Consumer) Run(ctx context.Context) {
 		}
 		for _, stream := range msgs {
 			for _, msg := range stream.Messages {
-			c.log.Info().
+				c.log.Info().
 					Str("id", msg.ID).
 					Interface("event", msg.Values["event"]).
 					Interface("zone_id", msg.Values["zone_id"]).
@@ -77,7 +78,7 @@ func (c *Consumer) Run(ctx context.Context) {
 
 func (c *Consumer) ensureGroup(ctx context.Context) error {
 	err := c.redis.XGroupCreateMkStream(ctx, lifecycleStream, consumerGroup, "$").Err()
-	if err != nil && err.Error() == "BUSYGROUP Consumer Group name already exists" {
+	if err != nil && strings.Contains(err.Error(), "BUSYGROUP") {
 		return nil
 	}
 	return err
