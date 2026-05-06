@@ -12,14 +12,12 @@ const PolicyBody = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   owner_type: z.string().optional(),
-  created_by: z.string().default('api'),
   content: z.string().min(1),
   schema_version: z.string().default('2026-03-16'),
 })
 
 const VersionBody = z.object({
   content: z.string().min(1),
-  created_by: z.string().default('api'),
   schema_version: z.string().default('2026-03-16'),
 })
 

@@ -6,10 +6,12 @@
 import Fastify from 'fastify'
 import swagger from '@fastify/swagger'
 import swaggerUI from '@fastify/swagger-ui'
-import { timingSafeEqual } from 'crypto'
+import { randomUUID } from 'node:crypto'
 import type { Config } from './config.js'
 import type { DB } from './db.js'
 import type { RedisClient } from './redis.js'
+import { adminAuthPlugin } from './auth.js'
+import { registerAdminAuditHook } from './admin-audit.js'
 import { zonesRoutes } from './routes/zones.js'
 import { applicationsRoutes } from './routes/applications.js'
 import { resourcesRoutes } from './routes/resources.js'
@@ -31,7 +33,7 @@ declare module 'fastify' {
   }
 }
 
-interface AppDeps {
+export interface AppDeps {
   cfg: Config
   db: DB
   redis: RedisClient
@@ -40,23 +42,24 @@ interface AppDeps {
 export async function buildApp({ cfg, db, redis }: AppDeps) {
   const app = Fastify({
     logger: { level: cfg.logLevel },
+    genReqId: (req) => {
+      const incoming = req.headers['x-request-id']
+      const value = Array.isArray(incoming) ? incoming[0] : incoming
+      return value && /^[A-Za-z0-9_.\-:]{1,128}$/.test(value) ? value : randomUUID()
+    },
+    requestIdHeader: 'x-request-id',
   })
 
   app.decorate('db', db)
   app.decorate('redis', redis)
 
-  app.addHook('preHandler', async (req, reply) => {
-    if (!req.url.startsWith('/v1/')) return
-
-    const auth = req.headers.authorization
-    const token = auth?.startsWith('Bearer ') ? auth.slice(7) : ''
-    const expected = Buffer.from(cfg.adminToken)
-    const actual = Buffer.from(token)
-
-    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
-      return reply.code(401).send({ error: 'invalid_admin_token' })
-    }
+  app.addHook('onSend', async (req, reply, payload) => {
+    reply.header('x-request-id', req.id)
+    return payload
   })
+
+  await app.register(adminAuthPlugin, { db })
+  registerAdminAuditHook(app, { db })
 
   await app.register(swagger, {
     openapi: {
@@ -78,12 +81,23 @@ export async function buildApp({ cfg, db, redis }: AppDeps) {
   await app.register(stepUpChallengesRoutes, { prefix: '/v1' })
   await app.register(policyTemplatesRoutes, { prefix: '/v1' })
   await app.register(zoneEventsRoutes, { prefix: '/v1' })
-  await app.register(localBootstrapRoutes, { prefix: '/v1' })
+
+  if (cfg.localBootstrapEnabled) {
+    await app.register(localBootstrapRoutes, { prefix: '/v1' })
+    app.log.warn('local bootstrap endpoint enabled; do not use in production')
+  }
 
   app.get('/health', async () => ({ ok: true }))
-  app.get('/ready', async () => {
-    await db.query('SELECT 1')
-    return { ok: true }
+  app.get('/ready', async (_req, reply) => {
+    try {
+      await db.query('SELECT 1')
+      const pong = await redis.ping()
+      if (pong !== 'PONG') throw new Error(`unexpected redis ping reply: ${pong}`)
+      return { ok: true }
+    } catch (err) {
+      reply.code(503)
+      return { ok: false, error: (err as Error).message }
+    }
   })
 
   return app
