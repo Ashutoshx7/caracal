@@ -27,6 +27,7 @@ ensureGroup() {
 
 ensureGroup caracal.audit.events       audit-ingestor
 ensureGroup caracal.audit.events       siem-export
+ensureGroup caracal.audit.events.dlq   audit-dlq-observer
 ensureGroup caracal.policy.invalidate  opa-engine
 ensureGroup caracal.sessions.revoke    sts-revocation
 ensureGroup caracal.agents.lifecycle       agent-coordinator-relay
