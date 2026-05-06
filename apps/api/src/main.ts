@@ -36,7 +36,12 @@ await seedBootstrapAdminToken(db, {
   log: (msg) => log('info', msg),
 })
 
-const app = await buildApp({ cfg, db, redis })
+const shutdown = new ShutdownRegistry({
+  timeoutMs: cfg.shutdownTimeoutMs,
+  log,
+})
+
+const app = await buildApp({ cfg, db, redis, isDraining: () => shutdown.draining })
 
 const dispatcher = new OutboxDispatcher({
   db,
@@ -50,11 +55,6 @@ const dispatcher = new OutboxDispatcher({
 })
 
 const dcrTimer = startDCRGC(db)
-
-const shutdown = new ShutdownRegistry({
-  timeoutMs: cfg.shutdownTimeoutMs,
-  log: (level, msg, meta) => app.log[level]({ ...meta }, msg),
-})
 
 shutdown.register('dcr-gc-timer', () => { clearInterval(dcrTimer) })
 shutdown.register('outbox-dispatcher', () => dispatcher.stop())

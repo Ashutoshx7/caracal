@@ -27,6 +27,10 @@ export class ShutdownRegistry {
     this.entries.push({ name, fn })
   }
 
+  get draining(): boolean {
+    return this.firing
+  }
+
   install(signals: NodeJS.Signals[] = ['SIGTERM', 'SIGINT']): void {
     if (this.installed) return
     this.installed = true
