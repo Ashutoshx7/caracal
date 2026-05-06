@@ -21,4 +21,7 @@ FROM alpine:3.22
 RUN apk add --no-cache ca-certificates wget
 COPY --from=builder /gateway /gateway
 USER 65532:65532
+EXPOSE 8081
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget -qO- http://127.0.0.1:8081/health || exit 1
 ENTRYPOINT ["/gateway"]

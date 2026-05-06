@@ -4,11 +4,13 @@
 // Delegation graph routes for agent-to-agent authority edges.
 
 import type { FastifyPluginAsync } from 'fastify'
-import type { Pool, PoolClient, QueryResult } from 'pg'
+import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { v7 as uuidv7 } from 'uuid'
+import { enqueue, Topics, type Queryable } from '../outbox.js'
 
-type Queryable = Pick<Pool | PoolClient, 'query'>
+const LIST_DEFAULT_LIMIT = 100
+const LIST_MAX_LIMIT = 500
 
 const DelegationBody = z.object({
   source_session_id: z.string().min(1),
@@ -19,6 +21,11 @@ const DelegationBody = z.object({
   scopes: z.array(z.string().min(1)).default([]),
   constraints_json: z.record(z.unknown()).default({}),
   expires_at: z.string().datetime(),
+})
+
+const ListQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(LIST_MAX_LIMIT).default(LIST_DEFAULT_LIMIT),
+  cursor: z.string().min(1).optional(),
 })
 
 export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
@@ -35,7 +42,9 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       await client.query('BEGIN')
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`delegation:${zoneId}`])
-      const endpoints = await activeAgentEndpoints(client, zoneId, body.source_session_id, body.target_session_id)
+      const endpoints = await activeAgentEndpoints(
+        client, zoneId, body.source_session_id, body.target_session_id,
+      )
       if (!endpoints.source || !endpoints.target) {
         await client.query('ROLLBACK')
         return reply.code(404).send({ error: 'delegation_endpoint_not_found' })
@@ -56,12 +65,12 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
           return reply.code(403).send({ error: 'delegation_scopes_exceed_resource' })
         }
       }
-      const cycle = await wouldCreateCycle(client, zoneId, body.source_session_id, body.target_session_id)
-      if (cycle && !cycleAllowed(body.constraints_json)) {
+      if (await wouldCreateCycle(client, zoneId, body.source_session_id, body.target_session_id)) {
         await client.query('ROLLBACK')
-        return reply.code(409).send({ error: 'delegation_cycle_requires_constraints' })
+        return reply.code(409).send({ error: 'delegation_cycle_denied' })
       }
 
+      const edgeId = uuidv7()
       const { rows } = await client.query(
         `INSERT INTO delegation_edges
          (id, zone_id, source_session_id, target_session_id, issuer_application_id, receiver_application_id,
@@ -70,7 +79,7 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
          RETURNING id, zone_id, source_session_id, target_session_id, issuer_application_id, receiver_application_id,
                    resource_id, scopes, constraints_json, status, expires_at, edge_version, revoked_at, created_at`,
         [
-          uuidv7(),
+          edgeId,
           zoneId,
           body.source_session_id,
           body.target_session_id,
@@ -82,7 +91,13 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
           body.expires_at,
         ],
       )
-      await bumpGraphEpoch(client, zoneId)
+      await enqueue(client, Topics.DelegationsInvalidate, `edge_create:${edgeId}`, {
+        event: 'edge_create',
+        zone_id: zoneId,
+        edge_id: edgeId,
+        source_session_id: body.source_session_id,
+        target_session_id: body.target_session_id,
+      })
       await client.query('COMMIT')
       return reply.code(201).send(rows[0])
     } catch (err) {
@@ -93,14 +108,14 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
     }
   })
 
-  fastify.get('/zones/:zoneId/delegations/inbound/:sessionId', async (req) => {
+  fastify.get('/zones/:zoneId/delegations/inbound/:sessionId', async (req, reply) => {
     const { zoneId, sessionId } = req.params as { zoneId: string; sessionId: string }
-    return listEdges(fastify.db, zoneId, 'target_session_id', sessionId)
+    return listEdges(fastify.db, reply, zoneId, 'target_session_id', sessionId, req.query)
   })
 
-  fastify.get('/zones/:zoneId/delegations/outbound/:sessionId', async (req) => {
+  fastify.get('/zones/:zoneId/delegations/outbound/:sessionId', async (req, reply) => {
     const { zoneId, sessionId } = req.params as { zoneId: string; sessionId: string }
-    return listEdges(fastify.db, zoneId, 'source_session_id', sessionId)
+    return listEdges(fastify.db, reply, zoneId, 'source_session_id', sessionId, req.query)
   })
 
   fastify.get('/zones/:zoneId/delegations/:id/traverse', async (req) => {
@@ -131,7 +146,11 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
     const client = await fastify.db.connect()
     try {
       await client.query('BEGIN')
-      const { rows: edges } = await client.query(
+      const { rows: edges } = await client.query<{
+        id: string
+        target_session_id: string
+        session_sid: string
+      }>(
         `WITH RECURSIVE affected AS (
            SELECT id, target_session_id, ARRAY[id] AS visited
            FROM delegation_edges
@@ -156,21 +175,26 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
         await client.query('ROLLBACK')
         return reply.code(404).send({ error: 'delegation_not_found' })
       }
-      const targetIds = [...new Set(edges.map((edge: { target_session_id: string }) => edge.target_session_id))]
-      const sessionSids = [...new Set(edges.map((edge: { session_sid: string }) => edge.session_sid))]
+      const targetIds = [...new Set(edges.map((e) => e.target_session_id))]
+      const sessionSids = [...new Set(edges.map((e) => e.session_sid))]
       await client.query(
         `UPDATE agent_sessions SET status = 'terminated', terminated_at = now()
          WHERE id = ANY($1::text[]) AND zone_id = $2`,
         [targetIds, zoneId],
       )
-      await bumpGraphEpoch(client, zoneId)
-      for (const sessionSid of sessionSids) {
-        await client.query(
-          `INSERT INTO caracal_outbox (id, producer, topic, dedupe_key, payload_json)
-           VALUES ($1, 'coordinator', 'caracal.sessions.revoke', $2, $3)
-           ON CONFLICT (producer, topic, dedupe_key) DO NOTHING`,
-          [uuidv7(), `delegation:${id}:sid:${sessionSid}`, { zone_id: zoneId, session_id: sessionSid }],
-        )
+      await enqueue(client, Topics.DelegationsInvalidate, `edge_revoke:${id}`, {
+        event: 'edge_revoke', zone_id: zoneId, edge_id: id, affected_edges: edges.length,
+      })
+      for (const sid of sessionSids) {
+        await enqueue(client, Topics.SessionsRevoke,
+          `delegation:${id}:sid:${sid}`,
+          { zone_id: zoneId, session_id: sid, reason: 'delegation_revoked' })
+      }
+      for (const targetId of targetIds) {
+        await enqueue(client, Topics.AgentsLifecycle,
+          `terminate:${targetId}`,
+          { event: 'terminate', zone_id: zoneId, session_id: targetId,
+            parent_id: null, reason: 'delegation_revoked' })
       }
       await client.query('COMMIT')
       return { revoked_edges: edges.length, affected_sessions: sessionSids.length }
@@ -181,6 +205,43 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
       client.release()
     }
   })
+}
+
+const EDGE_LIST_FIELDS = {
+  source_session_id: 'source_session_id',
+  target_session_id: 'target_session_id',
+} as const
+
+async function listEdges(
+  db: Pool,
+  reply: import('fastify').FastifyReply,
+  zoneId: string,
+  field: keyof typeof EDGE_LIST_FIELDS,
+  sessionId: string,
+  rawQuery: unknown,
+): Promise<unknown> {
+  const parsed = ListQuery.safeParse(rawQuery)
+  if (!parsed.success) return reply.code(400).send({ error: 'invalid_query' })
+  const column = EDGE_LIST_FIELDS[field]
+  const { limit, cursor } = parsed.data
+  const params: unknown[] = [zoneId, sessionId, limit]
+  let cursorClause = ''
+  if (cursor) {
+    params.push(cursor)
+    cursorClause = `AND (created_at, id) < (
+      (SELECT created_at FROM delegation_edges WHERE id = $4 AND zone_id = $1),
+      $4)`
+  }
+  const { rows } = await db.query(
+    `SELECT id, zone_id, source_session_id, target_session_id, issuer_application_id, receiver_application_id,
+            resource_id, scopes, constraints_json, status, expires_at, edge_version, revoked_at, created_at
+     FROM delegation_edges
+     WHERE zone_id = $1 AND ${column} = $2 ${cursorClause}
+     ORDER BY created_at DESC, id DESC LIMIT $3`,
+    params,
+  )
+  const nextCursor = rows.length === limit ? rows[rows.length - 1].id : null
+  return { items: rows, next_cursor: nextCursor }
 }
 
 async function activeAgentEndpoints(
@@ -213,28 +274,6 @@ async function activeAgentEndpoints(
   return endpoints
 }
 
-async function bumpGraphEpoch(db: Queryable, zoneId: string): Promise<void> {
-  await db.query(
-    `INSERT INTO delegation_graph_epochs (zone_id, epoch)
-     VALUES ($1, 1)
-     ON CONFLICT (zone_id)
-     DO UPDATE SET epoch = delegation_graph_epochs.epoch + 1, updated_at = now()`,
-    [zoneId],
-  )
-}
-
-async function listEdges(db: Queryable, zoneId: string, field: string, sessionId: string): Promise<unknown[]> {
-  const { rows } = await db.query(
-    `SELECT id, zone_id, source_session_id, target_session_id, issuer_application_id, receiver_application_id,
-            resource_id, scopes, constraints_json, status, expires_at, edge_version, revoked_at, created_at
-     FROM delegation_edges
-     WHERE zone_id = $1 AND ${field} = $2
-     ORDER BY created_at DESC`,
-    [zoneId, sessionId],
-  )
-  return rows
-}
-
 async function getResourceScopes(db: Queryable, zoneId: string, resourceId: string): Promise<string[] | null> {
   const { rows } = await db.query(
     `SELECT scopes FROM resources WHERE id = $1 AND zone_id = $2`,
@@ -248,7 +287,9 @@ function scopesAllowed(requested: string[], available: string[]): boolean {
   return requested.every(scope => allowed.has(scope))
 }
 
-async function wouldCreateCycle(db: Queryable, zoneId: string, sourceId: string, targetId: string): Promise<boolean> {
+async function wouldCreateCycle(
+  db: Queryable, zoneId: string, sourceId: string, targetId: string,
+): Promise<boolean> {
   const { rows } = await db.query(
     `WITH RECURSIVE path AS (
        SELECT target_session_id, ARRAY[id] AS visited
@@ -266,13 +307,8 @@ async function wouldCreateCycle(db: Queryable, zoneId: string, sourceId: string,
      )
      SELECT 1 FROM path WHERE target_session_id = $3 LIMIT 1`,
     [zoneId, targetId, sourceId],
-  ) as QueryResult
+  )
   return rows.length > 0
 }
 
-function cycleAllowed(constraints: Record<string, unknown>): boolean {
-  return typeof constraints.ttl_seconds === 'number'
-    && typeof constraints.max_hops === 'number'
-    && typeof constraints.budget === 'number'
-    && constraints.policy_approved === true
-}
+export type { PoolClient }
