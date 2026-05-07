@@ -21,8 +21,11 @@ cli() {
 ensureGroup() {
     stream="$1"
     group="$2"
-    cli XGROUP CREATE "${stream}" "${group}" '$' MKSTREAM 2>&1 \
-        | grep -v BUSYGROUP || true
+    out=$(cli XGROUP CREATE "${stream}" "${group}" '$' MKSTREAM 2>&1) || true
+    case "${out}" in
+        ''|*BUSYGROUP*|*OK*) return 0 ;;
+        *) echo "error: XGROUP CREATE ${stream} ${group} failed: ${out}" >&2; exit 1 ;;
+    esac
 }
 
 # checkMaxLen warns when an existing stream's length exceeds the intended retention
