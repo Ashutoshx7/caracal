@@ -63,20 +63,31 @@ More coming soon
 
 ## Installation & Setup
 
-### Quickstart
+<details>
+<summary><strong>End Users</strong></summary>
 
-> Only Docker is required. The CLI is a single self-contained binary. Pin a version with `CARACAL_VERSION=vX.Y.Z` before the install command.
+### Prerequisites
 
-<details open>
-<summary><strong>Linux</strong> (x64 / arm64) curl or wget</summary>
+- Docker Desktop 4.x or Docker Engine 24+ with Compose v2
+- Git 2.x
+
+### Install
+
+Both `caracal` (CLI) and `caracal-tui` are installed to the same directory.
+
+> Pin a version: `CARACAL_VERSION=vX.Y.Z` before the install command.  
+> Skip the TUI binary: `CARACAL_SKIP_TUI=1` before the install command.
+
+<details>
+<summary><strong>Linux</strong> (x64 / arm64)</summary>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.sh | sh
-# or, without curl:
+# or:
 wget -qO- https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.sh | sh
 ```
 
-Installs to `~/.local/bin/caracal`. Override with `CARACAL_INSTALL_DIR=/usr/local/bin` (may need `sudo`).
+Installs to `~/.local/bin`. Override: `CARACAL_INSTALL_DIR=/usr/local/bin` (may need `sudo`).
 
 </details>
 
@@ -87,7 +98,7 @@ Installs to `~/.local/bin/caracal`. Override with `CARACAL_INSTALL_DIR=/usr/loca
 curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.sh | sh
 ```
 
-If Gatekeeper blocks the binary on first run: `xattr -d com.apple.quarantine ~/.local/bin/caracal`.
+If Gatekeeper blocks the binary: `xattr -d com.apple.quarantine ~/.local/bin/caracal`.
 
 </details>
 
@@ -98,54 +109,85 @@ If Gatekeeper blocks the binary on first run: `xattr -d com.apple.quarantine ~/.
 iwr -useb https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.ps1 | iex
 ```
 
-Installs to `%LOCALAPPDATA%\Programs\caracal\caracal.exe` and adds it to the user `PATH`. Requires Docker Desktop with WSL2.
+Installs to `%LOCALAPPDATA%\Programs\caracal`. Requires Docker Desktop with WSL2.
 
 </details>
 
 <details>
-<summary><strong>Manual</strong> direct download</summary>
+<summary><strong>Manual</strong></summary>
 
-Grab the matching asset from the [latest release](https://github.com/Garudex-Labs/caracal/releases/latest) (`caracal-linux-x64`, `caracal-linux-arm64`, `caracal-darwin-x64`, `caracal-darwin-arm64`, or `caracal-windows-x64.exe`), verify against `SHA256SUMS`, then place it on your `PATH` and `chmod +x` (Unix).
+Download from the [latest release](https://github.com/Garudex-Labs/caracal/releases/latest), verify against `SHA256SUMS`, place on your `PATH`, and `chmod +x` (Unix).
+
+Binaries: `caracal-linux-x64`, `caracal-linux-arm64`, `caracal-darwin-x64`, `caracal-darwin-arm64`, `caracal-windows-x64.exe`
 
 </details>
 
-<p></p>
-
-Then, on any platform:
+### Start the stack
 
 ```bash
-caracal up
-caracal init
-caracal run -- printenv RESOURCE_TOKEN
+caracal up        # start all services via Docker
+caracal init      # provision the local zone, writes caracal.toml
+caracal status    # probe all services
+caracal down      # stop; add -v to remove volumes
 ```
 
-### Basic commands
+<details>
+<summary><strong>CLI</strong></summary>
+
+All commands require `CARACAL_ADMIN_TOKEN`. Use `--zone <id>` or set `zone_id` in `caracal.toml` to target a zone.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `CARACAL_ADMIN_TOKEN` | — | Required |
+| `CARACAL_API_URL` | `http://localhost:3000` | |
+| `CARACAL_COORDINATOR_URL` | `http://localhost:4000` | |
+| `CARACAL_COORDINATOR_TOKEN` | — | Required for `agent` and `delegation` commands |
+| `CARACAL_ZONE_ID` | — | Or set `zone_id` in `caracal.toml` |
+
+</details>
+
+<details>
+<summary><strong>TUI</strong></summary>
 
 ```bash
-caracal up
-caracal status
-caracal down
-caracal init
-caracal run -- <cmd...>
-caracal credential read <resource>
-```
-
-### Inspect with the Terminal UI
-
-A read-only TUI ships next to `caracal` for interactively browsing zones, applications, resources, providers, policies, policy-sets, grants, sessions, agents, and a live audit tail.
-
-```bash
-export CARACAL_ADMIN_TOKEN=<your admin token>   # the installer prints this; or read it from infra/docker/.env
+export CARACAL_ADMIN_TOKEN=<your-admin-token>   # printed by the installer; or read from infra/docker/.env
 caracal-tui
 ```
 
-Useful environment variables: `CARACAL_API_URL` (default `http://localhost:3000`), `CARACAL_COORDINATOR_URL` (default `http://localhost:4000`), `CARACAL_COORDINATOR_TOKEN` (only required for the agents view), `CARACAL_ZONE_ID` (or set `zone_id` in `caracal.toml`). Inside the TUI: `j`/`k` or arrows to move, `Enter` to drill in, `h`/`Esc` to go back, `r` to reload, `p` to pause the audit tail, `d` to cycle the decision filter, `q` to quit.
+Uses the same environment variables as the CLI. `CARACAL_COORDINATOR_TOKEN` is only needed for the agents view.
 
-Skip installing the TUI by piping the installer with `CARACAL_SKIP_TUI=1`.
+| Key | Action |
+|---|---|
+| `j` / `k` or arrows | Move |
+| `Enter` | Drill in |
+| `h` / `Esc` | Go back |
+| `r` | Reload |
+| `p` | Pause / resume audit tail |
+| `d` | Cycle decision filter (all → allow → deny → partial) |
+| `q` | Quit |
 
-### Develop from source
+</details>
 
-For contributing, building from source, and running the stack against local code, see [CONTRIBUTING.md](CONTRIBUTING.md).
+</details>
+
+<pr></pr>
+
+<details>
+<summary><strong>Contributors</strong></summary>
+
+### Prerequisites
+
+- Node.js 24+
+- pnpm 10+
+- Docker Engine 24+ with Compose v2 (or Docker Desktop 4.x)
+- Git 2.x
+- Go 1.26+ (only when changing Go services or shared Go packages)
+- Python 3.11+ (only when changing the Python MCP package)
+- Bun (only when building distributable CLI/TUI binaries)
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for clone, setup, testing, and pull request workflow.
+
+</details>
 
 -----
 
