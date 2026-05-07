@@ -13,7 +13,10 @@ import (
 )
 
 func TestAuditBufferEmitNonBlocking(t *testing.T) {
-	buf := newAuditBuffer(nil, zerolog.Nop())
+	buf, err := newAuditBuffer(nil, zerolog.Nop(), false)
+	if err != nil {
+		t.Fatalf("newAuditBuffer: %v", err)
+	}
 
 	ev := AuditEvent{ID: "ev-1", ZoneID: "z1", Decision: "allow"}
 	buf.Emit(ev)
@@ -51,7 +54,10 @@ func TestAuditBufferDroppedCounterAccumulates(t *testing.T) {
 }
 
 func TestAuditBufferDroppedInitiallyZero(t *testing.T) {
-	buf := newAuditBuffer(nil, zerolog.Nop())
+	buf, err := newAuditBuffer(nil, zerolog.Nop(), false)
+	if err != nil {
+		t.Fatalf("newAuditBuffer: %v", err)
+	}
 	if buf.Dropped() != 0 {
 		t.Errorf("want 0 initially, got %d", buf.Dropped())
 	}
@@ -98,7 +104,10 @@ func TestOPAMetricsSnapshotReflectsIncrements(t *testing.T) {
 }
 
 func TestAuditBufferChannelCapacity(t *testing.T) {
-	buf := newAuditBuffer(nil, zerolog.Nop())
+	buf, err := newAuditBuffer(nil, zerolog.Nop(), false)
+	if err != nil {
+		t.Fatalf("newAuditBuffer: %v", err)
+	}
 	if cap(buf.ch) != auditBufCap {
 		t.Errorf("want capacity %d, got %d", auditBufCap, cap(buf.ch))
 	}
