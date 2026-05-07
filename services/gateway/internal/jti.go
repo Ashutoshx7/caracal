@@ -68,13 +68,13 @@ func (t *jtiTracker) Observe(ctx context.Context, jti string, exp time.Time, req
 	values := map[string]interface{}{
 		"id": id.String(),
 		"data": string(mustMarshal(map[string]interface{}{
-			"id":             id.String(),
-			"event_type":     "replay_detected",
-			"request_id":     requestID,
-			"decision":       "warn",
+			"id":                id.String(),
+			"event_type":        "replay_detected",
+			"request_id":        requestID,
+			"decision":          "warn",
 			"evaluation_status": "anomaly",
-			"metadata_json":  json.RawMessage(meta),
-			"occurred_at":    time.Now().UTC().Format(time.RFC3339Nano),
+			"metadata_json":     json.RawMessage(meta),
+			"occurred_at":       time.Now().UTC().Format(time.RFC3339Nano),
 		})),
 	}
 	if err := t.redis.XAdd(ctx, auditStream, values); err != nil {
