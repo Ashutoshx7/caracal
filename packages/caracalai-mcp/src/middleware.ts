@@ -5,6 +5,7 @@
 
 import { jwtVerify } from 'jose'
 import type { NextFunction, Request, RequestHandler, Response } from 'express'
+import { hasScope } from '@caracalai/shared'
 import { getKeySet } from './jwks.js'
 
 export interface MiddlewareOptions {
@@ -25,12 +26,16 @@ export interface CaracalRequest extends Request {
 export function caracalAuth(opts: MiddlewareOptions): RequestHandler {
   return async (req: CaracalRequest, res: Response, next: NextFunction): Promise<void> => {
     const authHeader = req.headers['authorization']
-    if (!authHeader?.startsWith('Bearer ')) {
+    if (!authHeader?.startsWith('Bearer ') || authHeader.length <= 7) {
       res.status(401).json({ error: 'invalid_token', error_description: 'Missing bearer token' })
       return
     }
 
-    const token = authHeader.slice(7)
+    const token = authHeader.slice(7).trim()
+    if (!token) {
+      res.status(401).json({ error: 'invalid_token', error_description: 'Missing bearer token' })
+      return
+    }
     try {
       const keySet = await getKeySet(opts.issuer)
       const { payload } = await jwtVerify(token, keySet, {
@@ -45,7 +50,7 @@ export function caracalAuth(opts: MiddlewareOptions): RequestHandler {
         return
       }
       for (const required of opts.requiredScopes ?? []) {
-        if (!scope.split(' ').includes(required)) {
+        if (!hasScope(scope, required)) {
           res.status(403).json({ error: 'insufficient_scope', error_description: `Missing scope: ${required}` })
           return
         }
