@@ -8,16 +8,15 @@
 
 <div align="center">
 
-**Pre-execution authority enforcement for AI agents**
+**Security-first authority and delegation system for AI agents**
 </div>
 
 <div align="center">
 
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue?style=for-the-badge&logo=gnubash&logoColor=white)](LICENSE)
 [![Version](https://img.shields.io/github/v/release/Garudex-Labs/caracal?style=for-the-badge&label=Release&color=orange)](https://github.com/Garudex-Labs/caracal/releases)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python&logoColor=white)](pyproject.toml)
 [![Repo Size](https://img.shields.io/github/repo-size/Garudex-Labs/caracal?style=for-the-badge&color=green)](https://github.com/Garudex-Labs/caracal)
-[![Website](https://img.shields.io/badge/Website-garudexlabs.com-333333?style=for-the-badge&logo=google-chrome&logoColor=white)](https://garudexlabs.com)
+[![Website](https://img.shields.io/badge/Website-caracal.run-333333?style=for-the-badge&logo=google-chrome&logoColor=white)](https://caracal.run)
 
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12350/badge)](https://www.bestpractices.dev/projects/12350) 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Garudex-Labs/caracal/badge)](https://scorecard.dev/viewer/?uri=github.com/Garudex-Labs/caracal) 
@@ -28,9 +27,9 @@
 
 # Overview
 
-**Caracal** is a pre-execution authority enforcement system for AI agents and automated software operating in production environments. It exists at the boundary where autonomous decisions turn into irreversible actions such as API calls, database writes, or system triggers.
+**Caracal** is a **security-first AI authority, delegation, and identity system** for **autonomous agents**. It enables organizations to control **what AI agents can access**, **what actions they can perform**, **how authority is delegated between agents**, and how every decision is governed through **policies**, **trust boundaries**, and **verifiable execution flows**.
 
-By enforcing the **principle of explicit authority**, Caracal ensures no action executes without a cryptographically verified, time-bound mandate issued under a governing policy.
+**Caracal** works by introducing a **secure control plane** built around **zones**, **identity**, **delegation**, and **policy enforcement** for AI agents. The **STS** issues and verifies agent identity, the **gateway** enforces access and policy decisions at runtime, and the **coordinator** manages agent lifecycle and delegation flows, ensuring every action performed by an autonomous agent is **authenticated**, **authorized**, **traceable**, and restricted to **explicitly granted authority boundaries**.
 
 -----
 
