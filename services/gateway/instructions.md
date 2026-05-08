@@ -7,7 +7,7 @@
 - Must use Go 1.26 with net/http only; no external HTTP framework.
 - Must listen on port 8081 only; loadConfig must reject any other PORT.
 - Must perform a fresh STS exchange on every proxied request.
-- Must use github.com/garudex-labs/caracal/shared/* for config, errors, and logging.
+- Must use github.com/garudex-labs/caracal/core/* for config, errors, and logging.
 - Must require STS_URL (https) and TLS_CERT_FILE+TLS_KEY_FILE; only INSECURE_STS=true and INSECURE_HTTP=true may relax these in dev.
 - Must validate every STS-supplied upstream through upstreamGuard; the upstream Transport must use guard.SafeDialContext to re-validate at connect time.
 - Must strip RFC 7230 hop-by-hop headers and X-Caracal-* routing headers before forwarding upstream.

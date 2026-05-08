@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/garudex-labs/caracal/shared/logging"
+	"github.com/garudex-labs/caracal/core/logging"
 	"github.com/rs/zerolog"
 )
 
