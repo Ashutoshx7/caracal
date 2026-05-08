@@ -4,10 +4,10 @@
 - Covers only the Python `caracalai-mcp` package under `caracal/packages/caracalai-mcp-python/`.
 
 ## Required
-- Must validate Caracal-issued JWTs using JWKS with 5-min cache.
-- Must check `iss`, `aud`, `exp`, and scope on every request.
+- Must wire FastMCP middleware to `caracalai_identity` for JWT verify, JWKS, scope, and claim shapes.
 - Must support FastMCP middleware pattern.
 
 ## Forbidden
+- Must not implement JWT verify, JWKS fetch, scope parsing, or claim types in this package.
 - Must not import from `caracalEnterprise/`.
 - Must not log plaintext bearer tokens.

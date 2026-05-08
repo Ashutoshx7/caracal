@@ -3,11 +3,15 @@
 //
 // Express middleware that validates Caracal JWTs at every MCP tool boundary.
 
-import { jwtVerify } from 'jose'
 import type { NextFunction, Request, RequestHandler, Response } from 'express'
-import { hasScope } from '@caracalai/shared'
-import { getKeySet } from './jwks.js'
-import type { RevocationStore } from './revocation.js'
+import {
+  ScopeInsufficientError,
+  TokenInvalidError,
+  ZoneInvalidError,
+  verify,
+  type Claims,
+} from '@caracalai/identity'
+import type { RevocationStore } from '@caracalai/revocation'
 
 export interface MiddlewareOptions {
   issuer: string
@@ -18,12 +22,7 @@ export interface MiddlewareOptions {
 }
 
 export interface CaracalRequest extends Request {
-  caracalClaims?: {
-    sub: string
-    zoneId: string
-    sid: string
-    scope: string
-  }
+  caracalClaims?: Claims
 }
 
 export function caracalAuth(opts: MiddlewareOptions): RequestHandler {
@@ -39,36 +38,38 @@ export function caracalAuth(opts: MiddlewareOptions): RequestHandler {
       res.status(401).json({ error: 'invalid_token', error_description: 'Missing bearer token' })
       return
     }
+
+    let claims: Claims
     try {
-      const keySet = await getKeySet(opts.issuer)
-      const { payload } = await jwtVerify(token, keySet, {
+      claims = await verify(token, {
         issuer: opts.issuer,
         audience: opts.audience,
+        zoneId: opts.zoneId,
+        requiredScopes: opts.requiredScopes,
       })
-
-      const scope = (payload['scope'] as string | undefined) ?? ''
-      const zoneId = payload['zone_id']
-      if (typeof zoneId !== 'string' || zoneId === '' || (opts.zoneId && zoneId !== opts.zoneId)) {
+    } catch (err) {
+      if (err instanceof ScopeInsufficientError) {
+        res.status(403).json({ error: 'insufficient_scope', error_description: err.message })
+        return
+      }
+      if (err instanceof ZoneInvalidError) {
         res.status(401).json({ error: 'invalid_token', error_description: 'Token zone validation failed' })
         return
       }
-      for (const required of opts.requiredScopes ?? []) {
-        if (!hasScope(scope, required)) {
-          res.status(403).json({ error: 'insufficient_scope', error_description: `Missing scope: ${required}` })
-          return
-        }
-      }
-
-      const sid = typeof payload['sid'] === 'string' ? (payload['sid'] as string) : ''
-      if (opts.revocations && sid && (await opts.revocations.isRevoked(sid))) {
-        res.status(401).json({ error: 'invalid_token', error_description: 'Session revoked' })
+      if (err instanceof TokenInvalidError) {
+        res.status(401).json({ error: 'invalid_token', error_description: 'Token validation failed' })
         return
       }
-
-      req.caracalClaims = { sub: payload.sub ?? '', zoneId, sid, scope }
-      next()
-    } catch {
       res.status(401).json({ error: 'invalid_token', error_description: 'Token validation failed' })
+      return
     }
+
+    if (opts.revocations && claims.sid && (await opts.revocations.isRevoked(claims.sid))) {
+      res.status(401).json({ error: 'invalid_token', error_description: 'Session revoked' })
+      return
+    }
+
+    req.caracalClaims = claims
+    next()
   }
 }

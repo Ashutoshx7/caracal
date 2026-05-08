@@ -7,11 +7,12 @@ package mcp
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/garudex-labs/caracal/identity"
 )
 
 // Options configures the auth middleware.
@@ -29,31 +30,32 @@ type errBody struct {
 
 // Middleware returns a net/http middleware that validates Caracal JWTs.
 func Middleware(opts Options) func(http.Handler) http.Handler {
+	cfg := identity.Config{
+		Issuer:         opts.Issuer,
+		Audience:       opts.Audience,
+		ZoneID:         opts.ZoneID,
+		RequiredScopes: opts.RequiredScopes,
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			token, err := extractBearer(r)
-			if err != nil {
+			token, ok := extractBearer(r)
+			if !ok {
 				writeErr(w, http.StatusUnauthorized, "invalid_token", "Missing bearer token")
 				return
 			}
 
-			claims, err := validateToken(token, opts)
+			_, err := identity.Verify(token, cfg)
 			if err != nil {
-				writeErr(w, http.StatusUnauthorized, "invalid_token", "Token validation failed")
-				return
-			}
-
-			scope, _ := claims["scope"].(string)
-			zoneID, _ := claims["zone_id"].(string)
-			if zoneID == "" || (opts.ZoneID != "" && zoneID != opts.ZoneID) {
-				writeErr(w, http.StatusUnauthorized, "invalid_token", "Token zone validation failed")
-				return
-			}
-			for _, required := range opts.RequiredScopes {
-				if !containsScope(scope, required) {
-					writeErr(w, http.StatusForbidden, "insufficient_scope", "Missing scope: "+required)
-					return
+				var scopeErr *identity.ScopeMissingError
+				switch {
+				case errors.As(err, &scopeErr):
+					writeErr(w, http.StatusForbidden, "insufficient_scope", "Missing scope: "+scopeErr.Scope)
+				case errors.Is(err, identity.ErrZoneInvalid):
+					writeErr(w, http.StatusUnauthorized, "invalid_token", "Token zone validation failed")
+				default:
+					writeErr(w, http.StatusUnauthorized, "invalid_token", "Token validation failed")
 				}
+				return
 			}
 
 			next.ServeHTTP(w, r)
@@ -61,44 +63,16 @@ func Middleware(opts Options) func(http.Handler) http.Handler {
 	}
 }
 
-func extractBearer(r *http.Request) (string, error) {
+func extractBearer(r *http.Request) (string, bool) {
 	auth := r.Header.Get("Authorization")
 	if !strings.HasPrefix(auth, "Bearer ") {
-		return "", jwt.ErrTokenMalformed
+		return "", false
 	}
 	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 	if token == "" {
-		return "", jwt.ErrTokenMalformed
+		return "", false
 	}
-	return token, nil
-}
-
-func validateToken(tokenStr string, opts Options) (jwt.MapClaims, error) {
-	claims := jwt.MapClaims{}
-	_, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
-		kid, _ := t.Header["kid"].(string)
-		keys, err := getJWKS(opts.Issuer)
-		if err != nil {
-			return nil, err
-		}
-		if k, ok := keys[kid]; ok {
-			return k, nil
-		}
-		return nil, jwt.ErrTokenSignatureInvalid
-	}, jwt.WithIssuer(opts.Issuer), jwt.WithAudience(opts.Audience), jwt.WithValidMethods([]string{jwt.SigningMethodES256.Alg()}))
-	return claims, err
-}
-
-func containsScope(scope, target string) bool {
-	if target == "" {
-		return false
-	}
-	for _, s := range strings.Fields(scope) {
-		if s == target {
-			return true
-		}
-	}
-	return false
+	return token, true
 }
 
 func writeErr(w http.ResponseWriter, status int, code, desc string) {

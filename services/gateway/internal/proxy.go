@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	sharederr "github.com/garudex-labs/caracal/shared/errors"
+	sharederr "github.com/garudex-labs/caracal/core/errors"
 	"github.com/rs/zerolog"
 )
 

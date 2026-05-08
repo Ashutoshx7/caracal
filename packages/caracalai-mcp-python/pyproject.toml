@@ -8,8 +8,7 @@ version = "0.1.0"
 description = "Caracal MCP auth middleware for Python FastMCP servers"
 requires-python = ">=3.11"
 dependencies = [
-  "PyJWT>=2.10.0",
-  "httpx>=0.28.0",
+  "caracalai-identity",
 ]
 
 [project.optional-dependencies]

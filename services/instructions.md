@@ -11,4 +11,4 @@
 ## Forbidden
 - Must not contain TypeScript apps or packages.
 - Must not contain infra configuration (Docker, SQL, Redis config).
-- Must not place shared library code here; shared Go code belongs in `packages/shared/`.
+- Must not place shared library code here; shared Go code belongs in `packages/core/go/`.

@@ -1,17 +1,20 @@
 # packages
 
 ## Scope
-- Covers only shared library packages under this directory.
+- Covers only library packages under this directory.
 
 ## Required
-- Must use prefix `ts-` for internal TypeScript shared packages (e.g. `ts-shared`).
-- Must use prefix `caracalai-` for externally-publishable SDK packages (e.g. `caracalai-oauth`).
-- Must use no prefix for Go packages (e.g. `shared`).
-- Go packages must have their own `go.mod` and be listed in `go.work`.
-- TS packages must have their own `package.json` and be listed in `pnpm-workspace.yaml`.
-- Python packages must have their own `pyproject.toml`.
+- Must place each package under a single domain directory containing one subdirectory per language (`ts/`, `go/`, `python/`).
+- Must place framework adaptors under `framework-adaptor/<framework>/<language>/`.
+- Must place runtime-platform adaptors under `runtime-adaptor/<runtime>/<language>/`.
+- Must place storage backends under `state-backend/<binding>/<language>/`.
+- Must give every Go package its own `go.mod` and list it in `go.work`.
+- Must give every TS package its own `package.json` and list it in `pnpm-workspace.yaml`.
+- Must give every Python package its own `pyproject.toml`.
 
 ## Forbidden
 - Must not contain runnable services or applications.
 - Must not contain infra configuration.
 - Must not duplicate logic already owned by a sibling package.
+- Must not import across the `caracal/` and `caracalEnterprise/` product boundary.
+- Must not introduce a top-level `shared/` or `ts-shared/` directory; the foundation lives under `core/`.

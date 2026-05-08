@@ -11,7 +11,7 @@
 - Must enqueue every lifecycle, revocation, invocation, and delegation event to caracal_outbox; never xadd directly.
 - Must serialize agent spawn caps and delegation graph mutations with pg_advisory_xact_lock per zone.
 - Must guard background sweeps with pg_try_advisory_xact_lock for leader election.
-- Must use github.com/garudex-labs/caracal/shared/* for Go relay config and logging.
+- Must use github.com/garudex-labs/caracal/core/* for Go relay config and logging.
 
 ## Forbidden
 - Must not import from caracalEnterprise/.

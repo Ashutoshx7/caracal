@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/garudex-labs/caracal/shared/config"
+	"github.com/garudex-labs/caracal/core/config"
 )
 
 const (

@@ -6,7 +6,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.41.5
 	github.com/aws/aws-sdk-go-v2/config v1.29.14
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.97.3
-	github.com/garudex-labs/caracal/shared v0.0.0
+	github.com/garudex-labs/caracal/core v0.0.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/parquet-go/parquet-go v0.23.0
 	github.com/redis/go-redis/v9 v9.7.3
@@ -49,4 +49,4 @@ require (
 	golang.org/x/text v0.29.0 // indirect
 )
 
-replace github.com/garudex-labs/caracal/shared => ../../packages/shared
+replace github.com/garudex-labs/caracal/core => ../../packages/core/go

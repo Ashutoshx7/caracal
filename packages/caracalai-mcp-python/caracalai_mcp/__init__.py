@@ -3,7 +3,8 @@
 #
 # caracalai_mcp — Python MCP auth middleware for Caracal-issued JWTs.
 
-from .middleware import CaracalAuth, verify_token
-from .jwks import JwksCache
+from caracalai_identity import JwksCache, verify_token
 
-__all__ = ["CaracalAuth", "verify_token", "JwksCache"]
+from .middleware import CaracalAuth
+
+__all__ = ["CaracalAuth", "JwksCache", "verify_token"]

@@ -3,7 +3,7 @@ module github.com/garudex-labs/caracal/agent-coordinator-relay
 go 1.26
 
 require (
-	github.com/garudex-labs/caracal/shared v0.0.0
+	github.com/garudex-labs/caracal/core v0.0.0
 	github.com/redis/go-redis/v9 v9.7.3
 	github.com/rs/zerolog v1.33.0
 )
@@ -16,4 +16,4 @@ require (
 	golang.org/x/sys v0.38.0 // indirect
 )
 
-replace github.com/garudex-labs/caracal/shared => ../../../packages/shared
+replace github.com/garudex-labs/caracal/core => ../../../packages/core/go
