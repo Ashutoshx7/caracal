@@ -6,7 +6,7 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto'
-import { isProduction, loadZoneKek, seal } from '@caracalai/shared'
+import { isProduction, loadZoneKek, open, seal } from '@caracalai/shared'
 
 const ZONE_ID = 'zone1'
 const APP_ID = 'app1'
@@ -34,6 +34,7 @@ interface BootstrapResult {
   resource: string
   scope: string
   rotated: boolean
+  signing_key_resealed?: boolean
 }
 
 function sha256Hex(data: string | Buffer): string {
@@ -64,9 +65,10 @@ export const localBootstrapRoutes: FastifyPluginAsync = async (fastify) => {
     const existing = await fastify.db.query(`SELECT id FROM zones WHERE id = $1`, [ZONE_ID])
     const zoneExists = existing.rowCount! > 0
 
+    let signingKeyResealed = false
     if (zoneExists) {
-      const { rows: secretRows } = await fastify.db.query<{ dek_id: string }>(
-        `SELECT dek_id FROM secrets WHERE id = $1 AND zone_id = $2`,
+      const { rows: secretRows } = await fastify.db.query<{ dek_id: string; ciphertext: Buffer; nonce: Buffer }>(
+        `SELECT dek_id, ciphertext, nonce FROM secrets WHERE id = $1 AND zone_id = $2`,
         [SIGNING_KEY_ID, ZONE_ID],
       )
       if (secretRows[0] && secretRows[0].dek_id !== LOCAL_DEK_ID) {
@@ -74,6 +76,19 @@ export const localBootstrapRoutes: FastifyPluginAsync = async (fastify) => {
           error: 'zone_not_local_bootstrap',
           detail: 'refusing to overwrite zone whose signing key was sealed under a different DEK',
         })
+      }
+      if (secretRows[0]) {
+        try {
+          open(kek, { ciphertext: secretRows[0].ciphertext, nonce: secretRows[0].nonce })
+        } catch {
+          const reseal = seal(kek, generateSigningKeyPem())
+          await fastify.db.query(
+            `UPDATE secrets SET ciphertext = $1, nonce = $2, updated_at = now()
+             WHERE id = $3 AND zone_id = $4`,
+            [reseal.ciphertext, reseal.nonce, SIGNING_KEY_ID, ZONE_ID],
+          )
+          signingKeyResealed = true
+        }
       }
     }
 
@@ -86,6 +101,7 @@ export const localBootstrapRoutes: FastifyPluginAsync = async (fastify) => {
         resource: RESOURCE_NAME,
         scope: 'read',
         rotated: false,
+        signing_key_resealed: signingKeyResealed,
       } satisfies BootstrapResult
     }
 

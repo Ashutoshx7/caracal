@@ -317,6 +317,7 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 	}
 	token, jti, err := issueToken(ctx, issueParams, s.keys, s.cfg.IssuerURL)
 	if err != nil {
+		s.log.Error().Err(err).Str("zone_id", zoneID).Str("request_id", requestID).Msg("token issuance failed")
 		return nil, nil, http.StatusInternalServerError, sharederr.New(sharederr.Internal, "token issuance failed")
 	}
 	s.recordIssuedJTI(ctx, jti, app.ID, zoneID, requestID, ttl)

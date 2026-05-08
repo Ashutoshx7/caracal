@@ -74,6 +74,9 @@ func (c *Consumer) Run(ctx context.Context) {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
+			if errors.Is(err, redis.Nil) {
+				continue
+			}
 			c.log.Error().Err(err).Msg("xreadgroup")
 			time.Sleep(time.Second)
 			continue
