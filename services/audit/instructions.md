@@ -15,7 +15,7 @@
 - Must serialize per-zone chain head writes via pg_advisory_xact_lock(hashtext(zone_id)).
 - Must gate the parquet exporter and retention rotator on session-level pg_try_advisory_lock leases.
 - Must not UPDATE or DELETE rows in audit_events.
-- Must use github.com/garudex-labs/caracal/shared/* for config, errors, and logging.
+- Must use github.com/garudex-labs/caracal/core/* for config, errors, and logging.
 
 ## Env
 - AUDIT_HMAC_KEY: hex-encoded >=32-byte key for chain HMAC and producer signature verification.
