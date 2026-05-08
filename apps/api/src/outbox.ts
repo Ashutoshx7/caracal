@@ -5,7 +5,7 @@
 // a cooperative dispatcher that drains rows to Redis streams with backoff.
 
 import { v7 as uuidv7 } from 'uuid'
-import { STREAM_SIG_FIELD, loadStreamsHmacKey, signStream } from '@caracalai/shared'
+import { STREAM_SIG_FIELD, loadStreamsHmacKey, signStream } from '@caracalai/core'
 import type { DB } from './db.js'
 import type { RedisClient } from './redis.js'
 

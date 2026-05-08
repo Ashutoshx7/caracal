@@ -6,7 +6,7 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { v7 as uuidv7 } from 'uuid'
-import { loadZoneKek, seal } from '@caracalai/shared'
+import { loadZoneKek, seal } from '@caracalai/core'
 import { buildPatchUpdate, patchColumn, patchExpression } from './patch.js'
 import { ZoneIdParams, ZoneParams, parseParams } from './params.js'
 import { zoneExists } from '../zone-guard.js'
