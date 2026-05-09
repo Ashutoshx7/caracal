@@ -103,7 +103,7 @@ async def verify_token(
     return decoded
 
 
-async def verify(token: str, config: JwtConfig) -> Claims:
+async def verify_config(token: str, config: JwtConfig) -> Claims:
     decoded = await verify_token(
         token,
         issuer=config.issuer,

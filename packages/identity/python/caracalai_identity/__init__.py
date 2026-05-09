@@ -13,8 +13,8 @@ from .verify import (
     ScopeInsufficientError,
     TokenInvalidError,
     ZoneInvalidError,
-    verify,
     verify_chain_contains,
+    verify_config,
     verify_token,
 )
 
@@ -30,7 +30,7 @@ __all__ = [
     "TokenInvalidError",
     "ZoneInvalidError",
     "has_scope",
-    "verify",
     "verify_chain_contains",
+    "verify_config",
     "verify_token",
 ]
