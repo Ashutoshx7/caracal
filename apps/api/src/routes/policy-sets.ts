@@ -200,11 +200,11 @@ export const policySetsRoutes: FastifyPluginAsync = async (fastify) => {
       // delete of one of them blocks until activation commits. This closes the
       // TOCTOU between policySetContractError and the UPDATE below.
       if (referencedIds.length > 0) {
-        const { rows: locked } = await client.query<{ id: string }>(
+        const { rowCount: lockedCount } = await client.query(
           `SELECT id FROM policy_versions WHERE id = ANY($1::text[]) FOR SHARE`,
           [Array.from(new Set(referencedIds))],
         )
-        if (locked.length !== new Set(referencedIds).size) {
+        if ((lockedCount ?? 0) !== new Set(referencedIds).size) {
           await client.query('ROLLBACK')
           return reply.code(409).send({ error: 'referenced_policy_version_missing' })
         }
