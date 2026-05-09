@@ -41,4 +41,3 @@ class Claims:
     delegation_chain: list[ChainHop] = field(default_factory=list)
     graph_epoch: int | None = None
     hop_count: int | None = None
-    on_behalf: str | None = None

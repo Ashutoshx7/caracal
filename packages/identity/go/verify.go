@@ -123,7 +123,6 @@ func Verify(tokenStr string, cfg Config) (Claims, error) {
 	delegationEdgeID, _ := mapClaims["delegation_edge_id"].(string)
 	sourceSessionID, _ := mapClaims["source_session_id"].(string)
 	targetSessionID, _ := mapClaims["target_session_id"].(string)
-	onBehalf, _ := mapClaims["on_behalf"].(string)
 	chain := readChain(mapClaims["delegation_chain"])
 	path := readStringSlice(mapClaims["delegation_path"])
 
@@ -157,13 +156,11 @@ func Verify(tokenStr string, cfg Config) (Claims, error) {
 		return Claims{}, ErrDelegationRequired
 	}
 	for _, expected := range cfg.RequireChainContains {
-		present := onBehalf == expected
-		if !present {
-			for _, hop := range chain {
-				if hop.ApplicationID == expected {
-					present = true
-					break
-				}
+		present := false
+		for _, hop := range chain {
+			if hop.ApplicationID == expected {
+				present = true
+				break
 			}
 		}
 		if !present {
@@ -185,14 +182,13 @@ func Verify(tokenStr string, cfg Config) (Claims, error) {
 		DelegationChain:  chain,
 		GraphEpoch:       graphEpoch,
 		HopCount:         hopCount,
-		OnBehalf:         onBehalf,
 	}, nil
 }
 
 // VerifyChainContains reports whether the claims include the given application
 // either as an issuing party or in the delegation chain.
 func VerifyChainContains(claims Claims, applicationID string) bool {
-	if claims.ClientID == applicationID || claims.OnBehalf == applicationID {
+	if claims.ClientID == applicationID {
 		return true
 	}
 	for _, hop := range claims.DelegationChain {
