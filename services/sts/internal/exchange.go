@@ -322,7 +322,6 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 		issueParams.DelegationPath = delegation.path
 		issueParams.DelegationChain = delegation.chain
 		issueParams.GraphEpoch = delegation.graphEpoch
-		issueParams.OnBehalfOf = delegation.edge.IssuerAppID
 	}
 	token, jti, err := issueToken(ctx, issueParams, s.keys, s.cfg.IssuerURL)
 	if err != nil {

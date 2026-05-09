@@ -38,5 +38,4 @@ type Claims struct {
 	DelegationChain  []ChainHop
 	GraphEpoch       int64
 	HopCount         int
-	OnBehalf         string
 }

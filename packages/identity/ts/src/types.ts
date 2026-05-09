@@ -33,5 +33,4 @@ export interface Claims {
   delegationChain?: ChainHop[]
   graphEpoch?: number
   hopCount?: number
-  onBehalf?: string
 }
