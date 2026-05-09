@@ -75,6 +75,13 @@ class WorkflowEntry(BaseModel):
     id: str
     label: str
     focus: str
+    stages: list["StageEntry"] = []
+
+
+class StageEntry(BaseModel):
+    id: str
+    label: str
+    intent: str
 
 
 class AppConfig(BaseModel):
@@ -89,6 +96,9 @@ class AppConfig(BaseModel):
     scenario: ScenarioConfig
     content: ContentConfig
     prompts: PromptsConfig
+
+
+WorkflowEntry.model_rebuild()
 
 
 _config: AppConfig | None = None
