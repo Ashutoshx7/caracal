@@ -29,6 +29,6 @@ func (r *RedisClient) SetNXTTL(ctx context.Context, key, value string, ttl time.
 }
 
 // XAdd appends an entry to a Redis stream.
-func (r *RedisClient) XAdd(ctx context.Context, stream string, values map[string]interface{}) error {
+func (r *RedisClient) XAdd(ctx context.Context, stream string, values map[string]any) error {
 	return r.c.XAdd(ctx, &redis.XAddArgs{Stream: stream, Values: values}).Err()
 }

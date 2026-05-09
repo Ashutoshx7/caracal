@@ -58,16 +58,16 @@ func (t *jtiTracker) Check(ctx context.Context, jti string, exp time.Time, reque
 		return true
 	}
 	id, _ := uuid.NewV7()
-	meta, _ := json.Marshal(map[string]interface{}{
+	meta, _ := json.Marshal(map[string]any{
 		"jti":        jti,
 		"resource":   resource,
 		"client_id":  clientID,
 		"subject_fp": subjectFP,
 		"request_id": requestID,
 	})
-	values := map[string]interface{}{
+	values := map[string]any{
 		"id": id.String(),
-		"data": string(mustMarshal(map[string]interface{}{
+		"data": string(mustMarshal(map[string]any{
 			"id":                id.String(),
 			"event_type":        "replay_detected",
 			"request_id":        requestID,
@@ -84,7 +84,7 @@ func (t *jtiTracker) Check(ctx context.Context, jti string, exp time.Time, reque
 	return false
 }
 
-func mustMarshal(v interface{}) []byte {
+func mustMarshal(v any) []byte {
 	b, _ := json.Marshal(v)
 	return b
 }
