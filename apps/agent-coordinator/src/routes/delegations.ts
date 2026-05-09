@@ -8,6 +8,7 @@ import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { v7 as uuidv7 } from 'uuid'
 import { enqueue, Topics, type Queryable } from '../outbox.js'
+import { ownsApplication, requireScope } from '../auth.js'
 
 const LIST_DEFAULT_LIMIT = 100
 const LIST_MAX_LIMIT = 500
@@ -32,6 +33,10 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/zones/:zoneId/delegations', async (req, reply) => {
     const { zoneId } = req.params as { zoneId: string }
     const body = DelegationBody.parse(req.body)
+    if (!ownsApplication(req, body.issuer_application_id)
+      && !requireScope(req, `coordinator.delegate_from:${body.issuer_application_id}`)) {
+      return reply.code(403).send({ error: 'issuer_ownership_required' })
+    }
     if (body.source_session_id === body.target_session_id) {
       return reply.code(400).send({ error: 'self_delegation_denied' })
     }
