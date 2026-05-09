@@ -171,6 +171,9 @@ importers:
 
   packages/caracalai-mcp/ts:
     dependencies:
+      '@caracalai/identity':
+        specifier: workspace:*
+        version: link:../../identity/ts
       '@caracalai/revocation':
         specifier: workspace:*
         version: link:../../revocation/ts
