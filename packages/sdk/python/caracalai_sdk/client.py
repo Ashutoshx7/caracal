@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Mapping
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Mapping
 
 import httpx
 
@@ -24,6 +24,9 @@ from .context import (
 from .coordinator import AgentKind, CoordinatorClient
 from .envelope import decode_envelope, to_headers
 from .primitives import with_agent, with_delegation
+
+if TYPE_CHECKING:
+    from .http import ASGIApp, CaracalASGIMiddleware
 
 
 @dataclass
@@ -149,12 +152,12 @@ class Caracal:
     def try_context(self) -> CaracalContext | None:
         return try_current()
 
-    def middleware(self) -> Any:
+    def middleware(self) -> Callable[[ASGIApp], CaracalASGIMiddleware]:
         from .http import CaracalASGIMiddleware
 
         outer = self
 
-        def factory(app: Any) -> CaracalASGIMiddleware:
+        def factory(app: ASGIApp) -> CaracalASGIMiddleware:
             return CaracalASGIMiddleware(app, outer)
 
         return factory
