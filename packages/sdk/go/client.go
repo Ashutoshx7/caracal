@@ -141,6 +141,22 @@ func (c *Caracal) BindFromRequest(ctx context.Context, r *http.Request) context.
 	return Bind(ctx, cc)
 }
 
+// Context returns the current Caracal context bound on ctx. Returns an error
+// if no Caracal context has been bound on this execution path.
+func (c *Caracal) Context(ctx context.Context) (CaracalContext, error) {
+	return Current(ctx)
+}
+
+// TryContext returns the current Caracal context if one is bound on ctx, or
+// the zero value and false otherwise.
+func (c *Caracal) TryContext(ctx context.Context) (CaracalContext, bool) {
+	cur, err := Current(ctx)
+	if err != nil {
+		return CaracalContext{}, false
+	}
+	return cur, true
+}
+
 // HTTPClient returns an *http.Client whose RoundTripper auto-injects the
 // Caracal envelope headers from the request's context.
 func (c *Caracal) HTTPClient(base *http.Client) *http.Client {

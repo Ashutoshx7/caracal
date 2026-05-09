@@ -8,12 +8,12 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   Caracal,
-  caracalHttpMiddleware,
-  current,
+} from "../../../../packages/sdk/ts/src/index.js";
+import {
   HeaderAgentSession,
   HeaderSubjectToken,
   HeaderHop,
-} from "../../../../packages/sdk/ts/src/index.js";
+} from "../../../../packages/sdk/ts/src/advanced.js";
 
 const dummyConfig = {
   coordinator: { baseUrl: "http://coord" },
@@ -52,7 +52,7 @@ describe("middleware + bindFromHeaders", () => {
   it("binds inbound envelope and runs handler with current() resolvable", async () => {
     const c = new Caracal(dummyConfig);
     let seen = "";
-    const mw = caracalHttpMiddleware(c);
+    const mw = c.middleware();
     await new Promise<void>((resolve, reject) => {
       mw(
         {
@@ -66,7 +66,7 @@ describe("middleware + bindFromHeaders", () => {
         (err) => {
           if (err) return reject(err);
           try {
-            const ctx = current();
+            const ctx = c.context();
             seen = `${ctx.subjectToken}|${ctx.agentSessionId}|${ctx.hop}`;
             resolve();
           } catch (e) {
