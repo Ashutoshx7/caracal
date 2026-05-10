@@ -131,17 +131,18 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stsCtx, cancel := context.WithTimeout(r.Context(), p.sts.client.Timeout)
-	res, status, cerr, internalErr := p.sts.Exchange(stsCtx, bearer, bind, resource, requestID)
+	out := p.sts.Exchange(stsCtx, bearer, bind, resource, requestID)
 	cancel()
-	if cerr != nil {
-		writeErr(w, requestID, status, cerr.Code, cerr.Description)
+	if out.ClientErr != nil {
+		writeErr(w, requestID, out.Status, out.ClientErr.Code, out.ClientErr.Description)
 		logger.Warn().
-			Int("status", status).
-			Str("error_code", string(cerr.Code)).
-			Err(internalErr).
+			Int("status", out.Status).
+			Str("error_code", string(out.ClientErr.Code)).
+			Err(out.InternalErr).
 			Msg("sts exchange failed")
 		return
 	}
+	res := out.Result
 
 	upstreamURL, err := p.guard.Check(res.Upstream.URL)
 	if err != nil {
