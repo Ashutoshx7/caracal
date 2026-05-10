@@ -18,7 +18,8 @@
     "prepare": "tsc"
   },
   "dependencies": {
-    "@caracalai/oauth": "workspace:*"
+    "@caracalai/oauth": "workspace:*",
+    "@caracalai/sdk": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.8.0",

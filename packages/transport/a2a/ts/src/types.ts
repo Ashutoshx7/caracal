@@ -16,12 +16,18 @@ export interface A2ARequest {
   metadata?: Record<string, unknown>
 }
 
+export type FetchLike = (
+  url: string,
+  init: { method: string; headers: Record<string, string>; body: string },
+) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>
+
 export interface A2AOptions {
   stsUrl: string
   clientSecret?: string
   clientAssertion?: string
   clientAssertionType?: string
   ttlSeconds?: number
+  fetchImpl?: FetchLike
 }
 
 export interface A2AResponse {
