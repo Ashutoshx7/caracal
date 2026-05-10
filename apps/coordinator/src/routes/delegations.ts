@@ -40,7 +40,8 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
     }
     if (body.receiver_application_id !== body.issuer_application_id
       && !ownsApplication(req, body.receiver_application_id)
-      && !requireScope(req, `coordinator.delegate_to:${body.receiver_application_id}`)) {
+      && !requireScope(req, `coordinator.delegate_to:${body.receiver_application_id}`)
+      && !requireScope(req, 'coordinator.admin')) {
       return reply.code(403).send({ error: 'receiver_consent_required' })
     }
     if (body.source_session_id === body.target_session_id) {
