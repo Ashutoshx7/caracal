@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Redis client lifecycle for the agent coordinator outbox publisher.
+// Redis client lifecycle for the coordinator outbox publisher.
 
 import { Redis } from 'ioredis'
 import { cfg } from './config.js'

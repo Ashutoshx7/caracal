@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Agent coordinator service entry point with graceful shutdown.
+// Coordinator service entry point with graceful shutdown.
 
 import { buildApp } from './app.js'
 import { db } from './db.js'

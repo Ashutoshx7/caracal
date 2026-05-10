@@ -3,7 +3,7 @@
 //
 // Durable agent invocation routes with idempotency, cancellation, and outbox events.
 
-import type { FastifyPluginAsync } from 'fastify'
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { v7 as uuidv7 } from 'uuid'
 import { enqueue, Topics, type Queryable } from '../outbox.js'
@@ -131,6 +131,15 @@ export const invocationsRoutes: FastifyPluginAsync = async (fastify) => {
     const client = await fastify.db.connect()
     try {
       await client.query('BEGIN')
+      const owner = await loadInvocationOwner(client, zoneId, id)
+      if (!owner) {
+        await client.query('ROLLBACK')
+        return reply.code(404).send({ error: 'invocation_not_found' })
+      }
+      if (!authorizeInvocationCaller(req, owner.application_id)) {
+        await client.query('ROLLBACK')
+        return reply.code(403).send({ error: 'invoker_ownership_required' })
+      }
       const { rows } = await client.query(
         `UPDATE agent_invocations
          SET status = 'running', attempts = attempts + 1, started_at = now(),
@@ -161,6 +170,15 @@ export const invocationsRoutes: FastifyPluginAsync = async (fastify) => {
     const client = await fastify.db.connect()
     try {
       await client.query('BEGIN')
+      const owner = await loadInvocationOwner(client, zoneId, id)
+      if (!owner) {
+        await client.query('ROLLBACK')
+        return reply.code(404).send({ error: 'invocation_not_found' })
+      }
+      if (!authorizeInvocationCaller(req, owner.application_id)) {
+        await client.query('ROLLBACK')
+        return reply.code(403).send({ error: 'invoker_ownership_required' })
+      }
       const { rows } = await client.query(
         `UPDATE agent_invocations
          SET status = CASE WHEN status IN ('pending', 'failed') THEN 'canceled' ELSE 'cancel_requested' END,
@@ -192,6 +210,15 @@ export const invocationsRoutes: FastifyPluginAsync = async (fastify) => {
     const client = await fastify.db.connect()
     try {
       await client.query('BEGIN')
+      const owner = await loadInvocationOwner(client, zoneId, id)
+      if (!owner) {
+        await client.query('ROLLBACK')
+        return reply.code(404).send({ error: 'invocation_not_found' })
+      }
+      if (!authorizeInvocationCaller(req, owner.application_id)) {
+        await client.query('ROLLBACK')
+        return reply.code(403).send({ error: 'invoker_ownership_required' })
+      }
       const { rows } = await client.query(
         `UPDATE agent_invocations
          SET status = $3, error_json = $4::jsonb, metadata_json = metadata_json || $5::jsonb,
@@ -214,6 +241,26 @@ export const invocationsRoutes: FastifyPluginAsync = async (fastify) => {
       client.release()
     }
   })
+}
+
+async function loadInvocationOwner(
+  db: Queryable, zoneId: string, id: string,
+): Promise<{ application_id: string } | null> {
+  const { rows } = await db.query<{ application_id: string }>(
+    `SELECT s.application_id
+     FROM agent_invocations i
+     JOIN agent_services s ON s.id = i.service_id AND s.zone_id = i.zone_id
+     WHERE i.zone_id = $1 AND i.id = $2
+     FOR UPDATE OF i`,
+    [zoneId, id],
+  )
+  return rows[0] ?? null
+}
+
+function authorizeInvocationCaller(req: FastifyRequest, appId: string): boolean {
+  return ownsApplication(req, appId)
+    || requireScope(req, `coordinator.invoke_from:${appId}`)
+    || requireScope(req, 'coordinator.admin')
 }
 
 async function getInvocationByKey(

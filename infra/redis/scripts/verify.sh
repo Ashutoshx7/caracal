@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Verifies redis Phase 5: all streams and consumer groups exist; provisioner idempotency.
+# Verifies redis: all streams and consumer groups exist; provisioner idempotency.
 # Usage: REDIS_HOST=localhost REDIS_PORT=6379 REDIS_PASSWORD=secret bash verify.sh
 
 set -euo pipefail

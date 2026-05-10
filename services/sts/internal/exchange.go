@@ -418,14 +418,9 @@ func (s *Server) authenticateApp(ctx context.Context, req TokenExchangeRequest) 
 		if credential == "" {
 			credential = req.ClientAssertion
 		}
-		ok, needsRehash := verifyClientSecret(*app.ClientSecretHash, credential)
+		ok := verifyClientSecret(*app.ClientSecretHash, credential)
 		if !ok {
 			return nil, "", errSecretMismatch
-		}
-		if needsRehash {
-			if newHash, herr := hashClientSecret(credential); herr == nil {
-				_ = s.db.UpdateApplicationSecretHash(ctx, app.ID, app.ZoneID, newHash)
-			}
 		}
 	} else if derefStr(app.CredentialType) == "public" {
 		if strings.TrimSpace(req.ClientAssertion) == "" {
