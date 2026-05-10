@@ -119,9 +119,14 @@ if $run_ts; then
   ts_run apps/tui tui tests/typescript/unit/tui
   ts_run packages/core/ts core tests/typescript/unit/shared
   ts_run packages/admin/ts admin tests/typescript/unit/admin
+  ts_run packages/sdk/ts sdk tests/typescript/unit/sdk/client.test.ts
   ts_run packages/transport/a2a/ts transport-a2a tests/typescript/unit/transport-a2a
   ts_run packages/oauth/ts oauth tests/typescript/unit/sdk/oauth
+  ts_run packages/revocation/ts revocation tests/typescript/unit/revocation
+  ts_run packages/transport/mcp/ts transport-mcp tests/typescript/unit/transport-mcp
   ts_run packages/connectors/express/ts mcp-express tests/typescript/unit/sdk/mcp-express
+  ts_run packages/connectors/fastmcp/ts mcp-fastmcp tests/typescript/unit/sdk/mcp-fastmcp
+  ts_run packages/connectors/postgres/ts tokenstate-postgres tests/typescript/unit/connectors/postgres
   ts_run packages/identity/ts identity tests/typescript/unit/identity
 fi
 
@@ -135,7 +140,10 @@ if $run_go; then
     ./services/gateway/... \
     ./apps/coordinator/relay/... \
     ./packages/transport/mcp/go/... \
-    ./packages/connectors/nethttp/go/...
+    ./packages/connectors/nethttp/go/... \
+    ./packages/identity/go/... \
+    ./packages/revocation/go/... \
+    ./packages/sdk/go/...
   go tool cover -func=coverage/go/coverage.out
 fi
 
@@ -145,14 +153,15 @@ if $run_py; then
     -e packages/core/python \
     -e packages/identity/python \
     -e packages/revocation/python \
+    -e packages/sdk/python \
     -e packages/transport/mcp/python \
     -e packages/connectors/fastmcp/python \
     coverage==7.13.5 cryptography==48.0.0
 
   step "py: coverage run"
   mkdir -p coverage/python
-  PYTHONPATH="$root/packages/core/python:$root/packages/identity/python:$root/packages/revocation/python:$root/packages/transport/mcp/python:$root/packages/connectors/fastmcp/python:$root/tests/shared/test-utils/python" \
-    coverage run --source=packages/core/python/caracalai_core,packages/identity/python/caracalai_identity,packages/revocation/python/caracalai_revocation,packages/transport/mcp/python/caracalai_transport_mcp,packages/connectors/fastmcp/python/caracalai_mcp_fastmcp \
+  PYTHONPATH="$root/packages/core/python:$root/packages/identity/python:$root/packages/revocation/python:$root/packages/sdk/python:$root/packages/transport/mcp/python:$root/packages/connectors/fastmcp/python:$root/tests/shared/test-utils/python" \
+    coverage run --source=packages/core/python/caracalai_core,packages/identity/python/caracalai_identity,packages/revocation/python/caracalai_revocation,packages/sdk/python/caracalai_sdk,packages/transport/mcp/python/caracalai_transport_mcp,packages/connectors/fastmcp/python/caracalai_mcp_fastmcp \
     -m unittest discover -s tests/python -p 'test_*.py' -v
   coverage xml -o coverage/python/coverage.xml
   coverage report --show-missing
