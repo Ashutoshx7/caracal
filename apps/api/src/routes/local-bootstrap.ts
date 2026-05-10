@@ -51,10 +51,6 @@ export const localBootstrapRoutes: FastifyPluginAsync = async (fastify) => {
   const kek = loadZoneKek()
 
   fastify.post('/local/bootstrap', async (req, reply) => {
-    const remote = req.socket.remoteAddress ?? ''
-    if (!isLoopback(remote)) {
-      return reply.code(403).send({ error: 'local_bootstrap_loopback_only' })
-    }
     const parsed = BootstrapBody.safeParse(req.body ?? {})
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' })
     const { force } = parsed.data
@@ -68,7 +64,7 @@ export const localBootstrapRoutes: FastifyPluginAsync = async (fastify) => {
         `SELECT dek_id, ciphertext, nonce FROM secrets WHERE id = $1 AND zone_id = $2`,
         [SIGNING_KEY_ID, ZONE_ID],
       )
-      if (secretRows[0] && secretRows[0].dek_id !== LOCAL_DEK_ID) {
+      if (!force && secretRows[0] && secretRows[0].dek_id !== LOCAL_DEK_ID) {
         return reply.code(409).send({
           error: 'zone_not_local_bootstrap',
           detail: 'refusing to overwrite zone whose signing key was sealed under a different DEK',
@@ -166,7 +162,7 @@ export const localBootstrapRoutes: FastifyPluginAsync = async (fastify) => {
       await client.query(
         `INSERT INTO secrets (id, zone_id, entity_id, name, type, ciphertext, nonce, dek_id)
          VALUES ($1, $2, $2, 'zone_signing_key', 'token', $3, $4, $5)
-         ON CONFLICT (id) DO UPDATE SET ciphertext = EXCLUDED.ciphertext, nonce = EXCLUDED.nonce, updated_at = now()`,
+         ON CONFLICT (id) DO UPDATE SET ciphertext = EXCLUDED.ciphertext, nonce = EXCLUDED.nonce, dek_id = EXCLUDED.dek_id, updated_at = now()`,
         [SIGNING_KEY_ID, ZONE_ID, sealed.ciphertext, sealed.nonce, LOCAL_DEK_ID],
       )
 
@@ -191,11 +187,4 @@ export const localBootstrapRoutes: FastifyPluginAsync = async (fastify) => {
   })
 }
 
-function isLoopback(remote: string): boolean {
-  if (!remote) return false
-  const addr = remote.startsWith('::ffff:') ? remote.slice(7) : remote
-  if (addr === '::1') return true
-  const m = addr.match(/^(\d{1,3})\.\d{1,3}\.\d{1,3}\.\d{1,3}$/)
-  if (!m) return false
-  return Number(m[1]) === 127
-}
+
