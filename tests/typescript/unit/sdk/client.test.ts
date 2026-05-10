@@ -54,7 +54,7 @@ describe("Caracal.headers", () => {
 });
 
 describe("middleware + bindFromHeaders", () => {
-  it("binds inbound W3C envelope and exposes claims through Caracal.context()", async () => {
+  it("binds inbound W3C envelope and exposes claims through Caracal.current()", async () => {
     const c = new Caracal(dummyConfig);
     let seen = "";
     const mw = c.middleware();
@@ -72,7 +72,8 @@ describe("middleware + bindFromHeaders", () => {
         (err) => {
           if (err) return reject(err);
           try {
-            const ctx = c.context();
+            const ctx = c.current();
+            if (!ctx) throw new Error("no context bound");
             seen = `${ctx.subjectToken}|${ctx.agentSessionId}|${ctx.hop}`;
             resolve();
           } catch (e) {
@@ -85,7 +86,7 @@ describe("middleware + bindFromHeaders", () => {
   });
 });
 
-describe("caracal.fetch", () => {
+describe("caracal.transport", () => {
   it("auto-injects envelope headers on outbound calls", async () => {
     const calls: { url: string; headers: Headers }[] = [];
     const fakeFetch = vi.fn(async (input: any, init: any) => {
@@ -93,7 +94,7 @@ describe("caracal.fetch", () => {
       return new Response(null, { status: 204 });
     }) as unknown as typeof fetch;
     const c = new Caracal({ ...dummyConfig, coordinator: { baseUrl: "http://c", fetchImpl: fakeFetch } });
-    await c.fetch("http://api/x");
+    await c.transport()("http://api/x");
     expect(calls).toHaveLength(1);
     expect(calls[0].headers.get(HeaderAuthorization)).toBe("Bearer tok");
     expect(parseTraceparent(calls[0].headers.get(HeaderTraceparent)!)).toBeTruthy();

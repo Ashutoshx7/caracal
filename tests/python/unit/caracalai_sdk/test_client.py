@@ -22,7 +22,6 @@ from caracalai_sdk.advanced import (
     parse_baggage,
     parse_traceparent,
     current,
-    try_current,
 )
 
 
@@ -99,7 +98,7 @@ class AsgiMiddlewareTests(unittest.IsolatedAsyncioTestCase):
 
         await mw(scope, receive, send)
         self.assertEqual(captured, {"sub": "inbound", "agent": "sess9", "hop": "3"})
-        self.assertIsNone(try_current())
+        self.assertIsNone(current())
 
 
 if __name__ == "__main__":

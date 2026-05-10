@@ -93,7 +93,7 @@ func TestHTTPClientInjects(t *testing.T) {
 		AgentSessionID: "sess9",
 		Hop:            1,
 	})
-	client := c.HTTPClient(nil)
+	client := c.Transport(nil)
 	req, _ := http.NewRequestWithContext(ctx, "GET", srv.URL, nil)
 	resp, err := client.Do(req)
 	if err != nil {
