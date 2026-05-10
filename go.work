@@ -11,4 +11,5 @@ use (
 	./services/audit
 	./services/gateway
 	./services/sts
+	./tests/go
 )
