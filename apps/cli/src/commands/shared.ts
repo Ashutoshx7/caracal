@@ -5,12 +5,12 @@
 
 import { readFileSync } from 'node:fs'
 import { AdminClient, AdminApiError } from '@caracalai/admin'
+import { discoverAdminToken } from '@caracalai/core'
 import {
   DEFAULT_API_URL,
   DEFAULT_COORDINATOR_URL,
-  discoverAdminToken,
   resolveServiceUrl,
-} from '@caracalai/core'
+} from '@caracalai/core/cli'
 import type { CliConfig } from '../config.ts'
 
 export { discoverAdminToken }

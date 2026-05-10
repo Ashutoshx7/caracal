@@ -139,6 +139,13 @@ export class Caracal {
     return bind(ctx, fn) as Promise<T>;
   }
 
+  /**
+   * Fetch wrapper that injects the Caracal envelope (traceparent + baggage)
+   * onto outbound requests and, for gateway-routed calls, replaces the
+   * `Authorization` header with the current subject token. When a request is
+   * routed through the gateway any caller-supplied `Authorization` is
+   * intentionally overwritten so the gateway always sees the active subject.
+   */
   fetch: typeof fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const ctx = tryCurrent();
     const env: Envelope = ctx

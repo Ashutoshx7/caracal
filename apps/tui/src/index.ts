@@ -6,13 +6,13 @@
 import { readFileSync } from 'node:fs'
 import { parse } from 'smol-toml'
 import { AdminClient } from '@caracalai/admin'
+import { discoverAdminToken } from '@caracalai/core'
 import {
   DEFAULT_API_URL,
   DEFAULT_COORDINATOR_URL,
-  discoverAdminToken,
   resolveCliConfigPath,
   resolveServiceUrl,
-} from '@caracalai/core'
+} from '@caracalai/core/cli'
 import { App } from './screen.ts'
 import { MenuView } from './views/menu.ts'
 

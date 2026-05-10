@@ -5,7 +5,7 @@
 
 import { parse } from 'smol-toml'
 import { readFileSync } from 'fs'
-import { resolveCliConfigPath } from '@caracalai/core'
+import { resolveCliConfigPath } from '@caracalai/core/cli'
 import { runCommand } from './commands/run.ts'
 import { credentialReadCommand } from './commands/credential.ts'
 import { initCommand } from './commands/init.ts'
