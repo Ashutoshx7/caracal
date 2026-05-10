@@ -15,7 +15,7 @@ importers:
         specifier: ^5.2.1
         version: 5.8.5
 
-  apps/agent-coordinator:
+  apps/coordinator:
     dependencies:
       '@caracalai/core':
         specifier: workspace:*

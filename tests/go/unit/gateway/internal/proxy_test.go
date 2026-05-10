@@ -63,7 +63,7 @@ func newFakeSTS(t *testing.T, upstream string, calls *int32) *httptest.Server {
 func newProxyForTest(_ *testing.T, sts *httptest.Server, allowPrivate bool) *proxy {
 	stsClient := newSTSClient(sts.URL, 2*time.Second)
 	guard := newUpstreamGuard(nil, allowPrivate)
-	return newProxy(stsClient, guard, zerolog.New(io.Discard), 1<<20, 5*time.Second, testBindings(), nil, nil)
+	return newProxy(stsClient, nil, guard, zerolog.New(io.Discard), 1<<20, 5*time.Second, testBindings(), nil, nil)
 }
 
 // testBindings returns a bindingStore preloaded with the resource identifiers used
@@ -382,7 +382,7 @@ func TestProxyBodySizeLimitEnforced(t *testing.T) {
 
 	stsClient := newSTSClient(sts.URL, 2*time.Second)
 	guard := newUpstreamGuard(nil, true)
-	p := newProxy(stsClient, guard, zerolog.New(io.Discard), 16, 2*time.Second, testBindings(), nil, nil)
+	p := newProxy(stsClient, nil, guard, zerolog.New(io.Discard), 16, 2*time.Second, testBindings(), nil, nil)
 
 	tok := makeJWT(t, time.Hour)
 	hdr := http.Header{
@@ -531,18 +531,18 @@ func TestSTSClientTransportFailureSanitised(t *testing.T) {
 	c := newSTSClient("http://127.0.0.1:1", 100*time.Millisecond)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	_, status, cerr, internalErr := c.Exchange(ctx, "tok", binding{ZoneID: "z", ApplicationID: "a"}, "r", "rid")
-	if internalErr == nil {
+	out := c.Exchange(ctx, "tok", binding{ZoneID: "z", ApplicationID: "a"}, "r", "rid")
+	if out.InternalErr == nil {
 		t.Fatal("expected transport error")
 	}
-	if cerr == nil {
+	if out.ClientErr == nil {
 		t.Fatal("expected sanitised CaracalError")
 	}
-	if status < 500 {
-		t.Errorf("transport failure should map to 5xx, got %d", status)
+	if out.Status < 500 {
+		t.Errorf("transport failure should map to 5xx, got %d", out.Status)
 	}
-	if strings.Contains(cerr.Description, "127.0.0.1") {
-		t.Errorf("internal address leaked: %s", cerr.Description)
+	if strings.Contains(out.ClientErr.Description, "127.0.0.1") {
+		t.Errorf("internal address leaked: %s", out.ClientErr.Description)
 	}
 }
 
