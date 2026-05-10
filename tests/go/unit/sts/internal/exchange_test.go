@@ -91,6 +91,27 @@ func TestTokenTTL(t *testing.T) {
 	}
 }
 
+func TestSameTokenPrincipal(t *testing.T) {
+	if !sameTokenPrincipal(
+		map[string]any{"sub": "user1", "client_id": "app1"},
+		map[string]any{"sub": "user1", "client_id": "app1"},
+	) {
+		t.Fatal("matching subject and client must be same principal")
+	}
+	if sameTokenPrincipal(
+		map[string]any{"sub": "user1", "client_id": "app1"},
+		map[string]any{"sub": "user1", "client_id": "app2"},
+	) {
+		t.Fatal("different clients must be distinct principals")
+	}
+	if sameTokenPrincipal(
+		map[string]any{"sub": "user1", "client_id": "app1"},
+		map[string]any{"sub": "user2", "client_id": "app1"},
+	) {
+		t.Fatal("different subjects must be distinct principals")
+	}
+}
+
 func TestBuildAuditEventFields(t *testing.T) {
 	result := &OPAResult{
 		Decision:         "allow",

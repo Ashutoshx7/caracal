@@ -137,6 +137,9 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 		if _, serr := s.validateTokenSession(ctx, zoneID, "", actorClaims); serr != nil {
 			return nil, nil, http.StatusForbidden, serr
 		}
+		if sameTokenPrincipal(subjectClaims, actorClaims) {
+			return nil, nil, http.StatusBadRequest, sharederr.New(sharederr.InvalidToken, "actor_token and subject_token must identify distinct principals")
+		}
 	}
 	// client_id is the authenticated calling application; it is published on a separate
 	// key so it never shadows actor token claims (which carry a distinct application id).
@@ -793,6 +796,17 @@ func claimString(claims map[string]any, key string) string {
 	}
 	value, _ := claims[key].(string)
 	return value
+}
+
+func sameTokenPrincipal(subjectClaims, actorClaims map[string]any) bool {
+	subject := claimString(subjectClaims, "sub")
+	actor := claimString(actorClaims, "sub")
+	if subject == "" || actor == "" || subject != actor {
+		return false
+	}
+	subjectClient := claimString(subjectClaims, "client_id")
+	actorClient := claimString(actorClaims, "client_id")
+	return subjectClient == "" || actorClient == "" || subjectClient == actorClient
 }
 
 func scopesAllowed(requested, available []string) bool {
