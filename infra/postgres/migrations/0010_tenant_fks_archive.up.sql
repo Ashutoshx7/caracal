@@ -1,7 +1,7 @@
 -- Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 -- Caracal, a product of Garudex Labs
 --
--- Phase 2 control-plane hardening: tenant-boundary FKs and soft-delete columns.
+-- Tenant-boundary FKs and soft-delete columns for control-plane tables.
 
 ALTER TABLE delegated_grants
     ADD CONSTRAINT delegated_grants_zone_id_fkey

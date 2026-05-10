@@ -1,7 +1,7 @@
 -- Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 -- Caracal, a product of Garudex Labs
 --
--- Phase 2 control-plane hardening rollback.
+-- Rollback of tenant-boundary FKs and soft-delete columns.
 
 DROP INDEX IF EXISTS resources_active_idx;
 DROP INDEX IF EXISTS providers_active_idx;
