@@ -15,6 +15,15 @@ function buildApp() {
   }
   app.decorate('db', db as never)
   app.decorate('redis', { xadd: vi.fn() } as never)
+  app.addHook('preHandler', async (req) => {
+    ;(req as unknown as { caracalAuth: unknown }).caracalAuth = {
+      zoneId: (req.params as Record<string, string>)?.zoneId ?? 'z1',
+      scopes: ['coordinator.admin'],
+      subject: 'test',
+      clientId: 'app-1',
+      sessionId: 'sid-test',
+    }
+  })
   app.register(invocationsRoutes, { prefix: '/v1' })
   return { app, db }
 }
@@ -115,6 +124,7 @@ describe('PATCH /v1/zones/:zoneId/invocations/:id/cancel', () => {
     const client = {
       query: vi.fn()
         .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ application_id: 'app-1' }] })
         .mockResolvedValueOnce({ rows: [{ id: 'inv-1', status: 'cancel_requested' }] })
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [] }),

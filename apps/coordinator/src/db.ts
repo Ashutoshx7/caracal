@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// PostgreSQL pool factory for the agent coordinator.
+// PostgreSQL pool factory for the coordinator.
 
 import pg from 'pg'
 import { cfg } from './config.js'

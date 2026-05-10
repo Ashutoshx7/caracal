@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Agent coordinator configuration loaded strictly from environment.
+// Coordinator configuration loaded strictly from environment.
 
 import { getenv, mustGetenv } from '@caracalai/core'
 

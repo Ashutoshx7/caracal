@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Agent coordinator Fastify application factory.
+// Coordinator Fastify application factory.
 
 import Fastify from 'fastify'
 import type { Pool } from 'pg'
