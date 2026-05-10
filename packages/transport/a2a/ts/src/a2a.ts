@@ -43,6 +43,8 @@ export async function a2aCall(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${token.accessToken}`,
+    'X-Caracal-Zone-Id': zoneId,
+    'X-Caracal-Application-Id': applicationId,
     ...envHeaders,
   }
 

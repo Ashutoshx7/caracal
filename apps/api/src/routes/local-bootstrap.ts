@@ -65,7 +65,7 @@ export const localBootstrapRoutes: FastifyPluginAsync = async (fastify) => {
         `SELECT dek_id, ciphertext, nonce FROM secrets WHERE id = $1 AND zone_id = $2`,
         [SIGNING_KEY_ID, ZONE_ID],
       )
-      if (!force && secretRows[0] && secretRows[0].dek_id !== LOCAL_DEK_ID) {
+      if (secretRows[0] && secretRows[0].dek_id !== LOCAL_DEK_ID) {
         return reply.code(409).send({
           error: 'zone_not_local_bootstrap',
           detail: 'refusing to overwrite zone whose signing key was sealed under a different DEK',

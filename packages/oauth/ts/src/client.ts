@@ -137,7 +137,7 @@ export class OAuthClient {
         const status = res.status
         const transient = status === 408 || status === 425 || status === 429 || (status >= 500 && status < 600)
         if (!transient || attempt === maxRetries) break
-        const retryAfter = res.headers.get('retry-after')
+        const retryAfter = res.headers?.get('retry-after')
         let waitMs: number
         if (retryAfter) {
           const secs = Number(retryAfter)
