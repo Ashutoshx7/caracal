@@ -222,7 +222,9 @@ class Caracal:
                     request.url = httpx.URL(rewritten[0])
                     request.headers["host"] = request.url.host
                     request.headers["X-Caracal-Resource"] = rewritten[1]
-                    request.headers["Authorization"] = f"Bearer {outer.config.subject_token}"
+                    ctx = current()
+                    token = ctx.subject_token if ctx is not None else outer.config.subject_token
+                    request.headers["Authorization"] = f"Bearer {token}"
                 for k, v in outer.headers().items():
                     if k not in request.headers:
                         request.headers[k] = v

@@ -190,8 +190,8 @@ func (c *Caracal) Delegate(ctx context.Context, opts DelegateOptions, fn func(co
 // using the configured subject token if no context is bound).
 func (c *Caracal) Headers(ctx context.Context) http.Header {
 	h := http.Header{}
-	cur, err := Current(ctx)
-	if err != nil {
+	cur, ok := Current(ctx)
+	if !ok {
 		InjectHTTP(Envelope{SubjectToken: c.SubjectToken, Hop: 0}, h)
 		return h
 	}
@@ -216,11 +216,7 @@ func (c *Caracal) BindFromRequest(ctx context.Context, r *http.Request) context.
 
 // Current returns the Caracal context bound on ctx, or a zero value and false.
 func (c *Caracal) Current(ctx context.Context) (CaracalContext, bool) {
-	cur, err := Current(ctx)
-	if err != nil {
-		return CaracalContext{}, false
-	}
-	return cur, true
+	return Current(ctx)
 }
 
 // Transport returns an *http.Client whose RoundTripper auto-injects the
@@ -245,9 +241,9 @@ type caracalTransport struct {
 }
 
 func (t *caracalTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	cur, err := Current(req.Context())
+	cur, ok := Current(req.Context())
 	var env Envelope
-	if err != nil {
+	if !ok {
 		env = Envelope{SubjectToken: t.client.SubjectToken, Hop: 0}
 	} else {
 		env = ToEnvelope(cur)

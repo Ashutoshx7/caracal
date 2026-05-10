@@ -55,7 +55,7 @@ const dispatcher = new OutboxDispatcher({
   log: (level, msg, meta) => app.log[level]({ ...meta }, msg),
 })
 
-const dcrTimer = startDCRGC(db)
+const dcrTimer = startDCRGC(db, app.log)
 
 shutdown.register('dcr-gc-timer', () => { clearInterval(dcrTimer) })
 shutdown.register('outbox-dispatcher', () => dispatcher.stop())
