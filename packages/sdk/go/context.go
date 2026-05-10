@@ -43,15 +43,6 @@ func Current(ctx context.Context) (CaracalContext, error) {
 	return v.(CaracalContext), nil
 }
 
-// MustCurrent panics if no CaracalContext is bound.
-func MustCurrent(ctx context.Context) CaracalContext {
-	c, err := Current(ctx)
-	if err != nil {
-		panic(err)
-	}
-	return c
-}
-
 // FromEnvelope builds a CaracalContext from a deserialized Envelope.
 func FromEnvelope(env Envelope, zoneID, clientID string) (CaracalContext, error) {
 	if env.SubjectToken == "" {
