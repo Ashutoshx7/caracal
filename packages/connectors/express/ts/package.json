@@ -1,7 +1,15 @@
 {
   "name": "@caracalai/mcp-express",
   "version": "0.1.0",
-  "private": true,
+  "description": "Caracal MCP authentication adapter for Express.",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/Garudex-Labs/caracal",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Garudex-Labs/caracal.git",
+    "directory": "packages/connectors/express/ts"
+  },
+  "keywords": ["caracal", "mcp", "express", "connector"],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -11,11 +19,16 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "files": ["dist", "README.md", "LICENSE"],
+  "publishConfig": { "access": "public" },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --root ../../../.. tests/typescript/unit/sdk/mcp-express",
-    "prepare": "tsc"
+    "prepublishOnly": "tsc"
+  },
+  "peerDependencies": {
+    "express": "^5.0.0"
   },
   "dependencies": {
     "@caracalai/transport-mcp": "workspace:*",

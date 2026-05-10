@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Release pipeline: build CLI binaries, push runtime images to GHCR, publish GitHub Release on v* tags.
+# Release pipeline: build CLI binaries, publish npm/PyPI packages, push runtime images to GHCR, publish GitHub Release on v* tags.
 
 name: release
 
@@ -80,6 +80,102 @@ jobs:
         with:
           name: cli-binaries
           path: release-dist/*
+      - uses: actions/attest-build-provenance@7668a9fa50f3da3d83fbb0a4c5fb4ac3fc6d1c2e # v2
+        with:
+          subject-path: release-dist/caracal-*
+
+  npm:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+      - run: pnpm install --frozen-lockfile
+      - name: Stamp version on public packages
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          for f in \
+            packages/core/ts/package.json \
+            packages/sdk/ts/package.json \
+            packages/admin/ts/package.json \
+            packages/oauth/ts/package.json \
+            packages/identity/ts/package.json \
+            packages/revocation/ts/package.json \
+            packages/transport/mcp/ts/package.json \
+            packages/transport/a2a/ts/package.json \
+            packages/connectors/express/ts/package.json \
+            packages/connectors/fastmcp/ts/package.json \
+            packages/connectors/postgres/ts/package.json
+          do
+            jq --arg v "${VERSION}" '.version = $v' "$f" > "$f.tmp"
+            mv "$f.tmp" "$f"
+          done
+      - run: pnpm run build:typescript
+      - name: Publish public packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for d in \
+            packages/core/ts \
+            packages/oauth/ts \
+            packages/admin/ts \
+            packages/identity/ts \
+            packages/revocation/ts \
+            packages/sdk/ts \
+            packages/transport/mcp/ts \
+            packages/transport/a2a/ts \
+            packages/connectors/express/ts \
+            packages/connectors/fastmcp/ts \
+            packages/connectors/postgres/ts
+          do
+            pnpm --dir "$d" publish --no-git-checks --access public
+          done
+
+  pypi:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    strategy:
+      matrix:
+        package:
+          - packages/core/python
+          - packages/identity/python
+          - packages/revocation/python
+          - packages/sdk/python
+          - packages/transport/mcp/python
+          - packages/connectors/fastmcp/python
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v5
+        with:
+          python-version: '3.12'
+      - name: Stamp version
+        working-directory: ${{ matrix.package }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          python - <<PY
+          import re, pathlib
+          p = pathlib.Path('pyproject.toml')
+          t = p.read_text()
+          t = re.sub(r'(?m)^version\s*=\s*"[^"]*"', f'version = "${VERSION}"', t, count=1)
+          p.write_text(t)
+          PY
+      - name: Build sdist + wheel
+        working-directory: ${{ matrix.package }}
+        run: |
+          pip install build
+          python -m build
+      - uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # v1
+        with:
+          packages-dir: ${{ matrix.package }}/dist
 
   images:
     needs: validate
@@ -131,7 +227,7 @@ jobs:
           sbom: true
 
   publish:
-    needs: [cli, images]
+    needs: [cli, npm, pypi, images]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

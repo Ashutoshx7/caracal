@@ -275,41 +275,54 @@ sha256sum caracal-tui-* >> ../../cli/dist/SHA256SUMS
 
 ## Releases
 
-Releases are fully automated by [`.github/workflows/release.yml`](.github/workflows/release.yml).
+Releases are fully automated by [`.github/workflows/release.yml`](.github/workflows/release.yml) and gated by [Changesets](https://github.com/changesets/changesets).
+
+### Authoring a changeset
+
+Every PR that changes a published package adds a changeset:
+
+```bash
+pnpm changeset
+```
+
+Pick the affected `@caracalai/*` packages and the bump type (patch / minor / major). The generated `.changeset/*.md` is committed with the PR.
 
 ### Cutting a release
 
-1. Confirm `main` is green (all CI checks pass).
-2. Tag with a semantic version and push:
-
 ```bash
-git tag -a v0.2.0 -m "v0.2.0"
-git push origin v0.2.0
+./scripts/release.sh
 ```
+
+The script verifies a clean `main`, pulls latest, runs `pnpm changeset version` to bump versions and rewrite `workspace:*` deps to real semver, commits the result, tags `vX.Y.Z`, and pushes the branch and tag. Pushing the tag triggers the release workflow.
 
 ### What the pipeline does
 
-The `release` workflow triggers on `v*.*.*` tags and runs three jobs:
+The `release` workflow triggers on `v*.*.*` tags and runs five jobs in parallel after `validate`:
 
 **`validate`** — runs `pnpm test` (TypeScript + Go + Python) against the tagged commit.
 
-**`cli`** (parallel with `images`) —
+**`cli`** —
 1. Stamps `apps/cli/src/runtime/version.ts` and `apps/cli/package.json` with the tag version.
-2. Runs `pnpm --dir apps/cli build` — builds five CLI binaries via `bun build --compile`:
-   - `caracal-linux-x64`
-   - `caracal-linux-arm64`
-   - `caracal-darwin-x64`
-   - `caracal-darwin-arm64`
-   - `caracal-windows-x64.exe`
-3. Runs `pnpm --dir apps/tui build` — builds five TUI binaries:
-   - `caracal-tui-linux-x64`
-   - `caracal-tui-linux-arm64`
-   - `caracal-tui-darwin-x64`
-   - `caracal-tui-darwin-arm64`
-   - `caracal-tui-windows-x64.exe`
-4. Generates `SHA256SUMS` covering all ten binaries.
+2. Builds five CLI and five TUI binaries via `bun build --compile`.
+3. Generates `SHA256SUMS` and produces SLSA build provenance for every binary.
 
-**`images`** (parallel with `cli`) — builds and pushes five multi-arch (`linux/amd64`, `linux/arm64`) container images to GHCR with provenance and SBOM:
+**`npm`** — stamps versions across the eleven public TS packages, builds them, then publishes each to npm under `@caracalai/*` with `NPM_TOKEN`:
+
+```
+@caracalai/core            @caracalai/oauth             @caracalai/admin
+@caracalai/identity        @caracalai/revocation        @caracalai/sdk
+@caracalai/transport-mcp   @caracalai/transport-a2a     @caracalai/mcp-express
+@caracalai/mcp-fastmcp     @caracalai/tokenstate-postgres
+```
+
+**`pypi`** — matrix-publishes the six Python packages to PyPI via OIDC trusted publishing (`pypa/gh-action-pypi-publish`):
+
+```
+caracalai-core              caracalai-identity          caracalai-revocation
+caracalai-sdk               caracalai-transport-mcp     caracalai-fastmcp
+```
+
+**`images`** — builds and pushes five multi-arch (`linux/amd64`, `linux/arm64`) container images to GHCR with provenance and SBOM:
 
 | Image | Dockerfile |
 |---|---|
@@ -326,6 +339,8 @@ Each image is tagged `vX.Y.Z`, `vX.Y`, and `latest`.
 - `SHA256SUMS`
 - `install.sh`
 - `install.ps1`
+
+Go modules under `packages/*/go` become installable as `go get github.com/garudex-labs/caracal/<name>@vX.Y.Z` automatically once the tag is pushed.
 
 ### Versioning policy
 
