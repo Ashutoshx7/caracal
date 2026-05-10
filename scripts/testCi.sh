@@ -8,6 +8,22 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 root="$(pwd)"
+go_cmd="$(go env GOROOT)/bin/go"
+if [[ ! -x "$go_cmd" ]]; then
+  go_cmd=go
+fi
+go_pkgs=(
+  ./packages/core/go/...
+  ./services/sts/...
+  ./services/audit/...
+  ./services/gateway/...
+  ./apps/coordinator/relay/...
+  ./packages/transport/mcp/go/...
+  ./packages/connectors/nethttp/go/...
+  ./packages/identity/go/...
+  ./packages/revocation/go/...
+  ./packages/sdk/go/...
+)
 
 run_ts=false
 run_go=false
@@ -55,17 +71,7 @@ if $run_smoke; then
   step "smoke: pnpm -r build"
   pnpm -r build
   step "smoke: go vet"
-  go vet \
-    ./packages/core/go/... \
-    ./services/sts/... \
-    ./services/audit/... \
-    ./services/gateway/... \
-    ./apps/coordinator/relay/... \
-    ./packages/transport/mcp/go/... \
-    ./packages/connectors/nethttp/go/... \
-    ./packages/identity/go/... \
-    ./packages/revocation/go/... \
-    ./packages/sdk/go/...
+  "$go_cmd" vet "${go_pkgs[@]}"
 fi
 
 if $run_ts || $run_docs; then
@@ -131,20 +137,20 @@ if $run_ts; then
 fi
 
 if $run_go; then
-  step "go: test with coverage"
+  step "go: race"
   mkdir -p coverage/go
-  go test -race -covermode=atomic -coverprofile=coverage/go/coverage.out \
-    ./packages/core/go/... \
-    ./services/sts/... \
-    ./services/audit/... \
-    ./services/gateway/... \
-    ./apps/coordinator/relay/... \
-    ./packages/transport/mcp/go/... \
-    ./packages/connectors/nethttp/go/... \
-    ./packages/identity/go/... \
-    ./packages/revocation/go/... \
-    ./packages/sdk/go/...
-  go tool cover -func=coverage/go/coverage.out
+  "$go_cmd" test -race "${go_pkgs[@]}"
+
+  step "go: coverage"
+  mapfile -t go_cover_pkgs < <("$go_cmd" list -f '{{if .TestGoFiles}}{{.ImportPath}}{{end}}' "${go_pkgs[@]}" | sed '/^$/d')
+  "$go_cmd" test -covermode=atomic -coverprofile=coverage/go/coverage.out "${go_cover_pkgs[@]}"
+  "$go_cmd" test -race -covermode=atomic \
+    -coverpkg=github.com/garudex-labs/caracal/transport-mcp,github.com/garudex-labs/caracal/revocation \
+    -coverprofile=coverage/go/tests.out \
+    ./tests/go/unit/revocation \
+    ./tests/go/unit/transport/mcp
+  tail -n +2 coverage/go/tests.out >> coverage/go/coverage.out
+  "$go_cmd" tool cover -func=coverage/go/coverage.out
 fi
 
 if $run_py; then
