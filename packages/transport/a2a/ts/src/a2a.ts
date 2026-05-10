@@ -4,7 +4,7 @@
 // A2A call helper: exchanges subject authority for a target agent token.
 
 import { OAuthClient } from '@caracalai/oauth'
-import { toEnvelope, toHeaders, tryCurrent, type Envelope } from '@caracalai/sdk/advanced'
+import { toEnvelope, toHeaders, current, type Envelope } from '@caracalai/sdk/advanced'
 import type { A2AOptions, A2ARequest, A2AResponse, FetchLike } from './types.js'
 
 export async function a2aCall(
@@ -29,7 +29,7 @@ export async function a2aCall(
     },
   )
 
-  const ctx = tryCurrent()
+  const ctx = current()
   const envelope: Envelope = ctx
     ? toEnvelope(ctx)
     : {
