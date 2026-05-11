@@ -12,11 +12,10 @@ import {
   DEFAULT_COORDINATOR_URL,
   resolveCliConfigPath,
   resolveServiceUrl,
+  type CliConfig,
 } from '@caracalai/core/cli'
 import { App } from './screen.ts'
 import { MenuView } from './views/menu.ts'
-
-interface CliConfig { zone_id?: string }
 
 function loadConfig(): CliConfig | undefined {
   const path = resolveCliConfigPath()

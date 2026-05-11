@@ -1,4 +1,19 @@
 User-agent: *
 Allow: /
 
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
 Sitemap: https://docs.garudexlabs.com/sitemap-index.xml
+
+# AI discovery: https://docs.garudexlabs.com/llms.txt
+# Full content: https://docs.garudexlabs.com/llms-full.txt

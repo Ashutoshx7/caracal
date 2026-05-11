@@ -70,6 +70,22 @@ export default defineConfig({
           tag: 'meta',
           attrs: { name: 'color-scheme', content: 'dark light' },
         },
+        {
+          tag: 'script',
+          attrs: { type: 'application/ld+json' },
+          content: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'SoftwareApplication',
+            name: 'Caracal',
+            description,
+            url: site,
+            author: { '@type': 'Organization', name: 'Garudex Labs' },
+            license: 'https://www.apache.org/licenses/LICENSE-2.0',
+            applicationCategory: 'DeveloperApplication',
+            operatingSystem: 'Linux, macOS',
+            programmingLanguage: ['Go', 'TypeScript', 'Python'],
+          }),
+        },
       ],
       editLink: {
         baseUrl: 'https://github.com/Garudex-Labs/caracal/edit/main/docs/',
@@ -87,7 +103,8 @@ export default defineConfig({
           label: 'Start',
           items: [
             { label: 'Overview', link: '/start/' },
-            { label: 'Introduction', link: '/start/overview/' },
+            { label: 'What is Caracal?', link: '/start/overview/' },
+            { label: 'Concepts Primer', link: '/start/concepts-primer/' },
             { label: 'Installation', link: '/start/installation/' },
             { label: 'Quickstart', link: '/start/quickstart/' },
           ],
@@ -106,6 +123,8 @@ export default defineConfig({
             { label: 'Intent', link: '/concepts/intent/' },
             { label: 'Workspace', link: '/concepts/workspace/' },
             { label: 'Ledger', link: '/concepts/ledger/' },
+            { label: 'Zone', link: '/concepts/zone/' },
+            { label: 'Resource Binding', link: '/concepts/resource-binding/' },
           ],
         },
         {
@@ -181,6 +200,7 @@ export default defineConfig({
           items: [
             { label: 'Overview', link: '/reference/' },
             { label: 'API', link: '/reference/api/' },
+            { label: 'Error Reference', link: '/reference/errors/' },
             { label: 'Glossary', link: '/reference/glossary/' },
           ],
         },
