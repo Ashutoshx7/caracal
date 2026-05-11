@@ -61,13 +61,16 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      ZONE_KEK: ${ZONE_KEK}
+      AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY}
+      STREAMS_HMAC_KEY: ${STREAMS_HMAC_KEY}
       ZONE_KEK_PROVIDER: local
       ISSUER_URL: http://localhost:8080
       PORT: 8080
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ready || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -81,12 +84,14 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       STS_URL: http://sts:8080
+      ZONE_KEK: ${ZONE_KEK}
+      STREAMS_HMAC_KEY: ${STREAMS_HMAC_KEY}
       CARACAL_ADMIN_TOKEN: ${CARACAL_ADMIN_TOKEN}
       PORT: 3000
     ports:
       - "3000:3000"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ready || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -100,11 +105,15 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       STS_URL: http://sts:8080
+      CARACAL_ENV: ${CARACAL_ENV}
+      INSECURE_STS: ${INSECURE_STS}
+      INSECURE_HTTP: ${INSECURE_HTTP}
+      STREAMS_HMAC_KEY: ${STREAMS_HMAC_KEY}
       PORT: 8081
     ports:
       - "8081:8081"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/ready || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -117,13 +126,14 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY}
       AUDIT_EXPORT_S3_ENDPOINT: ${AUDIT_EXPORT_S3_ENDPOINT:-}
       AUDIT_EXPORT_S3_BUCKET: ${AUDIT_EXPORT_S3_BUCKET:-}
       PORT: "9090"
     ports:
       - "9090:9090"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/ready || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -138,13 +148,14 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       STS_URL: http://sts:8080
       ISSUER_URL: http://localhost:8080
+      STREAMS_HMAC_KEY: ${STREAMS_HMAC_KEY}
       AGENT_COORDINATOR_AUDIENCE: caracal.coordinator
       AGENT_COORDINATOR_SCOPE: agent:lifecycle
       PORT: 4000
     ports:
       - "4000:4000"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/ready || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 20
