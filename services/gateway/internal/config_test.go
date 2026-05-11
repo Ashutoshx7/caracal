@@ -73,6 +73,13 @@ func TestConfigValidateProductionRequiresRedis(t *testing.T) {
 	}
 }
 
+func TestConfigValidateProductionRequiresStreamHMAC(t *testing.T) {
+	c := Config{Env: "production", Port: "8081", STSURL: "https://sts", TLSCertFile: "c", TLSKeyFile: "k", MaxRequestBytes: 1, RedisURL: "redis://redis"}
+	if err := c.validate(); err == nil || !strings.Contains(err.Error(), "STREAMS_HMAC_KEY") {
+		t.Errorf("expected stream HMAC requirement, got %v", err)
+	}
+}
+
 func TestConfigValidateProductionRejectsJTIFailOpen(t *testing.T) {
 	c := Config{Env: "production", Port: "8081", STSURL: "https://sts", TLSCertFile: "c", TLSKeyFile: "k", MaxRequestBytes: 1, RedisURL: "redis://redis", JTIFailOpen: true}
 	if err := c.validate(); err == nil || !strings.Contains(err.Error(), "JTI_FAIL_OPEN") {

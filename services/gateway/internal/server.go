@@ -9,9 +9,11 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
+	sharedcrypto "github.com/garudex-labs/caracal/core/crypto"
 	"github.com/garudex-labs/caracal/core/logging"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
@@ -48,6 +50,14 @@ func New(ctx context.Context) (*Server, error) {
 		if err != nil {
 			return nil, err
 		}
+		streamKey, err := sharedcrypto.DecodeStreamKey(cfg.StreamsHMACKey)
+		if err != nil {
+			return nil, fmt.Errorf("streams hmac key: %w", err)
+		}
+		if len(streamKey) == 0 {
+			log.Warn().Msg("STREAMS_HMAC_KEY not set; revocation stream messages will not be origin-verified")
+		}
+		rdb.SetStreamSigning(streamKey, cfg.Env == "production")
 		tracker = newJTITracker(rdb, log, cfg.JTIFailOpen)
 	} else {
 		log.Warn().Msg("REDIS_URL unset; jti replay detection and revocation propagation disabled")
@@ -81,7 +91,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	mux.HandleFunc("/ready", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("/ready", s.handleReady)
 	mux.Handle("/", p)
 
 	handler := requestIDMiddleware(mux)
@@ -134,6 +144,34 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 		return err
 	}
+}
+
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if s.bindings == nil {
+		http.Error(w, "bindings unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.bindings.Reload(ctx); err != nil {
+		http.Error(w, "postgres unreachable: "+err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	if s.redis != nil {
+		if err := s.redis.Ping(ctx); err != nil {
+			http.Error(w, "redis unreachable: "+err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+	}
+	if s.sts == nil {
+		http.Error(w, "sts unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.sts.Health(ctx); err != nil {
+		http.Error(w, "sts unreachable: "+err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 // requestIDMiddleware ensures every request has a server-assigned UUID in its context
