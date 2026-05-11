@@ -33,6 +33,7 @@ env:
 
 jobs:
   validate:
+    if: github.repository == 'Garudex-Labs/caracal'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -251,7 +252,7 @@ jobs:
 
   publish:
     needs: [cli, npm, pypi, images]
-    if: github.event_name == 'push' && inputs.dryRun != true
+    if: github.repository == 'Garudex-Labs/caracal' && github.event_name == 'push' && inputs.dryRun != true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
