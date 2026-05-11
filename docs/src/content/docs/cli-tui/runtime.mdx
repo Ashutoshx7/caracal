@@ -1,7 +1,156 @@
 ---
 title: Runtime Commands
-description: caracal run and credential read for binding mandates to processes.
+description: caracal run and credential read — inject resource mandates into subprocesses and print tokens for manual use.
 pageType: reference
 ---
 
-caracal run and credential read for binding mandates to processes.
+Runtime commands bind Caracal mandates to processes. They require `caracal.toml` and perform OAuth 2.0 token exchange directly with the STS. No `CARACAL_ADMIN_TOKEN` is needed — they use the application credentials from `caracal.toml`.
+
+---
+
+## `caracal run`
+
+Inject resource tokens into a subprocess's environment and run it.
+
+```bash
+caracal run -- <command> [args...]
+```
+
+The `--` separator is optional but recommended when `<command>` accepts flags that would be parsed by `caracal`. All arguments after `--` are passed verbatim to the subprocess.
+
+### What it does
+
+1. Loads `caracal.toml`. Exits with an error if the file is not found.
+2. Checks MCP governance rules (see below).
+3. For each entry in `credentials[]`, exchanges the application's client credentials for a resource token at the STS with a 60-minute TTL.
+4. For each entry in `optional_credentials[]`, attempts the same exchange but logs a warning on failure rather than exiting.
+5. Spawns the subprocess with the tokens injected as named environment variables.
+6. Forwards stdin, stdout, and stderr to the subprocess unchanged.
+7. Exits with the subprocess's exit code.
+
+### Token exchange
+
+Each credential exchange posts to `{zone_url}/oauth2/token` using the `zone_id`, `application_id`, and `app_client_secret` from `caracal.toml`. The resulting token is a short-lived ES256-signed mandate. It is injected into the subprocess's environment under the variable name specified by the credential's `env` field.
+
+### Step-up challenges
+
+If the STS returns `interaction_required`, `caracal run` handles it automatically:
+
+1. Writes a JSON notice to stderr:
+   ```json
+   {"resource": "resource://my-api", "challenge_id": "chall_abc123", "reason": "step_up_required"}
+   ```
+2. Polls `GET /step-up/{challengeId}` every 2 seconds for up to 5 minutes.
+3. Once the challenge is satisfied (e.g., the user completes an MFA prompt), retries the token exchange.
+4. If the 5-minute window expires without satisfaction, exits with code `1`.
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Subprocess exited successfully |
+| `1` | Credential acquisition failed, or MCP governance blocked the command |
+| `2` | Subprocess exited with a non-zero exit code |
+| `127` | Failed to spawn the subprocess |
+| `128 + N` | Subprocess killed by signal N |
+
+### Configuration
+
+Credentials are declared in `caracal.toml`. A minimal setup with one required token:
+
+```toml
+zone_url = "http://localhost:8080"
+zone_id = "zone_abc123"
+application_id = "app_def456"
+app_client_secret = "secret_xyz"
+
+[[credentials]]
+env = "RESOURCE_TOKEN"
+resource = "resource://my-api"
+```
+
+```bash
+caracal run -- python3 agent.py
+# agent.py reads os.environ['RESOURCE_TOKEN']
+```
+
+Multiple resources, with one optional:
+
+```toml
+[[credentials]]
+env = "PAYMENTS_TOKEN"
+resource = "resource://payments-api"
+
+[[credentials]]
+env = "INVENTORY_TOKEN"
+resource = "resource://inventory-api"
+
+[[optional_credentials]]
+env = "ANALYTICS_TOKEN"
+resource = "resource://analytics-api"
+on_failure = "warn"
+```
+
+**`continue_on_failure`:**
+
+```toml
+continue_on_failure = true
+```
+
+When `false` (the default), if any required credential exchange fails the subprocess is not spawned and `caracal run` exits with code `1`. When `true`, the failure is logged and the subprocess runs with the remaining tokens set. The environment variable for the failed credential is not set.
+
+### MCP governance
+
+`caracal run` detects when the subprocess command references an MCP server binary (`mcp-server`, `fastmcp`, `@modelcontextprotocol`). Configure governance behavior in `caracal.toml`:
+
+```toml
+[mcp_governance]
+mode = "block"   # "block" or "log"
+```
+
+- `"block"`: writes a JSON notice to stderr and exits with code `1` before spawning the process.
+- `"log"`: writes the notice and continues.
+
+This lets you enforce that MCP servers only run through Caracal-governed wrappers.
+
+---
+
+## `caracal credential read`
+
+Print a short-lived token for a resource to stdout.
+
+```bash
+caracal credential read <resource>
+```
+
+Exchanges the application credentials from `caracal.toml` for a 15-minute mandate scoped to `<resource>`. Outputs the token as a plain string to stdout.
+
+| Argument | Description |
+| --- | --- |
+| `<resource>` | Resource identifier, e.g., `resource://my-api` or `resource_abc123` |
+
+**Use cases:**
+
+Testing an API endpoint manually:
+
+```bash
+TOKEN=$(caracal credential read resource://my-api)
+curl -H "Authorization: Bearer $TOKEN" http://my-api.internal/tool
+```
+
+Fetching a token in a script where 15 minutes is the right TTL (shorter than `caracal run`'s 60-minute tokens):
+
+```bash
+TOKEN=$(caracal credential read resource://my-api)
+# Use $TOKEN for one request or a short-lived operation
+```
+
+**Step-up:**
+
+`caracal credential read` does **not** handle step-up automatically. If the STS requires interaction, it exits immediately and writes a JSON error to stderr:
+
+```json
+{"error": "interaction_required", "challenge_id": "chall_abc123"}
+```
+
+Use `caracal run` when you need automatic step-up polling.
