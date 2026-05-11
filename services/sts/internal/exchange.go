@@ -152,10 +152,16 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 
 	challengeResolved := false
 	if req.ChallengeID != "" || req.ChallengeResponse != "" {
+		if ok, _ := s.stepUpThrottle.Allow(zoneID, principalID); !ok {
+			s.auditBuffer.Emit(buildAuditEvent(requestID, zoneID, "deny", "challenge_cooldown", &OPAResult{}, nil))
+			return nil, nil, http.StatusTooManyRequests, sharederr.New(sharederr.AccessDenied, "too many failed step-up attempts; try again later")
+		}
 		if cerr := s.verifyAndConsumeChallenge(ctx, zoneID, principalID, req.ChallengeID, req.ChallengeResponse, req.Resources); cerr != nil {
+			s.stepUpThrottle.RecordFailure(zoneID, principalID)
 			s.auditBuffer.Emit(buildAuditEvent(requestID, zoneID, "deny", "challenge_invalid", &OPAResult{}, nil))
 			return nil, nil, http.StatusUnauthorized, sharederr.New(sharederr.AccessDenied, "challenge not satisfied or expired")
 		}
+		s.stepUpThrottle.RecordSuccess(zoneID, principalID)
 		challengeResolved = true
 	}
 	delegation, refErr := s.validateSessionReferences(ctx, zoneID, app.ID, req, subjectClaims != nil)
@@ -364,7 +370,9 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 		s.log.Error().Err(err).Str("zone_id", zoneID).Str("request_id", requestID).Msg("token issuance failed")
 		return nil, nil, http.StatusInternalServerError, sharederr.New(sharederr.Internal, "token issuance failed")
 	}
-	s.recordIssuedJTI(ctx, jti, app.ID, zoneID, requestID, ttl)
+	if err := s.recordIssuedJTI(ctx, jti, app.ID, zoneID, requestID, ttl); err != nil {
+		return nil, nil, http.StatusInternalServerError, sharederr.New(sharederr.Internal, "token issuance failed")
+	}
 
 	// Build per-resource upstream directives so the gateway can substitute the
 	// provider-native credential where the resource expects one.

@@ -29,14 +29,15 @@ const (
 
 // Server holds all runtime state for the STS.
 type Server struct {
-	cfg         Config
-	db          DBQuerier
-	redis       *RedisClient
-	opa         *OPAEngine
-	keys        *KeyCache
-	auditBuffer *AuditBuffer
-	metrics     *STSMetrics
-	log         zerolog.Logger
+	cfg            Config
+	db             DBQuerier
+	redis          *RedisClient
+	opa            *OPAEngine
+	keys           *KeyCache
+	auditBuffer    *AuditBuffer
+	metrics        *STSMetrics
+	stepUpThrottle *stepUpThrottle
+	log            zerolog.Logger
 }
 
 // New initialises all dependencies and returns a ready-to-run Server.
@@ -81,14 +82,15 @@ func New(ctx context.Context) (*Server, error) {
 	}
 
 	return &Server{
-		cfg:         cfg,
-		db:          db,
-		redis:       rdb,
-		opa:         opa,
-		keys:        keys,
-		auditBuffer: buf,
-		metrics:     metrics,
-		log:         log,
+		cfg:            cfg,
+		db:             db,
+		redis:          rdb,
+		opa:            opa,
+		keys:           keys,
+		auditBuffer:    buf,
+		metrics:        metrics,
+		stepUpThrottle: newStepUpThrottle(),
+		log:            log,
 	}, nil
 }
 
@@ -199,8 +201,22 @@ func (s *Server) handleStepUpStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
-	if err := s.db.Ping(r.Context()); err != nil {
-		w.WriteHeader(http.StatusServiceUnavailable)
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := s.db.Ping(ctx); err != nil {
+		http.Error(w, "postgres unreachable: "+err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	if s.redis == nil {
+		http.Error(w, "redis unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.redis.Ping(ctx); err != nil {
+		http.Error(w, "redis unreachable: "+err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.auditBuffer.Ready(); err != nil {
+		http.Error(w, "audit replay unavailable: "+err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	w.WriteHeader(http.StatusOK)

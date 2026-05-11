@@ -3,10 +3,17 @@
 //
 // TypeScript identity JWKS cache unit tests for fetch and cache behavior.
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { getKeySet } from '../../../../packages/identity/ts/src/jwks.js'
 
+const TTL_MS = 5 * 60 * 1000
+
 describe('getKeySet', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
   it('fetches JWKS from the issuer well-known endpoint', async () => {
     const issuer = 'https://issuer-one.example/'
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ keys: [] }) })
@@ -35,4 +42,45 @@ describe('getKeySet', () => {
 
     await expect(getKeySet('https://issuer-three.example')).rejects.toThrow('JWKS fetch failed: 503')
   })
+
+  it('returns stale key set and triggers background revalidation after TTL', async () => {
+    vi.useFakeTimers()
+    const issuer = 'https://issuer-stale.example'
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ keys: [] }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const stale = await getKeySet(issuer)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    vi.advanceTimersByTime(TTL_MS + 1)
+
+    const returned = await getKeySet(issuer)
+    expect(returned).toBe(stale)
+
+    await vi.runAllTimersAsync()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('resets revalidating flag when background refresh fails', async () => {
+    vi.useFakeTimers()
+    const issuer = 'https://issuer-stale-fail.example'
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ keys: [] }) })
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ keys: [] }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getKeySet(issuer)
+
+    vi.advanceTimersByTime(TTL_MS + 1)
+    await getKeySet(issuer)
+    await vi.runAllTimersAsync()
+
+    vi.advanceTimersByTime(TTL_MS + 1)
+    await getKeySet(issuer)
+    await vi.runAllTimersAsync()
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
 })
+

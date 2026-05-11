@@ -11,6 +11,7 @@ COPY packages/identity/go/ packages/identity/go/
 COPY packages/revocation/go/ packages/revocation/go/
 COPY packages/transport/mcp/go/ packages/transport/mcp/go/
 COPY packages/connectors/nethttp/go/ packages/connectors/nethttp/go/
+COPY packages/connectors/redis/go/ packages/connectors/redis/go/
 COPY packages/sdk/go/ packages/sdk/go/
 COPY services/sts/ services/sts/
 COPY services/audit/ services/audit/
@@ -27,5 +28,5 @@ COPY --from=builder /gateway /gateway
 USER 65532:65532
 EXPOSE 8081
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget -qO- http://127.0.0.1:8081/health || exit 1
+    CMD wget -qO- http://127.0.0.1:8081/ready || exit 1
 ENTRYPOINT ["/gateway"]

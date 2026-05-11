@@ -11,6 +11,7 @@ COPY packages/identity/go/ packages/identity/go/
 COPY packages/revocation/go/ packages/revocation/go/
 COPY packages/transport/mcp/go/ packages/transport/mcp/go/
 COPY packages/connectors/nethttp/go/ packages/connectors/nethttp/go/
+COPY packages/connectors/redis/go/ packages/connectors/redis/go/
 COPY packages/sdk/go/ packages/sdk/go/
 COPY services/sts/ services/sts/
 COPY services/audit/ services/audit/
@@ -27,7 +28,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/coordinator/package.json apps/coordinator/package.json
 COPY packages/core/ts/package.json packages/core/ts/package.json
 COPY packages/identity/ts/package.json packages/identity/ts/package.json
-RUN npm install -g pnpm@10.28.0 && pnpm install --frozen-lockfile --ignore-scripts --filter @caracalai/coordinator...
+RUN npm install -g pnpm@11.0.9 && pnpm install --frozen-lockfile --ignore-scripts --filter @caracalai/coordinator...
 COPY packages/core/ts/tsconfig.json packages/core/ts/tsconfig.json
 COPY packages/core/ts/src packages/core/ts/src
 COPY packages/identity/ts/tsconfig.json packages/identity/ts/tsconfig.json
@@ -47,5 +48,5 @@ COPY apps/coordinator/start.sh /start.sh
 RUN chmod +x /start.sh && chown -R node:node /app /relay /start.sh
 USER node
 EXPOSE 4000
-HEALTHCHECK --interval=10s --timeout=3s --retries=3 CMD wget -qO- "http://127.0.0.1:${PORT:-4000}/health" || exit 1
+HEALTHCHECK --interval=10s --timeout=3s --retries=3 CMD wget -qO- "http://127.0.0.1:${PORT:-4000}/ready" || exit 1
 ENTRYPOINT ["/start.sh"]

@@ -151,10 +151,10 @@ describe("agent lifecycle and delegation", () => {
     const fakeFetch = vi.fn(async (input: any, init: RequestInit = {}) => {
       calls.push({ url: String(input), init });
       if (init.method === "POST" && String(input).endsWith("/agents")) {
-        return new Response(JSON.stringify({ agent_session_id: "agent-1" }), { status: 200 });
+        return new Response(JSON.stringify({ id: "agent-1" }), { status: 200 });
       }
       if (init.method === "POST" && String(input).endsWith("/delegations")) {
-        return new Response(JSON.stringify({ delegation_edge_id: "edge-1" }), { status: 200 });
+        return new Response(JSON.stringify({ id: "edge-1" }), { status: 200 });
       }
       return new Response(null, { status: 204 });
     }) as unknown as typeof fetch;

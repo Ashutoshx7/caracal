@@ -131,6 +131,15 @@ export const localBootstrapRoutes: FastifyPluginAsync = async (fastify) => {
         [RESOURCE_ID, ZONE_ID, RESOURCE_NAME],
       )
       await client.query(
+        `INSERT INTO gateway_resource_bindings (resource_identifier, zone_id, application_id)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (resource_identifier) DO UPDATE
+         SET zone_id = EXCLUDED.zone_id,
+             application_id = EXCLUDED.application_id,
+             updated_at = now()`,
+        [RESOURCE_NAME, ZONE_ID, APP_ID],
+      )
+      await client.query(
         `INSERT INTO policies (id, zone_id, name, description, owner_type, created_by)
          VALUES ($1, $2, 'Local Dev Allow', 'Allows the local CLI example resource.', 'customer', 'local-bootstrap')
          ON CONFLICT (id) DO NOTHING`,
@@ -187,5 +196,4 @@ export const localBootstrapRoutes: FastifyPluginAsync = async (fastify) => {
     } satisfies BootstrapResult)
   })
 }
-
 

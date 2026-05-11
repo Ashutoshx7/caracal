@@ -21,8 +21,10 @@ const DelegationBody = z.object({
   receiver_application_id: z.string().min(1),
   resource_id: z.string().min(1).nullable().default(null),
   scopes: z.array(z.string().min(1)).default([]),
-  constraints_json: z.record(z.unknown()).default({}),
-  expires_at: z.string().datetime(),
+  constraints: z.record(z.unknown()).optional(),
+  constraints_json: z.record(z.unknown()).optional(),
+  expires_at: z.string().datetime().optional(),
+  ttl_seconds: z.number().int().min(1).max(86400).optional(),
 })
 
 const ListQuery = z.object({
@@ -34,6 +36,13 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/zones/:zoneId/delegations', async (req, reply) => {
     const { zoneId } = req.params as { zoneId: string }
     const body = DelegationBody.parse(req.body)
+    const constraints = normalizedConstraints(body.constraints_json, body.constraints, body.ttl_seconds)
+    const expiresAt = body.expires_at
+      ?? (typeof constraints.expires_at === 'string' ? constraints.expires_at : undefined)
+      ?? (body.ttl_seconds ? new Date(Date.now() + body.ttl_seconds * 1000).toISOString() : undefined)
+    if (!expiresAt) {
+      return reply.code(400).send({ error: 'delegation_expiry_required' })
+    }
     if (!ownsApplication(req, body.issuer_application_id)
       && !requireScope(req, `coordinator.delegate_from:${body.issuer_application_id}`)) {
       return reply.code(403).send({ error: 'issuer_ownership_required' })
@@ -47,10 +56,10 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
     if (body.source_session_id === body.target_session_id) {
       return reply.code(400).send({ error: 'self_delegation_denied' })
     }
-    if (new Date(body.expires_at).getTime() <= Date.now()) {
+    if (new Date(expiresAt).getTime() <= Date.now()) {
       return reply.code(400).send({ error: 'delegation_expired' })
     }
-    const maxHops = body.constraints_json?.max_hops
+    const maxHops = constraints.max_hops
     if (maxHops !== undefined && (typeof maxHops !== 'number' || maxHops <= 0)) {
       return reply.code(400).send({ error: 'invalid_max_hops' })
     }
@@ -107,8 +116,8 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
           body.receiver_application_id,
           body.resource_id,
           body.scopes,
-          body.constraints_json,
-          body.expires_at,
+          constraints,
+          expiresAt,
         ],
       )
       const epoch = await bumpEpoch(client, zoneId)
@@ -121,7 +130,7 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
         epoch,
       })
       await client.query('COMMIT')
-      return reply.code(201).send(rows[0])
+      return reply.code(201).send(delegationResponse(rows[0]))
     } catch (err) {
       await client.query('ROLLBACK')
       throw err
@@ -251,6 +260,30 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
       client.release()
     }
   })
+}
+
+function normalizedConstraints(
+  constraintsJson: Record<string, unknown> | undefined,
+  constraints: Record<string, unknown> | undefined,
+  ttlSeconds: number | undefined,
+): Record<string, unknown> {
+  const out = { ...(constraintsJson ?? {}), ...(constraints ?? {}) }
+  if (typeof out.max_depth === 'number' && out.max_hops === undefined) {
+    out.max_hops = out.max_depth
+  }
+  if (ttlSeconds !== undefined && out.ttl_seconds === undefined) {
+    out.ttl_seconds = ttlSeconds
+  }
+  return out
+}
+
+function delegationResponse(row: unknown): unknown {
+  if (!row || typeof row !== 'object') return row
+  const out = { ...(row as Record<string, unknown>) }
+  if (typeof out.id === 'string') {
+    out.delegation_edge_id = out.id
+  }
+  return out
 }
 
 const EDGE_LIST_FIELDS = {

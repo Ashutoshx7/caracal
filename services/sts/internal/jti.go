@@ -18,17 +18,18 @@ const jtiRegistryPrefix = "audit:jti:"
 
 // recordIssuedJTI writes a SETNX entry keyed by the new token's JTI with TTL equal
 // to the token lifetime. A SETNX collision indicates either a duplicate UUIDv7
-// (cryptographically improbable) or a clock anomaly; either case is surfaced as a
-// jti_collision audit event so operators can investigate.
-func (s *Server) recordIssuedJTI(ctx context.Context, jti, appID, zoneID, requestID string, ttl time.Duration) {
+// (cryptographically improbable) or a clock anomaly. Either case is treated as a
+// hard failure: the audit event is emitted and the caller must reject the
+// exchange so the duplicate token never reaches a relying party.
+func (s *Server) recordIssuedJTI(ctx context.Context, jti, appID, zoneID, requestID string, ttl time.Duration) error {
 	if s.redis == nil || jti == "" {
-		return
+		return nil
 	}
 	value := fmt.Sprintf("%s|%d", appID, time.Now().Unix())
 	created, err := s.redis.SetNXTTL(ctx, jtiRegistryPrefix+jti, value, ttl)
 	if err != nil {
 		s.log.Error().Err(err).Str("jti", jti).Msg("jti registry write failed")
-		return
+		return err
 	}
 	if !created {
 		id, _ := uuid.NewV7()
@@ -42,11 +43,13 @@ func (s *Server) recordIssuedJTI(ctx context.Context, jti, appID, zoneID, reques
 			ZoneID:           zoneID,
 			EventType:        "jti_collision",
 			RequestID:        requestID,
-			Decision:         "warn",
+			Decision:         "deny",
 			EvaluationStatus: "anomaly",
 			MetadataJSON:     meta,
 			OccurredAt:       time.Now(),
 		})
-		s.log.Warn().Str("jti", jti).Str("app_id", appID).Msg("jti registry collision")
+		s.log.Error().Str("jti", jti).Str("app_id", appID).Msg("jti registry collision; rejecting exchange")
+		return fmt.Errorf("jti collision: %s", jti)
 	}
+	return nil
 }
