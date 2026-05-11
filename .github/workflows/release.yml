@@ -103,6 +103,7 @@ jobs:
             -e packages/sdk/python \
             -e packages/transport/mcp/python \
             -e packages/connectors/fastmcp/python \
+            -e packages/connectors/redis/python \
             coverage==7.13.5 cryptography==48.0.0
 
       - name: Generate CLI embedded assets
@@ -123,6 +124,7 @@ jobs:
           pnpm --dir packages/connectors/express/ts build
           pnpm --dir packages/connectors/fastmcp/ts build
           pnpm --dir packages/connectors/postgres/ts build
+          pnpm --dir packages/connectors/redis/ts build
           pnpm --dir apps/api build
           pnpm --dir apps/coordinator build
 
@@ -139,7 +141,7 @@ jobs:
 
       - name: Python tests
         env:
-          PYTHONPATH: ${{ github.workspace }}/packages/core/python:${{ github.workspace }}/packages/identity/python:${{ github.workspace }}/packages/revocation/python:${{ github.workspace }}/packages/sdk/python:${{ github.workspace }}/packages/transport/mcp/python:${{ github.workspace }}/packages/connectors/fastmcp/python:${{ github.workspace }}/tests/shared/test-utils/python
+          PYTHONPATH: ${{ github.workspace }}/packages/core/python:${{ github.workspace }}/packages/identity/python:${{ github.workspace }}/packages/revocation/python:${{ github.workspace }}/packages/sdk/python:${{ github.workspace }}/packages/transport/mcp/python:${{ github.workspace }}/packages/connectors/fastmcp/python:${{ github.workspace }}/packages/connectors/redis/python:${{ github.workspace }}/tests/shared/test-utils/python
         run: pnpm run test:python
 
   cli:
@@ -305,7 +307,8 @@ jobs:
             packages/transport/a2a/ts \
             packages/connectors/express/ts \
             packages/connectors/fastmcp/ts \
-            packages/connectors/postgres/ts
+            packages/connectors/postgres/ts \
+            packages/connectors/redis/ts
           do
             pnpm --dir "$d" pack --pack-destination /tmp/caracal-pack
           done
@@ -337,6 +340,7 @@ jobs:
           - packages/sdk/python
           - packages/transport/mcp/python
           - packages/connectors/fastmcp/python
+          - packages/connectors/redis/python
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:

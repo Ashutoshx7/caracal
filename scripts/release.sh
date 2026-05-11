@@ -54,7 +54,7 @@ done
 tag="${prefix}${suffix}"
 
 pending="$(find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' ! -name 'instructions.md' 2>/dev/null | wc -l | tr -d ' ')"
-if [[ "$pending" == "0" ]]; then
+if [[ "$pending" == "0" && "$mode" != "dryrun" ]]; then
     echo "release: no pending changesets in .changeset/" >&2
     echo "release: run \`pnpm changeset\` on each PR that touches a published package" >&2
     exit 1
@@ -64,20 +64,28 @@ echo "release: planned tag = ${tag}"
 echo "release: ${pending} pending changeset(s)"
 
 if [[ "$mode" == "dryrun" ]]; then
-    pnpm changeset status
-    pnpm changeset version
-    echo "release: --- dry-run package version preview ---"
-    git --no-pager diff -- '**/package.json'
-    git checkout -- .
-    git clean -fd .changeset/ packages/ apps/
+    if [[ "$pending" != "0" ]]; then
+        pnpm changeset status
+        pnpm changeset version
+        echo "release: --- dry-run package version preview ---"
+        git --no-pager diff -- '**/package.json'
+        git checkout -- .
+        git clean -fd .changeset/ packages/ apps/
+    else
+        echo "release: initial release; no changesets to apply"
+    fi
     echo "release: dry-run complete; no commits made"
     exit 0
 fi
 
-pnpm changeset version
+if [[ "$pending" != "0" ]]; then
+    pnpm changeset version
+fi
 
 git add -A
-git commit -m "release: ${tag}"
+if ! git diff --cached --quiet; then
+    git commit -m "release: ${tag}"
+fi
 git tag -a "${tag}" -m "${tag}"
 git push origin main
 git push origin "${tag}"
