@@ -9,6 +9,7 @@ from caracalai_identity import (
     AgentIdentityRequiredError,
     ChainMismatchError,
     DelegationRequiredError,
+    HopCountExceededError,
     JwtConfig,
     ScopeInsufficientError,
     TokenInvalidError,
@@ -37,6 +38,7 @@ async def authenticate(
     require_agent: bool = False,
     require_delegation: bool = False,
     require_chain_contains: list[str] | None = None,
+    max_hop_count: int | None = None,
 ) -> AuthResult:
     if not token:
         return AuthResult(None, AuthError("missing_token", "Missing bearer token"))
@@ -49,6 +51,7 @@ async def authenticate(
         require_agent=require_agent,
         require_delegation=require_delegation,
         require_chain_contains=require_chain_contains or [],
+        max_hop_count=max_hop_count,
     )
 
     try:
@@ -61,6 +64,8 @@ async def authenticate(
         return AuthResult(None, AuthError("delegation_required", "Delegation required"))
     except ChainMismatchError as err:
         return AuthResult(None, AuthError("chain_mismatch", str(err)))
+    except HopCountExceededError as err:
+        return AuthResult(None, AuthError("hop_count_exceeded", str(err)))
     except ZoneInvalidError:
         return AuthResult(None, AuthError("invalid_zone", "Token zone validation failed"))
     except TokenInvalidError:
