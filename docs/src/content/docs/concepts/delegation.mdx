@@ -2,6 +2,126 @@
 title: Delegation Graph
 description: Directed, cycle-checked edges that pass scoped authority between agent sessions.
 pageType: concept
+keywords: [delegation, graph, cascade, revocation, edge, cycle detection, hop, authority]
 ---
 
-Directed, cycle-checked edges that pass scoped authority between agent sessions.
+Delegation is the mechanism by which one agent passes a subset of its authority to another. In Caracal, delegations are directed edges in a graph tracked by the Coordinator. This page covers the graph structure, how delegation edges work, the limits enforced on the graph, and what happens when an edge is revoked.
+
+## What delegation is
+
+When agent A wants to call agent B to do work on A's behalf, A can create a delegation edge that grants B a scoped subset of A's authority. B then uses that edge to obtain its own mandate from the STS, backed by A's authority but restricted to what the edge permits.
+
+Delegation is explicit and tracked. Every edge is stored in the database. The full lineage — from the root agent to the deepest delegated agent — is embedded in every mandate as the `delegation_chain` claim, making the authority provenance visible to any resource that inspects the token.
+
+## The delegation edge
+
+A delegation edge connects two agent sessions:
+
+| Field | Description |
+| ----- | ----------- |
+| `source_session_id` | The session ID of the delegating agent |
+| `target_session_id` | The session ID of the agent receiving authority |
+| `issuer_application_id` | The application that owns the source session |
+| `receiver_application_id` | The application that owns the target session |
+| `resource_id` | Optional; if set, B's authority is restricted to this single resource |
+| `scopes` | The scopes B may request |
+| `constraints_json` | Caveats on the delegation (see [Caveats and Constraints](./caveat/)) |
+| `status` | `"active"` or `"revoked"` |
+| `expires_at` | When the edge expires |
+
+A delegation edge is a claim by A that B is authorized to act within the stated bounds. The STS independently validates the edge before issuing any mandate to B.
+
+## The graph structure and limits
+
+The Coordinator enforces hard limits on the delegation graph:
+
+| Limit | Value | Description |
+| ----- | ----- | ----------- |
+| `MAX_DEPTH` | 10 | Maximum depth of the session tree (hops) |
+| `MAX_CHILDREN` | 10 | Maximum direct children per session |
+| `MAX_PER_ZONE` | 50 | Maximum active sessions per zone per application |
+| `MAX_PER_APP` | 200 | Maximum active sessions per application across all zones |
+
+These limits prevent unbounded graph growth and make the cascade behavior of revocation predictable.
+
+## Cycle detection
+
+The Coordinator uses a recursive CTE to detect cycles before accepting a new delegation edge:
+
+```sql
+WITH RECURSIVE graph AS (
+  SELECT id, source_session_id, target_session_id, ARRAY[id] AS visited
+  FROM delegation_edges WHERE id = $1 AND zone_id = $2
+  UNION ALL
+  SELECT e.id, e.source_session_id, e.target_session_id, g.visited || e.id
+  FROM delegation_edges e
+  JOIN graph g ON g.target_session_id = e.source_session_id
+  WHERE e.zone_id = $2
+    AND NOT (e.id = ANY(g.visited))
+    AND g.depth < MAX_DEPTH
+)
+```
+
+If the graph already contains a path back to the source session, the edge is rejected with an error. This prevents circular delegations regardless of depth.
+
+## How the STS validates a delegation edge
+
+When an agent presents a `delegation_edge_id` in a token exchange request, the STS:
+
+1. Loads the delegation edge from the database and verifies it is `status = "active"` and not expired.
+2. Validates the edge's `target_session_id` matches the requesting session.
+3. Computes the full delegation path using a recursive CTE, tracing back to the root session.
+4. Checks that the requested scopes are a subset of the edge's `scopes`.
+5. Validates caveats: TTL, hop count, and budget (see [Caveats and Constraints](./caveat/)).
+6. Passes the delegation edge metadata to OPA in `input.delegation_edge`, including the full path and constraints.
+7. Embeds the delegation chain in the issued mandate:
+   - `delegation_edge_id`: the ID of this edge
+   - `delegation_chain`: ordered array of `{applicationId, agentSessionId, delegationEdgeId}` for every hop
+   - `hop_count`: depth of the chain
+   - `graph_epoch`: version of the delegation graph at issuance, enabling downstream detection of stale chains
+
+## Cascade revocation
+
+Revoking a delegation edge revokes the entire subtree rooted at that edge. The Coordinator uses a recursive CTE to find all downstream edges and sessions:
+
+```
+Edge A→B revoked
+  → B's session terminated
+  → Edge B→C revoked
+    → C's session terminated
+    → Edge C→D revoked
+      → D's session terminated
+```
+
+For each revoked session, the Coordinator enqueues a revocation event through the outbox pattern to the `caracal.sessions.revoke` Redis stream. The STS and Gateway subscribe to this stream and propagate the revocation:
+
+- The **STS** marks the session ID as revoked in its revocation cache, rejecting any future token exchanges for that session.
+- The **Gateway** checks the revocation cache on every request and at every 4 KB chunk boundary during streaming. If a session is revoked mid-stream, the Gateway closes the upstream connection and sets a `X-Caracal-Revoked` response trailer.
+
+Revocation propagates in near real-time via the Redis stream. The Gateway's revocation cache holds entries for 24 hours after revocation — sufficient to cover any in-flight per-call token's 15-minute TTL.
+
+## The delegation chain in mandates
+
+Every mandate issued to a delegated agent carries the full lineage:
+
+```json
+{
+  "sub": "app-uuid",
+  "agent_session_id": "session-C",
+  "delegation_edge_id": "edge-B-to-C",
+  "hop_count": 2,
+  "delegation_chain": [
+    { "applicationId": "app-A", "agentSessionId": "session-A" },
+    { "applicationId": "app-B", "agentSessionId": "session-B", "delegationEdgeId": "edge-A-to-B" },
+    { "applicationId": "app-C", "agentSessionId": "session-C", "delegationEdgeId": "edge-B-to-C" }
+  ]
+}
+```
+
+Resources and policies can inspect `delegation_chain` to verify the authority provenance, enforce that specific applications appear in the chain, or restrict access based on chain depth.
+
+## Next steps
+
+- [Caveats and Constraints](./caveat/) — the constraints that can be attached to a delegation edge
+- [Sessions and Revocation](./sessions-revocation/) — the session lifecycle and revocation event stream
+- [Authority Model](./authority-model/) — how delegation edges are validated by the STS at exchange time

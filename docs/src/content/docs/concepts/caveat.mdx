@@ -2,6 +2,102 @@
 title: Caveats and Constraints
 description: TTL, hop, budget, and approval restrictions that travel with a delegation edge.
 pageType: concept
+keywords: [caveat, constraints, TTL, max_hops, budget, delegation, restriction]
 ---
 
-TTL, hop, budget, and approval restrictions that travel with a delegation edge.
+Caveats are restrictions attached to a delegation edge that limit the scope of the delegated authority. They travel with the edge and are enforced by the STS at every token exchange that relies on the edge. This page covers each caveat type, how they are enforced, and how they interact.
+
+## What caveats are
+
+When application A creates a delegation edge to application B, A can attach caveats that restrict what B can do with the delegated authority. These caveats are stored in `constraints_json` on the delegation edge and cannot be modified after the edge is created — they are part of the edge's definition.
+
+Caveats narrow authority; they cannot expand it. B can request only what the edge's `scopes` permit, and the caveats impose additional limits on top of that.
+
+## Caveat types
+
+### `ttl_seconds`
+
+Caps the lifetime of any per-call token issued using this delegation edge.
+
+When the STS issues a mandate to a delegated agent, it caps the token TTL at the lesser of:
+- The requested `ttl_seconds` in the exchange request
+- The edge's `ttl_seconds` caveat
+- The system-wide per-call TTL ceiling (15 minutes)
+
+If B requests a token with a 30-minute TTL but the edge has `ttl_seconds = 300`, the token expires in 5 minutes.
+
+The edge itself also carries an `expires_at` timestamp. The STS rejects any exchange for an expired edge.
+
+### `max_hops`
+
+Limits how many times authority can be re-delegated along the chain.
+
+If A→B has `max_hops = 1`, B cannot delegate its authority further to C. The STS checks the current hop count against `max_hops` before allowing an exchange on the edge. A delegation chain that exceeds this limit is rejected.
+
+The system-wide maximum depth is 10 (`MAX_DEPTH`). Edge-level `max_hops` can be more restrictive but never more permissive than the system limit.
+
+:::note
+The `max_depth` field in the SDK's `DelegationConstraints` type is normalized to `max_hops` in the Coordinator. Both names refer to the same constraint.
+:::
+
+### `budget`
+
+A list of scopes that B is allowed to request. This is an additional restriction on top of the edge's `scopes` array.
+
+The `budget` caveat is useful when A wants to delegate a broad set of scopes but limit B to a narrower operational set. For example: the edge `scopes` are `["read", "write", "transfer"]` but the budget is `["read"]`, so B can only request `read` regardless of the edge scopes.
+
+The STS checks that the exchange's requested scopes are contained within the budget before evaluating the policy.
+
+### `policy_approved`
+
+A boolean flag that a policy can check to distinguish pre-approved delegations from ad hoc ones.
+
+This caveat has no enforcement logic in the STS itself — it is purely a signal for policy rules. A policy can inspect `input.delegation_edge.constraints_json.policy_approved` to grant broader access when the delegation was explicitly approved through an out-of-band process.
+
+## How caveats are enforced
+
+At token exchange, after the delegation edge is loaded and validated as active, the STS applies caveats in sequence:
+
+```
+1. Is the edge active and not expired?        → reject if no
+2. Does the target session match?             → reject if no
+3. Are requested scopes ⊆ edge scopes?        → reject if no
+4. Are requested scopes ⊆ budget?            → reject if budget set and no
+5. Is the token TTL ≤ edge ttl_seconds?       → cap to edge limit
+6. Is the hop count ≤ max_hops?              → reject if exceeded
+7. Pass edge metadata to OPA for evaluation  → allow / deny
+```
+
+Caveat enforcement happens before OPA evaluation. If any caveat check fails, the STS returns an error without calling OPA. The failure is recorded in the audit ledger.
+
+The edge's `constraints_json` is also passed verbatim to OPA in `input.delegation_edge.constraints_json`, so policies can write additional logic against caveat values — for example, denying exchanges for edges with `max_hops > 2`, or requiring `policy_approved = true` for high-value resources.
+
+## Caveat immutability
+
+Caveats are set at edge creation and cannot be changed. An edge with incorrect constraints must be revoked and replaced. This immutability is intentional: it ensures that the authority given at delegation time does not silently expand.
+
+## Example delegation with caveats
+
+```typescript
+// TypeScript SDK
+await caracal.delegate(
+  {
+    to: childAgentSessionId,
+    toApplicationId: "app-b",
+    scopes: ["resource://payments:read"],
+    constraints: {
+      ttlSeconds: 300,   // tokens expire in 5 minutes
+      maxDepth: 1,       // no further re-delegation
+    },
+  },
+  async () => {
+    // Child agent has authority for 5 minutes, read-only, no sub-delegation
+  }
+);
+```
+
+## Next steps
+
+- [Delegation Graph](./delegation/) — how edges form a tracked graph with cycle detection and cascade revocation
+- [Sessions and Revocation](./sessions-revocation/) — what happens to sessions when an edge is revoked
+- [Authority Model](./authority-model/) — how the STS enforces caveats before calling OPA

@@ -2,6 +2,129 @@
 title: Authority Model
 description: How Caracal enforces authority before a request reaches its target.
 pageType: concept
+keywords: [pre-execution, enforcement, OPA, STS, token exchange, authorization, deny-all]
 ---
 
-How Caracal enforces authority before a request reaches its target.
+Caracal's central design decision is that authorization is enforced at credential issuance, not at the point of resource access. A credential is only issued after a policy explicitly permits it. This page explains what that means mechanically and why the system is structured around that decision.
+
+## The enforcement point
+
+The **Security Token Service (STS)** is where enforcement happens. Every agent that wants to act — call a tool, access an API, read a resource — must first exchange its application credentials with the STS for a mandate. The STS issues that mandate only if an OPA policy evaluation returns `decision = "allow"`.
+
+This is pre-execution enforcement: the policy runs before the agent acts, not in logs after the fact.
+
+The alternative — middleware enforcement — issues a broad token at login and checks it at each resource. That model requires every resource to implement access control correctly, allows a broad token to be misused between resources, and makes revocation hard to propagate uniformly. Caracal enforces once, at the only choke point where all authority flows.
+
+## The exchange decision
+
+Each token exchange request carries:
+
+- The **principal**: the application making the request
+- One or more **resources** the agent wants access to
+- Optionally: a **subject token** to chain from ambient to per-call scope, a **delegation edge ID** to present delegated authority, and a **challenge response** to satisfy a step-up
+
+The STS evaluates the active policy set against each requested resource independently, making one OPA call per resource. Resources can be allowed and denied in the same exchange. The STS issues a mandate covering only the allowed subset and records a deny audit event for the rest.
+
+The OPA input for each evaluation:
+
+```json
+{
+  "principal": {
+    "type": "application",
+    "id": "<application_id>",
+    "zone_id": "<zone_id>",
+    "credential_type": "token",
+    "agent_session_id": "<session_id>"
+  },
+  "resource": {
+    "type": "resource",
+    "id": "<resource_id>",
+    "identifier": "resource://payments",
+    "scopes": ["transfer", "read"]
+  },
+  "action": { "id": "TokenExchange" },
+  "session": { "id": "<session_id>" },
+  "delegation_edge": {
+    "id": "<edge_id>",
+    "source_session_id": "...",
+    "target_session_id": "...",
+    "scopes": ["read"],
+    "constraints_json": { "max_hops": 1, "ttl_seconds": 300 }
+  },
+  "context": {
+    "actor_claims": { ... },
+    "subject_claims": { ... },
+    "trace_id": "...",
+    "challenge_resolved": false,
+    "requested_scopes": ["read"]
+  }
+}
+```
+
+Every field in `principal`, `resource`, `delegation_edge`, and `context` is available to the policy for decision-making.
+
+## The decision contract
+
+A policy must return:
+
+```json
+{
+  "decision": "allow",
+  "evaluation_status": "complete",
+  "determining_policies": ["<policy_id>"],
+  "diagnostics": {}
+}
+```
+
+The STS accepts the result only when both conditions hold:
+
+1. `evaluation_status` is exactly `"complete"`. Any other value — `"partial"`, an error, an unrecognized string — results in a hard deny. A partial evaluation is indistinguishable from a misconfigured policy; the STS never issues a mandate from an incomplete decision.
+2. `decision` is exactly `"allow"`. Any other string is a deny.
+
+## The deny-all default
+
+When no policy set is active in a zone, the OPA engine installs a deny-all fallback:
+
+```rego
+package caracal.authz
+result := {
+  "decision": "deny",
+  "evaluation_status": "complete",
+  "determining_policies": [],
+  "diagnostics": [{"reason": "no_active_policy_set"}]
+}
+```
+
+There is no default-allow state. A zone with no active policy set blocks all token exchanges unconditionally.
+
+## Per-resource independent evaluation
+
+Each resource in a request gets its own OPA evaluation call with that resource's `identifier`, `id`, and `scopes` in the input. A policy can allow `resource://files` while denying `resource://payments` in the same exchange.
+
+Denied resources are recorded in the audit ledger with `decision = "deny"` and do not block the mandate for the permitted resources.
+
+## Defense in depth after issuance
+
+Pre-execution enforcement at the STS is the primary gate. Two additional layers run after issuance.
+
+**The Gateway** validates every inbound request:
+- Verifies the ES256 signature against the zone's JWKS endpoint
+- Checks the JTI against the replay cache — each per-call token is accepted exactly once
+- Confirms the requested resource appears in the mandate's `target` claim
+- Checks the session ID against the revocation cache; if the session was revoked mid-stream, the response is truncated at the next 4 KB chunk boundary and a `X-Caracal-Revoked` trailer is set
+
+**JTI replay prevention** at the STS:
+- On issuance, each JTI is written to Redis with `SETNX` and TTL equal to the token lifetime
+- If `SETNX` fails, the STS rejects the exchange and emits an audit event with `event_type = jti_collision`
+
+These layers are defense in depth. The STS policy decision is the authoritative gate; the Gateway and replay check prevent token theft and reuse.
+
+## What the authority model does not do
+
+Caracal controls whether an agent is permitted to make a call — not what the agent says inside that call. Semantic content filtering, prompt injection detection, and output validation are outside its scope.
+
+## Next steps
+
+- [Mandate](./mandate/) — the credential produced when a policy allows the exchange
+- [Policy](./policy/) — how to write Rego that returns the required decision shape
+- [Zone](./zone/) — the tenancy boundary that scopes keys, policies, and resources

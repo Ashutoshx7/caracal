@@ -2,6 +2,126 @@
 title: Mandate
 description: The short-lived, ES256-signed JWT that carries scoped authority for a single agent action.
 pageType: concept
+keywords: [mandate, JWT, ES256, ambient token, per-call token, JTI, replay, token exchange]
 ---
 
-The short-lived, ES256-signed JWT that carries scoped authority for a single agent action.
+A mandate is the credential Caracal issues to an agent after a policy allows the token exchange. It is an ES256-signed JWT that asserts exactly what the agent is permitted to do, for how long, and in which zone. This page describes its structure, the two token types, and how replay protection works.
+
+## Two token types
+
+Every mandate carries a `use` claim that distinguishes its purpose:
+
+### Ambient token (`use = "ambient"`)
+
+An ambient token is issued at the start of an agent session when no `subject_token` is presented in the exchange. It represents the agent's identity and acts as a re-presentable credential for narrowing into per-call tokens.
+
+- **TTL**: 60 minutes
+- **Purpose**: proves who the agent is; presented back to the STS to obtain per-call tokens bound to specific resources
+- **Re-use**: can be presented as `subject_token` in subsequent exchanges to derive per-call tokens; cannot be presented to the Gateway directly as an authorization credential
+
+### Per-call token (`use = "per_call"`)
+
+A per-call token is issued when an ambient token is presented as the `subject_token`. It is scoped to a specific set of resources and presented to the Gateway or a resource directly.
+
+- **TTL**: 15 minutes
+- **Purpose**: authorizes one call or a set of calls within that window to specific resources
+- **Re-use**: cannot be presented as `subject_token` for further exchange — this prevents subject confusion across the ambient/per-call boundary (RFC 8693 §2.1 mitigation)
+
+The distinction exists because the STS needs to know whether a token is being used to identify an agent (ambient) or to authorize a specific action (per-call). Mixing the two roles leads to confusion about delegation scope.
+
+## JWT claims
+
+A mandate carries the following claims in addition to standard JWT registered claims (`iss`, `sub`, `aud`, `exp`, `iat`, `jti`):
+
+| Claim | Type | Description |
+| ----- | ---- | ----------- |
+| `use` | string | `"ambient"` or `"per_call"` |
+| `zone_id` | string | Zone this token is bound to |
+| `client_id` | string | Application ID of the issuing principal |
+| `scope` | string | Space-separated OAuth scopes granted |
+| `target` | string[] | Resource identifiers this token covers (per-call only) |
+| `sid` | string | Session ID binding the token to a specific agent session |
+| `agent_session_id` | string | Coordinator session ID |
+| `delegation_edge_id` | string | ID of the delegation edge, if delegated |
+| `source_session_id` | string | Originating session ID in a delegation chain |
+| `target_session_id` | string | Receiving session ID in a delegation chain |
+| `delegation_path` | string[] | Ordered list of session IDs in the delegation chain |
+| `delegation_chain` | object[] | Full chain of `{applicationId, agentSessionId, delegationEdgeId}` hops |
+| `hop_count` | number | Number of delegation hops from root |
+| `graph_epoch` | number | Epoch of the delegation graph at issuance |
+
+The `target` claim on per-call tokens is what prevents scope creep: the Gateway verifies that the resource being accessed appears in `target`, and rejects tokens that cover a different resource even if they have matching scopes.
+
+## Signing and verification
+
+Mandates are signed with ES256 (ECDSA P-256 + SHA-256). Each zone has its own signing key pair.
+
+**Issuance**: The STS decrypts the zone's signing key from `dek_ciphertext` in the database using the `ZONE_KEK`, then signs the JWT with the zone's private key.
+
+**Verification**: The Gateway and connectors retrieve the zone's public keys from the STS's JWKS endpoint:
+
+```
+GET /zones/{zoneId}/.well-known/jwks.json
+```
+
+The JWKS endpoint serves the two most recent signing keys for the zone, enabling key rotation without breaking in-flight tokens.
+
+JWKS responses are cached in-process. The Gateway caches per zone and refreshes every 5 minutes.
+
+## JTI replay protection
+
+Each mandate carries a unique `jti` (JWT ID). Per-call tokens are subject to replay protection:
+
+1. On issuance, the STS writes `audit:jti:{jti}` to Redis using `SETNX` with TTL equal to the token lifetime.
+2. If `SETNX` fails, the JTI already exists — the STS rejects the exchange and emits a `jti_collision` audit event. Under normal operation this never occurs; it indicates clock skew or a UUID generation fault.
+3. The Gateway maintains a parallel check using `seen:jti:{jti}` in Redis, also with `SETNX`. The first request carrying a per-call token succeeds; any subsequent request with the same JTI is rejected with HTTP 401.
+
+Ambient tokens bypass Gateway JTI replay checks because they are intended to be re-presented to the STS multiple times.
+
+## Mandate lifetime and the exchange chain
+
+```
+Agent credentials → STS → ambient mandate (60 min)
+                              │
+                              └─ re-present as subject_token
+                              │
+                              ▼
+                           STS → per-call mandate (15 min) covering [resource://payments]
+                              │
+                              └─ present to Gateway → upstream
+```
+
+The ambient token is the long-lived session credential. It is exchanged at session start and stored in the agent's runtime environment (injected by `caracal run` as `CARACAL_SUBJECT_TOKEN`). The SDK exchanges this ambient token for per-call tokens as needed for each outbound call.
+
+## Token response shape
+
+The STS token exchange response:
+
+```json
+{
+  "access_token": "<per-call JWT>",
+  "token_type": "Bearer",
+  "expires_in": 900,
+  "scope": "read",
+  "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
+  "target_resources": ["resource://payments"],
+  "upstreams": {
+    "resource://payments": {
+      "url": "https://payments.internal/api",
+      "auth_mode": "caracal_jwt"
+    }
+  }
+}
+```
+
+`target_resources` lists the identifiers of resources the mandate covers. `upstreams` tells the Gateway or SDK how to route the request and what credential to present to the upstream.
+
+## What a mandate is not
+
+A mandate is not a session cookie, an API key, or a long-lived secret. It expires within minutes, is bound to a specific zone, and (for per-call tokens) can be used exactly once via the Gateway. An agent that loses its mandate simply requests a new one.
+
+## Next steps
+
+- [Authority Model](./authority-model/) — the STS enforcement model that produces mandates
+- [Policy](./policy/) — the Rego document that determines whether a mandate is issued
+- [Sessions and Revocation](./sessions-revocation/) — how sessions bound to mandates are managed
