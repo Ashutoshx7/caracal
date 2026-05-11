@@ -206,10 +206,10 @@ func TestVerifyRejectsChainMismatch(t *testing.T) {
 	}
 }
 
-func TestVerifyAcceptsChainWithLegacyKeys(t *testing.T) {
+func TestVerifyChainHopShortKeys(t *testing.T) {
 	token, issuer, closeServer := mintToken(t, jwt.MapClaims{
 		"delegation_chain": []map[string]any{
-			{"application_id": "app-parent", "agent_session_id": "s1", "delegation_edge_id": "e1"},
+			{"app": "app-parent", "session": "s1", "edge": "e1"},
 		},
 	})
 	defer closeServer()
@@ -225,6 +225,27 @@ func TestVerifyAcceptsChainWithLegacyKeys(t *testing.T) {
 	hop := claims.DelegationChain[0]
 	if hop.ApplicationID != "app-parent" || hop.AgentSessionID != "s1" || hop.DelegationEdgeID != "e1" {
 		t.Fatalf("wrong chain hop: %+v", hop)
+	}
+}
+
+func TestVerifyRejectsLongChainKeys(t *testing.T) {
+	token, issuer, closeServer := mintToken(t, jwt.MapClaims{
+		"delegation_chain": []map[string]any{
+			{"application_id": "app-parent", "agent_session_id": "s1", "delegation_edge_id": "e1"},
+		},
+	})
+	defer closeServer()
+
+	_, err := identity.Verify(token, identity.Config{
+		Issuer:               issuer,
+		Audience:             "resource://api",
+		RequireChainContains: []string{"app-parent"},
+	})
+	if err == nil {
+		t.Fatal("expected ChainMismatchError; long-form keys are no longer accepted")
+	}
+	if _, ok := err.(*identity.ChainMismatchError); !ok {
+		t.Fatalf("expected *ChainMismatchError, got %T: %v", err, err)
 	}
 }
 

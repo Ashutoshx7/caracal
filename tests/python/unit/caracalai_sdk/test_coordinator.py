@@ -1,0 +1,213 @@
+"""
+Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+Caracal, a product of Garudex Labs
+
+Coordinator REST client unit tests: spawn, delegate, and terminate flows.
+"""
+
+import unittest
+
+import httpx
+
+from caracalai_sdk.coordinator import (
+    AgentKind,
+    CoordinatorClient,
+    DelegationConstraints,
+    DelegationRequest,
+    SpawnRequest,
+    create_delegation,
+    spawn_agent,
+    terminate_agent,
+)
+
+
+def _client(handler) -> CoordinatorClient:
+    return CoordinatorClient(
+        base_url="http://coordinator.test",
+        _client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+
+class SpawnAgentTests(unittest.IsolatedAsyncioTestCase):
+    async def test_returns_agent_session_id_from_response(self) -> None:
+        async def handler(req: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"agent_session_id": "agent-1", "id": "agent-1"})
+
+        res = await spawn_agent(
+            _client(handler), "tok",
+            SpawnRequest(zone_id="z", application_id="app"),
+        )
+        self.assertEqual(res.agent_session_id, "agent-1")
+
+    async def test_falls_back_to_id_when_agent_session_id_absent(self) -> None:
+        async def handler(req: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"id": "agent-fallback"})
+
+        res = await spawn_agent(
+            _client(handler), "tok",
+            SpawnRequest(zone_id="z", application_id="app"),
+        )
+        self.assertEqual(res.agent_session_id, "agent-fallback")
+
+    async def test_raises_on_http_error(self) -> None:
+        async def handler(req: httpx.Request) -> httpx.Response:
+            return httpx.Response(500, json={"error": "internal"})
+
+        with self.assertRaises(httpx.HTTPStatusError):
+            await spawn_agent(
+                _client(handler), "tok",
+                SpawnRequest(zone_id="z", application_id="app"),
+            )
+
+    async def test_raises_when_response_has_no_id(self) -> None:
+        async def handler(req: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"other": "field"})
+
+        with self.assertRaises(KeyError):
+            await spawn_agent(
+                _client(handler), "tok",
+                SpawnRequest(zone_id="z", application_id="app"),
+            )
+
+    async def test_sends_optional_fields_when_set(self) -> None:
+        captured: list[dict] = []
+
+        async def handler(req: httpx.Request) -> httpx.Response:
+            import json
+            captured.append(json.loads(req.content))
+            return httpx.Response(200, json={"agent_session_id": "a-1"})
+
+        await spawn_agent(
+            _client(handler), "tok",
+            SpawnRequest(
+                zone_id="z",
+                application_id="app",
+                session_sid="sid-1",
+                parent_id="parent-1",
+                kind=AgentKind.EPHEMERAL,
+                ttl_seconds=60,
+                metadata={"purpose": "test"},
+            ),
+        )
+        body = captured[0]
+        self.assertEqual(body["session_sid"], "sid-1")
+        self.assertEqual(body["parent_id"], "parent-1")
+        self.assertEqual(body["kind"], "ephemeral")
+        self.assertEqual(body["ttl_seconds"], 60)
+        self.assertEqual(body["metadata"], {"purpose": "test"})
+
+
+class TerminateAgentTests(unittest.IsolatedAsyncioTestCase):
+    async def test_swallows_errors(self) -> None:
+        async def handler(req: httpx.Request) -> httpx.Response:
+            return httpx.Response(500)
+
+        # Must not raise
+        await terminate_agent(_client(handler), "tok", "z", "agent-1")
+
+    async def test_succeeds_on_204(self) -> None:
+        async def handler(req: httpx.Request) -> httpx.Response:
+            return httpx.Response(204)
+
+        await terminate_agent(_client(handler), "tok", "z", "agent-1")
+
+
+class CreateDelegationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_returns_delegation_edge_id(self) -> None:
+        async def handler(req: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"delegation_edge_id": "edge-1", "id": "edge-1"})
+
+        res = await create_delegation(
+            _client(handler), "tok",
+            DelegationRequest(
+                zone_id="z",
+                issuer_application_id="app",
+                source_session_id="agent-1",
+                target_session_id="agent-2",
+                receiver_application_id="app-2",
+                scopes=["tool:call"],
+            ),
+        )
+        self.assertEqual(res.delegation_edge_id, "edge-1")
+
+    async def test_falls_back_to_id_when_delegation_edge_id_absent(self) -> None:
+        async def handler(req: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"id": "edge-fallback"})
+
+        res = await create_delegation(
+            _client(handler), "tok",
+            DelegationRequest(
+                zone_id="z",
+                issuer_application_id="app",
+                source_session_id="agent-1",
+                target_session_id="agent-2",
+                receiver_application_id="app-2",
+                scopes=["tool:call"],
+            ),
+        )
+        self.assertEqual(res.delegation_edge_id, "edge-fallback")
+
+    async def test_raises_on_http_error(self) -> None:
+        async def handler(req: httpx.Request) -> httpx.Response:
+            return httpx.Response(403, json={"error": "forbidden"})
+
+        with self.assertRaises(httpx.HTTPStatusError):
+            await create_delegation(
+                _client(handler), "tok",
+                DelegationRequest(
+                    zone_id="z",
+                    issuer_application_id="app",
+                    source_session_id="agent-1",
+                    target_session_id="agent-2",
+                    receiver_application_id="app-2",
+                    scopes=["tool:call"],
+                ),
+            )
+
+    async def test_sends_constraints_and_ttl(self) -> None:
+        captured: list[dict] = []
+
+        async def handler(req: httpx.Request) -> httpx.Response:
+            import json
+            captured.append(json.loads(req.content))
+            return httpx.Response(200, json={"delegation_edge_id": "edge-1"})
+
+        await create_delegation(
+            _client(handler), "tok",
+            DelegationRequest(
+                zone_id="z",
+                issuer_application_id="app",
+                source_session_id="agent-1",
+                target_session_id="agent-2",
+                receiver_application_id="app-2",
+                scopes=["tool:call"],
+                constraints=DelegationConstraints(resources=["calendar"], max_depth=2),
+                ttl_seconds=30,
+            ),
+        )
+        body = captured[0]
+        self.assertEqual(body["constraints"], {"resources": ["calendar"], "max_depth": 2})
+        self.assertEqual(body["ttl_seconds"], 30)
+
+
+class DelegationConstraintsTests(unittest.TestCase):
+    def test_to_wire_omits_none_fields(self) -> None:
+        c = DelegationConstraints()
+        self.assertEqual(c.to_wire(), {})
+
+    def test_to_wire_includes_set_fields(self) -> None:
+        c = DelegationConstraints(
+            resources=["res"],
+            actions=["read"],
+            max_depth=3,
+            expires_at="2026-12-31T00:00:00Z",
+        )
+        wire = c.to_wire()
+        self.assertEqual(wire["resources"], ["res"])
+        self.assertEqual(wire["actions"], ["read"])
+        self.assertEqual(wire["max_depth"], 3)
+        self.assertEqual(wire["expires_at"], "2026-12-31T00:00:00Z")
+
+
+if __name__ == "__main__":
+    unittest.main()
