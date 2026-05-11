@@ -1,7 +1,279 @@
 ---
 title: Go SDK
-description: The Caracal Go SDK with FromEnv, Spawn, Delegate, Transport, and Middleware.
+description: Complete API reference for github.com/garudex-labs/caracal/sdk — agent sessions, delegation, context propagation, and outbound transport for Go services.
 pageType: reference
 ---
 
-The Caracal Go SDK with FromEnv, Spawn, Delegate, Transport, and Middleware.
+The Go SDK propagates Caracal identity through standard `context.Context`. There is no goroutine-local storage; context flows explicitly through function parameters as idiomatic Go requires. `FromEnv()` constructs the client from environment variables. `Spawn` and `Delegate` pass a child `context.Context` to their callback functions, making the bound context available to any downstream function that accepts a `context.Context`.
+
+## Install
+
+```bash
+go get github.com/garudex-labs/caracal/sdk
+```
+
+## Environment variables
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `CARACAL_COORDINATOR_URL` | Yes | Coordinator base URL (e.g., `http://coordinator:4000`) |
+| `CARACAL_ZONE_ID` | Yes | Zone identifier |
+| `CARACAL_APPLICATION_ID` | Yes | Registered application ID |
+| `CARACAL_SUBJECT_TOKEN` | Yes | Ambient bearer token |
+| `CARACAL_GATEWAY_URL` | No | Gateway base URL for resource-routed calls |
+| `CARACAL_RESOURCES` | No | Comma-separated `resourceId=https://upstream/prefix` pairs |
+
+## `Caracal` struct
+
+```go
+import sdk "github.com/garudex-labs/caracal/sdk"
+
+type Caracal struct {
+    Coordinator       *CoordinatorClient
+    ZoneID            string
+    ApplicationID     string
+    SubjectToken      string
+    GatewayURL        string
+    Resources         []ResourceBinding
+    DefaultKind       AgentKind
+    DefaultTTLSeconds int
+}
+
+type CoordinatorClient struct {
+    BaseURL    string
+    HTTPClient *http.Client   // nil uses http.DefaultClient
+}
+
+type ResourceBinding struct {
+    ResourceID     string
+    UpstreamPrefix string
+}
+```
+
+### `FromEnv()`
+
+Reads all `CARACAL_*` environment variables and returns a `*Caracal`. Returns an error if any required variable is missing.
+
+```go
+func FromEnv() (*Caracal, error)
+```
+
+## Agent kind constants
+
+```go
+type AgentKind string
+
+const (
+    KindService   AgentKind = "service"
+    KindInstance  AgentKind = "instance"
+    KindEphemeral AgentKind = "ephemeral"
+)
+```
+
+## Agent session methods
+
+### `Spawn(ctx, fn, opts...)`
+
+Opens an agent session on the Coordinator, derives a child context with the session bound via `context.WithValue`, passes that child context to `fn`, then terminates the session when `fn` returns. If `fn` returns an error, `Spawn` returns that error; the session is still terminated.
+
+```go
+func (c *Caracal) Spawn(ctx context.Context, fn func(context.Context) error, opts ...SpawnOptions) error
+
+type SpawnOptions struct {
+    Kind       AgentKind
+    TTLSeconds int
+    SessionSID string             // explicit SID; generated if empty
+    ParentID   string             // parent agent session ID for nested spawns
+    Metadata   map[string]any
+    TraceID    string
+}
+```
+
+### `Delegate(ctx, opts, fn)`
+
+Creates a delegation edge from the session bound in `ctx` to the target session. Passes a child context with the delegation edge bound to `fn`. Returns when `fn` returns.
+
+```go
+func (c *Caracal) Delegate(ctx context.Context, opts DelegateOptions, fn func(context.Context) error) error
+
+type DelegateOptions struct {
+    To              string
+    ToApplicationID string
+    Scopes          []string
+    TTLSeconds      int
+    Constraints     *DelegationConstraints
+}
+
+type DelegationConstraints struct {
+    Resources []string
+    Actions   []string
+    MaxDepth  int
+    ExpiresAt string    // ISO 8601
+}
+```
+
+### `Current(ctx)`
+
+Retrieves the `CaracalContext` bound to `ctx`. Returns `(zero, false)` if no context is bound.
+
+```go
+func Current(ctx context.Context) (CaracalContext, bool)
+
+type CaracalContext struct {
+    SubjectToken     string
+    ZoneID           string
+    ClientID         string     // Application ID
+    AgentSessionID   string
+    DelegationEdgeID string
+    ParentEdgeID     string
+    SessionID        string
+    TraceID          string
+    Hop              int        // 0 at root; incremented on each Delegate
+}
+```
+
+### `Bind(ctx, c)`
+
+Binds a `CaracalContext` into `ctx` and returns the child context. Use `Current` to retrieve it.
+
+```go
+func Bind(parent context.Context, c CaracalContext) context.Context
+```
+
+## Transport and headers
+
+### `Transport(base)`
+
+Returns an `*http.Client` that reads the `CaracalContext` from the request's context and injects three headers before sending:
+
+- `Authorization: Bearer <SubjectToken>`
+- `traceparent: 00-{TraceID}-{spanID}-01`
+- `baggage: caracal.agent_session=…,caracal.delegation_edge=…,caracal.hop=N`
+
+Pass `nil` to wrap `http.DefaultClient`, or pass a custom `*http.Client`:
+
+```go
+func (c *Caracal) Transport(base *http.Client) *http.Client
+```
+
+The returned client injects headers by reading the context on each `Do` call — the request must have a context bound via `http.NewRequestWithContext`.
+
+### `BindFromRequest(ctx, r)`
+
+Reads the Caracal envelope from `r`'s headers and returns a child context with the envelope bound. Use in HTTP handlers to propagate inbound agent identity:
+
+```go
+func (c *Caracal) BindFromRequest(ctx context.Context, r *http.Request) context.Context
+```
+
+### `Middleware(next)`
+
+Returns an `http.Handler` that calls `BindFromRequest` on every request before calling `next`:
+
+```go
+func (c *Caracal) Middleware(next http.Handler) http.Handler
+```
+
+## Lifecycle hooks
+
+```go
+type LifecycleHook func(context.Context, CaracalContext) error
+
+func (c *Caracal) OnAgentStart(h LifecycleHook)
+func (c *Caracal) OnAgentEnd(h LifecycleHook)
+```
+
+`OnAgentStart` fires before the `fn` callback inside `Spawn`. `OnAgentEnd` fires after `fn` returns (including on error). If a hook returns an error, `Spawn` does not call `fn` (for start) or propagates the hook error (for end).
+
+## Envelope and wire protocol
+
+Import from the same module for direct envelope manipulation:
+
+```go
+type Envelope struct {
+    SubjectToken     string
+    AgentSessionID   string
+    DelegationEdgeID string
+    ParentEdgeID     string
+    TraceID          string
+    Hop              int
+}
+
+const (
+    HeaderAuthorization = "Authorization"
+    HeaderTraceparent   = "traceparent"
+    HeaderBaggage       = "baggage"
+
+    BaggageAgentSession   = "caracal.agent_session"
+    BaggageDelegationEdge = "caracal.delegation_edge"
+    BaggageParentEdge     = "caracal.parent_edge"
+    BaggageHop            = "caracal.hop"
+
+    MaxHop = 32
+)
+
+func EncodeEnvelope(env Envelope, set func(name, value string))
+func DecodeEnvelope(get func(string) string) Envelope
+func InjectHTTP(env Envelope, h http.Header)
+func FromHTTPRequest(r *http.Request) Envelope
+func ToMap(env Envelope) map[string]string
+func FromMap(m map[string]string) Envelope
+```
+
+### Wire header format
+
+```
+Authorization: Bearer {SubjectToken}
+traceparent:   00-{32-hex-TraceID}-{16-hex-spanID}-01
+baggage:       caracal.agent_session={AgentSessionID},
+               caracal.delegation_edge={DelegationEdgeID},
+               caracal.parent_edge={ParentEdgeID},
+               caracal.hop={Hop}
+```
+
+Hop is capped at `MaxHop = 32`. The span ID is generated fresh from `crypto/rand` on each hop.
+
+## Low-level Coordinator client
+
+For advanced use cases, the Coordinator REST operations are also exported:
+
+```go
+type SpawnRequest struct {
+    ZoneID        string
+    ApplicationID string
+    SessionSID    string
+    ParentID      string
+    Kind          AgentKind
+    TTLSeconds    int
+    Metadata      map[string]any
+}
+
+type SpawnResponse struct {
+    ID             string `json:"id"`
+    AgentSessionID string `json:"agent_session_id"`
+}
+
+func SpawnAgent(ctx context.Context, client *CoordinatorClient, bearer string, req SpawnRequest) (SpawnResponse, error)
+
+type DelegationRequest struct {
+    ZoneID                string
+    IssuerApplicationID   string
+    SourceSessionID       string
+    TargetSessionID       string
+    ReceiverApplicationID string
+    Scopes                []string
+    Constraints           *DelegationConstraints
+    TTLSeconds            int
+}
+
+func CreateDelegation(ctx context.Context, client *CoordinatorClient, bearer string, req DelegationRequest) (DelegationResponse, error)
+
+func TerminateAgent(ctx context.Context, client *CoordinatorClient, bearer, zoneID, agentSessionID string)
+```
+
+## Error behavior
+
+- `Spawn` returns the Coordinator's error if session creation is rejected (limit exceeded, unreachable).
+- `Delegate` returns an error if no session is bound in `ctx`, the Coordinator is unreachable, or the edge would create a cycle.
+- `Transport` passes `http.Client` errors through unchanged; header injection does not fail.
+- `FromEnv` returns an error if any required env var is missing.

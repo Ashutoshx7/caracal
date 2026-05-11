@@ -1,7 +1,42 @@
 ---
 title: Connectors
-description: Framework-specific adapters that plug Caracal into your runtime.
+description: Framework-specific packages that integrate Caracal mandate verification into Express, FastMCP, Go net/http, Postgres, and Redis.
 pageType: landing
 ---
 
-Framework-specific adapters that plug Caracal into your runtime.
+Connectors wrap the primitive transport and revocation packages and expose framework-native interfaces — middleware functions, callable auth classes, and backend implementations. They are the fastest path to adding Caracal verification to an existing application.
+
+Choose the connector for your framework. If your framework is not listed, use the transport packages directly: [`@caracalai/transport-mcp`](../transport-mcp/) (TypeScript) or [`caracalai_transport_mcp`](../transport-mcp/) (Python) call `authenticate()` without any framework dependency.
+
+## Available connectors
+
+| Package | Language | Framework | Purpose |
+| --- | --- | --- | --- |
+| [`@caracalai/mcp-express`](./express/) | TypeScript | Express | `caracalAuth()` middleware — attaches verified `Claims` to `req.caracalClaims` |
+| [`caracalai-mcp-fastmcp`](./fastmcp/) | Python | FastMCP | `CaracalAuth` callable — verifies bearer token and returns `Claims` |
+| [`github.com/garudex-labs/caracal/mcp-nethttp`](./nethttp/) | Go | `net/http` | `Middleware()` — wraps any `http.Handler`; attaches claims to request context |
+| [`@caracalai/tokenstate-postgres`](./postgres/) | TypeScript | Any | `PostgresBackend` — persists MCP token state to a Postgres table |
+| [`@caracalai/revocation-redis`](./redis/) | TypeScript | Any | Redis-backed `RevocationStore` and stream consumer |
+| [`caracalai-revocation-redis`](./redis/) | Python | Any | Python equivalent with synchronous `poll_once()` |
+
+## Relationship to transport packages
+
+The connector packages call the transport packages internally. The data flow for verification is:
+
+```
+inbound request
+  → connector middleware (extracts bearer, calls authenticate())
+    → @caracalai/transport-mcp or caracalai_transport_mcp
+      → @caracalai/identity or caracalai_identity (JWKS verify)
+      → RevocationStore (isRevoked check)
+  → claims attached to framework context
+  → handler executes
+```
+
+The Redis and Postgres connectors sit on a separate axis — they are storage backends consumed by the verification path, not middleware themselves.
+
+## Production revocation
+
+The in-memory `RevocationStore` from `@caracalai/revocation` or `caracalai-revocation` is not appropriate for production multi-replica deployments. Replace it with `RedisRevocationStore` from the Redis connector. Pair it with `RedisRevocationConsumer` to automatically populate the store from the `caracal.sessions.revoke` stream.
+
+See the [Redis connector reference](./redis/) for the full setup, including stream consumer configuration and HMAC signature verification.

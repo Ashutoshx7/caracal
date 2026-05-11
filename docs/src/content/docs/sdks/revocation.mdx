@@ -1,7 +1,128 @@
 ---
 title: Revocation Package
-description: Revocation lookup interface and the in-memory default implementation.
+description: RevocationStore interface, InMemoryRevocationStore implementation, and how revocation integrates with mandate verification — TypeScript and Python.
 pageType: reference
 ---
 
-Revocation lookup interface and the in-memory default implementation.
+The revocation packages define the `RevocationStore` interface and provide an in-memory implementation for development. Production deployments use the Redis-backed implementation from the connectors layer. Any component that verifies mandates must supply a revocation store, because a cryptographically valid mandate from a revoked session must still be rejected.
+
+## TypeScript — `@caracalai/revocation`
+
+```bash
+npm install @caracalai/revocation
+```
+
+### `RevocationStore` interface
+
+```typescript
+interface RevocationStore {
+  isRevoked(sid: string): Promise<boolean>;
+  markRevoked(sid: string, ttlMs?: number): Promise<void>;
+}
+```
+
+`sid` is the session ID from the mandate's `sid` claim. Every component that calls `authenticate()` or the Express/MCP middleware passes a `RevocationStore` instance. The store is checked on every inbound request against the `sid` of the presented mandate.
+
+### `InMemoryRevocationStore`
+
+```typescript
+import { InMemoryRevocationStore } from '@caracalai/revocation';
+
+const store = new InMemoryRevocationStore();
+```
+
+No constructor options. TTL entries are kept in memory. Suitable for single-process development and testing. Not appropriate for production multi-replica deployments — sessions revoked in one replica are not propagated to others.
+
+### Behavior
+
+- `isRevoked(sid)`: Returns `true` if `sid` was marked revoked and the entry has not expired.
+- `markRevoked(sid, ttlMs?)`: Records the session as revoked. `ttlMs` defaults to 24 hours (86,400,000 ms) matching the Gateway's revocation retention window.
+- Entries are lazily expired: they are removed on access when the TTL has elapsed.
+
+---
+
+## Python — `caracalai-revocation`
+
+```bash
+pip install caracalai-revocation
+```
+
+### `RevocationStore` protocol
+
+```python
+from typing import Protocol
+
+class RevocationStore(Protocol):
+    def is_revoked(self, sid: str) -> bool: ...
+    def mark_revoked(self, sid: str, ttl_ms: int | None = None) -> None: ...
+```
+
+All Caracal Python packages that accept a revocation store accept any object implementing this protocol.
+
+### `InMemoryRevocationStore`
+
+```python
+from caracalai_revocation import InMemoryRevocationStore
+
+DEFAULT_TTL_MS = 24 * 60 * 60 * 1000   # 24 hours
+
+store = InMemoryRevocationStore(default_ttl_ms=DEFAULT_TTL_MS)
+```
+
+Constructor options:
+
+| Parameter | Type | Default | Description |
+| --------- | ---- | ------- | ----------- |
+| `default_ttl_ms` | `int` | `86400000` | Default TTL applied to `mark_revoked` when no `ttl_ms` is supplied |
+
+### Behavior
+
+- `is_revoked(sid)`: Returns `True` if the SID is marked revoked and its entry has not expired.
+- `mark_revoked(sid, ttl_ms?)`: Records the SID as revoked; uses `default_ttl_ms` if `ttl_ms` is `None`.
+- Not thread-safe for concurrent mutation; suitable for async single-process use.
+- Not suitable for production multi-replica deployments.
+
+---
+
+## Integration with mandate verification
+
+Every mandate verification path requires a `RevocationStore`:
+
+**TypeScript (`@caracalai/transport-mcp`):**
+```typescript
+import { authenticate } from '@caracalai/transport-mcp';
+import { InMemoryRevocationStore } from '@caracalai/revocation';
+
+const revocations = new InMemoryRevocationStore();
+
+const result = await authenticate(token, {
+  issuer: 'http://sts:8080',
+  audience: 'resource://api',
+  revocations,              // required
+});
+```
+
+**Python (`caracalai_transport_mcp`):**
+```python
+from caracalai_transport_mcp import authenticate
+from caracalai_revocation import InMemoryRevocationStore
+
+revocations = InMemoryRevocationStore()
+
+result = await authenticate(
+    token,
+    issuer='http://sts:8080',
+    audience='resource://api',
+    revocations=revocations,  # required
+)
+```
+
+## Production: Redis-backed store
+
+For multi-replica deployments, replace `InMemoryRevocationStore` with the Redis-backed implementation from `@caracalai/revocation-redis` or `caracalai-revocation-redis`. The Redis store also provides a `RedisRevocationConsumer` that subscribes to the `caracal.sessions.revoke` Redis stream and populates the store automatically from revocation events.
+
+See [Redis Connector](./connectors/redis/) for the full Redis revocation reference.
+
+## Revocation timing
+
+The Gateway consumes the `caracal.sessions.revoke` stream and populates its revocation store within seconds of a session being revoked. Per-call mandates have a 15-minute TTL. A mandate issued before revocation completes will be rejected by the Gateway on the next request because the Gateway checks the `sid` claim against its revocation store on every request. Services behind the Gateway are therefore protected within the Gateway's stream consumer latency (typically under 5 seconds). Services accessed directly — bypassing the Gateway — must maintain their own revocation store fed from the same stream to achieve sub-TTL enforcement.

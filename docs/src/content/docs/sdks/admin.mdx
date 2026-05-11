@@ -1,7 +1,340 @@
 ---
 title: Admin Package
-description: The TypeScript admin client used by the CLI and TUI to drive the control plane.
+description: Complete API reference for @caracalai/admin — the TypeScript control-plane client for zones, applications, policies, grants, sessions, agents, and delegations.
 pageType: reference
 ---
 
-The TypeScript admin client used by the CLI and TUI to drive the control plane.
+`@caracalai/admin` is the TypeScript client for Caracal's control-plane REST API. It is used by the CLI and TUI to manage zones, applications, policies, grants, and agent state. Use it directly when building tooling, scripts, or dashboards that interact with the Caracal control plane.
+
+## Install
+
+```bash
+npm install @caracalai/admin
+```
+
+## `AdminClient`
+
+### Constructor
+
+```typescript
+import { AdminClient } from '@caracalai/admin';
+
+new AdminClient(opts: AdminClientOptions)
+
+interface AdminClientOptions {
+  apiUrl: string;                       // API base URL (e.g., http://localhost:3000)
+  adminToken: string;                   // Bearer token for all API requests
+  coordinatorUrl?: string;              // Coordinator URL for agent and delegation operations
+  coordinatorToken?: string;            // Separate token for coordinator endpoints
+  fetchImpl?: typeof fetch;             // Custom fetch; defaults to global fetch
+  timeoutMs?: number;                   // Per-request timeout; default: 30000
+  retries?: number;                     // Retry count on transient errors; default: 3
+  signal?: AbortSignal;                 // Cancellation signal applied to all requests
+}
+```
+
+### Token discovery
+
+```typescript
+import { discoverAdminToken } from '@caracalai/core';
+
+const token = discoverAdminToken();
+// Checks in order: explicit param → CARACAL_ADMIN_TOKEN env → infra/docker/.env → .env
+```
+
+### Retry behavior
+
+Retries on HTTP 408, 425, 429, and 5xx. Backoff: `min(250ms × 2^attempt, 5000ms) / 2 + random(base/2)`. Respects `Retry-After` headers. All requests share the `timeoutMs` limit and the optional `signal`.
+
+### Error handling
+
+All failed requests throw `AdminApiError`:
+
+```typescript
+class AdminApiError extends Error {
+  readonly status: number;      // HTTP status code
+  readonly code: string;        // Error code from response or statusText
+  readonly body: unknown;       // Full response body (JSON-parsed or raw string)
+}
+```
+
+---
+
+## Zone methods — `client.zones`
+
+```typescript
+client.zones.list(): Promise<Zone[]>
+client.zones.get(id: string): Promise<Zone>
+client.zones.create(input: ZoneInput): Promise<Zone>
+client.zones.patch(id: string, input: Partial<ZoneInput>): Promise<Zone>
+client.zones.delete(id: string): Promise<void>
+
+interface Zone {
+  id: string;
+  org_id: string;
+  name: string;
+  slug: string;
+  dcr_enabled: boolean;
+  pkce_required: boolean;
+  login_flow: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ZoneInput {
+  name: string;
+  slug?: string;
+  org_id?: string;
+  dcr_enabled?: boolean;
+  pkce_required?: boolean;
+  login_flow?: string;
+}
+```
+
+---
+
+## Application methods — `client.applications`
+
+```typescript
+client.applications.list(zoneId: string): Promise<Application[]>
+client.applications.get(zoneId: string, id: string): Promise<Application>
+client.applications.create(zoneId: string, input: ApplicationInput): Promise<Application>
+client.applications.patch(zoneId: string, id: string, input: Partial<ApplicationInput>): Promise<Application>
+client.applications.delete(zoneId: string, id: string): Promise<void>
+client.applications.dcr(zoneId: string, input: DCRInput): Promise<Application>
+
+interface Application {
+  id: string;
+  zone_id: string;
+  name: string;
+  registration_method: 'managed' | 'dcr';
+  credential_type: 'token' | 'password' | 'public-key' | 'url' | 'public';
+  traits: string[];
+  consent: string;
+  created_at: string;
+}
+
+interface ApplicationInput {
+  name: string;
+  registration_method?: 'managed' | 'dcr';
+  credential_type?: 'token' | 'password' | 'public-key' | 'url' | 'public';
+  client_secret?: string;
+  traits?: string[];
+  consent?: string;
+}
+
+interface DCRInput {
+  name: string;
+  credential_type?: string;
+  expires_in?: number;         // seconds
+}
+```
+
+---
+
+## Resource methods — `client.resources`
+
+```typescript
+client.resources.list(zoneId: string): Promise<Resource[]>
+client.resources.get(zoneId: string, id: string): Promise<Resource>
+client.resources.create(zoneId: string, input: ResourceInput): Promise<Resource>
+client.resources.patch(zoneId: string, id: string, input: Partial<ResourceInput>): Promise<Resource>
+client.resources.delete(zoneId: string, id: string): Promise<void>
+
+interface Resource {
+  id: string;
+  zone_id: string;
+  identifier: string;
+  name: string;
+  upstream_url: string | null;
+  scopes: string[];
+  provider_id: string | null;
+  created_at: string;
+}
+
+interface ResourceInput {
+  identifier: string;
+  scopes: string[];
+  name?: string;
+  upstream_url?: string;
+  prefix_match?: boolean;
+  provider_id?: string;
+}
+```
+
+---
+
+## Provider methods — `client.providers`
+
+```typescript
+client.providers.list(zoneId: string): Promise<Provider[]>
+client.providers.get(zoneId: string, id: string): Promise<Provider>
+client.providers.create(zoneId: string, input: ProviderInput): Promise<Provider>
+client.providers.patch(zoneId: string, id: string, input: Partial<ProviderInput>): Promise<Provider>
+client.providers.delete(zoneId: string, id: string): Promise<void>
+
+interface ProviderInput {
+  identifier: string;
+  name?: string;
+  kind: 'oauth2' | 'oidc' | 'apikey' | 'workload';
+  owner_type?: string;
+  config_json?: Record<string, unknown>;   // public config fields
+  secret_config?: Record<string, unknown>; // encrypted by the API before storage
+}
+```
+
+---
+
+## Policy methods — `client.policies`
+
+Policies are immutable after creation. New Rego source is added as a new version. The schema version defaults to `'2026-03-16'`.
+
+```typescript
+client.policies.list(zoneId: string): Promise<Policy[]>
+client.policies.get(zoneId: string, id: string): Promise<Policy & { versions: PolicyVersion[] }>
+client.policies.create(zoneId: string, input: PolicyInput): Promise<Policy & { version: PolicyVersion }>
+client.policies.addVersion(zoneId: string, id: string, content: string, schemaVersion?: string): Promise<PolicyVersion>
+client.policies.delete(zoneId: string, id: string): Promise<void>
+
+interface PolicyInput {
+  name: string;
+  content: string;          // Rego source
+  description?: string;
+  owner_type?: string;
+  schema_version?: string;  // default: '2026-03-16'
+}
+
+interface Policy {
+  id: string;
+  zone_id: string;
+  name: string;
+  description: string | null;
+  owner_type: string;
+  created_by: string;
+  created_at: string;
+}
+
+interface PolicyVersion {
+  id: string;
+  policy_id: string;
+  version: number;
+  content_sha256: string;
+  schema_version: string;
+  created_at: string;
+}
+```
+
+---
+
+## Policy set methods — `client.policySets`
+
+```typescript
+client.policySets.list(zoneId: string): Promise<PolicySet[]>
+client.policySets.get(zoneId: string, id: string): Promise<PolicySet>
+client.policySets.create(zoneId: string, name: string, description?: string): Promise<PolicySet>
+client.policySets.addVersion(
+  zoneId: string,
+  id: string,
+  manifest: Array<{ policy_version_id: string }>
+): Promise<PolicySetVersion>
+client.policySets.activate(
+  zoneId: string,
+  id: string,
+  versionId: string,
+  shadowVersionId?: string
+): Promise<{ activated: boolean; version_id: string; shadow_version_id: string | null }>
+client.policySets.delete(zoneId: string, id: string): Promise<void>
+```
+
+---
+
+## Grant methods — `client.grants`
+
+```typescript
+client.grants.list(zoneId: string): Promise<Grant[]>
+client.grants.get(zoneId: string, id: string): Promise<Grant>
+client.grants.create(zoneId: string, input: GrantInput): Promise<Grant>
+client.grants.revoke(zoneId: string, id: string): Promise<void>
+
+interface GrantInput {
+  application_id: string;
+  resource_id: string;
+  scopes: string[];
+  user_id?: string;
+}
+```
+
+---
+
+## Session methods — `client.sessions` (read-only)
+
+```typescript
+client.sessions.list(zoneId: string, query?: SessionQuery): Promise<Session[]>
+
+interface SessionQuery {
+  status?: 'active' | 'revoked' | 'expired';
+  subject?: string;
+  limit?: number;
+}
+```
+
+---
+
+## Audit methods — `client.audit`
+
+```typescript
+client.audit.list(zoneId: string, query?: AuditQuery): Promise<AuditEvent[]>
+client.audit.byRequest(zoneId: string, requestId: string): Promise<AuditDetail[]>
+
+interface AuditQuery {
+  since?: string;           // ISO 8601
+  until?: string;
+  decision?: 'allow' | 'deny';
+  event_type?: string;
+  request_id?: string;
+  limit?: number;           // default: 100
+}
+
+interface AuditDetail extends AuditEvent {
+  policy_set_id: string | null;
+  policy_set_version_id: string | null;
+  manifest_sha: string | null;
+  determining_policies_json: unknown[] | null;
+  diagnostics_json: unknown[] | null;
+}
+```
+
+---
+
+## Agent methods — `client.agents`
+
+Agent methods use `coordinatorUrl` and `coordinatorToken`. They fail if those fields were not set in the constructor.
+
+```typescript
+client.agents.list(zoneId: string): Promise<AgentSession[]>
+client.agents.get(zoneId: string, id: string): Promise<AgentSession>
+client.agents.children(zoneId: string, id: string): Promise<AgentSession[]>
+client.agents.suspend(zoneId: string, id: string): Promise<{ suspended: true }>
+client.agents.resume(zoneId: string, id: string): Promise<{ resumed: true }>
+client.agents.terminate(zoneId: string, id: string): Promise<void>
+```
+
+---
+
+## Delegation methods — `client.delegations`
+
+```typescript
+client.delegations.inbound(zoneId: string, sessionId: string): Promise<DelegationEdge[]>
+client.delegations.outbound(zoneId: string, sessionId: string): Promise<DelegationEdge[]>
+client.delegations.traverse(zoneId: string, id: string): Promise<TraverseNode[]>
+client.delegations.revoke(zoneId: string, id: string): Promise<{ revoked_edges: number; affected_sessions: number }>
+```
+
+---
+
+## Bootstrap
+
+```typescript
+// Initialize local stack (development only; requires CARACAL_LOCAL_BOOTSTRAP_ENABLED=true on the API)
+client.bootstrap(force?: boolean): Promise<LocalBootstrapResult>
+```

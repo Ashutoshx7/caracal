@@ -1,7 +1,252 @@
 ---
 title: TypeScript SDK
-description: The @caracalai/sdk package for Node and edge runtimes.
+description: Complete API reference for @caracalai/sdk — the Caracal client for Node and edge runtimes.
 pageType: reference
 ---
 
-The @caracalai/sdk package for Node and edge runtimes.
+`@caracalai/sdk` is the primary integration point for TypeScript and JavaScript services. It manages agent session lifecycle via `AsyncLocalStorage`, propagates identity across async boundaries without explicit threading, and provides a `fetch`-compatible transport that injects W3C envelope headers on every outbound call.
+
+## Install
+
+```bash
+npm install @caracalai/sdk
+```
+
+## Environment variables
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `CARACAL_COORDINATOR_URL` | Yes | Coordinator base URL (e.g., `http://coordinator:4000`) |
+| `CARACAL_ZONE_ID` | Yes | Zone identifier |
+| `CARACAL_APPLICATION_ID` | Yes | Registered application ID |
+| `CARACAL_SUBJECT_TOKEN` | Yes | Ambient bearer token |
+| `CARACAL_GATEWAY_URL` | No | Gateway base URL for resource-routed calls |
+| `CARACAL_RESOURCES` | No | Comma-separated `resourceId=upstreamPrefix` pairs |
+
+## `Caracal` class
+
+### Constructor
+
+```typescript
+import { Caracal } from '@caracalai/sdk';
+
+new Caracal(config: CaracalConfig)
+```
+
+```typescript
+interface CaracalConfig {
+  coordinator: { baseUrl: string; fetchImpl?: typeof fetch };
+  zoneId: string;
+  applicationId: string;
+  subjectToken: string;
+  gatewayUrl?: string;
+  resources?: ResourceBinding[];       // [{ resourceId: string; upstreamPrefix: string }]
+  defaultKind?: AgentKind;             // default: 'instance'
+  defaultTtlSeconds?: number;
+}
+```
+
+### `Caracal.fromEnv(env?)`
+
+Reads all `CARACAL_*` environment variables and constructs a `Caracal` instance. Throws if any required variable is missing.
+
+```typescript
+static fromEnv(env?: NodeJS.ProcessEnv): Caracal
+```
+
+## Agent session methods
+
+### `spawn(fn, opts?)`
+
+Opens an agent session on the Coordinator, binds it to the current async context via `AsyncLocalStorage`, runs `fn`, then terminates the session when `fn` returns or throws. Session state is unavailable outside the callback.
+
+```typescript
+spawn<T>(fn: () => Promise<T>, opts?: SpawnOptions): Promise<T>
+
+interface SpawnOptions {
+  kind?: AgentKind;             // 'service' | 'instance' | 'ephemeral'
+  ttlSeconds?: number;
+  sessionSid?: string;          // Explicit SID; generated if omitted
+  parentId?: string;            // Parent agent session ID for nested spawns
+  metadata?: Record<string, unknown>;
+  traceId?: string;
+}
+
+type AgentKind = 'service' | 'instance' | 'ephemeral';
+```
+
+The Coordinator enforces: max depth 10, max children per session 10, max 50 active sessions per application per zone, max 200 active sessions per application across all zones.
+
+### `delegate(opts, fn)`
+
+Creates a delegation edge from the current agent session to a target session. The edge authorizes `opts.toApplicationId` to request the listed scopes. `fn` runs under the delegated context; `current()` inside `fn` returns the delegated `CaracalContext`.
+
+```typescript
+delegate<T>(opts: DelegateOptions, fn: () => Promise<T>): Promise<T>
+
+interface DelegateOptions {
+  to: string;                   // Target agent session ID
+  toApplicationId: string;      // Application owning the target session
+  scopes: string[];
+  ttlSeconds?: number;
+  constraints?: {               // All fields optional
+    resources?: string[];       // Restrict edge to these resource identifiers
+    actions?: string[];
+    maxDepth?: number;          // Max further delegation hops
+    expiresAt?: string;         // ISO 8601 hard expiry
+  };
+}
+```
+
+### `current()`
+
+Returns the `CaracalContext` bound to the current `AsyncLocalStorage` slot, or `undefined` if called outside a `spawn()` or `delegate()` callback.
+
+```typescript
+current(): CaracalContext | undefined
+
+interface CaracalContext {
+  subjectToken: string;
+  zoneId: string;
+  clientId: string;             // Application ID
+  agentSessionId?: string;
+  delegationEdgeId?: string;
+  parentEdgeId?: string;
+  sessionId?: string;
+  traceId?: string;
+  hop: number;                  // 0 at root, incremented on each delegate()
+}
+```
+
+## Transport and headers
+
+### `transport()`
+
+Returns a `fetch`-compatible function that reads the current `CaracalContext` from `AsyncLocalStorage` and injects three headers on every call:
+
+- `Authorization: Bearer <subjectToken>`
+- `traceparent: 00-{traceId}-{spanId}-01`
+- `baggage: caracal.agent_session=…,caracal.delegation_edge=…,caracal.hop=N`
+
+If `gatewayUrl` and `resources` are configured, URLs matching a known resource prefix are rewritten to route through the Gateway.
+
+```typescript
+transport(): typeof fetch
+```
+
+### `headers()`
+
+Returns the current envelope as a plain `Record<string, string>`. Use this to inject context headers manually into non-`fetch` calls:
+
+```typescript
+headers(): Record<string, string>
+```
+
+### `bindFromHeaders(headers, fn)`
+
+Reads the Caracal envelope from inbound HTTP headers and binds the resulting context for the duration of `fn`. Use this in server handlers to propagate the calling agent's identity:
+
+```typescript
+bindFromHeaders<T>(
+  headers: Record<string, string | string[] | undefined> | HeaderGetter,
+  fn: () => Promise<T>
+): Promise<T>
+```
+
+### `middleware()`
+
+Returns an Express/Connect-compatible request handler that calls `bindFromHeaders` on every request:
+
+```typescript
+middleware(): (req: IncomingMessage, res: ServerResponse, next: () => void) => void
+```
+
+## Lifecycle hooks
+
+```typescript
+onAgentStart(cb: (ctx: CaracalContext) => void | Promise<void>): void
+onAgentEnd(cb: (ctx: CaracalContext) => void | Promise<void>): void
+```
+
+Both hooks fire synchronously within the `spawn()` call — `onAgentStart` before `fn` runs, `onAgentEnd` after `fn` completes (including on throw).
+
+## Advanced API
+
+Import from `@caracalai/sdk/advanced` for low-level primitives:
+
+```typescript
+import {
+  current,            // Get CaracalContext from AsyncLocalStorage directly
+  bind,               // Synchronously bind a context and run a fn: bind(ctx, fn) → T
+  abind,              // Async bind: await abind(ctx, promise) → T
+  withOverrides,      // Patch current context fields: withOverrides({ hop: 2 })
+  Envelope,           // Wire envelope type
+  encodeEnvelope,     // Serialize Envelope to header map
+  decodeEnvelope,     // Parse Envelope from header map
+  toHeaders,          // Envelope → { Authorization, traceparent, baggage }
+  fromHeaders,        // Header map → Envelope
+  HEADER_AUTHORIZATION,
+  HEADER_TRACEPARENT,
+  HEADER_BAGGAGE,
+  BAGGAGE_AGENT_SESSION,
+  BAGGAGE_DELEGATION_EDGE,
+  BAGGAGE_PARENT_EDGE,
+  BAGGAGE_HOP,
+  MAX_HOP,            // 32
+} from '@caracalai/sdk/advanced';
+```
+
+### `Envelope` type
+
+```typescript
+interface Envelope {
+  subjectToken?: string;
+  agentSessionId?: string;
+  delegationEdgeId?: string;
+  parentEdgeId?: string;
+  traceId?: string;
+  hop: number;
+}
+```
+
+### Wire header encoding
+
+```
+Authorization: Bearer {subjectToken}
+traceparent:   00-{32-hex-traceId}-{16-hex-spanId}-01
+baggage:       caracal.agent_session={agentSessionId},
+               caracal.delegation_edge={delegationEdgeId},
+               caracal.parent_edge={parentEdgeId},
+               caracal.hop={hop}
+```
+
+Hop is capped at `MAX_HOP = 32`. The span ID is regenerated on each hop from `crypto.getRandomValues`.
+
+## `ResourceBinding` and Gateway routing
+
+When `resources` is set in the config, `transport()` rewrites any request URL that starts with a known `upstreamPrefix` to route through the Gateway, injecting the mandate as the `Authorization` header:
+
+```typescript
+interface ResourceBinding {
+  resourceId: string;       // e.g., 'resource://inventory'
+  upstreamPrefix: string;   // e.g., 'http://inventory:8080'
+}
+```
+
+A call to `http://inventory:8080/items` becomes `{gatewayUrl}/items` with the appropriate mandate headers and the resource target embedded.
+
+## `CoordinatorClient` options
+
+```typescript
+interface CoordinatorClient {
+  baseUrl: string;
+  fetchImpl?: typeof fetch;   // Custom fetch for testing
+}
+```
+
+## Error behavior
+
+- `spawn()` throws if the Coordinator is unreachable or rejects the session creation (e.g., limits exceeded).
+- `delegate()` throws if no current session exists, or if the Coordinator rejects the edge (e.g., cycle detected).
+- `transport()` passes fetch errors through unchanged.
+- `fromEnv()` throws synchronously if any required env var is missing.

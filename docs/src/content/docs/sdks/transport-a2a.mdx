@@ -1,7 +1,184 @@
 ---
 title: A2A Transport
-description: Agent-to-agent transport for direct delegated calls between agents.
+description: Agent-to-agent delegated call transport — a2aCall() function, wire protocol, retry behavior, and context propagation headers.
 pageType: reference
 ---
 
-Agent-to-agent transport for direct delegated calls between agents.
+`@caracalai/transport-a2a` executes delegated calls between agents over HTTP. It performs a two-step operation: exchange the caller's subject token for a per-resource mandate at the STS, then POST the call to the target agent's `/a2a` endpoint with that mandate and the full Caracal context envelope.
+
+The package is TypeScript-only. There is no Python or Go equivalent.
+
+## Install
+
+```bash
+npm install @caracalai/transport-a2a
+```
+
+## `a2aCall(req, subjectToken, zoneId, applicationId, opts)`
+
+```typescript
+import { a2aCall } from '@caracalai/transport-a2a';
+
+async function a2aCall(
+  req: A2ARequest,
+  subjectToken: string,
+  zoneId: string,
+  applicationId: string,
+  opts: A2AOptions,
+): Promise<A2AResponse>
+```
+
+Calls the target agent. Never returns a partial result — either resolves with `A2AResponse` or throws.
+
+### `A2ARequest`
+
+```typescript
+interface A2ARequest {
+  agentUrl: string;                   // Base URL of the target agent; call POSTs to {agentUrl}/a2a
+  method: string;                     // Method name to invoke
+  params: unknown;                    // Method parameters (JSON-serializable)
+  requestId: string;                  // Caller-assigned request correlation ID
+  resource?: string;                  // Resource identifier for token exchange; defaults to agentUrl
+  scopes?: string[];                  // Scopes to request; forwarded to STS token exchange
+  sessionId?: string;                 // Session ID for token exchange
+  agentSessionId?: string;            // Current agent's session ID
+  delegationEdgeId?: string;          // Delegation edge to propagate
+  metadata?: Record<string, unknown>; // Arbitrary metadata included in the A2A payload
+}
+```
+
+### `A2AOptions`
+
+```typescript
+interface A2AOptions {
+  stsUrl: string;                     // STS base URL; exchange endpoint at {stsUrl}/oauth/2/token
+  clientSecret?: string;              // Client credential for token exchange
+  clientAssertion?: string;           // JWT client assertion
+  clientAssertionType?: string;       // e.g., 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
+  ttlSeconds?: number;                // Mandate TTL hint passed to STS
+  timeoutMs?: number;                 // Per-attempt timeout in milliseconds; default: 30_000
+  retries?: number;                   // Retry count on transient errors; default: 2 (3 total attempts)
+  retryBaseMs?: number;               // Backoff base in milliseconds; default: 250
+  fetchImpl?: FetchLike;              // Custom fetch; defaults to global fetch
+}
+```
+
+### `A2AResponse`
+
+```typescript
+interface A2AResponse {
+  result: unknown;    // Deserialized response body from the target agent
+  requestId: string;  // Request ID echoed from the response
+}
+```
+
+---
+
+## Wire protocol
+
+`a2aCall` executes two HTTP requests:
+
+**Step 1 — Token exchange**
+
+Posts to `{opts.stsUrl}/oauth/2/token` via `OAuthClient.exchange()` to obtain a short-lived bearer mandate scoped to `req.resource` (or `req.agentUrl` if `resource` is absent). The response is cached internally for the duration of the mandate's validity window.
+
+**Step 2 — Agent call**
+
+Posts to `{req.agentUrl}/a2a` as JSON with the following headers:
+
+| Header | Value |
+| --- | --- |
+| `Content-Type` | `application/json` |
+| `Authorization` | `Bearer {accessToken}` |
+| `X-Caracal-Zone-Id` | `{zoneId}` |
+| `X-Caracal-Application-Id` | `{applicationId}` |
+| `X-Caracal-Agent-Session-Id` | `{req.agentSessionId}` (if set) |
+| `X-Caracal-Delegation-Edge-Id` | `{req.delegationEdgeId}` (if set) |
+| `X-Caracal-Trace-Id` | Propagated trace ID from current context |
+| `X-Caracal-Hop` | Current hop count (incremented from inbound context) |
+
+The JSON body contains `{ method, params, requestId, metadata }` fields from the request.
+
+---
+
+## Retry behavior
+
+| Condition | Behavior |
+| --- | --- |
+| HTTP 408, 425, 429, 5xx | Retry after backoff |
+| Network error / timeout | Retry after backoff |
+| HTTP 4xx (other) | Throw immediately, no retry |
+
+Backoff formula per attempt: `min(retryBaseMs × 2^attempt, 5000) / 2 + random(base / 2)` ms. With defaults (`retryBaseMs=250`, `retries=2`), the maximum total wait across two retries is approximately 4.25 seconds before the third and final attempt.
+
+`timeoutMs` applies per attempt via `AbortController`. An attempt that exceeds the timeout counts as a transient error and is retried.
+
+---
+
+## Error handling
+
+`a2aCall` throws on unrecoverable errors:
+
+- `Error('A2A call failed: {status}')` — target agent returned a non-2xx status after all retries.
+- `InteractionRequiredError` — STS token exchange requires step-up; contains `challengeId`. Callers must satisfy the challenge and retry.
+- `AbortError` — request timed out.
+- Network fetch errors propagate unchanged.
+
+---
+
+## Usage pattern
+
+```typescript
+import { a2aCall } from '@caracalai/transport-a2a';
+import { InteractionRequiredError } from '@caracalai/oauth';
+import { randomUUID } from 'node:crypto';
+
+async function callPaymentAgent(
+  subjectToken: string,
+  payload: unknown,
+) {
+  const response = await a2aCall(
+    {
+      agentUrl: 'https://payment-agent.internal',
+      method: 'initiate_transfer',
+      params: payload,
+      requestId: randomUUID(),
+      scopes: ['transfer:write'],
+    },
+    subjectToken,
+    process.env.CARACAL_ZONE_ID!,
+    process.env.CARACAL_APPLICATION_ID!,
+    {
+      stsUrl: process.env.CARACAL_STS_URL!,
+      clientSecret: process.env.CARACAL_CLIENT_SECRET!,
+    },
+  );
+
+  return response.result;
+}
+```
+
+**With step-up handling:**
+
+```typescript
+import { a2aCall } from '@caracalai/transport-a2a';
+import { InteractionRequiredError } from '@caracalai/oauth';
+
+async function callWithStepUp(subjectToken: string) {
+  try {
+    return await a2aCall(req, subjectToken, zoneId, appId, opts);
+  } catch (err) {
+    if (err instanceof InteractionRequiredError) {
+      await satisfyChallenge(err.challengeId);
+      return await a2aCall(req, subjectToken, zoneId, appId, opts);
+    }
+    throw err;
+  }
+}
+```
+
+---
+
+## Relationship to the main SDK
+
+The main TypeScript SDK (`@caracalai/sdk`) uses `a2aCall` internally when you call `caracal.transport('a2a')` or use `delegate()` with an A2A target. Use `@caracalai/transport-a2a` directly only when building custom tooling or when you need fine-grained control over the call parameters (custom `requestId`, explicit `scopes`, or `metadata`).

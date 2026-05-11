@@ -1,7 +1,178 @@
 ---
 title: FastMCP Connector
-description: Mandate context injection for FastMCP servers.
+description: CaracalAuth callable reference — constructor options, Claims return type, CaracalAuthError, and integration with FastMCP Server.
 pageType: reference
 ---
 
-Mandate context injection for FastMCP servers.
+`caracalai-mcp-fastmcp` provides `CaracalAuth`, a callable class that verifies Caracal mandates for FastMCP servers. Instantiate it with verification requirements, then pass the instance to your FastMCP `Server` as the `auth` argument. FastMCP calls `CaracalAuth` with each inbound bearer token. On success it returns `Claims`; on failure it raises `CaracalAuthError`.
+
+## Install
+
+```bash
+pip install caracalai-mcp-fastmcp caracalai-revocation
+```
+
+## `CaracalAuth`
+
+```python
+from caracalai_mcp_fastmcp import CaracalAuth
+
+class CaracalAuth:
+    def __init__(
+        self,
+        issuer: str,
+        audience: str,
+        revocations: RevocationStore,
+        required_scopes: list[str] | None = None,
+        expected_zone_id: str | None = None,
+        require_agent: bool = False,
+        require_delegation: bool = False,
+        require_chain_contains: list[str] | None = None,
+        max_hop_count: int | None = None,
+    ) -> None: ...
+
+    async def __call__(self, token: str) -> Claims: ...
+```
+
+### Constructor parameters
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `issuer` | `str` | required | STS base URL; JWKS at `{issuer}/.well-known/jwks.json` |
+| `audience` | `str` | required | Must match the `aud` claim |
+| `revocations` | `RevocationStore` | required | Checked on every call |
+| `required_scopes` | `list[str] \| None` | `None` | All listed scopes must be present |
+| `expected_zone_id` | `str \| None` | `None` | If set, `zone_id` claim must match |
+| `require_agent` | `bool` | `False` | Reject tokens without `agent_session_id` |
+| `require_delegation` | `bool` | `False` | Reject tokens without `delegation_edge_id` |
+| `require_chain_contains` | `list[str] \| None` | `None` | All listed application IDs must appear in the delegation chain |
+| `max_hop_count` | `int \| None` | `None` | Reject tokens whose `hop_count` exceeds this value |
+
+---
+
+## Return type and errors
+
+### `Claims`
+
+`await auth(token)` returns a `Claims` dataclass from `caracalai_identity` on success.
+
+```python
+@dataclass
+class Claims:
+    sub: str
+    zone_id: str
+    client_id: str
+    sid: str
+    scope: str
+    agent_session_id: str | None = None
+    delegation_edge_id: str | None = None
+    source_session_id: str | None = None
+    target_session_id: str | None = None
+    delegation_path: list[str] = field(default_factory=list)
+    delegation_chain: list[ChainHop] = field(default_factory=list)
+    graph_epoch: int | None = None
+    hop_count: int | None = None
+```
+
+### `CaracalAuthError`
+
+Raised when verification fails for any reason.
+
+```python
+from caracalai_mcp_fastmcp import CaracalAuthError
+
+class CaracalAuthError(Exception):
+    code: str         # one of the error codes listed below
+    description: str
+```
+
+Error codes follow the same set as the transport package:
+
+`missing_token`, `invalid_token`, `invalid_zone`, `insufficient_scope`, `session_revoked`, `agent_required`, `delegation_required`, `chain_mismatch`, `hop_count_exceeded`.
+
+---
+
+## Usage
+
+**Basic setup with FastMCP:**
+
+```python
+import os
+from fastmcp import FastMCP
+from caracalai_mcp_fastmcp import CaracalAuth, CaracalAuthError
+from caracalai_revocation import InMemoryRevocationStore
+
+revocations = InMemoryRevocationStore()
+
+auth = CaracalAuth(
+    issuer=os.environ['CARACAL_STS_URL'],
+    audience='resource://my-mcp-server',
+    revocations=revocations,
+    required_scopes=['tool:call'],
+    require_agent=True,
+)
+
+mcp = FastMCP('my-server', auth=auth)
+
+@mcp.tool()
+async def search(query: str) -> list[str]:
+    # FastMCP has already verified the token before calling this tool
+    return []
+
+if __name__ == '__main__':
+    mcp.run()
+```
+
+**Accessing claims inside a tool:**
+
+FastMCP passes verified auth context through the tool context argument. The exact mechanism depends on the FastMCP version; check the FastMCP documentation for how to retrieve the `auth` result from the tool context. The `Claims` object returned by `CaracalAuth.__call__` is what FastMCP provides.
+
+```python
+from fastmcp import Context
+
+@mcp.tool()
+async def search(query: str, ctx: Context) -> list[str]:
+    claims = ctx.auth  # Claims returned by CaracalAuth.__call__
+    # use claims.sub, claims.scope, etc.
+    return []
+```
+
+**Production Redis revocation:**
+
+```python
+import threading
+import os
+from caracalai_revocation_redis import RedisRevocationStore, RedisRevocationConsumer
+import redis
+
+redis_client = redis.Redis.from_url(os.environ['REDIS_URL'])
+
+revocations = RedisRevocationStore(redis_client)
+consumer = RedisRevocationConsumer(
+    redis=redis_client,
+    store=revocations,
+    consumer=f'mcp-server-{os.environ["INSTANCE_ID"]}',
+    stream_hmac_key=bytes.fromhex(os.environ['CARACAL_STREAM_HMAC_KEY']),
+)
+consumer.ensure_group()
+
+def _poll_loop():
+    while True:
+        consumer.poll_once()
+
+threading.Thread(target=_poll_loop, daemon=True).start()
+
+auth = CaracalAuth(
+    issuer=os.environ['CARACAL_STS_URL'],
+    audience='resource://my-mcp-server',
+    revocations=revocations,
+)
+```
+
+See the [Redis connector reference](../redis/) for full consumer configuration details.
+
+---
+
+## Relationship to transport packages
+
+`CaracalAuth` calls `authenticate()` from `caracalai_transport_mcp` internally, passing all constructor arguments as verification parameters. Use `CaracalAuth` when building FastMCP servers. Use `authenticate()` from `caracalai_transport_mcp` directly when building for a framework that does not have a dedicated connector.

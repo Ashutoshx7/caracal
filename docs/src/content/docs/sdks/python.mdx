@@ -1,7 +1,311 @@
 ---
 title: Python SDK
-description: The caracalai-sdk package for FastAPI, ASGI, and synchronous Python apps.
+description: Complete API reference for caracalai-sdk — the Caracal client for async Python, FastAPI, and ASGI apps.
 pageType: reference
 ---
 
-The caracalai-sdk package for FastAPI, ASGI, and synchronous Python apps.
+`caracalai-sdk` provides agent session management and context propagation for Python services. Session lifecycle uses async context managers. Context propagates through Python's `contextvars.ContextVar` mechanism, making it available across `await` boundaries without explicit parameter threading. Outbound calls use `httpx.AsyncClient` with automatic W3C header injection.
+
+## Install
+
+```bash
+pip install caracalai-sdk
+```
+
+## Environment variables
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `CARACAL_COORDINATOR_URL` | Yes | Coordinator base URL (e.g., `http://coordinator:4000`) |
+| `CARACAL_ZONE_ID` | Yes | Zone identifier |
+| `CARACAL_APPLICATION_ID` | Yes | Registered application ID |
+| `CARACAL_SUBJECT_TOKEN` | Yes | Ambient bearer token |
+| `CARACAL_GATEWAY_URL` | No | Gateway base URL for resource-routed calls |
+| `CARACAL_RESOURCES` | No | Comma-separated `resourceId=upstreamPrefix` pairs |
+
+## `Caracal` class
+
+### Constructor
+
+```python
+from caracalai_sdk import Caracal, CaracalConfig
+from caracalai_sdk.advanced import CoordinatorClient, AgentKind, ResourceBinding
+
+caracal = Caracal(CaracalConfig(
+    coordinator=CoordinatorClient(base_url='http://coordinator:4000'),
+    zone_id='my-zone',
+    application_id='my-app',
+    subject_token='eyJ...',
+    gateway_url='http://gateway:8081',         # optional
+    resources=[                                # optional
+        ResourceBinding(
+            resource_id='resource://inventory',
+            upstream_prefix='http://inventory:8080',
+        ),
+    ],
+    default_kind=AgentKind.INSTANCE,
+    default_ttl_seconds=3600,
+))
+```
+
+### `Caracal.from_env(env?)`
+
+Reads all `CARACAL_*` environment variables and constructs a `Caracal` instance.
+
+```python
+@classmethod
+def from_env(cls, env: Mapping[str, str] | None = None) -> Caracal: ...
+```
+
+## Data types
+
+```python
+from dataclasses import dataclass, field
+from typing import Any
+
+@dataclass
+class CaracalConfig:
+    coordinator: CoordinatorClient
+    zone_id: str
+    application_id: str
+    subject_token: str
+    gateway_url: str | None = None
+    resources: list[ResourceBinding] = field(default_factory=list)
+    default_kind: AgentKind = AgentKind.INSTANCE
+    default_ttl_seconds: int | None = None
+
+@dataclass
+class CoordinatorClient:
+    base_url: str
+    timeout: float = 10.0
+
+@dataclass
+class ResourceBinding:
+    resource_id: str
+    upstream_prefix: str
+
+@dataclass(frozen=True)
+class CaracalContext:
+    subject_token: str
+    zone_id: str
+    client_id: str
+    agent_session_id: str | None = None
+    delegation_edge_id: str | None = None
+    parent_edge_id: str | None = None
+    session_id: str | None = None
+    trace_id: str | None = None
+    hop: int = 0
+
+class AgentKind(StrEnum):
+    SERVICE   = 'service'
+    INSTANCE  = 'instance'
+    EPHEMERAL = 'ephemeral'
+```
+
+## Agent session methods
+
+### `spawn()`
+
+Async context manager. Opens an agent session on the Coordinator at `__aenter__`, binds it to the current context via `contextvars.ContextVar`, and terminates the session at `__aexit__`.
+
+```python
+async def spawn(
+    self,
+    *,
+    kind: AgentKind | None = None,
+    ttl_seconds: int | None = None,
+    session_sid: str | None = None,
+    parent_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    trace_id: str | None = None,
+) -> AsyncGenerator[CaracalContext, None]: ...
+```
+
+Usage:
+
+```python
+async with caracal.spawn(kind=AgentKind.EPHEMERAL, ttl_seconds=600) as ctx:
+    print(ctx.agent_session_id)
+    # all awaited calls here share the session
+```
+
+Session limits: max depth 10, max children per session 10, max 50 active per application per zone, max 200 per application across zones.
+
+### `delegate()`
+
+Async context manager. Creates a delegation edge from the current session to the target. The target application can request the listed scopes through this edge.
+
+```python
+async def delegate(
+    self,
+    *,
+    to: str,
+    to_application_id: str,
+    scopes: list[str],
+    constraints: DelegationConstraints | None = None,
+    ttl_seconds: int | None = None,
+) -> AsyncGenerator[CaracalContext, None]: ...
+```
+
+```python
+@dataclass
+class DelegationConstraints:
+    resources: list[str] | None = None
+    actions: list[str] | None = None
+    max_depth: int | None = None
+    expires_at: str | None = None      # ISO 8601
+
+    def to_wire(self) -> dict[str, Any]: ...
+```
+
+Usage:
+
+```python
+async with caracal.spawn() as source:
+    async with caracal.delegate(
+        to=target_session_id,
+        to_application_id='payments-service',
+        scopes=['payment:submit'],
+        constraints=DelegationConstraints(resources=['resource://payments']),
+        ttl_seconds=300,
+    ) as delegated:
+        print(delegated.delegation_edge_id)
+```
+
+### `current()`
+
+Returns the `CaracalContext` bound to the current context var, or `None` if called outside a `spawn()` or `delegate()` block.
+
+```python
+def current(self) -> CaracalContext | None: ...
+```
+
+## Transport and headers
+
+### `transport(**kwargs)`
+
+Returns an `httpx.AsyncClient` that reads the current `CaracalContext` from context vars and injects three headers on every request:
+
+- `Authorization: Bearer <subject_token>`
+- `traceparent: 00-{traceId}-{spanId}-01`
+- `baggage: caracal.agent_session=…;caracal.delegation_edge=…;caracal.hop=N`
+
+Additional `kwargs` are forwarded to the `httpx.AsyncClient` constructor (e.g., `timeout`, `verify`).
+
+```python
+def transport(self, **kwargs: Any) -> httpx.AsyncClient: ...
+```
+
+Usage:
+
+```python
+async with caracal.spawn():
+    async with caracal.transport() as client:
+        resp = await client.get('http://inventory:8080/items')
+```
+
+### `headers()`
+
+Returns the current envelope as `dict[str, str]`. Use for manual header injection.
+
+```python
+def headers(self) -> dict[str, str]: ...
+```
+
+### `bind_from_headers(headers)`
+
+Async context manager. Reads the Caracal envelope from inbound HTTP headers and binds the resulting context for the duration of the block.
+
+```python
+async def bind_from_headers(
+    self,
+    headers: Mapping[str, str],
+) -> AsyncGenerator[CaracalContext, None]: ...
+```
+
+Usage:
+
+```python
+async with caracal.bind_from_headers(request.headers):
+    ctx = caracal.current()   # populated from inbound headers
+```
+
+### `middleware()`
+
+Returns an ASGI middleware factory for use with FastAPI or Starlette. Wraps each request with `bind_from_headers`.
+
+```python
+def middleware(self) -> Callable[[ASGIApp], CaracalASGIMiddleware]: ...
+```
+
+Usage:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+app.add_middleware(caracal.middleware())
+```
+
+## Advanced API
+
+Import from `caracalai_sdk.advanced` for low-level primitives:
+
+```python
+from caracalai_sdk.advanced import (
+    current,          # Get CaracalContext from ContextVar directly
+    bind,             # Sync bind: bind(ctx, fn) → result
+    abind,            # Async bind: await abind(ctx, coro)
+    with_overrides,   # Patch current context: with_overrides(agent_session_id='…')
+    to_envelope,      # CaracalContext → Envelope
+    from_envelope,    # Envelope → CaracalContext
+    Envelope,
+    encode_envelope,  # Envelope → dict[str, str] (headers)
+    decode_envelope,  # dict[str, str] → Envelope
+    to_headers,       # Alias for encode_envelope
+    from_headers,     # Alias for decode_envelope
+    parse_baggage,
+    parse_traceparent,
+    HEADER_AUTHORIZATION,
+    HEADER_TRACEPARENT,
+    HEADER_BAGGAGE,
+    BAGGAGE_AGENT_SESSION,
+    BAGGAGE_DELEGATION_EDGE,
+    BAGGAGE_PARENT_EDGE,
+    BAGGAGE_HOP,
+    MAX_HOP,          # 32
+)
+```
+
+### `Envelope` type
+
+```python
+@dataclass
+class Envelope:
+    subject_token: str | None = None
+    agent_session_id: str | None = None
+    delegation_edge_id: str | None = None
+    parent_edge_id: str | None = None
+    trace_id: str | None = None
+    hop: int = 0
+```
+
+### Wire header format
+
+```
+Authorization: Bearer {subject_token}
+traceparent:   00-{32-hex-traceId}-{16-hex-spanId}-01
+baggage:       caracal.agent_session={agentSessionId};
+               caracal.delegation_edge={delegationEdgeId};
+               caracal.parent_edge={parentEdgeId};
+               caracal.hop={hop}
+```
+
+Hop is capped at `MAX_HOP = 32`.
+
+## Error behavior
+
+- `spawn()` raises if the Coordinator is unreachable or rejects the session (session limit exceeded).
+- `delegate()` raises if no current session exists or the Coordinator rejects the edge (cycle detected, session inactive).
+- `transport()` passes `httpx` errors through unchanged.
+- `from_env()` raises `ValueError` if any required variable is missing.

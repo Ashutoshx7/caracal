@@ -1,7 +1,146 @@
 ---
 title: OAuth Package
-description: RFC 8693 token exchange primitives shared across the SDKs.
+description: Complete API reference for @caracalai/oauth — RFC 8693 token exchange, intelligent caching, retry logic, and step-up error handling.
 pageType: reference
 ---
 
-RFC 8693 token exchange primitives shared across the SDKs.
+`@caracalai/oauth` implements RFC 8693 (OAuth 2.0 Token Exchange) for TypeScript. It exchanges a long-lived ambient token for a short-lived per-resource mandate, caches the result keyed on the full exchange context, and surfaces step-up challenges as a typed error. The main SDK uses this package internally; install it directly only when building custom exchange logic or tools that call the STS directly.
+
+## Install
+
+```bash
+npm install @caracalai/oauth
+```
+
+## `OAuthClient`
+
+### Constructor
+
+```typescript
+import { OAuthClient, InMemoryTokenCache } from '@caracalai/oauth';
+
+new OAuthClient(
+  stsUrl: string,           // STS base URL; exchange at {stsUrl}/oauth/2/token
+  zoneId: string,
+  applicationId: string,
+  cache?: TokenCache        // defaults to new InMemoryTokenCache()
+)
+```
+
+### `exchange(subjectToken, resource, opts?)`
+
+Exchanges `subjectToken` for a per-call mandate scoped to `resource`. Returns a cached response if a valid, non-expired token exists for the same exchange context.
+
+```typescript
+async exchange(
+  subjectToken: string,
+  resource: string,
+  opts?: ExchangeOptions
+): Promise<TokenExchangeResponse>
+
+interface ExchangeOptions {
+  clientSecret?: string;
+  clientAssertion?: string;
+  clientAssertionType?: string;       // e.g., 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
+  actorToken?: string;
+  sessionId?: string;
+  agentSessionId?: string;
+  delegationEdgeId?: string;
+  scopes?: string[];                  // Normalized: deduped and sorted before caching
+  timeoutMs?: number;                 // Default: 30000
+  retries?: number;                   // Default: 3
+  ttlSeconds?: number;
+}
+
+interface TokenExchangeResponse {
+  accessToken: string;
+  tokenType: 'Bearer';
+  expiresIn: number;                  // Seconds
+  issuedAt: number;                   // Unix timestamp (seconds)
+}
+```
+
+The request is sent to `POST {stsUrl}/oauth/2/token` as `application/x-www-form-urlencoded` with:
+
+```
+grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+subject_token={subjectToken}
+subject_token_type=urn:ietf:params:oauth:token-type:access_token
+resource={resource}
+zone_id={zoneId}
+application_id={applicationId}
+[additional fields from opts]
+```
+
+## `InteractionRequiredError`
+
+Thrown when the STS responds with `error: "interaction_required"` (step-up authentication required):
+
+```typescript
+class InteractionRequiredError extends Error {
+  readonly code = 'interaction_required';
+  readonly challengeId: string;       // Challenge ID; pass to the satisfaction endpoint
+  readonly resource?: string;
+  readonly acrValues?: string;        // Authentication context requirement
+}
+```
+
+Catch it to initiate the step-up flow:
+
+```typescript
+try {
+  const result = await client.exchange(subjectToken, resource, { clientSecret });
+} catch (err) {
+  if (err instanceof InteractionRequiredError) {
+    // err.challengeId identifies the challenge to satisfy
+    await waitForChallengeSatisfaction(err.challengeId);
+    // Retry after satisfaction
+    const result = await client.exchange(subjectToken, resource, { clientSecret });
+  }
+}
+```
+
+## Token cache
+
+### `TokenCache` interface
+
+```typescript
+interface TokenCache {
+  get(subjectToken: string, resource: string): TokenExchangeResponse | undefined
+  set(subjectToken: string, resource: string, token: TokenExchangeResponse): void
+}
+```
+
+The cache key is computed as a SHA-256 hash of the full exchange context — not just `subjectToken + resource`, but also `actorToken`, `sessionId`, `agentSessionId`, `delegationEdgeId`, `clientAssertion`, and the normalized scope list. This means two exchanges for the same resource with different agent sessions or delegation edges produce separate cache entries.
+
+### Cache validity
+
+A cached entry is returned only if the token has at least `timeoutMs/1000 + 30` seconds remaining. This preflight window prevents returning a token that would expire before the downstream service can use it.
+
+### `InMemoryTokenCache`
+
+```typescript
+new InMemoryTokenCache(opts?: { maxEntries?: number })   // default: 10,000
+```
+
+LRU-ordered: on overflow, the oldest entry is evicted. Entries are not actively garbage-collected — expired entries are only removed when fetched.
+
+### Concurrent request deduplication
+
+When multiple concurrent calls exchange the same (subject, resource) pair, `OAuthClient` coalesces them into a single inflight request. All waiters receive the same response when it completes.
+
+## Retry behavior
+
+`exchange` retries automatically on transient HTTP errors:
+
+| Status | Behavior |
+| ------ | -------- |
+| 408, 425, 429, 5xx | Retry after backoff |
+| 401 | Single automatic retry; no backoff |
+| 400 | Not retried; parse and throw immediately |
+
+Backoff formula (when no `Retry-After` header): `min(250ms × 2^attempt, 5000ms) / 2 + random(base/2)`.
+
+If the server sends a `Retry-After` header, that value overrides the computed backoff.
+
+The `timeoutMs` limit applies per attempt, not across all retries. An `AbortController` enforces it.
