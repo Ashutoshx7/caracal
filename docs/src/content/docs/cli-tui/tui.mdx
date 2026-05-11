@@ -1,7 +1,191 @@
 ---
 title: TUI Walkthrough
-description: Navigate zones, applications, resources, policies, grants, sessions, audit, and agents.
+description: Navigate the caracal-tui — launch, screen layout, key bindings, views, and live audit streaming.
 pageType: reference
 ---
 
-Navigate zones, applications, resources, policies, grants, sessions, audit, and agents.
+`caracal-tui` is a terminal UI for inspecting all Caracal entities without leaving the shell. It fetches from the same control-plane API as the CLI and renders into a full-screen terminal buffer with keyboard navigation.
+
+---
+
+## Launch
+
+```bash
+caracal-tui
+```
+
+**Requirements:**
+
+- A TTY terminal (`stdin` must be a TTY).
+- `CARACAL_ADMIN_TOKEN` set in the environment.
+- `CARACAL_API_URL` set in production (localhost default in development).
+- For agent and delegation views: `CARACAL_COORDINATOR_URL` and `CARACAL_COORDINATOR_TOKEN`.
+
+On startup, the TUI enters full-screen alt buffer mode and hides the cursor. Press `q` or `ctrl-c` at any time to exit and restore the terminal.
+
+---
+
+## Screen layout
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ Caracal TUI                                   http://localhost:3000│  banner
+│ > menu › zones › zone_abc123                                      │  breadcrumb
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  (view content)                                                  │
+│                                                                  │
+├──────────────────────────────────────────────────────────────────┤
+│ (status message)                                                 │  status line
+│ ↑/↓:move  enter:select  z:set-zone  h:back  q:quit             │  key hints
+└──────────────────────────────────────────────────────────────────┘
+```
+
+The terminal is redrawn every 30 ms when content changes. Resize events (SIGWINCH) trigger an immediate redraw. The last column in every list view expands to fill the remaining terminal width.
+
+---
+
+## Main menu
+
+The main menu is the root view. Navigate with arrow keys or number shortcuts:
+
+| Key | View | Zone required |
+| --- | --- | --- |
+| `1` | Zones | No |
+| `2` | Applications | Yes |
+| `3` | Resources | Yes |
+| `4` | Providers | Yes |
+| `5` | Policies | Yes |
+| `6` | Policy-sets | Yes |
+| `7` | Grants | Yes |
+| `8` | Sessions | Yes |
+| `9` | Audit (live) | Yes |
+| `0` | Agents | Yes + `CARACAL_COORDINATOR_TOKEN` |
+
+For views that require a zone, press `z` to open the zone picker before navigating.
+
+---
+
+## Navigation — keys that work everywhere
+
+| Key | Action |
+| --- | --- |
+| `q` | Quit the TUI |
+| `ctrl-c` | Quit the TUI |
+| `h`, `esc`, `←` | Go back to the parent view |
+| `↑`, `j` | Move cursor up one row |
+| `↓`, `k` | Move cursor down one row |
+| `pgup` | Move up 10 rows |
+| `pgdn` | Move down 10 rows |
+| `home`, `g` | Jump to the first row |
+| `end`, `G` | Jump to the last row |
+| `enter` | Open selected row |
+| `r` | Reload data from the API |
+| `z` | Open zone picker |
+
+---
+
+## Zone picker
+
+Press `z` from the main menu or any list view to change the active zone. All zone-scoped views use the selected zone.
+
+The zone picker lists all zones with columns: `slug`, `id`, `name`. The currently selected zone is highlighted.
+
+Navigate with the standard list keys. Press `enter` to confirm the selection and return to the previous view. Press `h`, `esc`, or `←` to cancel without changing the zone.
+
+---
+
+## List views
+
+Each entity type opens its own list view with fixed-width columns and an expanding final column. The status line shows loading state, errors, and the row count.
+
+**Loading states:**
+
+- `loading…` — initial fetch in progress.
+- `(no rows)` — fetch succeeded with an empty result set.
+- Error message in red — fetch failed. Common errors:
+  - `401 Unauthorized` — check `CARACAL_ADMIN_TOKEN`.
+  - `403 Forbidden` — token lacks required scope.
+  - `404 Not Found` — resource may have been deleted since the previous load.
+  - Connection error — check `caracal status` to confirm the stack is running.
+
+**Columns per view:**
+
+| View | Columns |
+| --- | --- |
+| Zones | `slug` (18), `name` (24), `login_flow` (12), `dcr` (5), `pkce` (5), `id` |
+| Applications | `name` (24), `method` (8), `cred` (12), `traits` (24), `id` |
+| Resources | `identifier` (32), `name` (18), `upstream` (32), `scopes` |
+| Providers | `identifier` (24), `name` (24), `kind` (10), `owner` (10), `id` |
+| Policies | `name` (28), `owner` (10), `description` (32), `id` |
+| Policy-sets | `name` (24), `active_version` (36), `description` |
+| Grants | `app` (36), `user` (36), `resource` (36), `status` (10), `scopes` |
+| Sessions | `subject` (36), `type` (10), `status` (10), `expires_at` (24), `id` |
+| Agents | `application` (36), `parent` (36), `status` (10), `depth` (6), `spawned_at` (24), `id` |
+
+Text that exceeds a column's width is truncated with `…`.
+
+---
+
+## Detail views
+
+Press `enter` on any list row to open the detail view for that entity. The detail view renders the full API response as pretty-printed JSON.
+
+**Navigation in detail view:**
+
+| Key | Action |
+| --- | --- |
+| `↑`, `j` | Scroll up one line |
+| `↓`, `k` | Scroll down one line |
+| `pgup` | Scroll up 10 lines |
+| `pgdn` | Scroll down 10 lines |
+| `home`, `g` | Jump to the top |
+| `end`, `G` | Jump to the bottom |
+| `r` | Reload from the API |
+| `h`, `esc`, `←` | Back to the list view |
+
+---
+
+## Audit tail (live streaming)
+
+The Audit view (`9` from the main menu) polls the audit API every 2 seconds and displays events as they arrive. Up to 500 events are kept in memory.
+
+**Columns:** `occurred_at` (22), `event_type` (28), `decision` (8), `status` (12), `request_id` (24)
+
+**Decision coloring:**
+
+| Decision | Color |
+| --- | --- |
+| `allow` | Green |
+| `deny` | Red |
+| `partial` | Orange |
+
+**Audit-specific keys:**
+
+| Key | Action |
+| --- | --- |
+| `p` | Toggle pause / resume streaming |
+| `d` | Cycle decision filter: `all` → `allow` → `deny` → `partial` → `all` |
+| `enter` | Open full audit detail for the selected event |
+| `r` | Force immediate reload |
+
+The current filter is shown in the status line (e.g., `filter:deny`). When paused, `p:resume` is shown. When streaming, `p:pause` is shown.
+
+**Audit detail:**
+
+Press `enter` on an audit event to open its full detail view, showing the complete `AuditDetail` record including `determining_policies_json` and `diagnostics_json`. This is the TUI equivalent of `caracal explain <request_id>`.
+
+---
+
+## Error display
+
+API errors are shown in the status line in red. The TUI does not exit on API errors — press `r` to retry, or press `h` to go back and try a different view.
+
+| Error | Likely cause |
+| --- | --- |
+| `unauthorized — check CARACAL_ADMIN_TOKEN` | Token missing, wrong, or expired |
+| `forbidden — token lacks required scope` | Token does not have admin scope |
+| `not found — resource may have been deleted` | Entity was removed between load and detail fetch |
+| `is the stack running? try 'caracal up'` | API not reachable |
+| `coordinator URL not set` | `CARACAL_COORDINATOR_URL` is missing |
+| `coordinator token not set` | `CARACAL_COORDINATOR_TOKEN` is missing |

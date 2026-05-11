@@ -1,7 +1,154 @@
 ---
 title: Local Setup
-description: Toolchains, package managers, and one-command bootstrap.
+description: Toolchains, package managers, and one-command bootstrap for Caracal development.
 pageType: workflow
 ---
 
-Toolchains, package managers, and one-command bootstrap.
+This page covers what you need installed and how to bring up a local Caracal stack ready for development.
+
+---
+
+## Required toolchains
+
+| Tool | Version | Used for |
+| --- | --- | --- |
+| Node.js | 24+ | TypeScript services and packages |
+| pnpm | 11.0.9+ | TypeScript dependency management |
+| Go | 1.26+ | Go services and packages |
+| Python | 3.11+ | Python SDK packages |
+| Bun | 1.x | CLI/TUI binary compilation |
+| Docker Desktop | latest stable | Local service stack |
+
+Install each from its official source. The repository does not manage toolchain versions through scripts — use your system package manager or version manager.
+
+### Go workspace
+
+The repository uses a `go.work` file at the repository root to span all 11 Go modules. After installing Go 1.26+, no additional configuration is needed — `go` commands run from the repo root pick up all modules automatically.
+
+```sh
+go work sync   # sync workspace module graph
+```
+
+### Python environments
+
+Each Python package has its own virtual environment. Create it before working on that package:
+
+```sh
+cd packages/caracalai-python
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+---
+
+## Clone and install
+
+```sh
+git clone https://github.com/garudex-labs/caracal.git
+cd caracal
+pnpm install
+```
+
+`pnpm install` resolves all TypeScript workspace dependencies across `apps/`, `services/`, `packages/`, and `docs/`. Go and Python dependencies are managed separately per module.
+
+---
+
+## Environment configuration
+
+```sh
+cp .env.example .env
+```
+
+`.env.example` documents every required and optional variable. The defaults bring up a working local stack without modification. The variables you most often need to set:
+
+| Variable | What it does |
+| --- | --- |
+| `ZONE_KEK` | 32-byte hex key for zone encryption (a test value is in `.env.example`) |
+| `CARACAL_ADMIN_TOKEN` | Bootstrap admin token — can be any string for local development |
+| `STREAMS_HMAC_KEY` | Hex key for Redis stream signing (leave empty to skip in development) |
+| `AUDIT_HMAC_KEY` | Hex key for audit chain HMAC (leave empty to skip in development) |
+
+All services read from `.env` when started through Docker Compose. Do not commit `.env` — it is in `.gitignore`.
+
+---
+
+## Start the stack
+
+```sh
+caracal up
+```
+
+This runs `docker compose up -d` using the compose file in `infra/`. It starts five services: API (3000), STS (8080), Gateway (8081), Coordinator (4000), Audit (9090), plus PostgreSQL and Redis.
+
+After the stack is up, run the bootstrap initialization:
+
+```sh
+caracal init
+```
+
+`caracal init` calls the API's bootstrap endpoint, seeds the admin token from your `.env`, and creates the default zone. It requires `CARACAL_API_URL`, `CARACAL_ADMIN_TOKEN`, and `CARACAL_ZONE_ID` from your environment or `caracal.toml`. If `caracal.toml` does not exist, `init` creates one from defaults.
+
+Verify the stack is healthy:
+
+```sh
+caracal status
+```
+
+All five services should show `healthy`.
+
+---
+
+## Database migrations
+
+Migrations run automatically when the API service starts. Migration files live in `infra/postgres/migrations/` as numbered SQL files:
+
+```
+NNNN_description.up.sql
+NNNN_description.down.sql
+```
+
+If you need to run migrations manually against a local Postgres instance:
+
+```sh
+psql $DATABASE_URL -f infra/postgres/migrations/0001_init.up.sql
+```
+
+The API uses an advisory lock to serialize migration runs across concurrent replicas, so it is safe to start multiple replicas simultaneously.
+
+---
+
+## Build individual services
+
+**TypeScript services:**
+
+```sh
+pnpm --filter @caracalai/api build
+pnpm --filter @caracalai/coordinator build
+```
+
+**Go services:**
+
+```sh
+cd services/sts && go build ./...
+cd services/gateway && go build ./...
+cd services/audit && go build ./...
+```
+
+**CLI/TUI binaries:**
+
+```sh
+pnpm --filter @caracalai/cli build
+bun build --compile --target=bun-linux-x64 apps/cli/src/index.ts --outfile dist/caracal
+```
+
+---
+
+## Editor setup
+
+The repository has no enforced editor configuration. Recommended plugins:
+
+- **TypeScript**: the built-in TS Language Server via your editor's LSP support.
+- **Go**: `gopls` (bundled with Go or installable via `go install golang.org/x/tools/gopls@latest`).
+- **Python**: Pylance or Pyright.
+- **Rego**: OPA extension for VS Code provides syntax highlighting and `opa check` integration.

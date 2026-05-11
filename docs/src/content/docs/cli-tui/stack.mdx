@@ -1,7 +1,120 @@
 ---
 title: Stack Commands
-description: caracal up, down, status, and init for managing the local stack.
+description: caracal up, down, status, and init — start, stop, probe, and provision the local Caracal stack.
 pageType: reference
 ---
 
-caracal up, down, status, and init for managing the local stack.
+Stack commands manage the local Caracal stack. They delegate to `docker compose` and do not require `CARACAL_ADMIN_TOKEN`. Run them from the directory that contains `infra/docker/docker-compose.yml`, or set `CARACAL_REPO_ROOT` to point there.
+
+---
+
+## `caracal up`
+
+Start the stack.
+
+```bash
+caracal up
+```
+
+Equivalent to `docker compose up -d`. In development mode, passes `--build` to rebuild images before starting. In runtime mode (detected automatically), runs without `--build` and injects `CARACAL_VERSION` into the compose environment.
+
+Forwards all `docker compose` output to stdout and exits with the compose exit code.
+
+---
+
+## `caracal down`
+
+Stop and remove stack containers.
+
+```bash
+caracal down       # stop containers, preserve volumes
+caracal down -v    # stop containers and remove volumes (destroys all persisted data)
+```
+
+`-v` is passed directly to `docker compose down`. Use it to reset the stack to a clean state between test runs or when rotating secrets.
+
+---
+
+## `caracal status`
+
+Probe all five services and report their health.
+
+```bash
+caracal status
+```
+
+Sends `GET /health` to each service in parallel with a 1500 ms timeout:
+
+| Service | Default port | URL probed |
+| --- | --- | --- |
+| `api` | 3000 | `http://localhost:3000/health` |
+| `sts` | 8080 | `http://localhost:8080/health` |
+| `gateway` | 8081 | `http://localhost:8081/health` |
+| `audit` | 9090 | `http://localhost:9090/health` |
+| `coordinator` | 4000 | `http://localhost:4000/health` |
+
+Example output:
+
+```
+api            3000  ok      200
+sts            8080  ok      200
+gateway        8081  down    timeout
+audit          9090  ok      200
+coordinator    4000  ok      200
+```
+
+Exit code is `0` if all services respond, `1` if any is down or unreachable. Use this in scripts to wait for stack readiness:
+
+```bash
+caracal up
+until caracal status; do sleep 1; done
+```
+
+---
+
+## `caracal init`
+
+Bootstrap the local zone and write `caracal.toml`.
+
+```bash
+caracal init
+caracal init --force    # rotate client secret if a zone already exists
+```
+
+Calls `POST /v1/local/bootstrap` on the control-plane API. This endpoint is only available when `CARACAL_LOCAL_BOOTSTRAP_ENABLED=true` is set on the API service (enabled by default in the local compose stack).
+
+**Steps:**
+
+1. Calls the bootstrap endpoint.
+2. Receives `zone_id`, `application_id`, `app_client_secret`, and a default resource identifier.
+3. Writes `caracal.toml` to the resolved config path.
+
+If the zone is already provisioned and no `--force` flag is passed, `init` exits with an error rather than silently overwriting the existing secret. `--force` rotates the client secret and rewrites the config.
+
+**Flags:**
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--api-url <url>` | `http://localhost:3000` | Control-plane API base URL |
+| `--zone-url <url>` | `http://localhost:8080` | STS base URL written to `zone_url` in `caracal.toml` |
+| `--admin-token <token>` | From env discovery | Admin token; overrides `CARACAL_ADMIN_TOKEN` |
+| `--config <path>` | Auto-resolved | Explicit output path for `caracal.toml` |
+| `--force` | `false` | Rotate client secret even if a zone already exists |
+
+**Output:**
+
+```
+Wrote /home/user/myproject/caracal.toml
+Note: Caracal enforces policy only on traffic that reaches the gateway...
+```
+
+**Typical first-run workflow:**
+
+```bash
+caracal up
+until caracal status; do sleep 1; done
+caracal init
+# caracal.toml is now written; caracal run is ready to use
+```
+
+For config file details — including the full `caracal.toml` schema and discovery order — see [Configuration File](./config-file/).
