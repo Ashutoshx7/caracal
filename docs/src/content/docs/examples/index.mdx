@@ -1,7 +1,40 @@
 ---
 title: Examples
-description: End-to-end scenarios that exercise the full Caracal stack.
+description: End-to-end scenarios that demonstrate Caracal authorization patterns in real application contexts.
 pageType: landing
 ---
 
-End-to-end scenarios that exercise the full Caracal stack.
+The examples in this section are complete, runnable applications that show how Caracal's authorization patterns — agent sessions, delegation hierarchies, scoped mandates, and provider-specific transport — apply to realistic workloads.
+
+## What the examples demonstrate
+
+Each example focuses on patterns that are difficult to grasp from documentation alone:
+
+- How delegation chains form when one agent spawns another
+- How scope enforcement works across a hierarchy of agents with different authorities
+- How transport works across heterogeneous protocols (REST, gRPC, MCP, SSE) within the same orchestration
+- How the session lifecycle integrates with long-running agent workflows
+- How ephemeral agents with constrained, single-operation authority differ from long-lived session agents
+
+## Available examples
+
+| Example | Scenario | Key patterns |
+| --- | --- | --- |
+| [Lynx Capital: Autonomous Payouts](./lynx-capital/) | Multi-agent swarm processing a weekly invoice batch across 5 regions | Hierarchical spawning, delegation scope, ephemeral payment agents, multi-protocol transport |
+
+## Prerequisites for all examples
+
+All examples assume a running Caracal stack. Start it with:
+
+```bash
+cd caracal/infra/docker
+docker compose up -d
+```
+
+Verify all services are healthy:
+
+```bash
+docker compose ps
+```
+
+Each example includes its own setup instructions and environment configuration. Dependencies and startup commands are in the example's own directory under `examples/`.

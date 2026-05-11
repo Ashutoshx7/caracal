@@ -1,7 +1,166 @@
 ---
 title: Backup and Retention
-description: Audit retention windows, ledger export, and disaster recovery posture.
+description: Audit event partition lifecycle, S3 Parquet export, chain HMAC tamper detection, and disaster recovery posture.
 pageType: config
 ---
 
-Audit retention windows, ledger export, and disaster recovery posture.
+The audit ledger is the most critical durable store in Caracal. This page covers how audit data is retained in Postgres, exported to S3 in Parquet format, verified for tamper-evidence, and how to approach disaster recovery.
+
+## Audit data model
+
+Audit events are stored in the `audit_events` table, which is range-partitioned on `occurred_at` with one partition per calendar month. The table schema includes chain linkage fields for tamper detection:
+
+| Column | Purpose |
+| --- | --- |
+| `id` | Event identifier |
+| `zone_id` | Zone that generated the event |
+| `chain_seq` | Monotonic per-zone sequence number |
+| `content_sha256` | SHA-256 hash of the event payload |
+| `prev_content_sha256` | Hash of the preceding event in the chain |
+| `chain_hmac` | HMAC-SHA256 linking this event to its predecessor |
+| `ingest_signature` | Signature added at ingest time |
+| `occurred_at` | Event timestamp (partition key) |
+| `ingested_at` | Time of database insertion |
+
+The chain fields make any deletion or modification of an existing event detectable by the tamper sweeper.
+
+---
+
+## Retention policy
+
+`AUDIT_RETENTION_DAYS` (default: 365) controls how long audit events are retained. The Audit service's retention rotator runs every 6 hours (leader-elected via advisory lock `0x4341524130303032`) and:
+
+1. Pre-creates monthly Postgres partitions for the current month and 3 future months.
+2. Identifies partitions whose entire date range falls before `now() - AUDIT_RETENTION_DAYS`.
+3. Drops those partitions.
+
+**Partition drop is irreversible.** Data in dropped partitions is gone permanently unless it was exported to S3 before the partition was dropped. Configure S3 export before data reaches its retention cutoff if long-term archival is required.
+
+Check active partitions:
+
+```sql
+SELECT relname,
+       pg_size_pretty(pg_relation_size(oid)) AS size
+FROM   pg_class
+WHERE  relname LIKE 'audit_events_%'
+ORDER  BY relname;
+```
+
+---
+
+## Parquet export to S3
+
+When `AUDIT_EXPORT_S3_BUCKET` is set, the Audit service exports completed hours of audit events to S3 in OCSF v1.7.0 Parquet format. The export runs hourly, leader-elected via advisory lock `0x4341524130303031`.
+
+**Configuration:**
+
+```bash
+AUDIT_EXPORT_S3_ENDPOINT=https://s3.amazonaws.com   # Or MinIO endpoint
+AUDIT_EXPORT_S3_BUCKET=my-audit-archive
+AUDIT_EXPORT_S3_REGION=us-east-1                    # default
+```
+
+For MinIO or other S3-compatible stores, set `AUDIT_EXPORT_S3_ENDPOINT` to the custom endpoint URL.
+
+**Export behavior:**
+
+- Exports the most recently completed whole hour of `ingested_at` data.
+- On fresh deployment, exports only the most recent complete hour (no historical catch-up).
+- After the first export, tracks a watermark in `audit_export_watermark` and catches up hour-by-hour if the exporter was down.
+- Each export run emits `export_events_total`, `export_errors_total`, `export_duration_ms`, and `is_export_leader` metrics.
+
+**Verifying export health:**
+
+```bash
+curl http://localhost:9090/metrics | jq '{
+  export_events_total,
+  export_errors_total,
+  is_export_leader
+}'
+```
+
+If `export_errors_total` is increasing and `export_events_total` is not, check S3 connectivity and credentials.
+
+**Check the watermark:**
+
+```sql
+SELECT last_exported_hour, updated_at
+FROM   audit_export_watermark
+WHERE  name = 'default';
+```
+
+If `last_exported_hour` is significantly behind `now()`, the exporter has fallen behind. This can happen after an extended outage or if the Audit service was stopped. The exporter will catch up automatically when restarted, processing one hour per run.
+
+---
+
+## Tamper detection
+
+The Audit service runs a continuous tamper sweeper that verifies the chain integrity of audit events using the `AUDIT_HMAC_KEY`. The sweeper checks:
+
+1. `content_sha256` matches the actual payload hash.
+2. `chain_hmac` is a valid HMAC of this event linked to `prev_content_sha256`.
+3. `chain_seq` is strictly monotonic per zone.
+
+Tamper metrics from `GET /metrics` on the Audit service:
+
+| Metric | Meaning |
+| --- | --- |
+| `tamper_checked_total` | Events verified by the sweeper |
+| `tamper_mismatch_total` | Events where hash or HMAC does not match |
+| `tamper_chain_breaks` | Chain sequence breaks detected |
+| `tamper_hmac_failures` | HMAC verification failures |
+| `tamper_last_sweep_unix` | Unix timestamp of the last rolling sweep |
+| `tamper_last_full_unix` | Unix timestamp of the last full sweep |
+
+`tamper_mismatch_total > 0` or `tamper_chain_breaks > 0` indicates that audit event data has been modified after ingest. This is a security event — see [Incident Response](./incident-response/).
+
+Tamper alerts are also written to the `audit_ingest_alerts` table:
+
+```sql
+SELECT kind, detail, zone_id, observed_at
+FROM   audit_ingest_alerts
+ORDER  BY observed_at DESC
+LIMIT  20;
+```
+
+---
+
+## Audit DLQ
+
+`caracal.audit.events.dlq` receives audit events that failed delivery more than `AUDIT_MAX_DELIVERIES` (default 5) times. Events in the DLQ are not inserted into Postgres.
+
+Monitor DLQ depth:
+
+```bash
+redis-cli -a $REDIS_PASSWORD XLEN caracal.audit.events.dlq
+```
+
+Growing DLQ depth means events are being generated faster than the Audit service can persist them, or the Audit service has a database write error. Investigate Audit service logs and Postgres connectivity.
+
+---
+
+## Disaster recovery posture
+
+Caracal does not provide built-in backup orchestration beyond the S3 Parquet export. For full disaster recovery:
+
+**PostgreSQL:**
+
+- Enable continuous WAL archiving (`wal_level=replica`, `archive_mode=on`).
+- Take daily base backups with `pg_basebackup` to durable object storage.
+- Test point-in-time recovery to a separate instance at least monthly.
+- Target a recovery point objective (RPO) consistent with your audit and compliance requirements.
+- The `audit_events` partitioned table is the highest-priority data to protect.
+
+**Redis:**
+
+- The `redisData` volume holds the AOF log (`appendonly yes`, `appendfsync everysec`). On crash, the worst-case data loss is 1 second of writes.
+- For production, use Redis persistence (`AOF + RDB`) and back up the `redisData` volume.
+- Redis stream data is also in Postgres via the transactional outbox — if Redis is lost, in-flight outbox rows will be re-delivered on restart. Events already acknowledged by consumers are gone, but those were already persisted.
+
+**Recovery order:**
+
+Restore and start services in this order:
+1. Postgres (restore backup, apply WAL)
+2. Redis (restore AOF/RDB, or start fresh and let outbox re-deliver)
+3. `init` container (re-provisions streams and consumer groups)
+4. STS → API → Audit → Coordinator → Gateway
