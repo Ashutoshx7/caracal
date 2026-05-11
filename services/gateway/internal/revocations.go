@@ -73,6 +73,16 @@ func (s *revocationStore) mark(sid string) {
 	s.mu.Unlock()
 }
 
+// Size reports how many active revocations are currently tracked.
+func (s *revocationStore) Size() int {
+	if s == nil {
+		return 0
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.entries)
+}
+
 func (s *revocationStore) prune() {
 	cutoff := time.Now()
 	s.mu.Lock()

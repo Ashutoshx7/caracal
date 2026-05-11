@@ -29,14 +29,15 @@ const (
 
 // Server holds all runtime state for the STS.
 type Server struct {
-	cfg         Config
-	db          DBQuerier
-	redis       *RedisClient
-	opa         *OPAEngine
-	keys        *KeyCache
-	auditBuffer *AuditBuffer
-	metrics     *STSMetrics
-	log         zerolog.Logger
+	cfg            Config
+	db             DBQuerier
+	redis          *RedisClient
+	opa            *OPAEngine
+	keys           *KeyCache
+	auditBuffer    *AuditBuffer
+	metrics        *STSMetrics
+	stepUpThrottle *stepUpThrottle
+	log            zerolog.Logger
 }
 
 // New initialises all dependencies and returns a ready-to-run Server.
@@ -81,14 +82,15 @@ func New(ctx context.Context) (*Server, error) {
 	}
 
 	return &Server{
-		cfg:         cfg,
-		db:          db,
-		redis:       rdb,
-		opa:         opa,
-		keys:        keys,
-		auditBuffer: buf,
-		metrics:     metrics,
-		log:         log,
+		cfg:            cfg,
+		db:             db,
+		redis:          rdb,
+		opa:            opa,
+		keys:           keys,
+		auditBuffer:    buf,
+		metrics:        metrics,
+		stepUpThrottle: newStepUpThrottle(),
+		log:            log,
 	}, nil
 }
 
