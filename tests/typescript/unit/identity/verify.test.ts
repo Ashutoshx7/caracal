@@ -150,26 +150,23 @@ describe('verify', () => {
     ).rejects.toMatchObject({ name: 'ChainMismatchError', missingApplicationId: 'app-parent' })
   })
 
-  it('reads delegation chain entries with legacy application_id key', async () => {
+  it('rejects long-form delegation chain keys', async () => {
     const { token, issuer } = await mintToken({
       delegation_chain: [{ application_id: 'app-legacy', agent_session_id: 's1', delegation_edge_id: 'e1' }],
     })
-    const claims = await verify(token, {
-      issuer,
-      audience: 'resource://api',
-      requireChainContains: ['app-legacy'],
-    })
-    expect(claims.delegationChain?.[0]).toMatchObject({
-      applicationId: 'app-legacy',
-      agentSessionId: 's1',
-      delegationEdgeId: 'e1',
-    })
+    await expect(
+      verify(token, {
+        issuer,
+        audience: 'resource://api',
+        requireChainContains: ['app-legacy'],
+      }),
+    ).rejects.toMatchObject({ name: 'ChainMismatchError', missingApplicationId: 'app-legacy' })
   })
 
-  it('reads graph_epoch when delegation_graph_epoch is absent', async () => {
+  it('ignores legacy graph_epoch claim', async () => {
     const { token, issuer } = await mintToken({ graph_epoch: 42 })
     const claims = await verify(token, { issuer, audience: 'resource://api' })
-    expect(claims.graphEpoch).toBe(42)
+    expect(claims.graphEpoch).toBeUndefined()
   })
 })
 
