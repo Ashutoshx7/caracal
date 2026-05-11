@@ -3,6 +3,12 @@
 //
 // Caracal JWT claim shapes and verification configuration types.
 
+// DefaultMaxHopCount caps delegation chain depth when verifier callers leave
+// JwtConfig.maxHopCount unset. Matches the coordinator's MAX_DEPTH so a token
+// that would have been blocked at spawn time cannot pass a permissive resource
+// server.
+export const DEFAULT_MAX_HOP_COUNT = 10
+
 export interface JwtConfig {
   issuer: string
   audience: string
