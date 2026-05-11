@@ -11,6 +11,7 @@ COPY packages/identity/go/ packages/identity/go/
 COPY packages/revocation/go/ packages/revocation/go/
 COPY packages/transport/mcp/go/ packages/transport/mcp/go/
 COPY packages/connectors/nethttp/go/ packages/connectors/nethttp/go/
+COPY packages/connectors/redis/go/ packages/connectors/redis/go/
 COPY packages/sdk/go/ packages/sdk/go/
 COPY services/audit/ services/audit/
 COPY services/gateway/ services/gateway/
