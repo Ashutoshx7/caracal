@@ -1,7 +1,178 @@
 ---
 title: Tail and Query the Audit Stream
-description: Stream live audit events from the CLI and query historical decisions.
+description: Stream live audit events from the CLI, filter by decision or event type, and inspect full diagnostics for a specific request ID.
 pageType: workflow
 ---
 
-Stream live audit events from the CLI and query historical decisions.
+Every OPA evaluation — allow and deny — is recorded in the audit log. The `caracal audit tail` command streams live events from the database. The `caracal explain` command shows the full diagnostics for a single request ID: which policies determined the decision, what diagnostics were returned, and what the full input object looked like.
+
+## Prerequisites
+
+- `CARACAL_ADMIN_TOKEN` set.
+- Events in the audit log (any token exchange generates at least one event).
+
+## Stream live events
+
+```bash
+caracal audit tail
+```
+
+Default output is a human-readable table. Events appear in near real time as token exchanges complete.
+
+### Output as JSON
+
+```bash
+caracal audit tail --json
+```
+
+Each line is a JSON object. Pipe to `jq` for field extraction:
+
+```bash
+caracal audit tail --json | jq '{id, decision, event_type, occurred_at}'
+```
+
+### Filter by decision
+
+```bash
+# Only denied exchanges
+caracal audit tail --decision deny
+
+# Only allowed exchanges
+caracal audit tail --decision allow
+```
+
+### Filter by event type
+
+```bash
+# Only token exchange events
+caracal audit tail --event-type token_exchange
+
+# Step-up related events
+caracal audit tail --event-type challenge_invalid
+caracal audit tail --event-type challenge_cooldown
+```
+
+### Filter by zone
+
+```bash
+caracal audit tail --zone zone-abc123
+```
+
+### Filter by time range
+
+```bash
+# Events since a specific timestamp (ISO 8601)
+caracal audit tail --since 2026-05-11T08:00:00Z
+
+# Events within a window
+caracal audit tail \
+  --since 2026-05-11T08:00:00Z \
+  --until 2026-05-11T09:00:00Z
+```
+
+### Limit output
+
+```bash
+# Last 50 events (default: 100)
+caracal audit tail --limit 50
+```
+
+### Filter by request ID
+
+Every token exchange carries a `request_id` in the response and in the mandate's claim set. Correlate a specific exchange:
+
+```bash
+caracal audit tail --request-id req-abc123
+```
+
+## Inspect full diagnostics for a request
+
+`explain` shows the complete audit record for one request: the principal, resource, decision, determining policies, policy-returned diagnostics, and metadata:
+
+```bash
+caracal explain req-abc123
+```
+
+Example output:
+
+```
+Request:  req-abc123
+Zone:     my-zone
+Decision: deny
+Event:    token_exchange
+
+Determining policies:
+  - payments-policy (psv-def456)
+
+Diagnostics:
+  - step_up_required: mfa
+
+Metadata:
+  principal_id:    app-xyz789
+  resource_id:     res-ghi012
+  session_id:      sess-jkl345
+  agent_session_id: sess-mno678
+```
+
+As JSON:
+
+```bash
+caracal explain req-abc123 --json
+```
+
+## Audit event fields
+
+| Field | Description |
+| ----- | ----------- |
+| `id` | Audit event UUID |
+| `zone_id` | Zone the exchange occurred in |
+| `event_type` | `token_exchange`, `jti_collision`, `challenge_invalid`, `challenge_cooldown`, etc. |
+| `request_id` | Correlation ID from the exchange request |
+| `decision` | `allow` or `deny` |
+| `policy_set_id` | Active policy set |
+| `policy_set_version_id` | Exact version that was evaluated |
+| `manifest_sha` | SHA-256 of the policy set version manifest |
+| `determining_policies` | Array of `{"policy": "name"}` objects |
+| `diagnostics` | Array of diagnostic objects from the policy (e.g., `{"step_up_required": "mfa"}`) |
+| `metadata` | Principal, resource, session, and agent session IDs |
+| `occurred_at` | Microsecond-precision timestamp |
+
+## Common query patterns
+
+### Find all denies for a specific application
+
+```bash
+caracal audit tail --decision deny --json \
+  | jq 'select(.metadata.principal_id == "app-abc123")'
+```
+
+### Find exchanges that triggered step-up
+
+```bash
+caracal audit tail --decision deny --json \
+  | jq 'select(.diagnostics[]?.step_up_required != null)'
+```
+
+### Check which policy version is making decisions
+
+```bash
+caracal audit tail --limit 10 --json \
+  | jq '{policy_set_version_id, decision, determining_policies}'
+```
+
+### Find JTI collision events (replay attempts)
+
+```bash
+caracal audit tail --event-type jti_collision --json
+```
+
+## Audit chain integrity
+
+The audit log is HMAC-chained. Each event includes a `chain_hmac` that links it to the previous event. Tamper detection runs at Audit service startup and hourly thereafter. Any detected break is recorded in `audit_ingest_alerts`.
+
+The CLI does not expose chain validation directly. To verify the chain, query `audit_ingest_alerts` via the Audit service's API or the database directly.
+
+## What to read next
+
+- [Author a Rego Policy](./author-policy/) — `determining_policies` and `diagnostics` come from the policy's `result` object
+- [Step-Up Re-Authentication](./step-up/) — `challenge_invalid` and `challenge_cooldown` events explained

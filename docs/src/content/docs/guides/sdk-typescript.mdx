@@ -1,7 +1,202 @@
 ---
 title: Integrate the TypeScript SDK
-description: Add Caracal to a Node service and exchange a mandate inside a request handler.
+description: Install @caracalai/sdk, configure environment variables, spawn agents, delegate authority, and make outbound calls with auto-injected mandate headers.
 pageType: workflow
 ---
 
-Add Caracal to a Node service and exchange a mandate inside a request handler.
+The TypeScript SDK provides `Caracal.fromEnv()` as the entry point, `spawn()` to open an agent session bound to an async context, `delegate()` to create authority edges to other agents, and `transport()` to get a `fetch` implementation that auto-injects W3C headers on every outbound call.
+
+## Prerequisites
+
+- Node.js 20 or later.
+- A registered application in a Caracal zone with a `client_secret`.
+- The Caracal stack running with the Coordinator reachable.
+
+## Install
+
+```bash
+npm install @caracalai/sdk
+```
+
+## Environment variables
+
+Set these in your process environment or `.env` file:
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `CARACAL_COORDINATOR_URL` | Yes | Base URL of the Coordinator service (e.g., `http://localhost:4000`) |
+| `CARACAL_ZONE_ID` | Yes | Zone identifier |
+| `CARACAL_APPLICATION_ID` | Yes | Registered application ID |
+| `CARACAL_SUBJECT_TOKEN` | Yes | Ambient bearer token for this application |
+| `CARACAL_GATEWAY_URL` | No | Gateway base URL for resource-routed calls |
+| `CARACAL_RESOURCES` | No | Comma-separated resource bindings: `resourceId=upstreamPrefix,other=prefix` |
+
+## Construct the client
+
+```typescript
+import { Caracal } from '@caracalai/sdk';
+
+// Reads all CARACAL_* env vars
+const caracal = Caracal.fromEnv();
+```
+
+To configure programmatically:
+
+```typescript
+import { Caracal, AgentKind } from '@caracalai/sdk';
+
+const caracal = new Caracal({
+  coordinator: { baseUrl: 'http://coordinator:4000' },
+  zoneId: 'my-zone',
+  applicationId: 'my-app',
+  subjectToken: process.env.MY_APP_TOKEN!,
+  gatewayUrl: 'http://gateway:8081',
+  resources: [
+    { resourceId: 'resource://inventory', upstreamPrefix: 'http://inventory:8080' },
+  ],
+  defaultKind: AgentKind.Instance,
+  defaultTtlSeconds: 3600,
+});
+```
+
+## Spawn an agent session
+
+`spawn()` opens an agent session on the Coordinator, binds it to the current async context via `AsyncLocalStorage`, runs the provided function, then closes the session when the function returns or throws.
+
+```typescript
+await caracal.spawn(async () => {
+  const ctx = caracal.current();
+  console.log('agent session:', ctx?.agentSessionId);
+  // All awaited calls inside this function share the agent session.
+});
+```
+
+Options:
+
+```typescript
+await caracal.spawn(async () => { /* ... */ }, {
+  kind: AgentKind.Ephemeral,   // 'service' | 'instance' | 'ephemeral'
+  ttlSeconds: 600,
+  metadata: { purpose: 'invoice-batch' },
+});
+```
+
+## Access ambient context
+
+Inside any `spawn()` callback — including in functions called at arbitrary depth — `caracal.current()` returns the live context:
+
+```typescript
+function processInvoice(id: string) {
+  const ctx = caracal.current();
+  // ctx.agentSessionId, ctx.zoneId, ctx.delegationEdgeId, ctx.hop
+}
+```
+
+## Delegate authority
+
+`delegate()` creates a delegation edge from the current agent session to a target agent session, scoping authority to specific scopes. The child callback runs under the delegated context.
+
+```typescript
+await caracal.spawn(async () => {
+  await caracal.delegate(
+    {
+      to: targetAgentSessionId,
+      toApplicationId: 'payments-service',
+      scopes: ['payment:submit', 'payment:read'],
+      ttlSeconds: 300,
+    },
+    async () => {
+      const ctx = caracal.current();
+      // ctx.delegationEdgeId is now set
+      // Outbound calls carry this edge in W3C Baggage
+    }
+  );
+});
+```
+
+## Make outbound calls
+
+`caracal.transport()` returns a `fetch`-compatible function that reads the current context from `AsyncLocalStorage` and injects:
+
+- `Authorization: Bearer <subjectToken>`
+- `traceparent: 00-{traceId}-{spanId}-01`
+- `baggage: caracal.agent_session=…,caracal.delegation_edge=…,caracal.hop=N`
+
+```typescript
+const transport = caracal.transport();
+
+await caracal.spawn(async () => {
+  const res = await transport('http://inventory:8080/items', {
+    method: 'GET',
+  });
+  const items = await res.json();
+});
+```
+
+If `CARACAL_GATEWAY_URL` and `CARACAL_RESOURCES` are set, the transport rewrites URLs for known resource prefixes and routes them through the Gateway.
+
+## Receive inbound context
+
+When your service receives a request from another Caracal agent, extract the context from the request headers:
+
+```typescript
+import express from 'express';
+
+const app = express();
+
+app.use(async (req, res, next) => {
+  await caracal.bindFromHeaders(req.headers, async () => {
+    // caracal.current() is populated from the inbound envelope
+    next();
+  });
+});
+```
+
+## Lifecycle hooks
+
+Register callbacks that fire when agent sessions open and close:
+
+```typescript
+caracal.onAgentStart((ctx) => {
+  console.log('session opened:', ctx.agentSessionId);
+});
+
+caracal.onAgentEnd((ctx) => {
+  console.log('session closed:', ctx.agentSessionId);
+});
+```
+
+## Complete example
+
+```typescript
+import { Caracal, AgentKind } from '@caracalai/sdk';
+
+const caracal = Caracal.fromEnv();
+
+async function runBatch(invoiceIds: string[]) {
+  await caracal.spawn(
+    async () => {
+      const ctx = caracal.current()!;
+      console.log(`processing ${invoiceIds.length} invoices in session ${ctx.agentSessionId}`);
+
+      const transport = caracal.transport();
+
+      for (const id of invoiceIds) {
+        const res = await transport(`http://invoices:8080/invoices/${id}`);
+        if (!res.ok) throw new Error(`invoice ${id} fetch failed: ${res.status}`);
+        const data = await res.json();
+        console.log(data);
+      }
+    },
+    { kind: AgentKind.Ephemeral, ttlSeconds: 120 }
+  );
+}
+
+runBatch(['inv-001', 'inv-002', 'inv-003']);
+```
+
+## What to read next
+
+- [Protect an Express App](./protect-express/) — gate your own routes with mandate verification
+- [Implement Multi-Agent Delegation](./delegation/) — deeper delegation graph patterns
+- [Protect an MCP Server](./protect-mcp/) — add mandate auth to an MCP tool server

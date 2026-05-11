@@ -1,7 +1,191 @@
 ---
 title: Define Resources and Providers
-description: Register upstream resources, scopes, and credential providers in a zone.
+description: Register upstream resources with scopes and optional credential providers in a Caracal zone using the CLI.
 pageType: workflow
 ---
 
-Register upstream resources, scopes, and credential providers in a zone.
+Resources are the protected targets in a zone. Each resource has a string identifier, a list of scopes, an optional upstream URL for Gateway routing, and an optional credential provider for downstream authentication. Providers supply the credentials (OAuth2 tokens, API keys, workload assertions) that the Gateway injects into forwarded requests.
+
+## Prerequisites
+
+- `CARACAL_ADMIN_TOKEN` set.
+- A zone ID available (`CARACAL_ZONE_ID` or `--zone <id>`).
+
+## Register a resource
+
+```bash
+caracal resource create \
+  --identifier "resource://inventory" \
+  --scopes "inventory:read,inventory:write,inventory:admin" \
+  --name "Inventory Service"
+```
+
+The `--identifier` value is the string that appears in the `aud` and `target` claims of issued mandates. Agents request access to this exact identifier.
+
+To include an upstream URL for Gateway routing:
+
+```bash
+caracal resource create \
+  --identifier "resource://inventory" \
+  --scopes "inventory:read,inventory:write" \
+  --name "Inventory Service" \
+  --upstream-url "http://inventory:8080"
+```
+
+The Gateway uses the upstream URL to forward requests after verifying the mandate. Without an upstream URL, the resource can still be used for mandate issuance but the Gateway has no destination to route to.
+
+### Resource options
+
+| Flag | Description |
+| ---- | ----------- |
+| `--identifier` | Required. The resource identifier string (e.g., `resource://payments`) |
+| `--scopes` | Required. Comma-separated list of valid scope strings |
+| `--name` | Human-readable display name |
+| `--upstream-url` | URL the Gateway forwards matching requests to |
+| `--prefix` | If set, the Gateway uses prefix matching rather than exact path matching |
+| `--provider` | Attach an existing credential provider ID |
+
+## List and inspect resources
+
+```bash
+# List all resources in the zone
+caracal resource list
+
+# Get a specific resource
+caracal resource get res-abc123
+```
+
+## Update a resource
+
+```bash
+# Add a scope and update the upstream URL
+caracal resource patch res-abc123 \
+  --scopes "inventory:read,inventory:write,inventory:export" \
+  --upstream-url "http://inventory-v2:8080"
+```
+
+## Register a credential provider
+
+Providers define how the Gateway authenticates to the upstream after verifying the client mandate. Supported kinds: `oauth2`, `oidc`, `apikey`, `workload`.
+
+### API key provider
+
+```bash
+caracal provider create \
+  --identifier "provider://inventory-apikey" \
+  --name "Inventory API Key" \
+  --kind apikey \
+  --config @provider-config.json
+```
+
+`provider-config.json` for an API key provider:
+
+```json
+{
+  "api_key": "sk-live-abc123",
+  "header_name": "X-Api-Key"
+}
+```
+
+The `api_key` field matches the credential encryption regex (`/(secret|password|token|api[_-]?key|…)/i`), so it is encrypted at rest under the zone KEK.
+
+### OAuth2 provider
+
+```bash
+caracal provider create \
+  --identifier "provider://payments-oauth" \
+  --name "Payments OAuth2" \
+  --kind oauth2 \
+  --config @oauth2-config.json
+```
+
+`oauth2-config.json`:
+
+```json
+{
+  "token_url": "https://auth.payments.example.com/oauth/token",
+  "client_id": "svc-caracal",
+  "client_secret": "super-secret-value",
+  "scopes": ["payments.read", "payments.write"]
+}
+```
+
+### OIDC provider
+
+```bash
+caracal provider create \
+  --identifier "provider://sso-oidc" \
+  --kind oidc \
+  --config @oidc-config.json
+```
+
+`oidc-config.json`:
+
+```json
+{
+  "issuer": "https://sso.example.com",
+  "client_id": "caracal-gateway",
+  "client_secret": "oidc-secret",
+  "audience": "https://api.example.com"
+}
+```
+
+### Workload provider
+
+The workload provider is used for mTLS or workload identity federation (e.g., AWS IAM roles for service accounts). The exact configuration fields depend on the workload identity platform:
+
+```bash
+caracal provider create \
+  --identifier "provider://aws-workload" \
+  --kind workload \
+  --config @workload-config.json
+```
+
+## Attach a provider to a resource
+
+After creating the provider, attach it to the resource:
+
+```bash
+caracal resource patch res-abc123 \
+  --provider prov-def456
+```
+
+Or set it at resource creation time with `--provider prov-def456`.
+
+## Complete example: resource with OAuth2 provider
+
+```bash
+# 1. Create the OAuth2 provider
+caracal provider create \
+  --identifier "provider://payments-oauth" \
+  --name "Payments OAuth2" \
+  --kind oauth2 \
+  --config @oauth2-config.json
+# → ID: prov-abc123
+
+# 2. Create the resource
+caracal resource create \
+  --identifier "resource://payments" \
+  --scopes "payment:read,payment:submit,payment:void" \
+  --name "Payments API" \
+  --upstream-url "http://payments:8080" \
+  --provider prov-abc123
+# → ID: res-def456
+
+# 3. Verify
+caracal resource get res-def456
+```
+
+## Delete a resource or provider
+
+```bash
+caracal resource delete res-def456
+caracal provider delete prov-abc123
+```
+
+Deleting a resource that has active grants or is referenced by running agent sessions does not revoke those sessions immediately. Policy evaluation will deny further exchanges once the resource is gone.
+
+## What to read next
+
+- [Issue Grants and Invitations](./grants-invitations/) — bind applications to the resource scopes you just defined
+- [Author a Rego Policy](./author-policy/) — write the policy that controls access to these resources

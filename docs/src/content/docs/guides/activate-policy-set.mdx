@@ -1,7 +1,160 @@
 ---
 title: Activate a Policy Set
-description: Version a policy, attach it to a policy set, and roll the active version forward.
+description: Create a Rego policy, version it, bundle it into a policy set, and promote the version to active using the Caracal CLI.
 pageType: workflow
 ---
 
-Version a policy, attach it to a policy set, and roll the active version forward.
+A policy set is a named collection of policy versions. Exactly one policy set can be active per zone at a time. Activating a new version triggers an OPA bundle reload across all STS instances within one poll cycle (up to 60 seconds, usually faster via the `caracal.policy.invalidate` stream).
+
+## Prerequisites
+
+- `CARACAL_ADMIN_TOKEN` set in your shell.
+- A Rego policy file written and tested locally (see [Author a Rego Policy](./author-policy/)).
+- `CARACAL_ZONE_ID` set, or pass `--zone <id>` to each command.
+
+## Step 1 — Create the policy
+
+```bash
+caracal policy create \
+  --name "access-control" \
+  --file ./policy.rego
+```
+
+The command prints the new policy ID. Save it:
+
+```
+ID: pol-abc123
+```
+
+## Step 2 — List existing versions
+
+A newly created policy has one version created automatically from the `--file` content. List it:
+
+```bash
+caracal policy get pol-abc123
+```
+
+Note the version ID (e.g., `pv-def456`).
+
+## Step 3 — Add a new version (optional)
+
+When you update the Rego source, create a new immutable version:
+
+```bash
+caracal policy version pol-abc123 --file ./policy-v2.rego
+```
+
+Each version is identified by a SHA-256 content hash. Creating the same file twice returns the existing version ID.
+
+## Step 4 — Create a policy set
+
+```bash
+caracal policy-set create --name "production"
+```
+
+Save the policy set ID:
+
+```
+ID: ps-ghi789
+```
+
+## Step 5 — Bundle policy versions into a policy-set version
+
+A policy-set version is an immutable snapshot of one or more policy version IDs:
+
+```bash
+caracal policy-set version ps-ghi789 \
+  --policy-versions pv-def456
+```
+
+Save the policy-set version ID:
+
+```
+ID: psv-jkl012
+```
+
+To bundle multiple policies together (evaluated in order, first non-deny wins):
+
+```bash
+caracal policy-set version ps-ghi789 \
+  --policy-versions pv-def456,pv-mno345
+```
+
+## Step 6 — Activate the policy-set version
+
+```bash
+caracal policy-set activate ps-ghi789 --version psv-jkl012
+```
+
+The STS receives the invalidation event via the `caracal.policy.invalidate` Redis stream and reloads the OPA bundle. Subsequent token exchanges use the new policy within seconds. Token exchanges already in flight complete against the previous policy.
+
+Verify the active version:
+
+```bash
+caracal policy-set get ps-ghi789 --json
+```
+
+## Rolling back
+
+Activation is a forward-only pointer. To roll back, activate an earlier policy-set version:
+
+```bash
+# List available versions
+caracal policy-set get ps-ghi789 --json
+
+# Activate the previous version
+caracal policy-set activate ps-ghi789 --version psv-previous
+```
+
+## Shadow activation
+
+Shadow mode evaluates a candidate policy set alongside the active set without enforcing its decision. Use it to validate a new policy against live traffic before promoting it:
+
+```bash
+caracal policy-set activate ps-ghi789 --version psv-jkl012 --shadow psv-candidate
+```
+
+Shadow evaluations appear in the audit log with `evaluation_status: "shadow"`. They do not affect access control.
+
+## Full workflow in sequence
+
+```bash
+# 1. Create policy
+caracal policy create --name "payments-policy" --file ./payments.rego
+# → ID: pol-abc123, version ID: pv-def456
+
+# 2. Create policy set
+caracal policy-set create --name "production"
+# → ID: ps-ghi789
+
+# 3. Bundle into policy-set version
+caracal policy-set version ps-ghi789 --policy-versions pv-def456
+# → ID: psv-jkl012
+
+# 4. Activate
+caracal policy-set activate ps-ghi789 --version psv-jkl012
+
+# 5. Verify
+caracal policy-set get ps-ghi789 --json
+```
+
+## Checking which policy drove a decision
+
+After activation, run a token exchange and then inspect the audit event:
+
+```bash
+caracal audit tail --limit 5 --json | jq '.determining_policies'
+```
+
+Or use the explain command for a specific request:
+
+```bash
+caracal explain <request_id>
+```
+
+This shows the exact policy version and rule that drove the allow or deny decision.
+
+## What to read next
+
+- [Author a Rego Policy](./author-policy/) — write the Rego source
+- [Tail and Query the Audit Stream](./audit-stream/) — verify policy decisions in the audit log

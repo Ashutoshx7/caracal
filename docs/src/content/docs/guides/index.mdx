@@ -1,7 +1,33 @@
 ---
 title: Guides
-description: Task-oriented walkthroughs for the most common Caracal workflows.
+description: Task-oriented walkthroughs for integrating, operating, and extending Caracal.
 pageType: landing
 ---
 
-Task-oriented walkthroughs for the most common Caracal workflows.
+Each guide covers one end-to-end workflow. Start from the guide that matches your current task. Prerequisites are listed at the top of each guide.
+
+## Section map
+
+| Guide | What it covers |
+| ----- | -------------- |
+| [Integrate the TypeScript SDK](./sdk-typescript/) | Install `@caracalai/sdk`, configure env vars, spawn agents, delegate authority, and make outbound calls |
+| [Integrate the Python SDK](./sdk-python/) | Install `caracalai-sdk`, use async context managers to spawn and delegate, wire ASGI middleware |
+| [Integrate the Go SDK](./sdk-go/) | Install `github.com/garudex-labs/caracal/sdk`, use `Spawn`, `Delegate`, `Current`, and `Transport` |
+| [Protect an MCP Server](./protect-mcp/) | Gate MCP tool calls with mandate verification using `@caracalai/transport-mcp` (TS) or `caracalai_transport_mcp` (Python) |
+| [Protect an Express App](./protect-express/) | Add `caracalAuth` middleware to Express routes and enforce scope requirements |
+| [Protect a FastMCP App](./protect-fastmcp/) | Attach `CaracalAuth` to a FastMCP server so every tool call is mandate-gated |
+| [Protect a Go net/http Service](./protect-nethttp/) | Wrap Go handlers with `mcpnethttp.Middleware` and read validated claims from context |
+| [Author a Rego Policy](./author-policy/) | Write a `caracal.authz` policy, understand the full input schema, and avoid forbidden builtins |
+| [Activate a Policy Set](./activate-policy-set/) | Create, version, bundle, and promote a policy set to active using the CLI |
+| [Define Resources and Providers](./resources-providers/) | Register upstream resources, declare scopes, and attach credential providers |
+| [Issue Grants and Invitations](./grants-invitations/) | Bind applications and users to resource scopes; invite new zone members |
+| [Implement Multi-Agent Delegation](./delegation/) | Spawn child agents, attach caveats, read the delegation graph, and trigger cascade revocation |
+| [Tail and Query the Audit Stream](./audit-stream/) | Stream live decisions from the CLI and inspect full diagnostics per request |
+| [Run an Agent with `caracal run`](./cli-run/) | Inject a short-lived per-resource token into a subprocess without writing SDK code |
+| [Step-Up Re-Authentication](./step-up/) | Handle `interaction_required` from the STS and complete the challenge flow from agent code |
+
+## Prerequisites shared across all guides
+
+- A running Caracal stack (`caracal up` or Docker Compose).
+- A zone with at least one registered application. Run `caracal init` on a fresh stack to create the local zone and write `caracal.toml`.
+- `CARACAL_ADMIN_TOKEN` set in your shell for CLI operations that mutate control-plane state.

@@ -1,7 +1,187 @@
 ---
 title: Protect an Express App
-description: Use the Express connector middleware to gate routes by scope.
+description: Add the caracalAuth middleware to Express routes to verify mandates and enforce scope requirements on every request.
 pageType: workflow
 ---
 
-Use the Express connector middleware to gate routes by scope.
+The Express connector provides `caracalAuth`, a request-level middleware that extracts the bearer mandate from the `Authorization` header, verifies the ES256 signature against the zone JWKS, checks revocation, enforces scope requirements, and optionally opens an ephemeral agent session for the request. Validated claims are attached to `req.caracalClaims`.
+
+## Prerequisites
+
+- An Express app receiving requests from Caracal agents.
+- The STS JWKS endpoint reachable from the Express process.
+
+## Install
+
+```bash
+npm install @caracalai/mcp-express @caracalai/revocation
+```
+
+## Add the middleware
+
+```typescript
+import express from 'express';
+import { caracalAuth } from '@caracalai/mcp-express';
+import { InMemoryRevocationStore } from '@caracalai/revocation';
+
+const app = express();
+const revocations = new InMemoryRevocationStore();
+
+app.use(
+  caracalAuth({
+    issuer: process.env.CARACAL_STS_URL!,       // e.g. http://sts:8080
+    audience: 'resource://my-api',
+    zoneId: process.env.CARACAL_ZONE_ID!,
+    requiredScopes: ['api:read'],
+    revocations,
+  })
+);
+```
+
+Every request that passes the middleware has `req.caracalClaims` populated:
+
+```typescript
+import type { CaracalRequest } from '@caracalai/mcp-express';
+
+app.get('/items', (req: CaracalRequest, res) => {
+  const claims = req.caracalClaims!;
+  // claims.sub        — principal subject
+  // claims.zoneId     — zone the mandate was issued in
+  // claims.scope      — space-separated scopes
+  // claims.sid        — session ID (for revocation lookup)
+  // claims.agentSessionId — set when called from a spawned agent
+  res.json({ principal: claims.sub });
+});
+```
+
+## Middleware options
+
+| Option | Type | Required | Description |
+| ------ | ---- | -------- | ----------- |
+| `issuer` | `string` | Yes | STS base URL; JWKS fetched from `{issuer}/.well-known/jwks.json` |
+| `audience` | `string` | Yes | Must match the `aud` claim in the mandate |
+| `zoneId` | `string` | No | Rejects mandates from a different zone |
+| `requiredScopes` | `string[]` | No | All listed scopes must be in the mandate |
+| `requireAgent` | `boolean` | No | Rejects mandates without `agent_session_id` |
+| `requireDelegation` | `boolean` | No | Rejects mandates without `delegation_edge_id` |
+| `requireChainContains` | `string[]` | No | All listed application IDs must appear in `delegation_chain` |
+| `maxHopCount` | `number` | No | Rejects mandates with `hop_count` above this value |
+| `revocations` | `RevocationStore` | Yes | Checked against the mandate's `sid` claim |
+| `bindContext` | `boolean` | No | Bind Caracal context from inbound headers (default: `true`) |
+| `ephemeralAgent` | `{ coordinator, applicationId }` | No | Open an ephemeral agent session per request and expose it on `req.caracalContext` |
+
+## Per-route scope requirements
+
+Apply `caracalAuth` with different scopes per route by mounting it as a route-level middleware instead of globally:
+
+```typescript
+import { caracalAuth } from '@caracalai/mcp-express';
+import { revocations } from './revocations';
+
+const baseAuth = {
+  issuer: process.env.CARACAL_STS_URL!,
+  audience: 'resource://my-api',
+  revocations,
+};
+
+app.get(
+  '/items',
+  caracalAuth({ ...baseAuth, requiredScopes: ['api:read'] }),
+  (req: CaracalRequest, res) => res.json({ items: [] })
+);
+
+app.post(
+  '/items',
+  caracalAuth({ ...baseAuth, requiredScopes: ['api:write'] }),
+  (req: CaracalRequest, res) => res.status(201).json({ created: true })
+);
+
+app.delete(
+  '/items/:id',
+  caracalAuth({ ...baseAuth, requiredScopes: ['api:write', 'api:delete'] }),
+  (req: CaracalRequest, res) => res.status(204).send()
+);
+```
+
+## Ephemeral agent per request
+
+When `ephemeralAgent` is set, the middleware opens a fresh agent session for each request and terminates it when the response finishes. The active context is available on `req.caracalContext`:
+
+```typescript
+app.use(
+  caracalAuth({
+    issuer: process.env.CARACAL_STS_URL!,
+    audience: 'resource://my-api',
+    revocations,
+    ephemeralAgent: {
+      coordinator: { baseUrl: process.env.CARACAL_COORDINATOR_URL! },
+      applicationId: process.env.CARACAL_APPLICATION_ID!,
+    },
+  })
+);
+
+app.post('/workflow', async (req: CaracalRequest, res) => {
+  const ctx = req.caracalContext!;
+  // ctx.agentSessionId — the per-request ephemeral session
+  // Use caracal.current() if you also loaded the SDK with Caracal.fromEnv()
+  res.json({ session: ctx.agentSessionId });
+});
+```
+
+## Error responses
+
+The middleware sends structured JSON errors. Override error handling by adding an Express error handler after the middleware:
+
+| Scenario | Status | `error` |
+| -------- | ------ | ------- |
+| Missing `Authorization` header | 401 | `missing_token` |
+| Invalid JWT signature or expired | 401 | `invalid_token` |
+| Zone mismatch | 401 | `invalid_zone` |
+| Missing required scope | 403 | `insufficient_scope` |
+| Session revoked | 403 | `session_revoked` |
+| Agent session required | 403 | `agent_required` |
+| Delegation required | 403 | `delegation_required` |
+| Required app not in chain | 403 | `chain_mismatch` |
+| Hop count exceeded | 403 | `hop_count_exceeded` |
+
+## Production revocation
+
+Replace `InMemoryRevocationStore` with the Redis-backed store to share revocation state across replicas. See [Protect an MCP Server](./protect-mcp/#production-revocation) for the Redis setup pattern.
+
+## Complete example
+
+```typescript
+import express from 'express';
+import { caracalAuth, type CaracalRequest } from '@caracalai/mcp-express';
+import { InMemoryRevocationStore } from '@caracalai/revocation';
+
+const app = express();
+app.use(express.json());
+
+const revocations = new InMemoryRevocationStore();
+
+const auth = (scopes: string[]) =>
+  caracalAuth({
+    issuer: process.env.CARACAL_STS_URL!,
+    audience: 'resource://inventory',
+    zoneId: process.env.CARACAL_ZONE_ID!,
+    revocations,
+    requiredScopes: scopes,
+    requireAgent: true,
+  });
+
+app.get('/inventory', auth(['inventory:read']), (req: CaracalRequest, res) => {
+  res.json({ items: [], requestedBy: req.caracalClaims!.sub });
+});
+
+app.post('/inventory', auth(['inventory:write']), (req: CaracalRequest, res) => {
+  res.status(201).json({ created: req.body });
+});
+
+app.listen(8080, () => console.log('listening on :8080'));
+```
+
+## What to read next
+
+- [Integrate the TypeScript SDK](./sdk-typescript/) — make outbound calls from protected routes
+- [Author a Rego Policy](./author-policy/) — write the policy that controls which scopes are granted

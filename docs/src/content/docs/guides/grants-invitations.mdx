@@ -1,7 +1,114 @@
 ---
 title: Issue Grants and Invitations
-description: Bind users and applications to resource scopes via grants and invitations.
+description: Bind applications and users to resource scopes with grants, and invite new members into a zone with invitations.
 pageType: workflow
 ---
 
-Bind users and applications to resource scopes via grants and invitations.
+A grant is the control-plane record that binds a principal (application or user) to a set of scopes on a resource. Without a grant, OPA policy evaluation has no basis to allow a token exchange for that principal and resource combination. Invitations bring new users into the zone as members who can hold grants.
+
+## Prerequisites
+
+- `CARACAL_ADMIN_TOKEN` set.
+- At least one registered application and one registered resource (see [Define Resources and Providers](./resources-providers/)).
+
+## Create a grant
+
+```bash
+caracal grant create \
+  --app app-abc123 \
+  --resource res-def456 \
+  --scopes "payment:read,payment:submit"
+```
+
+The `--app` flag takes an application ID. The grant authorizes that application to request the listed scopes for the named resource. Whether the STS actually issues those scopes depends on the active policy — the grant is necessary but not sufficient.
+
+### Grant options
+
+| Flag | Required | Description |
+| ---- | -------- | ----------- |
+| `--app` | Yes | Application ID receiving the grant |
+| `--resource` | Yes | Resource ID the grant covers |
+| `--scopes` | Yes | Comma-separated scope strings the application may request |
+| `--user` | No | User subject ID (for user-scoped grants rather than app-scoped) |
+
+### User grant
+
+```bash
+caracal grant create \
+  --app app-abc123 \
+  --user user-xyz789 \
+  --resource res-def456 \
+  --scopes "report:read"
+```
+
+A user grant restricts the grant to exchanges where the subject matches `--user`. This is used for delegated user authority: the application acts on behalf of the specific user.
+
+## List grants
+
+```bash
+# All grants in the zone
+caracal grant list
+
+# As JSON (pipe to jq for filtering)
+caracal grant list --json | jq '.[] | select(.resource_id == "res-def456")'
+```
+
+## Inspect a grant
+
+```bash
+caracal grant get grant-ghi789
+```
+
+## Revoke a grant
+
+```bash
+caracal grant revoke grant-ghi789
+```
+
+Revoking a grant does not immediately terminate active sessions or revoke already-issued mandates. The 15-minute per-call TTL on issued mandates means the effect fully propagates within that window. Future token exchanges fail at policy evaluation once the grant is gone.
+
+## Invitations
+
+Invitations add users to the zone as members. A member can receive user-scoped grants, log into the control plane, and manage their own credentials (depending on zone configuration).
+
+### Invite a user by email
+
+```bash
+caracal invitation create --email alice@example.com
+```
+
+The command returns an invitation token and link. Send the link to the user. Invitations expire after the configured TTL (default: 24 hours).
+
+### List pending invitations
+
+```bash
+caracal invitation list
+```
+
+### Revoke an invitation
+
+```bash
+caracal invitation revoke inv-mno345
+```
+
+## Checking grant effects
+
+After issuing a grant, verify that an exchange would succeed by running `caracal run`:
+
+```bash
+CARACAL_APPLICATION_ID=app-abc123 \
+CARACAL_SUBJECT_TOKEN=<app-token> \
+caracal run --resource resource://payments -- \
+  echo "grant works"
+```
+
+If the exchange fails, check whether:
+
+1. The grant exists and covers the requested scopes: `caracal grant get <id>`
+2. The active policy allows the exchange: `caracal audit tail --limit 5 --json`
+3. The policy set is active: `caracal policy-set list`
+
+## What to read next
+
+- [Author a Rego Policy](./author-policy/) — policies are evaluated at exchange time; grants alone are not sufficient
+- [Tail and Query the Audit Stream](./audit-stream/) — check why a specific exchange was denied

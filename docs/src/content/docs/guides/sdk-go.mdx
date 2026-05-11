@@ -1,7 +1,244 @@
 ---
 title: Integrate the Go SDK
-description: Drop Caracal into a Go service using FromEnv, Spawn, Delegate, and Transport.
+description: Install the Go SDK, configure environment variables, use Spawn and Delegate with context.Context, and make outbound calls with auto-injected W3C headers.
 pageType: workflow
 ---
 
-Drop Caracal into a Go service using FromEnv, Spawn, Delegate, and Transport.
+The Go SDK propagates identity through standard `context.Context` — there is no goroutine-local storage. `sdk.FromEnv()` constructs the client from environment variables. `Spawn` runs a function inside an agent session bound to the provided context. `Current` retrieves the agent context. `Transport` wraps `http.DefaultClient` with automatic envelope injection.
+
+## Prerequisites
+
+- Go 1.22 or later.
+- A registered application in a Caracal zone with a `client_secret`.
+- The Caracal stack running with the Coordinator reachable.
+
+## Install
+
+```bash
+go get github.com/garudex-labs/caracal/sdk
+```
+
+## Environment variables
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `CARACAL_COORDINATOR_URL` | Yes | Base URL of the Coordinator service (e.g., `http://localhost:4000`) |
+| `CARACAL_ZONE_ID` | Yes | Zone identifier |
+| `CARACAL_APPLICATION_ID` | Yes | Registered application ID |
+| `CARACAL_SUBJECT_TOKEN` | Yes | Ambient bearer token for this application |
+| `CARACAL_GATEWAY_URL` | No | Gateway base URL for resource-routed calls |
+| `CARACAL_RESOURCES` | No | Comma-separated bindings: `resourceId=https://upstream/prefix,other=…` |
+
+## Construct the client
+
+```go
+import sdk "github.com/garudex-labs/caracal/sdk"
+
+client, err := sdk.FromEnv()
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+To configure programmatically:
+
+```go
+client := &sdk.Caracal{
+    Coordinator:   &sdk.CoordinatorClient{BaseURL: "http://coordinator:4000"},
+    ZoneID:        "my-zone",
+    ApplicationID: "my-app",
+    SubjectToken:  os.Getenv("MY_APP_TOKEN"),
+    GatewayURL:    "http://gateway:8081",
+    Resources: []sdk.ResourceBinding{
+        {ResourceID: "resource://inventory", UpstreamPrefix: "http://inventory:8080"},
+    },
+    DefaultKind:       sdk.KindInstance,
+    DefaultTTLSeconds: 3600,
+}
+```
+
+## Spawn an agent session
+
+`Spawn` opens an agent session on the Coordinator, binds it to the context via `context.WithValue`, calls the provided function, then terminates the session when the function returns or returns an error.
+
+```go
+err = client.Spawn(ctx, func(ctx context.Context) error {
+    cc, ok := sdk.Current(ctx)
+    if !ok {
+        return errors.New("no context")
+    }
+    log.Printf("agent session: %s", cc.AgentSessionID)
+    return nil
+})
+```
+
+Options:
+
+```go
+err = client.Spawn(ctx, func(ctx context.Context) error {
+    // ...
+    return nil
+}, sdk.SpawnOptions{
+    Kind:       sdk.KindEphemeral,
+    TTLSeconds: 600,
+    Metadata:   map[string]any{"purpose": "invoice-batch"},
+})
+```
+
+## Access ambient context
+
+`sdk.Current(ctx)` retrieves the `CaracalContext` bound to the Go context. Call it anywhere the context is available:
+
+```go
+func processInvoice(ctx context.Context, id string) error {
+    cc, ok := sdk.Current(ctx)
+    if !ok {
+        return errors.New("no agent context")
+    }
+    log.Printf("processing %s in session %s (hop %d)", id, cc.AgentSessionID, cc.Hop)
+    return nil
+}
+```
+
+## Delegate authority
+
+`Delegate` creates a delegation edge from the current session to a target session and runs a function inside that delegated context:
+
+```go
+err = client.Spawn(ctx, func(ctx context.Context) error {
+    return client.Delegate(ctx, sdk.DelegateOptions{
+        To:              targetAgentSessionID,
+        ToApplicationID: "payments-service",
+        Scopes:          []string{"payment:submit", "payment:read"},
+        Constraints: &sdk.DelegationConstraints{
+            Resources: []string{"resource://payments"},
+            MaxDepth:  2,
+        },
+        TTLSeconds: 300,
+    }, func(ctx context.Context) error {
+        cc, _ := sdk.Current(ctx)
+        log.Printf("delegation edge: %s", cc.DelegationEdgeID)
+        return nil
+    })
+})
+```
+
+## Make outbound calls
+
+`client.Transport(nil)` returns an `*http.Client` that reads the context from each request and injects:
+
+- `Authorization: Bearer <subjectToken>`
+- `traceparent: 00-{traceId}-{spanId}-01`
+- `baggage: caracal.agent_session=…,caracal.delegation_edge=…,caracal.hop=N`
+
+Pass `nil` to wrap `http.DefaultClient`, or pass a custom `*http.Client`:
+
+```go
+httpClient := client.Transport(nil)
+
+err = client.Spawn(ctx, func(ctx context.Context) error {
+    req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://inventory:8080/items", nil)
+    resp, err := httpClient.Do(req)
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+    // handle response
+    return nil
+})
+```
+
+## Receive inbound context
+
+Bind context from inbound HTTP request headers:
+
+```go
+func (c *Caracal) BindFromRequest(ctx context.Context, r *http.Request) context.Context
+```
+
+Use this in your HTTP handlers to propagate the calling agent's identity:
+
+```go
+func myHandler(w http.ResponseWriter, r *http.Request) {
+    ctx := client.BindFromRequest(r.Context(), r)
+    cc, ok := sdk.Current(ctx)
+    if ok {
+        log.Printf("inbound agent: %s", cc.AgentSessionID)
+    }
+    // pass ctx downstream
+}
+```
+
+## Middleware
+
+Wrap a handler to bind inbound envelope headers automatically:
+
+```go
+mux := http.NewServeMux()
+mux.Handle("/api/", client.Middleware(http.HandlerFunc(handler)))
+http.ListenAndServe(":8080", mux)
+```
+
+## Lifecycle hooks
+
+```go
+client.OnAgentStart(func(ctx context.Context, cc sdk.CaracalContext) error {
+    log.Printf("session opened: %s", cc.AgentSessionID)
+    return nil
+})
+
+client.OnAgentEnd(func(ctx context.Context, cc sdk.CaracalContext) error {
+    log.Printf("session closed: %s", cc.AgentSessionID)
+    return nil
+})
+```
+
+## Complete example
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "net/http"
+
+    sdk "github.com/garudex-labs/caracal/sdk"
+)
+
+func main() {
+    client, err := sdk.FromEnv()
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    httpClient := client.Transport(nil)
+
+    ids := []string{"inv-001", "inv-002", "inv-003"}
+
+    err = client.Spawn(context.Background(), func(ctx context.Context) error {
+        cc, _ := sdk.Current(ctx)
+        log.Printf("processing %d invoices in session %s", len(ids), cc.AgentSessionID)
+
+        for _, id := range ids {
+            req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
+                "http://invoices:8080/invoices/"+id, nil)
+            resp, err := httpClient.Do(req)
+            if err != nil {
+                return err
+            }
+            resp.Body.Close()
+        }
+        return nil
+    }, sdk.SpawnOptions{Kind: sdk.KindEphemeral, TTLSeconds: 120})
+
+    if err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+## What to read next
+
+- [Protect a Go net/http Service](./protect-nethttp/) — gate your handlers with mandate verification
+- [Implement Multi-Agent Delegation](./delegation/) — deeper delegation graph patterns

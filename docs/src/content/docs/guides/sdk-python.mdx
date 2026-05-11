@@ -1,7 +1,183 @@
 ---
 title: Integrate the Python SDK
-description: Wire Caracal into a Python application and obtain mandates from the SDK.
+description: Install caracalai-sdk, use async context managers to spawn and delegate agent sessions, wire ASGI middleware, and make outbound calls with auto-injected headers.
 pageType: workflow
 ---
 
-Wire Caracal into a Python application and obtain mandates from the SDK.
+The Python SDK uses async context managers for session lifecycle. `Caracal.from_env()` reads configuration from environment variables. `spawn()` and `delegate()` are async context managers that open and close sessions automatically. `transport()` returns an `httpx.AsyncClient` with mandate headers injected on every request.
+
+## Prerequisites
+
+- Python 3.11 or later.
+- A registered application in a Caracal zone with a `client_secret`.
+- The Caracal stack running with the Coordinator reachable.
+
+## Install
+
+```bash
+pip install caracalai-sdk
+```
+
+## Environment variables
+
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `CARACAL_COORDINATOR_URL` | Yes | Base URL of the Coordinator service (e.g., `http://localhost:4000`) |
+| `CARACAL_ZONE_ID` | Yes | Zone identifier |
+| `CARACAL_APPLICATION_ID` | Yes | Registered application ID |
+| `CARACAL_SUBJECT_TOKEN` | Yes | Ambient bearer token for this application |
+| `CARACAL_GATEWAY_URL` | No | Gateway base URL for resource-routed calls |
+| `CARACAL_RESOURCES` | No | Comma-separated bindings: `resourceId=upstreamPrefix,other=prefix` |
+
+## Construct the client
+
+```python
+from caracalai_sdk import Caracal
+
+# Reads all CARACAL_* env vars
+caracal = Caracal.from_env()
+```
+
+To configure programmatically:
+
+```python
+from caracalai_sdk import Caracal, CaracalConfig
+from caracalai_sdk.advanced import CoordinatorClient, AgentKind, ResourceBinding
+
+caracal = Caracal(CaracalConfig(
+    coordinator=CoordinatorClient(base_url='http://coordinator:4000'),
+    zone_id='my-zone',
+    application_id='my-app',
+    subject_token='eyJ...',
+    gateway_url='http://gateway:8081',
+    resources=[
+        ResourceBinding(
+            resource_id='resource://inventory',
+            upstream_prefix='http://inventory:8080',
+        ),
+    ],
+    default_kind=AgentKind.INSTANCE,
+))
+```
+
+## Spawn an agent session
+
+`spawn()` is an async context manager. It opens an agent session on the Coordinator at entry, binds it to the current async task via Python context vars, and closes the session at exit.
+
+```python
+async def main():
+    async with caracal.spawn() as ctx:
+        print('agent session:', ctx.agent_session_id)
+        # All awaits inside this block share the agent session.
+```
+
+Options:
+
+```python
+from caracalai_sdk.advanced import AgentKind
+
+async with caracal.spawn(
+    kind=AgentKind.EPHEMERAL,
+    ttl_seconds=600,
+    metadata={'purpose': 'invoice-batch'},
+) as ctx:
+    ...
+```
+
+## Access ambient context
+
+Inside a `spawn()` block, `caracal.current()` returns the live context:
+
+```python
+async def process_invoice(invoice_id: str):
+    ctx = caracal.current()
+    # ctx.agent_session_id, ctx.zone_id, ctx.delegation_edge_id, ctx.hop
+```
+
+## Delegate authority
+
+`delegate()` creates a delegation edge from the current session to a target session. All calls inside the block carry the delegated authority.
+
+```python
+from caracalai_sdk import DelegationConstraints
+
+async with caracal.spawn() as source:
+    async with caracal.delegate(
+        to=target_agent_session_id,
+        to_application_id='payments-service',
+        scopes=['payment:submit', 'payment:read'],
+        constraints=DelegationConstraints(resources=['resource://payments'], max_depth=2),
+        ttl_seconds=300,
+    ) as delegated:
+        print('delegation edge:', delegated.delegation_edge_id)
+        # Outbound calls carry this edge in W3C Baggage
+```
+
+## Make outbound calls
+
+`caracal.transport()` returns an `httpx.AsyncClient`. It reads the current context from Python context vars and injects:
+
+- `Authorization: Bearer <subject_token>`
+- `traceparent: 00-{traceId}-{spanId}-01`
+- `baggage: caracal.agent_session=…;caracal.delegation_edge=…;caracal.hop=N`
+
+```python
+async with caracal.spawn():
+    async with caracal.transport() as client:
+        response = await client.get('http://inventory:8080/items')
+        items = response.json()
+```
+
+## Receive inbound context
+
+Bind context from inbound HTTP headers to propagate the calling agent's identity into the current task:
+
+```python
+async with caracal.bind_from_headers(request.headers):
+    ctx = caracal.current()
+    # ctx is populated from the inbound Authorization and baggage headers
+```
+
+## ASGI middleware
+
+For FastAPI and Starlette, attach the ASGI middleware to bind inbound context automatically on every request:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+app.add_middleware(caracal.middleware())
+
+@app.get('/items')
+async def list_items():
+    ctx = caracal.current()
+    return {'agent': ctx.agent_session_id if ctx else None}
+```
+
+## Complete example
+
+```python
+import asyncio
+from caracalai_sdk import Caracal
+from caracalai_sdk.advanced import AgentKind
+
+caracal = Caracal.from_env()
+
+async def run_batch(invoice_ids: list[str]):
+    async with caracal.spawn(kind=AgentKind.EPHEMERAL, ttl_seconds=120) as ctx:
+        print(f'processing {len(invoice_ids)} invoices in session {ctx.agent_session_id}')
+
+        async with caracal.transport() as client:
+            for invoice_id in invoice_ids:
+                response = await client.get(f'http://invoices:8080/invoices/{invoice_id}')
+                response.raise_for_status()
+                print(response.json())
+
+asyncio.run(run_batch(['inv-001', 'inv-002', 'inv-003']))
+```
+
+## What to read next
+
+- [Protect a FastMCP App](./protect-fastmcp/) — gate FastMCP tool calls with mandate auth
+- [Implement Multi-Agent Delegation](./delegation/) — deeper delegation graph patterns
+- [Protect an MCP Server](./protect-mcp/) — low-level mandate verification for custom servers
