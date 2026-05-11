@@ -1,0 +1,181 @@
+---
+/*
+ * Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+ * Caracal, a product of Garudex Labs
+ *
+ * Starlight PageSidebar override — injects AI action buttons above the TOC.
+ */
+
+import MobileTableOfContents from 'virtual:starlight/components/MobileTableOfContents'
+import TableOfContents from 'virtual:starlight/components/TableOfContents'
+
+const { toc } = Astro.locals.starlightRoute
+const pageUrl = Astro.url.href
+---
+
+{toc && (
+  <>
+    <div class="lg:sl-hidden">
+      <MobileTableOfContents />
+    </div>
+
+    <div class="right-sidebar-panel sl-hidden lg:sl-block">
+      <div class="sl-container">
+
+        <div class="ai-actions">
+          <p class="ai-actions-label">AI tools</p>
+          <div class="ai-actions-buttons">
+            <button
+              id="btn-copy-md"
+              class="ai-btn"
+              data-llms-url="/llms-full.txt"
+              data-page-url={pageUrl}
+              type="button"
+            >
+              Copy as Markdown
+            </button>
+            <a
+              class="ai-btn"
+              href={`https://claude.ai/new?q=${encodeURIComponent(`Read the Caracal documentation at ${pageUrl} and explain it.`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Ask Claude
+            </a>
+            <a
+              class="ai-btn"
+              href={`https://chatgpt.com/?q=${encodeURIComponent(`Read the Caracal documentation at ${pageUrl} and explain it.`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Ask ChatGPT
+            </a>
+          </div>
+        </div>
+
+        <TableOfContents />
+
+      </div>
+    </div>
+  </>
+)}
+
+<script>
+  const btn = document.getElementById('btn-copy-md') as HTMLButtonElement | null
+  if (btn) {
+    btn.addEventListener('click', async () => {
+      const llmsUrl = btn.dataset.llmsUrl!
+      const pageUrl = btn.dataset.pageUrl!
+
+      try {
+        const text = await fetch(llmsUrl).then((r) => r.text())
+        const urlMarker = `# URL: ${pageUrl}`
+        const start = text.indexOf(urlMarker)
+
+        if (start === -1) {
+          await navigator.clipboard.writeText(text)
+          btn.textContent = 'Copied full docs!'
+        } else {
+          const bodyStart = text.indexOf('\n---\n', start)
+          const bodyEnd = text.indexOf('\n---\n', bodyStart + 5)
+          const section = bodyEnd === -1 ? text.slice(start) : text.slice(start, bodyEnd)
+          await navigator.clipboard.writeText(section)
+          btn.textContent = 'Copied!'
+        }
+      } catch {
+        btn.textContent = 'Copy failed'
+      }
+
+      setTimeout(() => {
+        btn.textContent = 'Copy as Markdown'
+      }, 2000)
+    })
+  }
+</script>
+
+<style>
+  @layer starlight.core {
+    .right-sidebar-panel {
+      padding: 1rem var(--sl-sidebar-pad-x);
+    }
+
+    .sl-container {
+      width: calc(var(--sl-sidebar-width) - 2 * var(--sl-sidebar-pad-x));
+    }
+
+    .right-sidebar-panel :global(h2) {
+      color: var(--sl-color-white);
+      font-size: var(--sl-text-h5);
+      font-weight: 600;
+      line-height: var(--sl-line-height-headings);
+      margin-bottom: 0.5rem;
+    }
+
+    .right-sidebar-panel :global(:where(a)) {
+      display: block;
+      font-size: var(--sl-text-xs);
+      text-decoration: none;
+      color: var(--sl-color-gray-3);
+      overflow-wrap: anywhere;
+    }
+
+    .right-sidebar-panel :global(:where(a):hover) {
+      color: var(--sl-color-white);
+    }
+
+    .ai-actions {
+      margin-bottom: 1.25rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--sl-color-hairline);
+    }
+
+    .ai-actions-label {
+      color: var(--sl-color-white);
+      font-size: var(--sl-text-h5);
+      font-weight: 600;
+      line-height: var(--sl-line-height-headings);
+      margin: 0 0 0.5rem 0;
+    }
+
+    .ai-actions-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .ai-btn {
+      display: block;
+      font-size: var(--sl-text-xs);
+      text-decoration: none;
+      color: var(--sl-color-gray-3);
+      overflow-wrap: anywhere;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+      text-align: left;
+      font-family: inherit;
+    }
+
+    .ai-btn:hover {
+      color: var(--sl-color-white);
+    }
+
+    button.ai-btn {
+      appearance: none;
+    }
+
+    @media (min-width: 72rem) {
+      .sl-container {
+        max-width: calc(
+          (
+            (
+                100vw - var(--sl-sidebar-width) - 2 * var(--sl-content-pad-x) - 2 *
+                  var(--sl-sidebar-pad-x)
+              ) * 0.25
+          )
+        );
+      }
+    }
+  }
+</style>
