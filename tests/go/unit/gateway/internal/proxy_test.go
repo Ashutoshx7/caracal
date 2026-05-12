@@ -33,9 +33,9 @@ func makeJWT(t *testing.T, offset time.Duration) string {
 }
 
 type stsResponseFixture struct {
-	AccessToken     string            `json:"access_token"`
-	ExpiresIn       int               `json:"expires_in"`
-	TargetUpstreams map[string]string `json:"target_upstreams"`
+	AccessToken string                       `json:"access_token"`
+	ExpiresIn   int                          `json:"expires_in"`
+	Upstreams   map[string]upstreamDirective `json:"upstreams"`
 }
 
 func newFakeSTS(t *testing.T, upstream string, calls *int32) *httptest.Server {
@@ -48,9 +48,9 @@ func newFakeSTS(t *testing.T, upstream string, calls *int32) *httptest.Server {
 		resource := r.Form.Get("resource")
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(stsResponseFixture{
-			AccessToken:     "sts-issued-token",
-			ExpiresIn:       300,
-			TargetUpstreams: map[string]string{resource: upstream},
+			AccessToken: "sts-issued-token",
+			ExpiresIn:   300,
+			Upstreams:   map[string]upstreamDirective{resource: {URL: upstream, AuthMode: "caracal_jwt"}},
 		})
 	}))
 }
@@ -58,14 +58,14 @@ func newFakeSTS(t *testing.T, upstream string, calls *int32) *httptest.Server {
 func newProxyForTest(_ *testing.T, sts *httptest.Server, allowPrivate bool) *proxy {
 	stsClient := newSTSClient(sts.URL, 2*time.Second)
 	guard := newUpstreamGuard(nil, allowPrivate)
-	return newProxy(stsClient, guard, zerolog.New(io.Discard), 1<<20, 5*time.Second, testBindings(), nil)
+	return newProxy(stsClient, nil, guard, zerolog.New(io.Discard), 1<<20, 5*time.Second, testBindings(), nil, nil, &GatewayMetrics{})
 }
 
 // testBindings returns a bindingStore preloaded with the resource identifiers used
 // across proxy tests. The empty pool is safe because tests never trigger Reload.
 func testBindings() *bindingStore {
 	s := &bindingStore{log: zerolog.Nop(), pollInterval: defaultBindingPollInterval}
-	m := map[string]string{"r": "z:a", "r1": "z:a"}
+	m := map[string]binding{"r": {ZoneID: "z", ApplicationID: "a"}, "r1": {ZoneID: "z", ApplicationID: "a"}}
 	s.cache.Store(&m)
 	return s
 }
@@ -338,9 +338,10 @@ func TestProxyPathAndQueryComposition(t *testing.T) {
 	defer upstream.Close()
 
 	sts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(stsResponseFixture{
-			AccessToken:     "tok",
-			TargetUpstreams: map[string]string{"r1": upstream.URL + "/base?fixed=upstream&shared=upstream"},
+			AccessToken: "tok",
+			Upstreams:   map[string]upstreamDirective{"r1": {URL: upstream.URL + "/base?fixed=upstream&shared=upstream", AuthMode: "caracal_jwt"}},
 		})
 	}))
 	defer sts.Close()
@@ -377,7 +378,7 @@ func TestProxyBodySizeLimitEnforced(t *testing.T) {
 
 	stsClient := newSTSClient(sts.URL, 2*time.Second)
 	guard := newUpstreamGuard(nil, true)
-	p := newProxy(stsClient, guard, zerolog.New(io.Discard), 16, 2*time.Second, testBindings(), nil)
+	p := newProxy(stsClient, nil, guard, zerolog.New(io.Discard), 16, 2*time.Second, testBindings(), nil, nil, &GatewayMetrics{})
 
 	tok := makeJWT(t, time.Hour)
 	hdr := http.Header{
@@ -526,18 +527,18 @@ func TestSTSClientTransportFailureSanitised(t *testing.T) {
 	c := newSTSClient("http://127.0.0.1:1", 100*time.Millisecond)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	_, status, cerr, internalErr := c.Exchange(ctx, "tok", "app", "r", "rid")
-	if internalErr == nil {
+	outcome := c.Exchange(ctx, "tok", binding{}, "r", "rid")
+	if outcome.InternalErr == nil {
 		t.Fatal("expected transport error")
 	}
-	if cerr == nil {
+	if outcome.ClientErr == nil {
 		t.Fatal("expected sanitised CaracalError")
 	}
-	if status < 500 {
-		t.Errorf("transport failure should map to 5xx, got %d", status)
+	if outcome.Status < 500 {
+		t.Errorf("transport failure should map to 5xx, got %d", outcome.Status)
 	}
-	if strings.Contains(cerr.Description, "127.0.0.1") {
-		t.Errorf("internal address leaked: %s", cerr.Description)
+	if strings.Contains(outcome.ClientErr.Description, "127.0.0.1") {
+		t.Errorf("internal address leaked: %s", outcome.ClientErr.Description)
 	}
 }
 

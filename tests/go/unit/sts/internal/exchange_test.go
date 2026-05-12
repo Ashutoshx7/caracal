@@ -13,9 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
-	"strings"
 	"testing"
 	"time"
 
@@ -173,6 +170,7 @@ type stubDB struct {
 	agentErr      error
 	edge          *DelegationEdge
 	edgeErr       error
+	edgesMap      map[string]*DelegationEdge
 	path          []string
 	pathErr       error
 	graphEpoch    int64
@@ -196,7 +194,13 @@ func (s *stubDB) UpdateGrantTokens(_ context.Context, _ string, _ int, _, _ []by
 func (s *stubDB) GetProvider(_ context.Context, _ string) (*ProviderConfig, error) {
 	return nil, errors.New("stub")
 }
-func (s *stubDB) GetDelegationEdge(_ context.Context, _ string) (*DelegationEdge, error) {
+func (s *stubDB) GetDelegationEdge(_ context.Context, id string) (*DelegationEdge, error) {
+	if s.edgesMap != nil {
+		if e, ok := s.edgesMap[id]; ok {
+			return e, nil
+		}
+		return nil, errors.New("stub: edge not found")
+	}
 	return s.edge, s.edgeErr
 }
 func (s *stubDB) GetResourceRateLimit(_ context.Context, _, _ string) (*ResourceRateLimit, error) {
@@ -257,14 +261,17 @@ func (s *stubDB) UpdateApplicationSecretHash(_ context.Context, _, _, _ string) 
 // TestExchangePartialDeny verifies that partial OPA evaluation status causes HTTP 403.
 // This is the hard invariant: a partial result must never produce a token.
 func TestExchangePartialDeny(t *testing.T) {
-	credType := "public"
+	hash, err := hashClientSecret("test-secret")
+	if err != nil {
+		t.Fatalf("hash client secret: %v", err)
+	}
 	db := &stubDB{
 		app: &Application{
 			ID:                 "app1",
 			ZoneID:             "zone1",
 			Name:               "Test App",
 			RegistrationMethod: "managed",
-			CredentialType:     &credType,
+			ClientSecretHash:   &hash,
 		},
 		resource: &Resource{
 			ID:         "res1",
@@ -296,20 +303,16 @@ result := {"decision": "partial", "evaluation_status": "partial", "determining_p
 		cfg:         Config{IssuerURL: "https://sts.example.com"},
 	}
 
-	form := url.Values{
-		"grant_type": {"urn:ietf:params:oauth:grant-type:token-exchange"},
-		"client_id":  {"zone1:app1"},
-		"resource":   {"https://api.example.com"},
-	}
-	req := httptest.NewRequest(http.MethodPost, "/oauth/2/token",
-		strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w := httptest.NewRecorder()
+	_, _, code, _ := srv.exchange(context.Background(), TokenExchangeRequest{
+		GrantType:     "urn:ietf:params:oauth:grant-type:token-exchange",
+		ZoneID:        "zone1",
+		ApplicationID: "app1",
+		ClientSecret:  "test-secret",
+		Resources:     []string{"https://api.example.com"},
+	}, "req-partial")
 
-	srv.handleTokenExchange(w, req)
-
-	if w.Code != http.StatusForbidden {
-		t.Errorf("partial OPA status must yield HTTP 403, got %d", w.Code)
+	if code != http.StatusForbidden {
+		t.Errorf("partial OPA status must yield HTTP 403, got %d", code)
 	}
 }
 
@@ -505,7 +508,10 @@ func TestValidateSessionReferencesRejectsMalformedDelegationConstraints(t *testi
 
 func TestExchangeRejectsResourceOutsideDelegationEdge(t *testing.T) {
 	now := time.Now()
-	credentialType := "public"
+	hash, err := hashClientSecret("test-secret")
+	if err != nil {
+		t.Fatalf("hash client secret: %v", err)
+	}
 	boundResourceID := "res-bound"
 	source := &AgentSession{
 		ID:            "agent-src",
@@ -529,7 +535,7 @@ func TestExchangeRejectsResourceOutsideDelegationEdge(t *testing.T) {
 			ZoneID:             "zone1",
 			Name:               "Test App",
 			RegistrationMethod: "managed",
-			CredentialType:     &credentialType,
+			ClientSecretHash:   &hash,
 		},
 		resource: &Resource{
 			ID:         "res-other",
@@ -553,10 +559,11 @@ func TestExchangeRejectsResourceOutsideDelegationEdge(t *testing.T) {
 			ExpiresAt:       now.Add(time.Minute),
 		},
 	}
-	srv := &Server{db: db}
+	srv := &Server{db: db, auditBuffer: &AuditBuffer{ch: make(chan AuditEvent, 100)}}
 	_, _, code, apiErr := srv.exchange(context.Background(), TokenExchangeRequest{
 		ZoneID:           "zone1",
 		ApplicationID:    "app1",
+		ClientSecret:     "test-secret",
 		Resources:        []string{"resource://api/other"},
 		Scope:            "read",
 		AgentSessionID:   source.ID,
@@ -677,21 +684,47 @@ func TestValidateSessionReferencesAcceptsDeepDelegationPath(t *testing.T) {
 		SpawnedAt:     now.Add(-time.Minute),
 		TTLSeconds:    600,
 	}
+	mainEdge := &DelegationEdge{
+		ID:              "edge1",
+		ZoneID:          "zone1",
+		SourceSessionID: source.ID,
+		TargetSessionID: target.ID,
+		IssuerAppID:     source.ApplicationID,
+		ReceiverAppID:   target.ApplicationID,
+		Scopes:          []string{"read"},
+		Status:          "active",
+		ExpiresAt:       now.Add(time.Minute),
+		ConstraintsJSON: []byte(`{"max_hops":3}`),
+	}
+	// Build a valid 3-edge chain: app1→app1 (edge0), app1→app2 (edge1), app2→app2 (edge2).
+	// Continuity: each edge's IssuerAppID must equal the previous edge's ReceiverAppID.
 	db := &stubDB{
 		agentSessions: []*AgentSession{source, target},
 		path:          []string{"edge0", "edge1", "edge2"},
 		graphEpoch:    12,
-		edge: &DelegationEdge{
-			ID:              "edge1",
-			ZoneID:          "zone1",
-			SourceSessionID: source.ID,
-			TargetSessionID: target.ID,
-			IssuerAppID:     source.ApplicationID,
-			ReceiverAppID:   target.ApplicationID,
-			Scopes:          []string{"read"},
-			Status:          "active",
-			ExpiresAt:       now.Add(time.Minute),
-			ConstraintsJSON: []byte(`{"max_hops":3}`),
+		edge:          mainEdge,
+		edgesMap: map[string]*DelegationEdge{
+			"edge0": {
+				ID:              "edge0",
+				ZoneID:          "zone1",
+				SourceSessionID: source.ID,
+				TargetSessionID: source.ID,
+				IssuerAppID:     "app1",
+				ReceiverAppID:   "app1",
+				Status:          "active",
+				ExpiresAt:       now.Add(time.Minute),
+			},
+			"edge1": mainEdge,
+			"edge2": {
+				ID:              "edge2",
+				ZoneID:          "zone1",
+				SourceSessionID: target.ID,
+				TargetSessionID: target.ID,
+				IssuerAppID:     "app2",
+				ReceiverAppID:   "app2",
+				Status:          "active",
+				ExpiresAt:       now.Add(time.Minute),
+			},
 		},
 	}
 	srv := &Server{db: db}
