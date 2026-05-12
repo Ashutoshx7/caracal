@@ -310,8 +310,10 @@ jobs:
           NPM_CONFIG_PROVENANCE: 'true'
         run: pnpm changeset publish
 
-      - name: Dry-run pack
+      - name: Dry-run pack and publish
         if: github.event_name != 'push' || inputs.dryRun == true
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/caracal-pack
@@ -331,6 +333,9 @@ jobs:
             packages/connectors/redis/ts
           do
             pnpm --dir "$d" pack --pack-destination /tmp/caracal-pack
+            echo "::group::npm publish --dry-run for $d"
+            ( cd "$d" && npm publish --dry-run --access public )
+            echo "::endgroup::"
           done
           echo "Packed tarballs:"
           ls -la /tmp/caracal-pack
@@ -398,6 +403,24 @@ jobs:
         with:
           packages-dir: ${{ matrix.package }}/dist
           skip-existing: true
+
+      - name: Dry-run publish to TestPyPI
+        if: github.event_name != 'push' || inputs.dryRun == true
+        working-directory: ${{ matrix.package }}
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TWINE_PASSWORD:-}" ]; then
+            echo "::warning::TEST_PYPI_API_TOKEN not set; running offline twine check only"
+            pip install twine
+            twine check dist/*
+            exit 0
+          fi
+          pip install twine
+          twine check dist/*
+          twine upload --repository-url https://test.pypi.org/legacy/ --skip-existing dist/*
 
   images:
     name: Build and push container images
