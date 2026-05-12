@@ -1,12 +1,13 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# One-shot Windows installer that downloads the matching caracal binary from a GitHub Release and verifies it against SHA256SUMS.
+# One-shot Windows installer that downloads, verifies, and extracts the Caracal CLI archive from a GitHub Release. Pass -Tui to also install the optional TUI.
 
 [CmdletBinding()]
 param(
     [string]$Version = $env:CARACAL_VERSION,
-    [string]$InstallDir = $env:CARACAL_INSTALL_DIR
+    [string]$InstallDir = $env:CARACAL_INSTALL_DIR,
+    [switch]$Tui
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,22 +19,25 @@ if ([string]::IsNullOrEmpty($InstallDir)) {
     $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\caracal'
 }
 
-$arch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
-switch -Wildcard ($arch) {
-    '64-bit*' { $target = 'caracal-windows-x64.exe'; $tuiTarget = 'caracal-tui-windows-x64.exe' }
-    default   { throw "unsupported architecture: $arch (only x64 binaries are published for Windows)" }
+$osArch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
+switch -Wildcard ($osArch) {
+    '64-bit*' { $arch = 'amd64' }
+    default   { throw "unsupported architecture: $osArch (only amd64 binaries are published for Windows)" }
 }
 
 if ($Version -eq 'latest') {
-    $base = "https://github.com/$repo/releases/latest/download"
+    $tag = (Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -UseBasicParsing).tag_name
+    if ([string]::IsNullOrEmpty($tag)) { throw 'could not resolve latest release tag from GitHub API' }
 } else {
-    $base = "https://github.com/$repo/releases/download/$Version"
+    $tag = $Version
 }
+$base = "https://github.com/$repo/releases/download/$tag"
 
 $tmp = New-Item -ItemType Directory -Force -Path (Join-Path $env:TEMP "caracal-install-$([guid]::NewGuid())")
 try {
+    Write-Host "caracal-install: target release $tag (windows-$arch)"
     $sumsPath = Join-Path $tmp.FullName 'SHA256SUMS'
-    Write-Host "caracal-install: downloading SHA256SUMS"
+    Write-Host 'caracal-install: downloading SHA256SUMS'
     Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $sumsPath -UseBasicParsing
 
     $sums = @{}
@@ -43,33 +47,27 @@ try {
         }
     }
 
-    function Verify-Hash([string]$Path, [string]$Name) {
-        if (-not $sums.ContainsKey($Name)) { throw "no checksum for $Name in SHA256SUMS" }
-        $actual = (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLower()
-        if ($actual -ne $sums[$Name]) { throw "checksum mismatch for $Name (expected $($sums[$Name]), got $actual)" }
+    function Install-Archive([string]$Kind, [string]$BinName) {
+        $archive = "caracal-$Kind-windows-$arch-$tag.zip"
+        if (-not $sums.ContainsKey($archive)) { throw "no checksum for $archive in SHA256SUMS" }
+        $archivePath = Join-Path $tmp.FullName $archive
+        Write-Host "caracal-install: downloading $archive"
+        Invoke-WebRequest -Uri "$base/$archive" -OutFile $archivePath -UseBasicParsing
+        $actual = (Get-FileHash -Algorithm SHA256 -Path $archivePath).Hash.ToLower()
+        if ($actual -ne $sums[$archive]) {
+            throw "checksum mismatch for $archive (expected $($sums[$archive]), got $actual)"
+        }
+        Expand-Archive -Path $archivePath -DestinationPath $tmp.FullName -Force
+        $src = Join-Path $tmp.FullName "$BinName.exe"
+        if (-not (Test-Path $src)) { throw "expected $BinName.exe inside $archive, not found" }
+        $dest = Join-Path $InstallDir "$BinName.exe"
+        Move-Item -Force $src $dest
+        Write-Host "caracal-install: installed $dest"
     }
 
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-    $dest = Join-Path $InstallDir 'caracal.exe'
-    $tuiDest = Join-Path $InstallDir 'caracal-tui.exe'
-
-    $tmpBin = Join-Path $tmp.FullName $target
-    Write-Host "caracal-install: downloading $base/$target"
-    Invoke-WebRequest -Uri "$base/$target" -OutFile $tmpBin -UseBasicParsing
-    Verify-Hash $tmpBin $target
-    Move-Item -Force $tmpBin $dest
-
-    if ($env:CARACAL_SKIP_TUI -ne '1') {
-        $tmpTui = Join-Path $tmp.FullName $tuiTarget
-        Write-Host "caracal-install: downloading $base/$tuiTarget"
-        try {
-            Invoke-WebRequest -Uri "$base/$tuiTarget" -OutFile $tmpTui -UseBasicParsing
-            Verify-Hash $tmpTui $tuiTarget
-            Move-Item -Force $tmpTui $tuiDest
-        } catch {
-            Write-Warning "caracal-install: optional caracal-tui binary not available for this release; skipping ($_)"
-        }
-    }
+    Install-Archive -Kind 'cli' -BinName 'caracal'
+    if ($Tui) { Install-Archive -Kind 'tui' -BinName 'caracal-tui' }
 } finally {
     Remove-Item -Recurse -Force $tmp.FullName -ErrorAction SilentlyContinue
 }
@@ -80,9 +78,13 @@ if (-not ($userPath -split ';' | Where-Object { $_ -ieq $InstallDir })) {
     Write-Host "caracal-install: added $InstallDir to user PATH (open a new shell to pick it up)"
 }
 
-Write-Host 'caracal-install: installed. Next steps:'
+Write-Host 'caracal-install: done. Next steps:'
 Write-Host '  caracal up         # start stack (Docker Desktop required)'
 Write-Host '  caracal init       # provision local zone'
 Write-Host '  caracal run -- cmd # smoke test ambient tokens'
-Write-Host '  caracal-tui        # interactive TUI to inspect zones, audit, agents'
+if ($Tui) {
+    Write-Host '  caracal-tui        # launch the interactive TUI'
+} else {
+    Write-Host 'caracal-install: TUI not installed (re-run with -Tui to add it)'
+}
 Write-Host "caracal-install: to uninstall, remove $InstallDir and the user PATH entry."

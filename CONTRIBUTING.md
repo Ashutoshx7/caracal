@@ -111,6 +111,7 @@ go test ./services/<name>/...              # single Go service
 scripts/testCi.sh             # full suite (ts + go + py + docs)
 scripts/testCi.sh --smoke     # post-merge smoke: pnpm -r build + go vet
 scripts/testCi.sh [--ts / --go / --py]        # any subset
+gh workflow run release.yml -f dryRun=true
 ```
 
 `--smoke` mirrors the post-merge job that runs on push to `main`; the full suite mirrors the daily scheduled and `workflow_dispatch` runs.
@@ -141,7 +142,7 @@ pnpm --dir apps/cli build:<linux|darwin|windows>-<x64|arm64>
 pnpm --dir apps/tui build                         # all 5 targets
 ```
 
-Output: `apps/{cli,tui}/dist/caracal[-tui]-<platform>[-<arch>][.exe]`. Generate `SHA256SUMS` with `sha256sum caracal-* > SHA256SUMS` in each `dist/`.
+Output: `apps/{cli,tui}/dist/caracal[-tui]-<os>-<bunArch>[.exe]` where `<bunArch>` is `x64` or `arm64`. The release workflow renames these into versioned archives (`caracal-{cli,tui}-<os>-{amd64,arm64}-<tag>.{tar.gz,zip}`); locally, work with the raw dist files.
 
 ## Releases
 
@@ -153,9 +154,22 @@ Pushing a CalVer tag triggers [`.github/workflows/release.yml`](.github/workflow
 
 | Job | Output |
 |---|---|
-| `cli` | 5 CLI + 5 TUI binaries, `SHA256SUMS`, SLSA provenance |
+| `cli` | 10 archives (5 CLI + 5 TUI), `SHA256SUMS`, SLSA provenance |
 | `images` | 5 multi-arch images on GHCR with provenance + SBOM, tagged `vYYYY.MM.DD[.N]`, `vYYYY.MM`, `latest` |
-| `publish` | GitHub Release with binaries, `SHA256SUMS`, `install.sh`, `install.ps1` |
+| `publish` | GitHub Release with archives, `SHA256SUMS`, `install.sh`, `install.ps1` |
+
+### Release archives
+
+Each archive contains exactly one binary (`caracal` or `caracal-tui`, `.exe` on Windows):
+
+| Asset | Format |
+|---|---|
+| `caracal-cli-linux-amd64-vYYYY.MM.DD.tar.gz` | tar.gz |
+| `caracal-cli-linux-arm64-vYYYY.MM.DD.tar.gz` | tar.gz |
+| `caracal-cli-darwin-amd64-vYYYY.MM.DD.tar.gz` | tar.gz |
+| `caracal-cli-darwin-arm64-vYYYY.MM.DD.tar.gz` | tar.gz |
+| `caracal-cli-windows-amd64-vYYYY.MM.DD.zip` | zip |
+| `caracal-tui-...` | same five targets, optional install |
 
 ### Cutting a release
 

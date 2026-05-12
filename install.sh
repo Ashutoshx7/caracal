@@ -2,18 +2,45 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# One-shot installer that downloads the matching caracal binary from a GitHub Release and verifies it against SHA256SUMS.
+# One-shot installer that downloads, verifies, and extracts the Caracal CLI archive from a GitHub Release. Pass --tui to also install the optional TUI.
 
 set -eu
 
 REPO="Garudex-Labs/caracal"
 INSTALL_DIR="${CARACAL_INSTALL_DIR:-${HOME}/.local/bin}"
 VERSION="${CARACAL_VERSION:-latest}"
+WITH_TUI=0
 
 err() {
     printf 'caracal-install: %s\n' "$1" >&2
     exit 1
 }
+
+usage() {
+    cat <<EOF
+caracal-install: download the Caracal CLI from GitHub Releases.
+
+Usage:
+  install.sh [--tui] [--version vYYYY.MM.DD[.N]] [--install-dir PATH]
+
+Default installs the CLI only. Pass --tui to also install the optional TUI.
+
+Environment overrides:
+  CARACAL_VERSION       same as --version
+  CARACAL_INSTALL_DIR   same as --install-dir
+EOF
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --tui) WITH_TUI=1 ;;
+        --version) [ $# -ge 2 ] || err "--version requires a value"; VERSION="$2"; shift ;;
+        --install-dir) [ $# -ge 2 ] || err "--install-dir requires a value"; INSTALL_DIR="$2"; shift ;;
+        --help|-h) usage; exit 0 ;;
+        *) err "unknown argument: $1 (use --help for usage)" ;;
+    esac
+    shift
+done
 
 require() {
     command -v "$1" >/dev/null 2>&1 || err "missing required command: $1"
@@ -22,6 +49,7 @@ require() {
 require uname
 require mkdir
 require chmod
+require tar
 
 if command -v curl >/dev/null 2>&1; then
     fetch() { curl -fsSL "$1" -o "$2"; }
@@ -36,73 +64,90 @@ if command -v sha256sum >/dev/null 2>&1; then
 elif command -v shasum >/dev/null 2>&1; then
     sha() { shasum -a 256 "$1" | awk '{print $1}'; }
 else
-    err "neither sha256sum nor shasum is installed; refusing to install without integrity check"
+    err "neither sha256sum nor shasum installed; refusing without integrity check"
 fi
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-arch="$(uname -m)"
-case "${arch}" in
-    x86_64|amd64) arch=x64 ;;
+machine="$(uname -m)"
+case "${machine}" in
+    x86_64|amd64) arch=amd64 ;;
     aarch64|arm64) arch=arm64 ;;
-    *) err "unsupported architecture: ${arch}" ;;
+    *) err "unsupported architecture: ${machine}" ;;
 esac
 case "${os}" in
-    linux) target="caracal-linux-${arch}"; tui_target="caracal-tui-linux-${arch}" ;;
-    darwin) target="caracal-darwin-${arch}"; tui_target="caracal-tui-darwin-${arch}" ;;
-    msys*|mingw*|cygwin*|windowsnt) target="caracal-windows-x64.exe"; tui_target="caracal-tui-windows-x64.exe" ;;
+    linux) ext=tar.gz ;;
+    darwin) ext=tar.gz ;;
+    msys*|mingw*|cygwin*|windowsnt)
+        os=windows
+        ext=zip
+        [ "${arch}" = arm64 ] && err "Windows arm64 binaries are not published; use install.ps1 on Windows"
+        require unzip
+        ;;
     *) err "unsupported OS: ${os}" ;;
 esac
-
-if [ "${VERSION}" = "latest" ]; then
-    base="https://github.com/${REPO}/releases/latest/download"
-else
-    base="https://github.com/${REPO}/releases/download/${VERSION}"
-fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 
-printf 'caracal-install: downloading SHA256SUMS\n'
-fetch "${base}/SHA256SUMS" "${tmp}/SHA256SUMS" || err "failed to download SHA256SUMS; cannot verify download"
+if [ "${VERSION}" = "latest" ]; then
+    fetch "https://api.github.com/repos/${REPO}/releases/latest" "${tmp}/_latest.json" \
+        || err "failed to resolve latest release from GitHub API"
+    tag="$(awk -F'"' '/"tag_name":/ {print $4; exit}' "${tmp}/_latest.json")"
+    [ -n "${tag}" ] || err "could not parse tag_name from GitHub API response"
+else
+    tag="${VERSION}"
+fi
+base="https://github.com/${REPO}/releases/download/${tag}"
 
-verify() {
-    bin="$1"; name="$2"
-    expected="$(awk -v n="${name}" '$2 == n || $2 == "*"n {print $1}' "${tmp}/SHA256SUMS")"
-    [ -n "${expected}" ] || err "no checksum found for ${name} in SHA256SUMS"
-    actual="$(sha "${bin}")"
-    [ "${expected}" = "${actual}" ] || err "checksum mismatch for ${name}: expected ${expected}, got ${actual}"
+printf 'caracal-install: target release %s (%s-%s)\n' "${tag}" "${os}" "${arch}"
+printf 'caracal-install: downloading SHA256SUMS\n'
+fetch "${base}/SHA256SUMS" "${tmp}/SHA256SUMS" || err "failed to download SHA256SUMS"
+
+installArchive() {
+    kind="$1"
+    binName="$2"
+    archive="caracal-${kind}-${os}-${arch}-${tag}.${ext}"
+    expected="$(awk -v n="${archive}" '$2 == n || $2 == "*"n {print $1}' "${tmp}/SHA256SUMS")"
+    [ -n "${expected}" ] || err "no checksum for ${archive} in SHA256SUMS"
+
+    printf 'caracal-install: downloading %s\n' "${archive}"
+    fetch "${base}/${archive}" "${tmp}/${archive}" || err "failed to download ${archive}"
+    actual="$(sha "${tmp}/${archive}")"
+    [ "${expected}" = "${actual}" ] || err "checksum mismatch for ${archive}: expected ${expected}, got ${actual}"
+
+    case "${ext}" in
+        tar.gz) tar -xzf "${tmp}/${archive}" -C "${tmp}" ;;
+        zip) unzip -q -o "${tmp}/${archive}" -d "${tmp}" ;;
+    esac
+
+    binFile="${binName}"
+    [ "${os}" = windows ] && binFile="${binName}.exe"
+    [ -f "${tmp}/${binFile}" ] || err "expected ${binFile} inside ${archive}, not found"
+
+    dest="${INSTALL_DIR}/${binFile}"
+    mv "${tmp}/${binFile}" "${dest}"
+    chmod +x "${dest}"
+    printf 'caracal-install: installed %s\n' "${dest}"
 }
 
 mkdir -p "${INSTALL_DIR}"
-dest="${INSTALL_DIR}/caracal"
-tui_dest="${INSTALL_DIR}/caracal-tui"
-case "${target}" in *.exe) dest="${dest}.exe"; tui_dest="${tui_dest}.exe" ;; esac
-
-printf 'caracal-install: downloading %s/%s\n' "${base}" "${target}"
-fetch "${base}/${target}" "${tmp}/${target}"
-verify "${tmp}/${target}" "${target}"
-mv "${tmp}/${target}" "${dest}"
-chmod +x "${dest}"
-
-if [ "${CARACAL_SKIP_TUI:-0}" != "1" ]; then
-    printf 'caracal-install: downloading %s/%s\n' "${base}" "${tui_target}"
-    if fetch "${base}/${tui_target}" "${tmp}/${tui_target}"; then
-        verify "${tmp}/${tui_target}" "${tui_target}"
-        mv "${tmp}/${tui_target}" "${tui_dest}"
-        chmod +x "${tui_dest}"
-    else
-        printf 'caracal-install: optional caracal-tui binary not available for this release; skipping\n' >&2
-    fi
-fi
+installArchive cli caracal
+[ "${WITH_TUI}" = "1" ] && installArchive tui caracal-tui
 
 case ":${PATH}:" in
     *":${INSTALL_DIR}:"*) ;;
     *) printf 'caracal-install: add %s to PATH (e.g. export PATH="%s:$PATH")\n' "${INSTALL_DIR}" "${INSTALL_DIR}" ;;
 esac
 
-printf 'caracal-install: installed. Next steps:\n'
+printf 'caracal-install: done. Next steps:\n'
 printf '  caracal up         # start stack (Docker required)\n'
 printf '  caracal init       # provision local zone\n'
 printf '  caracal run -- env # smoke test ambient tokens\n'
-printf '  caracal-tui        # interactive TUI to inspect zones, audit, agents\n'
-printf 'caracal-install: to uninstall, remove %s and %s\n' "${dest}" "${tui_dest}"
+if [ "${WITH_TUI}" = "1" ]; then
+    printf '  caracal-tui        # launch the interactive TUI\n'
+else
+    printf 'caracal-install: TUI not installed (re-run with --tui to add it)\n'
+fi
+printf 'caracal-install: to uninstall, remove %s/caracal' "${INSTALL_DIR}"
+[ "${WITH_TUI}" = "1" ] && printf ' and %s/caracal-tui' "${INSTALL_DIR}"
+printf '\n'

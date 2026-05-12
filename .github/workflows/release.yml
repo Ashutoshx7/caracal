@@ -137,25 +137,56 @@ jobs:
       - name: Build TUI binaries
         run: pnpm --dir apps/tui build
 
-      - name: Stage artifacts
+      - name: Package release archives
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
           mkdir -p release-dist
-          cp apps/cli/dist/caracal-* release-dist/
-          cp apps/tui/dist/caracal-tui-* release-dist/
-          echo "Staged artifacts:"
+          tag="v${VERSION}"
+          targets='cli:linux:amd64:x64 cli:linux:arm64:arm64 cli:darwin:amd64:x64 cli:darwin:arm64:arm64 cli:windows:amd64:x64 tui:linux:amd64:x64 tui:linux:arm64:arm64 tui:darwin:amd64:x64 tui:darwin:arm64:arm64 tui:windows:amd64:x64'
+          for entry in $targets; do
+            IFS=: read -r kind os arch bunArch <<EOF
+          ${entry}
+          EOF
+            ext=''
+            [ "$os" = windows ] && ext='.exe'
+            case "$kind" in
+              cli) srcDir=apps/cli/dist; srcBase=caracal; binName=caracal ;;
+              tui) srcDir=apps/tui/dist; srcBase=caracal-tui; binName=caracal-tui ;;
+            esac
+            src="${srcDir}/${srcBase}-${os}-${bunArch}${ext}"
+            [ -f "$src" ] || { echo "::error::missing source binary: ${src}"; exit 1; }
+            stage="$(mktemp -d)"
+            cp "$src" "${stage}/${binName}${ext}"
+            chmod +x "${stage}/${binName}${ext}" 2>/dev/null || true
+            name="caracal-${kind}-${os}-${arch}-${tag}"
+            if [ "$os" = windows ]; then
+              (cd "$stage" && zip -q "${name}.zip" "${binName}${ext}")
+              mv "${stage}/${name}.zip" release-dist/
+            else
+              tar -czf "release-dist/${name}.tar.gz" -C "$stage" "${binName}"
+            fi
+            rm -rf "$stage"
+          done
+          echo "Packaged archives:"
           ls -la release-dist/
 
-      - name: Smoke test linux-x64 binaries
+      - name: Smoke test linux-amd64 archives
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
-          chmod +x release-dist/caracal-linux-x64 release-dist/caracal-tui-linux-x64
+          tag="v${VERSION}"
+          work="$(mktemp -d)"
 
-          release-dist/caracal-linux-x64 --help
+          tar -xzf "release-dist/caracal-cli-linux-amd64-${tag}.tar.gz" -C "$work"
+          "${work}/caracal" --help
           echo "CLI smoke test passed"
 
+          tar -xzf "release-dist/caracal-tui-linux-amd64-${tag}.tar.gz" -C "$work"
           tui_exit=0
-          release-dist/caracal-tui-linux-x64 2>/tmp/tui-stderr || tui_exit=$?
+          "${work}/caracal-tui" 2>/tmp/tui-stderr || tui_exit=$?
           tui_msg="$(cat /tmp/tui-stderr)"
           [ "${tui_exit}" = "1" ] || { echo "::error::TUI exited with code ${tui_exit} (expected 1)"; exit 1; }
           echo "${tui_msg}" | grep -q "not a TTY" || { echo "::error::TUI missing expected no-TTY message; got: ${tui_msg}"; exit 1; }
@@ -164,7 +195,8 @@ jobs:
       - name: Generate checksums
         working-directory: release-dist
         run: |
-          sha256sum caracal-* caracal-tui-* > SHA256SUMS
+          set -euo pipefail
+          sha256sum caracal-cli-*.tar.gz caracal-cli-*.zip caracal-tui-*.tar.gz caracal-tui-*.zip > SHA256SUMS
           echo "Generated SHA256SUMS:"
           cat SHA256SUMS
 
@@ -174,7 +206,7 @@ jobs:
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: cli-binaries
+          name: release-archives
           path: release-dist/*
           if-no-files-found: error
           retention-days: 7
@@ -182,7 +214,9 @@ jobs:
       - uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
         if: github.event_name == 'push'
         with:
-          subject-path: release-dist/caracal-*
+          subject-path: |
+            release-dist/caracal-cli-*
+            release-dist/caracal-tui-*
 
   images:
     name: Build and push container images
@@ -263,7 +297,7 @@ jobs:
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: cli-binaries
+          name: release-archives
           path: dist
 
       - name: Verify release assets
@@ -271,20 +305,21 @@ jobs:
           set -euo pipefail
           echo "Release assets:"
           ls -la dist/
-          for bin in \
-            dist/caracal-linux-x64 \
-            dist/caracal-linux-arm64 \
-            dist/caracal-darwin-x64 \
-            dist/caracal-darwin-arm64 \
-            dist/caracal-windows-x64.exe \
-            dist/caracal-tui-linux-x64 \
-            dist/caracal-tui-linux-arm64 \
-            dist/caracal-tui-darwin-x64 \
-            dist/caracal-tui-darwin-arm64 \
-            dist/caracal-tui-windows-x64.exe \
-            dist/SHA256SUMS
+          tag="${GITHUB_REF_NAME}"
+          for asset in \
+            "dist/caracal-cli-linux-amd64-${tag}.tar.gz" \
+            "dist/caracal-cli-linux-arm64-${tag}.tar.gz" \
+            "dist/caracal-cli-darwin-amd64-${tag}.tar.gz" \
+            "dist/caracal-cli-darwin-arm64-${tag}.tar.gz" \
+            "dist/caracal-cli-windows-amd64-${tag}.zip" \
+            "dist/caracal-tui-linux-amd64-${tag}.tar.gz" \
+            "dist/caracal-tui-linux-arm64-${tag}.tar.gz" \
+            "dist/caracal-tui-darwin-amd64-${tag}.tar.gz" \
+            "dist/caracal-tui-darwin-arm64-${tag}.tar.gz" \
+            "dist/caracal-tui-windows-amd64-${tag}.zip" \
+            "dist/SHA256SUMS"
           do
-            [ -f "${bin}" ] || { echo "::error::Missing release asset: ${bin}"; exit 1; }
+            [ -f "${asset}" ] || { echo "::error::Missing release asset: ${asset}"; exit 1; }
           done
           echo "All release assets present"
 
@@ -298,7 +333,8 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            dist/caracal-*
+            dist/caracal-cli-*
+            dist/caracal-tui-*
             dist/SHA256SUMS
             install.sh
             install.ps1

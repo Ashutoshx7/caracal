@@ -47,17 +47,48 @@ Only maintainers push release tags. Do not push CalVer tags from feature branche
 
 ## CLI and TUI binaries
 
-The CLI (`caracal`) and TUI (`caracal-tui`) are compiled to self-contained binaries using `bun --compile`. Ten binaries are produced per release (five targets × two tools):
+The CLI (`caracal`) and the optional TUI (`caracal-tui`) are compiled to self-contained binaries using `bun --compile`. Ten archives are produced per release (five targets × two tools), each containing one executable:
 
-| Target | Binary names |
-| --- | --- |
-| `linux-x64` | `caracal-linux-x64`, `caracal-tui-linux-x64` |
-| `linux-arm64` | `caracal-linux-arm64`, `caracal-tui-linux-arm64` |
-| `darwin-arm64` | `caracal-darwin-arm64`, `caracal-tui-darwin-arm64` |
-| `darwin-x64` | `caracal-darwin-x64`, `caracal-tui-darwin-x64` |
-| `windows-x64` | `caracal-windows-x64.exe`, `caracal-tui-windows-x64.exe` |
+| Target | CLI archive | TUI archive |
+| --- | --- | --- |
+| `linux-amd64` | `caracal-cli-linux-amd64-vYYYY.MM.DD.tar.gz` | `caracal-tui-linux-amd64-vYYYY.MM.DD.tar.gz` |
+| `linux-arm64` | `caracal-cli-linux-arm64-vYYYY.MM.DD.tar.gz` | `caracal-tui-linux-arm64-vYYYY.MM.DD.tar.gz` |
+| `darwin-amd64` | `caracal-cli-darwin-amd64-vYYYY.MM.DD.tar.gz` | `caracal-tui-darwin-amd64-vYYYY.MM.DD.tar.gz` |
+| `darwin-arm64` | `caracal-cli-darwin-arm64-vYYYY.MM.DD.tar.gz` | `caracal-tui-darwin-arm64-vYYYY.MM.DD.tar.gz` |
+| `windows-amd64` | `caracal-cli-windows-amd64-vYYYY.MM.DD.zip` | `caracal-tui-windows-amd64-vYYYY.MM.DD.zip` |
 
-Binaries are attached to the GitHub Release with a `SHA256SUMS` file and SLSA provenance attestations.
+Archives are attached to the GitHub Release with a `SHA256SUMS` file and SLSA provenance attestations.
+
+### Install
+
+The CLI is the default install target. The TUI is opt-in:
+
+```sh
+# Linux/macOS — CLI only (default)
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.sh | sh
+
+# Linux/macOS — CLI + TUI
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.sh | sh -s -- --tui
+
+# Windows — CLI only
+iwr -useb https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.ps1 | iex
+
+# Windows — CLI + TUI
+$installer = (iwr -useb https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.ps1).Content
+& ([scriptblock]::Create($installer)) -Tui
+```
+
+The installers detect OS and architecture, resolve the latest release tag from the GitHub API (or accept `--version`/`-Version`), download the matching archive, verify it against `SHA256SUMS`, extract it, and place the binary on `PATH`.
+
+### Upgrade
+
+Re-run the same install command. The installer overwrites the binary in place with the new version.
+
+### Uninstall
+
+Linux/macOS: `rm ~/.local/bin/caracal` (and `~/.local/bin/caracal-tui` if installed).
+
+Windows: delete `%LOCALAPPDATA%\Programs\caracal` and remove the user PATH entry.
 
 ---
 
@@ -98,7 +129,7 @@ npm and PyPI packages are published from a maintainer workstation using the scri
 The release pipeline generates SLSA Level 3 provenance attestations for binaries and container images. Verify an artifact:
 
 ```sh
-gh attestation verify caracal-linux-x64 --repo garudex-labs/caracal
+gh attestation verify caracal-cli-linux-amd64-v2026.05.12.tar.gz --repo garudex-labs/caracal
 ```
 
 ---
