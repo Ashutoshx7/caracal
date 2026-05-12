@@ -46,10 +46,10 @@ pickItems() {
     render
 
     while true; do
-        local key rest
-        IFS= read -rsn1 key
+        local key='' rest=''
+        if ! IFS= read -rsn1 key; then continue; fi
         if [[ $key == $'\x1b' ]]; then
-            IFS= read -rsn2 -t 0.05 rest || rest=''
+            IFS= read -rsn2 -t 0.5 rest || rest=''
             key="$key$rest"
         fi
         case "$key" in
@@ -62,7 +62,8 @@ pickItems() {
                 for ((i = 0; i < n; i++)); do selected[i]=$any; done
                 ;;
             '') break ;;
-            $'\x1b') selected=(); for ((i = 0; i < n; i++)); do selected[i]=0; done; break ;;
+            $'\x1b') for ((i = 0; i < n; i++)); do selected[i]=0; done; break ;;
+            *) continue ;;
         esac
         printf '\033[%dA' "$n" >&2
         render
