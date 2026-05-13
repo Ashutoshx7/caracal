@@ -30,9 +30,9 @@
     "@caracalai/admin": "0.1.0",
     "@caracalai/transport-a2a": "0.1.0",
     "@caracalai/transport-mcp": "0.1.0",
-    "@caracalai/connectors-express": "0.1.0",
-    "@caracalai/connectors-fastmcp": "0.1.0",
-    "@caracalai/connectors-postgres": "0.1.0",
-    "@caracalai/connectors-redis": "0.1.0"
+    "@caracalai/mcp-express": "0.1.0",
+    "@caracalai/mcp-fastmcp": "0.1.0",
+    "@caracalai/tokenstate-postgres": "0.1.0",
+    "@caracalai/revocation-redis": "0.1.0"
   }
 }

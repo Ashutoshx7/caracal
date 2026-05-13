@@ -120,7 +120,7 @@ npm and PyPI packages are published from a maintainer workstation using the scri
 
 **npm packages** (`@caracalai/*`): `core`, `oauth`, `admin`, `identity`, `revocation`, `sdk`, `transport-mcp`, `transport-a2a`, `mcp-express`, `mcp-fastmcp`, `tokenstate-postgres`, `revocation-redis`. Browse at [npmjs.com/~caracal-run](https://www.npmjs.com/~caracal-run).
 
-**PyPI packages** (`caracalai-*`): `core`, `identity`, `revocation`, `sdk`, `transport-mcp`, `fastmcp`, `revocation-redis`. Browse at [pypi.org/user/CaracalAI](https://pypi.org/user/CaracalAI).
+**PyPI packages** (`caracalai-*`): `core`, `identity`, `revocation`, `sdk`, `transport-mcp`, `mcp-fastmcp`, `revocation-redis`. Browse at [pypi.org/user/CaracalAI](https://pypi.org/user/CaracalAI).
 
 ---
 
@@ -144,3 +144,22 @@ For a critical fix on an already-released version:
 4. Tag the hotfix: `git tag v2026.05.12.1 && git push origin v2026.05.12.1`.
 
 Tags must point to commits reachable from `main`.
+
+---
+
+## Post-release validation
+
+Every release tag has a directory under `caracal/releases/<tag>/` that owns all of its metadata:
+
+- `manifest.json` — pins every published artifact (binaries, containers, PyPI, npm) to a version, committed alongside the changeset version bump.
+- `validation.md` — the aggregated post-release validation report.
+- `findings/*.jsonl` — raw per-area findings.
+
+The `.github/workflows/postReleaseValidation.yml` workflow triggers on release completion (or via `workflow_dispatch`) and opens a PR that adds `validation.md` and `findings/` to that directory.
+
+Run a single check locally:
+
+```sh
+CARACAL_RELEASE=v2026.05.12 FINDINGS_DIR=/tmp/findings \
+  bash caracal/scripts/postRelease/validateRegistryMetadata.sh
+```

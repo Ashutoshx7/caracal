@@ -150,7 +150,7 @@ In production, replace `InMemoryRevocationStore` with the Redis-backed store so 
 **TypeScript:**
 
 ```typescript
-import { RedisRevocationStore } from '@caracalai/connectors-redis';
+import { RedisRevocationStore } from '@caracalai/revocation-redis';
 import { createClient } from 'redis';
 
 const redis = createClient({ url: process.env.REDIS_URL });

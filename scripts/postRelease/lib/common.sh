@@ -19,6 +19,9 @@ readonly STATUS_WARN="warn"
 readonly STATUS_FAIL="fail"
 
 readonly DRY_RUN="${DRY_RUN:-0}"
+readonly CARACAL_REPO="${CARACAL_REPO:-Garudex-Labs/caracal}"
+readonly CARACAL_REGISTRY="${CARACAL_REGISTRY:-ghcr.io/garudex-labs}"
+readonly CARACAL_IMAGE_PREFIX="${CARACAL_IMAGE_PREFIX:-caracal-}"
 
 mkdir -p "$FINDINGS_DIR"
 
@@ -99,7 +102,7 @@ hostPlatform() {
     msys*|mingw*|cygwin*) os="windows" ;;
   esac
   case "$arch" in
-    x86_64|amd64) arch="x64" ;;
+    x86_64|amd64) arch="amd64" ;;
     aarch64|arm64) arch="arm64" ;;
   esac
   printf '%s-%s' "$os" "$arch"

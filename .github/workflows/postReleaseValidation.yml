@@ -180,4 +180,4 @@ jobs:
           title: "release-validation: ${{ inputs.release }} report"
           labels: release-validation
           commit-message: "release-validation: ${{ inputs.release }} report"
-          add-paths: caracal/releases/${{ inputs.release }}/validation.md
+          add-paths: caracal/releases/${{ inputs.release }}/

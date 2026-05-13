@@ -3,8 +3,8 @@
 //
 // Aggregates JSONL findings and the release manifest into a markdown post-release validation report.
 
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 type Finding = {
   area: string;
@@ -21,6 +21,8 @@ type Finding = {
 type Manifest = {
   release: string;
   publishedAt: string;
+  registry?: string;
+  imagePrefix?: string;
   binaries: Record<string, string>;
   containers: Record<string, string>;
   pypi: Record<string, string>;
@@ -37,6 +39,8 @@ if (!findingsDir || !outPath || !release || !manifestPath) {
 }
 
 const manifest: Manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+const registry = manifest.registry ?? "ghcr.io/garudex-labs";
+const imagePrefix = manifest.imagePrefix ?? "caracal-";
 
 const AREAS = [
   ["registryMetadata", "Registry Metadata"],
@@ -51,8 +55,10 @@ const AREAS = [
 ] as const;
 
 const findings: Finding[] = [];
+const findingFiles: string[] = [];
 for (const f of readdirSync(findingsDir)) {
   if (!f.endsWith(".jsonl")) continue;
+  findingFiles.push(f);
   for (const line of readFileSync(join(findingsDir, f), "utf8").split("\n")) {
     if (!line.trim()) continue;
     findings.push(JSON.parse(line));
@@ -83,9 +89,13 @@ const compat = (() => {
   const row = (name: string, ver: string) => `| \`${name}\` | ${ver} |`;
   const sec = (title: string, entries: Record<string, string>) =>
     `### ${title}\n\n| Artifact | Version |\n| --- | --- |\n${Object.entries(entries).map(([k, v]) => row(k, v)).join("\n")}\n`;
+  const containerView: Record<string, string> = {};
+  for (const [svc, ver] of Object.entries(manifest.containers)) {
+    containerView[`${registry}/${imagePrefix}${svc}`] = `v${ver}`;
+  }
   return [
     sec("CLI / TUI binaries", manifest.binaries),
-    sec("Container images (ghcr.io/caracalai)", manifest.containers),
+    sec(`Container images (${registry})`, containerView),
     sec("PyPI packages", manifest.pypi),
     sec("npm packages", manifest.npm),
   ].join("\n");
@@ -159,5 +169,13 @@ ${topFixes || "_No failing findings._"}
 `;
 
 writeFileSync(outPath, md);
+
+const releaseDir = dirname(outPath);
+const persistedFindingsDir = join(releaseDir, "findings");
+mkdirSync(persistedFindingsDir, { recursive: true });
+for (const f of findingFiles) {
+  copyFileSync(join(findingsDir, f), join(persistedFindingsDir, f));
+}
+
 console.log(`wrote ${outPath} (${findings.length} findings, score ${score}%)`);
 process.exit(totalBlockers > 0 ? 1 : 0);

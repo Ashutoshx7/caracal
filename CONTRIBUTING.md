@@ -179,6 +179,17 @@ git tag v2026.05.12 && git push origin v2026.05.12
 
 Only maintainers listed in `.github/MAINTAINERS` may push release tags.
 
+### Validating a release
+
+After the tag is published, the `Post-Release Validation` workflow runs automatically (or trigger manually with `gh workflow run postReleaseValidation.yml -f release=v2026.05.12`). It exercises registries, archives, installers, containers, and provenance against `releases/<tag>/manifest.json`, then opens a PR adding `releases/<tag>/validation.md` and `releases/<tag>/findings/*.jsonl`.
+
+Reproduce a single area locally:
+
+```bash
+CARACAL_RELEASE=v2026.05.12 FINDINGS_DIR=/tmp/findings \
+  bash scripts/postRelease/validateRegistryMetadata.sh   # or any validate*.sh
+```
+
 ### npm and PyPI
 
 Packages are published locally with manually-entered tokens:
@@ -202,7 +213,7 @@ Browse published versions:
 npm:    @caracalai/{core,oauth,admin,identity,revocation,sdk,
                     transport-mcp,transport-a2a,
                     mcp-express,mcp-fastmcp,tokenstate-postgres,revocation-redis}
-pypi:   caracalai-{core,identity,revocation,sdk,transport-mcp,fastmcp,revocation-redis}
+pypi:   caracalai-{core,identity,revocation,sdk,transport-mcp,mcp-fastmcp,revocation-redis}
 ghcr:   ghcr.io/garudex-labs/caracal-{api,sts,gateway,audit,coordinator}
 ```
 
