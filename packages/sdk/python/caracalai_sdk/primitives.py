@@ -189,7 +189,7 @@ async def delegate_to_spawn(
         client_id=application_id,
         agent_session_id=spawn_res.agent_session_id,
         delegation_edge_id=delegation_res.delegation_edge_id,
-        parent_edge_id=delegation_res.delegation_edge_id,
+        parent_edge_id=parent.delegation_edge_id,
         session_id=parent.session_id,
         trace_id=trace_id or parent.trace_id,
         hop=parent.hop + 1,

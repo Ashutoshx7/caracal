@@ -167,7 +167,7 @@ export async function delegateToSpawn<T>(
     clientId: input.applicationId,
     agentSessionId: spawnRes.agent_session_id,
     delegationEdgeId: delRes.delegation_edge_id,
-    parentEdgeId: delRes.delegation_edge_id,
+    parentEdgeId: parent.delegationEdgeId,
     sessionId: input.sessionSid ?? parent.sessionId,
     traceId: input.traceId ?? parent.traceId,
     hop: parent.hop + 1,

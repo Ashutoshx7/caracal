@@ -69,6 +69,10 @@ if [[ "$mode" == "dryrun" ]]; then
         git --no-pager diff -- '**/package.json'
         git checkout -- .
         git clean -fd .changeset/ packages/ apps/
+        if [[ -n "$(git status --porcelain)" ]]; then
+            say_error "dry-run: revert failed; working tree is not clean"
+            exit 1
+        fi
     else
         say_info "initial release; no changesets to apply"
     fi

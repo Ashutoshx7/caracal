@@ -5,6 +5,8 @@
  * Coordinator REST client used by SDK primitives.
  */
 
+import { createHash } from "node:crypto";
+
 export interface CoordinatorClient {
   baseUrl: string;
   fetchImpl?: typeof fetch;
@@ -126,10 +128,6 @@ function deriveIdempotencyKey(req: SpawnRequest): string | undefined {
 }
 
 function sha256Hex(input: string): string {
-  // Node has node:crypto. Browsers/Bun expose WebCrypto, but spawn is always
-  // server-side here, so the sync createHash path is acceptable.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { createHash } = require("node:crypto") as typeof import("node:crypto");
   return createHash("sha256").update(input).digest("hex");
 }
 
