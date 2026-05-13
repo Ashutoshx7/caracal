@@ -240,3 +240,66 @@ func TestDelegateIncrementsHopAndBindsEdge(t *testing.T) {
 		t.Errorf("parent edge not threaded: %q vs %q", child.ParentEdgeID, parent.DelegationEdgeID)
 	}
 }
+
+func TestDelegateToSpawnRequiresActiveParent(t *testing.T) {
+srv, _ := makeCoordinatorServer(t)
+coord := &sdk.CoordinatorClient{BaseURL: srv.URL}
+err := sdk.DelegateToSpawn(context.Background(), sdk.DelegateToSpawnInput{
+Coordinator:   coord,
+ZoneID:        "z",
+ApplicationID: "app-child",
+SubjectToken:  "tok",
+Scopes:        []string{"tool:call"},
+}, func(ctx context.Context) error { return nil })
+if err == nil {
+t.Fatal("expected error without active parent")
+}
+}
+
+func TestDelegateToSpawnIssuesSpawnThenDelegation(t *testing.T) {
+srv, calls := makeCoordinatorServer(t)
+coord := &sdk.CoordinatorClient{BaseURL: srv.URL}
+
+var child sdk.CaracalContext
+err := sdk.Spawn(context.Background(), sdk.SpawnInput{
+Coordinator: coord, ZoneID: "z", ApplicationID: "app",
+SubjectToken: "tok", Kind: sdk.KindEphemeral,
+}, func(parentCtx context.Context) error {
+return sdk.DelegateToSpawn(parentCtx, sdk.DelegateToSpawnInput{
+Coordinator: coord, ZoneID: "z", ApplicationID: "app-child",
+SubjectToken: "tok", Scopes: []string{"tool:call"}, Kind: sdk.KindEphemeral,
+}, func(ctx context.Context) error {
+c, _ := sdk.Current(ctx)
+child = c
+return nil
+})
+})
+if err != nil {
+t.Fatal(err)
+}
+if child.AgentSessionID != "agent-1" {
+t.Errorf("expected agent-1, got %q", child.AgentSessionID)
+}
+if child.DelegationEdgeID != "edge-1" || child.ParentEdgeID != "edge-1" {
+t.Errorf("expected child edge=edge-1 & parent_edge=edge-1, got %+v", child)
+}
+if child.Hop != 1 {
+t.Errorf("expected hop 1, got %d", child.Hop)
+}
+posts := 0
+hasDelegation := false
+for _, c := range *calls {
+if strings.HasPrefix(c, "POST ") {
+posts++
+}
+if strings.Contains(c, "/delegations") {
+hasDelegation = true
+}
+}
+if posts != 3 {
+t.Errorf("expected 3 POSTs (parent spawn, child spawn, delegation), got %d: %v", posts, *calls)
+}
+if !hasDelegation {
+t.Errorf("delegation call missing: %v", *calls)
+}
+}

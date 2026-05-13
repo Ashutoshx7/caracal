@@ -24,7 +24,7 @@ from .context import (
 )
 from .coordinator import AgentKind, CoordinatorClient, DelegationConstraints
 from .envelope import decode_envelope, to_headers
-from .primitives import LifecycleHook, delegate, spawn
+from .primitives import LifecycleHook, delegate, delegate_to_spawn, spawn
 
 if TYPE_CHECKING:
     from .http import ASGIApp, CaracalASGIMiddleware
@@ -214,6 +214,60 @@ class Caracal:
             ttl_seconds=ttl_seconds,
         ) as ctx:
             yield ctx
+
+    @asynccontextmanager
+    async def delegate_to_spawn(
+        self,
+        *,
+        scopes: list[str],
+        constraints: DelegationConstraints | None = None,
+        delegation_ttl_seconds: int | None = None,
+        kind: AgentKind | None = None,
+        ttl_seconds: int | None = None,
+        session_sid: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        trace_id: str | None = None,
+    ) -> AsyncGenerator[CaracalContext, None]:
+        on_start: LifecycleHook | None = (
+            (lambda c: self._fire(self._agent_start_hooks, c)) if self._agent_start_hooks else None
+        )
+        on_end: LifecycleHook | None = (
+            (lambda c: self._fire(self._agent_end_hooks, c)) if self._agent_end_hooks else None
+        )
+        async with delegate_to_spawn(
+            coordinator=self.config.coordinator,
+            zone_id=self.config.zone_id,
+            application_id=self.config.application_id,
+            subject_token=self.config.subject_token,
+            scopes=scopes,
+            constraints=constraints,
+            delegation_ttl_seconds=delegation_ttl_seconds,
+            session_sid=session_sid,
+            kind=kind or self.config.default_kind,
+            ttl_seconds=ttl_seconds if ttl_seconds is not None else self.config.default_ttl_seconds,
+            metadata=metadata,
+            trace_id=trace_id,
+            on_agent_start=on_start,
+            on_agent_end=on_end,
+        ) as ctx:
+            yield ctx
+
+    @asynccontextmanager
+    async def bind(
+        self,
+        ctx: CaracalContext,
+    ) -> AsyncGenerator[CaracalContext, None]:
+        """Rebind an existing CaracalContext into the current async task.
+
+        Use when handing a child context off to a background task (e.g.
+        `asyncio.create_task`) — the contextvar from the parent task is not
+        visible there, so the receiving coroutine must reattach explicitly.
+        """
+        token = _ctx_var.set(ctx)
+        try:
+            yield ctx
+        finally:
+            _ctx_var.reset(token)
 
     def headers(self) -> dict[str, str]:
         ctx = current()

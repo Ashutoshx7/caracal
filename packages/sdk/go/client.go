@@ -244,6 +244,59 @@ func (c *Caracal) Delegate(ctx context.Context, opts DelegateOptions, fn func(co
 	}, fn)
 }
 
+// DelegateToSpawnOptions configures the atomic spawn+delegate primitive.
+type DelegateToSpawnOptions struct {
+	Scopes               []string
+	Constraints          *DelegationConstraints
+	DelegationTTLSeconds int
+	Kind                 AgentKind
+	TTLSeconds           int
+	SessionSID           string
+	Metadata             map[string]any
+	TraceID              string
+}
+
+// DelegateToSpawn atomically spawns a child session and records a parent→child
+// delegation edge before yielding the child context to fn. Use this at fan-out
+// boundaries (e.g. before launching a child goroutine) where the parent may
+// stop interacting before the child can issue any call.
+func (c *Caracal) DelegateToSpawn(ctx context.Context, opts DelegateToSpawnOptions, fn func(context.Context) error) error {
+	kind := opts.Kind
+	if kind == "" {
+		kind = c.DefaultKind
+	}
+	if kind == "" {
+		kind = KindInstance
+	}
+	ttl := opts.TTLSeconds
+	if ttl == 0 {
+		ttl = c.DefaultTTLSeconds
+	}
+	var onStart, onEnd LifecycleHook
+	if len(c.agentStartHooks) > 0 {
+		onStart = func(cx context.Context, cc CaracalContext) error { return c.fire(c.agentStartHooks, cx, cc) }
+	}
+	if len(c.agentEndHooks) > 0 {
+		onEnd = func(cx context.Context, cc CaracalContext) error { return c.fire(c.agentEndHooks, cx, cc) }
+	}
+	return DelegateToSpawn(ctx, DelegateToSpawnInput{
+		Coordinator:          c.Coordinator,
+		ZoneID:               c.ZoneID,
+		ApplicationID:        c.ApplicationID,
+		SubjectToken:         c.SubjectToken,
+		Scopes:               opts.Scopes,
+		Constraints:          opts.Constraints,
+		DelegationTTLSeconds: opts.DelegationTTLSeconds,
+		SessionSID:           opts.SessionSID,
+		Kind:                 kind,
+		TTLSeconds:           ttl,
+		Metadata:             opts.Metadata,
+		TraceID:              opts.TraceID,
+		OnAgentStart:         onStart,
+		OnAgentEnd:           onEnd,
+	}, fn)
+}
+
 // Headers returns the envelope headers for the current ctx (or a baseline
 // using the configured subject token if no context is bound).
 func (c *Caracal) Headers(ctx context.Context) http.Header {

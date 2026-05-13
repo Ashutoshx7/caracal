@@ -19,6 +19,15 @@ import pytest
 import uvicorn
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Vendored mock provider SDKs live under _mock/sdk/<pkg>/<pkg>/. When the
+# example is launched via `uv run`, [tool.uv.sources] installs them editable.
+# Bare `pytest` invocations skip that step, so make the package roots
+# importable directly.
+_LYNX_ROOT = Path(__file__).resolve().parents[1]
+for _pkg in (_LYNX_ROOT / "_mock" / "sdk").glob("*/"):
+    sys.path.insert(0, str(_pkg))
+
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 os.environ["LYNX_MOCK_FAST"] = "1"
 

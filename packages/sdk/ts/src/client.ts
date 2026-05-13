@@ -16,8 +16,10 @@ import { type CoordinatorClient } from "./coordinator.js";
 import {
   spawn as spawnPrimitive,
   delegate as delegatePrimitive,
+  delegateToSpawn as delegateToSpawnPrimitive,
   type SpawnInput,
   type DelegateInput,
+  type DelegateToSpawnInput,
 } from "./primitives.js";
 import { AgentKind, type DelegationConstraints } from "./coordinator.js";
 
@@ -52,6 +54,17 @@ export interface DelegateOptions {
   scopes: string[];
   constraints?: DelegationConstraints;
   ttlSeconds?: number;
+}
+
+export interface DelegateToSpawnOptions {
+  scopes: string[];
+  constraints?: DelegationConstraints;
+  delegationTtlSeconds?: number;
+  kind?: AgentKind;
+  ttlSeconds?: number;
+  sessionSid?: string;
+  metadata?: Record<string, unknown>;
+  traceId?: string;
 }
 
 export type LifecycleHook = (ctx: CaracalContext) => void | Promise<void>;
@@ -124,6 +137,30 @@ export class Caracal {
       ttlSeconds: opts.ttlSeconds,
     };
     return delegatePrimitive(input, fn);
+  }
+
+  delegateToSpawn<T>(opts: DelegateToSpawnOptions, fn: () => Promise<T>): Promise<T> {
+    const input: DelegateToSpawnInput = {
+      coordinator: this.config.coordinator,
+      zoneId: this.config.zoneId,
+      applicationId: this.config.applicationId,
+      subjectToken: this.config.subjectToken,
+      scopes: opts.scopes,
+      constraints: opts.constraints,
+      delegationTtlSeconds: opts.delegationTtlSeconds,
+      sessionSid: opts.sessionSid,
+      kind: opts.kind ?? this.config.defaultKind ?? AgentKind.Instance,
+      ttlSeconds: opts.ttlSeconds ?? this.config.defaultTtlSeconds,
+      metadata: opts.metadata,
+      traceId: opts.traceId,
+      onAgentStart: this.agentStartHooks.length ? (c) => this.fire(this.agentStartHooks, c) : undefined,
+      onAgentEnd: this.agentEndHooks.length ? (c) => this.fire(this.agentEndHooks, c) : undefined,
+    };
+    return delegateToSpawnPrimitive(input, fn);
+  }
+
+  bind<T>(ctx: CaracalContext, fn: () => Promise<T>): Promise<T> {
+    return bind(ctx, fn) as Promise<T>;
   }
 
   onAgentStart(cb: LifecycleHook): void {

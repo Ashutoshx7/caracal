@@ -126,3 +126,87 @@ async def delegate(
         yield child
     finally:
         _ctx_var.reset(token)
+
+
+@asynccontextmanager
+async def delegate_to_spawn(
+    *,
+    coordinator: CoordinatorClient,
+    zone_id: str,
+    application_id: str,
+    subject_token: str,
+    scopes: list[str],
+    constraints: DelegationConstraints | None = None,
+    delegation_ttl_seconds: int | None = None,
+    session_sid: str | None = None,
+    kind: AgentKind = AgentKind.INSTANCE,
+    ttl_seconds: int | None = None,
+    metadata: dict[str, Any] | None = None,
+    trace_id: str | None = None,
+    on_agent_start: LifecycleHook | None = None,
+    on_agent_end: LifecycleHook | None = None,
+) -> AsyncGenerator[CaracalContext, None]:
+    """Atomic spawn + delegate for fan-out workflows.
+
+    The parent context must be active. The child session is created and the
+    parent→child delegation edge is recorded before the child context is
+    yielded, so callers can safely hand the resulting context off to a
+    background task without racing the parent's lifecycle.
+    """
+    parent = current()
+    if parent is None or not parent.agent_session_id:
+        raise RuntimeError("delegate_to_spawn requires an active agent session in context")
+
+    spawn_res = await spawn_agent(
+        coordinator,
+        subject_token,
+        SpawnRequest(
+            zone_id=zone_id,
+            application_id=application_id,
+            session_sid=session_sid,
+            parent_id=parent.agent_session_id,
+            kind=kind,
+            ttl_seconds=ttl_seconds,
+            metadata=metadata,
+        ),
+    )
+
+    delegation_res = await create_delegation(
+        coordinator,
+        parent.subject_token,
+        DelegationRequest(
+            zone_id=parent.zone_id,
+            issuer_application_id=parent.client_id,
+            source_session_id=parent.agent_session_id,
+            target_session_id=spawn_res.agent_session_id,
+            receiver_application_id=application_id,
+            scopes=scopes,
+            constraints=constraints,
+            ttl_seconds=delegation_ttl_seconds,
+        ),
+    )
+
+    ctx = CaracalContext(
+        subject_token=subject_token,
+        zone_id=zone_id,
+        client_id=application_id,
+        agent_session_id=spawn_res.agent_session_id,
+        delegation_edge_id=delegation_res.delegation_edge_id,
+        parent_edge_id=delegation_res.delegation_edge_id,
+        session_id=session_sid or parent.session_id,
+        trace_id=trace_id or parent.trace_id,
+        hop=parent.hop + 1,
+    )
+
+    if on_agent_start is not None:
+        await on_agent_start(ctx)
+
+    token = _ctx_var.set(ctx)
+    try:
+        yield ctx
+    finally:
+        _ctx_var.reset(token)
+        if on_agent_end is not None:
+            await on_agent_end(ctx)
+        if kind != AgentKind.SERVICE:
+            await terminate_agent(coordinator, subject_token, zone_id, spawn_res.agent_session_id)

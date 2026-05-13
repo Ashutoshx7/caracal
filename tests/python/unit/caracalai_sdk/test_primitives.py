@@ -11,7 +11,7 @@ import httpx
 
 from caracalai_sdk.coordinator import AgentKind, CoordinatorClient
 from caracalai_sdk.context import current
-from caracalai_sdk.primitives import spawn, delegate
+from caracalai_sdk.primitives import spawn, delegate, delegate_to_spawn
 
 
 def _coord(handler) -> CoordinatorClient:
@@ -172,6 +172,73 @@ class DelegateTests(unittest.IsolatedAsyncioTestCase):
             ):
                 pass
             self.assertEqual(current().agent_session_id, parent.agent_session_id)
+
+
+class DelegateToSpawnTests(unittest.IsolatedAsyncioTestCase):
+    async def test_raises_without_active_parent(self) -> None:
+        coord = _coord(_default_handler)
+        with self.assertRaises(RuntimeError):
+            async with delegate_to_spawn(
+                coordinator=coord, zone_id="z", application_id="app",
+                subject_token="tok", scopes=["tool:call"],
+            ):
+                pass  # pragma: no cover
+
+    async def test_records_spawn_then_delegation_in_order(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        async def handler(req: httpx.Request) -> httpx.Response:
+            path = req.url.path
+            calls.append((req.method, path))
+            if req.method == "POST" and path.endswith("/agents"):
+                return httpx.Response(200, json={"agent_session_id": "child-1"})
+            if req.method == "POST" and path.endswith("/delegations"):
+                return httpx.Response(200, json={"delegation_edge_id": "edge-9"})
+            if req.method == "DELETE":
+                return httpx.Response(204)
+            return httpx.Response(404)
+
+        coord = _coord(handler)
+        async with spawn(
+            coordinator=coord, zone_id="z", application_id="app", subject_token="tok"
+        ) as parent:
+            async with delegate_to_spawn(
+                coordinator=coord, zone_id="z", application_id="app-child",
+                subject_token="tok", scopes=["tool:call"],
+            ) as child:
+                self.assertEqual(child.agent_session_id, "child-1")
+                self.assertEqual(child.delegation_edge_id, "edge-9")
+                self.assertEqual(child.parent_edge_id, "edge-9")
+                self.assertEqual(child.hop, parent.hop + 1)
+
+        posts = [c for c in calls if c[0] == "POST"]
+        self.assertEqual(len(posts), 3)
+        self.assertTrue(posts[1][1].endswith("/agents"))
+        self.assertTrue(posts[2][1].endswith("/delegations"))
+        self.assertTrue(any(m == "DELETE" for m, _ in calls))
+
+    async def test_service_kind_skips_termination(self) -> None:
+        calls: list[str] = []
+
+        async def handler(req: httpx.Request) -> httpx.Response:
+            calls.append(req.method)
+            if req.method == "POST" and req.url.path.endswith("/agents"):
+                return httpx.Response(200, json={"agent_session_id": "child-1"})
+            if req.method == "POST" and req.url.path.endswith("/delegations"):
+                return httpx.Response(200, json={"delegation_edge_id": "edge-9"})
+            return httpx.Response(204)
+
+        coord = _coord(handler)
+        async with spawn(
+            coordinator=coord, zone_id="z", application_id="app", subject_token="tok"
+        ):
+            async with delegate_to_spawn(
+                coordinator=coord, zone_id="z", application_id="app-child",
+                subject_token="tok", scopes=["tool:call"], kind=AgentKind.SERVICE,
+            ):
+                pass
+
+        self.assertEqual(calls.count("DELETE"), 1)
 
 
 if __name__ == "__main__":

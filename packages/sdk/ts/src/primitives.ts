@@ -101,3 +101,84 @@ export async function delegate<T>(
   };
   return (bind(child, fn) as Promise<T>);
 }
+
+export interface DelegateToSpawnInput {
+  coordinator: CoordinatorClient;
+  zoneId: string;
+  applicationId: string;
+  subjectToken: string;
+  scopes: string[];
+  constraints?: DelegationConstraints;
+  delegationTtlSeconds?: number;
+  sessionSid?: string;
+  kind?: AgentKind;
+  ttlSeconds?: number;
+  metadata?: Record<string, unknown>;
+  traceId?: string;
+  onAgentStart?: (ctx: CaracalContext) => void | Promise<void>;
+  onAgentEnd?: (ctx: CaracalContext) => void | Promise<void>;
+}
+
+/**
+ * Atomically spawn a child agent session and record a parent→child delegation
+ * edge before yielding the child context to fn. Use at fan-out boundaries
+ * where the child runs in a detached task and the parent may stop interacting
+ * before the child can issue any call.
+ */
+export async function delegateToSpawn<T>(
+  input: DelegateToSpawnInput,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const parent = current();
+  if (!parent || !parent.agentSessionId) {
+    throw new Error("delegateToSpawn requires an active agent session in context");
+  }
+  const kind = input.kind ?? AgentKind.Instance;
+  const spawnRes = await spawnAgent(input.coordinator, input.subjectToken, {
+    zoneId: input.zoneId,
+    applicationId: input.applicationId,
+    sessionSid: input.sessionSid,
+    parentId: parent.agentSessionId,
+    kind,
+    ttlSeconds: input.ttlSeconds,
+    metadata: input.metadata,
+  });
+  let delRes;
+  try {
+    delRes = await createDelegation(input.coordinator, parent.subjectToken, {
+      zoneId: parent.zoneId,
+      issuerApplicationId: parent.clientId,
+      sourceSessionId: parent.agentSessionId,
+      targetSessionId: spawnRes.agent_session_id,
+      receiverApplicationId: input.applicationId,
+      scopes: input.scopes,
+      constraints: input.constraints,
+      ttlSeconds: input.delegationTtlSeconds,
+    });
+  } catch (e) {
+    if (kind !== AgentKind.Service) {
+      await terminateAgent(input.coordinator, input.subjectToken, input.zoneId, spawnRes.agent_session_id);
+    }
+    throw e;
+  }
+  const ctx: CaracalContext = {
+    subjectToken: input.subjectToken,
+    zoneId: input.zoneId,
+    clientId: input.applicationId,
+    agentSessionId: spawnRes.agent_session_id,
+    delegationEdgeId: delRes.delegation_edge_id,
+    parentEdgeId: delRes.delegation_edge_id,
+    sessionId: input.sessionSid ?? parent.sessionId,
+    traceId: input.traceId ?? parent.traceId,
+    hop: parent.hop + 1,
+  };
+  if (input.onAgentStart) await input.onAgentStart(ctx);
+  try {
+    return await (bind(ctx, fn) as Promise<T>);
+  } finally {
+    if (input.onAgentEnd) await input.onAgentEnd(ctx);
+    if (kind !== AgentKind.Service) {
+      await terminateAgent(input.coordinator, input.subjectToken, input.zoneId, spawnRes.agent_session_id);
+    }
+  }
+}
