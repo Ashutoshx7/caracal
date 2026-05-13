@@ -148,6 +148,7 @@ caracal up        # start all services via Docker
 caracal init      # provision the local zone, writes caracal.toml
 caracal status    # probe all services
 caracal down      # stop; add -v to remove volumes
+caracal purge     # interactive cleanup (containers, volumes, config, runtime, caches)
 ```
 
 <details>

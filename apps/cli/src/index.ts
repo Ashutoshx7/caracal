@@ -10,6 +10,7 @@ import { runCommand } from './commands/run.ts'
 import { credentialReadCommand } from './commands/credential.ts'
 import { initCommand } from './commands/init.ts'
 import { upCommand, downCommand, statusCommand } from './commands/stack.ts'
+import { purgeCommand } from './commands/purge.ts'
 import { zoneCommand } from './commands/zone.ts'
 import { appCommand } from './commands/app.ts'
 import { resourceCommand } from './commands/resource.ts'
@@ -32,6 +33,7 @@ function usage(out: NodeJS.WriteStream = process.stderr): void {
       '  down [-v]                Stop the stack; -v also removes volumes',
       '  status                   Probe /health on every service',
       '  init [--force]           Provision the local zone and write caracal.toml',
+      '  purge [targets...]       Centralized cleanup (stack, volumes, logs, config, runtime, cache, all)',
       '',
       'Runtime:',
       '  run [--] <cmd...>        Run a command with RESOURCE_TOKEN injected into env',
@@ -104,6 +106,8 @@ if (command === 'init') {
   await downCommand(rest)
 } else if (command === 'status') {
   await statusCommand()
+} else if (command === 'purge') {
+  await purgeCommand(rest)
 } else if (command === 'run') {
   const cfg = loadConfig(true)!
   const cmdArgs = rest[0] === '--' ? rest.slice(1) : rest
