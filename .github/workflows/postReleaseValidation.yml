@@ -1,0 +1,183 @@
+name: Post-Release Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Release tag (e.g. v2026.05.13).
+        required: true
+        type: string
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+
+permissions:
+  contents: write
+  packages: read
+  attestations: read
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: post-release-${{ github.event.inputs.release || github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  registryMetadata:
+    runs-on: ubuntu-24.04
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    env:
+      CARACAL_RELEASE: ${{ inputs.release }}
+      FINDINGS_DIR: ${{ github.workspace }}/findings
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p "$FINDINGS_DIR" && bash caracal/scripts/postRelease/validateRegistryMetadata.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: findings-registry, path: findings/ }
+
+  pypiInstall:
+    runs-on: ${{ matrix.os }}
+    needs: registryMetadata
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
+        pm: [pip, uv, poetry]
+        py: ["3.11", "3.12", "3.13"]
+    env:
+      CARACAL_RELEASE: ${{ inputs.release }}
+      FINDINGS_DIR: ${{ github.workspace }}/findings
+      PM: ${{ matrix.pm }}
+      PY: ${{ matrix.py }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: ${{ matrix.py }} }
+      - if: matrix.pm == 'uv'
+        run: pipx install uv
+      - if: matrix.pm == 'poetry'
+        run: pipx install poetry
+      - run: mkdir -p "$FINDINGS_DIR" && bash caracal/scripts/postRelease/validatePypiInstall.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: findings-pypi-${{ matrix.os }}-${{ matrix.pm }}-${{ matrix.py }}, path: findings/ }
+
+  npmInstall:
+    runs-on: ${{ matrix.os }}
+    needs: registryMetadata
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
+        pm: [npm, pnpm, yarn]
+        node: ["20", "22"]
+    env:
+      CARACAL_RELEASE: ${{ inputs.release }}
+      FINDINGS_DIR: ${{ github.workspace }}/findings
+      PM: ${{ matrix.pm }}
+      NODE_V: ${{ matrix.node }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: ${{ matrix.node }} }
+      - if: matrix.pm == 'pnpm'
+        run: npm i -g pnpm@9
+      - if: matrix.pm == 'yarn'
+        run: corepack enable && corepack prepare yarn@4 --activate
+      - run: mkdir -p "$FINDINGS_DIR" && bash caracal/scripts/postRelease/validateNpmInstall.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: findings-npm-${{ matrix.os }}-${{ matrix.pm }}-${{ matrix.node }}, path: findings/ }
+
+  cliAndTui:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-13, macos-14, windows-2022]
+    env:
+      CARACAL_RELEASE: ${{ inputs.release }}
+      FINDINGS_DIR: ${{ github.workspace }}/findings
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p "$FINDINGS_DIR"
+      - run: bash caracal/scripts/postRelease/validateCliBinaries.sh
+      - run: bash caracal/scripts/postRelease/validateTuiBinaries.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: findings-binaries-${{ matrix.os }}, path: findings/ }
+
+  installers:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    env:
+      CARACAL_RELEASE: ${{ inputs.release }}
+      FINDINGS_DIR: ${{ github.workspace }}/findings
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p "$FINDINGS_DIR" && bash caracal/scripts/postRelease/validateInstallers.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: findings-installers-${{ matrix.os }}, path: findings/ }
+
+  containers:
+    runs-on: ubuntu-24.04
+    env:
+      CARACAL_RELEASE: ${{ inputs.release }}
+      FINDINGS_DIR: ${{ github.workspace }}/findings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - run: mkdir -p "$FINDINGS_DIR" && bash caracal/scripts/postRelease/validateContainers.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: findings-containers, path: findings/ }
+
+  provenance:
+    runs-on: ubuntu-24.04
+    env:
+      CARACAL_RELEASE: ${{ inputs.release }}
+      FINDINGS_DIR: ${{ github.workspace }}/findings
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: sigstore/cosign-installer@v3
+      - run: mkdir -p "$FINDINGS_DIR" && bash caracal/scripts/postRelease/validateProvenance.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: findings-provenance, path: findings/ }
+
+  examples:
+    runs-on: ubuntu-24.04
+    needs: [npmInstall]
+    env:
+      CARACAL_RELEASE: ${{ inputs.release }}
+      FINDINGS_DIR: ${{ github.workspace }}/findings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: npm i -g pnpm@9
+      - run: mkdir -p "$FINDINGS_DIR" && bash caracal/scripts/postRelease/validateExamples.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: findings-examples, path: findings/ }
+
+  aggregate:
+    runs-on: ubuntu-24.04
+    needs: [registryMetadata, pypiInstall, npmInstall, cliAndTui, installers, containers, provenance, examples]
+    if: always()
+    env:
+      CARACAL_RELEASE: ${{ inputs.release }}
+      FINDINGS_DIR: ${{ github.workspace }}/findings
+      MANIFEST: ${{ github.workspace }}/caracal/releases/${{ inputs.release }}/manifest.json
+      REPORT_OUT: ${{ github.workspace }}/caracal/docs/src/content/docs/releases/${{ inputs.release }}-validation.md
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/download-artifact@v4
+        with: { path: findings, pattern: findings-*, merge-multiple: true }
+      - run: bun caracal/scripts/postRelease/aggregateReport.ts
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          branch: release-validation/${{ inputs.release }}
+          title: "release-validation: ${{ inputs.release }} report"
+          labels: release-validation
+          commit-message: "release-validation: ${{ inputs.release }} report"
+          add-paths: caracal/docs/src/content/docs/releases/${{ inputs.release }}-validation.md

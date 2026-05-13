@@ -1,0 +1,38 @@
+{
+  "release": "v2026.05.12",
+  "publishedAt": "2026-05-12",
+  "binaries": {
+    "cli": "2026.05.12",
+    "tui": "2026.05.12"
+  },
+  "containers": {
+    "api": "2026.05.12",
+    "coordinator": "2026.05.12",
+    "audit": "2026.05.12",
+    "gateway": "2026.05.12",
+    "sts": "2026.05.12"
+  },
+  "pypi": {
+    "caracalai-core": "0.1.0",
+    "caracalai-identity": "0.1.0",
+    "caracalai-revocation": "0.1.0",
+    "caracalai-sdk": "0.1.0",
+    "caracalai-transport-mcp": "0.1.0",
+    "caracalai-mcp-fastmcp": "0.1.0",
+    "caracalai-revocation-redis": "0.1.0"
+  },
+  "npm": {
+    "@caracalai/core": "0.1.0",
+    "@caracalai/sdk": "0.1.0",
+    "@caracalai/identity": "0.1.0",
+    "@caracalai/revocation": "0.1.0",
+    "@caracalai/oauth": "0.1.0",
+    "@caracalai/admin": "0.1.0",
+    "@caracalai/transport-a2a": "0.1.0",
+    "@caracalai/transport-mcp": "0.1.0",
+    "@caracalai/connectors-express": "0.1.0",
+    "@caracalai/connectors-fastmcp": "0.1.0",
+    "@caracalai/connectors-postgres": "0.1.0",
+    "@caracalai/connectors-redis": "0.1.0"
+  }
+}
