@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Validates published Caracal release artifacts after successful release runs.
+# Validates published Caracal release artifacts and opens a report PR.
 
 name: Post-Release Validation
 
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: Release tag (e.g. v2026.05.13).
+        description: Release tag, such as v2026.05.13 or v2026.05.13.1.
         required: true
         type: string
 
@@ -24,183 +24,291 @@ concurrency:
   group: post-release-${{ inputs.release }}
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: bash
+
+env:
+  NODE_VERSION: '24'
+  PNPM_VERSION: '11.1.1'
+  FINDINGS_DIR: findings
+
 jobs:
   registryMetadata:
+    name: Registry metadata
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
       CARACAL_RELEASE: ${{ inputs.release }}
-      FINDINGS_DIR: ${{ github.workspace }}/findings
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
       - run: mkdir -p "$FINDINGS_DIR" && bash scripts/postRelease/validateRegistryMetadata.sh
-      - uses: actions/upload-artifact@v4
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: findings-registry
-          path: findings/
+          path: findings/*.jsonl
+          if-no-files-found: error
+          retention-days: 14
 
   pypiInstall:
+    name: PyPI (${{ matrix.os }}, ${{ matrix.pm }}, Python ${{ matrix.py }})
     runs-on: ${{ matrix.os }}
     needs: registryMetadata
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-14, windows-2022]
+        os: [ubuntu-24.04, macos-15, windows-2022]
         pm: [pip, uv, poetry]
-        py: ["3.11", "3.12", "3.13", "3.14"]
+        py: ['3.11', '3.12', '3.13', '3.14']
     env:
       CARACAL_RELEASE: ${{ inputs.release }}
-      FINDINGS_DIR: ${{ github.workspace }}/findings
       PM: ${{ matrix.pm }}
       PY: ${{ matrix.py }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.py }}
+
       - if: matrix.pm == 'uv'
-        run: pipx install uv
+        run: python -m pip install --upgrade uv
+
       - if: matrix.pm == 'poetry'
-        run: pipx install poetry
+        run: python -m pip install --upgrade poetry
+
       - run: mkdir -p "$FINDINGS_DIR" && bash scripts/postRelease/validatePypiInstall.sh
-      - uses: actions/upload-artifact@v4
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: findings-pypi-${{ matrix.os }}-${{ matrix.pm }}-${{ matrix.py }}
-          path: findings/
+          path: findings/*.jsonl
+          if-no-files-found: error
+          retention-days: 14
 
   npmInstall:
+    name: npm (${{ matrix.os }}, ${{ matrix.pm }}, Node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
     needs: registryMetadata
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-14, windows-2022]
+        os: [ubuntu-24.04, macos-15, windows-2022]
         pm: [npm, pnpm, yarn]
-        node: ["24"]
+        node: ['24']
     env:
       CARACAL_RELEASE: ${{ inputs.release }}
-      FINDINGS_DIR: ${{ github.workspace }}/findings
       PM: ${{ matrix.pm }}
       NODE_V: ${{ matrix.node }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ matrix.node }}
+
       - if: matrix.pm == 'pnpm'
-        run: npm i -g pnpm@11.1.1
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
       - if: matrix.pm == 'yarn'
         run: corepack enable && corepack prepare yarn@4 --activate
+
       - run: mkdir -p "$FINDINGS_DIR" && bash scripts/postRelease/validateNpmInstall.sh
-      - uses: actions/upload-artifact@v4
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: findings-npm-${{ matrix.os }}-${{ matrix.pm }}-${{ matrix.node }}
-          path: findings/
+          path: findings/*.jsonl
+          if-no-files-found: error
+          retention-days: 14
 
   cliAndTui:
+    name: Binaries (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-13, macos-14, windows-2022]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15-intel, macos-15, windows-2022]
     env:
       CARACAL_RELEASE: ${{ inputs.release }}
-      FINDINGS_DIR: ${{ github.workspace }}/findings
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
       - run: mkdir -p "$FINDINGS_DIR"
+
       - run: bash scripts/postRelease/validateCliBinaries.sh
+
       - run: bash scripts/postRelease/validateTuiBinaries.sh
-      - uses: actions/upload-artifact@v4
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: findings-binaries-${{ matrix.os }}
-          path: findings/
+          path: findings/*.jsonl
+          if-no-files-found: error
+          retention-days: 14
 
   installers:
+    name: Installers (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-2022]
     env:
       CARACAL_RELEASE: ${{ inputs.release }}
-      FINDINGS_DIR: ${{ github.workspace }}/findings
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
       - run: mkdir -p "$FINDINGS_DIR" && bash scripts/postRelease/validateInstallers.sh
-      - uses: actions/upload-artifact@v4
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: findings-installers-${{ matrix.os }}
-          path: findings/
+          path: findings/*.jsonl
+          if-no-files-found: error
+          retention-days: 14
 
   containers:
+    name: Containers
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     env:
       CARACAL_RELEASE: ${{ inputs.release }}
-      FINDINGS_DIR: ${{ github.workspace }}/findings
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
       - run: mkdir -p "$FINDINGS_DIR" && bash scripts/postRelease/validateContainers.sh
-      - uses: actions/upload-artifact@v4
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: findings-containers
-          path: findings/
+          path: findings/*.jsonl
+          if-no-files-found: error
+          retention-days: 14
 
   provenance:
+    name: Provenance
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     env:
       CARACAL_RELEASE: ${{ inputs.release }}
-      FINDINGS_DIR: ${{ github.workspace }}/findings
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
       - uses: sigstore/cosign-installer@v3
+
       - run: mkdir -p "$FINDINGS_DIR" && bash scripts/postRelease/validateProvenance.sh
-      - uses: actions/upload-artifact@v4
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: findings-provenance
-          path: findings/
+          path: findings/*.jsonl
+          if-no-files-found: error
+          retention-days: 14
 
   examples:
+    name: Examples
     runs-on: ubuntu-24.04
-    needs: [npmInstall]
+    needs: npmInstall
+    timeout-minutes: 15
     env:
       CARACAL_RELEASE: ${{ inputs.release }}
-      FINDINGS_DIR: ${{ github.workspace }}/findings
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-            node-version: "24"
-          - run: npm i -g pnpm@11.1.1
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - run: mkdir -p "$FINDINGS_DIR" && bash scripts/postRelease/validateExamples.sh
-      - uses: actions/upload-artifact@v4
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: findings-examples
-          path: findings/
+          path: findings/*.jsonl
+          if-no-files-found: error
+          retention-days: 14
 
   aggregate:
+    name: Aggregate report
     runs-on: ubuntu-24.04
-    needs: [registryMetadata, pypiInstall, npmInstall, cliAndTui, installers, containers, provenance, examples]
+    needs:
+      - registryMetadata
+      - pypiInstall
+      - npmInstall
+      - cliAndTui
+      - installers
+      - containers
+      - provenance
+      - examples
     if: always()
+    timeout-minutes: 10
     env:
       CARACAL_RELEASE: ${{ inputs.release }}
       FINDINGS_DIR: ${{ github.workspace }}/findings
       MANIFEST: ${{ github.workspace }}/releases/${{ inputs.release }}/manifest.json
       REPORT_OUT: ${{ github.workspace }}/releases/${{ inputs.release }}/validation.md
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: findings
           pattern: findings-*
-          merge-multiple: true
-      - run: bun scripts/postRelease/aggregateReport.ts
+
+      - id: report
+        continue-on-error: true
+        run: bun scripts/postRelease/aggregateReport.ts
+
       - uses: peter-evans/create-pull-request@v7
         with:
           branch: release-validation/${{ inputs.release }}
-          title: "release-validation: ${{ inputs.release }} report"
+          title: 'release-validation: ${{ inputs.release }} report'
           labels: release-validation
-          commit-message: "release-validation: ${{ inputs.release }} report"
+          commit-message: 'release-validation: ${{ inputs.release }} report'
           add-paths: releases/${{ inputs.release }}/
+
+      - if: steps.report.outcome == 'failure'
+        run: |
+          echo 'Post-release validation found blocker failures.'
+          exit 1
+
+      - if: contains(join(needs.*.result, ','), 'failure') || contains(join(needs.*.result, ','), 'cancelled')
+        run: |
+          echo 'One or more post-release validation jobs failed before aggregation.'
+          exit 1

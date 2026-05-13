@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Release pipeline: builds CLI binaries, pushes runtime images to GHCR, and creates the GitHub Release on CalVer tags. Npm and PyPI packages are published locally via scripts/publishNpm.sh and scripts/publishPypi.sh.
+# Builds CLI/TUI archives, pushes GHCR images, creates the GitHub Release, and starts post-release validation.
 
 name: release
 
@@ -9,7 +9,7 @@ on:
   push:
     tags:
       - 'v[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9]'
-      - 'v[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9].[0-9]+'
+      - 'v[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9].*'
   workflow_dispatch:
     inputs:
       ref:
@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           actor="${{ github.actor }}"
-          if ! grep -oP '(?<=@)\S+' .github/MAINTAINERS | grep -qiF "$actor"; then
+          if ! grep -Eo '@[[:alnum:]_-]+' .github/MAINTAINERS | sed 's/^@//' | grep -qiFx "$actor"; then
             echo "::error::$actor is not listed in .github/MAINTAINERS and cannot trigger a release."
             exit 1
           fi
@@ -70,6 +70,26 @@ jobs:
             echo "::error::Tag '${GITHUB_REF_NAME}' does not match CalVer format vYYYY.MM.DD or vYYYY.MM.DD.N"
             exit 1
           fi
+
+      - name: Validate release manifest
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          manifest="releases/${GITHUB_REF_NAME}/manifest.json"
+          version="${GITHUB_REF_NAME#v}"
+          test -f "$manifest" || { echo "::error::Missing release manifest: $manifest"; exit 1; }
+          node - "$manifest" "$GITHUB_REF_NAME" "$version" <<'NODE'
+          const { readFileSync } = require("node:fs");
+          const [manifestPath, release, version] = process.argv.slice(2);
+          const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+          if (manifest.release !== release) throw new Error(`manifest release ${manifest.release} does not match ${release}`);
+          for (const [kind, value] of Object.entries(manifest.binaries)) {
+            if (value !== version) throw new Error(`binary ${kind} version ${value} does not match ${version}`);
+          }
+          for (const [name, value] of Object.entries(manifest.containers)) {
+            if (value !== version) throw new Error(`container ${name} version ${value} does not match ${version}`);
+          }
+          NODE
 
   cli:
     name: Build CLI and TUI binaries
