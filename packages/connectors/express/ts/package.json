@@ -9,7 +9,12 @@
     "url": "https://github.com/Garudex-Labs/caracal.git",
     "directory": "packages/connectors/express/ts"
   },
-  "keywords": ["caracal", "mcp", "express", "connector"],
+  "keywords": [
+    "caracal",
+    "mcp",
+    "express",
+    "connector"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,8 +24,14 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
@@ -31,14 +42,14 @@
     "express": "^5.0.0"
   },
   "dependencies": {
-    "@caracalai/transport-mcp": "workspace:*",
     "@caracalai/identity": "workspace:*",
-    "@caracalai/sdk": "workspace:*"
+    "@caracalai/sdk": "workspace:*",
+    "@caracalai/transport-mcp": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
-    "@types/node": "^24.0.0",
-    "typescript": "^5.8.0",
-    "vitest": "^3.0.0"
+    "@types/node": "^24.12.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
   }
 }
