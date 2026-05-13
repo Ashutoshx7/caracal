@@ -34,7 +34,6 @@ async def spawn(
     zone_id: str,
     application_id: str,
     subject_token: str,
-    session_sid: str | None = None,
     parent_id: str | None = None,
     kind: AgentKind = AgentKind.INSTANCE,
     ttl_seconds: int | None = None,
@@ -53,7 +52,6 @@ async def spawn(
         SpawnRequest(
             zone_id=zone_id,
             application_id=application_id,
-            session_sid=session_sid,
             parent_id=resolved_parent_id,
             kind=kind,
             ttl_seconds=ttl_seconds,
@@ -67,7 +65,7 @@ async def spawn(
         client_id=application_id,
         agent_session_id=res.agent_session_id,
         parent_edge_id=parent.delegation_edge_id if parent else None,
-        session_id=session_sid or (parent.session_id if parent else None),
+        session_id=parent.session_id if parent else None,
         trace_id=trace_id or (parent.trace_id if parent else None),
         hop=parent.hop if parent else 0,
     )
@@ -138,7 +136,6 @@ async def delegate_to_spawn(
     scopes: list[str],
     constraints: DelegationConstraints | None = None,
     delegation_ttl_seconds: int | None = None,
-    session_sid: str | None = None,
     kind: AgentKind = AgentKind.INSTANCE,
     ttl_seconds: int | None = None,
     metadata: dict[str, Any] | None = None,
@@ -163,7 +160,6 @@ async def delegate_to_spawn(
         SpawnRequest(
             zone_id=zone_id,
             application_id=application_id,
-            session_sid=session_sid,
             parent_id=parent.agent_session_id,
             kind=kind,
             ttl_seconds=ttl_seconds,
@@ -193,7 +189,7 @@ async def delegate_to_spawn(
         agent_session_id=spawn_res.agent_session_id,
         delegation_edge_id=delegation_res.delegation_edge_id,
         parent_edge_id=delegation_res.delegation_edge_id,
-        session_id=session_sid or parent.session_id,
+        session_id=parent.session_id,
         trace_id=trace_id or parent.trace_id,
         hop=parent.hop + 1,
     )

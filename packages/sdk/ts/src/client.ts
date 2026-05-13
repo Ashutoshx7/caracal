@@ -42,7 +42,6 @@ export interface CaracalConfig {
 export interface SpawnOptions {
   kind?: AgentKind;
   ttlSeconds?: number;
-  sessionSid?: string;
   parentId?: string;
   metadata?: Record<string, unknown>;
   traceId?: string;
@@ -62,7 +61,6 @@ export interface DelegateToSpawnOptions {
   delegationTtlSeconds?: number;
   kind?: AgentKind;
   ttlSeconds?: number;
-  sessionSid?: string;
   metadata?: Record<string, unknown>;
   traceId?: string;
 }
@@ -117,7 +115,6 @@ export class Caracal {
       subjectToken: this.config.subjectToken,
       kind: opts.kind ?? this.config.defaultKind ?? AgentKind.Instance,
       ttlSeconds: opts.ttlSeconds ?? this.config.defaultTtlSeconds,
-      sessionSid: opts.sessionSid,
       parentId: opts.parentId,
       metadata: opts.metadata,
       traceId: opts.traceId,
@@ -148,7 +145,6 @@ export class Caracal {
       scopes: opts.scopes,
       constraints: opts.constraints,
       delegationTtlSeconds: opts.delegationTtlSeconds,
-      sessionSid: opts.sessionSid,
       kind: opts.kind ?? this.config.defaultKind ?? AgentKind.Instance,
       ttlSeconds: opts.ttlSeconds ?? this.config.defaultTtlSeconds,
       metadata: opts.metadata,

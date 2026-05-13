@@ -8,7 +8,6 @@ import { runTTLSweep } from '../../../../../../apps/coordinator/src/jobs/ttl-swe
 
 beforeAll(() => {
   process.env.ISSUER_URL ??= 'http://issuer.test'
-  process.env.AGENT_COORDINATOR_AUDIENCE ??= 'coord.test'
   process.env.STS_URL ??= 'http://sts.test'
   process.env.AGENT_COORDINATOR_SCOPE ??= 'coordinator.use'
   process.env.DATABASE_URL ??= 'postgres://x'
