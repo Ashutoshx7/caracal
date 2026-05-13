@@ -17,7 +17,7 @@ const ProviderBody = z.object({
   kind: z.enum(['oauth2', 'oidc', 'apikey', 'workload']).optional(),
   owner_type: z.string().optional(),
   client_id: z.string().optional(),
-  config_json: z.record(z.unknown()).optional(),
+  config_json: z.record(z.string(), z.unknown()).optional(),
 })
 
 // Keys whose values are credential material. They are stripped from config_json,
