@@ -37,7 +37,7 @@ env:
   NODE_VERSION: '24'
   PNPM_VERSION: '11.1.1'
   GO_VERSION: '1.26'
-  PYTHON_VERSION: '3.12'
+  PYTHON_VERSION: '3.14'
   GOTOOLCHAIN: auto
   REGISTRY: ghcr.io
   IMAGE_OWNER: garudex-labs
