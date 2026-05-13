@@ -14,7 +14,7 @@ require (
 
 require (
 	github.com/garudex-labs/caracal/core v0.0.0-00010101000000-000000000000 // indirect
-	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 )
 
 replace (

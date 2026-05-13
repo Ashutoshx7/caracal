@@ -9,7 +9,12 @@
     "url": "https://github.com/Garudex-Labs/caracal.git",
     "directory": "packages/transport/a2a/ts"
   },
-  "keywords": ["caracal", "a2a", "agent-to-agent", "transport"],
+  "keywords": [
+    "caracal",
+    "a2a",
+    "agent-to-agent",
+    "transport"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,8 +24,14 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
@@ -32,7 +43,7 @@
     "@caracalai/sdk": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.8.0",
-    "vitest": "^3.0.0"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
   }
 }

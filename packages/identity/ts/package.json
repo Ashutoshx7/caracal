@@ -9,7 +9,12 @@
     "url": "https://github.com/Garudex-Labs/caracal.git",
     "directory": "packages/identity/ts"
   },
-  "keywords": ["caracal", "identity", "jwt", "jwks"],
+  "keywords": [
+    "caracal",
+    "identity",
+    "jwt",
+    "jwks"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,8 +24,14 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -30,11 +41,11 @@
   },
   "dependencies": {
     "@caracalai/core": "workspace:*",
-    "jose": "^5.9.0"
+    "jose": "^6.2.3"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "typescript": "^5.8.0",
-    "vitest": "^3.0.0"
+    "@types/node": "^24.12.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
   }
 }
