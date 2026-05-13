@@ -12,6 +12,7 @@ from typing import Any
 
 from caracalai_revocation_redis import RedisRevocationConsumer, RedisRevocationStore
 from caracalai_revocation_redis.revocation import REVOCATION_STREAM, STREAM_SIG_FIELD
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 
 class FakeRedis:
@@ -23,7 +24,7 @@ class FakeRedis:
 
     def get(self, key: str) -> str | None:
         if self.fail_get:
-            raise RuntimeError("redis down")
+            raise RedisConnectionError("redis down")
         return self.values.get(key)
 
     def set(self, key: str, value: str, px: int) -> None:

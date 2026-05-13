@@ -9,6 +9,7 @@ import json
 from typing import Any
 
 import jwt
+from caracalai_core import CaracalError, ErrorCode
 
 from .jwks import JwksCache
 from .scope import has_scope
@@ -17,36 +18,49 @@ from .types import DEFAULT_MAX_HOP_COUNT, ChainHop, Claims, JwtConfig
 _cache = JwksCache()
 
 
-class TokenInvalidError(ValueError):
-    pass
+class TokenInvalidError(CaracalError):
+    def __init__(self, description: str = "Token validation failed") -> None:
+        super().__init__(ErrorCode.INVALID_TOKEN, description)
 
 
-class ZoneInvalidError(ValueError):
-    pass
+class ZoneInvalidError(CaracalError):
+    def __init__(self, description: str = "Token zone validation failed") -> None:
+        super().__init__(ErrorCode.ZONE_INVALID, description)
 
 
-class ScopeInsufficientError(PermissionError):
+class ScopeInsufficientError(CaracalError):
     def __init__(self, missing_scope: str) -> None:
-        super().__init__(f"Missing required scope: {missing_scope}")
+        super().__init__(
+            ErrorCode.SCOPE_INSUFFICIENT,
+            f"Missing required scope: {missing_scope}",
+            details={"missing_scope": missing_scope},
+        )
         self.missing_scope = missing_scope
 
 
-class AgentIdentityRequiredError(PermissionError):
-    pass
+class AgentIdentityRequiredError(CaracalError):
+    def __init__(self, description: str = "Agent identity required") -> None:
+        super().__init__(ErrorCode.AGENT_IDENTITY_REQUIRED, description)
 
 
-class DelegationRequiredError(PermissionError):
-    pass
+class DelegationRequiredError(CaracalError):
+    def __init__(self, description: str = "Delegation required") -> None:
+        super().__init__(ErrorCode.DELEGATION_REQUIRED, description)
 
 
-class ChainMismatchError(PermissionError):
+class ChainMismatchError(CaracalError):
     def __init__(self, missing_application_id: str) -> None:
-        super().__init__(f"Delegation chain missing application: {missing_application_id}")
+        super().__init__(
+            ErrorCode.CHAIN_MISMATCH,
+            f"Delegation chain missing application: {missing_application_id}",
+            details={"missing_application_id": missing_application_id},
+        )
         self.missing_application_id = missing_application_id
 
 
-class HopCountExceededError(PermissionError):
-    pass
+class HopCountExceededError(CaracalError):
+    def __init__(self, description: str = "Hop count exceeded") -> None:
+        super().__init__(ErrorCode.HOP_COUNT_EXCEEDED, description)
 
 
 def _read_chain(raw: Any) -> list[ChainHop]:
@@ -108,7 +122,7 @@ async def verify_token(
             last_err = e
 
     if decoded is None:
-        raise TokenInvalidError(f"Token validation failed: {last_err}")
+        raise TokenInvalidError(f"Token validation failed: {last_err}") from last_err
 
     scope: str = decoded.get("scope", "")
     zone_id: str | None = decoded.get("zone_id")

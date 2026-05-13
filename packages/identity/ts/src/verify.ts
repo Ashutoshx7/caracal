@@ -4,59 +4,61 @@
 // Verifies a Caracal JWT against an issuer JWKS and enforces zone and scope claims.
 
 import { jwtVerify } from 'jose'
-import { hasScope } from '@caracalai/core'
+import { CaracalError, hasScope } from '@caracalai/core'
 import { getKeySet } from './jwks.js'
 import { DEFAULT_MAX_HOP_COUNT, type ChainHop, type Claims, type JwtConfig } from './types.js'
 
-export class TokenInvalidError extends Error {
-  constructor(message = 'Token validation failed') {
-    super(message)
+export class TokenInvalidError extends CaracalError {
+  constructor(message = 'Token validation failed', cause?: unknown) {
+    super('invalid_token', message, cause !== undefined ? { cause } : {})
     this.name = 'TokenInvalidError'
   }
 }
 
-export class ZoneInvalidError extends Error {
+export class ZoneInvalidError extends CaracalError {
   constructor(message = 'Token zone validation failed') {
-    super(message)
+    super('zone_invalid', message)
     this.name = 'ZoneInvalidError'
   }
 }
 
-export class ScopeInsufficientError extends Error {
+export class ScopeInsufficientError extends CaracalError {
   readonly missingScope: string
   constructor(missingScope: string) {
-    super(`Missing scope: ${missingScope}`)
+    super('scope_insufficient', `Missing scope: ${missingScope}`, { details: { missingScope } })
     this.name = 'ScopeInsufficientError'
     this.missingScope = missingScope
   }
 }
 
-export class AgentIdentityRequiredError extends Error {
+export class AgentIdentityRequiredError extends CaracalError {
   constructor(message = 'Agent identity required') {
-    super(message)
+    super('agent_identity_required', message)
     this.name = 'AgentIdentityRequiredError'
   }
 }
 
-export class DelegationRequiredError extends Error {
+export class DelegationRequiredError extends CaracalError {
   constructor(message = 'Delegation required') {
-    super(message)
+    super('delegation_required', message)
     this.name = 'DelegationRequiredError'
   }
 }
 
-export class ChainMismatchError extends Error {
+export class ChainMismatchError extends CaracalError {
   readonly missingApplicationId: string
   constructor(missingApplicationId: string) {
-    super(`Delegation chain missing application: ${missingApplicationId}`)
+    super('chain_mismatch', `Delegation chain missing application: ${missingApplicationId}`, {
+      details: { missingApplicationId },
+    })
     this.name = 'ChainMismatchError'
     this.missingApplicationId = missingApplicationId
   }
 }
 
-export class HopCountExceededError extends Error {
+export class HopCountExceededError extends CaracalError {
   constructor(message = 'Hop count exceeded') {
-    super(message)
+    super('hop_count_exceeded', message)
     this.name = 'HopCountExceededError'
   }
 }
@@ -88,8 +90,8 @@ export async function verify(token: string, config: JwtConfig): Promise<Claims> 
       audience: config.audience,
       algorithms: ['ES256'],
     }))
-  } catch {
-    throw new TokenInvalidError()
+  } catch (err) {
+    throw new TokenInvalidError('Token validation failed', err)
   }
 
   const scope = (payload['scope'] as string | undefined) ?? ''

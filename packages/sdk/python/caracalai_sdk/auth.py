@@ -8,6 +8,7 @@ Token-exchange client that turns an application client_secret into an STS access
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import threading
 import time
@@ -30,7 +31,7 @@ def _decode_jwt_exp(token: str) -> float | None:
     payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
     try:
         payload = json.loads(base64.urlsafe_b64decode(payload_b64.encode("ascii")))
-    except Exception:
+    except (binascii.Error, ValueError, UnicodeDecodeError):
         return None
     exp = payload.get("exp")
     if isinstance(exp, (int, float)):

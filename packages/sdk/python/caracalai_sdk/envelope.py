@@ -88,7 +88,7 @@ def parse_baggage(value: str | None) -> dict[str, str]:
         raw = (piece[eq + 1:] if semi == -1 else piece[eq + 1:semi]).strip()
         try:
             out[k] = unquote(raw)
-        except Exception:
+        except UnicodeDecodeError:
             out[k] = raw
     return out
 

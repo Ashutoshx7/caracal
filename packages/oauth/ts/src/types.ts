@@ -3,6 +3,8 @@
 //
 // RFC 8693 token exchange types for the @caracalai/oauth client.
 
+import { CaracalError } from '@caracalai/core'
+
 export interface TokenExchangeRequest {
   subjectToken: string
   resource: string
@@ -39,16 +41,23 @@ export interface ExchangeOptions {
   ttlSeconds?: number
 }
 
-export class InteractionRequiredError extends Error {
-  readonly code = 'interaction_required' as const
+export class InteractionRequiredError extends CaracalError {
+  readonly challengeId: string
+  readonly resource?: string
+  readonly acrValues?: string
 
   constructor(
     message: string,
-    public readonly challengeId: string,
-    public readonly resource?: string,
-    public readonly acrValues?: string,
+    challengeId: string,
+    resource?: string,
+    acrValues?: string,
   ) {
-    super(message)
+    super('interaction_required', message, {
+      details: { challengeId, ...(resource ? { resource } : {}), ...(acrValues ? { acrValues } : {}) },
+    })
     this.name = 'InteractionRequiredError'
+    this.challengeId = challengeId
+    this.resource = resource
+    this.acrValues = acrValues
   }
 }
