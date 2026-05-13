@@ -20,6 +20,15 @@ pickItems() {
     printf '\nUse Up/Down to move, Space to toggle, "a" to toggle all, Enter to confirm, Esc to cancel.\n\n' >&2
     tput civis 2>/dev/null || true
     tty_state="$(stty -g 2>/dev/null || true)"
+    restoreTerminal() {
+        local rc=$?
+        [[ -z "$tty_state" ]] || stty "$tty_state" 2>/dev/null || true
+        tput cnorm 2>/dev/null || true
+        trap - ERR INT TERM
+        return "$rc"
+    }
+    trap restoreTerminal ERR
+    trap 'restoreTerminal; exit 130' INT TERM
     stty -echo
 
     render() {
@@ -57,11 +66,9 @@ pickItems() {
         render
     done
 
-    [[ -z "$tty_state" ]] || stty "$tty_state"
-    tput cnorm 2>/dev/null || true
-
     PICKED=()
     for ((i = 0; i < n; i++)); do
         [[ ${selected[i]} -eq 1 ]] && PICKED+=("${items[i]}")
     done
+    restoreTerminal
 }

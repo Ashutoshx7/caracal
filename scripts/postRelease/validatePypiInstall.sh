@@ -29,9 +29,13 @@ runProbe() {
     pip)
       runOrEcho "$CARACAL_PYTHON" -m venv "$dir/v"
       local py="$dir/v/bin/python" pip="$dir/v/bin/pip"
-      if [[ ! -x "$py" ]]; then
+      if [[ -f "$dir/v/Scripts/python.exe" ]]; then
         py="$dir/v/Scripts/python.exe"
         pip="$dir/v/Scripts/pip.exe"
+      fi
+      if [[ ! -f "$py" || ! -f "$pip" ]]; then
+        echo "venv python or pip executable not found" >&2
+        return 2
       fi
       runOrEcho "$pip" install --quiet "$pkg==$ver"
       runOrEcho "$py" -c "import $mod"
