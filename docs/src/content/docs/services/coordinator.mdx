@@ -37,7 +37,7 @@ Authorization: Bearer <STS-issued JWT>
 ```
 
 The token must carry:
-- `aud` matching `AGENT_COORDINATOR_AUDIENCE`.
+- `aud` matching `ISSUER_URL` (the STS issues ambient tokens with this audience; the Coordinator verifies against the same value).
 - `scope` containing `AGENT_COORDINATOR_SCOPE` (typically `agent:lifecycle`).
 
 The Coordinator verifies tokens using JWKS fetched from `{ISSUER_URL}/.well-known/jwks.json` (LRU cache, max 256 entries).
@@ -185,8 +185,7 @@ Invocation idempotency is enforced at the database level via a unique constraint
 | `DATABASE_URL` | — | PostgreSQL connection string |
 | `REDIS_URL` | — | Redis connection string |
 | `STS_URL` | — | STS URL for agent token exchanges |
-| `ISSUER_URL` | — | JWT issuer URL for JWKS verification |
-| `AGENT_COORDINATOR_AUDIENCE` | — | Required `aud` claim in bearer JWTs |
+| `ISSUER_URL` | — | JWT issuer URL for JWKS verification (also used as the required `aud`) |
 | `AGENT_COORDINATOR_SCOPE` | — | Required scope in bearer JWTs |
 | `DB_POOL_MAX` | `20` | PostgreSQL pool size |
 | `OUTBOX_INTERVAL_MS` | `1000` | Outbox poll interval |

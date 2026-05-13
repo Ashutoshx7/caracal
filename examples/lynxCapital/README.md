@@ -69,6 +69,12 @@ curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.s
 
 # Bring up the OSS stack (coordinator, gateway, postgres, redis, ...)
 caracal up
+
+# Provision a local zone + application. This writes
+# ~/.config/caracal/caracal.toml with zone_id / application_id /
+# app_client_secret — Lynx reads that file at startup and exchanges
+# the client_secret for a real STS access token.
+caracal init --force
 ```
 
 The stack listens on:
@@ -76,6 +82,7 @@ The stack listens on:
 - API         → `http://localhost:3000`
 - Coordinator → `http://localhost:4000`
 - Gateway     → `http://localhost:8081`
+- STS         → `http://localhost:8080`
 
 The defaults in `.env.example` already point at these. If you run Caracal on
 different hosts/ports, edit the `CARACAL_*` block in your `.env`.
@@ -88,7 +95,10 @@ different hosts/ports, edit the `CARACAL_*` block in your `.env`.
 ### 5 — Run Lynx Capital
 
 ```bash
-uvicorn app.main:app --reload --port 8000
+# Make sure the venv is active (the prompt should start with `(.venv)`),
+# then start the app. Using `python -m uvicorn` guarantees the venv's
+# uvicorn — not a system-wide one — picks up the right grpcio/protobuf.
+python -m uvicorn app.main:app --reload --port 8000
 ```
 
 Open **http://localhost:8000**.
