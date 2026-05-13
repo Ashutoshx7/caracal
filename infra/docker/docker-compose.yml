@@ -3,7 +3,7 @@
 #
 # Local-dev orchestration for the OSS Caracal stack.
 
-name: caracal
+name: caracal-dev
 
 x-logging: &defaultLogging
   driver: json-file

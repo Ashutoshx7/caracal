@@ -33,7 +33,6 @@
   "dependencies": {
     "@caracalai/transport-mcp": "workspace:*",
     "@caracalai/identity": "workspace:*",
-    "@caracalai/revocation": "workspace:*",
     "@caracalai/sdk": "workspace:*"
   },
   "devDependencies": {

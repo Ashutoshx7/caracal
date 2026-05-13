@@ -28,8 +28,7 @@
     "prepublishOnly": "tsc"
   },
   "dependencies": {
-    "@caracalai/transport-mcp": "workspace:*",
-    "@caracalai/revocation": "workspace:*"
+    "@caracalai/transport-mcp": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
