@@ -19,7 +19,7 @@ Every policy must:
 2. Import `rego.v1`.
 3. Define a `result` rule that produces the required output object.
 
-```rego
+```text
 package caracal.authz
 import rego.v1
 
@@ -30,7 +30,7 @@ result := { ... }
 
 The `result` rule must produce an object with exactly these four fields:
 
-```rego
+```text
 result := {
   "decision":              "allow",    # or "deny"
   "evaluation_status":    "complete",
@@ -120,7 +120,7 @@ Policies must be deterministic and must not make network calls. Use `data.*` for
 
 This pattern ensures the policy always produces a valid `result`, with allow overriding deny:
 
-```rego
+```text
 package caracal.authz
 import rego.v1
 
@@ -152,7 +152,7 @@ allow if {
 
 Check that requested scopes are covered by what the principal is allowed:
 
-```rego
+```text
 package caracal.authz
 import rego.v1
 
@@ -183,7 +183,7 @@ result := {
 
 Emit a `step_up_required` diagnostic to signal that the STS should create a step-up challenge:
 
-```rego
+```text
 package caracal.authz
 import rego.v1
 
@@ -226,7 +226,7 @@ The `step_up_required` value (`"mfa"`, `"human_approval"`, or `"software_attesta
 
 Store reference tables outside policy logic by loading them as OPA data documents. When you version a policy set, bundle the policy and a data document together. Access via `data.my_table`:
 
-```rego
+```text
 # Policy references data.approved_vendors
 result := {
   "decision": "allow",

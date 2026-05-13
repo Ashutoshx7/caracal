@@ -97,7 +97,7 @@ Without a `credential_provider_id`, the Gateway forwards the mandate as the `Aut
 
 The `identifier` field is the string that policies inspect. Use logical names that remain stable even if the underlying upstream URL changes:
 
-```rego
+```text
 # Allow read access to the payments resource
 result := {
   "decision": "allow",

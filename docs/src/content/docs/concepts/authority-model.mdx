@@ -85,7 +85,7 @@ The STS accepts the result only when both conditions hold:
 
 When no policy set is active in a zone, the OPA engine installs a deny-all fallback:
 
-```rego
+```text
 package caracal.authz
 result := {
   "decision": "deny",

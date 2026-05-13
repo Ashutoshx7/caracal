@@ -65,7 +65,7 @@ The challenge type is purely a signal. The STS does not perform the MFA check or
 
 A step-up policy guards by checking `challenge_resolved` and returning a structured diagnostic when it is not yet set:
 
-```rego
+```text
 result := {
   "decision": "allow",
   "evaluation_status": "complete",

@@ -17,7 +17,7 @@ Policies are stored in the `policies` table, versioned in `policy_versions` (eac
 
 Every Caracal-compatible Rego policy must produce a result at `data.caracal.authz.result`:
 
-```rego
+```text
 package caracal.authz
 
 import future.keywords.if
@@ -170,7 +170,7 @@ If policy compilation fails (syntax error, unsatisfiable rule, etc.), the STS in
 
 A policy can signal that it requires elevated authentication before allowing exchange. It does this by returning a `step_up_required` entry in `diagnostics`:
 
-```rego
+```text
 result := {
   "decision": "deny",
   "evaluation_status": "complete",

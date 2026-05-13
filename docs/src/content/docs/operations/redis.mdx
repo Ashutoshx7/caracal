@@ -10,7 +10,7 @@ Caracal uses Redis as the message bus between services via a transactional outbo
 
 The custom image at `infra/redis/` starts Redis 8 with `redis-server /etc/caracal/redis.conf`. Key configuration:
 
-```conf
+```ini
 bind 0.0.0.0
 port 6379
 protected-mode yes
