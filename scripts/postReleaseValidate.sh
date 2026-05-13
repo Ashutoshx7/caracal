@@ -6,6 +6,9 @@
 
 set -euo pipefail
 
+# shellcheck source=lib/style.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/style.sh"
+
 RELEASE=""
 CATEGORY="all"
 REPORT_OUT=""
@@ -29,7 +32,7 @@ while [[ $# -gt 0 ]]; do
     --only) ONLY="$2"; shift 2 ;;
     --dry-run) DRY=1; shift ;;
     -h|--help) usage; exit 0 ;;
-    *) echo "unknown arg: $1" >&2; usage; exit 2 ;;
+    *) say_error "unknown arg: $1"; usage; exit 2 ;;
   esac
 done
 
@@ -42,7 +45,7 @@ FINDINGS_DIR="${FINDINGS_DIR:-$(mktemp -d)}"
 REPORT_OUT="${REPORT_OUT:-$ROOT/releases/$RELEASE/validation.md}"
 
 if [[ ! -f "$MANIFEST" ]]; then
-  echo "orchestrator: manifest not found: $MANIFEST" >&2
+  say_error "manifest not found: $MANIFEST"
   exit 2
 fi
 
@@ -59,14 +62,19 @@ else
   IFS=',' read -r -a CATS <<< "$CATEGORY"
 fi
 
+say_header "post-release validation — $RELEASE"
 for c in "${CATS[@]}"; do
   script="$SUB/validate$(tr '[:lower:]' '[:upper:]' <<< "${c:0:1}")${c:1}.sh"
   if [[ ! -x "$script" ]]; then
-    echo "missing or non-executable: $script" >&2
+    say_error "missing or non-executable: $script"
     exit 2
   fi
-  echo "==> $c"
-  "$script" || echo "  ($c reported failures; continuing)"
+  say_step "$c"
+  if "$script"; then
+    say_success "$c"
+  else
+    say_warn "$c reported failures; continuing"
+  fi
 done
 
 REPORT_OUT="$REPORT_OUT" FINDINGS_DIR="$FINDINGS_DIR" CARACAL_RELEASE="$RELEASE" MANIFEST="$MANIFEST" \

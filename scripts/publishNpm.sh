@@ -8,6 +8,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# shellcheck source=lib/style.sh
+. "scripts/lib/style.sh"
+
 packages=(
     packages/core/ts
     packages/oauth/ts
@@ -81,18 +84,18 @@ pickItems() {
 
 pickItems "${packages[@]}"
 if [[ ${#PICKED[@]} -eq 0 ]]; then
-    echo "publishNpm: no packages selected; nothing to do"
+    say_warn "publishNpm: no packages selected; nothing to do"
     exit 0
 fi
 packages=("${PICKED[@]}")
-echo "publishNpm: ${#packages[@]} package(s) selected"
+say_info "publishNpm: ${#packages[@]} package(s) selected"
 
 if [[ -z "${NPM_TOKEN:-}" ]]; then
-    read -r -s -p "npm token (granular, with publish access to @caracalai): " NPM_TOKEN
+    read -r -s -p "$(printf '%snpm token (granular, with publish access to @caracalai):%s ' "${C_PROMPT}" "${C_RESET}")" NPM_TOKEN
     echo
 fi
 if [[ -z "$NPM_TOKEN" ]]; then
-    echo "publishNpm: NPM_TOKEN is required" >&2
+    say_error "publishNpm: NPM_TOKEN is required"
     exit 1
 fi
 
@@ -106,41 +109,43 @@ trap cleanup EXIT
 echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "$npmrc"
 export NPM_CONFIG_USERCONFIG="$npmrc"
 
-echo "publishNpm: verifying token"
+say_step "publishNpm: verifying token"
 npm whoami
 
 if [[ -z "${NPM_OTP:-}" ]]; then
-    read -r -p "npm 2FA OTP (leave empty if the token bypasses 2FA): " NPM_OTP
+    read -r -p "$(printf '%snpm 2FA OTP (leave empty if the token bypasses 2FA):%s ' "${C_PROMPT}" "${C_RESET}")" NPM_OTP
 fi
 
-echo "publishNpm: building TypeScript packages"
+say_step "publishNpm: building TypeScript packages"
 pnpm install --frozen-lockfile --prefer-offline
 pnpm run build:typescript
 
+say_header "publishNpm: publishing"
 for d in "${packages[@]}"; do
     name="$(jq -r .name "$d/package.json")"
     ver="$(jq -r .version "$d/package.json")"
     if npm view "${name}@${ver}" version >/dev/null 2>&1; then
-        echo "publishNpm: skip ${name}@${ver} (already published)"
+        say_warn "skip ${name}@${ver} (already published)"
         continue
     fi
-    echo "publishNpm: publishing ${name}@${ver}"
+    say_step "publishing ${name}@${ver}"
     while true; do
         otp_args=()
         [[ -n "$NPM_OTP" ]] && otp_args=(--otp "$NPM_OTP")
         if ( cd "$d" && npm publish --access public "${otp_args[@]}" ); then
+            say_success "${name}@${ver}"
             break
         fi
-        read -r -p "publishNpm: publish failed (OTP expired?); enter a new OTP or empty to abort: " NPM_OTP
-        [[ -z "$NPM_OTP" ]] && { echo "publishNpm: aborted" >&2; exit 1; }
+        read -r -p "$(printf '%spublish failed (OTP expired?); enter a new OTP or empty to abort:%s ' "${C_PROMPT}" "${C_RESET}")" NPM_OTP
+        [[ -z "$NPM_OTP" ]] && { say_error "publishNpm: aborted"; exit 1; }
     done
 done
 
-echo "publishNpm: verifying latest versions on npm"
+say_step "publishNpm: verifying latest versions on npm"
 for d in "${packages[@]}"; do
     name="$(jq -r .name "$d/package.json")"
     latest="$(curl -fsSL "https://registry.npmjs.org/${name}" 2>/dev/null | jq -r '.["dist-tags"].latest // "unknown"')"
-    echo "publishNpm: ${name} latest=${latest}"
+    printf '  %s%s%s  latest=%s\n' "${C_LABEL}" "${name}" "${C_RESET}" "${latest}"
 done
 
-echo "publishNpm: done"
+say_success "publishNpm: done"

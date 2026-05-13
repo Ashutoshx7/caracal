@@ -8,6 +8,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 root="$(pwd)"
+
+# shellcheck source=lib/style.sh
+. "scripts/lib/style.sh"
+
 go_cmd="$(go env GOROOT)/bin/go"
 if [[ ! -x "$go_cmd" ]]; then
   go_cmd=go
@@ -54,18 +58,18 @@ Usage: scripts/testCi.sh [--all|--smoke|--ts|--go|--py|--docs]...
   --docs   : pnpm --dir docs build
 EOF
       exit 0 ;;
-    *) echo "Unknown flag: $arg" >&2; exit 2 ;;
+    *) say_error "Unknown flag: $arg"; exit 2 ;;
   esac
 done
 
-step() { echo; echo "==> $*"; }
+step() { say_step "$*"; }
 
 if $run_smoke; then
   step "smoke: pnpm install"
   pnpm install --frozen-lockfile --prefer-offline
   if ! command -v bun >/dev/null 2>&1; then
-    echo "bun is required for pnpm -r build (apps/cli, apps/tui)." >&2
-    echo "Install: curl -fsSL https://bun.sh/install | bash" >&2
+    say_error "bun is required for pnpm -r build (apps/cli, apps/tui)."
+    say_label "Install: curl -fsSL https://bun.sh/install | bash"
     exit 1
   fi
   step "smoke: pnpm -r build"
@@ -183,4 +187,4 @@ if $run_docs; then
 fi
 
 echo
-echo 'All requested CI checks passed.'
+say_success "All requested CI checks passed."
