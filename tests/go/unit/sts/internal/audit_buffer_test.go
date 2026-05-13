@@ -115,7 +115,10 @@ func TestAuditBufferChannelCapacity(t *testing.T) {
 
 func TestAuditEventTimestamp(t *testing.T) {
 	before := time.Now()
-	ev := buildAuditEvent("req-x", "z1", "allow", "complete", &OPAResult{}, nil)
+	ev, err := buildAuditEvent("req-x", "z1", "allow", "complete", &OPAResult{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	after := time.Now()
 	if ev.OccurredAt.Before(before) || ev.OccurredAt.After(after) {
 		t.Errorf("OccurredAt out of range: %v not in [%v, %v]", ev.OccurredAt, before, after)

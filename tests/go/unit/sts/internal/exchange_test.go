@@ -93,7 +93,10 @@ func TestBuildAuditEventFields(t *testing.T) {
 		Decision:         "allow",
 		EvaluationStatus: "complete",
 	}
-	ev := buildAuditEvent("req-1", "zone-1", "allow", "complete", result, nil)
+	ev, err := buildAuditEvent("req-1", "zone-1", "allow", "complete", result, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if ev.RequestID != "req-1" {
 		t.Errorf("want req-1, got %s", ev.RequestID)
@@ -123,7 +126,10 @@ func TestBuildAuditEventDeny(t *testing.T) {
 		Decision:         "deny",
 		EvaluationStatus: "complete",
 	}
-	ev := buildAuditEvent("req-2", "zone-2", "deny", "complete", result, nil)
+	ev, err := buildAuditEvent("req-2", "zone-2", "deny", "complete", result, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if ev.Decision != "deny" {
 		t.Errorf("want deny, got %s", ev.Decision)
 	}

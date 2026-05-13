@@ -68,7 +68,11 @@ func (t *jtiTracker) Check(ctx context.Context, jti string, exp time.Time, use, 
 	if created {
 		return true
 	}
-	id := uuid.Must(uuid.NewV7())
+	id, err := uuid.NewV7()
+	if err != nil {
+		t.log.Error().Err(err).Str("jti", jti).Msg("replay_detected audit id generation failed")
+		return false
+	}
 	meta, _ := json.Marshal(map[string]any{
 		"jti":        jti,
 		"resource":   resource,

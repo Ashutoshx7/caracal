@@ -208,7 +208,7 @@ class DelegateToSpawnTests(unittest.IsolatedAsyncioTestCase):
             ) as child:
                 self.assertEqual(child.agent_session_id, "child-1")
                 self.assertEqual(child.delegation_edge_id, "edge-9")
-                self.assertEqual(child.parent_edge_id, "edge-9")
+                self.assertEqual(child.parent_edge_id, parent.delegation_edge_id)
                 self.assertEqual(child.hop, parent.hop + 1)
 
         posts = [c for c in calls if c[0] == "POST"]

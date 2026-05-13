@@ -32,7 +32,11 @@ func (s *Server) recordIssuedJTI(ctx context.Context, jti, appID, zoneID, reques
 		return err
 	}
 	if !created {
-		id, _ := uuid.NewV7()
+		id, err := uuid.NewV7()
+		if err != nil {
+			s.log.Error().Err(err).Str("jti", jti).Msg("jti collision audit id generation failed")
+			return err
+		}
 		meta, _ := json.Marshal(map[string]any{
 			"jti":        jti,
 			"app_id":     appID,

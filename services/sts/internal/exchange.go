@@ -83,7 +83,13 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 
 	requestID := r.Header.Get("X-Request-Id")
 	if requestID == "" {
-		requestID = uuid.Must(uuid.NewV7()).String()
+		id, err := uuid.NewV7()
+		if err != nil {
+			s.log.Error().Err(err).Msg("request id generation failed")
+			writeError(w, http.StatusInternalServerError, sharederr.New(sharederr.Internal, "generate request id"))
+			return
+		}
+		requestID = id.String()
 	}
 
 	resp, challenge, code, apiErr := s.exchange(r.Context(), req, requestID)
@@ -152,12 +158,16 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 	challengeResolved := false
 	if req.ChallengeID != "" || req.ChallengeResponse != "" {
 		if ok, _ := s.stepUpThrottle.Allow(zoneID, principalID); !ok {
-			s.auditBuffer.Emit(buildAuditEvent(requestID, zoneID, "deny", "challenge_cooldown", &OPAResult{}, nil))
+			if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "challenge_cooldown", &OPAResult{}, nil); auditErr != nil {
+				return nil, nil, http.StatusInternalServerError, auditErr
+			}
 			return nil, nil, http.StatusTooManyRequests, sharederr.New(sharederr.AccessDenied, "too many failed step-up attempts; try again later")
 		}
 		if cerr := s.verifyAndConsumeChallenge(ctx, zoneID, principalID, req.ChallengeID, req.ChallengeResponse, req.Resources); cerr != nil {
 			s.stepUpThrottle.RecordFailure(zoneID, principalID)
-			s.auditBuffer.Emit(buildAuditEvent(requestID, zoneID, "deny", "challenge_invalid", &OPAResult{}, nil))
+			if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "challenge_invalid", &OPAResult{}, nil); auditErr != nil {
+				return nil, nil, http.StatusInternalServerError, auditErr
+			}
 			return nil, nil, http.StatusUnauthorized, sharederr.New(sharederr.AccessDenied, "challenge not satisfied or expired")
 		}
 		s.stepUpThrottle.RecordSuccess(zoneID, principalID)
@@ -180,24 +190,32 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 	for _, identifier := range req.Resources {
 		resource, dbErr := s.db.GetResourceByIdentifier(ctx, zoneID, identifier)
 		if dbErr != nil {
-			s.auditBuffer.Emit(buildAuditEvent(requestID, zoneID, "deny", "resource_not_found", &OPAResult{},
-				map[string]any{"resource": identifier}))
+			if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "resource_not_found", &OPAResult{},
+				map[string]any{"resource": identifier}); auditErr != nil {
+				return nil, nil, http.StatusInternalServerError, auditErr
+			}
 			continue
 		}
 		if !scopesAllowed(scopes, resource.Scopes) {
-			s.auditBuffer.Emit(buildAuditEvent(requestID, zoneID, "deny", "scope_mismatch", &OPAResult{},
-				map[string]any{"resource": resource.Identifier}))
+			if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "scope_mismatch", &OPAResult{},
+				map[string]any{"resource": resource.Identifier}); auditErr != nil {
+				return nil, nil, http.StatusInternalServerError, auditErr
+			}
 			continue
 		}
 		if delegation != nil && delegation.edge.ResourceID != nil && *delegation.edge.ResourceID != resource.ID {
-			s.auditBuffer.Emit(buildAuditEvent(requestID, zoneID, "deny", "resource_outside_delegation", &OPAResult{},
-				map[string]any{"resource": resource.Identifier}))
+			if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "resource_outside_delegation", &OPAResult{},
+				map[string]any{"resource": resource.Identifier}); auditErr != nil {
+				return nil, nil, http.StatusInternalServerError, auditErr
+			}
 			continue
 		}
 
 		if rateErr := s.checkRateLimit(ctx, zoneID, resource.ID, app.ID); rateErr != nil {
-			s.auditBuffer.Emit(buildAuditEvent(requestID, zoneID, "deny", "rate_limited", &OPAResult{},
-				map[string]any{"resource": resource.Identifier}))
+			if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "rate_limited", &OPAResult{},
+				map[string]any{"resource": resource.Identifier}); auditErr != nil {
+				return nil, nil, http.StatusInternalServerError, auditErr
+			}
 			continue
 		}
 
@@ -207,13 +225,17 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 				// Provider-credentialed resources require a user-bound grant;
 				// application-principal exchanges (no subject_token) cannot
 				// produce a usable upstream credential.
-				s.auditBuffer.Emit(buildAuditEvent(requestID, zoneID, "deny", "credential_not_provisioned", &OPAResult{},
-					map[string]any{"resource": resource.Identifier, "reason": "no_user_principal"}))
+				if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "credential_not_provisioned", &OPAResult{},
+					map[string]any{"resource": resource.Identifier, "reason": "no_user_principal"}); auditErr != nil {
+					return nil, nil, http.StatusInternalServerError, auditErr
+				}
 				continue
 			}
 			if rerr := s.tryRefreshBrokeredGrant(ctx, zoneID, userID, resource.ID); rerr != nil {
-				s.auditBuffer.Emit(buildAuditEvent(requestID, zoneID, "deny", "credential_refresh_failed", &OPAResult{},
-					map[string]any{"resource": resource.Identifier, "reason": string(rerr.Code)}))
+				if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "credential_refresh_failed", &OPAResult{},
+					map[string]any{"resource": resource.Identifier, "reason": string(rerr.Code)}); auditErr != nil {
+					return nil, nil, http.StatusInternalServerError, auditErr
+				}
 				continue
 			}
 			// Confirm we actually have a usable provider AT before letting
@@ -222,8 +244,10 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 			// would reject the request with no clear deny signal.
 			grant, gerr := s.db.GetDelegatedGrant(ctx, zoneID, userID, resource.ID)
 			if gerr != nil || grant == nil || len(grant.AccessTokenCt) == 0 {
-				s.auditBuffer.Emit(buildAuditEvent(requestID, zoneID, "deny", "credential_not_provisioned", &OPAResult{},
-					map[string]any{"resource": resource.Identifier, "reason": "no_grant"}))
+				if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "credential_not_provisioned", &OPAResult{},
+					map[string]any{"resource": resource.Identifier, "reason": "no_grant"}); auditErr != nil {
+					return nil, nil, http.StatusInternalServerError, auditErr
+				}
 				continue
 			}
 		}
@@ -260,13 +284,17 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 		result, evalErr := s.opa.Evaluate(ctx, opaInput)
 		bundle := s.opa.BundleInfo(zoneID)
 		if evalErr != nil {
-			s.auditBuffer.Emit(buildAuditEventWithBundle(requestID, zoneID, "deny", "policy_eval_failed", &OPAResult{},
-				map[string]any{"resource": resource.Identifier}, bundle))
+			if auditErr := s.emitAuditEventWithBundle(requestID, zoneID, "deny", "policy_eval_failed", &OPAResult{},
+				map[string]any{"resource": resource.Identifier}, bundle); auditErr != nil {
+				return nil, nil, http.StatusInternalServerError, auditErr
+			}
 			return nil, nil, http.StatusServiceUnavailable, sharederr.New(sharederr.PolicyEvalFailed, "policy evaluation unavailable")
 		}
 
-		s.auditBuffer.Emit(buildAuditEventWithBundle(requestID, zoneID, result.Decision, result.EvaluationStatus, result,
-			mergeAuditMeta(map[string]any{"resource": resource.Identifier}, delegationMeta), bundle))
+		if auditErr := s.emitAuditEventWithBundle(requestID, zoneID, result.Decision, result.EvaluationStatus, result,
+			mergeAuditMeta(map[string]any{"resource": resource.Identifier}, delegationMeta), bundle); auditErr != nil {
+			return nil, nil, http.StatusInternalServerError, auditErr
+		}
 
 		// Only an explicit "complete" status is treated as a usable decision; any
 		// other value (partial, error, future enum) is a hard deny so an unknown
@@ -300,8 +328,10 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 	}
 
 	if len(grantedResources) == 0 {
-		s.auditBuffer.Emit(buildAuditEvent(requestID, zoneID, "deny", "exchange_denied", &OPAResult{},
-			map[string]any{"requested": req.Resources}))
+		if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "exchange_denied", &OPAResult{},
+			map[string]any{"requested": req.Resources}); auditErr != nil {
+			return nil, nil, http.StatusInternalServerError, auditErr
+		}
 		return nil, nil, http.StatusForbidden, sharederr.New(sharederr.AccessDenied, "policy denied")
 	}
 
@@ -498,12 +528,29 @@ func (s *Server) validateTokenSession(ctx context.Context, zoneID, sessionID str
 	return sid, nil
 }
 
-func buildAuditEvent(requestID, zoneID, decision, status string, result *OPAResult, meta map[string]any) AuditEvent {
+func (s *Server) emitAuditEvent(requestID, zoneID, decision, status string, result *OPAResult, meta map[string]any) *sharederr.CaracalError {
+	return s.emitAuditEventWithBundle(requestID, zoneID, decision, status, result, meta, ZoneBundleInfo{})
+}
+
+func (s *Server) emitAuditEventWithBundle(requestID, zoneID, decision, status string, result *OPAResult, meta map[string]any, bundle ZoneBundleInfo) *sharederr.CaracalError {
+	event, err := buildAuditEventWithBundle(requestID, zoneID, decision, status, result, meta, bundle)
+	if err != nil {
+		s.log.Error().Err(err).Str("request_id", requestID).Str("zone_id", zoneID).Msg("audit event id generation failed")
+		return sharederr.New(sharederr.Internal, "audit event creation failed")
+	}
+	s.auditBuffer.Emit(event)
+	return nil
+}
+
+func buildAuditEvent(requestID, zoneID, decision, status string, result *OPAResult, meta map[string]any) (AuditEvent, error) {
 	return buildAuditEventWithBundle(requestID, zoneID, decision, status, result, meta, ZoneBundleInfo{})
 }
 
-func buildAuditEventWithBundle(requestID, zoneID, decision, status string, result *OPAResult, meta map[string]any, bundle ZoneBundleInfo) AuditEvent {
-	id := uuid.Must(uuid.NewV7())
+func buildAuditEventWithBundle(requestID, zoneID, decision, status string, result *OPAResult, meta map[string]any, bundle ZoneBundleInfo) (AuditEvent, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return AuditEvent{}, err
+	}
 	dpJSON, _ := json.Marshal(result.DeterminingPolicies)
 	diagJSON, _ := json.Marshal(result.Diagnostics)
 	var metaJSON json.RawMessage
@@ -525,7 +572,7 @@ func buildAuditEventWithBundle(requestID, zoneID, decision, status string, resul
 		DiagnosticsJSON:         diagJSON,
 		MetadataJSON:            metaJSON,
 		OccurredAt:              time.Now(),
-	}
+	}, nil
 }
 
 // delegationAuditMeta returns audit metadata extracted from a delegation proof.
