@@ -9,6 +9,15 @@ set -euo pipefail
 : "${CARACAL_RELEASE:?CARACAL_RELEASE must be set (e.g. v2026.05.13)}"
 : "${FINDINGS_DIR:?FINDINGS_DIR must be set}"
 
+if command -v python3 >/dev/null 2>&1; then
+  readonly CARACAL_PYTHON="python3"
+elif command -v python >/dev/null 2>&1; then
+  readonly CARACAL_PYTHON="python"
+else
+  echo "common.sh: python is required" >&2
+  exit 2
+fi
+
 readonly SEV_BLOCKER="blocker"
 readonly SEV_MAJOR="major"
 readonly SEV_MINOR="minor"
@@ -37,9 +46,12 @@ declare -A PYPI_VER NPM_VER CONTAINER_VER
 CLI_VER=""
 TUI_VER=""
 
-eval "$(python3 - "$MANIFEST" <<'PY'
+eval "$("$CARACAL_PYTHON" - "$MANIFEST" "$CARACAL_RELEASE" <<'PY'
 import json, shlex, sys
 m = json.load(open(sys.argv[1]))
+release = sys.argv[2]
+if m.get("release") != release:
+    raise SystemExit(f"manifest release {m.get('release')!r} does not match {release!r}")
 print(f'CLI_VER={shlex.quote(m["binaries"]["cli"])}')
 print(f'TUI_VER={shlex.quote(m["binaries"]["tui"])}')
 for k, v in m["containers"].items():
@@ -54,7 +66,7 @@ PY
 logFinding() {
   local area="$1" artifact="$2" platform="$3" pm="$4" runtime="$5" severity="$6" status="$7" evidence="$8" repro="$9"
   local file="$FINDINGS_DIR/${area}.jsonl"
-  python3 -c '
+  "$CARACAL_PYTHON" -c '
 import json, sys
 print(json.dumps({
   "area": sys.argv[1], "artifact": sys.argv[2], "platform": sys.argv[3],
@@ -92,6 +104,19 @@ matchesOnly() {
     [[ "$item" == "$entry" ]] && return 0
   done
   return 1
+}
+
+sha256Check() {
+  local sums="$1" file="$2"
+  if command -v sha256sum >/dev/null 2>&1; then
+    grep " $file\$" "$sums" | sha256sum -c - >/dev/null
+    return
+  fi
+
+  local expected actual
+  expected="$(awk -v f="$file" '$2 == f {print $1; found=1} END {exit found ? 0 : 1}' "$sums")" || return 1
+  actual="$(shasum -a 256 "$file" | awk '{print $1}')"
+  [[ "$actual" == "$expected" ]]
 }
 
 hostPlatform() {

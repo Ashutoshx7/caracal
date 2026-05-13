@@ -22,12 +22,15 @@ run() {
   fi
   local dir; dir="$(mktemp -d)"
   cp -r "$SRC/." "$dir/"
-  local pinJson; pinJson="$(python3 -c '
-import json, os
-print(json.dumps({k.removeprefix("V_"): v for k, v in os.environ.items() if k.startswith("V_")}))
-' $(for k in "${!NPM_VER[@]}"; do printf 'V_%q=%s ' "$k" "${NPM_VER[$k]}"; done))"
+  local pinJson
+  pinJson="$("$CARACAL_PYTHON" - "$MANIFEST" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    print(json.dumps(json.load(f)["npm"]))
+PY
+)"
   if [[ -f "$dir/package.json" ]]; then
-    PINS="$pinJson" python3 - "$dir/package.json" <<'PY'
+    PINS="$pinJson" "$CARACAL_PYTHON" - "$dir/package.json" <<'PY'
 import json, os, sys
 path = sys.argv[1]
 pins = json.loads(os.environ["PINS"])

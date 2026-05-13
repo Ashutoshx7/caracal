@@ -27,9 +27,14 @@ runProbe() {
   local pkg="$1" mod="$2" ver="$3" dir="$4"
   case "$PM" in
     pip)
-      runOrEcho python3 -m venv "$dir/v"
-      runOrEcho "$dir/v/bin/pip" install --quiet "$pkg==$ver"
-      runOrEcho "$dir/v/bin/python" -c "import $mod"
+      runOrEcho "$CARACAL_PYTHON" -m venv "$dir/v"
+      local py="$dir/v/bin/python" pip="$dir/v/bin/pip"
+      if [[ ! -x "$py" ]]; then
+        py="$dir/v/Scripts/python.exe"
+        pip="$dir/v/Scripts/pip.exe"
+      fi
+      runOrEcho "$pip" install --quiet "$pkg==$ver"
+      runOrEcho "$py" -c "import $mod"
       ;;
     uv)
       runOrEcho uv init --quiet --no-readme --no-workspace "$dir/p"

@@ -26,13 +26,13 @@ checkPyPi() {
     return 0
   fi
   local got
-  got="$(printf '%s' "$body" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['info']['version'])")"
+  got="$(printf '%s' "$body" | "$CARACAL_PYTHON" -c "import json,sys;d=json.load(sys.stdin);print(d['info']['version'])")"
   if [[ "$got" != "$ver" ]]; then
     logFinding "$AREA" "$pkg" "registry" "pypi" "-" "$SEV_BLOCKER" "$STATUS_FAIL" "version mismatch: got $got expected $ver" "curl $url | jq .info.version"
     return 0
   fi
   local lic
-  lic="$(printf '%s' "$body" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['info'].get('license') or '')")"
+  lic="$(printf '%s' "$body" | "$CARACAL_PYTHON" -c "import json,sys;d=json.load(sys.stdin);print(d['info'].get('license') or '')")"
   if [[ "$lic" != *"Apache"* && "$lic" != *"apache"* ]]; then
     logFinding "$AREA" "$pkg" "registry" "pypi" "-" "$SEV_MAJOR" "$STATUS_WARN" "license not Apache-2.0: '$lic'" "curl $url | jq .info.license"
   fi
@@ -54,13 +54,13 @@ checkNpm() {
     return 0
   fi
   local hasV
-  hasV="$(printf '%s' "$body" | python3 -c "import json,sys,os;d=json.load(sys.stdin);print('yes' if os.environ['V'] in d.get('versions',{}) else 'no')" V="$ver")"
+  hasV="$(printf '%s' "$body" | V="$ver" "$CARACAL_PYTHON" -c "import json,sys,os;d=json.load(sys.stdin);print('yes' if os.environ['V'] in d.get('versions',{}) else 'no')")"
   if [[ "$hasV" != "yes" ]]; then
     logFinding "$AREA" "$pkg" "registry" "npm" "-" "$SEV_BLOCKER" "$STATUS_FAIL" "version $ver missing from versions[]" "curl $url | jq '.versions | keys'"
     return 0
   fi
   local lic
-  lic="$(V="$ver" printf '%s' "$body" | python3 -c "import json,sys,os;d=json.load(sys.stdin);print(d['versions'][os.environ['V']].get('license') or '')" V="$ver")"
+  lic="$(printf '%s' "$body" | V="$ver" "$CARACAL_PYTHON" -c "import json,sys,os;d=json.load(sys.stdin);print(d['versions'][os.environ['V']].get('license') or '')")"
   if [[ "$lic" != *"Apache"* ]]; then
     logFinding "$AREA" "$pkg" "registry" "npm" "-" "$SEV_MAJOR" "$STATUS_WARN" "license not Apache-2.0: '$lic'" "curl $url | jq .versions[\"$ver\"].license"
   fi
