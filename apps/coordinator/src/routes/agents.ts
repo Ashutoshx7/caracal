@@ -11,9 +11,9 @@ import { enqueue, enqueueMany, Topics, type OutboxItem, type Queryable } from '.
 import { ownsApplication, requireScope } from '../auth.js'
 
 export const MAX_DEPTH = 10
-export const MAX_CHILDREN = 10
-export const MAX_PER_ZONE = 50
-export const MAX_PER_APP = 200
+const MAX_CHILDREN = 10
+const MAX_PER_ZONE = 50
+const MAX_PER_APP = 200
 const DEFAULT_TTL = 3600
 const LIST_DEFAULT_LIMIT = 100
 const LIST_MAX_LIMIT = 500

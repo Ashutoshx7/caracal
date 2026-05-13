@@ -3,7 +3,7 @@
 //
 // ANSI escape sequences and a minimal screen abstraction for the TUI.
 
-export const ESC = '\u001b['
+const ESC = '\u001b['
 
 export const ansi = {
   enterAlt: `${ESC}?1049h${ESC}?25l`,

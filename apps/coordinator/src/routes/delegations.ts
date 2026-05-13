@@ -7,6 +7,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { v7 as uuidv7 } from 'uuid'
+import { scopesAllowed } from '@caracalai/core'
 import { enqueue, enqueueMany, Topics, type OutboxItem, type Queryable } from '../outbox.js'
 import { ownsApplication, requireScope } from '../auth.js'
 import { MAX_DEPTH, terminateSubtree } from './agents.js'
@@ -367,11 +368,6 @@ async function getResource(
     [resourceId, zoneId],
   )
   return rows[0] ?? null
-}
-
-function scopesAllowed(requested: string[], available: string[]): boolean {
-  const allowed = new Set(available)
-  return requested.every((scope) => allowed.has(scope))
 }
 
 async function wouldCreateCycle(

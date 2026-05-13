@@ -9,7 +9,7 @@ import type { JobLogger } from './outbox-publisher.js'
 
 const CLEANUP_LOCK = 'coordinator:retention_cleanup'
 
-export interface RetentionCleanupResult {
+interface RetentionCleanupResult {
   expiredEdges: number
   deletedEdges: number
   deletedOutbox: number
