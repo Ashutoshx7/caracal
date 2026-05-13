@@ -4,6 +4,7 @@
 // `caracal agent …` and `caracal delegation …` coordinator subcommands.
 
 import type { CliConfig } from '../config.ts'
+import { printError, printSuccess } from '../style.ts'
 import {
   buildAdminClient,
   fail,
@@ -19,8 +20,8 @@ import {
 
 function ensureCoordinator(): void {
   if (!process.env.CARACAL_COORDINATOR_TOKEN) {
-    process.stderr.write(
-      'Error: CARACAL_COORDINATOR_TOKEN required (JWT issued by STS with scope "agent:lifecycle"); set it before invoking agent/delegation commands.\n',
+    printError(
+      'CARACAL_COORDINATOR_TOKEN required (JWT issued by STS with scope "agent:lifecycle"); set it before invoking agent/delegation commands.',
     )
     process.exit(1)
   }
@@ -78,7 +79,7 @@ export async function agentCommand(argv: string[], cfg?: CliConfig): Promise<voi
         const id = positional[0]
         if (!id) return usage('agent terminate <id> [--zone …]')
         await client.agents.terminate(zoneId, id)
-        process.stdout.write(`terminated ${id}\n`)
+        printSuccess(`terminated ${id}`)
         return
       }
       default:

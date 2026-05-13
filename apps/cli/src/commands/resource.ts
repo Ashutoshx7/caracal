@@ -4,6 +4,7 @@
 // `caracal resource …` admin subcommands.
 
 import type { CliConfig } from '../config.ts'
+import { printSuccess } from '../style.ts'
 import {
   buildAdminClient,
   fail,
@@ -74,7 +75,7 @@ export async function resourceCommand(argv: string[], cfg?: CliConfig): Promise<
         const id = positional[0]
         if (!id) return usage('resource delete <id> [--zone …]')
         await client.resources.delete(zoneId, id)
-        process.stdout.write(`deleted ${id}\n`)
+        printSuccess(`deleted ${id}`)
         return
       }
       case 'help':

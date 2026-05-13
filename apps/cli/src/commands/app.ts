@@ -4,6 +4,7 @@
 // `caracal app …` admin subcommands.
 
 import type { CliConfig } from '../config.ts'
+import { printSuccess } from '../style.ts'
 import {
   buildAdminClient,
   fail,
@@ -71,7 +72,7 @@ export async function appCommand(argv: string[], cfg?: CliConfig): Promise<void>
         const id = positional[0]
         if (!id) return usage('app delete <id> [--zone …]')
         await client.applications.delete(zoneId, id)
-        process.stdout.write(`deleted ${id}\n`)
+        printSuccess(`deleted ${id}`)
         return
       }
       case 'dcr': {

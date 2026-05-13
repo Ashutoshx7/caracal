@@ -4,6 +4,7 @@
 // `caracal zone …` admin subcommands.
 
 import type { CliConfig } from '../config.ts'
+import { printSuccess } from '../style.ts'
 import {
   buildAdminClient,
   fail,
@@ -63,7 +64,7 @@ export async function zoneCommand(argv: string[], cfg?: CliConfig): Promise<void
         const id = positional[0]
         if (!id) return usage('zone delete <id>')
         await client.zones.delete(id)
-        process.stdout.write(`deleted ${id}\n`)
+        printSuccess(`deleted ${id}`)
         return
       }
       case 'help':
