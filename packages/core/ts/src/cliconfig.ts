@@ -6,6 +6,7 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { CaracalError } from './errors.js';
 
 export const DEFAULT_API_URL = 'http://localhost:3000';
 export const DEFAULT_COORDINATOR_URL = 'http://localhost:4000';
@@ -53,10 +54,16 @@ export function resolveCliConfigPath(env: NodeJS.ProcessEnv = process.env): stri
   return undefined;
 }
 
-export class ServiceUrlMissingError extends Error {
-  constructor(public readonly envKey: string, public readonly nodeEnv: string) {
-    super(`${envKey} is required when NODE_ENV=${nodeEnv}`);
+export class ServiceUrlMissingError extends CaracalError {
+  readonly envKey: string;
+  readonly nodeEnv: string;
+  constructor(envKey: string, nodeEnv: string) {
+    super('config_missing', `${envKey} is required when NODE_ENV=${nodeEnv}`, {
+      details: { envKey, nodeEnv },
+    });
     this.name = 'ServiceUrlMissingError';
+    this.envKey = envKey;
+    this.nodeEnv = nodeEnv;
   }
 }
 

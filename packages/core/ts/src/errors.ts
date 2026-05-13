@@ -3,7 +3,7 @@
 //
 // Shared error codes and types for TypeScript services.
 
-export type ErrorCode =
+export type WellKnownErrorCode =
   | 'access_denied'
   | 'invalid_token'
   | 'resource_not_found'
@@ -13,16 +13,38 @@ export type ErrorCode =
   | 'interaction_required'
   | 'sts_unavailable'
   | 'credential_expired_not_renewable'
-  | 'payload_too_large';
+  | 'payload_too_large'
+  | 'zone_invalid'
+  | 'scope_insufficient'
+  | 'agent_identity_required'
+  | 'delegation_required'
+  | 'chain_mismatch'
+  | 'hop_count_exceeded'
+  | 'http_request_failed'
+  | 'config_missing';
+
+// Permits server-supplied or upstream-defined codes alongside well-known ones,
+// while still autocompleting WellKnownErrorCode literals.
+export type ErrorCode = WellKnownErrorCode | (string & {});
+
+export interface CaracalErrorOptions {
+  requestId?: string;
+  details?: Record<string, unknown>;
+  cause?: unknown;
+}
 
 export class CaracalError extends Error {
-  constructor(
-    public readonly code: ErrorCode,
-    message: string,
-    public readonly requestId?: string,
-  ) {
-    super(message);
+  readonly code: ErrorCode;
+  readonly requestId?: string;
+  readonly details?: Record<string, unknown>;
+
+  constructor(code: ErrorCode, message: string, opts: CaracalErrorOptions | string = {}) {
+    const options: CaracalErrorOptions = typeof opts === 'string' ? { requestId: opts } : opts;
+    super(message, options.cause !== undefined ? { cause: options.cause } : undefined);
     this.name = 'CaracalError';
+    this.code = code;
+    if (options.requestId) this.requestId = options.requestId;
+    if (options.details) this.details = options.details;
   }
 
   toJSON() {
@@ -30,6 +52,7 @@ export class CaracalError extends Error {
       error: this.code,
       error_description: this.message,
       ...(this.requestId ? { requestId: this.requestId } : {}),
+      ...(this.details ? { details: this.details } : {}),
     };
   }
 }

@@ -10,6 +10,8 @@ from collections.abc import Mapping, Sequence
 from hashlib import sha256
 from typing import Any, Protocol
 
+from redis.exceptions import RedisError, ResponseError
+
 REVOCATION_STREAM = "caracal.sessions.revoke"
 DEFAULT_REVOCATION_TTL_MS = 24 * 60 * 60 * 1000
 STREAM_SIG_FIELD = "_sig"
@@ -38,7 +40,7 @@ class RedisRevocationStore:
             return False
         try:
             return self._redis.get(self._key(sid)) is not None
-        except Exception:
+        except RedisError:
             if self._fail_closed:
                 return True
             raise
@@ -80,8 +82,8 @@ class RedisRevocationConsumer:
     def ensure_group(self) -> None:
         try:
             self._redis.xgroup_create(self._stream, self._group, id="0", mkstream=True)
-        except Exception as err:
-            if "BUSYGROUP" not in str(err):
+        except ResponseError as err:
+            if not str(err).startswith("BUSYGROUP"):
                 raise
 
     def poll_once(self) -> int:

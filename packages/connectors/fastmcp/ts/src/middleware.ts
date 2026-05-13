@@ -5,6 +5,7 @@
 
 import { authenticate, extractBearer } from '@caracalai/transport-mcp'
 import type { AuthDeps, AuthErrorCode } from '@caracalai/transport-mcp'
+import { CaracalError } from '@caracalai/core'
 
 export type FastMcpAuthOptions = AuthDeps
 
@@ -14,12 +15,10 @@ export interface FastMcpContext {
   scope: string
 }
 
-export class FastMcpAuthError extends Error {
-  readonly code: AuthErrorCode
+export class FastMcpAuthError extends CaracalError {
   constructor(code: AuthErrorCode, description: string) {
-    super(description)
+    super(code, description)
     this.name = 'FastMcpAuthError'
-    this.code = code
   }
 }
 
