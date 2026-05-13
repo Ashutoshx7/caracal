@@ -8,7 +8,7 @@ import type { DB } from '../db.js'
 
 const REAP_LOCK_KEY = '7163920485318481'
 
-export async function runSessionsReap(db: DB): Promise<number> {
+async function runSessionsReap(db: DB): Promise<number> {
   const client = await db.connect()
   try {
     const { rows } = await client.query<{ acquired: boolean }>(

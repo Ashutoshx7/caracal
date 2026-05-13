@@ -10,7 +10,7 @@ import { sha256 } from '@caracalai/core'
 import { v7 as uuidv7 } from 'uuid'
 import type { DB } from './db.js'
 
-export type AdminScope = 'global' | 'zone'
+type AdminScope = 'global' | 'zone'
 
 export interface Actor {
   id: string
@@ -19,7 +19,7 @@ export interface Actor {
   zoneId: string | null
 }
 
-export interface AdminTokenRow {
+interface AdminTokenRow {
   id: string
   name: string
   scope: AdminScope

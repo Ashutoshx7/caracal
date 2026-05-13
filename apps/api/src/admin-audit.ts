@@ -10,7 +10,7 @@ import type { Actor } from './auth.js'
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
-export interface AdminAuditEvent {
+interface AdminAuditEvent {
   requestId: string
   actor: Actor | null
   method: string
@@ -22,7 +22,7 @@ export interface AdminAuditEvent {
   payload: Record<string, unknown> | null
 }
 
-export async function recordAdminEvent(db: DB, ev: AdminAuditEvent): Promise<void> {
+async function recordAdminEvent(db: DB, ev: AdminAuditEvent): Promise<void> {
   const id = uuidv7()
   await db.query(
     `INSERT INTO admin_audit_events

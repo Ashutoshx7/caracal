@@ -171,6 +171,7 @@ Services accept either `REDIS_URL` or the individual `REDIS_*` variables.
 | `OUTBOX_RETENTION_DAYS` | `7` | Days to retain published/dead outbox rows |
 | `SHUTDOWN_GRACE_MS` | `15000` | Graceful shutdown window |
 | `VERIFY_RATE_LIMIT_PER_MIN` | `60` | Token verify rate limit per client per minute (minimum 0) |
+| `INVOCATION_RATE_LIMIT_PER_MIN` | `120` | Invocation mutation rate limit per application per zone per minute (minimum 0) |
 | `RELAY_DEDUPE_WINDOW_SEC` | `3600` | Window for relay deduplication (Go relay) |
 | `JWKS_CACHE_MAX` | `256` | Maximum JWKS cache entries |
 | `LOG_LEVEL` | `info` | Log verbosity |
