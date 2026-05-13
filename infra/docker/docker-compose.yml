@@ -237,6 +237,7 @@ services:
       CARACAL_ADMIN_TOKEN: ${CARACAL_ADMIN_TOKEN}
       CARACAL_LOCAL_BOOTSTRAP_ENABLED: ${CARACAL_LOCAL_BOOTSTRAP_ENABLED:-true}
       PORT: 3000
+      HOST: 0.0.0.0
     ports:
       - "127.0.0.1:3000:3000"
     healthcheck:
@@ -326,6 +327,7 @@ services:
       STREAMS_HMAC_KEY: ${STREAMS_HMAC_KEY}
       AGENT_COORDINATOR_SCOPE: agent:lifecycle
       PORT: 4000
+      HOST: 0.0.0.0
     ports:
       - "127.0.0.1:4000:4000"
     healthcheck:

@@ -86,3 +86,16 @@ func PositiveIntEnv(key string, fallback int) int {
 	}
 	return n
 }
+
+// PositiveInt64Env returns a positive int64 env var or fallback when unset or invalid.
+func PositiveInt64Env(key string, fallback int64) int64 {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
+}

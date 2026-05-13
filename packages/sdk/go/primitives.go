@@ -213,7 +213,7 @@ func DelegateToSpawn(ctx context.Context, opts DelegateToSpawnInput, fn func(con
 		ClientID:         opts.ApplicationID,
 		AgentSessionID:   spawnRes.AgentSessionID,
 		DelegationEdgeID: delRes.DelegationEdgeID,
-		ParentEdgeID:     delRes.DelegationEdgeID,
+		ParentEdgeID:     parent.DelegationEdgeID,
 		SessionID:        sessionID,
 		TraceID:          traceID,
 		Hop:              parent.Hop + 1,
