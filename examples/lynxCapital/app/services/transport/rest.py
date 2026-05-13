@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from app import caracal as caracal_module
 from app.services.resilience import (
     CircuitOpenError, RetryPolicy, breaker, idempotency_key, with_retry,
 )
@@ -90,6 +91,7 @@ class RestClient:
             headers: dict[str, str], attempt: int) -> httpx.Response:
         h = dict(headers)
         h["X-Attempt"] = str(attempt)
+        h.update(caracal_module.headers())
         self._auth.apply(h)
         return self._http.request(method, path, json=json, headers=h)
 

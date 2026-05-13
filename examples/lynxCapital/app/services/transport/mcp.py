@@ -14,6 +14,7 @@ import struct
 import threading
 from typing import Any
 
+from app import caracal as caracal_module
 from app.services.resilience import RetryPolicy, breaker, with_retry
 
 
@@ -90,6 +91,12 @@ class McpClient:
         return bytes(buf)
 
     def _request(self, method: str, params: dict) -> Any:
+        envelope = caracal_module.headers()
+        if envelope:
+            meta = dict(params.get("_meta") or {})
+            meta.update(envelope)
+            params = {**params, "_meta": meta}
+
         def _attempt(_: int) -> Any:
             with self._lock:
                 try:

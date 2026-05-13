@@ -28,6 +28,13 @@ services: banking, ERP, OCR, compliance, vendor portal, tax, FX):
 docker compose -f _mock/docker-compose.yml up -d --build
 ```
 
+Bring up Caracal (Coordinator + Gateway) and point `CARACAL_*` in `.env` at it
+before starting Lynx — Caracal is required, not optional:
+
+```bash
+docker compose -f ../../infra/docker/docker-compose.yml up -d
+```
+
 ## Run
 
 ```bash

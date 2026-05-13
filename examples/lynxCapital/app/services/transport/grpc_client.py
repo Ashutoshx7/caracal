@@ -12,6 +12,7 @@ from typing import Any, Iterator
 
 import grpc
 
+from app import caracal as caracal_module
 from app.services.resilience import RetryPolicy, breaker, with_retry
 
 
@@ -60,8 +61,13 @@ class GrpcClient:
         self._channel.close()
 
     def _metadata(self) -> list[tuple[str, str]]:
+        md: list[tuple[str, str]] = []
         token = os.getenv(self._auth_env, "")
-        return [(self._auth_header, token)] if token else []
+        if token:
+            md.append((self._auth_header, token))
+        for k, v in caracal_module.headers().items():
+            md.append((k.lower(), v))
+        return md
 
     def unary(self, stub_factory, method_name: str, request: Any) -> Any:
         stub = stub_factory(self._channel)
