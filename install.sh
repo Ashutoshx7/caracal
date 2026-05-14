@@ -156,6 +156,7 @@ if [ -n "${shadow}" ]; then
 fi
 
 printf 'caracal-install: done. Next steps:\n'
+printf '  installed caracal %s (mode: runtime)\n' "${tag}"
 printf '  hash -r            # refresh your shell command cache\n'
 printf '  caracal up         # start stack (Docker required)\n'
 printf '  caracal init       # provision local zone\n'

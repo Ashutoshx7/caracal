@@ -2,8 +2,9 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Workspace entry point: locates the repo root by walking up from cwd and delegates to the workspace CLI.
+// Workspace entry: locates the repo root, stamps a dev CLI identity, then delegates to the workspace CLI.
 
+import { execFileSync } from 'child_process'
 import { existsSync } from 'fs'
 import { dirname, join } from 'path'
 
@@ -30,6 +31,18 @@ if (!root) {
 }
 
 process.env.CARACAL_REPO_ROOT = root
+
+try {
+  const sha = execFileSync('node', [join(root, 'apps/cli/scripts/stampDev.mjs')], {
+    stdio: ['ignore', 'pipe', 'inherit'],
+  })
+    .toString()
+    .trim()
+  process.env.CARACAL_DEV_SHA = sha
+} catch (err) {
+  process.stderr.write(`caracal: failed to stamp dev version: ${err?.message ?? err}\n`)
+  process.exit(1)
+}
 
 import(join(root, 'apps/cli/bin/caracal.mjs')).catch((err) => {
   process.stderr.write(`caracal: ${err?.message ?? err}\n`)

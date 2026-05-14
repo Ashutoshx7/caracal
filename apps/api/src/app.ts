@@ -13,7 +13,7 @@ import type { DB } from './db.js'
 import type { RedisClient } from './redis.js'
 import { adminAuthPlugin } from './auth.js'
 import { registerAdminAuditHook } from './admin-audit.js'
-import { isProduction } from '@caracalai/core'
+import { assertRuntimeSafe, caracalMode, isProduction } from '@caracalai/core'
 import { zonesRoutes } from './routes/zones.js'
 import { applicationsRoutes } from './routes/applications.js'
 import { resourcesRoutes } from './routes/resources.js'
@@ -103,11 +103,11 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
   await app.register(zoneEventsRoutes, { prefix: '/v1' })
 
   if (cfg.localBootstrapEnabled) {
-    if (isProduction()) {
-      throw new Error('CARACAL_LOCAL_BOOTSTRAP_ENABLED must not be set in production')
+    if (caracalMode() === 'runtime') {
+      throw new Error('CARACAL_LOCAL_BOOTSTRAP_ENABLED must not be set under CARACAL_MODE=runtime')
     }
     await app.register(localBootstrapRoutes, { prefix: '/v1' })
-    app.log.warn('local bootstrap endpoint enabled; loopback-only, non-production only')
+    app.log.warn('local bootstrap endpoint enabled; loopback-only, dev mode only')
   }
 
   app.get('/health', async () => ({ ok: true }))

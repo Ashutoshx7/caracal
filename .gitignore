@@ -77,3 +77,4 @@ temp/
 caracal.toml
 # Generated CLI runtime bundle
 apps/cli/src/runtime/embedded.ts
+apps/cli/src/runtime/version.gen.ts
