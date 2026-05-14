@@ -139,7 +139,13 @@ function listCaracalImages(): string[] {
   return out.stdout
     .split('\n')
     .map((s) => s.trim())
-    .filter((s) => s.length > 0 && (s.startsWith('caracal/') || s.startsWith('ghcr.io/garudex-labs/caracal-')))
+    .filter(
+      (s) =>
+        s.length > 0 &&
+        (s.startsWith('caracal/') ||
+          s.startsWith('localhost/caracal-') ||
+          s.startsWith('ghcr.io/garudex-labs/caracal-')),
+    )
 }
 
 function removeImages(images: string[], ctx: PurgeContext): Promise<number> {
@@ -300,9 +306,20 @@ const TARGETS: Target[] = [
 ]
 
 function caracalBinaries(): string[] {
-  const installDir = process.env.CARACAL_INSTALL_DIR ?? join(homedir(), '.local', 'bin')
-  const candidates = [join(installDir, 'caracal'), join(installDir, 'caracal-tui')]
-  return candidates.filter((p) => existsSync(p))
+  const dirs = new Set<string>([process.env.CARACAL_INSTALL_DIR ?? join(homedir(), '.local', 'bin')])
+  const pnpmGlobal = spawnSync('pnpm', ['bin', '-g'], { encoding: 'utf8' })
+  if (pnpmGlobal.status === 0 && typeof pnpmGlobal.stdout === 'string') {
+    const dir = pnpmGlobal.stdout.trim()
+    if (dir) dirs.add(dir)
+  }
+  const found: string[] = []
+  for (const dir of dirs) {
+    for (const name of ['caracal', 'caracal-tui']) {
+      const p = join(dir, name)
+      if (existsSync(p)) found.push(p)
+    }
+  }
+  return found
 }
 
 function targetById(id: string): Target | undefined {
