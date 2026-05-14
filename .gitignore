@@ -16,9 +16,6 @@ coverage/
 coverage.xml
 *.tsbuildinfo
 
-# Docs tooling artifacts (generated; local dev only)
-docs/.docusaurus/
-
 # Environment files
 .env
 .env.*
