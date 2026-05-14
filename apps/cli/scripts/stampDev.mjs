@@ -38,6 +38,7 @@ const body =
 
 export const CARACAL_VERSION = '${version}'
 export const CARACAL_MODE: 'dev' | 'runtime' = 'dev'
+export const CARACAL_REGISTRY = 'localhost/'
 `
 
 writeFileSync(resolve(cliRoot, 'src/runtime/version.gen.ts'), body, 'utf8')

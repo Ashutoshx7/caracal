@@ -2,24 +2,37 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Writes apps/cli/src/runtime/version.gen.ts with the runtime CLI identity for release CI before bun --compile.
+// Writes apps/cli/src/runtime/version.gen.ts with the runtime CLI identity; CI sets CARACAL_RELEASE_VERSION for GHCR builds, otherwise stamps a developer-local release pointing at localhost dev images.
 
+import { execSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const cliRoot = resolve(here, '..')
+const repoRoot = resolve(cliRoot, '..', '..')
 
 function baseVersion() {
-  if (process.env.CARACAL_RELEASE_VERSION) return process.env.CARACAL_RELEASE_VERSION
   const raw = readFileSync(resolve(cliRoot, 'runtime/release.json'), 'utf8')
   return JSON.parse(raw).version
 }
 
-const version = baseVersion()
-if (/\+dev\.|-dev\./.test(version)) {
-  process.stderr.write(`stampRelease: refusing dev-suffixed version '${version}'\n`)
+function shortSha() {
+  if (process.env.CARACAL_DEV_SHA) return process.env.CARACAL_DEV_SHA
+  try {
+    return execSync('git rev-parse --short HEAD', { cwd: repoRoot }).toString().trim()
+  } catch {
+    return 'nogit'
+  }
+}
+
+const ciRelease = process.env.CARACAL_RELEASE_VERSION
+const version = ciRelease ?? `dev-${shortSha()}`
+const registry = ciRelease ? 'ghcr.io/garudex-labs/' : 'localhost/'
+
+if (ciRelease && /\+dev\.|-dev\./.test(ciRelease)) {
+  process.stderr.write(`stampRelease: refusing dev-suffixed CARACAL_RELEASE_VERSION '${ciRelease}'\n`)
   process.exit(1)
 }
 
@@ -31,7 +44,8 @@ const body =
 
 export const CARACAL_VERSION = '${version}'
 export const CARACAL_MODE: 'dev' | 'runtime' = 'runtime'
+export const CARACAL_REGISTRY = '${registry}'
 `
 
 writeFileSync(resolve(cliRoot, 'src/runtime/version.gen.ts'), body, 'utf8')
-process.stdout.write(`stamped runtime version ${version}\n`)
+process.stdout.write(`stamped runtime version ${version} registry ${registry}\n`)
