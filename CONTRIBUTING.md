@@ -2,29 +2,15 @@
 
 ## Prerequisites
 
-| Tool | Version | Required for |
-|---|---|---|
-| Node.js | 24+ | All work |
-| pnpm | 10+ | All work |
-| Docker + Compose v2 | 24+ | Running the stack |
-| Git | 2.x | All work |
-| Go | 1.26+ | Go services / packages |
-| Python | 3.11+ | Python packages |
-| Bun | latest | Building CLI / TUI binaries |
-
-## Repository Layout
-
-```
-apps/         api, cli, tui, coordinator
-services/     sts, gateway, audit (Go)
-packages/     core, identity, revocation, oauth, sdk, admin,
-              transport/{mcp,a2a}, connectors/{express,fastmcp,postgres,nethttp}
-infra/        docker compose, postgres migrations
-tests/        typescript, go, python
-scripts/      release automation
-```
-
-Every directory has an `instructions.md`. Read it before editing inside.
+| Tool                | Version | Required for                |
+| ------------------- | ------- | --------------------------- |
+| Node.js             | 24+     | All work                    |
+| pnpm                | 10+     | All work                    |
+| Docker + Compose v2 | 24+     | Running the stack           |
+| Git                 | 2.x     | All work                    |
+| Go                  | 1.26+   | Go services / packages      |
+| Python              | 3.11+   | Python packages             |
+| Bun                 | latest  | Building CLI / TUI binaries |
 
 ## Setup
 
@@ -32,181 +18,148 @@ Every directory has an `instructions.md`. Read it before editing inside.
 git clone https://github.com/Garudex-Labs/caracal.git && cd caracal
 pnpm install
 cp infra/docker/.env.example infra/docker/.env   # set POSTGRES_PASSWORD, REDIS_PASSWORD, CARACAL_ADMIN_TOKEN
-pnpm --filter './packages/**' build
-pnpm caracal up                                  # start postgres, redis, sts, api, gateway, audit, coordinator
+pnpm caracal up                                  # build + start the full stack
 pnpm caracal init                                # provision local zone, write caracal.toml
 ```
 
-To drop the `pnpm` prefix: `pnpm link --global` (and `pnpm unlink --global caracal` to undo).
+Drop the `pnpm` prefix with `pnpm link --global` (undo with `pnpm unlink --global caracal`).
+
+## Modes: dev vs runtime
+
+Every artifact is bound to one of two modes at build time. The mode is stamped into `apps/cli/src/runtime/version.gen.ts` (gitignored) and propagated to services via `CARACAL_MODE`.
+
+|                       | Dev                                                      | Runtime                                                     |
+| --------------------- | -------------------------------------------------------- | ----------------------------------------------------------- |
+| Stamped by            | `apps/cli/scripts/stampDev.mjs` (auto on `pnpm caracal`) | `apps/cli/scripts/stampRelease.mjs` (release CI)            |
+| `caracal --version`   | `2026.05.12+dev.<sha> [dev (sha …)]`                     | `2026.05.12 [runtime]`                                      |
+| Container images      | `localhost/caracal-{svc}:dev-<sha>` (built locally)      | `ghcr.io/garudex-labs/caracal-{svc}:v<calver>` (pulled)     |
+| Compose file          | `infra/docker/docker-compose.yml`                        | embedded in CLI, installed to `~/.caracal/compose.yml`      |
+| `INSECURE_*` env vars | honored                                                  | refused; services panic on startup                          |
+
+The base CalVer is centralized in `apps/cli/runtime/release.json`. Bump it there if local builds need a new base version — never edit `version.gen.ts` by hand.
+
+### Test a release-style binary locally
+
+```bash
+pnpm --dir apps/cli build:release                    # stamp runtime + bun compile (5 targets)
+"$PWD/apps/cli/dist/caracal-linux-x64" --version     # → caracal <ver> [runtime]
+(cd /tmp && "$OLDPWD/apps/cli/dist/caracal-linux-x64" up)
+```
+
+Override the version a release binary targets (also useful for pinning during dev): `CARACAL_VERSION=v2026.04.01 caracal up`.
 
 ## Stack Commands
 
 ```bash
-pnpm caracal up [--build]           # start (optionally force rebuild)
-pnpm caracal down [-v]              # stop (optionally wipe volumes)
+pnpm caracal up [--build]           # start stack (--build forces rebuild)
+pnpm caracal down [-v]              # stop (-v wipes volumes)
 pnpm caracal status                 # /health probe every service
-pnpm caracal init [--force]         # provision zone (rotate secret with --force)
-pnpm caracal purge [targets...]     # centralized cleanup (stack/volumes/logs/config/runtime/cache)
-pnpm caracal run -- <cmd>           # run with RESOURCE_TOKEN injected
+pnpm caracal init [--force]         # provision zone (--force rotates the secret)
+pnpm caracal purge [targets...]     # cleanup: stack/volumes/logs/config/runtime/cache
+pnpm caracal run -- <cmd>           # run <cmd> with RESOURCE_TOKEN injected
 pnpm caracal credential read <res>  # resolve a credential
 pnpm caracal --help
 ```
 
 ## Development
 
-### CLI from source
+### CLI
 
 ```bash
 pnpm --dir apps/cli dev
 pnpm --dir apps/cli typecheck
 ```
 
-### TUI from source
+### TUI
 
-The stack must be up and provisioned first.
+Stack must be up and provisioned first.
 
 ```bash
 export CARACAL_ADMIN_TOKEN=$(grep ^CARACAL_ADMIN_TOKEN infra/docker/.env | cut -d= -f2)
 pnpm --filter @caracalai/tui dev
 ```
 
-### TUI environment
-
-| Variable | Default | Notes |
-|---|---|---|
-| `CARACAL_ADMIN_TOKEN` | — | Required |
-| `CARACAL_API_URL` | `http://localhost:3000` | Admin views |
-| `CARACAL_COORDINATOR_URL` | `http://localhost:4000` | Agents view |
-| `CARACAL_COORDINATOR_TOKEN` | — | Required for agents view |
-| `CARACAL_ZONE_ID` | — | Or `zone_id` in `caracal.toml` |
-
-Config discovery: `$CARACAL_CONFIG` → `caracal.toml` (cwd / `$PWD` / `$INIT_CWD`) → `$XDG_CONFIG_HOME/caracal/caracal.toml`.
-
-### TUI keys
-
-| Key | Action |
-|---|---|
-| `j` / `k` / arrows | Move |
-| `Enter` | Drill in |
-| `h` / `←` / `Esc` | Back |
-| `g` / `G` | Top / bottom |
-| `r` | Reload |
-| `p` | Pause audit tail |
-| `d` | Cycle audit filter |
-| `q` / `Ctrl-C` | Quit |
+TUI env vars match the CLI: `CARACAL_ADMIN_TOKEN`, `CARACAL_API_URL`, `CARACAL_COORDINATOR_URL`, `CARACAL_COORDINATOR_TOKEN`, `CARACAL_ZONE_ID`. Config discovery: `$CARACAL_CONFIG` → `caracal.toml` (cwd / `$PWD` / `$INIT_CWD`) → `$XDG_CONFIG_HOME/caracal/caracal.toml`. Keybindings live in the README.
 
 ## Tests
 
 ```bash
-pnpm test                                  # full suite
+pnpm test                                    # full suite (ts + go + py)
 pnpm run test:typescript | test:go | test:python
-pnpm --dir apps/<name> test                # single package
-go test ./services/<name>/...              # single Go service
+pnpm --dir apps/<name> test                  # single TS package
+go test ./services/<name>/...                # single Go service
 ```
 
-### CI parity locally
-
-`scripts/testCi.sh` runs the same checks as `.github/workflows/test.yml` against the local checkout.
+`scripts/testCi.sh` mirrors `.github/workflows/test.yml` locally:
 
 ```bash
-scripts/testCi.sh             # full suite (ts + go + py + docs)
-scripts/testCi.sh --smoke     # post-merge smoke: pnpm -r build + go vet
-scripts/testCi.sh [--ts / --go / --py]        # any subset
-gh workflow run release.yml -f dryRun=true
+scripts/testCi.sh                # full suite (ts + go + py + docs)
+scripts/testCi.sh --smoke        # post-merge smoke (pnpm -r build + go vet)
+scripts/testCi.sh --ts | --go | --py
 ```
-
-`--smoke` mirrors the post-merge job that runs on push to `main`; the full suite mirrors the daily scheduled and `workflow_dispatch` runs.
 
 ## Code Style
 
 - Header and naming rules are enforced by `.claude/rules/` and `.github/instructions/`.
 - One implementation per feature — no fallback paths, shims, or dead branches.
-- Match surrounding abstraction level. Don't add helpers a single caller could inline.
+- Match surrounding abstraction level. Don't introduce helpers a single caller could inline.
 
 ## Submitting Changes
 
 1. Branch off `main`. Keep commits focused.
 2. Add a changeset for any change to a published package: `pnpm changeset`.
-3. End-to-end check if you touched API / STS / CLI: `pnpm caracal up && pnpm caracal init && pnpm caracal run -- printenv RESOURCE_TOKEN`.
+3. If you touched API / STS / CLI, smoke-test end-to-end: `pnpm caracal up && pnpm caracal init && pnpm caracal run -- printenv RESOURCE_TOKEN`.
 4. `pnpm test` must pass.
-5. Open the PR; describe the change and any new `instructions.md` entries.
-6. `git commit -s` for DCO sign-off.
+5. `git commit -s` (DCO sign-off), open the PR, describe the change and any new `instructions.md` entries.
 
 ## Building Binaries
 
-`bun build --compile` produces self-contained executables (no Node / Bun runtime needed on the target).
+`bun build --compile` produces self-contained executables (no Node / Bun on the target).
 
 ```bash
-pnpm --dir apps/cli sync-embedded                 # required before any compile
-pnpm --dir apps/cli build                         # all 5 targets
-pnpm --dir apps/cli build:<linux|darwin|windows>-<x64|arm64>
-pnpm --dir apps/tui build                         # all 5 targets
+pnpm --dir apps/{cli,tui} sync-embedded               # required before any compile
+pnpm --dir apps/{cli,tui} build[:<os>-<arch>]         # all 5 targets, or a single one (e.g. build:linux-arm64)
 ```
 
-Output: `apps/{cli,tui}/dist/caracal[-tui]-<os>-<bunArch>[.exe]` where `<bunArch>` is `x64` or `arm64`. The release workflow renames these into versioned archives (`caracal-{cli,tui}-<os>-{amd64,arm64}-<tag>.{tar.gz,zip}`); locally, work with the raw dist files.
+Output lands in `apps/{cli,tui}/dist/caracal[-tui]-<os>-<bunArch>[.exe]` (`<bunArch>` ∈ {`x64`, `arm64`}). The release workflow renames these into versioned archives; locally you work with the raw dist files.
 
 ## Releases
 
-All release artifacts share one CalVer version: `vYYYY.MM.DD` (suffix `.N` for same-day re-cuts).
-
-### Pipeline
-
-Pushing a CalVer tag triggers [`.github/workflows/release.yml`](.github/workflows/release.yml):
-
-| Job | Output |
-|---|---|
-| `cli` | 10 archives (5 CLI + 5 TUI), `SHA256SUMS`, SLSA provenance |
-| `images` | 5 multi-arch images on GHCR with provenance + SBOM, tagged `vYYYY.MM.DD[.N]`, `vYYYY.MM`, `latest` |
-| `publish` | GitHub Release with archives, `SHA256SUMS`, `install.sh`, `install.ps1` |
-
-### Release archives
-
-Each archive contains exactly one binary (`caracal` or `caracal-tui`, `.exe` on Windows):
-
-| Asset | Format |
-|---|---|
-| `caracal-cli-linux-amd64-vYYYY.MM.DD.tar.gz` | tar.gz |
-| `caracal-cli-linux-arm64-vYYYY.MM.DD.tar.gz` | tar.gz |
-| `caracal-cli-darwin-amd64-vYYYY.MM.DD.tar.gz` | tar.gz |
-| `caracal-cli-darwin-arm64-vYYYY.MM.DD.tar.gz` | tar.gz |
-| `caracal-cli-windows-amd64-vYYYY.MM.DD.zip` | zip |
-| `caracal-tui-...` | same five targets, optional install |
+Release artifacts share one CalVer: `vYYYY.MM.DD` (suffix `.N` for same-day re-cuts). Only maintainers listed in `.github/MAINTAINERS` may cut releases.
 
 ### Cutting a release
 
 ```bash
-git tag v2026.05.12 && git push origin v2026.05.12
+scripts/release.sh               # applies changesets, computes CalVer, tags, pushes
+scripts/release.sh --dry-run     # preview without tagging
 ```
 
-Only maintainers listed in `.github/MAINTAINERS` may push release tags.
+Pushing the tag triggers `.github/workflows/release.yml`, which produces:
 
-### Validating a release
+- 10 archives (5 CLI + 5 TUI), `SHA256SUMS`, SLSA provenance
+- 5 multi-arch GHCR images with provenance + SBOM, tagged `v<calver>` and `vYYYY.MM`
+- A GitHub Release with archives, `SHA256SUMS`, `install.sh`, `install.ps1`
 
-After `release.yml` completes successfully for a release tag, the `Post-Release Validation` workflow runs automatically (or trigger manually with `gh workflow run postReleaseValidation.yml -f release=v2026.05.12`). It exercises registries, archives, installers, containers, and provenance against `releases/<tag>/manifest.json`, then opens a PR adding `releases/<tag>/validation.md` and `releases/<tag>/findings/*.jsonl`.
+### Post-release validation
 
-Reproduce a single area locally:
+`postReleaseValidation.yml` runs automatically after `release.yml` succeeds (or trigger with `gh workflow run postReleaseValidation.yml -f release=v2026.05.12`). It exercises registries, archives, installers, containers, and provenance, then opens a PR with `releases/<tag>/validation.md`.
+
+Reproduce one area locally:
 
 ```bash
 CARACAL_RELEASE=v2026.05.12 FINDINGS_DIR=/tmp/findings \
-  bash scripts/postRelease/validateRegistryMetadata.sh   # or any validate*.sh
+  bash scripts/postRelease/validateRegistryMetadata.sh
 ```
 
-### npm and PyPI
-
-Packages are published locally with manually-entered tokens:
+### Publishing to npm and PyPI
 
 ```bash
 ./scripts/publishNpm.sh
-./scripts/publishPypi.sh            # PyPI
-./scripts/publishPypi.sh --testpypi  # TestPyPI
+./scripts/publishPypi.sh             # PyPI
+./scripts/publishPypi.sh --testpypi   # TestPyPI
 ```
 
-Each script presents an interactive picker (up/down, space to toggle, `a` toggles all, enter confirms), prompts for the registry token, builds, and uploads each selected package, skipping versions already on the registry.
-
-Browse published versions:
-
-- npm: <https://www.npmjs.com/~caracal-run>
-- PyPI: <https://pypi.org/user/CaracalAI>
+Interactive picker (↑/↓ to move, space to toggle, `a` all, enter confirms), prompts for the registry token, builds and uploads each selected package, skips versions already published. Both scripts refuse to publish dev-stamped versions (`+dev.<sha>` / `-dev.<sha>`).
 
 ### Published artifacts
 
@@ -218,9 +171,11 @@ pypi:   caracalai-{core,identity,revocation,sdk,transport-mcp,mcp-fastmcp,revoca
 ghcr:   ghcr.io/garudex-labs/caracal-{api,sts,gateway,audit,coordinator}
 ```
 
+Browse: [npm](https://www.npmjs.com/~caracal-run) · [PyPI](https://pypi.org/user/CaracalAI).
+
 ### Rollback
 
-Never delete a published tag. Roll forward by cutting a new CalVer tag. Floating image tags (`latest`, `vYYYY.MM`) move with the new cut.
+Never delete a published tag. Roll forward with a new CalVer tag. The floating `vYYYY.MM` image tag moves with the new cut; pinned `v<calver>` tags are immutable.
 
 ## Security
 

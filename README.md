@@ -151,6 +151,8 @@ caracal down      # stop; add -v to remove volumes
 caracal purge     # interactive cleanup (containers, volumes, config, runtime, caches)
 ```
 
+> The installer pins the CLI to one release. `caracal up` pulls matching container images from `ghcr.io/garudex-labs/caracal-*:<tag>`. Override per invocation with `CARACAL_VERSION=vYYYY.MM.DD caracal up` to run an older or newer release stack from the same CLI.
+
 <details>
 <summary><strong>CLI</strong></summary>
 
