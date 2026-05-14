@@ -37,93 +37,48 @@ validateStack() {
     return 0
   fi
   local dir; dir="$(mktemp -d)"
-  cp "$COMPOSE_SRC" "$dir/docker-compose.yml"
-  local pinJson
-  pinJson="$("$CARACAL_PYTHON" - "$MANIFEST" <<'PY'
-import json, sys
-with open(sys.argv[1]) as f:
-    print(json.dumps(json.load(f)["containers"]))
-PY
-)"
-  REG="$REGISTRY" PREFIX="$IMAGE_PREFIX" PINS="$pinJson" "$CARACAL_PYTHON" - "$dir/docker-compose.yml" <<'PY'
+  cat >"$dir/stack.env" <<'EOF'
+POSTGRES_USER=caracal
+POSTGRES_PASSWORD=caracal-postrelease-postgres
+POSTGRES_DB=caracal
+REDIS_PASSWORD=caracal-postrelease-redis
+ZONE_KEK=1111111111111111111111111111111111111111111111111111111111111111
+AUDIT_HMAC_KEY=2222222222222222222222222222222222222222222222222222222222222222
+STREAMS_HMAC_KEY=3333333333333333333333333333333333333333333333333333333333333333
+CARACAL_ADMIN_TOKEN=caracal-postrelease-admin-token
+EOF
+  REG="$REGISTRY" PREFIX="$IMAGE_PREFIX" "$CARACAL_PYTHON" - "$MANIFEST" "$dir/docker-compose.release.yml" <<'PY'
 import json, os, sys
-path = sys.argv[1]
-reg = os.environ["REG"]
-prefix = os.environ["PREFIX"]
-pins = json.loads(os.environ["PINS"])
-lines = open(path).read().splitlines(keepends=True)
-
-def indentOf(line):
-    s = line.rstrip("\n")
-    return len(s) - len(s.lstrip(" "))
-
-svcIndent = None
-for line in lines:
-    if line.rstrip("\n").rstrip() == "services:" and indentOf(line) == 0:
-        for follow in lines[lines.index(line) + 1:]:
-            if follow.strip() == "":
-                continue
-            svcIndent = indentOf(follow)
-            break
-        break
-if svcIndent is None:
-    sys.exit("services: section not found")
-childIndent = svcIndent + 2
-
-for svc, ver in pins.items():
-    out = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        if (
-            indentOf(line) == svcIndent
-            and line.strip() == f"{svc}:"
-        ):
-            out.append(line)
-            i += 1
-            body = []
-            while i < len(lines):
-                cur = lines[i]
-                if cur.strip() == "":
-                    body.append(cur); i += 1; continue
-                if indentOf(cur) <= svcIndent:
-                    break
-                body.append(cur); i += 1
-            j = 0
-            cleaned = []
-            while j < len(body):
-                bl = body[j]
-                if bl.strip() == "build:" and indentOf(bl) == childIndent:
-                    j += 1
-                    while j < len(body):
-                        nxt = body[j]
-                        if nxt.strip() == "" or indentOf(nxt) > childIndent:
-                            j += 1
-                        else:
-                            break
-                    continue
-                cleaned.append(bl); j += 1
-            replaced = False
-            for k, bl in enumerate(cleaned):
-                if bl.strip().startswith("image:") and indentOf(bl) == childIndent:
-                    cleaned[k] = f"{' ' * childIndent}image: {reg}/{prefix}{svc}:v{ver}\n"
-                    replaced = True
-                    break
-            if not replaced:
-                cleaned.insert(0, f"{' ' * childIndent}image: {reg}/{prefix}{svc}:v{ver}\n")
-            out.extend(cleaned)
-        else:
-            out.append(line); i += 1
-    lines = out
-
-open(path, "w").write("".join(lines))
+manifest = json.load(open(sys.argv[1]))
+out = open(sys.argv[2], "w")
+out.write("services:\n")
+for svc, ver in manifest["containers"].items():
+    out.write(f"  {svc}:\n")
+    out.write("    build: null\n")
+    out.write(f"    image: {os.environ['REG']}/{os.environ['PREFIX']}{svc}:v{ver}\n")
+    out.write("    pull_policy: never\n")
 PY
-  if runOrEcho docker compose -f "$dir/docker-compose.yml" up -d >"$dir/up" 2>&1; then
+  local i img
+  for (( i = 0; i < ${#CONTAINER_NAMES[@]}; i++ )); do
+    img="$(imageRef "${CONTAINER_NAMES[$i]}" "${CONTAINER_VERS[$i]}")"
+    if ! runOrEcho docker pull "$img" >>"$dir/pull" 2>&1; then
+      logFinding "$AREA" "stack" "linux-amd64" "compose" "docker" "$SEV_BLOCKER" "$STATUS_FAIL" "$(head -c 2000 "$dir/pull")" "docker pull $img"
+      rm -rf "$dir"
+      return 0
+    fi
+  done
+  if ! runOrEcho docker compose --env-file "$dir/stack.env" -f "$COMPOSE_SRC" build postgres redis >"$dir/build" 2>&1; then
+    logFinding "$AREA" "stack" "linux-amd64" "compose" "docker" "$SEV_BLOCKER" "$STATUS_FAIL" "$(head -c 2000 "$dir/build")" "docker compose build postgres redis"
+    rm -rf "$dir"
+    return 0
+  fi
+  if runOrEcho docker compose --env-file "$dir/stack.env" -f "$COMPOSE_SRC" -f "$dir/docker-compose.release.yml" up -d --no-build --pull never >"$dir/up" 2>&1; then
     sleep 5
     logFinding "$AREA" "stack" "linux-amd64" "compose" "docker" "$SEV_INFO" "$STATUS_PASS" "compose up succeeded" "docker compose up -d"
-    runOrEcho docker compose -f "$dir/docker-compose.yml" down -v >/dev/null 2>&1 || true
+    runOrEcho docker compose --env-file "$dir/stack.env" -f "$COMPOSE_SRC" -f "$dir/docker-compose.release.yml" down -v >/dev/null 2>&1 || true
   else
-    logFinding "$AREA" "stack" "linux-amd64" "compose" "docker" "$SEV_BLOCKER" "$STATUS_FAIL" "$(head -c 400 "$dir/up")" "docker compose up -d"
+    logFinding "$AREA" "stack" "linux-amd64" "compose" "docker" "$SEV_BLOCKER" "$STATUS_FAIL" "$(head -c 2000 "$dir/up")" "docker compose up -d"
+    runOrEcho docker compose --env-file "$dir/stack.env" -f "$COMPOSE_SRC" -f "$dir/docker-compose.release.yml" down -v >/dev/null 2>&1 || true
   fi
   rm -rf "$dir"
 }
