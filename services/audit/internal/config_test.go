@@ -10,17 +10,17 @@ import (
 	"testing"
 )
 
-func TestLoadConfigRequiresHMACInProduction(t *testing.T) {
+func TestLoadConfigRequiresHMACInRuntime(t *testing.T) {
 	t.Setenv("PORT", "9090")
 	t.Setenv("DATABASE_URL", "postgres://example")
 	t.Setenv("REDIS_URL", "redis://example")
-	t.Setenv("CARACAL_ENV", "production")
+	t.Setenv("CARACAL_MODE", "runtime")
 	t.Setenv("AUDIT_HMAC_KEY", "")
 
 	defer func() {
 		r := recover()
 		if r == nil {
-			t.Fatal("production config must require AUDIT_HMAC_KEY")
+			t.Fatal("runtime config must require AUDIT_HMAC_KEY")
 		}
 		if !strings.Contains(r.(string), "AUDIT_HMAC_KEY") {
 			t.Fatalf("panic must name AUDIT_HMAC_KEY, got %v", r)
@@ -29,15 +29,15 @@ func TestLoadConfigRequiresHMACInProduction(t *testing.T) {
 	_ = loadConfig()
 }
 
-func TestLoadConfigAllowsUnsignedDevelopmentAudit(t *testing.T) {
+func TestLoadConfigAllowsUnsignedDevAudit(t *testing.T) {
 	t.Setenv("PORT", "9090")
 	t.Setenv("DATABASE_URL", "postgres://example")
 	t.Setenv("REDIS_URL", "redis://example")
-	t.Setenv("CARACAL_ENV", "development")
+	t.Setenv("CARACAL_MODE", "dev")
 	t.Setenv("AUDIT_HMAC_KEY", "")
 
 	cfg := loadConfig()
 	if len(cfg.HMACKey) != 0 {
-		t.Fatal("development config must allow unsigned audit mode")
+		t.Fatal("dev config must allow unsigned audit mode")
 	}
 }

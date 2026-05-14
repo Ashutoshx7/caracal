@@ -8,7 +8,8 @@
 - Must listen on port 8081 only; loadConfig must reject any other PORT.
 - Must perform a fresh STS exchange on every proxied request.
 - Must use github.com/garudex-labs/caracal/core/* for config, errors, and logging.
-- Must require STS_URL (https) and TLS_CERT_FILE+TLS_KEY_FILE; only INSECURE_STS=true and INSECURE_HTTP=true may relax these, and only when CARACAL_ENV=dev.
+- Must require STS_URL; under CARACAL_MODE=runtime STS_URL must use https unless the target host is internal (single-label / loopback).
+- Must run plaintext when TLS_CERT_FILE/TLS_KEY_FILE are unset, and TLS when both are set; rejects partial config.
 - Must require DATABASE_URL and load resource→client_id bindings from gateway_resource_bindings.
 - Must reload bindings periodically so newly registered resources are reachable without restart.
 - Must validate every STS-supplied upstream through upstreamGuard; the upstream Transport must use guard.SafeDialContext to re-validate at connect time.
@@ -32,7 +33,6 @@
 - Timeouts: STS_TIMEOUT, UPSTREAM_TIMEOUT, READ_HEADER_TIMEOUT, READ_TIMEOUT, WRITE_TIMEOUT, IDLE_TIMEOUT.
 - Limits: MAX_REQUEST_BYTES.
 - SSRF: UPSTREAM_HOST_ALLOWLIST (CSV), ALLOW_PRIVATE_UPSTREAMS.
-- Replay: JTI_FAIL_OPEN (default false; only set true to allow traffic when Redis is unreachable).
-- Dev escape hatches: INSECURE_HTTP, INSECURE_STS (rejected unless CARACAL_ENV=dev).
-- Environment: CARACAL_ENV (production|dev, default production).
+- Replay: JTI_FAIL_OPEN (default false; rejected under CARACAL_MODE=runtime).
+- Mode: CARACAL_MODE (dev|runtime, default runtime); runtime forbids INSECURE_STS, INSECURE_HTTP, CARACAL_LOCAL_BOOTSTRAP_ENABLED via core/config.AssertRuntimeSafe.
 - Misc: PORT (must equal 8081), LOG_LEVEL.
