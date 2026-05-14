@@ -1,0 +1,5 @@
+zone_id = "test-zone"
+application_id = "test-app"
+app_client_secret = "test-secret"
+sts_url = "http://127.0.0.1:0"
+coordinator_url = "http://127.0.0.1:0"
