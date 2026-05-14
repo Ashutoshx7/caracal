@@ -12,10 +12,12 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/garudex-labs/caracal/core/config"
 	"github.com/garudex-labs/caracal/gateway/internal"
 )
 
 func main() {
+	config.AssertRuntimeSafe()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
