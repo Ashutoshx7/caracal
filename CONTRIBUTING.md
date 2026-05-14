@@ -7,10 +7,14 @@
 | Node.js             | 24+     | All work                    |
 | pnpm                | 10+     | All work                    |
 | Docker + Compose v2 | 24+     | Running the stack           |
-| Git                 | 2.x     | All work                    |
 | Go                  | 1.26+   | Go services / packages      |
 | Python              | 3.11+   | Python packages             |
 | Bun                 | latest  | Building CLI / TUI binaries |
+
+Throughout this doc:
+
+- `<os>` ∈ `linux` · `darwin` · `windows`
+- `<arch>` ∈ `x64` · `arm64` (Windows: `x64` only; binary has a `.exe` suffix)
 
 ## Setup
 
@@ -26,32 +30,40 @@ Drop the `pnpm` prefix with `pnpm link --global` (undo with `pnpm unlink --globa
 
 ## Modes: dev vs runtime
 
-Every artifact is bound to one of two modes at build time. The mode is stamped into `apps/cli/src/runtime/version.gen.ts` (gitignored) and propagated to services via `CARACAL_MODE`.
+Every artifact is bound to one of two modes at build time.
 
 |                       | Dev                                                      | Runtime                                                     |
 | --------------------- | -------------------------------------------------------- | ----------------------------------------------------------- |
-| Stamped by            | `apps/cli/scripts/stampDev.mjs` (auto on `pnpm caracal`) | `apps/cli/scripts/stampRelease.mjs` (release CI)            |
-| `caracal --version`   | `2026.05.12+dev.<sha> [dev (sha …)]`                     | `2026.05.12 [runtime]`                                      |
-| Container images      | `localhost/caracal-{svc}:dev-<sha>` (built locally)      | `ghcr.io/garudex-labs/caracal-{svc}:v<calver>` (pulled)     |
+| `caracal --version`   | `2026.05.12+dev.<sha> [dev (sha …)]`                     | `v2026.05.12 [runtime]` (CI) / `dev-<sha> [runtime]` (local)|
+| Container images      | `localhost/caracal-{svc}:dev-<sha>` (built locally)      | `ghcr.io/garudex-labs/caracal-{svc}:v<calver>` (CI) / `localhost/caracal-{svc}:dev-<sha>` (local) |
 | Compose file          | `infra/docker/docker-compose.yml`                        | embedded in CLI, installed to `~/.caracal/compose.yml`      |
 | `INSECURE_*` env vars | honored                                                  | refused; services panic on startup                          |
 
-The base CalVer is centralized in `apps/cli/runtime/release.json`. Bump it there if local builds need a new base version — never edit `version.gen.ts` by hand.
+The base CalVer is centralized in `apps/cli/runtime/release.json` (consumed by `stampDev`). Release CI must pass `CARACAL_RELEASE_VERSION=v<calver>` explicitly; without it, `build:release` produces a developer-local binary that targets `localhost/caracal-<svc>:dev-<sha>` instead of pulling from GHCR.
 
 ### Test a release-style binary locally
 
+Run from the repo root:
+
 ```bash
-pnpm --dir apps/cli build:release                    # stamp runtime + bun compile (5 targets)
-"$PWD/apps/cli/dist/caracal-linux-x64" --version     # → caracal <ver> [runtime]
-(cd /tmp && "$OLDPWD/apps/cli/dist/caracal-linux-x64" up)
+pnpm --dir apps/cli build:release                          # stamp runtime + build local images + bun compile (all targets)
+BIN="$(pwd)/apps/cli/dist/caracal-<os>-<arch>"             # absolute path; survives cd
+"$BIN" --version                                           # → caracal dev-<sha> [runtime]
+(cd /tmp && "$BIN" up && "$BIN" status && "$BIN" down)
 ```
+
+The local `build:release` stamps the binary with `CARACAL_VERSION=dev-<sha>` and `CARACAL_REGISTRY=localhost/`, then runs `docker compose build` to produce `localhost/caracal-{svc}:dev-<sha>` for each service. The release-style binary resolves to those images — no GHCR pull, no auth, fully reproducible from your checkout.
+
+CI publishes against GHCR with `CARACAL_RELEASE_VERSION=v2026.05.12 pnpm --dir apps/cli build:release`, which skips the local image build and stamps the binary to pull `ghcr.io/garudex-labs/caracal-{svc}:v2026.05.12`.
+
+`pnpm caracal …` only works inside the repo (it resolves through `scripts.caracal` in the root `package.json`). Outside the repo, invoke the binary directly.
 
 Override the version a release binary targets (also useful for pinning during dev): `CARACAL_VERSION=v2026.04.01 caracal up`.
 
 ## Stack Commands
 
 ```bash
-pnpm caracal up [--build]           # start stack (--build forces rebuild)
+pnpm caracal up                     # build + start the stack (dev rebuilds; runtime pulls images)
 pnpm caracal down [-v]              # stop (-v wipes volumes)
 pnpm caracal status                 # /health probe every service
 pnpm caracal init [--force]         # provision zone (--force rotates the secret)
@@ -110,18 +122,18 @@ scripts/testCi.sh --ts | --go | --py
 2. Add a changeset for any change to a published package: `pnpm changeset`.
 3. If you touched API / STS / CLI, smoke-test end-to-end: `pnpm caracal up && pnpm caracal init && pnpm caracal run -- printenv RESOURCE_TOKEN`.
 4. `pnpm test` must pass.
-5. `git commit -s` (DCO sign-off), open the PR, describe the change and any new `instructions.md` entries.
 
 ## Building Binaries
 
 `bun build --compile` produces self-contained executables (no Node / Bun on the target).
 
 ```bash
-pnpm --dir apps/{cli,tui} sync-embedded               # required before any compile
-pnpm --dir apps/{cli,tui} build[:<os>-<arch>]         # all 5 targets, or a single one (e.g. build:linux-arm64)
+pnpm --dir apps/cli sync-embedded            # CLI only; required before `build:<os>-<arch>`
+pnpm --dir apps/<cli|tui> build              # all targets for that app
+pnpm --dir apps/<cli|tui> build:<os>-<arch>  # single target
 ```
 
-Output lands in `apps/{cli,tui}/dist/caracal[-tui]-<os>-<bunArch>[.exe]` (`<bunArch>` ∈ {`x64`, `arm64`}). The release workflow renames these into versioned archives; locally you work with the raw dist files.
+Output: `apps/<cli|tui>/dist/caracal[-tui]-<os>-<arch>[.exe]` (Windows binaries have the `.exe` suffix). The release workflow renames these into versioned archives; locally you work with the raw dist files.
 
 ## Releases
 
