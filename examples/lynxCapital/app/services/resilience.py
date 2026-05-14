@@ -7,7 +7,6 @@ circuit breakers, deadlines, and idempotency-key generation.
 """
 from __future__ import annotations
 
-import os
 import random
 import threading
 import time
@@ -100,7 +99,6 @@ def with_retry(
     breaker_obj: CircuitBreaker | None = None,
 ) -> T:
     """Run `fn(attempt)` with retries on transient errors; honors the breaker."""
-    fast = os.getenv("LYNX_MOCK_FAST") == "1"
     last: BaseException | None = None
     for attempt in range(1, policy.max_attempts + 1):
         if breaker_obj is not None:
@@ -114,9 +112,9 @@ def with_retry(
                 breaker_obj.on_failure()
             if not retryable or attempt == policy.max_attempts:
                 raise
-            delay = 0.0 if fast else policy.delay(attempt)
+            delay = policy.delay(attempt)
             retry_after = getattr(exc, "retry_after_s", None)
-            if retry_after and not fast:
+            if retry_after:
                 delay = max(delay, float(retry_after))
             time.sleep(delay)
             continue
