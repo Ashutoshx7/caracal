@@ -55,11 +55,15 @@ export function installRuntimeAssets(paths: RuntimePaths = runtimePaths()): { cr
   mkdirSync(paths.home, { recursive: true })
   let created = false
 
-  if (!existsSync(paths.composeFile)) {
+  const existingCompose = existsSync(paths.composeFile) ? readFileSync(paths.composeFile, 'utf8') : null
+  if (existingCompose !== COMPOSE_YML) {
     writeFileSync(paths.composeFile, COMPOSE_YML, { mode: 0o644 })
     created = true
   }
-  if (!existsSync(paths.provisionScript)) {
+  const existingProvision = existsSync(paths.provisionScript)
+    ? readFileSync(paths.provisionScript, 'utf8')
+    : null
+  if (existingProvision !== PROVISION_STREAMS_SH) {
     writeFileSync(paths.provisionScript, PROVISION_STREAMS_SH, { mode: 0o644 })
     chmodSync(paths.provisionScript, 0o755)
     created = true

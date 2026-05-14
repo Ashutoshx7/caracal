@@ -9,7 +9,7 @@ import { homedir } from 'node:os'
 import { createInterface } from 'node:readline'
 import { join } from 'node:path'
 import { resolveCliConfigPath } from '@caracalai/core/cli'
-import { CARACAL_VERSION } from '../runtime/version.ts'
+import { CARACAL_REGISTRY, CARACAL_VERSION } from '../runtime/version.ts'
 import { runtimePaths } from '../runtime/install.ts'
 import { resolvePaths } from './stack.ts'
 import { showHelp } from './shared.ts'
@@ -117,9 +117,8 @@ function runCompose(args: string[], ctx: PurgeContext, stack?: ComposeStack): Pr
       return resolveExit(0)
     }
     const env: NodeJS.ProcessEnv = { ...process.env }
-    if (!env.CARACAL_VERSION) {
-      env.CARACAL_VERSION = CARACAL_VERSION.startsWith('v') ? CARACAL_VERSION : `v${CARACAL_VERSION}`
-    }
+    if (!env.CARACAL_VERSION) env.CARACAL_VERSION = CARACAL_VERSION
+    if (!env.CARACAL_REGISTRY) env.CARACAL_REGISTRY = CARACAL_REGISTRY
     const proc = spawn(
       'docker',
       ['compose', '--env-file', s.envFile, '-f', s.composeFile, ...args],

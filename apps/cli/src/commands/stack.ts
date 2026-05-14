@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { CARACAL_MODE, CARACAL_VERSION } from '../runtime/version.ts'
+import { CARACAL_MODE, CARACAL_REGISTRY, CARACAL_VERSION } from '../runtime/version.ts'
 import { installRuntimeAssets, runtimePaths, seedEnvFile } from '../runtime/install.ts'
 import { style, SYMBOL, printError, printInfo } from '../style.ts'
 
@@ -88,15 +88,16 @@ function printBanner(paths: StackPaths): void {
   const tag =
     paths.mode === 'dev'
       ? `dev (sha ${process.env.CARACAL_DEV_SHA ?? 'unknown'})`
-      : `runtime (v${CARACAL_VERSION})`
+      : `runtime (${CARACAL_VERSION})`
   process.stdout.write(`${style.label('caracal mode:')} ${style.header(tag)}\n`)
 }
 
 function runCompose(args: string[], paths: StackPaths): Promise<number> {
   return new Promise((resolveExit) => {
     const env: NodeJS.ProcessEnv = { ...process.env, CARACAL_MODE: paths.mode }
-    if (paths.mode === 'runtime' && !env.CARACAL_VERSION) {
-      env.CARACAL_VERSION = CARACAL_VERSION.startsWith('v') ? CARACAL_VERSION : `v${CARACAL_VERSION}`
+    if (paths.mode === 'runtime') {
+      if (!env.CARACAL_VERSION) env.CARACAL_VERSION = CARACAL_VERSION
+      if (!env.CARACAL_REGISTRY) env.CARACAL_REGISTRY = CARACAL_REGISTRY
     }
     if (paths.mode === 'dev' && !env.CARACAL_DEV_SHA) {
       env.CARACAL_DEV_SHA = 'nogit'
