@@ -2,6 +2,11 @@
   "name": "caracal",
   "private": true,
   "packageManager": "pnpm@11.0.9",
+  "pnpm": {
+    "overrides": {
+      "fast-uri": "3.1.2"
+    }
+  },
   "bin": {
     "caracal": "apps/cli/bin/caracal-workspace.mjs"
   },
