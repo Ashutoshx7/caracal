@@ -3,15 +3,6 @@
 //
 // Shared environment classification for TypeScript services.
 
-export function caracalEnv(): string {
-  return process.env.CARACAL_ENV ?? 'development';
-}
-
-export function isProduction(): boolean {
-  const env = caracalEnv();
-  return env === 'production' || env === 'prod' || env === 'staging';
-}
-
 export type CaracalMode = 'dev' | 'runtime';
 
 export function caracalMode(): CaracalMode {
@@ -19,6 +10,10 @@ export function caracalMode(): CaracalMode {
   if (raw === '' || raw === 'runtime') return 'runtime';
   if (raw === 'dev') return 'dev';
   throw new Error(`CARACAL_MODE must be 'dev' or 'runtime' (got '${raw}')`);
+}
+
+export function isRuntime(): boolean {
+  return caracalMode() === 'runtime';
 }
 
 export function assertRuntimeSafe(): void {

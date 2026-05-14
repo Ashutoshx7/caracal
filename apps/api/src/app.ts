@@ -13,7 +13,7 @@ import type { DB } from './db.js'
 import type { RedisClient } from './redis.js'
 import { adminAuthPlugin } from './auth.js'
 import { registerAdminAuditHook } from './admin-audit.js'
-import { assertRuntimeSafe, caracalMode, isProduction } from '@caracalai/core'
+import { assertRuntimeSafe, caracalMode, isRuntime } from '@caracalai/core'
 import { zonesRoutes } from './routes/zones.js'
 import { applicationsRoutes } from './routes/applications.js'
 import { resourcesRoutes } from './routes/resources.js'
@@ -85,7 +85,7 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
       servers: [{ url: `http://localhost:${cfg.port}` }],
     },
   })
-  if (!isProduction()) {
+  if (!isRuntime()) {
     await app.register(swaggerUI, { routePrefix: '/docs' })
   }
 

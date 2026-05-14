@@ -6,7 +6,7 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { generateKeyPairSync, randomBytes } from 'node:crypto'
-import { isProduction, loadZoneKek, open, seal, sha256Hex } from '@caracalai/core'
+import { isRuntime, loadZoneKek, open, seal, sha256Hex } from '@caracalai/core'
 import { hashClientSecret } from '../hash-secret.js'
 
 const ZONE_ID = 'zone1'
@@ -46,8 +46,8 @@ function generateSigningKeyPem(): Buffer {
 }
 
 export const localBootstrapRoutes: FastifyPluginAsync = async (fastify) => {
-  if (isProduction()) {
-    throw new Error('local bootstrap routes must not be registered in production')
+  if (isRuntime()) {
+    throw new Error('local bootstrap routes must not be registered under CARACAL_MODE=runtime')
   }
   const kek = loadZoneKek()
 

@@ -5,12 +5,12 @@
 
 import type { Pool } from 'pg'
 import type { Redis } from 'ioredis'
-import { STREAM_SIG_FIELD, loadStreamsHmacKey, signStream } from '@caracalai/core'
+import { STREAM_SIG_FIELD, isRuntime, loadStreamsHmacKey, signStream } from '@caracalai/core'
 import { cfg } from '../config.js'
 
 const streamHmacKey = loadStreamsHmacKey()
-if (streamHmacKey === null && process.env.CARACAL_ENV && ['production', 'prod', 'staging'].includes(process.env.CARACAL_ENV)) {
-  throw new Error('STREAMS_HMAC_KEY is required in production')
+if (streamHmacKey === null && isRuntime()) {
+  throw new Error('STREAMS_HMAC_KEY is required when CARACAL_MODE=runtime')
 }
 
 interface OutboxRow {

@@ -17,7 +17,6 @@ type Base struct {
 	DatabaseURL string
 	RedisURL    string
 	LogLevel    string
-	Env         string
 	Mode        string
 }
 
@@ -28,18 +27,12 @@ func Load() Base {
 	if len(missing) > 0 {
 		panic("required env vars missing: " + strings.Join(missing, ", "))
 	}
-	mode := Mode()
-	envDefault := "development"
-	if mode == "runtime" {
-		envDefault = "production"
-	}
 	return Base{
 		Port:        os.Getenv("PORT"),
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		RedisURL:    os.Getenv("REDIS_URL"),
 		LogLevel:    Getenv("LOG_LEVEL", "info"),
-		Env:         Getenv("CARACAL_ENV", envDefault),
-		Mode:        mode,
+		Mode:        Mode(),
 	}
 }
 
@@ -87,14 +80,8 @@ func MissingRequired(keys ...string) []string {
 	return missing
 }
 
-// IsProduction reports whether the service runs in a production-like environment.
-func (b Base) IsProduction() bool {
-	switch b.Env {
-	case "production", "prod", "staging":
-		return true
-	}
-	return false
-}
+// IsRuntime reports whether the service runs under CARACAL_MODE=runtime.
+func (b Base) IsRuntime() bool { return b.Mode == "runtime" }
 
 // MustGetenv returns the value of key or panics if it is unset or empty.
 func MustGetenv(key string) string {
