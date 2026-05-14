@@ -16,7 +16,7 @@ readonly NODE_V="${NODE_V:-22}"
 prepareProject() {
   local dir="$1"; shift
   ( cd "$dir" && runOrEcho npm init -y >/dev/null )
-  runOrEcho node -e "const fs=require('fs');const p='$dir/package.json';const j=JSON.parse(fs.readFileSync(p));j.type='module';fs.writeFileSync(p,JSON.stringify(j,null,2));"
+  ( cd "$dir" && runOrEcho node -e "const fs=require('fs');const p='package.json';const j=JSON.parse(fs.readFileSync(p));j.type='module';fs.writeFileSync(p,JSON.stringify(j,null,2));" )
   case "$PM" in
     npm)   ( cd "$dir" && export CI=1 && runOrEcho npm install --silent "$@" ) ;;
     pnpm)  ( cd "$dir" && export CI=1 && runOrEcho pnpm add --silent "$@" ) ;;
@@ -28,9 +28,9 @@ prepareProject() {
 runProbe() {
   local pkg="$1" dir="$2"
   if [[ "$PM" == "yarn" ]]; then
-    ( cd "$dir" && runOrEcho yarn node --input-type=module -e "const m = await import('$pkg'); if (!m) process.exit(1);" )
+    ( cd "$dir" && runOrEcho yarn node --input-type=module -e "const m = await import('$pkg'); if (m == null) process.exit(1);" )
   else
-    ( cd "$dir" && runOrEcho node --input-type=module -e "const m = await import('$pkg'); if (!m) process.exit(1);" )
+    ( cd "$dir" && runOrEcho node --input-type=module -e "const m = await import('$pkg'); if (m == null) process.exit(1);" )
   fi
 }
 
@@ -47,7 +47,7 @@ validateOne() {
     logFinding "$AREA" "$pkg" "$plat" "$PM" "node$NODE_V" "$SEV_BLOCKER" "$STATUS_FAIL" "$installEvidence" "$PM add $pkg@$ver"
     return 0
   fi
-  if runProbe "$pkg" "$dir" 2>"$dir/err"; then
+  if runProbe "$pkg" "$dir" >"$dir/err" 2>&1; then
     logFinding "$AREA" "$pkg" "$plat" "$PM" "node$NODE_V" "$SEV_INFO" "$STATUS_PASS" "install + ESM import ok @ $ver" "$PM add $pkg@$ver"
   else
     local evid; evid="$(head -c 400 "$dir/err" | tr '\n' ' ' || true)"
@@ -68,10 +68,10 @@ if (( ${#specs[@]} == 0 )); then
   rm -rf "$dir"
   exit 0
 fi
-if prepareProject "$dir" "${specs[@]}" 2>"$dir/install.err"; then
+if prepareProject "$dir" "${specs[@]}" >"$dir/install.log" 2>&1; then
   installOk=1
 else
-  installEvidence="$(head -c 400 "$dir/install.err" | tr '\n' ' ' || true)"
+  installEvidence="$(head -c 400 "$dir/install.log" | tr '\n' ' ' || true)"
 fi
 for (( i = 0; i < ${#NPM_NAMES[@]}; i++ )); do validateOne "${NPM_NAMES[$i]}"; done
 rm -rf "$dir"

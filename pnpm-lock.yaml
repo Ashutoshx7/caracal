@@ -184,7 +184,7 @@ importers:
   packages/admin/ts:
     dependencies:
       '@caracalai/core':
-        specifier: workspace:*
+        specifier: 0.1.2
         version: link:../../core/ts
     devDependencies:
       '@types/node':
@@ -200,13 +200,13 @@ importers:
   packages/connectors/express/ts:
     dependencies:
       '@caracalai/identity':
-        specifier: workspace:*
+        specifier: 0.1.2
         version: link:../../../identity/ts
       '@caracalai/sdk':
-        specifier: workspace:*
+        specifier: 0.1.2
         version: link:../../../sdk/ts
       '@caracalai/transport-mcp':
-        specifier: workspace:*
+        specifier: 0.1.2
         version: link:../../../transport/mcp/ts
       express:
         specifier: ^5.0.0
@@ -228,10 +228,10 @@ importers:
   packages/connectors/fastmcp/ts:
     dependencies:
       '@caracalai/core':
-        specifier: workspace:*
+        specifier: 0.1.2
         version: link:../../../core/ts
       '@caracalai/transport-mcp':
-        specifier: workspace:*
+        specifier: 0.1.2
         version: link:../../../transport/mcp/ts
     devDependencies:
       '@types/node':
@@ -266,10 +266,10 @@ importers:
   packages/connectors/redis/ts:
     dependencies:
       '@caracalai/core':
-        specifier: workspace:*
+        specifier: 0.1.2
         version: link:../../../core/ts
       '@caracalai/revocation':
-        specifier: workspace:*
+        specifier: 0.1.2
         version: link:../../../revocation/ts
     devDependencies:
       '@types/node':
@@ -297,7 +297,7 @@ importers:
   packages/identity/ts:
     dependencies:
       '@caracalai/core':
-        specifier: workspace:*
+        specifier: 0.1.2
         version: link:../../core/ts
       jose:
         specifier: ^6.2.3
@@ -316,7 +316,7 @@ importers:
   packages/oauth/ts:
     dependencies:
       '@caracalai/core':
-        specifier: workspace:*
+        specifier: 0.1.2
         version: link:../../core/ts
     devDependencies:
       '@types/node':
@@ -356,10 +356,10 @@ importers:
   packages/transport/a2a/ts:
     dependencies:
       '@caracalai/oauth':
-        specifier: workspace:*
+        specifier: 0.1.2
         version: link:../../../oauth/ts
       '@caracalai/sdk':
-        specifier: workspace:*
+        specifier: 0.1.2
         version: link:../../../sdk/ts
     devDependencies:
       '@types/node':
@@ -375,10 +375,10 @@ importers:
   packages/transport/mcp/ts:
     dependencies:
       '@caracalai/identity':
-        specifier: workspace:*
+        specifier: 0.1.2
         version: link:../../../identity/ts
       '@caracalai/revocation':
-        specifier: workspace:*
+        specifier: 0.1.2
         version: link:../../../revocation/ts
     devDependencies:
       '@types/node':
