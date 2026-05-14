@@ -82,7 +82,7 @@ export class OutboxDispatcher {
   constructor(private readonly opts: DispatcherOptions) {
     this.streamHmacKey = loadStreamsHmacKey()
     if (this.streamHmacKey === null && isRuntime()) {
-      throw new Error('STREAMS_HMAC_KEY is required in production')
+      throw new Error('STREAMS_HMAC_KEY is required when CARACAL_MODE=runtime')
     }
   }
 

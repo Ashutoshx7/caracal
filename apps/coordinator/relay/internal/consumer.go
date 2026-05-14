@@ -48,8 +48,8 @@ func New(_ context.Context) (*Consumer, error) {
 	if err != nil {
 		return nil, err
 	}
-	if base.IsProduction() && len(hmacKey) == 0 {
-		return nil, errors.New("STREAMS_HMAC_KEY is required in production")
+	if base.IsRuntime() && len(hmacKey) == 0 {
+		return nil, errors.New("STREAMS_HMAC_KEY is required when CARACAL_MODE=runtime")
 	}
 	if len(hmacKey) == 0 {
 		log.Warn().Msg("STREAMS_HMAC_KEY not set; lifecycle events will not be origin-verified")
@@ -64,7 +64,7 @@ func New(_ context.Context) (*Consumer, error) {
 	}
 	return &Consumer{
 		redis: r, log: log, hmacKey: hmacKey,
-		requireSig: base.IsProduction(),
+		requireSig: base.IsRuntime(),
 		dedupeTTL:  time.Duration(dedupeSec) * time.Second,
 	}, nil
 }

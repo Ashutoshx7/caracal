@@ -8,7 +8,10 @@ import { localBootstrapRoutes } from '../../../../../apps/api/src/routes/local-b
 import { buildRouteApp } from '../../../../shared/test-utils/typescript/fastify.js'
 
 const TEST_ZONE_KEK = '0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20'
-beforeAll(() => { vi.stubEnv('ZONE_KEK', TEST_ZONE_KEK) })
+beforeAll(() => {
+  vi.stubEnv('ZONE_KEK', TEST_ZONE_KEK)
+  vi.stubEnv('CARACAL_MODE', 'dev')
+})
 afterAll(() => { vi.unstubAllEnvs() })
 
 describe('POST /v1/local/bootstrap', () => {

@@ -3,12 +3,20 @@
 //
 // Unit tests for the OutboxDispatcher dispatch loop and backoff handling.
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { enqueueOutbox, OutboxDispatcher } from '../../../../apps/api/src/outbox.js'
 
 function makeLogger() {
   return vi.fn()
 }
+
+beforeEach(() => {
+  vi.stubEnv('CARACAL_MODE', 'dev')
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
 
 describe('enqueueOutbox', () => {
   it('inserts a row with serialized JSON payload', async () => {
