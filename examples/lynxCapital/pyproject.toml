@@ -42,6 +42,14 @@ dev = [
 # `[tool.uv.sources]` table below resolves them automatically; with plain
 # `pip` use the install line in the README.
 
+# Global resolution floors for transitive deps (Dependabot / GHSA minima).
+[tool.uv]
+constraint-dependencies = [
+    "langsmith>=0.8.0",
+    "langchain-core>=1.3.3",
+    "mako>=1.3.12",
+]
+
 [tool.uv.sources]
 lynx-sdk-stripe-treasury  = { path = "_mock/sdk/lynx_sdk_stripe_treasury", editable = true }
 lynx-sdk-tax              = { path = "_mock/sdk/lynx_sdk_tax",             editable = true }
