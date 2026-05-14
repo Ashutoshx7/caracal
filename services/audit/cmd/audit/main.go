@@ -13,9 +13,11 @@ import (
 	"syscall"
 
 	"github.com/garudex-labs/caracal/audit/internal"
+	"github.com/garudex-labs/caracal/core/config"
 )
 
 func main() {
+	config.AssertRuntimeSafe()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 

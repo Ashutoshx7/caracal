@@ -137,20 +137,13 @@ jobs:
 
       - name: Stamp CLI version
         env:
-          VERSION: ${{ steps.ver.outputs.version }}
+          CARACAL_RELEASE_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
-          printf '%s\n' \
-            '// Copyright (C) 2026 Garudex Labs.  All Rights Reserved.' \
-            '// Caracal, a product of Garudex Labs' \
-            '//' \
-            '// CLI version constant; CI rewrites this from the release tag before bun --compile.' \
-            '' \
-            "export const CARACAL_VERSION = '${VERSION}'" \
-            > apps/cli/src/runtime/version.ts
-          jq --arg v "${VERSION}" '.version = $v' apps/cli/package.json > apps/cli/package.json.tmp
+          node apps/cli/scripts/stampRelease.mjs
+          jq --arg v "${CARACAL_RELEASE_VERSION}" '.version = $v' apps/cli/package.json > apps/cli/package.json.tmp
           mv apps/cli/package.json.tmp apps/cli/package.json
-          echo "Stamped version ${VERSION} into CLI"
+          echo "Stamped version ${CARACAL_RELEASE_VERSION} into CLI"
 
       - name: Build CLI binaries
         run: pnpm --dir apps/cli build
@@ -288,8 +281,7 @@ jobs:
           tags: |
             type=raw,value=${{ github.ref_name }},enable=${{ github.event_name == 'push' }}
             type=match,pattern=v(\d+\.\d+)\.\d+(\.\d+)?,group=1,prefix=v
-            type=raw,value=latest,enable=${{ github.event_name == 'push' }}
-            type=raw,value=dryrun,enable=${{ github.event_name != 'push' }}
+            type=raw,value=dispatch-${{ github.run_id }},enable=${{ github.event_name != 'push' }}
 
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:

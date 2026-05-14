@@ -18,6 +18,7 @@ type Base struct {
 	RedisURL    string
 	LogLevel    string
 	Env         string
+	Mode        string
 }
 
 // Load reads Base from environment variables, collecting all missing required values
@@ -27,12 +28,50 @@ func Load() Base {
 	if len(missing) > 0 {
 		panic("required env vars missing: " + strings.Join(missing, ", "))
 	}
+	mode := Mode()
+	envDefault := "development"
+	if mode == "runtime" {
+		envDefault = "production"
+	}
 	return Base{
 		Port:        os.Getenv("PORT"),
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		RedisURL:    os.Getenv("REDIS_URL"),
 		LogLevel:    Getenv("LOG_LEVEL", "info"),
-		Env:         Getenv("CARACAL_ENV", "development"),
+		Env:         Getenv("CARACAL_ENV", envDefault),
+		Mode:        mode,
+	}
+}
+
+// Mode returns the explicit Caracal deployment mode (dev or runtime). Defaults to runtime
+// when unset so production safety wins on misconfiguration.
+func Mode() string {
+	m := strings.ToLower(strings.TrimSpace(os.Getenv("CARACAL_MODE")))
+	switch m {
+	case "dev", "runtime":
+		return m
+	case "":
+		return "runtime"
+	default:
+		panic("CARACAL_MODE must be 'dev' or 'runtime' (got '" + m + "')")
+	}
+}
+
+// AssertRuntimeSafe panics if any developer-only escape hatch is set while CARACAL_MODE=runtime.
+// Call early in service startup; cheap and idempotent.
+func AssertRuntimeSafe() {
+	if Mode() != "runtime" {
+		return
+	}
+	forbidden := []string{"INSECURE_STS", "INSECURE_HTTP", "CARACAL_LOCAL_BOOTSTRAP_ENABLED"}
+	var set []string
+	for _, k := range forbidden {
+		if v := strings.ToLower(os.Getenv(k)); v == "true" || v == "1" || v == "yes" {
+			set = append(set, k)
+		}
+	}
+	if len(set) > 0 {
+		panic("CARACAL_MODE=runtime forbids: " + strings.Join(set, ", "))
 	}
 }
 
