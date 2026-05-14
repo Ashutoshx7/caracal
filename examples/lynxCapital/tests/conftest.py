@@ -29,7 +29,16 @@ for _pkg in (_LYNX_ROOT / "_mock" / "sdk").glob("*/"):
     sys.path.insert(0, str(_pkg))
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
-os.environ["LYNX_MOCK_FAST"] = "1"
+
+_caracal_toml = _LYNX_ROOT / "tests" / ".caracal.toml.tmp"
+_caracal_toml.write_text(
+    'zone_id = "test-zone"\n'
+    'application_id = "test-app"\n'
+    'app_client_secret = "test-secret"\n'
+    'sts_url = "http://127.0.0.1:0"\n'
+    'coordinator_url = "http://127.0.0.1:0"\n'
+)
+os.environ["CARACAL_CONFIG"] = str(_caracal_toml)
 
 
 def _free_port() -> int:
