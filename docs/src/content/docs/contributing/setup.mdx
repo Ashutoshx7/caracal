@@ -57,19 +57,24 @@ pnpm install
 ## Environment configuration
 
 ```sh
-cp .env.example .env
+cp infra/docker/.env.example infra/docker/.env
+infra/secrets/secret-init.sh
 ```
 
-`.env.example` documents every required and optional variable. The defaults bring up a working local stack without modification. The variables you most often need to set:
+`infra/docker/.env.example` documents every required and optional variable. Copy it to `infra/docker/.env` and set your values. `secret-init.sh` generates the Docker secret files in `infra/secrets/files/` (gitignored) that the compose stack mounts for postgres, Redis, and the application services. Run it once before the first `caracal up`; it is idempotent and safe to re-run.
+
+The variables you most often need to set in `infra/docker/.env`:
 
 | Variable | What it does |
 | --- | --- |
-| `ZONE_KEK` | 32-byte hex key for zone encryption (a test value is in `.env.example`) |
-| `CARACAL_ADMIN_TOKEN` | Bootstrap admin token — can be any string for local development |
-| `STREAMS_HMAC_KEY` | Hex key for Redis stream signing (leave empty to skip in development) |
-| `AUDIT_HMAC_KEY` | Hex key for audit chain HMAC (leave empty to skip in development) |
+| `POSTGRES_PASSWORD` | Postgres password (must match the generated `infra/secrets/files/postgresPassword`) |
+| `REDIS_PASSWORD` | Redis password (must match `infra/secrets/files/redisPassword`) |
+| `ZONE_KEK` | 32-byte hex key for zone encryption |
+| `CARACAL_ADMIN_TOKEN` | Bootstrap admin token |
+| `AUDIT_HMAC_KEY` | Hex key for audit chain HMAC |
+| `STREAMS_HMAC_KEY` | Hex key for Redis stream signing |
 
-All services read from `.env` when started through Docker Compose. Do not commit `.env` — it is in `.gitignore`.
+Do not commit `infra/docker/.env` or `infra/secrets/files/` — both are in `.gitignore`.
 
 ---
 
@@ -79,7 +84,7 @@ All services read from `.env` when started through Docker Compose. Do not commit
 caracal up
 ```
 
-This runs `docker compose up -d` using the compose file in `infra/`. It starts five services: API (3000), STS (8080), Gateway (8081), Coordinator (4000), Audit (9090), plus PostgreSQL and Redis.
+This runs `docker compose up -d` using the compose file in `infra/docker/`. It starts seven services: API (3000), STS (8080), Gateway (8081), Coordinator (4000), Audit (9090), plus PostgreSQL and Redis.
 
 After the stack is up, run the bootstrap initialization:
 
@@ -95,7 +100,7 @@ Verify the stack is healthy:
 caracal status
 ```
 
-All five services should show `healthy`.
+All seven services should show `healthy`.
 
 ---
 

@@ -36,6 +36,7 @@ The base CalVer is centralized in `apps/cli/runtime/release.json` (consumed by `
 git clone https://github.com/Garudex-Labs/caracal.git && cd caracal
 pnpm install
 cp infra/docker/.env.example infra/docker/.env   # set POSTGRES_PASSWORD, REDIS_PASSWORD, CARACAL_ADMIN_TOKEN
+infra/secrets/secret-init.sh                     # generate Docker secret files (gitignored)
 pnpm caracal up                                  # build + start the full stack
 pnpm caracal init                                # provision local zone, write caracal.toml
 ```
@@ -169,7 +170,7 @@ npm:    @caracalai/{core,oauth,admin,identity,revocation,sdk,
                     transport-mcp,transport-a2a,
                     mcp-express,mcp-fastmcp,tokenstate-postgres,revocation-redis}
 pypi:   caracalai-{core,identity,revocation,sdk,transport-mcp,mcp-fastmcp,revocation-redis}
-ghcr:   ghcr.io/garudex-labs/caracal-{api,sts,gateway,audit,coordinator}
+ghcr:   ghcr.io/garudex-labs/caracal-{api,sts,gateway,audit,coordinator,redis}
 ```
 
 Browse: [npm](https://www.npmjs.com/~caracal-run) · [PyPI](https://pypi.org/user/CaracalAI).
