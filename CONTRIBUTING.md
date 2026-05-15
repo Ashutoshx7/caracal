@@ -67,18 +67,13 @@ pnpm --dir apps/cli typecheck
 
 ### TUI
 
-Stack must be up and provisioned first.
+Stack must be up and provisioned first. Then run from the repo root:
 
 ```bash
-# bash / zsh (Linux, macOS):
-export CARACAL_ADMIN_TOKEN=$(grep ^CARACAL_ADMIN_TOKEN infra/docker/.env | cut -d= -f2)
-# PowerShell (Windows):
-$env:CARACAL_ADMIN_TOKEN = (Get-Content infra/docker/.env | Select-String '^CARACAL_ADMIN_TOKEN=').ToString().Split('=',2)[1]
+pnpm caracal-tui
 ```
 
-```bash
-pnpm --filter @caracalai/tui dev
-```
+The workspace shim sets `CARACAL_REPO_ROOT` so `CARACAL_ADMIN_TOKEN` is discovered from `infra/docker/.env` automatically — no manual export needed. To override, set `CARACAL_ADMIN_TOKEN` in your shell.
 
 TUI env vars match the CLI: `CARACAL_ADMIN_TOKEN`, `CARACAL_API_URL`, `CARACAL_COORDINATOR_URL`, `CARACAL_COORDINATOR_TOKEN`, `CARACAL_ZONE_ID`. Config discovery: `$CARACAL_CONFIG` → `caracal.toml` (cwd / `$PWD` / `$INIT_CWD`) → `$XDG_CONFIG_HOME/caracal/caracal.toml`. Keybindings live in the README.
 

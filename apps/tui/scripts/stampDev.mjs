@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Writes apps/tui/src/version.gen.ts with the dev-stamped TUI identity.
+// Writes apps/tui/src/version.gen.ts with the dev-stamped TUI identity and prints the short SHA on stdout.
 
 import { execSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -42,3 +42,4 @@ export const CARACAL_TUI_MODE: 'dev' | 'runtime' = '${mode}'
 `
 
 writeFileSync(resolve(tuiRoot, 'src/version.gen.ts'), body, 'utf8')
+process.stdout.write(`${releaseVersion ?? shortSha()}\n`)

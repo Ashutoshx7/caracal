@@ -26,7 +26,7 @@
     "prebuild": "node scripts/stampDev.mjs",
     "build": "bun run build:linux-x64 && bun run build:linux-arm64 && bun run build:darwin-x64 && bun run build:darwin-arm64 && bun run build:windows-x64",
     "build:release": "node scripts/stampRelease.mjs && bun run build",
-    "dev": "node bin/caracal-tui.mjs",
+    "dev": "node bin/caracal-tui-workspace.mjs",
     "pretypecheck": "node scripts/stampDev.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --root ../.. tests/typescript/unit/tui"
