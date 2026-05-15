@@ -151,6 +151,8 @@ jobs:
 
       - run: mkdir -p "$FINDINGS_DIR"
 
+      - run: bash scripts/postRelease/validateShellBinaries.sh
+
       - run: bash scripts/postRelease/validateCliBinaries.sh
 
       - run: bash scripts/postRelease/validateTuiBinaries.sh

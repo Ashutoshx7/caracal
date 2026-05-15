@@ -187,7 +187,7 @@ jobs:
           set -euo pipefail
           mkdir -p release-dist
           tag="v${VERSION}"
-          targets='cli:linux:amd64:x64 cli:linux:arm64:arm64 cli:darwin:amd64:x64 cli:darwin:arm64:arm64 cli:windows:amd64:x64 tui:linux:amd64:x64 tui:linux:arm64:arm64 tui:darwin:amd64:x64 tui:darwin:arm64:arm64 tui:windows:amd64:x64'
+          targets='shell:linux:amd64:x64 shell:linux:arm64:arm64 shell:darwin:amd64:x64 shell:darwin:arm64:arm64 shell:windows:amd64:x64 cli:linux:amd64:x64 cli:linux:arm64:arm64 cli:darwin:amd64:x64 cli:darwin:arm64:arm64 cli:windows:amd64:x64 tui:linux:amd64:x64 tui:linux:arm64:arm64 tui:darwin:amd64:x64 tui:darwin:arm64:arm64 tui:windows:amd64:x64'
           for entry in $targets; do
             IFS=: read -r kind os arch bunArch <<EOF
           ${entry}
@@ -195,7 +195,8 @@ jobs:
             ext=''
             [ "$os" = windows ] && ext='.exe'
             case "$kind" in
-              cli) srcDir=apps/cli/dist; srcBase=caracal-cli; binName=caracal ;;
+              shell) srcDir=apps/cli/dist; srcBase=caracal; binName=caracal ;;
+              cli) srcDir=apps/cli/dist; srcBase=caracal-cli; binName=caracal-cli ;;
               tui) srcDir=apps/tui/dist; srcBase=caracal-tui; binName=caracal-tui ;;
             esac
             src="${srcDir}/${srcBase}-${os}-${bunArch}${ext}"
@@ -223,8 +224,12 @@ jobs:
           tag="v${VERSION}"
           work="$(mktemp -d)"
 
-          tar -xzf "release-dist/caracal-cli-linux-amd64-${tag}.tar.gz" -C "$work"
+          tar -xzf "release-dist/caracal-shell-linux-amd64-${tag}.tar.gz" -C "$work"
           "${work}/caracal" --help
+          echo "Shell smoke test passed"
+
+          tar -xzf "release-dist/caracal-cli-linux-amd64-${tag}.tar.gz" -C "$work"
+          "${work}/caracal-cli" --help
           echo "CLI smoke test passed"
 
           tar -xzf "release-dist/caracal-tui-linux-amd64-${tag}.tar.gz" -C "$work"
@@ -239,7 +244,7 @@ jobs:
         working-directory: release-dist
         run: |
           set -euo pipefail
-          sha256sum caracal-cli-*.tar.gz caracal-cli-*.zip caracal-tui-*.tar.gz caracal-tui-*.zip > SHA256SUMS
+          sha256sum caracal-shell-*.tar.gz caracal-shell-*.zip caracal-cli-*.tar.gz caracal-cli-*.zip caracal-tui-*.tar.gz caracal-tui-*.zip > SHA256SUMS
           echo "Generated SHA256SUMS:"
           cat SHA256SUMS
 
@@ -275,6 +280,7 @@ jobs:
         if: github.event_name == 'push'
         with:
           subject-path: |
+            release-dist/caracal-shell-*
             release-dist/caracal-cli-*
             release-dist/caracal-tui-*
 
@@ -376,6 +382,11 @@ jobs:
           ls -la dist/
           tag="${GITHUB_REF_NAME}"
           for asset in \
+            "dist/caracal-shell-linux-amd64-${tag}.tar.gz" \
+            "dist/caracal-shell-linux-arm64-${tag}.tar.gz" \
+            "dist/caracal-shell-darwin-amd64-${tag}.tar.gz" \
+            "dist/caracal-shell-darwin-arm64-${tag}.tar.gz" \
+            "dist/caracal-shell-windows-amd64-${tag}.zip" \
             "dist/caracal-cli-linux-amd64-${tag}.tar.gz" \
             "dist/caracal-cli-linux-arm64-${tag}.tar.gz" \
             "dist/caracal-cli-darwin-amd64-${tag}.tar.gz" \
@@ -402,6 +413,7 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
+            dist/caracal-shell-*
             dist/caracal-cli-*
             dist/caracal-tui-*
             dist/SHA256SUMS
