@@ -2,13 +2,14 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# One-shot installer that downloads, verifies, and extracts the Caracal CLI archive from a GitHub Release. Pass --tui to also install the optional TUI.
+# One-shot installer that downloads, verifies, and extracts Caracal release archives. The thin `caracal` shell is always installed; --tui adds the TUI alongside the CLI, --tui-only installs shell+TUI without the CLI.
 
 set -eu
 
 REPO="Garudex-Labs/caracal"
 INSTALL_DIR="${CARACAL_INSTALL_DIR:-${HOME}/.local/bin}"
 VERSION="${CARACAL_VERSION:-latest}"
+WITH_CLI=1
 WITH_TUI=0
 
 err() {
@@ -18,12 +19,13 @@ err() {
 
 usage() {
     cat <<EOF
-caracal-install: download the Caracal CLI from GitHub Releases.
+caracal-install: download the Caracal binaries from GitHub Releases.
 
 Usage:
-  install.sh [--tui] [--version vYYYY.MM.DD[.N]] [--install-dir PATH]
+  install.sh [--tui | --tui-only] [--version vYYYY.MM.DD[.N]] [--install-dir PATH]
 
-Default installs the CLI only. Pass --tui to also install the optional TUI.
+The thin 'caracal' shell is always installed. Default also installs the CLI binary
+(caracal-cli). Pass --tui to add the optional TUI, or --tui-only for shell+TUI.
 
 Environment overrides:
   CARACAL_VERSION       same as --version
@@ -34,6 +36,7 @@ EOF
 while [ $# -gt 0 ]; do
     case "$1" in
         --tui) WITH_TUI=1 ;;
+        --tui-only) WITH_TUI=1; WITH_CLI=0 ;;
         --version) [ $# -ge 2 ] || err "--version requires a value"; VERSION="$2"; shift ;;
         --install-dir) [ $# -ge 2 ] || err "--install-dir requires a value"; INSTALL_DIR="$2"; shift ;;
         --help|-h) usage; exit 0 ;;
@@ -131,7 +134,8 @@ installArchive() {
 }
 
 mkdir -p "${INSTALL_DIR}"
-installArchive cli caracal
+installArchive shell caracal
+[ "${WITH_CLI}" = "1" ] && installArchive cli caracal-cli
 [ "${WITH_TUI}" = "1" ] && installArchive tui caracal-tui
 
 case ":${PATH}:" in
@@ -139,34 +143,51 @@ case ":${PATH}:" in
     *) printf 'caracal-install: add %s to PATH (e.g. export PATH="%s:$PATH")\n' "${INSTALL_DIR}" "${INSTALL_DIR}" ;;
 esac
 
-shadow=""
-IFS=":"
-for dir in ${PATH}; do
-    [ -z "${dir}" ] && continue
-    [ "${dir}" = "${INSTALL_DIR}" ] && break
-    if [ -e "${dir}/caracal" ] || [ -L "${dir}/caracal" ]; then
-        shadow="${dir}/caracal"
-        break
+checkShadow() {
+    binName="$1"
+    shadow=""
+    IFS=":"
+    for dir in ${PATH}; do
+        [ -z "${dir}" ] && continue
+        [ "${dir}" = "${INSTALL_DIR}" ] && break
+        if [ -e "${dir}/${binName}" ] || [ -L "${dir}/${binName}" ]; then
+            shadow="${dir}/${binName}"
+            break
+        fi
+    done
+    unset IFS
+    if [ -n "${shadow}" ]; then
+        printf 'caracal-install: warning: %s appears earlier in PATH than %s.\n' "${shadow}" "${INSTALL_DIR}" >&2
+        printf 'caracal-install: remove it to use the installed binary: rm "%s"\n' "${shadow}" >&2
     fi
-done
-unset IFS
-if [ -n "${shadow}" ]; then
-    printf 'caracal-install: warning: %s appears earlier in PATH than %s.\n' "${shadow}" "${INSTALL_DIR}" >&2
-    printf 'caracal-install: remove it to use the installed binary: rm "%s"\n' "${shadow}" >&2
-fi
+}
+
+checkShadow caracal
+[ "${WITH_CLI}" = "1" ] && checkShadow caracal-cli
+[ "${WITH_TUI}" = "1" ] && checkShadow caracal-tui
 
 printf 'caracal-install: done. Next steps:\n'
-printf '  installed caracal %s (mode: runtime)\n' "${tag}"
+printf '  installed release %s (mode: runtime)\n' "${tag}"
 printf '  hash -r            # refresh your shell command cache\n'
 printf '  caracal up         # start stack (Docker required)\n'
-printf '  caracal zone create --name <n>   # provision a zone\n'
-printf '  caracal app create --name <n>    # provision an application\n'
-printf '  caracal run -- env # smoke test ambient tokens\n'
+printf '  caracal status     # probe service health\n'
+printf '  caracal down       # stop stack\n'
+printf '  caracal purge      # centralized cleanup\n'
+if [ "${WITH_CLI}" = "1" ]; then
+    printf '  caracal cli zone create --name <n>   # provision a zone\n'
+    printf '  caracal cli app create --name <n>    # provision an application\n'
+    printf '  caracal cli run -- env               # smoke test ambient tokens\n'
+fi
 if [ "${WITH_TUI}" = "1" ]; then
-    printf '  caracal-tui        # launch the interactive TUI\n'
-else
-    printf 'caracal-install: TUI not installed (re-run with --tui to add it)\n'
+    printf '  caracal tui        # launch the interactive TUI\n'
+fi
+if [ "${WITH_CLI}" = "0" ] && [ "${WITH_TUI}" = "1" ]; then
+    printf 'caracal-install: CLI not installed (re-run without --tui-only to add it)\n'
+fi
+if [ "${WITH_CLI}" = "1" ] && [ "${WITH_TUI}" = "0" ]; then
+    printf 'caracal-install: TUI not installed (re-run with --tui to add it, or --tui-only for TUI alone)\n'
 fi
 printf 'caracal-install: to uninstall, remove %s/caracal' "${INSTALL_DIR}"
-[ "${WITH_TUI}" = "1" ] && printf ' and %s/caracal-tui' "${INSTALL_DIR}"
+[ "${WITH_CLI}" = "1" ] && printf ' %s/caracal-cli' "${INSTALL_DIR}"
+[ "${WITH_TUI}" = "1" ] && printf ' %s/caracal-tui' "${INSTALL_DIR}"
 printf '\n'
