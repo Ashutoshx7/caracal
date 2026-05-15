@@ -2,6 +2,12 @@
 // Caracal, a product of Garudex Labs
 //
 // Non-blocking audit event buffer with on-disk fallback for unflushed events.
+//
+// This is the STS-specific buffer, kept here because it is tightly integrated with
+// STSMetrics atomics and the hot token-exchange path. New services that need to
+// emit audit events MUST use packages/core/go/audit.Client, which exposes the same
+// semantics (HMAC-signed XAdd to caracal.audit.events with disk-spill fallback)
+// behind a stable public API.
 
 package internal
 
