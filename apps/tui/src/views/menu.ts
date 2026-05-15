@@ -314,6 +314,21 @@ export class MenuView implements View {
 
   currentZoneId(): string | undefined { return this.zoneId }
 
+  async init(app: App): Promise<void> {
+    if (!this.zoneId) return
+    try {
+      await this.client.zones.get(this.zoneId)
+    } catch (err) {
+      const status = (err as { status?: number }).status
+      if (status === 404) {
+        const stale = this.zoneId
+        this.zoneId = undefined
+        app.setStatus(`configured zone ${stale} no longer exists — press z to pick another or open Zones to create one`, 'error')
+        app.invalidate()
+      }
+    }
+  }
+
   setZone(id: string, slug: string | undefined, app: App): void {
     this.zoneId = id
     app.setStatus(`zone set to ${slug ?? id}`)
