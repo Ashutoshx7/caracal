@@ -44,3 +44,18 @@ if (res.status !== 0) {
   process.stderr.write(`buildLocalImages: docker compose build exited ${res.status}\n`)
   process.exit(res.status ?? 1)
 }
+
+// Re-tag with the runtime compose's expected `:v<version>` pattern so the
+// release binary can resolve `localhost/caracal-<svc>:v${CARACAL_VERSION}`
+// where CARACAL_VERSION = `dev-<sha>` (from stampRelease).
+const runtimeTag = `vdev-${sha}`
+for (const svc of services) {
+  const src = `localhost/caracal-${svc}:dev-${sha}`
+  const dst = `localhost/caracal-${svc}:${runtimeTag}`
+  const tag = spawnSync('docker', ['tag', src, dst], { stdio: 'inherit' })
+  if (tag.status !== 0) {
+    process.stderr.write(`buildLocalImages: docker tag ${src} ${dst} exited ${tag.status}\n`)
+    process.exit(tag.status ?? 1)
+  }
+}
+process.stdout.write(`buildLocalImages: also tagged localhost/caracal-<svc>:${runtimeTag}\n`)
