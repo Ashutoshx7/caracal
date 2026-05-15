@@ -97,19 +97,21 @@ func (s *revocationStore) prune() {
 // startRevocationConsumer subscribes to the revocation stream and populates store.
 // It loops until ctx is cancelled. A nil redis client makes this a no-op so
 // deployments without REDIS_URL still serve traffic (with revocation propagation
-// disabled — STS validation at exchange time remains the trust root).
-func startRevocationConsumer(ctx context.Context, redis revocationRedis, store *revocationStore, log zerolog.Logger) {
+// disabled — STS validation at exchange time remains the trust root). Returns
+// an error when the consumer group cannot be ensured so the gateway refuses to
+// start with revocations silently broken.
+func startRevocationConsumer(ctx context.Context, redis revocationRedis, store *revocationStore, log zerolog.Logger) error {
 	if redis == nil || store == nil {
 		log.Warn().Msg("revocation consumer disabled (no redis client)")
-		return
+		return nil
 	}
 	if err := redis.EnsureGroup(ctx, streamRevoke, groupRevoke); err != nil {
-		log.Error().Err(err).Msg("revocation consumer ensure group failed")
-		return
+		return fmt.Errorf("revocation consumer ensure group: %w", err)
 	}
 	consumer := fmt.Sprintf("gateway-%s-%d", hostname(), os.Getpid())
 	go runRevocationLoop(ctx, redis, store, consumer, log)
 	go runRevocationGC(ctx, store)
+	return nil
 }
 
 func runRevocationLoop(ctx context.Context, redis revocationRedis, store *revocationStore, consumer string, log zerolog.Logger) {

@@ -6,6 +6,7 @@
 import Fastify from 'fastify'
 import type { Pool } from 'pg'
 import type { Redis as RedisClient } from 'ioredis'
+import { ZodError } from 'zod'
 import { agentsRoutes } from './routes/agents.js'
 import { agentServicesRoutes } from './routes/agent-services.js'
 import { delegationsRoutes } from './routes/delegations.js'
@@ -33,6 +34,19 @@ export async function buildApp() {
   })
   app.decorate('db', db)
   app.decorate('redis', redis)
+  app.setErrorHandler((err, req, reply) => {
+    if (err instanceof ZodError) {
+      reply
+        .code(400)
+        .send({ error: 'invalid_body', issues: err.issues.map((i) => ({ path: i.path, message: i.message })) })
+      return
+    }
+    req.log.error({ err }, 'unhandled route error')
+    const status = (err as { statusCode?: number }).statusCode
+    reply
+      .code(typeof status === 'number' && status >= 400 && status < 600 ? status : 500)
+      .send({ error: 'internal_error' })
+  })
   app.addHook('onRequest', async (req, reply) => {
     if (cfg.coordinatorRateLimitPerMin <= 0) return
     const minute = Math.floor(Date.now() / 60_000)
@@ -46,7 +60,7 @@ export async function buildApp() {
   app.addHook('preHandler', verifyBearer)
   registerAdminAuditHook(app, db)
   app.get('/health', async () => ({ ok: true }))
-  app.get('/ready', async (_req, reply) => {
+  app.get('/ready', async (req, reply) => {
     try {
       await app.db.query('SELECT 1')
       const pong = await app.redis.ping()
@@ -54,7 +68,8 @@ export async function buildApp() {
       return { ok: true }
     } catch (err) {
       reply.code(503)
-      return { ok: false, error: (err as Error).message }
+      req.log.warn({ err }, 'ready_dependency_check_failed')
+      return { ok: false, error: 'dependency_check_failed' }
     }
   })
   app.get('/metrics', async () => {

@@ -127,7 +127,8 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
       return { ok: true }
     } catch (err) {
       reply.code(503)
-      return { ok: false, error: (err as Error).message }
+      req.log.warn({ err }, 'ready_dependency_check_failed')
+      return { ok: false, error: 'dependency_check_failed' }
     }
   })
 

@@ -8,6 +8,7 @@ package internal
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"io"
 	"testing"
 	"time"
@@ -163,4 +164,31 @@ func (f *fakeRevocationRedis) IncrWithExpiry(_ context.Context, _ string, _ time
 func (f *fakeRevocationRedis) Del(_ context.Context, key string) error {
 	f.deleted = append(f.deleted, key)
 	return nil
+}
+
+type ensureGroupFailRedis struct {
+	fakeRevocationRedis
+	err error
+}
+
+func (e *ensureGroupFailRedis) EnsureGroup(_ context.Context, _, _ string) error {
+	return e.err
+}
+
+func TestStartRevocationConsumerNilRedisIsNoOp(t *testing.T) {
+	if err := startRevocationConsumer(context.Background(), nil, newRevocationStore(zerolog.Nop()), zerolog.Nop()); err != nil {
+		t.Fatalf("expected nil error for nil redis, got %v", err)
+	}
+}
+
+func TestStartRevocationConsumerEnsureGroupFailureSurfaces(t *testing.T) {
+	want := errors.New("ensure boom")
+	r := &ensureGroupFailRedis{err: want}
+	err := startRevocationConsumer(context.Background(), r, newRevocationStore(zerolog.Nop()), zerolog.Nop())
+	if err == nil {
+		t.Fatal("expected error from EnsureGroup failure, got nil")
+	}
+	if !errors.Is(err, want) {
+		t.Fatalf("expected wrapped %v, got %v", want, err)
+	}
 }
