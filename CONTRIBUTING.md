@@ -35,7 +35,7 @@ The base CalVer is centralized in `packages/engine/runtime/release.json` (consum
 ```bash
 git clone https://github.com/Garudex-Labs/caracal.git && cd caracal
 pnpm install
-pnpm caracal up                                  # auto-bootstraps secrets + .env, builds + starts the full stack
+pnpm caracal up                                  # Starts the full stack
 pnpm caracal init                                # provision local zone, write caracal.toml
 ```
 
@@ -80,15 +80,13 @@ pnpm caracal-tui
 ```bash
 pnpm test                                    # full suite (ts + go + py)
 pnpm run test:typescript | test:go | test:python
-pnpm --dir apps/<name> test                  # single TS package
-go test ./services/<name>/...                # single Go service
 ```
 
 `scripts/testCi.sh` mirrors `.github/workflows/test.yml` locally:
 
 ```bash
 scripts/testCi.sh                # full suite (ts + go + py + docs)
-scripts/testCi.sh --ts | --go | --py | --smoke
+scripts/testCi.sh --smoke | --go | --py | --ts
 ```
 
 ## Submitting Changes

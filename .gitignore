@@ -76,6 +76,7 @@ tmp/
 temp/
 
 caracal.toml
-# Generated CLI runtime bundle
+# Generated runtime bundles
 packages/engine/src/embedded.ts
 apps/cli/src/runtime/version.gen.ts
+apps/tui/src/version.gen.ts
