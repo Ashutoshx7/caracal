@@ -3,19 +3,7 @@
 //
 // `caracal agent …` and `caracal delegation …` coordinator subcommands.
 
-import {
-  agentList,
-  agentGet,
-  agentTree,
-  agentSuspend,
-  agentResume,
-  agentTerminate,
-  delegationInbound,
-  delegationOutbound,
-  delegationTraverse,
-  delegationRevoke,
-  ensureCoordinatorToken,
-} from '@caracalai/cli-core'
+import { ensureCoordinatorToken } from '@caracalai/engine'
 import type { CliConfig } from '../config.ts'
 import { printError, printSuccess } from '../style.ts'
 import {
@@ -56,7 +44,7 @@ export async function agentCommand(argv: string[], cfg?: CliConfig): Promise<voi
     switch (verb) {
       case 'list': {
         const zoneId = requireZone(ctx, flags)
-        const rows = await agentList({ client, zoneId })
+        const rows = await client.agents.list(zoneId)
         if (json) return printJSON(rows)
         return printTable(rows, ['id', 'application_id', 'parent_id', 'status', 'depth', 'spawned_at', 'terminated_at'])
       }
@@ -64,14 +52,14 @@ export async function agentCommand(argv: string[], cfg?: CliConfig): Promise<voi
         const zoneId = requireZone(ctx, flags)
         const id = positional[0]
         if (!id) return usage('agent get <id> [--zone …]')
-        return printJSON(await agentGet({ client, zoneId, id }))
+        return printJSON(await client.agents.get(zoneId, id))
       }
       case 'children':
       case 'tree': {
         const zoneId = requireZone(ctx, flags)
         const id = positional[0]
         if (!id) return usage('agent tree <id> [--zone …]')
-        const rows = await agentTree({ client, zoneId, id })
+        const rows = await client.agents.children(zoneId, id)
         if (json) return printJSON(rows)
         return printTable(rows, ['id', 'application_id', 'parent_id', 'status', 'depth', 'spawned_at'])
       }
@@ -79,19 +67,19 @@ export async function agentCommand(argv: string[], cfg?: CliConfig): Promise<voi
         const zoneId = requireZone(ctx, flags)
         const id = positional[0]
         if (!id) return usage('agent suspend <id> [--zone …]')
-        return printJSON(await agentSuspend({ client, zoneId, id }))
+        return printJSON(await client.agents.suspend(zoneId, id))
       }
       case 'resume': {
         const zoneId = requireZone(ctx, flags)
         const id = positional[0]
         if (!id) return usage('agent resume <id> [--zone …]')
-        return printJSON(await agentResume({ client, zoneId, id }))
+        return printJSON(await client.agents.resume(zoneId, id))
       }
       case 'terminate': {
         const zoneId = requireZone(ctx, flags)
         const id = positional[0]
         if (!id) return usage('agent terminate <id> [--zone …]')
-        await agentTerminate({ client, zoneId, id })
+        await client.agents.terminate(zoneId, id)
         printSuccess(`terminated ${id}`)
         return
       }
@@ -121,7 +109,7 @@ export async function delegationCommand(argv: string[], cfg?: CliConfig): Promis
         const zoneId = requireZone(ctx, flags)
         const sessionId = positional[0]
         if (!sessionId) return usage('delegation inbound <session-id> [--zone …]')
-        const rows = await delegationInbound({ client, zoneId, sessionId })
+        const rows = await client.delegations.inbound(zoneId, sessionId)
         if (json) return printJSON(rows)
         return printTable(rows, ['id', 'source_session_id', 'target_session_id', 'resource_id', 'status', 'expires_at'])
       }
@@ -129,7 +117,7 @@ export async function delegationCommand(argv: string[], cfg?: CliConfig): Promis
         const zoneId = requireZone(ctx, flags)
         const sessionId = positional[0]
         if (!sessionId) return usage('delegation outbound <session-id> [--zone …]')
-        const rows = await delegationOutbound({ client, zoneId, sessionId })
+        const rows = await client.delegations.outbound(zoneId, sessionId)
         if (json) return printJSON(rows)
         return printTable(rows, ['id', 'source_session_id', 'target_session_id', 'resource_id', 'status', 'expires_at'])
       }
@@ -137,7 +125,7 @@ export async function delegationCommand(argv: string[], cfg?: CliConfig): Promis
         const zoneId = requireZone(ctx, flags)
         const id = positional[0]
         if (!id) return usage('delegation traverse <edge-id> [--zone …]')
-        const rows = await delegationTraverse({ client, zoneId, id })
+        const rows = await client.delegations.traverse(zoneId, id)
         if (json) return printJSON(rows)
         return printTable(rows, ['depth', 'id', 'source_session_id', 'target_session_id'])
       }
@@ -145,7 +133,7 @@ export async function delegationCommand(argv: string[], cfg?: CliConfig): Promis
         const zoneId = requireZone(ctx, flags)
         const id = positional[0]
         if (!id) return usage('delegation revoke <edge-id> [--zone …]')
-        return printJSON(await delegationRevoke({ client, zoneId, id }))
+        return printJSON(await client.delegations.revoke(zoneId, id))
       }
       default:
         return unknownVerb('delegation', verb, delegationHelp)

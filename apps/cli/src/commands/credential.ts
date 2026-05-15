@@ -3,7 +3,7 @@
 //
 // `caracal credential read <resource>`: prints a one-shot 15-min token to stdout.
 
-import { credentialRead } from '@caracalai/cli-core'
+import { credentialRead } from '@caracalai/engine'
 import type { CliConfig } from '../config.ts'
 import { printError } from '../style.ts'
 

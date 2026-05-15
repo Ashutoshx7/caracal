@@ -3,7 +3,6 @@
 //
 // `caracal audit …` and `caracal explain <request_id>` debuggability commands.
 
-import { auditTail, auditExplain } from '@caracalai/cli-core'
 import type { CliConfig } from '../config.ts'
 import { printError } from '../style.ts'
 import {
@@ -31,17 +30,13 @@ export async function auditCommand(argv: string[], cfg?: CliConfig): Promise<voi
     switch (verb) {
       case 'tail': {
         const zoneId = requireZone(ctx, flags)
-        const rows = await auditTail({
-          client,
-          zoneId,
-          query: {
-            since: flagString(flags, 'since'),
-            until: flagString(flags, 'until'),
-            request_id: flagString(flags, 'request-id'),
-            decision: flagString(flags, 'decision') as 'allow' | 'deny' | 'partial' | undefined,
-            event_type: flagString(flags, 'event-type'),
-            limit: flagInt(flags, 'limit'),
-          },
+        const rows = await client.audit.list(zoneId, {
+          since: flagString(flags, 'since'),
+          until: flagString(flags, 'until'),
+          request_id: flagString(flags, 'request-id'),
+          decision: flagString(flags, 'decision') as 'allow' | 'deny' | 'partial' | undefined,
+          event_type: flagString(flags, 'event-type'),
+          limit: flagInt(flags, 'limit'),
         })
         if (json) return printJSON(rows)
         return printTable(rows, ['occurred_at', 'event_type', 'decision', 'evaluation_status', 'request_id', 'id'])
@@ -95,7 +90,7 @@ export async function explainCommand(argv: string[], cfg?: CliConfig): Promise<v
   const json = flagBool(flags, 'json')
 
   try {
-    const rows = await auditExplain({ client, zoneId, requestId })
+    const rows = await client.audit.byRequest(zoneId, requestId)
     if (json) return printJSON(rows)
     for (const row of rows) {
       process.stdout.write(`event       ${row.event_type}  decision=${row.decision ?? '-'}  status=${row.evaluation_status ?? '-'}\n`)
