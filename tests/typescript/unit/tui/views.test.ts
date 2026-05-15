@@ -119,6 +119,21 @@ describe('ListView', () => {
     await view.onKey('h', { app, size: { rows: 10, cols: 40 }, status: '' })
     expect(app.pop).toHaveBeenCalled()
   })
+
+  it('keeps cursor at 0 with empty rows on every navigation key', async () => {
+    const app = fakeApp()
+    const view = new ListView<{ id: string }>({
+      title: 'x',
+      columns: [{ header: 'id', value: (r) => r.id }],
+      load: async () => [],
+    })
+    await view.init(app)
+    const ctx = { app, size: { rows: 10, cols: 40 }, status: '' }
+    for (const k of ['j', 'k', 'pgdn', 'pgup', 'g', 'G'] as const) {
+      await view.onKey(k, ctx)
+      expect((view as unknown as { cursor: number }).cursor).toBe(0)
+    }
+  })
 })
 
 describe('DetailView', () => {
@@ -141,5 +156,21 @@ describe('DetailView', () => {
     await view.onKey('j', { app, size: { rows: 5, cols: 80 }, status: '' })
     const lines = view.render({ app, size: { rows: 5, cols: 80 }, status: '' })
     expect(lines[0]).toContain('"k1"')
+  })
+
+  it('caps scroll offset so the last line stays visible (no off-by-one past end)', async () => {
+    const app = fakeApp()
+    const data = Array.from({ length: 100 }, (_, i) => `line-${i}`)
+    const view = new DetailView({ title: 'x', load: async () => data })
+    await view.init(app)
+    const ctx = { app, size: { rows: 25, cols: 80 }, status: '' }
+    for (let i = 0; i < 500; i++) await view.onKey('j', ctx)
+    const offset = (view as unknown as { offset: number; body: string[] }).offset
+    const body = (view as unknown as { body: string[] }).body
+    // Maximum valid offset must show a full viewport ending on the last line.
+    expect(offset).toBe(Math.max(0, body.length - ctx.size.rows))
+    const rendered = view.render(ctx)
+    expect(rendered.length).toBe(ctx.size.rows)
+    expect(rendered[rendered.length - 1]).toContain(body[body.length - 1]!)
   })
 })

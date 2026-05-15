@@ -88,3 +88,40 @@ describe('POST /v1/zones/:zoneId/grants', () => {
     expect(JSON.parse(res.body)).toMatchObject({ id: 'grant-1', scopes: ['read'] })
   })
 })
+
+describe('DELETE /v1/zones/:zoneId/grants/:id bounded session revocation', () => {
+  it('pages session revocation in batches of 1000 and stops at the short batch', async () => {
+    const { app, db } = buildApp()
+
+    const fullBatch = Array.from({ length: 1000 }, (_, i) => ({ id: `s${i}` }))
+    const tailBatch = [{ id: 's-tail' }]
+
+    const client = {
+      query: vi.fn(),
+      release: vi.fn(),
+    }
+    client.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ user_id: 'user-1' }] })
+      .mockResolvedValueOnce({ rows: fullBatch })
+
+    for (let i = 0; i < fullBatch.length; i += 1) {
+      client.query.mockResolvedValueOnce({ rows: [] })
+    }
+
+    client.query.mockResolvedValueOnce({ rows: tailBatch })
+    client.query.mockResolvedValueOnce({ rows: [] })
+    client.query.mockResolvedValueOnce({ rows: [] })
+
+    db.connect.mockResolvedValue(client)
+
+    await app.ready()
+    const res = await app.inject({ method: 'DELETE', url: '/v1/zones/z1/grants/g1' })
+
+    expect(res.statusCode).toBe(204)
+    const updates = client.query.mock.calls.filter((c: unknown[]) => /UPDATE sessions SET status = 'revoked'/.test(c[0] as string))
+    expect(updates.length).toBe(2)
+    const limitArg = (updates[0][1] as unknown[])[2]
+    expect(limitArg).toBe(1000)
+  })
+})
