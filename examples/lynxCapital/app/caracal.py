@@ -30,7 +30,15 @@ def get() -> Caracal | None:
 
 
 def headers() -> dict[str, str]:
-    return _caracal.headers() if _caracal is not None else {}
+    """Project the SDK's current Caracal context into outbound headers.
+
+    Background transports (gRPC clients, SSE consumers, MCP sockets) reach
+    here from tasks that do not inherit the orchestrator's contextvar; in
+    that case there is no bound child context and the application's service
+    identity is the correct one to send. ``allow_root=True`` makes that
+    intent explicit instead of relying on a silent fallback.
+    """
+    return _caracal.headers(allow_root=True) if _caracal is not None else {}
 
 
 def _scopes_for(role: str, region: str | None, scope: str | None) -> list[str]:

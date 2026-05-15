@@ -13,7 +13,7 @@ COPY _mock ./_mock
 
 RUN pip install --no-cache-dir \
         fastapi "uvicorn[standard]" sse-starlette pydantic pyyaml \
-        httpx grpcio python-dotenv \
+        httpx grpcio protobuf python-dotenv \
     && pip install --no-cache-dir -e ./_mock/sdk/lynx_sdk_stripe_treasury \
     && pip install --no-cache-dir -e ./_mock/sdk/lynx_sdk_tax
 
