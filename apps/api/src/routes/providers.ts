@@ -10,6 +10,7 @@ import { loadZoneKek, seal } from '@caracalai/core'
 import { buildPatchUpdate, patchColumn, patchExpression } from './patch.js'
 import { ZoneIdParams, ZoneParams, parseParams } from './params.js'
 import { zoneExists } from '../zone-guard.js'
+import { appendKeysetCondition, parseListPagination, setNextLink } from './list-pagination.js'
 
 const ProviderBody = z.object({
   name: z.string().min(1).optional(),
@@ -81,11 +82,19 @@ export const providersRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/zones/:zoneId/providers', async (req, reply) => {
     const params = parseParams(ZoneParams, req, reply)
     if (!params) return
+    const page = parseListPagination(req, reply)
+    if (!page) return
+    const keyset = appendKeysetCondition(
+      { conds: ['zone_id = $1', 'archived_at IS NULL'], values: [params.zoneId] },
+      page,
+    )
     const { rows } = await fastify.db.query<ProviderRow>(
       `SELECT ${RETURNING}
-       FROM providers WHERE zone_id = $1 AND archived_at IS NULL ORDER BY created_at DESC`,
-      [params.zoneId],
+       FROM providers WHERE ${keyset.conds.join(' AND ')}
+       ORDER BY created_at DESC, id DESC LIMIT ${keyset.limitPlaceholder}`,
+      keyset.values,
     )
+    setNextLink(req, reply, rows, page.limit)
     return rows.map(projectProvider)
   })
 

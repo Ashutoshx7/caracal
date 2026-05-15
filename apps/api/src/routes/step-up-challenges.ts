@@ -5,17 +5,26 @@
 
 import type { FastifyPluginAsync } from 'fastify'
 import { ZoneIdParams, ZoneParams, parseParams } from './params.js'
+import { appendKeysetCondition, parseListPagination, setNextLink } from './list-pagination.js'
 
 export const stepUpChallengesRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/zones/:zoneId/step-up-challenges', async (req, reply) => {
     const params = parseParams(ZoneParams, req, reply)
     if (!params) return
+    const page = parseListPagination(req, reply)
+    if (!page) return
+    const keyset = appendKeysetCondition(
+      { conds: ['zone_id = $1'], values: [params.zoneId] },
+      page,
+    )
     const { rows } = await fastify.db.query(
       `SELECT id, zone_id, session_id, challenge_type, metadata_json,
               created_at, expires_at, satisfied_at
-       FROM step_up_challenges WHERE zone_id = $1 ORDER BY created_at DESC`,
-      [params.zoneId],
+       FROM step_up_challenges WHERE ${keyset.conds.join(' AND ')}
+       ORDER BY created_at DESC, id DESC LIMIT ${keyset.limitPlaceholder}`,
+      keyset.values,
     )
+    setNextLink(req, reply, rows, page.limit)
     return rows
   })
 

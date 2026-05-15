@@ -9,6 +9,7 @@ import { v7 as uuidv7 } from 'uuid'
 import { buildPatchUpdate, patchColumn } from './patch.js'
 import { ZoneIdParams, ZoneParams, parseParams } from './params.js'
 import { zoneExists } from '../zone-guard.js'
+import { appendKeysetCondition, parseListPagination, setNextLink } from './list-pagination.js'
 
 const HttpURL = z.string().url().refine((value) => {
   const protocol = new URL(value).protocol
@@ -36,11 +37,19 @@ export const resourcesRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/zones/:zoneId/resources', async (req, reply) => {
     const params = parseParams(ZoneParams, req, reply)
     if (!params) return
+    const page = parseListPagination(req, reply)
+    if (!page) return
+    const keyset = appendKeysetCondition(
+      { conds: ['zone_id = $1', 'archived_at IS NULL'], values: [params.zoneId] },
+      page,
+    )
     const { rows } = await fastify.db.query(
       `SELECT id, zone_id, name, identifier, upstream_url, prefix, scopes, credential_provider_id, created_at, updated_at
-       FROM resources WHERE zone_id = $1 AND archived_at IS NULL ORDER BY created_at DESC`,
-      [params.zoneId],
+       FROM resources WHERE ${keyset.conds.join(' AND ')}
+       ORDER BY created_at DESC, id DESC LIMIT ${keyset.limitPlaceholder}`,
+      keyset.values,
     )
+    setNextLink(req, reply, rows, page.limit)
     return rows
   })
 

@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { v7 as uuidv7 } from 'uuid'
 import { buildPatchUpdate, patchColumn } from './patch.js'
 import { IdParams, parseParams } from './params.js'
+import { appendKeysetCondition, parseListPagination, setNextLink } from './list-pagination.js'
 
 const ZoneCreateBody = z.object({
   org_id: z.string().min(1).default('default'),
@@ -32,11 +33,17 @@ function slugify(name: string): string {
 }
 
 export const zonesRoutes: FastifyPluginAsync = async (fastify) => {
-  fastify.get('/zones', async () => {
+  fastify.get('/zones', async (req, reply) => {
+    const page = parseListPagination(req, reply)
+    if (!page) return
+    const keyset = appendKeysetCondition({ conds: ['archived_at IS NULL'], values: [] }, page)
     const { rows } = await fastify.db.query(
       `SELECT id, org_id, name, slug, dcr_enabled, pkce_required, login_flow, created_at, updated_at
-       FROM zones WHERE archived_at IS NULL ORDER BY created_at DESC`,
+       FROM zones WHERE ${keyset.conds.join(' AND ')}
+       ORDER BY created_at DESC, id DESC LIMIT ${keyset.limitPlaceholder}`,
+      keyset.values,
     )
+    setNextLink(req, reply, rows, page.limit)
     return rows
   })
 
