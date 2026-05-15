@@ -27,7 +27,7 @@ Every artifact is bound to one of two modes at build time.
 | Compose file          | `infra/docker/docker-compose.yml`                        | embedded in CLI, installed to `~/.caracal/compose.yml`      |
 | `INSECURE_*` env vars | honored                                                  | refused; services panic on startup                          |
 
-The base CalVer is centralized in `apps/cli/runtime/release.json` (consumed by `stampDev`). Release CI must pass `CARACAL_RELEASE_VERSION=v<calver>` explicitly; without it, `build:release` produces a developer-local binary that targets `localhost/caracal-<svc>:dev-<sha>` instead of pulling from GHCR.
+The base CalVer is centralized in `packages/engine/runtime/release.json` (consumed by `stampDev`). Release CI must pass `CARACAL_RELEASE_VERSION=v<calver>` explicitly; without it, `build:release` produces a developer-local binary that targets `localhost/caracal-<svc>:dev-<sha>` instead of pulling from GHCR.
 
 
 ## Setup

@@ -5,7 +5,6 @@
 
 import type { AdminClient, Zone } from '@caracalai/admin'
 import {
-  auditExplain,
   composeRun,
   credentialRead,
   runExec,
@@ -118,7 +117,7 @@ function auditExplainEntry(ctx: Ctx): View {
       app.pop()
       app.push(new DetailView({
         title: `audit / ${v.request_id}`,
-        load: () => auditExplain({ client: ctx.client, zoneId: ctx.zoneId, requestId: v.request_id! }),
+        load: () => ctx.client.audit.byRequest(ctx.zoneId, v.request_id!),
       }))
     },
   })

@@ -2,7 +2,7 @@
 
 ## Scope
 - Covers the `@caracalai/engine` package: the shared engine used by the Caracal CLI and TUI.
-- Owns the non-HTTP execution layer: process control (`runExec`), stack lifecycle, runtime install + embedded assets, OAuth step-up exchange, token + env scrubbing, coordinator guards, and admin verb pass-throughs.
+- Owns the non-HTTP execution layer: process control (`runExec`), stack lifecycle, runtime install + embedded assets, OAuth step-up exchange, token + env scrubbing, and the coordinator-token guard.
 - HTTP admin verbs live in `@caracalai/admin`; CLI and TUI call them directly.
 
 ## Required
