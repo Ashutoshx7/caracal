@@ -314,10 +314,15 @@ function targetById(id: string): Target | undefined {
 function prompt(question: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stdout })
   return new Promise((resolveAnswer) => {
-    rl.question(question, (answer) => {
+    let settled = false
+    const finish = (value: string) => {
+      if (settled) return
+      settled = true
       rl.close()
-      resolveAnswer(answer.trim())
-    })
+      resolveAnswer(value)
+    }
+    rl.question(question, (answer) => finish(answer.trim()))
+    rl.once('close', () => finish(''))
   })
 }
 

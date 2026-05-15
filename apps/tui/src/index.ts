@@ -17,6 +17,17 @@ import { App } from './screen.ts'
 import { CARACAL_TUI_MODE, CARACAL_TUI_VERSION } from './version.gen.ts'
 import { MenuView } from './views/menu.ts'
 
+function installCrashHandlers(): void {
+  process.on('uncaughtException', (err) => {
+    process.stderr.write(`caracal-tui: ${err instanceof Error ? err.message : String(err)}\n`)
+    process.exit(1)
+  })
+  process.on('unhandledRejection', (reason) => {
+    process.stderr.write(`caracal-tui: ${reason instanceof Error ? reason.message : String(reason)}\n`)
+    process.exit(1)
+  })
+}
+
 function loadConfig(): CliConfig | undefined {
   const path = resolveCliConfigPath()
   if (!path) return undefined
@@ -42,6 +53,7 @@ function printHelp(): void {
 }
 
 function main(): void {
+  installCrashHandlers()
   const command = process.argv[2]
   if (command === '--help' || command === '-h' || command === 'help') {
     printHelp()

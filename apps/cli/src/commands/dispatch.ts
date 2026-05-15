@@ -22,6 +22,13 @@ const WORKSPACE_SHIMS: Record<string, string> = {
   'caracal-tui': 'apps/tui/bin/caracal-tui.mjs',
 }
 
+const KNOWN_SIBLINGS = Object.freeze(Object.keys(WORKSPACE_SHIMS))
+
+const INVOKED_AS: Record<string, string> = {
+  'caracal-cli': 'caracal cli',
+  'caracal-tui': 'caracal tui',
+}
+
 function workspaceShim(binName: string): { cmd: string; argvPrefix: string[] } | undefined {
   const root = process.env.CARACAL_REPO_ROOT
   if (!root) return undefined
@@ -59,6 +66,9 @@ interface MissingHints {
 }
 
 export function execSibling(binName: string, argv: string[], hints: MissingHints): never {
+  if (!KNOWN_SIBLINGS.includes(binName)) {
+    throw new Error(`execSibling: refusing to dispatch to non-whitelisted binary '${binName}'`)
+  }
   const shim = workspaceShim(binName)
   const cmd = shim?.cmd ?? locate(binName)
   if (!cmd) {
@@ -70,7 +80,7 @@ export function execSibling(binName: string, argv: string[], hints: MissingHints
   const fullArgs = shim ? [...shim.argvPrefix, ...argv] : argv
   const result = spawnSync(cmd, fullArgs, {
     stdio: 'inherit',
-    env: { ...process.env, CARACAL_INVOKED_AS: binName === 'caracal-cli' ? 'caracal cli' : 'caracal tui' },
+    env: { ...process.env, CARACAL_INVOKED_AS: INVOKED_AS[binName] },
   })
   if (result.error) {
     printError(`failed to launch ${binName}: ${result.error.message}`)
