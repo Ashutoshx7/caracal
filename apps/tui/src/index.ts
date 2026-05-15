@@ -14,7 +14,7 @@ import {
   type CliConfig,
 } from '@caracalai/core/cli'
 import { App } from './screen.ts'
-import { CARACAL_TUI_VERSION } from './version.gen.ts'
+import { CARACAL_TUI_MODE, CARACAL_TUI_VERSION } from './version.gen.ts'
 import { MenuView } from './views/menu.ts'
 
 function loadConfig(): CliConfig | undefined {
@@ -26,7 +26,8 @@ function loadConfig(): CliConfig | undefined {
 function main(): void {
   const command = process.argv[2]
   if (command === '--version' || command === '-v' || command === 'version') {
-    process.stdout.write(`caracal-tui ${CARACAL_TUI_VERSION}\n`)
+    const tag = CARACAL_TUI_MODE === 'dev' ? `dev (sha ${process.env.CARACAL_DEV_SHA ?? 'unknown'})` : 'runtime'
+    process.stdout.write(`caracal-tui ${CARACAL_TUI_VERSION} [${tag}]\n`)
     return
   }
   if (!process.stdin.isTTY) {
