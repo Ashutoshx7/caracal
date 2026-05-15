@@ -12,10 +12,10 @@
   },
   "scripts": {
     "caracal": "node apps/cli/bin/caracal-workspace.mjs",
-    "build:typescript": "pnpm --dir packages/core/ts build && pnpm --dir packages/oauth/ts build && pnpm --dir packages/admin/ts build && pnpm --dir packages/sdk/ts build && pnpm --dir packages/transport/a2a/ts build && pnpm --dir packages/identity/ts build && pnpm --dir packages/revocation/ts build && pnpm --dir packages/transport/mcp/ts build && pnpm --dir packages/connectors/express/ts build && pnpm --dir packages/connectors/fastmcp/ts build && pnpm --dir packages/connectors/postgres/ts build && pnpm --dir packages/connectors/redis/ts build && pnpm --dir apps/api build && pnpm --dir apps/coordinator build",
+    "build:typescript": "pnpm --dir packages/core/ts build && pnpm --dir packages/oauth/ts build && pnpm --dir packages/admin/ts build && pnpm --dir packages/engine build && pnpm --dir packages/sdk/ts build && pnpm --dir packages/transport/a2a/ts build && pnpm --dir packages/identity/ts build && pnpm --dir packages/revocation/ts build && pnpm --dir packages/transport/mcp/ts build && pnpm --dir packages/connectors/express/ts build && pnpm --dir packages/connectors/fastmcp/ts build && pnpm --dir packages/connectors/postgres/ts build && pnpm --dir packages/connectors/redis/ts build && pnpm --dir apps/api build && pnpm --dir apps/coordinator build",
     "lint": "pnpm -r --if-present lint",
     "typecheck": "pnpm -r --if-present typecheck",
-    "ci": "pnpm --dir apps/cli sync-embedded && pnpm run build:typescript && pnpm run lint && pnpm run typecheck && pnpm run test",
+    "ci": "pnpm --filter @caracalai/engine sync-embedded && pnpm run build:typescript && pnpm run lint && pnpm run typecheck && pnpm run test",
     "test": "pnpm run test:typescript && pnpm run test:go && pnpm run test:python",
     "test:go": "go test ./packages/core/go/... ./services/sts/... ./services/audit/... ./services/gateway/... ./apps/coordinator/relay/... ./packages/transport/mcp/go/... ./packages/connectors/nethttp/go/... ./packages/connectors/redis/go/... ./packages/identity/go/... ./packages/revocation/go/... ./packages/sdk/go/... ./tests/go/unit/revocation ./tests/go/unit/transport/mcp ./tests/go/unit/identity",
     "test:python": "PYTHONPATH=packages/core/python:packages/identity/python:packages/revocation/python:packages/transport/mcp/python:packages/connectors/fastmcp/python:packages/connectors/redis/python:packages/sdk/python:tests/shared/test-utils/python python -m unittest discover -s tests/python -p 'test_*.py'",
