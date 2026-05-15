@@ -124,9 +124,11 @@ export async function initCommand(argv: string[]): Promise<void> {
       printError(`bootstrap failed (${err.status}): ${err.code}`)
     } else {
       const desc = err instanceof Error ? err.message : String(err)
-      printError(desc.startsWith('zone already provisioned')
-        ? desc
-        : `cannot reach Caracal API at ${opts.apiUrl}: ${desc}`)
+      printError(
+        desc.startsWith('zone already provisioned') || desc.startsWith('`init` is only available')
+          ? desc
+          : `cannot reach Caracal API at ${opts.apiUrl}: ${desc}`,
+      )
     }
     process.exit(1)
   }

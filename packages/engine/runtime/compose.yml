@@ -15,7 +15,6 @@ services:
     secrets:
       - source: postgresPassword
         target: postgresPassword
-        mode: 0400
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD_FILE: /run/secrets/postgresPassword

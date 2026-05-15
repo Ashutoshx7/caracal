@@ -143,7 +143,17 @@ function renderToml(opts: {
 
 export async function stackInit(opts: StackInitOpts): Promise<StackInitOutcome> {
   const client = new AdminClient({ apiUrl: opts.apiUrl, adminToken: opts.adminToken })
-  const data = await client.bootstrap(opts.force ?? false)
+  let data: LocalBootstrapResult
+  try {
+    data = await client.bootstrap(opts.force ?? false)
+  } catch (err) {
+    if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 404) {
+      throw new Error(
+        '`init` is only available in dev mode. Runtime deployments must provision zones via the admin API or UI.',
+      )
+    }
+    throw err
+  }
 
   if (!data.app_client_secret) {
     if (existsSync(opts.configPath)) {
