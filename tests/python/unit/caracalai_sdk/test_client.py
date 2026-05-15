@@ -95,9 +95,16 @@ def _build_caracal() -> Caracal:
 
 
 class HeadersTests(unittest.TestCase):
-    def test_no_context_falls_back_to_subject_token(self) -> None:
+    def test_no_context_raises_without_allow_root(self) -> None:
         c = _build_caracal()
-        h = c.headers()
+        with self.assertRaises(RuntimeError) as cm:
+            c.headers()
+        self.assertIn("no CaracalContext", str(cm.exception))
+        self.assertIn("allow_root=True", str(cm.exception))
+
+    def test_no_context_emits_root_when_allow_root_true(self) -> None:
+        c = _build_caracal()
+        h = c.headers(allow_root=True)
         self.assertEqual(h[HEADER_AUTHORIZATION], "Bearer tok")
         self.assertIsNotNone(parse_traceparent(h[HEADER_TRACEPARENT]))
         self.assertEqual(parse_baggage(h.get(HEADER_BAGGAGE)).get(BAGGAGE_HOP), "0")
@@ -127,7 +134,7 @@ class GatewayRoutingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(request.headers[HEADER_AUTHORIZATION], "Bearer tok")
             return httpx.Response(204)
 
-        async with c.transport(transport=httpx.MockTransport(handler)) as client:
+        async with c.transport(transport=httpx.MockTransport(handler), allow_root=True) as client:
             response = await client.get("https://api.example.com/v1/events?limit=10")
 
         self.assertEqual(response.status_code, 204)
@@ -154,7 +161,7 @@ class GatewayRoutingTests(unittest.IsolatedAsyncioTestCase):
             seen.append(request.headers["X-Caracal-Resource"])
             return httpx.Response(204)
 
-        async with c.transport(transport=httpx.MockTransport(handler)) as client:
+        async with c.transport(transport=httpx.MockTransport(handler), allow_root=True) as client:
             await client.get("https://api.example.com/v1/accounts/treasury/balance")
             await client.get("https://api.example.com/v1/accounts/payable")
             await client.get("https://api.example.com/v1/markets/spot")
@@ -275,6 +282,178 @@ class AsgiMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         await mw(scope, receive, send)
         self.assertEqual(captured, {"sub": "inbound", "agent": "sess9", "hop": "3"})
         self.assertIsNone(current())
+
+
+class TransportRootGuardTests(unittest.IsolatedAsyncioTestCase):
+    """CP-1: gateway-routed requests must refuse to leak the bootstrap subject."""
+
+    async def test_transport_refuses_root_fallback_by_default(self) -> None:
+        c = Caracal(
+            CaracalConfig(
+                coordinator=CoordinatorClient(base_url="http://coord"),
+                zone_id="z",
+                application_id="app",
+                subject_token="tok",
+                gateway_url="https://gateway.example.com/proxy",
+                resources=[ResourceBinding("calendar", "https://api.example.com/v1")],
+            )
+        )
+
+        async def handler(request):
+            return httpx.Response(204)
+
+        async with c.transport(transport=httpx.MockTransport(handler)) as client:
+            with self.assertRaises(RuntimeError):
+                await client.get("https://api.example.com/v1/events")
+
+    async def test_transport_root_allowed_when_opted_in(self) -> None:
+        c = Caracal(
+            CaracalConfig(
+                coordinator=CoordinatorClient(base_url="http://coord"),
+                zone_id="z",
+                application_id="app",
+                subject_token="tok",
+                gateway_url="https://gateway.example.com/proxy",
+                resources=[ResourceBinding("calendar", "https://api.example.com/v1")],
+            )
+        )
+        seen = {}
+
+        async def handler(request):
+            seen["auth"] = request.headers[HEADER_AUTHORIZATION]
+            return httpx.Response(204)
+
+        async with c.transport(transport=httpx.MockTransport(handler), allow_root=True) as client:
+            await client.get("https://api.example.com/v1/events")
+        self.assertEqual(seen["auth"], "Bearer tok")
+
+
+class FromConfigBindingsTests(unittest.TestCase):
+    """CP-2: ``from_config`` must honour ``CARACAL_RESOURCES_FILE`` like ``from_env``."""
+
+    def _write_toml(self, body: str) -> str:
+        import tempfile
+
+        fh = tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False)
+        fh.write(body)
+        fh.close()
+        return fh.name
+
+    def test_from_config_loads_resources_file_env_var(self) -> None:
+        import os
+        import tempfile
+
+        cfg_path = self._write_toml(
+            'zone_id = "z"\n'
+            'application_id = "a"\n'
+            'app_client_secret = "s"\n'
+            'sts_url = "https://sts.example.com"\n'
+            'coordinator_url = "https://coord.example.com"\n'
+        )
+        bindings_file = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        bindings_file.write(
+            '[{"resource_id":"calendar","upstream_prefix":"https://api.example.com/v1"}]'
+        )
+        bindings_file.close()
+
+        prev = os.environ.get("CARACAL_RESOURCES_FILE")
+        os.environ["CARACAL_RESOURCES_FILE"] = bindings_file.name
+        try:
+            c = Caracal.from_config(cfg_path)
+        finally:
+            if prev is None:
+                os.environ.pop("CARACAL_RESOURCES_FILE", None)
+            else:
+                os.environ["CARACAL_RESOURCES_FILE"] = prev
+        rids = [b.resource_id for b in c.config.resources]
+        self.assertIn("calendar", rids)
+
+    def test_from_config_unions_toml_and_env_resources(self) -> None:
+        import os
+
+        cfg_path = self._write_toml(
+            'zone_id = "z"\n'
+            'application_id = "a"\n'
+            'app_client_secret = "s"\n'
+            'sts_url = "https://sts.example.com"\n'
+            'coordinator_url = "https://coord.example.com"\n'
+            '[[credentials]]\n'
+            'resource = "calendar"\n'
+            'upstream_prefix = "https://api.example.com/v1"\n'
+        )
+        prev = os.environ.get("CARACAL_RESOURCES")
+        os.environ["CARACAL_RESOURCES"] = "billing=https://billing.example.com/v2"
+        try:
+            c = Caracal.from_config(cfg_path)
+        finally:
+            if prev is None:
+                os.environ.pop("CARACAL_RESOURCES", None)
+            else:
+                os.environ["CARACAL_RESOURCES"] = prev
+        rids = sorted(b.resource_id for b in c.config.resources)
+        self.assertEqual(rids, ["billing", "calendar"])
+
+
+class ResourceBindingsValidationTests(unittest.TestCase):
+    """CP-4: malformed ``CARACAL_RESOURCES_FILE`` entries must raise."""
+
+    def _write(self, body: str) -> str:
+        import tempfile
+
+        fh = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        fh.write(body)
+        fh.close()
+        return fh.name
+
+    def test_dict_shape_loads(self) -> None:
+        from caracalai_sdk.client import _load_resource_bindings_file
+
+        bindings = _load_resource_bindings_file(
+            self._write('{"calendar":"https://api.example.com/v1"}')
+        )
+        self.assertEqual(len(bindings), 1)
+        self.assertEqual(bindings[0].resource_id, "calendar")
+
+    def test_list_shape_loads(self) -> None:
+        from caracalai_sdk.client import _load_resource_bindings_file
+
+        bindings = _load_resource_bindings_file(
+            self._write(
+                '[{"resource_id":"calendar","upstream_prefix":"https://api.example.com/v1"}]'
+            )
+        )
+        self.assertEqual(len(bindings), 1)
+
+    def test_typo_field_raises(self) -> None:
+        from caracalai_sdk.client import _load_resource_bindings_file
+
+        path = self._write(
+            '[{"resource_id":"calendar","upstreamprefix":"https://api.example.com/v1"}]'
+        )
+        with self.assertRaises(ValueError) as cm:
+            _load_resource_bindings_file(path)
+        self.assertIn("upstreamprefix", str(cm.exception))
+
+    def test_missing_field_raises(self) -> None:
+        from caracalai_sdk.client import _load_resource_bindings_file
+
+        path = self._write('[{"resource_id":"calendar"}]')
+        with self.assertRaises(ValueError) as cm:
+            _load_resource_bindings_file(path)
+        self.assertIn("upstream_prefix", str(cm.exception))
+
+    def test_empty_value_raises(self) -> None:
+        from caracalai_sdk.client import _load_resource_bindings_file
+
+        path = self._write('{"calendar":""}')
+        with self.assertRaises(ValueError):
+            _load_resource_bindings_file(path)
+
+    def test_unsupported_top_level_raises(self) -> None:
+        from caracalai_sdk.client import _load_resource_bindings_file
+
+        with self.assertRaises(ValueError):
+            _load_resource_bindings_file(self._write('"not-a-binding"'))
 
 
 if __name__ == "__main__":

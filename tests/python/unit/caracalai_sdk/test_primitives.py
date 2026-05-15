@@ -241,5 +241,105 @@ class DelegateToSpawnTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls.count("DELETE"), 1)
 
 
+class ParentCtxOverrideTests(unittest.IsolatedAsyncioTestCase):
+    """CP-3: spawn / delegate_to_spawn must accept an explicit parent context."""
+
+    async def test_spawn_uses_explicit_parent_ctx_when_no_current(self) -> None:
+        from caracalai_sdk.context import CaracalContext
+
+        captured: dict = {}
+
+        def handler(req: httpx.Request) -> httpx.Response:
+            if req.method == "POST" and str(req.url).endswith("/agents"):
+                import json
+
+                captured["body"] = json.loads(req.content.decode())
+                return httpx.Response(200, json={"agent_session_id": "agent-2"})
+            return httpx.Response(204)
+
+        parent = CaracalContext(
+            subject_token="parent-tok",
+            zone_id="z",
+            client_id="parent-app",
+            agent_session_id="parent-session",
+            hop=2,
+            trace_id="11111111111111111111111111111111",
+        )
+        coord = _coord(handler)
+        self.assertIsNone(current())
+        async with spawn(
+            coordinator=coord,
+            zone_id="z",
+            application_id="child-app",
+            subject_token="tok",
+            parent_ctx=parent,
+        ) as ctx:
+            self.assertEqual(ctx.agent_session_id, "agent-2")
+            self.assertEqual(ctx.hop, 2)
+            self.assertEqual(ctx.trace_id, "11111111111111111111111111111111")
+        self.assertEqual(captured["body"].get("parent_id"), "parent-session")
+
+    async def test_delegate_to_spawn_uses_explicit_parent_ctx(self) -> None:
+        from caracalai_sdk.context import CaracalContext
+
+        seen = {"delegations": 0, "agents": 0}
+
+        def handler(req: httpx.Request) -> httpx.Response:
+            url = str(req.url)
+            if req.method == "POST" and url.endswith("/delegations"):
+                seen["delegations"] += 1
+                return httpx.Response(200, json={"delegation_edge_id": "edge-9"})
+            if req.method == "POST" and url.endswith("/agents"):
+                seen["agents"] += 1
+                return httpx.Response(200, json={"agent_session_id": "agent-9"})
+            return httpx.Response(204)
+
+        parent = CaracalContext(
+            subject_token="parent-tok",
+            zone_id="z",
+            client_id="parent-app",
+            agent_session_id="parent-session",
+            hop=1,
+            trace_id="11111111111111111111111111111111",
+        )
+        coord = _coord(handler)
+        self.assertIsNone(current())
+        async with delegate_to_spawn(
+            coordinator=coord,
+            zone_id="z",
+            application_id="child-app",
+            subject_token="tok",
+            scopes=["tool:call"],
+            kind=AgentKind.SERVICE,
+            parent_ctx=parent,
+        ) as ctx:
+            self.assertEqual(ctx.hop, 2)
+            self.assertEqual(ctx.delegation_edge_id, "edge-9")
+        self.assertEqual(seen["delegations"], 1)
+        self.assertEqual(seen["agents"], 1)
+
+    async def test_delegate_to_spawn_requires_parent_session(self) -> None:
+        from caracalai_sdk.context import CaracalContext
+
+        coord = _coord(_default_handler)
+        bare = CaracalContext(
+            subject_token="parent-tok",
+            zone_id="z",
+            client_id="parent-app",
+            agent_session_id=None,
+        )
+        with self.assertRaises(RuntimeError):
+            async with delegate_to_spawn(
+                coordinator=coord,
+                zone_id="z",
+                application_id="child-app",
+                subject_token="tok",
+                scopes=["tool:call"],
+                kind=AgentKind.SERVICE,
+                parent_ctx=bare,
+            ):
+                pass
+
+
 if __name__ == "__main__":
     unittest.main()
