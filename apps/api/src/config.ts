@@ -53,6 +53,7 @@ export interface Config {
     streamMaxLen: number
   }
   readyRateLimitPerMin: number
+  trustProxy: boolean
 }
 
 function buildDatabaseUrl(): string {
@@ -128,5 +129,6 @@ export function loadConfig(): Config {
       streamMaxLen: parseIntEnv('OUTBOX_STREAM_MAXLEN', 100_000),
     },
     readyRateLimitPerMin: parseNonNegIntEnv('READY_RATE_LIMIT_PER_MIN', 120),
+    trustProxy: parseBool(process.env.TRUST_PROXY, false),
   }
 }

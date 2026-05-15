@@ -18,6 +18,12 @@ import { assertRuntimeSafe } from '@caracalai/core'
 assertRuntimeSafe()
 
 const cfg = loadConfig()
+
+const log = (level: 'info' | 'warn' | 'error', msg: string, meta?: Record<string, unknown>): void => {
+  const line = meta ? `${msg} ${JSON.stringify(meta)}` : msg
+  process.stdout.write(`[${level}] ${line}\n`)
+}
+
 const db = newDB({
   connectionString: cfg.databaseUrl,
   max: cfg.db.poolMax,
@@ -29,52 +35,54 @@ const db = newDB({
 })
 const redis = newRedis(cfg.redisUrl)
 
-const log = (level: 'info' | 'warn' | 'error', msg: string, meta?: Record<string, unknown>): void => {
-  const line = meta ? `${msg} ${JSON.stringify(meta)}` : msg
-  process.stdout.write(`[${level}] ${line}\n`)
-}
-
-await runMigrations(db, (msg) => log('info', msg))
-await seedBootstrapAdminToken(db, {
-  envToken: cfg.bootstrapAdminToken,
-  log: (msg) => log('info', msg),
-})
-
 const shutdown = new ShutdownRegistry({
   timeoutMs: cfg.shutdownGraceMs,
   log,
 })
-
-const app = await buildApp({ cfg, db, redis, isDraining: () => shutdown.draining })
-
-const dispatcher = new OutboxDispatcher({
-  db,
-  redis,
-  workerId: cfg.workerId,
-  batchSize: cfg.outbox.batchSize,
-  pollIntervalMs: cfg.outbox.pollIntervalMs,
-  lockDurationSec: cfg.outbox.lockDurationSec,
-  maxAttempts: cfg.outbox.maxAttempts,
-  streamMaxLen: cfg.outbox.streamMaxLen,
-  log: (level, msg, meta) => app.log[level]({ ...meta }, msg),
-})
-
-const dcrTimer = startDCRGC(db, app.log)
-const sessionsReaperTimer = startSessionsReaper(db, app.log)
-
-shutdown.register('dcr-gc-timer', () => { clearInterval(dcrTimer) })
-shutdown.register('sessions-reaper', () => { clearInterval(sessionsReaperTimer) })
-shutdown.register('outbox-dispatcher', () => dispatcher.stop())
-shutdown.register('fastify', () => app.close())
 shutdown.register('redis', async () => { await redis.quit() })
 shutdown.register('postgres', () => db.end())
-shutdown.install()
-
-dispatcher.start()
 
 try {
-  await app.listen({ port: cfg.port, host: cfg.host })
+  await redis.ping()
+  await runMigrations(db, (msg) => log('info', msg))
+  await seedBootstrapAdminToken(db, {
+    envToken: cfg.bootstrapAdminToken,
+    log: (msg) => log('info', msg),
+  })
+
+  const app = await buildApp({ cfg, db, redis, isDraining: () => shutdown.draining })
+
+  const dispatcher = new OutboxDispatcher({
+    db,
+    redis,
+    workerId: cfg.workerId,
+    batchSize: cfg.outbox.batchSize,
+    pollIntervalMs: cfg.outbox.pollIntervalMs,
+    lockDurationSec: cfg.outbox.lockDurationSec,
+    maxAttempts: cfg.outbox.maxAttempts,
+    streamMaxLen: cfg.outbox.streamMaxLen,
+    log: (level, msg, meta) => app.log[level]({ ...meta }, msg),
+  })
+
+  const dcrTimer = startDCRGC(db, app.log)
+  const sessionsReaperTimer = startSessionsReaper(db, app.log)
+
+  shutdown.register('dcr-gc-timer', () => { clearInterval(dcrTimer) })
+  shutdown.register('sessions-reaper', () => { clearInterval(sessionsReaperTimer) })
+  shutdown.register('outbox-dispatcher', () => dispatcher.stop())
+  shutdown.register('fastify', () => app.close())
+  shutdown.install()
+
+  dispatcher.start()
+
+  try {
+    await app.listen({ port: cfg.port, host: cfg.host })
+  } catch (err) {
+    app.log.error(err)
+    await shutdown.fire('listen-failed')
+  }
 } catch (err) {
-  app.log.error(err)
-  await shutdown.fire('listen-failed')
+  const reason = err instanceof Error ? err.message : String(err)
+  log('error', `startup failed: ${reason}`)
+  await shutdown.fire('startup-failed')
 }

@@ -49,7 +49,7 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
     },
     requestIdHeader: 'x-request-id',
     disableRequestLogging: false,
-    trustProxy: false,
+    trustProxy: cfg.trustProxy,
   })
 
   app.decorate('db', db)

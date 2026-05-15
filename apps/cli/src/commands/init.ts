@@ -3,7 +3,7 @@
 //
 // `caracal init`: provisions the local zone via the API and writes caracal.toml.
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { discoverAdminToken, runtimeEnvFile } from '@caracalai/core'
@@ -151,7 +151,12 @@ export async function initCommand(argv: string[]): Promise<void> {
   })
 
   mkdirSync(dirname(opts.configPath), { recursive: true })
-  writeFileSync(opts.configPath, toml, { mode: 0o600 })
+  // Atomic write: a half-written caracal.toml from a crash mid-write is worse
+  // than no file (the secret it would have held is unrecoverable from the
+  // server's perspective once /bootstrap returned it).
+  const tmp = `${opts.configPath}.tmp-${process.pid}-${Date.now()}`
+  writeFileSync(tmp, toml, { mode: 0o600 })
+  renameSync(tmp, opts.configPath)
   printSuccess(`Wrote ${style.code(opts.configPath)}`)
   printWarn(
     'Caracal enforces policy only on traffic that reaches the gateway or a Caracal connector.\n' +

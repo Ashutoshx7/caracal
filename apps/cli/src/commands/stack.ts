@@ -107,7 +107,17 @@ function runCompose(args: string[], paths: StackPaths): Promise<number> {
       ['compose', '--env-file', paths.envFile, '-f', paths.composeFile, ...args],
       { stdio: 'inherit', cwd: paths.cwd, env },
     )
+    // Forward Ctrl+C / TERM / HUP / QUIT so docker compose tears down its
+    // stack cleanly. Without this, the parent dies and compose is reparented
+    // to PID 1, leaving containers running.
+    const forward: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGQUIT']
+    const handlers = forward.map((sig) => {
+      const h = (): void => { try { proc.kill(sig) } catch { /* already dead */ } }
+      process.on(sig, h)
+      return [sig, h] as const
+    })
     proc.on('exit', (code, signal) => {
+      for (const [sig, h] of handlers) process.off(sig, h)
       if (typeof code === 'number') return resolveExit(code)
       if (signal) {
         const map: Record<string, number> = { SIGINT: 2, SIGTERM: 15, SIGKILL: 9, SIGHUP: 1, SIGQUIT: 3 }
@@ -116,6 +126,7 @@ function runCompose(args: string[], paths: StackPaths): Promise<number> {
       resolveExit(1)
     })
     proc.on('error', (err) => {
+      for (const [sig, h] of handlers) process.off(sig, h)
       printError(`failed to invoke docker compose: ${err.message}`)
       resolveExit(127)
     })
