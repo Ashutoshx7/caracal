@@ -4,10 +4,15 @@
 - Covers only infrastructure configuration under this directory.
 
 ## Required
-- Must contain only Docker, PostgreSQL, and Redis configuration directories.
-- Must name subdirectories by infrastructure concern (e.g. `docker`, `postgres`, `redis`).
+- Must name every subdirectory by a single infrastructure concern.
+- Permitted subdirectories: `docker`, `postgres`, `redis`, `healthcheck`,
+  `secrets`, `edge`, `backup`, `observability`, `scripts`.
+- Must keep concern-specific assets in their own subdirectory (e.g. Caddy in
+  `edge`, OTel collector in `observability`, pg_basebackup in `backup`).
 
 ## Forbidden
 - Must not contain service source code (Go or TypeScript).
 - Must not contain shared library code.
 - Must not duplicate environment configuration already in service directories.
+- Must not check in generated secrets, TLS material, or backups; each producing
+  directory must gitignore its output.
