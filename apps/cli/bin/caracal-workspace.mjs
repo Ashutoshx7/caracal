@@ -32,6 +32,20 @@ if (!root) {
 
 process.env.CARACAL_REPO_ROOT = root
 
+const engineDist = join(root, 'packages/engine/dist/index.js')
+if (!existsSync(engineDist)) {
+  process.stderr.write('caracal: building @caracalai/engine (first run)…\n')
+  try {
+    execFileSync('pnpm', ['--filter', '@caracalai/engine', 'build'], {
+      cwd: root,
+      stdio: 'inherit',
+    })
+  } catch (err) {
+    process.stderr.write(`caracal: failed to build engine: ${err?.message ?? err}\n`)
+    process.exit(1)
+  }
+}
+
 try {
   const sha = execFileSync('node', [join(root, 'apps/cli/scripts/stampDev.mjs')], {
     stdio: ['ignore', 'pipe', 'inherit'],
