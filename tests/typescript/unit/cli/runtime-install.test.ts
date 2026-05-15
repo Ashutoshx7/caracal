@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync, chmodSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { installRuntimeAssets, runtimePaths } from '../../../../apps/cli/src/runtime/install.ts'
+import { installRuntimeAssets, runtimePaths } from '../../../../packages/engine/dist/index.js'
 
 describe('runtime installer', () => {
   it('writes compose and env with secrets and correct modes', () => {

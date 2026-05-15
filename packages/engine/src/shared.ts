@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Shared helpers for cli-core verbs: AdminClient bootstrap, file content reads, token scrubbing.
+// Shared helpers for engine verbs: AdminClient bootstrap, file content reads, token scrubbing.
 
 import { readFileSync } from 'node:fs'
 import { AdminClient } from '@caracalai/admin'

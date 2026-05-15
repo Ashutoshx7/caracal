@@ -1,14 +1,14 @@
 {
-  "name": "@caracalai/cli-core",
+  "name": "@caracalai/engine",
   "version": "0.1.2",
   "private": true,
-  "description": "Shared verb bodies for the Caracal CLI and TUI.",
+  "description": "Shared execution engine for the Caracal CLI and TUI: process control, stack lifecycle, runtime install, OAuth step-up, and token scrubbing.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/Garudex-Labs/caracal",
   "repository": {
     "type": "git",
     "url": "https://github.com/Garudex-Labs/caracal.git",
-    "directory": "packages/cli-core"
+    "directory": "packages/engine"
   },
   "type": "module",
   "main": "./dist/index.js",
@@ -17,14 +17,22 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./scrubCwdEnv": {
+      "import": "./dist/scrubCwdEnv.js",
+      "types": "./dist/scrubCwdEnv.d.ts"
     }
   },
   "files": [
     "dist",
+    "runtime",
     "LICENSE"
   ],
   "scripts": {
+    "sync-embedded": "node scripts/build-embedded.mjs",
+    "prebuild": "node scripts/build-embedded.mjs",
     "build": "tsc",
+    "pretypecheck": "node scripts/build-embedded.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

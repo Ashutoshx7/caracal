@@ -1,7 +1,7 @@
-# cli-core/src
+# engine/src
 
 ## Scope
-- Covers verb-body source modules under `packages/cli-core/src/`.
+- Covers verb-body source modules under `packages/engine/src/`.
 
 ## Required
 - Each module groups one CLI noun's verbs (e.g. `zone.ts`, `app.ts`).
