@@ -34,8 +34,8 @@ function composeArgv(paths: StackPaths, args: string[]): string[] {
 
 export function stackUp(opts: StackComposeOpts): StackComposeHandle {
   const args = opts.paths.mode === 'dev'
-    ? ['up', '-d', '--build', ...opts.args]
-    : ['up', '-d', ...opts.args]
+    ? ['up', '-d', '--build', '--remove-orphans', ...opts.args]
+    : ['up', '-d', '--remove-orphans', ...opts.args]
   const handle = runExec({
     argv: composeArgv(opts.paths, args),
     env: opts.env,

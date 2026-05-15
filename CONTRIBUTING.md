@@ -121,6 +121,7 @@ pnpm --dir apps/cli build:release                          # stamp runtime + bui
 pnpm --dir apps/tui build:release                          # stamp runtime + bun compile (all targets)
 BIN="$(pwd)/apps/cli/dist/caracal-cli-<os>-<arch>"         # absolute path; survives cd
 TUI="$(pwd)/apps/tui/dist/caracal-tui-<os>-<arch>"         # TUI binary; same OS/arch matrix
+pnpm caracal down                                          # Stop dev to test runtime
 "$BIN" --version                                           # → caracal dev-<sha> [runtime]
 "$TUI" --version                                           # → caracal-tui dev-<sha> [runtime]
 (cd /tmp && "$BIN" up && "$BIN" status && "$TUI" && "$BIN" down)
