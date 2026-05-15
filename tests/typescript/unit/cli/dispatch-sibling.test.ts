@@ -9,19 +9,27 @@ import { execSibling } from '../../../../apps/cli/src/commands/dispatch.ts'
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('execSibling', () => {
-  it('exits 127 with a hint when the sibling binary is not installed', () => {
+  it('exits 127 with a hint when a known sibling binary is not installed', () => {
     const origPath = process.env.PATH
+    const origRoot = process.env.CARACAL_REPO_ROOT
     process.env.PATH = '/nonexistent-caracal-dir'
+    delete process.env.CARACAL_REPO_ROOT
     const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => { throw new Error(`exit:${code ?? 0}`) }) as never)
     const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
     const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
     try {
-      expect(() => execSibling('caracal-nonexistent', [], { installLine: 'install hint' })).toThrow('exit:127')
+      expect(() => execSibling('caracal-cli', [], { installLine: 'install hint' })).toThrow('exit:127')
       expect(exit).toHaveBeenCalledWith(127)
       const errOut = [...stderr.mock.calls, ...stdout.mock.calls].map((c) => String(c[0])).join('')
       expect(errOut).toContain('install hint')
     } finally {
       process.env.PATH = origPath
+      if (origRoot !== undefined) process.env.CARACAL_REPO_ROOT = origRoot
     }
+  })
+
+  it('refuses to dispatch to a non-whitelisted binary name', () => {
+    expect(() => execSibling('../../evil', [], { installLine: 'x' })).toThrow(/non-whitelisted/)
+    expect(() => execSibling('caracal-nonexistent', [], { installLine: 'x' })).toThrow(/non-whitelisted/)
   })
 })

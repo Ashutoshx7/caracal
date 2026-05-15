@@ -4,6 +4,7 @@
 // `caracal-cli`: administrative, runtime, and observability commands for the Caracal control plane, dispatched through a strict whitelist registry.
 
 import '@caracalai/engine/scrubCwdEnv'
+import { installCrashHandlers } from './crash.ts'
 import { runCommand } from './commands/run.ts'
 import { credentialReadCommand } from './commands/credential.ts'
 import { zoneCommand } from './commands/zone.ts'
@@ -53,6 +54,8 @@ const executors: Record<string, Executor> = {
 }
 
 const registry = buildRegistry(CLI_COMMANDS, executors)
+
+installCrashHandlers('caracal-cli')
 
 const dispatchOptions: DispatchOptions = {
   binary: process.env.CARACAL_INVOKED_AS ?? 'caracal-cli',
