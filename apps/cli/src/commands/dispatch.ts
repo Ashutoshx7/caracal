@@ -17,6 +17,21 @@ const INSTALL_HINTS = {
   tuiOnly: `Or TUI only:      curl -fsSL ${INSTALL_URL} | sh -s -- --tui-only`,
 } as const
 
+const WORKSPACE_SHIMS: Record<string, string> = {
+  'caracal-cli': 'apps/cli/bin/caracal-cli.mjs',
+  'caracal-tui': 'apps/tui/bin/caracal-tui.mjs',
+}
+
+function workspaceShim(binName: string): { cmd: string; argvPrefix: string[] } | undefined {
+  const root = process.env.CARACAL_REPO_ROOT
+  if (!root) return undefined
+  const rel = WORKSPACE_SHIMS[binName]
+  if (!rel) return undefined
+  const shim = join(root, rel)
+  try { if (existsSync(shim) && statSync(shim).isFile()) return { cmd: process.execPath, argvPrefix: [shim] } } catch { /* ignore */ }
+  return undefined
+}
+
 function searchDirs(): string[] {
   const dirs: string[] = []
   const path = process.env.PATH ?? ''
@@ -44,14 +59,19 @@ interface MissingHints {
 }
 
 export function execSibling(binName: string, argv: string[], hints: MissingHints): never {
-  const bin = locate(binName)
-  if (!bin) {
+  const shim = workspaceShim(binName)
+  const cmd = shim?.cmd ?? locate(binName)
+  if (!cmd) {
     printError(`'${binName}' is not installed.`)
     printInfo(hints.installLine)
     if (hints.altLine) printInfo(hints.altLine)
     process.exit(127)
   }
-  const result = spawnSync(bin, argv, { stdio: 'inherit' })
+  const fullArgs = shim ? [...shim.argvPrefix, ...argv] : argv
+  const result = spawnSync(cmd, fullArgs, {
+    stdio: 'inherit',
+    env: { ...process.env, CARACAL_INVOKED_AS: binName === 'caracal-cli' ? 'caracal cli' : 'caracal tui' },
+  })
   if (result.error) {
     printError(`failed to launch ${binName}: ${result.error.message}`)
     process.exit(1)

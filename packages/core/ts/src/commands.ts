@@ -18,6 +18,7 @@ export interface CommandDescriptor {
   readonly subcommands?: readonly string[];
   readonly requiresConfig?: boolean;
   readonly requiresZone?: boolean;
+  readonly hidden?: boolean;
 }
 
 export const SHELL_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
@@ -53,7 +54,7 @@ export const CLI_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
   { name: 'agent', group: 'multiagent', summary: 'list|get|tree|suspend|resume|terminate', subcommands: ['list', 'get', 'tree', 'children', 'suspend', 'resume', 'terminate'], requiresZone: true },
   { name: 'delegation', group: 'multiagent', summary: 'inbound|outbound|traverse|revoke', subcommands: ['inbound', 'outbound', 'traverse', 'revoke'], requiresZone: true },
 
-  { name: 'completion', group: 'shell', summary: 'Emit shell completion script (bash|zsh|fish|powershell)', subcommands: ['bash', 'zsh', 'fish', 'powershell'] },
+  { name: 'completion', group: 'shell', summary: 'Emit shell completion script (bash|zsh|fish|powershell)', subcommands: ['bash', 'zsh', 'fish', 'powershell'], hidden: true },
 ]);
 
 export function findCommand(
