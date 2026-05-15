@@ -204,13 +204,15 @@ async with caracal.spawn():
         resp = await client.get('http://inventory:8080/items')
 ```
 
-### `headers()`
+### `headers(*, allow_root=False)`
 
 Returns the current envelope as `dict[str, str]`. Use for manual header injection.
 
 ```python
-def headers(self) -> dict[str, str]: ...
+def headers(self, *, allow_root: bool = False) -> dict[str, str]: ...
 ```
+
+Raises `RuntimeError` when no `CaracalContext` is bound on the current task. Pass `allow_root=True` only from trusted boundary code (background workers, long-lived service transports) that intentionally acts under the bootstrap subject identity. Inside any request, agent, or delegated scope, bind a context with `caracal.spawn()`, `caracal.delegate*()`, or `caracal.bind_from_headers()` first — this prevents silently leaking the bootstrap token into per-user paths.
 
 ### `bind_from_headers(headers)`
 

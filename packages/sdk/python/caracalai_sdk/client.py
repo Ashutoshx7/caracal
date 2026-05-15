@@ -112,14 +112,102 @@ def _load_resource_bindings_file(path: str | None) -> list[ResourceBinding]:
 
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
+    return _validate_resource_bindings(data, source=f"CARACAL_RESOURCES_FILE={path!r}")
+
+
+_BINDING_FIELDS = frozenset({"resource_id", "upstream_prefix"})
+
+
+def _validate_resource_bindings(data: Any, *, source: str) -> list[ResourceBinding]:
+    """Strictly validate resource binding data loaded from JSON/TOML.
+
+    Accepts either a flat ``{resource_id: upstream_prefix}`` dict or a list
+    of ``{"resource_id": ..., "upstream_prefix": ...}`` records. Every entry
+    must carry both fields as non-empty strings; any deviation raises
+    ``ValueError`` listing every bad entry's position so misconfiguration
+    surfaces at start-up instead of as a downstream 404.
+    """
+    errors: list[str] = []
+    out: list[ResourceBinding] = []
+
     if isinstance(data, dict):
-        items = data.items()
+        for key, value in data.items():
+            if not isinstance(key, str) or not key:
+                errors.append(f"{source}: key {key!r} is not a non-empty string")
+                continue
+            if not isinstance(value, str) or not value:
+                errors.append(f"{source}: entry {key!r}: upstream_prefix must be a non-empty string")
+                continue
+            out.append(ResourceBinding(resource_id=key, upstream_prefix=value))
     elif isinstance(data, list):
-        items = ((d["resource_id"], d["upstream_prefix"]) for d in data)
+        for idx, entry in enumerate(data):
+            if not isinstance(entry, dict):
+                errors.append(f"{source}[{idx}]: entry must be an object, got {type(entry).__name__}")
+                continue
+            extra = set(entry) - _BINDING_FIELDS
+            if extra:
+                errors.append(
+                    f"{source}[{idx}]: unknown field(s) {sorted(extra)!r}; "
+                    f"expected exactly {sorted(_BINDING_FIELDS)!r}"
+                )
+                continue
+            missing = _BINDING_FIELDS - set(entry)
+            if missing:
+                errors.append(f"{source}[{idx}]: missing field(s) {sorted(missing)!r}")
+                continue
+            rid, prefix = entry["resource_id"], entry["upstream_prefix"]
+            if not isinstance(rid, str) or not rid:
+                errors.append(f"{source}[{idx}]: resource_id must be a non-empty string")
+                continue
+            if not isinstance(prefix, str) or not prefix:
+                errors.append(f"{source}[{idx}]: upstream_prefix must be a non-empty string")
+                continue
+            out.append(ResourceBinding(resource_id=rid, upstream_prefix=prefix))
     else:
-        raise ValueError(f"CARACAL_RESOURCES_FILE: unsupported JSON shape in {path!r}")
-    return [ResourceBinding(resource_id=str(rid), upstream_prefix=str(prefix))
-            for rid, prefix in items if rid and prefix]
+        raise ValueError(
+            f"{source}: unsupported shape {type(data).__name__}; "
+            f"expected object or array of {{resource_id, upstream_prefix}}"
+        )
+
+    if errors:
+        raise ValueError("invalid resource bindings:\n  - " + "\n  - ".join(errors))
+    return out
+
+
+def _resolve_bindings(
+    cfg_credentials: list[Any] | None,
+    env: Mapping[str, str],
+    *,
+    cfg_source: str,
+) -> list[ResourceBinding]:
+    """Single source of truth for resource binding resolution.
+
+    Unions bindings from three sources — TOML credentials block, JSON file
+    pointed to by ``CARACAL_RESOURCES_FILE``, and the flat
+    ``CARACAL_RESOURCES`` env var — validates each, and returns a
+    deduplicated list. Later sources override earlier ones on conflict.
+    """
+    seen: dict[str, ResourceBinding] = {}
+
+    if cfg_credentials:
+        cred_records: list[dict[str, str]] = []
+        for idx, cred in enumerate(cfg_credentials):
+            if not isinstance(cred, dict):
+                raise ValueError(f"{cfg_source}.credentials[{idx}]: must be a table")
+            rid = cred.get("resource")
+            prefix = cred.get("upstream_prefix")
+            if rid and prefix:
+                cred_records.append({"resource_id": str(rid), "upstream_prefix": str(prefix)})
+        for b in _validate_resource_bindings(cred_records, source=f"{cfg_source}.credentials"):
+            seen[b.resource_id] = b
+
+    for b in _load_resource_bindings_file(env.get("CARACAL_RESOURCES_FILE")):
+        seen[b.resource_id] = b
+
+    for b in _parse_resource_bindings(env.get("CARACAL_RESOURCES")):
+        seen[b.resource_id] = b
+
+    return list(seen.values())
 
 
 def _resource_ids_from_env(env: Mapping[str, str], bindings: list[ResourceBinding]) -> list[str]:
@@ -203,10 +291,7 @@ class Caracal:
         if missing:
             raise RuntimeError(f"Caracal.from_env: missing {', '.join(missing)}")
 
-        bindings = (
-            _load_resource_bindings_file(e.get("CARACAL_RESOURCES_FILE"))
-            + _parse_resource_bindings(e.get("CARACAL_RESOURCES"))
-        )
+        bindings = _resolve_bindings(None, e, cfg_source="env")
         gateway_url = e.get("CARACAL_GATEWAY_URL") or None
 
         client_secret = e.get("CARACAL_APP_CLIENT_SECRET")
@@ -341,17 +426,18 @@ class Caracal:
             )
         gateway_url = cfg.get("gateway_url") or os.environ.get("CARACAL_GATEWAY_URL")
 
-        credentials = cfg.get("credentials") or []
-        bindings: list[ResourceBinding] = []
-        resource_ids: list[str] = []
-        for cred in credentials:
-            rid = cred.get("resource")
-            if not rid:
-                continue
-            resource_ids.append(str(rid))
-            prefix = cred.get("upstream_prefix")
-            if prefix:
-                bindings.append(ResourceBinding(resource_id=str(rid), upstream_prefix=str(prefix)))
+        bindings = _resolve_bindings(
+            cfg.get("credentials") or [], os.environ, cfg_source=str(cfg_path),
+        )
+        resource_ids = [b.resource_id for b in bindings]
+        if not resource_ids:
+            extra_resources = (
+                cfg.get("credentials") or []
+            )
+            for cred in extra_resources:
+                rid = cred.get("resource") if isinstance(cred, dict) else None
+                if rid:
+                    resource_ids.append(str(rid))
         if not resource_ids:
             resource_ids = ["resource://example"]
 
@@ -382,6 +468,7 @@ class Caracal:
         kind: AgentKind | None = None,
         ttl_seconds: int | None = None,
         parent_id: str | None = None,
+        parent_ctx: CaracalContext | None = None,
         metadata: dict[str, Any] | None = None,
         trace_id: str | None = None,
     ) -> AsyncGenerator[CaracalContext, None]:
@@ -397,6 +484,7 @@ class Caracal:
             application_id=self.config.application_id,
             subject_token=self.config.subject_token,
             parent_id=parent_id,
+            parent_ctx=parent_ctx,
             kind=kind or self.config.default_kind,
             ttl_seconds=ttl_seconds if ttl_seconds is not None else self.config.default_ttl_seconds,
             metadata=metadata,
@@ -431,6 +519,7 @@ class Caracal:
         self,
         *,
         scopes: list[str],
+        parent_ctx: CaracalContext | None = None,
         constraints: DelegationConstraints | None = None,
         delegation_ttl_seconds: int | None = None,
         kind: AgentKind | None = None,
@@ -450,6 +539,7 @@ class Caracal:
             application_id=self.config.application_id,
             subject_token=self.config.subject_token,
             scopes=scopes,
+            parent_ctx=parent_ctx,
             constraints=constraints,
             delegation_ttl_seconds=delegation_ttl_seconds,
             kind=kind or self.config.default_kind,
@@ -478,9 +568,28 @@ class Caracal:
         finally:
             _ctx_var.reset(token)
 
-    def headers(self) -> dict[str, str]:
+    def headers(self, *, allow_root: bool = False) -> dict[str, str]:
+        """Project the current Caracal context into outbound HTTP headers.
+
+        When no context is bound to the current task this would return the
+        bootstrap application subject token. Doing so silently leaks root
+        identity from background tasks that escape the contextvar (asyncio
+        task groups, thread pools, framework background runners). Callers
+        therefore MUST opt in via ``allow_root=True`` when they intentionally
+        want service-level (un-delegated) credentials. Bind a child context
+        explicitly with :meth:`bind` before fan-out to keep delegation
+        semantics intact.
+        """
         ctx = current()
         if ctx is None:
+            if not allow_root:
+                raise RuntimeError(
+                    "Caracal.headers(): no CaracalContext is bound to the current "
+                    "task. Refusing to fall back to the bootstrap subject token. "
+                    "Bind a child context with `async with caracal.bind(parent_ctx):` "
+                    "before fan-out, or pass `allow_root=True` to explicitly use "
+                    "the application's service identity."
+                )
             from .envelope import Envelope
 
             return to_headers(Envelope(subject_token=self.config.subject_token, hop=0))
@@ -537,11 +646,17 @@ class Caracal:
 
         return factory
 
-    def transport(self, **kwargs: Any) -> httpx.AsyncClient:
+    def transport(self, *, allow_root: bool = False, **kwargs: Any) -> httpx.AsyncClient:
         """Returns an httpx.AsyncClient that auto-injects the envelope on every request
         and rewrites resource-bound calls through the configured Caracal gateway. Pass
-        to any provider SDK that accepts a custom httpx client."""
+        to any provider SDK that accepts a custom httpx client.
+
+        Per-request identity is taken from the bound :class:`CaracalContext`. If a
+        request fires with no context bound, the call raises ``RuntimeError`` unless
+        the transport was created with ``allow_root=True`` (service-level identity).
+        """
         outer = self
+        root_allowed = allow_root
 
         class _CaracalAuth(httpx.Auth):
             requires_request_body = False
@@ -550,25 +665,38 @@ class Caracal:
                 rewritten = outer._route_through_gateway(
                     request.url, request.headers.get("X-Caracal-Resource")
                 )
+                ctx = current()
                 if rewritten is not None:
                     request.url = httpx.URL(rewritten[0])
                     request.headers["host"] = request.url.host
                     request.headers["X-Caracal-Resource"] = rewritten[1]
-                    ctx = current()
-                    token = ctx.subject_token if ctx is not None else outer.config.subject_token
+                    if ctx is not None:
+                        token = ctx.subject_token
+                    elif root_allowed:
+                        token = outer.config.subject_token
+                    else:
+                        raise RuntimeError(
+                            "Caracal.transport(): gateway-routed request fired with "
+                            "no CaracalContext bound. Bind a child context before "
+                            "fan-out or build the transport with `allow_root=True`."
+                        )
                     request.headers["Authorization"] = f"Bearer {token}"
-                for k, v in outer.headers().items():
+                for k, v in outer.headers(allow_root=root_allowed).items():
                     if k not in request.headers:
                         request.headers[k] = v
                 yield request
 
         return httpx.AsyncClient(auth=_CaracalAuth(), **kwargs)
 
-    def sync_transport(self, **kwargs: Any) -> httpx.Client:
+    def sync_transport(self, *, allow_root: bool = False, **kwargs: Any) -> httpx.Client:
         """Sync counterpart to transport(): returns an httpx.Client that auto-injects
         the envelope on every request and rewrites resource-bound calls through the
-        configured Caracal gateway. Use with sync httpx-based SDKs."""
+        configured Caracal gateway. Use with sync httpx-based SDKs.
+
+        See :meth:`transport` for the ``allow_root`` semantics.
+        """
         outer = self
+        root_allowed = allow_root
 
         class _CaracalSyncAuth(httpx.Auth):
             requires_request_body = False
@@ -577,14 +705,23 @@ class Caracal:
                 rewritten = outer._route_through_gateway(
                     request.url, request.headers.get("X-Caracal-Resource")
                 )
+                ctx = current()
                 if rewritten is not None:
                     request.url = httpx.URL(rewritten[0])
                     request.headers["host"] = request.url.host
                     request.headers["X-Caracal-Resource"] = rewritten[1]
-                    ctx = current()
-                    token = ctx.subject_token if ctx is not None else outer.config.subject_token
+                    if ctx is not None:
+                        token = ctx.subject_token
+                    elif root_allowed:
+                        token = outer.config.subject_token
+                    else:
+                        raise RuntimeError(
+                            "Caracal.sync_transport(): gateway-routed request fired "
+                            "with no CaracalContext bound. Bind a child context "
+                            "before fan-out or build the transport with `allow_root=True`."
+                        )
                     request.headers["Authorization"] = f"Bearer {token}"
-                for k, v in outer.headers().items():
+                for k, v in outer.headers(allow_root=root_allowed).items():
                     if k not in request.headers:
                         request.headers[k] = v
                 yield request

@@ -39,21 +39,17 @@ defaults for the local mock network.
 
 The mock network simulates all 11 external financial services (banking, ERP,
 OCR, FX, compliance, vendor portal, tax) across REST, SSE, gRPC, and MCP.
-Always build it locally — it is not published to any registry.
+The image is built locally — it is not published to any registry.
 
 ```bash
-docker compose -f _mock/docker-compose.yml up -d --build
+docker compose -f _mock/docker-compose.yml up -d --build --wait
 ```
 
-Services started:
+To re-check status later:
 
-| Container | Transport | Port |
-|---|---|---|
-| `mock-rest-1` | REST (13 providers) | 8800 |
-| `mock-fx-stream-1` | SSE (FX rates) | 8810 |
-| `mock-treasury-grpc-1` | gRPC | 50051 |
-| `mock-compliance-grpc-1` | gRPC | 50052 |
-| `mock-vendor-mcp-1` | MCP | 7800 |
+```bash
+docker compose -f _mock/docker-compose.yml ps -a
+```
 
 ### 4 — Start Caracal
 
