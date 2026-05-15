@@ -11,6 +11,9 @@ import { STREAM_SESSIONS_REVOKE } from '../redis.js'
 import { enqueueOutbox } from '../outbox.js'
 import { ZoneIdParams, ZoneParams, parseParams } from './params.js'
 import { zoneExists } from '../zone-guard.js'
+import { appendKeysetCondition, parseListPagination, setNextLink } from './list-pagination.js'
+
+const SESSION_REVOKE_BATCH = 1000
 
 // Scope strings cross trust boundaries (Rego policies, upstream IdPs). Restrict to a
 // safe charset and bounded length so neither side has to sanitize control characters,
@@ -30,11 +33,19 @@ export const grantsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/zones/:zoneId/grants', async (req, reply) => {
     const params = parseParams(ZoneParams, req, reply)
     if (!params) return
+    const page = parseListPagination(req, reply)
+    if (!page) return
+    const keyset = appendKeysetCondition(
+      { conds: ['zone_id = $1'], values: [params.zoneId] },
+      page,
+    )
     const { rows } = await fastify.db.query(
       `SELECT id, zone_id, application_id, user_id, resource_id, scopes, status, created_at
-       FROM delegated_grants WHERE zone_id = $1 ORDER BY created_at DESC`,
-      [params.zoneId],
+       FROM delegated_grants WHERE ${keyset.conds.join(' AND ')}
+       ORDER BY created_at DESC, id DESC LIMIT ${keyset.limitPlaceholder}`,
+      keyset.values,
     )
+    setNextLink(req, reply, rows, page.limit)
     return rows
   })
 
@@ -103,19 +114,29 @@ export const grantsRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(404).send({ error: 'grant_not_found' })
       }
 
-      const { rows: sessions } = await client.query<{ id: string }>(
-        `UPDATE sessions SET status = 'revoked'
-         WHERE zone_id = $1 AND status = 'active' AND subject_id = $2
-         RETURNING id`,
-        [params.zoneId, rows[0].user_id],
-      )
-
-      for (const s of sessions) {
-        await enqueueOutbox(client, {
-          streamName: STREAM_SESSIONS_REVOKE,
-          payload: { zone_id: params.zoneId, session_id: s.id, reason: 'grant_revoked', grant_id: params.id },
-          requestId: req.id,
-        })
+      // Page session revocation so a grant covering many active sessions cannot
+      // hold a long-running UPDATE lock or flood the outbox in a single batch.
+      while (true) {
+        const { rows: sessions } = await client.query<{ id: string }>(
+          `UPDATE sessions SET status = 'revoked'
+           WHERE id IN (
+             SELECT id FROM sessions
+             WHERE zone_id = $1 AND status = 'active' AND subject_id = $2
+             ORDER BY created_at
+             LIMIT $3
+             FOR UPDATE SKIP LOCKED
+           )
+           RETURNING id`,
+          [params.zoneId, rows[0].user_id, SESSION_REVOKE_BATCH],
+        )
+        for (const s of sessions) {
+          await enqueueOutbox(client, {
+            streamName: STREAM_SESSIONS_REVOKE,
+            payload: { zone_id: params.zoneId, session_id: s.id, reason: 'grant_revoked', grant_id: params.id },
+            requestId: req.id,
+          })
+        }
+        if (sessions.length < SESSION_REVOKE_BATCH) break
       }
 
       await client.query('COMMIT')
