@@ -26,6 +26,7 @@
 - Must support `continue_on_failure` opt-in and optional resources with `on_failure = "warn"`.
 - Must implement MCP shadow governance: exit 1 on unauthorized MCP servers unless `mcp_governance = "log"`.
 - Must talk to the admin API and coordinator only through `@caracalai/admin`; must not issue raw `fetch` calls to admin endpoints from CLI command modules.
+- Must call `@caracalai/engine` for verb bodies; CLI handlers must only parse flags, format output, and set exit codes.
 
 ## Forbidden
 - Must not import from `caracalEnterprise/`.
