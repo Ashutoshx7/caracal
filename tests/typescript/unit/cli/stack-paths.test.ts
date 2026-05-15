@@ -15,6 +15,7 @@ function repoFixture(): string {
   const dockerDir = join(repoRoot, 'infra', 'docker')
   mkdirSync(dockerDir, { recursive: true })
   writeFileSync(join(dockerDir, 'docker-compose.yml'), 'name: caracal\n')
+  writeFileSync(join(dockerDir, '.env.example'), '')
   writeFileSync(join(dockerDir, '.env'), 'POSTGRES_PASSWORD=test\n')
   return repoRoot
 }

@@ -35,10 +35,13 @@ The base CalVer is centralized in `packages/engine/runtime/release.json` (consum
 ```bash
 git clone https://github.com/Garudex-Labs/caracal.git && cd caracal
 pnpm install
-pnpm secrets:init                                # create infra/docker/.env, generate secret files, sync values
-pnpm caracal up                                  # build + start the full stack
+pnpm caracal up                                  # auto-bootstraps secrets + .env, builds + starts the full stack
 pnpm caracal init                                # provision local zone, write caracal.toml
 ```
+
+The first `caracal up` auto-generates `infra/docker/.env` and the secret files
+under `infra/secrets/files/` (both gitignored). Re-run `pnpm secrets:init`
+explicitly only if you want to bootstrap credentials without starting the stack.
 
 Drop the `pnpm` prefix with `pnpm link --global` (undo with `pnpm unlink --global caracal`).
 

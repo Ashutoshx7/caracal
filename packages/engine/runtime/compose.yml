@@ -5,12 +5,20 @@
 
 name: caracal
 
+secrets:
+  postgresPassword:
+    file: ./secrets/postgresPassword
+
 services:
   postgres:
     image: postgres:18-alpine
+    secrets:
+      - source: postgresPassword
+        target: postgresPassword
+        mode: 0400
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgresPassword
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "127.0.0.1:5432:5432"

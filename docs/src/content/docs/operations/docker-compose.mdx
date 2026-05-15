@@ -125,53 +125,26 @@ Runs two processes via `start.sh`: the Go relay binary (background) and the Node
 
 ## First-run procedure
 
-**1. Copy and populate the env file:**
+**1. Bootstrap credentials and start the stack:**
 
 ```bash
-cp infra/docker/.env.example infra/docker/.env
+pnpm caracal up
 ```
 
-Set these values in `infra/docker/.env`:
+The first `caracal up` automatically creates `infra/docker/.env` from `infra/docker/.env.example`, generates per-secret files in `infra/secrets/files/` (gitignored, `0444`) that the compose stack mounts as Docker secrets, and syncs the same values into `.env` so env-interpolated services and secret-mounted services agree on every credential.
 
-```bash
-POSTGRES_PASSWORD=<strong-password>
-REDIS_PASSWORD=<strong-password>
-CARACAL_ADMIN_TOKEN=<strong-token>
+Edit `infra/docker/.env` only to override optional knobs (resource limits, S3 export, etc.). Required credentials are managed automatically and re-synced on every run.
 
-ZONE_KEK=$(openssl rand -hex 32)
-AUDIT_HMAC_KEY=$(openssl rand -hex 32)
-STREAMS_HMAC_KEY=$(openssl rand -hex 32)
-
-# Development only — do not use in production
-INSECURE_STS=true
-INSECURE_HTTP=true
-CARACAL_LOCAL_BOOTSTRAP_ENABLED=true
-```
-
-**2. Generate Docker secret files:**
+To provision credentials without starting the stack:
 
 ```bash
 pnpm secrets:init
 ```
 
-This creates per-secret files in `infra/secrets/files/` (gitignored) that the compose stack mounts as Docker secrets. The passwords it generates must match the values you set in `infra/docker/.env`. Run it once; it is idempotent.
-
-**3. Build images:**
+**2. Verify health:**
 
 ```bash
-cd infra/docker && docker compose build
-```
-
-**4. Start the stack:**
-
-```bash
-docker compose up -d
-```
-
-**5. Verify health:**
-
-```bash
-docker compose ps
+pnpm caracal status
 ```
 
 All services should show `healthy`. The `init` container shows `Exited (0)`.

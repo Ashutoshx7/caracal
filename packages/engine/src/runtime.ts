@@ -1,13 +1,13 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Runtime mode helpers: locate $CARACAL_HOME, install bundled assets, generate secrets.
+// Runtime mode helpers: locate $CARACAL_HOME, install bundled assets.
 
-import { randomBytes } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
-import { COMPOSE_YML, ENV_EXAMPLE } from './embedded.js'
+import { COMPOSE_YML } from './embedded.js'
+import { bootstrapSecrets, runtimeBootstrapPaths } from './secrets.js'
 
 export interface RuntimePaths {
   home: string
@@ -31,25 +31,12 @@ export function runtimePaths(home: string = defaultRuntimeHome()): RuntimePaths 
   }
 }
 
-function randomSecret(bytes = 24): string {
-  return randomBytes(bytes).toString('base64url')
+export interface InstallReport {
+  created: boolean
+  filesCreated: string[]
 }
 
-function hexSecret(bytes = 32): string {
-  return randomBytes(bytes).toString('hex')
-}
-
-function seedEnv(template: string): string {
-  return template
-    .replace(/^(POSTGRES_PASSWORD)=$/m, `$1=${randomSecret(18)}`)
-    .replace(/^(REDIS_PASSWORD)=$/m, `$1=${randomSecret(18)}`)
-    .replace(/^(CARACAL_ADMIN_TOKEN)=$/m, `$1=${randomSecret(24)}`)
-    .replace(/^(ZONE_KEK)=$/m, `$1=${hexSecret(32)}`)
-    .replace(/^(AUDIT_HMAC_KEY)=$/m, `$1=${hexSecret(32)}`)
-    .replace(/^(STREAMS_HMAC_KEY)=$/m, `$1=${hexSecret(32)}`)
-}
-
-export function installRuntimeAssets(paths: RuntimePaths = runtimePaths()): { created: boolean } {
+export function installRuntimeAssets(paths: RuntimePaths = runtimePaths()): InstallReport {
   mkdirSync(paths.home, { recursive: true })
   let created = false
 
@@ -58,23 +45,13 @@ export function installRuntimeAssets(paths: RuntimePaths = runtimePaths()): { cr
     writeFileSync(paths.composeFile, COMPOSE_YML, { mode: 0o644 })
     created = true
   }
-  if (!existsSync(paths.envFile)) {
-    writeFileSync(paths.envFile, seedEnv(ENV_EXAMPLE), { mode: 0o600 })
-    created = true
-  } else {
-    // Defensive: env file holds DB/Redis/admin secrets; force tight perms even
-    // if it was created by an earlier version or copied from .env.example.
-    try { chmodSync(paths.envFile, 0o600) } catch { /* permissions may be unsupported */ }
-  }
-  return { created }
-}
 
-export function seedEnvFile(envFile: string, mode = 0o600): { seeded: boolean } {
-  if (!existsSync(envFile)) return { seeded: false }
-  const original = readFileSync(envFile, 'utf8')
-  const updated = seedEnv(original)
-  if (updated === original) return { seeded: false }
-  writeFileSync(envFile, updated, { mode })
-  return { seeded: true }
+  const report = bootstrapSecrets(runtimeBootstrapPaths(paths.home))
+  if (report.envCreated || report.envUpdated || report.filesCreated.length > 0) created = true
+
+  if (existsSync(paths.envFile)) {
+    try { chmodSync(paths.envFile, 0o600) } catch { /* perms may be unsupported */ }
+  }
+  return { created, filesCreated: report.filesCreated }
 }
 

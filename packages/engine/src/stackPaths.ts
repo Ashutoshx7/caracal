@@ -3,9 +3,9 @@
 //
 // Resolves StackPaths for dev and runtime modes, installing and seeding assets as needed.
 
-import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { installRuntimeAssets, runtimePaths, seedEnvFile } from './runtime.js'
+import { bootstrapSecrets, devBootstrapPaths } from './secrets.js'
+import { installRuntimeAssets, runtimePaths } from './runtime.js'
 import type { StackPaths } from './stack.js'
 
 export type StackMode = 'dev' | 'runtime'
@@ -40,21 +40,20 @@ function devPaths(opts: ResolveStackPathsOptions): StackPaths {
   }
   const composeFile = process.env.CARACAL_COMPOSE_FILE ?? join(repoRoot, 'infra', 'docker', 'docker-compose.yml')
   const envFile = process.env.CARACAL_ENV_FILE ?? join(repoRoot, 'infra', 'docker', '.env')
-  if (!existsSync(envFile)) {
-    throw new Error(`env file not found at ${envFile}; copy infra/docker/.env.example to infra/docker/.env first.`)
+  const report = bootstrapSecrets(devBootstrapPaths(repoRoot))
+  if (report.envCreated) opts.onInfo?.(`created ${envFile} from .env.example`)
+  if (report.filesCreated.length > 0) {
+    opts.onInfo?.(`generated ${report.filesCreated.length} secret file(s) under infra/secrets/files`)
   }
-  const { seeded } = seedEnvFile(envFile)
-  if (seeded) opts.onInfo?.(`seeded missing secrets in ${envFile}`)
+  if (report.envUpdated && !report.envCreated) opts.onInfo?.(`synced secrets → ${envFile}`)
   return { composeFile, envFile, cwd: repoRoot, mode: 'dev' }
 }
 
 function runtimeStackPaths(opts: ResolveStackPathsOptions): StackPaths {
   const paths = runtimePaths()
-  const { created } = installRuntimeAssets(paths)
-  if (created) opts.onInfo?.(`provisioned runtime assets at ${paths.home}`)
+  const report = installRuntimeAssets(paths)
+  if (report.created) opts.onInfo?.(`provisioned runtime assets at ${paths.home}`)
   const composeFile = process.env.CARACAL_COMPOSE_FILE ?? paths.composeFile
   const envFile = process.env.CARACAL_ENV_FILE ?? paths.envFile
-  const { seeded } = seedEnvFile(envFile)
-  if (seeded) opts.onInfo?.(`seeded missing secrets in ${envFile}`)
   return { composeFile, envFile, cwd: paths.home, mode: 'runtime' }
 }

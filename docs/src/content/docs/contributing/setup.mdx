@@ -56,11 +56,10 @@ pnpm install
 
 ## Environment configuration
 
-```sh
-pnpm secrets:init
-```
+Credentials are bootstrapped automatically the first time you run `caracal up`.
+No manual `.env` editing is required.
 
-`pnpm secrets:init` is the single source of truth for stack credentials. It:
+The bootstrap (shared between dev and runtime modes):
 
 1. Creates `infra/docker/.env` from `infra/docker/.env.example` if missing.
 2. Generates random secret files in `infra/secrets/files/` (gitignored, `0444`) for Postgres, Redis, the admin token, zone KEK, and HMAC keys.
@@ -68,7 +67,13 @@ pnpm secrets:init
 
 Idempotent and safe to re-run — existing secret files are reused and re-synced into `.env`.
 
-Optional knobs (resource limits, S3 export, etc.) are documented inline in `infra/docker/.env.example` and can be edited freely after `secrets:init`.
+If you want to provision credentials without starting the stack, run:
+
+```sh
+pnpm secrets:init
+```
+
+Optional knobs (resource limits, S3 export, etc.) are documented inline in `infra/docker/.env.example` and can be edited freely.
 
 Do not commit `infra/docker/.env` or `infra/secrets/files/` — both are in `.gitignore`.
 
