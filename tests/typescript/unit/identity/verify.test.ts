@@ -77,7 +77,7 @@ describe('verify', () => {
       source_session_id: 'src-1',
       target_session_id: 'tgt-1',
       delegation_path: ['edge-0', 'edge-1'],
-      delegation_chain: [{ app: 'app-parent', session: 's1', edge: 'e1' }],
+      delegation_chain: [{ application_id: 'app-parent', agent_session_id: 's1', delegation_edge_id: 'e1' }],
       hop_count: 2,
       delegation_graph_epoch: 7,
     })
@@ -144,23 +144,23 @@ describe('verify', () => {
   })
 
   it('throws ChainMismatchError when required application is absent from the chain', async () => {
-    const { token, issuer } = await mintToken({ delegation_chain: [{ app: 'app-child' }] })
+    const { token, issuer } = await mintToken({ delegation_chain: [{ application_id: 'app-child' }] })
     await expect(
       verify(token, { issuer, audience: 'resource://api', requireChainContains: ['app-parent'] }),
     ).rejects.toMatchObject({ name: 'ChainMismatchError', missingApplicationId: 'app-parent' })
   })
 
-  it('rejects long-form delegation chain keys', async () => {
+  it('rejects compact delegation chain keys', async () => {
     const { token, issuer } = await mintToken({
-      delegation_chain: [{ application_id: 'app-legacy', agent_session_id: 's1', delegation_edge_id: 'e1' }],
+      delegation_chain: [{ app: 'app-child', session: 's1', edge: 'e1' }],
     })
     await expect(
       verify(token, {
         issuer,
         audience: 'resource://api',
-        requireChainContains: ['app-legacy'],
+        requireChainContains: ['app-child'],
       }),
-    ).rejects.toMatchObject({ name: 'ChainMismatchError', missingApplicationId: 'app-legacy' })
+    ).rejects.toMatchObject({ name: 'ChainMismatchError', missingApplicationId: 'app-child' })
   })
 
   it('ignores legacy graph_epoch claim', async () => {

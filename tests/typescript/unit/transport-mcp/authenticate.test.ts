@@ -91,7 +91,7 @@ describe('transport-mcp authentication', () => {
     const { token, issuer, audience } = await mintToken({
       agent_session_id: 'agent-1',
       delegation_edge_id: 'edge-1',
-      delegation_chain: [{ app: 'app-parent' }],
+      delegation_chain: [{ application_id: 'app-parent' }],
       hop_count: 2,
     })
     revocations.isRevoked.mockResolvedValue(false)
@@ -142,7 +142,7 @@ describe('transport-mcp authentication', () => {
     [{ requiredScopes: ['admin:call'] }, {}, 'insufficient_scope', 'Missing scope: admin:call'],
     [{ requireAgent: true }, {}, 'agent_required', 'Agent identity required'],
     [{ requireDelegation: true }, {}, 'delegation_required', 'Delegation required'],
-    [{ requireChainContains: ['app-parent'] }, { delegation_chain: [{ app: 'app-child' }] }, 'chain_mismatch', 'Delegation chain missing application: app-parent'],
+    [{ requireChainContains: ['app-parent'] }, { delegation_chain: [{ application_id: 'app-child' }] }, 'chain_mismatch', 'Delegation chain missing application: app-parent'],
     [{ maxHopCount: 1 }, { hop_count: 2 }, 'hop_count_exceeded', 'Hop count exceeded'],
     [{ zoneId: 'zone-2' }, {}, 'invalid_zone', 'Token zone validation failed'],
   ])('maps identity verification failure to %s', async (deps, claims, code, description) => {

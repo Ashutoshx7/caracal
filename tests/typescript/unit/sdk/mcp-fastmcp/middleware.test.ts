@@ -70,7 +70,7 @@ describe('verifyFastMcpToken', () => {
     const { token, issuer, audience } = await mintToken({
       agent_session_id: 'agent-1',
       delegation_edge_id: 'edge-1',
-      delegation_chain: [{ app: 'app-parent' }],
+      delegation_chain: [{ application_id: 'app-parent' }],
       hop_count: 2,
     })
     revocations.isRevoked.mockResolvedValue(false)
@@ -95,7 +95,7 @@ describe('verifyFastMcpToken', () => {
 
   it('raises FastMcpAuthError with the transport error code', async () => {
     const { token, issuer, audience } = await mintToken({
-      delegation_chain: [{ app: 'app-child' }],
+      delegation_chain: [{ application_id: 'app-child' }],
     })
 
     await expect(verifyFastMcpToken(token, {

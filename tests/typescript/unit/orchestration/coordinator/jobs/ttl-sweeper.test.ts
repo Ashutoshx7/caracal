@@ -53,11 +53,11 @@ describe('runTTLSweep', () => {
       { id: 'agent-3', zone_id: 'z2' },
     ]
     const terminatedZ1 = [
-      { id: 'agent-1', session_sid: 'sid-1', parent_id: null },
-      { id: 'agent-2', session_sid: 'sid-2', parent_id: 'agent-1' },
+      { id: 'agent-1', subject_session_id: 'sid-1', parent_id: null },
+      { id: 'agent-2', subject_session_id: 'sid-2', parent_id: 'agent-1' },
     ]
     const terminatedZ2 = [
-      { id: 'agent-3', session_sid: 'sid-3', parent_id: null },
+      { id: 'agent-3', subject_session_id: 'sid-3', parent_id: null },
     ]
     let subtreeCall = 0
     const client = clientFromSteps([
