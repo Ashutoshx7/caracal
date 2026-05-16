@@ -11,7 +11,7 @@
 - Streaming functions must accept an `onLine: (line: string) => void` callback and return a `{ dispose }` handle.
 - Positional CLI arguments and option flags must surface as fields on the typed options object — callers do all flag parsing.
 - Token-bearing strings written through the package must pass through `scrubTokens`.
-- Generated bundle `src/embedded.ts` is produced by `scripts/build-embedded.mjs` from `runtime/compose.yml` and `runtime/.env.example`; regenerate before every build (wired through `prebuild` and `pretypecheck`).
+- Generated bundle `src/embedded.ts` is produced by `scripts/build-embedded.mjs`; regenerate before every build (wired through `prebuild` and `pretypecheck`).
 
 ## Forbidden
 - Must not parse argv or flags.

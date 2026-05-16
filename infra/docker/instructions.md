@@ -5,6 +5,8 @@
 
 ## Required
 - Must use Docker Compose v2 with multi-stage Dockerfiles authored in each service directory.
+- Must keep `docker-compose.yml` for local development and `runtime-compose.yml` for self-hosted GHCR releases.
+- Must keep the runtime Compose source only in this directory.
 - Must use only these OSS host ports: 3000, 4000, 5432, 6379, 8080, 8081, 9090.
 - Must declare a healthcheck for every long-running service.
 - Must use `depends_on: { service_healthy }` for ordering against postgres and redis.

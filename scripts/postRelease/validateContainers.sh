@@ -13,7 +13,7 @@ readonly AREA="containers"
 readonly REGISTRY="$CARACAL_REGISTRY"
 readonly IMAGE_PREFIX="$CARACAL_IMAGE_PREFIX"
 readonly REPO_ROOT="$(cd "$HERE/../.." && pwd)"
-readonly COMPOSE_SRC="$REPO_ROOT/infra/docker/docker-compose.yml"
+readonly COMPOSE_SRC="$REPO_ROOT/infra/docker/runtime-compose.yml"
 
 imageRef() {
   printf '%s/%s%s:v%s' "$REGISTRY" "$IMAGE_PREFIX" "$1" "$2"
@@ -33,7 +33,7 @@ validatePull() {
 validateStack() {
   matchesOnly "stack" || return 0
   if [[ ! -f "$COMPOSE_SRC" ]]; then
-    logFinding "$AREA" "stack" "linux-amd64" "compose" "docker" "$SEV_MAJOR" "$STATUS_WARN" "docker-compose.yml not found" "ls $COMPOSE_SRC"
+    logFinding "$AREA" "stack" "linux-amd64" "compose" "docker" "$SEV_MAJOR" "$STATUS_WARN" "runtime-compose.yml not found" "ls $COMPOSE_SRC"
     return 0
   fi
   local dir; dir="$(mktemp -d)"

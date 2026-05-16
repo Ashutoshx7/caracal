@@ -20,7 +20,7 @@ function escape(value) {
   return value.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${')
 }
 
-const compose = read('packages/engine/runtime/compose.yml')
+const compose = read('infra/docker/runtime-compose.yml')
 const envExample = read('packages/engine/runtime/.env.example')
 
 const lines = []
