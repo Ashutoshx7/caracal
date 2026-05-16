@@ -1,0 +1,17 @@
+# control service
+
+## Scope
+- Covers only the Go control service under `caracal/services/control/`.
+
+## Required
+- `cmd/control/main.go` must refuse to start unless `CONTROL_MODE=on`.
+- `internal/handler.go` must expose only `POST /v1/agent/invoke` plus `/health` and `/ready`.
+- Every accepted request must validate `command` and `subcommand` against `github.com/garudex-labs/caracal/core/commands` before any upstream call.
+- Every accepted and rejected request must produce one audit event of type `control.invoke` on `caracal.audit.events`.
+- Bearer tokens must be ES256 JWTs verified against the STS JWKS and must carry the `control:invoke` scope.
+
+## Forbidden
+- Must not shell out, fork, or exec any process.
+- Must not accept commands not present in the canonical catalog.
+- Must not expose multiple endpoints or admin routes beyond those listed above.
+- Must not bind to a port already used by another OSS service in `infra/docker/docker-compose.yml`.
