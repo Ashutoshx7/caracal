@@ -14,6 +14,7 @@ WORKDIR /build
 COPY go.work go.work
 COPY packages/core/go/ packages/core/go/
 COPY packages/identity/go/ packages/identity/go/
+COPY packages/oauth/go/ packages/oauth/go/
 COPY packages/revocation/go/ packages/revocation/go/
 COPY packages/transport/mcp/go/ packages/transport/mcp/go/
 COPY packages/connectors/nethttp/go/ packages/connectors/nethttp/go/

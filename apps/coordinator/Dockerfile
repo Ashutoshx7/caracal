@@ -14,6 +14,7 @@ WORKDIR /build
 COPY go.work go.work
 COPY packages/core/go/ packages/core/go/
 COPY packages/identity/go/ packages/identity/go/
+COPY packages/oauth/go/ packages/oauth/go/
 COPY packages/revocation/go/ packages/revocation/go/
 COPY packages/transport/mcp/go/ packages/transport/mcp/go/
 COPY packages/connectors/nethttp/go/ packages/connectors/nethttp/go/
@@ -40,11 +41,14 @@ RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/coordinator/package.json apps/coordinator/package.json
+COPY packages/adminAudit/ts/package.json packages/adminAudit/ts/package.json
 COPY packages/core/ts/package.json packages/core/ts/package.json
 COPY packages/identity/ts/package.json packages/identity/ts/package.json
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store,sharing=locked \
     pnpm config set store-dir /pnpm/store && \
     pnpm install --frozen-lockfile --ignore-scripts --filter @caracalai/coordinator...
+COPY packages/adminAudit/ts/tsconfig.json packages/adminAudit/ts/tsconfig.json
+COPY packages/adminAudit/ts/src packages/adminAudit/ts/src
 COPY packages/core/ts/tsconfig.json packages/core/ts/tsconfig.json
 COPY packages/core/ts/src packages/core/ts/src
 COPY packages/identity/ts/tsconfig.json packages/identity/ts/tsconfig.json
@@ -52,6 +56,7 @@ COPY packages/identity/ts/src packages/identity/ts/src
 COPY apps/coordinator/tsconfig.json apps/coordinator/tsconfig.json
 COPY apps/coordinator/src/ apps/coordinator/src/
 RUN set -e; \
+    pnpm --filter @caracalai/admin-audit build; \
     pnpm --filter @caracalai/core build; \
     pnpm --filter @caracalai/identity build; \
     pnpm --filter @caracalai/coordinator build; \

@@ -26,15 +26,19 @@ RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/package.json
+COPY packages/adminAudit/ts/package.json packages/adminAudit/ts/package.json
 COPY packages/core/ts/package.json packages/core/ts/package.json
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store,sharing=locked \
     pnpm config set store-dir /pnpm/store && \
     pnpm install --frozen-lockfile --ignore-scripts --filter @caracalai/api...
+COPY packages/adminAudit/ts/tsconfig.json packages/adminAudit/ts/tsconfig.json
+COPY packages/adminAudit/ts/src packages/adminAudit/ts/src
 COPY packages/core/ts/tsconfig.json packages/core/ts/tsconfig.json
 COPY packages/core/ts/src packages/core/ts/src
 COPY apps/api/tsconfig.json apps/api/tsconfig.json
 COPY apps/api/src apps/api/src
 RUN set -e; \
+    pnpm --filter @caracalai/admin-audit build; \
     pnpm --filter @caracalai/core build; \
     pnpm --filter @caracalai/api build; \
     pnpm --config.inject-workspace-packages=true --filter @caracalai/api deploy --prod /out; \

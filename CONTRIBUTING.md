@@ -61,7 +61,7 @@ pnpm --dir apps/cli typecheck
 #### TUI
 
 ```bash
-pnpm caracal-tui
+pnpm caracal tui
 ```
 
 CLI and TUI are exact alternatives over the same engine: every command available in one is available in the other. Both consume the canonical catalog at `packages/core/ts/src/commands.ts` (mirrored in Go at `packages/core/go/commands/catalog.go`; parity enforced by `tests/typescript/scripts/catalog-parity.test.ts`).
