@@ -9,6 +9,7 @@ import { v7 as uuidv7 } from 'uuid'
 import { enqueue, Topics, type Queryable } from '../outbox.js'
 import { ownsApplication, requireScope } from '../auth.js'
 import { cfg } from '../config.js'
+import { ZoneIdParams, ZoneParams, parseParams } from './params.js'
 
 const RetryPolicy = z.object({
   max_attempts: z.number().int().min(1).max(10).default(3),
@@ -48,7 +49,9 @@ const INVOCATION_SELECT = `SELECT id, zone_id, service_id, source_session_id, ta
 
 export const invocationsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/zones/:zoneId/invocations', async (req, reply) => {
-    const { zoneId } = req.params as { zoneId: string }
+    const params = parseParams(ZoneParams, req, reply)
+    if (!params) return
+    const { zoneId } = params
     if (await rateLimited(fastify, req, zoneId)) {
       return reply.code(429).send({ error: 'rate_limited' })
     }
@@ -121,7 +124,9 @@ export const invocationsRoutes: FastifyPluginAsync = async (fastify) => {
   })
 
   fastify.get('/zones/:zoneId/invocations/:id', async (req, reply) => {
-    const { zoneId, id } = req.params as { zoneId: string; id: string }
+    const params = parseParams(ZoneIdParams, req, reply)
+    if (!params) return
+    const { zoneId, id } = params
     const { rows } = await fastify.db.query(
       `${INVOCATION_SELECT} WHERE zone_id = $1 AND id = $2`,
       [zoneId, id],
@@ -131,7 +136,9 @@ export const invocationsRoutes: FastifyPluginAsync = async (fastify) => {
   })
 
   fastify.patch('/zones/:zoneId/invocations/:id/start', async (req, reply) => {
-    const { zoneId, id } = req.params as { zoneId: string; id: string }
+    const params = parseParams(ZoneIdParams, req, reply)
+    if (!params) return
+    const { zoneId, id } = params
     if (await rateLimited(fastify, req, zoneId)) {
       return reply.code(429).send({ error: 'rate_limited' })
     }
@@ -172,7 +179,9 @@ export const invocationsRoutes: FastifyPluginAsync = async (fastify) => {
   })
 
   fastify.patch('/zones/:zoneId/invocations/:id/cancel', async (req, reply) => {
-    const { zoneId, id } = req.params as { zoneId: string; id: string }
+    const params = parseParams(ZoneIdParams, req, reply)
+    if (!params) return
+    const { zoneId, id } = params
     if (await rateLimited(fastify, req, zoneId)) {
       return reply.code(429).send({ error: 'rate_limited' })
     }
@@ -215,7 +224,9 @@ export const invocationsRoutes: FastifyPluginAsync = async (fastify) => {
   })
 
   fastify.patch('/zones/:zoneId/invocations/:id/complete', async (req, reply) => {
-    const { zoneId, id } = req.params as { zoneId: string; id: string }
+    const params = parseParams(ZoneIdParams, req, reply)
+    if (!params) return
+    const { zoneId, id } = params
     if (await rateLimited(fastify, req, zoneId)) {
       return reply.code(429).send({ error: 'rate_limited' })
     }

@@ -29,6 +29,21 @@ function buildApp() {
 }
 
 describe('POST /v1/zones/:zoneId/agent-services', () => {
+  it('rejects malformed route params before database access', async () => {
+    const { app, db } = buildApp()
+    await app.ready()
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/zones/z!1/agent-services',
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.body)).toEqual({ error: 'invalid_params' })
+    expect(db.query).not.toHaveBeenCalled()
+    expect(db.connect).not.toHaveBeenCalled()
+  })
+
   it('registers an agent service', async () => {
     const { app, db } = buildApp()
     const client = {
