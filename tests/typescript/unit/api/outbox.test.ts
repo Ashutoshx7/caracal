@@ -60,7 +60,7 @@ describe('OutboxDispatcher', () => {
     redis.xadd.mockResolvedValue('0-1')
     const dispatcher = new OutboxDispatcher({ db: db as unknown as DB, redis: redis as unknown as RedisClient, workerId: 'w', log: makeLogger() })
     await dispatcher.tick()
-    expect(redis.xadd).toHaveBeenCalledWith('stream.x', '*', 'a', '1')
+    expect(redis.xadd).toHaveBeenCalledWith('stream.x', '*', 'outbox_id', 'r1', 'a', '1')
     expect(dbCalls.some((c) => c.sql.includes('SET dispatched_at = now()'))).toBe(true)
   })
 

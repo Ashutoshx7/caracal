@@ -12,7 +12,16 @@ const CONFIG_PATH = '../../../../apps/api/src/config.ts'
 
 let dir: string
 let originalCwd: string
-const SAVED_KEYS = ['CARACAL_ENV_FILE', 'CARACAL_REPO_ROOT', 'API_TEST_VAR', 'DATABASE_URL', 'REDIS_URL', 'TRUST_PROXY']
+const SAVED_KEYS = [
+  'CARACAL_ENV_FILE',
+  'CARACAL_REPO_ROOT',
+  'API_TEST_VAR',
+  'DATABASE_URL',
+  'REDIS_URL',
+  'TRUST_PROXY',
+  'CARACAL_MODE',
+  'NODE_ENV',
+]
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'caracal-api-cfg-'))
@@ -46,9 +55,19 @@ describe('api config loadEnvChain', () => {
   test('loads infra/docker/.env when CARACAL_REPO_ROOT is set', async () => {
     mkdirSync(join(dir, 'infra', 'docker'), { recursive: true })
     writeFileSync(join(dir, 'infra', 'docker', '.env'), 'API_TEST_VAR=repo-value\n')
+    process.env.CARACAL_MODE = 'dev'
     process.env.CARACAL_REPO_ROOT = dir
     await import(CONFIG_PATH)
     expect(process.env.API_TEST_VAR).toBe('repo-value')
+  })
+
+  test('does not load repo env files in runtime mode', async () => {
+    mkdirSync(join(dir, 'infra', 'docker'), { recursive: true })
+    writeFileSync(join(dir, 'infra', 'docker', '.env'), 'API_TEST_VAR=runtime-leak\n')
+    process.env.CARACAL_MODE = 'runtime'
+    process.env.CARACAL_REPO_ROOT = dir
+    await import(CONFIG_PATH)
+    expect(process.env.API_TEST_VAR).toBeUndefined()
   })
 
   test('does not walk up from cwd looking for infra/docker/.env', async () => {

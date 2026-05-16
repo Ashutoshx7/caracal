@@ -112,6 +112,18 @@ describe('adminAuthPlugin', () => {
     await app.close()
   })
 
+  it('blocks malformed zone paths for zone-scoped tokens without throwing', async () => {
+    const app = await buildPluginApp(makeDb({ token: 's', scope: 'zone', zoneId: 'z1' }))
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/zones/%E0%A4%A/things',
+      headers: { authorization: 'Bearer s' },
+    })
+    expect(res.statusCode).toBe(403)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'admin_token_zone_mismatch' })
+    await app.close()
+  })
+
   it('allows zone-scoped tokens for their own zone', async () => {
     const app = await buildPluginApp(makeDb({ token: 's', scope: 'zone', zoneId: 'z1' }))
     const res = await app.inject({
