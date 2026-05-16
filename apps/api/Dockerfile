@@ -37,7 +37,7 @@ COPY apps/api/src apps/api/src
 RUN set -e; \
     pnpm --filter @caracalai/core build; \
     pnpm --filter @caracalai/api build; \
-    pnpm --filter @caracalai/api deploy --prod --legacy /out; \
+    pnpm --config.inject-workspace-packages=true --filter @caracalai/api deploy --prod /out; \
     find /out/node_modules -type d \( -name test -o -name tests -o -name __tests__ \) -prune -exec rm -rf {} + 2>/dev/null || true; \
     find /out/node_modules -type f \( -name '*.md' -o -name '*.markdown' -o -name '*.map' -o -name 'CHANGELOG*' -o -name '.npmignore' -o -name '.eslintrc*' -o -name '.prettierrc*' \) -delete 2>/dev/null || true
 
