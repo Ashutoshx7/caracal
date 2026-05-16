@@ -37,6 +37,17 @@ export const SECRET_KEYS: readonly string[] = Object.freeze([
 
 export const REDACT_VALUE = '***';
 
+const PINO_REDACT_CONTAINERS: readonly string[] = Object.freeze([
+  'req.headers',
+  'request.headers',
+  'res.headers',
+  'response.headers',
+  'req.body',
+  'request.body',
+  'req.query',
+  'request.query',
+]);
+
 const BEARER_PATTERN = /bearer\s+[A-Za-z0-9._\-+/=]{8,}/gi;
 const JWT_PATTERN = /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g;
 const AWS_AKIA = /AKIA[0-9A-Z]{16}/g;
@@ -58,6 +69,17 @@ export const MAX_FIELD_BYTES = (() => {
 export function isSecretKey(name: string): boolean {
   const lower = name.toLowerCase();
   return SECRET_KEYS.some((k) => lower.includes(k));
+}
+
+export function buildPinoRedactPaths(): string[] {
+  const paths = new Set<string>();
+  for (const k of SECRET_KEYS) {
+    for (const c of PINO_REDACT_CONTAINERS) {
+      paths.add(`${c}["${k}"]`);
+      paths.add(`${c}["${k.toUpperCase()}"]`);
+    }
+  }
+  return Array.from(paths);
 }
 
 /**
@@ -273,6 +295,5 @@ function makeLogger(
     metrics: () => devLogMetrics(),
   };
 }
-
 
 
