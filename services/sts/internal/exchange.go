@@ -124,7 +124,7 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 		if err != nil {
 			return nil, nil, http.StatusUnauthorized, sharederr.New(sharederr.InvalidToken, "invalid subject_token")
 		}
-		sid, serr := s.validateTokenSession(ctx, zoneID, req.SessionID, subjectClaims)
+		sid, serr := s.validateTokenSession(ctx, zoneID, app.ID, req.SessionID, subjectClaims)
 		if serr != nil {
 			return nil, nil, http.StatusForbidden, serr
 		}
@@ -139,7 +139,7 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 		if err != nil {
 			return nil, nil, http.StatusUnauthorized, sharederr.New(sharederr.InvalidToken, "invalid actor_token")
 		}
-		if _, serr := s.validateTokenSession(ctx, zoneID, "", actorClaims); serr != nil {
+		if _, serr := s.validateTokenSession(ctx, zoneID, app.ID, "", actorClaims); serr != nil {
 			return nil, nil, http.StatusForbidden, serr
 		}
 		if sameTokenPrincipal(subjectClaims, actorClaims) {
@@ -505,7 +505,7 @@ func (s *Server) validateSubjectToken(ctx context.Context, tokenStr, zoneID stri
 	return mc, nil
 }
 
-func (s *Server) validateTokenSession(ctx context.Context, zoneID, sessionID string, claims map[string]any) (string, *sharederr.CaracalError) {
+func (s *Server) validateTokenSession(ctx context.Context, zoneID, appID, sessionID string, claims map[string]any) (string, *sharederr.CaracalError) {
 	sid := claimString(claims, "sid")
 	if sid == "" {
 		return "", sharederr.New(sharederr.InvalidToken, "missing token session")
@@ -524,6 +524,9 @@ func (s *Server) validateTokenSession(ctx context.Context, zoneID, sessionID str
 	sub := claimString(claims, "sub")
 	if sub == "" || session.SubjectID == nil || *session.SubjectID != sub {
 		return "", sharederr.New(sharederr.AccessDenied, "session subject mismatch")
+	}
+	if clientID := claimString(claims, "client_id"); clientID == "" || clientID != appID {
+		return "", sharederr.New(sharederr.AccessDenied, "session client mismatch")
 	}
 	return sid, nil
 }

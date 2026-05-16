@@ -13,6 +13,8 @@ import (
 	"github.com/garudex-labs/caracal/core/config"
 )
 
+const stsPort = "8080"
+
 type Config struct {
 	config.Base
 	ZoneKEKProvider    string
@@ -28,8 +30,12 @@ func loadConfig() (Config, error) {
 	if missing := config.MissingRequired("PORT", "DATABASE_URL", "REDIS_URL", "ISSUER_URL"); len(missing) > 0 {
 		return Config{}, fmt.Errorf("required env vars missing: %s", strings.Join(missing, ", "))
 	}
+	base := config.Load()
+	if base.Port != stsPort {
+		return Config{}, fmt.Errorf("PORT must be %s for sts", stsPort)
+	}
 	return Config{
-		Base:               config.Load(),
+		Base:               base,
 		ZoneKEKProvider:    config.Getenv("ZONE_KEK_PROVIDER", "local"),
 		IssuerURL:          os.Getenv("ISSUER_URL"),
 		MaxGrantTTLSeconds: config.IntEnv("MAX_GRANT_TTL_SECONDS", 3600),
