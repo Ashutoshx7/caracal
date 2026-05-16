@@ -210,13 +210,14 @@ function validateSuccessResponse(data: STSSuccessResponse): TokenExchangeRespons
   if (data.token_type !== undefined && data.token_type !== 'Bearer') {
     throw new Error('STS response invalid: token_type must be Bearer')
   }
-  if (!Number.isInteger(data.expires_in) || data.expires_in <= 0) {
+  const expiresIn = data.expires_in
+  if (typeof expiresIn !== 'number' || !Number.isInteger(expiresIn) || expiresIn <= 0) {
     throw new Error('STS response invalid: expires_in must be a positive integer')
   }
   return {
     accessToken: data.access_token,
     tokenType: 'Bearer',
-    expiresIn: data.expires_in,
+    expiresIn,
     issuedAt: Math.floor(Date.now() / 1000),
   }
 }
