@@ -6,7 +6,9 @@
 ## Required
 - Must use PostgreSQL 18 only.
 - Must listen on port 5432 only.
+- Must package migrations and `caracal-migrate` inside the Postgres image.
 - Must apply numbered `NNNN_*.up.sql` migrations in order; pair every `up` with a `down`.
+- Must run schema migrations through the Compose `dbMigrate` one-shot before app services start.
 - Must keep `audit_events` writable only by `caracalAudit` (INSERT + SELECT).
 - Must keep `policy_versions` immutable through the `reject_policy_version_mutation` trigger.
 - Must store secrets only as ChaCha20 ciphertext in `secrets.ciphertext` with `nonce` and `dek_id` populated.

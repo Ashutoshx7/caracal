@@ -6,10 +6,10 @@
 ## Required
 - Must use Redis 8 only.
 - Must listen on port 6379 only.
-- Must apply `requirepass` via the `REDIS_PASSWORD` env var passed to `redis-server` on the CLI.
+- Must apply `requirepass` from `REDIS_PASSWORD_FILE`; `REDIS_PASSWORD` is only allowed for direct script verification.
 - Must run `provision-streams.sh` once at compose `init` time; the script must remain idempotent.
 - Must keep `appendonly yes`, `appendfsync everysec`, and `maxmemory-policy noeviction`.
-- Must keep these streams and consumer groups: `caracal.audit.events` (`audit-ingestor`, `siem-export`), `caracal.audit.events.dlq` (`audit-dlq-observer`), `caracal.policy.invalidate` (`opa-engine`), `caracal.sessions.revoke` (`sts-revocation`), `caracal.agents.lifecycle` (`coordinator-relay`), `caracal.providers.ratelimit` (no group).
+- Must keep these streams and consumer groups: `caracal.audit.events` (`audit-ingestor`, `siem-export`), `caracal.audit.events.dlq` (`audit-dlq-observer`), `caracal.policy.invalidate` (`opa-engine`), `caracal.sessions.revoke` (`sts-revocation`), `caracal.keys.invalidate` (`sts-keys`), `caracal.agents.lifecycle` (`coordinator-relay`), `caracal.invocations.lifecycle` (`invocations-observer`), `caracal.delegations.invalidate` (`delegations-observer`), `caracal.providers.ratelimit` (no group).
 
 ## Forbidden
 - Must not import or reference `caracalEnterprise/`.
