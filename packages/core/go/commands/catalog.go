@@ -28,25 +28,27 @@ type Descriptor struct {
 
 // CLI mirrors apps/cli/src/registry order; parity is enforced by tests/typescript/scripts/catalog-parity.test.ts.
 var CLI = []Descriptor{
-	{Name: "run", Group: GroupRuntime, Summary: "Run a command with RESOURCE_TOKEN injected into env", RequiresConfig: true},
-	{Name: "credential", Group: GroupRuntime, Summary: "Print the resolved credential for a resource", Subcommands: []string{"read"}, RequiresConfig: true},
+	{Name: "run", Group: GroupRuntime, Summary: "Run a command with RESOURCE_TOKEN", RequiresConfig: true},
+	{Name: "credential", Group: GroupRuntime, Summary: "Read a resource credential", Subcommands: []string{"read"}, RequiresConfig: true},
 
-	{Name: "zone", Group: GroupAdmin, Summary: "list|get|create|patch|delete", Subcommands: []string{"list", "get", "create", "patch", "delete"}},
-	{Name: "app", Group: GroupAdmin, Summary: "list|get|create|patch|delete|dcr", Subcommands: []string{"list", "get", "create", "patch", "delete", "dcr"}},
-	{Name: "resource", Group: GroupAdmin, Summary: "list|get|create|patch|delete", Subcommands: []string{"list", "get", "create", "patch", "delete"}, RequiresZone: true},
-	{Name: "provider", Group: GroupAdmin, Summary: "list|get|create|patch|delete", Subcommands: []string{"list", "get", "create", "patch", "delete"}, RequiresZone: true},
-	{Name: "policy", Group: GroupAdmin, Summary: "list|get|create|version|delete", Subcommands: []string{"list", "get", "create", "version", "delete"}, RequiresZone: true},
-	{Name: "policy-set", Group: GroupAdmin, Summary: "list|get|create|version|activate|delete", Subcommands: []string{"list", "get", "create", "version", "activate", "delete"}, RequiresZone: true},
-	{Name: "grant", Group: GroupAdmin, Summary: "list|get|create|revoke", Subcommands: []string{"list", "get", "create", "revoke", "delete"}, RequiresZone: true},
-	{Name: "session", Group: GroupAdmin, Summary: "list", Subcommands: []string{"list"}, RequiresZone: true},
+	{Name: "zone", Group: GroupAdmin, Summary: "Manage zones", Subcommands: []string{"list", "get", "create", "patch", "delete"}},
+	{Name: "app", Group: GroupAdmin, Summary: "Manage applications", Subcommands: []string{"list", "get", "create", "patch", "delete", "dcr"}},
+	{Name: "resource", Group: GroupAdmin, Summary: "Manage protected resources", Subcommands: []string{"list", "get", "create", "patch", "delete"}, RequiresZone: true},
+	{Name: "provider", Group: GroupAdmin, Summary: "Manage identity providers", Subcommands: []string{"list", "get", "create", "patch", "delete"}, RequiresZone: true},
+	{Name: "policy", Group: GroupAdmin, Summary: "Manage policies", Subcommands: []string{"list", "get", "create", "version", "delete"}, RequiresZone: true},
+	{Name: "policy-set", Group: GroupAdmin, Summary: "Manage policy sets", Subcommands: []string{"list", "get", "create", "version", "activate", "delete"}, RequiresZone: true},
+	{Name: "grant", Group: GroupAdmin, Summary: "Manage grants", Subcommands: []string{"list", "get", "create", "revoke", "delete"}, RequiresZone: true},
+	{Name: "session", Group: GroupAdmin, Summary: "List sessions", Subcommands: []string{"list"}, RequiresZone: true},
 
-	{Name: "audit", Group: GroupObservability, Summary: "tail [--decision …] [--request-id …] [--since …] [--limit N]", Subcommands: []string{"tail"}, RequiresZone: true},
-	{Name: "explain", Group: GroupObservability, Summary: "Show audit row + determining policies + diagnostics", RequiresZone: true},
+	{Name: "audit", Group: GroupObservability, Summary: "Search audit events", Subcommands: []string{"tail"}, RequiresZone: true},
+	{Name: "explain", Group: GroupObservability, Summary: "Explain an audit request", RequiresZone: true},
 
-	{Name: "agent", Group: GroupMultiagent, Summary: "list|get|tree|suspend|resume|terminate", Subcommands: []string{"list", "get", "tree", "children", "suspend", "resume", "terminate"}, RequiresZone: true},
-	{Name: "delegation", Group: GroupMultiagent, Summary: "inbound|outbound|traverse|revoke", Subcommands: []string{"inbound", "outbound", "traverse", "revoke"}, RequiresZone: true},
+	{Name: "agent", Group: GroupMultiagent, Summary: "Manage agent sessions", Subcommands: []string{"list", "get", "tree", "children", "suspend", "resume", "terminate"}, RequiresZone: true},
+	{Name: "delegation", Group: GroupMultiagent, Summary: "Manage delegation edges", Subcommands: []string{"inbound", "outbound", "traverse", "revoke"}, RequiresZone: true},
 
-	{Name: "completion", Group: GroupShell, Summary: "Emit shell completion script (bash|zsh|fish|powershell)", Subcommands: []string{"bash", "zsh", "fish", "powershell"}, Hidden: true},
+	{Name: "control", Group: GroupAdmin, Summary: "Manage control API credentials", Subcommands: []string{"key", "rotate", "revoke"}, RequiresZone: true},
+
+	{Name: "completion", Group: GroupShell, Summary: "Generate shell completions", Subcommands: []string{"bash", "zsh", "fish", "powershell"}, Hidden: true},
 }
 
 // ByName returns the descriptor for name or nil if unknown / hidden.

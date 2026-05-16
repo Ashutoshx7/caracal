@@ -5,12 +5,15 @@
 
 import type { AdminClient, Zone } from '@caracalai/admin'
 import {
-  composeRun,
+  buildRunEnv,
+  checkMcpGovernance,
+  controlKeyCreate,
+  controlKeyGet,
+  controlKeyList,
+  controlKeyRevoke,
+  controlKeyRotate,
   credentialRead,
   runExec,
-  stackDown,
-  stackStatus,
-  stackUp,
 } from '@caracalai/engine'
 import { readFileSync } from 'node:fs'
 import { parse } from 'smol-toml'
@@ -24,7 +27,7 @@ import { explainError } from '../errors.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
 import { DetailView } from './detail.ts'
-import { ConfirmView, FormView } from './form.ts'
+import { FormView } from './form.ts'
 import {
   agentsView,
   applicationsView,
@@ -39,8 +42,6 @@ import {
   zonesView,
   type Ctx,
 } from './factory.ts'
-import { resolveStackPaths } from '@caracalai/engine'
-import { CARACAL_TUI_MODE } from '../version.gen.ts'
 import { StreamView } from './stream.ts'
 
 interface Entry {
@@ -53,7 +54,7 @@ interface Entry {
 function loadCliConfig(): CliConfig | undefined {
   const path = resolveCliConfigPath()
   if (!path) return undefined
-  try { return parse(readFileSync(path, 'utf8')) as unknown as CliConfig } catch { return undefined }
+  return parse(readFileSync(path, 'utf8')) as unknown as CliConfig
 }
 
 function tokenizeArgv(input: string): string[] {
@@ -103,8 +104,8 @@ const ENTRIES: Entry[] = [
   { key: 'g', label: 'delegation',   needsZone: true,  open: delegationsView },
   { key: 'x', label: 'explain',      needsZone: true,  open: auditExplainEntry },
   { key: 'c', label: 'credential',   needsZone: false, open: credentialEntry },
-  { key: 's', label: 'stack',        needsZone: false, open: stackEntry },
   { key: 'u', label: 'run',          needsZone: false, open: runEntry },
+  { key: 't', label: 'control',      needsZone: true,  open: controlEntry },
 ]
 
 function auditExplainEntry(ctx: Ctx): View {
@@ -147,27 +148,27 @@ function credentialEntry(): View {
   })
 }
 
-function stackEntry(): View {
-  return new StackMenuView()
-}
-
 function runEntry(): View {
   return new FormView({
     title: 'run',
     fields: [
-      { key: 'argv', label: 'argv', kind: 'text', required: true, hint: 'shell-quoted, no metacharacters' },
+      { key: 'argv', label: 'argv', kind: 'text', required: true, hint: 'space-separated argv (quotes group tokens); spawn() — not a shell — so no globbing or pipes' },
       { key: 'env', label: 'env (KEY=VAL csv)', kind: 'list' },
     ],
     onSubmit: async (v, app) => {
       const argv = tokenizeArgv(v.argv ?? '')
       if (argv.length === 0) throw new Error('argv is empty')
-      const env = v.env ? parseEnv(v.env) : undefined
+      const extraEnv = v.env ? parseEnv(v.env) : undefined
+      const cfg = loadCliConfig()
+      if (!cfg) throw new Error('caracal.toml not found')
       app.pop()
       app.push(new StreamView({
         title: `run ${argv[0]}`,
-        spawn: (onLine) => {
+        spawn: async (onLine) => {
+          checkMcpGovernance(argv, cfg, (line) => onLine(line))
+          const env = await buildRunEnv(cfg, { onLine: (line) => onLine(line) })
           const handle = runExec({
-            argv, env, onLine: (line) => onLine(line), forwardSignals: false,
+            argv, env: { ...env, ...extraEnv }, onLine: (line) => onLine(line), forwardSignals: false,
           })
           return { dispose: handle.dispose, exitCode: handle.exitCode }
         },
@@ -176,24 +177,31 @@ function runEntry(): View {
   })
 }
 
-class StackMenuView implements View {
-  readonly title = 'stack'
-  private cursor = 0
-  private items: { key: string; label: string; build: (app: App) => View | Promise<View> }[]
+function controlEntry(ctx: Ctx): View {
+  return new ControlMenuView(ctx)
+}
 
-  constructor() {
+class ControlMenuView implements View {
+  readonly title = 'control'
+  private cursor = 0
+  private readonly ctx: Ctx
+  private readonly items: { key: string; label: string; build: () => View }[]
+
+  constructor(ctx: Ctx) {
+    this.ctx = ctx
     this.items = [
-      { key: 'u', label: 'up', build: () => stackComposeStream('up', stackUp) },
-      { key: 'd', label: 'down', build: () => stackComposeStream('down', stackDown) },
-      { key: 's', label: 'status', build: () => stackStatusDetail() },
-      { key: 'p', label: 'purge', build: () => stackPurgeForm() },
+      { key: 'l', label: 'list keys',  build: () => this.listView() },
+      { key: 'g', label: 'get key', build: () => this.getForm() },
+      { key: 'c', label: 'create key', build: () => this.createForm() },
+      { key: 'r', label: 'rotate key', build: () => this.rotateForm() },
+      { key: 'v', label: 'revoke key', build: () => this.revokeForm() },
     ]
   }
 
-  hints(): string[] { return ['↑/↓:select', 'enter:open', 'h:back'] }
+  hints(): string[] { return ['↑/↓:select', 'enter:open', 'esc:back'] }
 
   render(_ctx: ViewContext): string[] {
-    const lines: string[] = ['', ' ' + ansi.bold + 'Stack' + ansi.reset, '']
+    const lines: string[] = ['', ' ' + ansi.bold + 'Control API keys' + ansi.reset, '']
     for (let i = 0; i < this.items.length; i++) {
       const it = this.items[i]!
       const text = `[${it.key}] ${it.label}`
@@ -205,65 +213,97 @@ class StackMenuView implements View {
   }
 
   async onKey(key: Key, ctx: ViewContext): Promise<void> {
-    if (key === 'up' || key === 'k') { this.cursor = Math.max(0, this.cursor - 1); return }
+    if (key === 'up') { this.cursor = Math.max(0, this.cursor - 1); return }
     if (key === 'down' || key === 'j') { this.cursor = Math.min(this.items.length - 1, this.cursor + 1); return }
-    if (key === 'left' || key === 'h' || key === 'esc') { ctx.app.pop(); return }
+    if (key === 'left' || key === 'esc') { ctx.app.pop(); return }
     const direct = this.items.findIndex((it) => it.key === key)
-    if (direct >= 0) {
-      const built = await this.items[direct]!.build(ctx.app)
-      ctx.app.push(built)
-      return
-    }
-    if (key === 'enter') {
-      const built = await this.items[this.cursor]!.build(ctx.app)
-      ctx.app.push(built)
-    }
+    if (direct >= 0) { ctx.app.push(this.items[direct]!.build()); return }
+    if (key === 'enter') { ctx.app.push(this.items[this.cursor]!.build()) }
   }
-}
 
-type ComposeFn = (opts: {
-  paths: import('@caracalai/engine').StackPaths
-  args: string[]
-  env?: Record<string, string | undefined>
-  onLine?: (line: string, stream: 'stdout' | 'stderr') => void
-}) => { dispose: () => void; exitCode: Promise<number> }
+  private listView(): View {
+    return new DetailView({
+      title: 'control / keys',
+      load: () => controlKeyList(this.ctx.client, this.ctx.zoneId),
+    })
+  }
 
-function stackComposeStream(label: 'up' | 'down', fn: ComposeFn): View {
-  return new StreamView({
-    title: `stack ${label}`,
-    spawn: (onLine) => {
-      const paths = resolveStackPaths({ mode: CARACAL_TUI_MODE })
-      return fn({
-        paths,
-        args: [],
-        onLine: (line) => onLine(line),
-      })
-    },
-  })
-}
+  private createForm(): View {
+    const { client, zoneId } = this.ctx
+    return new FormView({
+      title: 'control key create',
+      fields: [
+        { key: 'name', label: 'name', kind: 'text', required: true },
+        { key: 'client_secret', label: 'client_secret', kind: 'secret' },
+      ],
+      onSubmit: async (v, app) => {
+        const result = await controlKeyCreate(client, zoneId, {
+          name: v.name!,
+          clientSecret: v.client_secret || undefined,
+        })
+        app.pop()
+        app.push(new DetailView({
+          title: `control / ${result.application.id}`,
+          load: async () => ({
+            id: result.application.id,
+            name: result.application.name,
+            client_id: result.application.id,
+            client_secret: result.clientSecret,
+            traits: result.application.traits,
+            note: 'store client_secret now — it cannot be retrieved later',
+          }),
+        }))
+      },
+    })
+  }
 
-function stackStatusDetail(): View {
-  return new DetailView({ title: 'stack status', load: () => stackStatus() })
-}
+  private getForm(): View {
+    const { client, zoneId } = this.ctx
+    return new FormView({
+      title: 'control key get',
+      fields: [{ key: 'id', label: 'application id', kind: 'text', required: true }],
+      onSubmit: async (v, app) => {
+        app.pop()
+        app.push(new DetailView({
+          title: `control / ${v.id}`,
+          load: () => controlKeyGet(client, zoneId, v.id!),
+        }))
+      },
+    })
+  }
 
-function stackPurgeForm(): View {
-  return new ConfirmView({
-    message: 'purge stack? (compose down -v --remove-orphans)',
-    onConfirm: async (app) => {
-      app.pop()
-      app.push(new StreamView({
-        title: 'stack purge',
-        spawn: (onLine) => {
-          const paths = resolveStackPaths({ mode: CARACAL_TUI_MODE })
-          return composeRun({
-            paths,
-            args: ['down', '-v', '--remove-orphans'],
-            onLine: (line) => onLine(line),
-          })
-        },
-      }))
-    },
-  })
+  private rotateForm(): View {
+    const { client, zoneId } = this.ctx
+    return new FormView({
+      title: 'control key rotate',
+      fields: [{ key: 'id', label: 'application id', kind: 'text', required: true }],
+      onSubmit: async (v, app) => {
+        const result = await controlKeyRotate(client, zoneId, v.id!)
+        app.pop()
+        app.push(new DetailView({
+          title: `control / ${result.application.id}`,
+          load: async () => ({
+            id: result.application.id,
+            client_secret: result.clientSecret,
+            note: 'store client_secret now — it cannot be retrieved later',
+          }),
+        }))
+      },
+    })
+  }
+
+  private revokeForm(): View {
+    const { client, zoneId } = this.ctx
+    return new FormView({
+      title: 'control key revoke',
+      fields: [{ key: 'id', label: 'application id', kind: 'text', required: true }],
+      onSubmit: async (v, app) => {
+        await controlKeyRevoke(client, zoneId, v.id!)
+        app.pop()
+        app.setStatus(`revoked control key ${v.id}`)
+      },
+    })
+  }
 }
 
 export class MenuView implements View {
@@ -307,7 +347,7 @@ export class MenuView implements View {
   render(_ctx: ViewContext): string[] {
     const lines: string[] = []
     lines.push('')
-    lines.push(' ' + ansi.bold + 'Caracal' + ansi.reset + ansi.dim + '  Inspect and manage the OSS stack interactively.' + ansi.reset)
+    lines.push(' ' + ansi.bold + 'Caracal' + ansi.reset + ansi.dim + '  Inspect and manage identity resources interactively.' + ansi.reset)
     lines.push('')
     const zone = this.zoneId ? ansi.fg(76) + this.zoneId + ansi.reset : ansi.fg(214) + '(no zone selected)' + ansi.reset
     lines.push(' zone: ' + zone)
@@ -370,7 +410,7 @@ class ZonePickerView implements View {
     this.pick = pick
   }
 
-  hints(): string[] { return ['↑/↓:move', 'enter:select', 'h:back'] }
+  hints(): string[] { return ['↑/↓:move', 'enter:select', 'esc:back'] }
 
   render(ctx: ViewContext): string[] {
     const lines: string[] = ['', ' Pick a zone to administer:']
@@ -398,7 +438,7 @@ class ZonePickerView implements View {
       ctx.app.pop()
       return
     }
-    if (key === 'left' || key === 'h' || key === 'esc') ctx.app.pop()
+    if (key === 'left' || key === 'esc') ctx.app.pop()
   }
 }
 

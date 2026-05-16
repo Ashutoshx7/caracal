@@ -41,7 +41,7 @@ export class StreamView implements View {
   }
 
   hints(): string[] {
-    return ['j/k:scroll', 'pgup/pgdn:page', 'G:tail', 'h/esc:back']
+    return ['j/k:scroll', 'pgup/pgdn:page', 'G:tail', 'esc:back']
   }
 
   async init(app: App): Promise<void> {
@@ -112,6 +112,6 @@ export class StreamView implements View {
     if (key === 'pgup') { this.auto = false; this.offset = Math.max(0, this.offset - 10); return }
     if (key === 'pgdn') { this.auto = false; this.offset = Math.min(last, this.offset + 10); return }
     if (key === 'G' || key === 'end') { this.auto = true; this.offset = last; return }
-    if (key === 'left' || key === 'h' || key === 'esc') ctx.app.pop()
+    if (key === 'left' || key === 'esc') ctx.app.pop()
   }
 }
