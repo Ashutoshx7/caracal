@@ -7,8 +7,9 @@ import type { FastifyBaseLogger } from 'fastify'
 import type { DB } from '../db.js'
 
 const REAP_LOCK_KEY = '7163920485318481'
+const REAP_BATCH_SIZE = 500
 
-async function runSessionsReap(db: DB): Promise<number> {
+export async function runSessionsReap(db: DB): Promise<number> {
   const client = await db.connect()
   try {
     const { rows } = await client.query<{ acquired: boolean }>(
@@ -18,10 +19,20 @@ async function runSessionsReap(db: DB): Promise<number> {
     if (!rows[0]?.acquired) return 0
     try {
       const { rowCount } = await client.query(
-        `UPDATE sessions s
+        `WITH orphan_sessions AS (
+           SELECT s.id
+           FROM sessions s
+           WHERE s.status = 'active'
+             AND NOT EXISTS (SELECT 1 FROM zones z WHERE z.id = s.zone_id)
+           ORDER BY s.created_at
+           LIMIT $1
+           FOR UPDATE SKIP LOCKED
+         )
+         UPDATE sessions s
          SET status = 'expired'
-         WHERE s.status = 'active'
-           AND NOT EXISTS (SELECT 1 FROM zones z WHERE z.id = s.zone_id)`,
+         FROM orphan_sessions
+         WHERE s.id = orphan_sessions.id`,
+        [REAP_BATCH_SIZE],
       )
       return rowCount ?? 0
     } finally {

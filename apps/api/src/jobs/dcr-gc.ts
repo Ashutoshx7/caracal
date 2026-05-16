@@ -7,15 +7,26 @@ import type { FastifyBaseLogger } from 'fastify'
 import type { DB } from '../db.js'
 
 const GC_LOCK_KEY = '7163920485318472'
+const GC_BATCH_SIZE = 500
 
 export async function runDCRGC(db: DB): Promise<number> {
   const { rowCount } = await db.query(
-    `UPDATE applications
+    `WITH expired_applications AS (
+       SELECT id
+       FROM applications
+       WHERE registration_method = 'dcr'
+         AND expires_at IS NOT NULL
+         AND expires_at < now() - INTERVAL '24 hours'
+         AND archived_at IS NULL
+       ORDER BY expires_at
+       LIMIT $1
+       FOR UPDATE SKIP LOCKED
+     )
+     UPDATE applications a
      SET archived_at = now()
-     WHERE registration_method = 'dcr'
-       AND expires_at IS NOT NULL
-       AND expires_at < now() - INTERVAL '24 hours'
-       AND archived_at IS NULL`,
+     FROM expired_applications
+     WHERE a.id = expired_applications.id`,
+    [GC_BATCH_SIZE],
   )
   return rowCount ?? 0
 }
@@ -30,12 +41,22 @@ async function runDCRGCIfLeader(db: DB): Promise<number | null> {
     if (!rows[0]?.acquired) return null
     try {
       const { rowCount } = await client.query(
-        `UPDATE applications
+        `WITH expired_applications AS (
+           SELECT id
+           FROM applications
+           WHERE registration_method = 'dcr'
+             AND expires_at IS NOT NULL
+             AND expires_at < now() - INTERVAL '24 hours'
+             AND archived_at IS NULL
+           ORDER BY expires_at
+           LIMIT $1
+           FOR UPDATE SKIP LOCKED
+         )
+         UPDATE applications a
          SET archived_at = now()
-         WHERE registration_method = 'dcr'
-           AND expires_at IS NOT NULL
-           AND expires_at < now() - INTERVAL '24 hours'
-           AND archived_at IS NULL`,
+         FROM expired_applications
+         WHERE a.id = expired_applications.id`,
+        [GC_BATCH_SIZE],
       )
       return rowCount ?? 0
     } finally {

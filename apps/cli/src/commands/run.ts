@@ -22,7 +22,8 @@ export async function runCommand(argv: string[], cfg: CliConfig): Promise<void> 
         target.write(line + '\n')
       },
     })
-  } catch {
+  } catch (err) {
+    printError(err instanceof Error ? err.message : String(err))
     process.exit(1)
   }
 
