@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Interactive command shell for `caracal cli` (no args): controlled REPL with allowlisted dispatch, history, and inline dropdown autocomplete.
+// Interactive command shell for `caracal cli` (no args): controlled REPL with allowlisted dispatch, history, and on-demand inline + dropdown autocomplete.
 
 import { createInterface, emitKeypressEvents, type Interface } from 'node:readline'
 import { COMMAND_NAME_PATTERN } from '@caracalai/core/commands'
@@ -55,11 +55,16 @@ class ReplExit extends Error {
   }
 }
 
-interface DropdownState {
+interface GhostState {
   suggestions: Suggestion[]
   selected: number
-  rendered: number
+  tokenStart: number
+  tokenEnd: number
+  painted: number
+  summoned: boolean
 }
+
+type ReadlineInternal = { line: string; cursor: number; _refreshLine: () => void }
 
 export async function startRepl(opts: ReplOptions): Promise<void> {
   if (!process.stdin.isTTY) {
@@ -67,27 +72,29 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     process.exit(1)
   }
   const { registry } = opts.dispatchOptions
-  const useDropdown = colorOn(process.stdout)
+  const useGhost = colorOn(process.stdout)
   const promptText = `${style.prompt('caracal')}${style.label(' › ')}`
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
     prompt: promptText,
-    completer: useDropdown ? undefined : buildSimpleCompleter(registry),
+    completer: useGhost ? noopCompleter : buildSimpleCompleter(registry),
     terminal: true,
     historySize: 500,
   })
 
-  const dropdown: DropdownState = { suggestions: [], selected: 0, rendered: 0 }
-  if (useDropdown) attachDropdown(rl, registry, opts.cfg, dropdown)
+  const ghost: GhostState = { suggestions: [], selected: 0, tokenStart: 0, tokenEnd: 0, painted: 0, summoned: false }
+  if (useGhost) attachGhost(rl, registry, opts.cfg, ghost)
 
-  printInfo(`Caracal CLI ${opts.dispatchOptions.version} — interactive shell. Type \`help\` for commands, \`exit\` to quit.`)
-  if (useDropdown) printInfo(`${style.kbd(' Tab ')} accept   ${style.kbd(' ↑↓ ')} navigate   ${style.kbd(' Esc ')} dismiss`)
+  printInfo(`Caracal CLI ${opts.dispatchOptions.version}`)
+  if (useGhost) printInfo(`${style.kbd(' Tab ')} suggest/accept   ${style.kbd(' ↑↓ ')} cycle   ${style.kbd(' Esc ')} dismiss`)
+  printInfo('Type `help` for commands, `exit` to quit.')
   rl.prompt()
 
   let exitCode = 0
   for await (const raw of rl) {
-    clearDropdown(dropdown)
+    resetGhost(ghost)
+    clearPanel(ghost)
     const line = raw.trim()
     if (!line) { rl.prompt(); continue }
     const args = splitArgs(line)
@@ -125,6 +132,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   if (exitCode !== 0) process.exit(exitCode)
 }
 
+const noopCompleter = (line: string, cb: (err: null, result: [string[], string]) => void): void => {
+  cb(null, [[], line])
+}
+
 function buildSimpleCompleter(registry: CommandRegistry): (line: string) => [string[], string] {
   const visible = registry.ordered.filter((b) => !b.descriptor.hidden).map((b) => b.descriptor.name)
   const all = [...new Set([...visible, ...BUILTINS.map((b) => b.value)])].sort()
@@ -139,104 +150,156 @@ function buildSimpleCompleter(registry: CommandRegistry): (line: string) => [str
   }
 }
 
-function attachDropdown(
+function attachGhost(
   rl: Interface,
   registry: CommandRegistry,
   cfg: CliConfig | undefined,
-  state: DropdownState,
+  state: GhostState,
 ): void {
   emitKeypressEvents(process.stdin, rl)
-  const refresh = () => {
-    const line = (rl as unknown as { line: string }).line ?? ''
-    const cursor = (rl as unknown as { cursor: number }).cursor ?? line.length
+  const internal = rl as unknown as ReadlineInternal
+
+  const recompute = () => {
+    const line = internal.line ?? ''
+    const cursor = internal.cursor ?? line.length
+    if (line.length === 0 && !state.summoned) {
+      state.suggestions = []
+      clearPanel(state)
+      internal._refreshLine()
+      return
+    }
     const result = complete(registry, line, cursor, {
       cfg,
       hasZone: hasZone(cfg),
       builtins: BUILTINS,
-      limit: 8,
+      limit: 12,
     })
     state.suggestions = result.suggestions
+    state.tokenStart = result.tokenStart
+    state.tokenEnd = result.tokenEnd
     if (state.selected >= state.suggestions.length) state.selected = 0
-    renderDropdown(state)
+    paintGhost(internal, state)
   }
-  process.stdin.on('keypress', (_ch: string | undefined, key: { name?: string; ctrl?: boolean; meta?: boolean } | undefined) => {
+
+  const onKey = (_ch: string | undefined, key: { name?: string; ctrl?: boolean } | undefined) => {
     if (!key) return
-    if (key.ctrl && (key.name === 'c' || key.name === 'd')) { clearDropdown(state); return }
+    if (key.ctrl && (key.name === 'c' || key.name === 'd')) { dismiss(internal, state); return }
     if (key.name === 'tab') {
-      if (state.suggestions.length > 0) {
-        applySelection(rl, registry, cfg, state)
-        return
-      }
+      if (pickAcceptable(state)) { acceptSuggestion(internal, state); recompute(); return }
+      state.summoned = true
+      recompute()
+      return
     }
-    if (key.name === 'up' && state.suggestions.length > 0) {
+    if (key.name === 'right' && atLineEnd(internal) && pickAcceptable(state) && state.painted > 0) {
+      acceptSuggestion(internal, state); recompute(); return
+    }
+    if (key.name === 'up' && state.suggestions.length > 1) {
       state.selected = (state.selected - 1 + state.suggestions.length) % state.suggestions.length
-      renderDropdown(state)
+      paintGhost(internal, state)
       return
     }
-    if (key.name === 'down' && state.suggestions.length > 0) {
+    if (key.name === 'down' && state.suggestions.length > 1) {
       state.selected = (state.selected + 1) % state.suggestions.length
-      renderDropdown(state)
+      paintGhost(internal, state)
       return
     }
-    if (key.name === 'escape') { clearDropdown(state); return }
-    if (key.name === 'return' || key.name === 'enter') return
-    setImmediate(refresh)
-  })
+    if (key.name === 'escape') { dismiss(internal, state); return }
+    if (key.name === 'return' || key.name === 'enter') { resetGhost(state); clearPanel(state); return }
+    state.summoned = false
+    setImmediate(recompute)
+  }
+
+  process.stdin.on('keypress', onKey)
+  rl.on('close', () => { process.stdin.removeListener('keypress', onKey) })
 }
 
-function applySelection(
-  rl: Interface,
-  registry: CommandRegistry,
-  cfg: CliConfig | undefined,
-  state: DropdownState,
-): void {
-  const sug = state.suggestions[state.selected]
-  if (!sug || sug.disabled) return
-  const internal = rl as unknown as { line: string; cursor: number; _refreshLine?: () => void }
-  const line = internal.line ?? ''
-  const cursor = internal.cursor ?? line.length
-  const res = complete(registry, line, cursor, { cfg, hasZone: hasZone(cfg), builtins: BUILTINS, limit: 1 })
-  const before = line.slice(0, res.tokenStart)
-  const after = line.slice(res.tokenEnd)
-  const insert = sug.value + (sug.kind === 'command' || sug.kind === 'subcommand' ? ' ' : '')
-  internal.line = before + insert + after
-  internal.cursor = before.length + insert.length
-  if (typeof internal._refreshLine === 'function') internal._refreshLine()
+function resetGhost(state: GhostState): void {
   state.suggestions = []
   state.selected = 0
-  clearDropdown(state)
+  state.tokenStart = 0
+  state.tokenEnd = 0
+  state.summoned = false
 }
 
-function renderDropdown(state: DropdownState): void {
-  clearDropdown(state)
+function dismiss(internal: ReadlineInternal, state: GhostState): void {
+  state.suggestions = []
+  state.summoned = false
+  clearPanel(state)
+  internal._refreshLine()
+}
+
+function pickAcceptable(state: GhostState): boolean {
+  const sug = state.suggestions[state.selected]
+  return Boolean(sug && !sug.disabled)
+}
+
+function atLineEnd(internal: ReadlineInternal): boolean {
+  const line = internal.line ?? ''
+  return (internal.cursor ?? 0) >= line.length
+}
+
+function paintGhost(internal: ReadlineInternal, state: GhostState): void {
+  clearPanel(state)
+  internal._refreshLine()
   if (state.suggestions.length === 0) return
-  const out = process.stdout
-  const lines: string[] = []
-  const maxNameLen = Math.min(28, Math.max(...state.suggestions.map((s) => s.value.length)))
-  for (let i = 0; i < state.suggestions.length; i++) {
-    const s = state.suggestions[i]!
-    const highlighted = highlightMatch(s.value, s.matchStart, s.matchLength)
-    const padding = ' '.repeat(Math.max(1, maxNameLen + 2 - s.value.length))
-    const summary = s.disabled
-      ? style.dim(`${s.summary} · ${s.disabledReason ?? 'unavailable'}`)
-      : style.dim(s.summary)
-    const kindTag = style.dim(`[${s.kind[0]}]`)
-    const row = `${kindTag} ${highlighted}${padding}${summary}`
-    lines.push(i === state.selected ? `${style.accent('▸')} ${style.selected(' ' + s.value + ' ')} ${style.dim(s.summary)}` : `  ${row}`)
+  const sug = state.suggestions[state.selected]
+  if (sug && !sug.disabled && atLineEnd(internal)) {
+    const typed = internal.line.slice(state.tokenStart, internal.cursor)
+    if (sug.value.toLowerCase().startsWith(typed.toLowerCase())) {
+      const tail = sug.value.slice(typed.length)
+      if (tail) {
+        process.stdout.write(style.dim(tail))
+        process.stdout.write(`\x1b[${tail.length}D`)
+      }
+    }
   }
-  out.write('\x1b7')
-  for (const ln of lines) out.write('\n' + ln + '\x1b[K')
-  out.write(`\x1b[${lines.length}A\x1b8`)
-  state.rendered = lines.length
+  drawPanel(state)
 }
 
-function clearDropdown(state: DropdownState): void {
-  if (state.rendered <= 0) return
+function drawPanel(state: GhostState): void {
+  const rows = state.suggestions.slice(0, 8)
+  if (rows.length === 0) return
   const out = process.stdout
   out.write('\x1b7')
-  for (let i = 0; i < state.rendered; i++) out.write('\n\x1b[2K')
-  out.write(`\x1b[${state.rendered}A\x1b8`)
-  state.rendered = 0
+  for (let i = 0; i < rows.length; i++) {
+    const s = rows[i]!
+    const marker = i === state.selected ? style.accent('▸ ') : '  '
+    const name = s.disabled
+      ? style.dim(s.value)
+      : i === state.selected
+        ? style.selected(` ${s.value} `)
+        : highlightMatch(s.value, s.matchStart, s.matchLength)
+    const note = s.disabled
+      ? style.dim(` ${s.summary} · ${s.disabledReason ?? 'unavailable'}`)
+      : style.dim(` ${s.summary}`)
+    out.write('\n\x1b[2K' + marker + name + note)
+  }
+  out.write(`\x1b[${rows.length}A\x1b8`)
+  state.painted = rows.length
+}
+
+function clearPanel(state: GhostState): void {
+  if (state.painted <= 0) return
+  const out = process.stdout
+  out.write('\x1b7')
+  for (let i = 0; i < state.painted; i++) out.write('\n\x1b[2K')
+  out.write(`\x1b[${state.painted}A\x1b8`)
+  state.painted = 0
+}
+
+function acceptSuggestion(internal: ReadlineInternal, state: GhostState): void {
+  const sug = state.suggestions[state.selected]
+  if (!sug) return
+  const before = internal.line.slice(0, state.tokenStart)
+  const after = internal.line.slice(state.tokenEnd)
+  const wantsTrailing = (sug.kind === 'command' || sug.kind === 'subcommand') && after.length === 0
+  const insert = sug.value + (wantsTrailing ? ' ' : '')
+  internal.line = before + insert + after
+  internal.cursor = before.length + insert.length
+  state.suggestions = []
+  state.summoned = false
+  clearPanel(state)
+  internal._refreshLine()
 }
 
 function hasZone(cfg: CliConfig | undefined): boolean {

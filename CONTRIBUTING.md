@@ -1,80 +1,64 @@
 # Contributing to Caracal
 
-## Prerequisites
+<details>
+<summary>Prerequisites</summary>
 
-| Tool                | Version | Required for                |
-| ------------------- | ------- | --------------------------- |
-| Node.js             | 24+     | All work                    |
-| pnpm                | 10+     | All work                    |
-| Docker + Compose v2 | 24+     | Running the stack           |
-| Go                  | 1.26+   | Go services / packages      |
-| Python              | 3.11+   | Python packages             |
-| Bun                 | latest  | Building CLI / TUI binaries |
-
-Throughout this doc:
+| Tool                | Version |
+| ------------------- | ------- |
+| Node.js             | 24+     |
+| pnpm                | 10+     |
+| Docker + Compose v2 | 24+     |
+| Go                  | 1.26+   |
+| Python              | 3.11+   |
+| Bun                 | latest  |
 
 - `<os>` ∈ `linux` · `darwin` · `windows`
-- `<arch>` ∈ `x64` · `arm64` (Windows: `x64` only; binary has a `.exe` suffix)
+- `<arch>` ∈ `x64` · `arm64`
 
-## Modes: dev vs runtime
+</details>
 
-Every artifact is bound to one of two modes at build time.
+<details>
+<summary>Modes</summary>
 
 |                       | Dev                                                      | Runtime                                                     |
 | --------------------- | -------------------------------------------------------- | ----------------------------------------------------------- |
-| `caracal --version`   | `2026.05.14+dev.<sha> [dev (sha …)]`                     | `v2026.05.14 [runtime]` (CI) / `dev-<sha> [runtime]` (local)|
-| Container images      | `localhost/caracal-{svc}:dev-<sha>` (built locally)      | `ghcr.io/garudex-labs/caracal-{svc}:v<calver>` (CI) / `localhost/caracal-{svc}:dev-<sha>` (local) |
-| Compose file          | `infra/docker/docker-compose.yml`                        | embedded in CLI, installed to the Caracal runtime home (`~/.local/share/caracal/` on Linux, `~/Library/Application Support/caracal/` on macOS) |
-| `INSECURE_*` env vars | honored                                                  | refused; services panic on startup                          |
+| `caracal --version`   | `2026.05.14+dev.<sha> [dev (sha …)]`                     | `v2026.05.14 [runtime]` (Released) / `dev-<sha> [runtime]` (local)|
+| Container images      | `localhost/caracal-{svc}:dev-<sha>` (built locally)      | `ghcr.io/garudex-labs/caracal-{svc}:v<calver>` (Released) / `localhost/caracal-{svc}:dev-<sha>` (local) |
 
-The base CalVer is centralized in `packages/engine/runtime/release.json` (consumed by `stampDev`). Release CI must pass `CARACAL_RELEASE_VERSION=v<calver>` explicitly; without it, `build:release` produces a developer-local binary that targets `localhost/caracal-<svc>:dev-<sha>` instead of pulling from GHCR.
-
+</details>
 
 ## Setup
 
 ```bash
 git clone https://github.com/Garudex-Labs/caracal.git && cd caracal
 pnpm install
-pnpm caracal up                                  # Starts the full stack
-pnpm caracal zone create --name dev              # provision your first zone (returns the id)
-pnpm caracal app create --zone <id> --name cli   # provision an application (returns the client secret)
-# author caracal.toml with zone_id, application_id, app_client_secret, zone_url
+pnpm caracal up                     # Build and start the full stack
+
+# Essential Commands
+pnpm caracal --help                 # Show CLI help and available commands
+pnpm caracal status                 # Check health status of all services
+pnpm caracal down [--help]          # Stop the stack
+pnpm caracal purge                  # Remove stack, volumes, logs, cache, and runtime data
 ```
 
-Caracal ships no pre-seeded fixtures; the database starts empty in every mode. Operators (or your IaC) own zone/application/resource/policy provisioning through the regular `/v1/*` admin endpoints — the same path used in production.
-
-The first `caracal up` auto-generates `infra/docker/.env` and the secret files
-under `infra/secrets/files/` (both gitignored). Re-run `pnpm secrets:init`
-explicitly only if you want to bootstrap credentials without starting the stack.
-
-Drop the `pnpm` prefix with `pnpm link --global` (undo with `pnpm unlink --global caracal`).
-
-## Stack Commands
+<details>
+<summary>Drop the `pnpm` prefix</summary>
 
 ```bash
-pnpm caracal up                     # build + start the stack (dev rebuilds; runtime pulls images)
-pnpm caracal down [-v]              # stop (-v wipes volumes)
-pnpm caracal status                 # /health probe every service
-pnpm caracal zone create --name <n> # provision a zone (returns id)
-pnpm caracal app  create --name <n> # provision an application (returns client secret)
-pnpm caracal purge [targets...]     # cleanup: stack/volumes/logs/config/runtime/cache
-pnpm caracal run -- <cmd>           # run <cmd> with RESOURCE_TOKEN injected
-pnpm caracal credential read <res>  # resolve a credential
-pnpm caracal --help
+pnpm link --global            # Install global symlink
+pnpm unlink --global caracal  # Remove global symlink
 ```
 
-## Development
+</details>
 
-### CLI
+#### CLI
 
 ```bash
-pnpm --dir apps/cli dev
+pnpm caracal cli
 pnpm --dir apps/cli typecheck
 ```
 
-### TUI
-
-Stack must be up and provisioned first. Then run from the repo root:
+#### TUI
 
 ```bash
 pnpm caracal-tui

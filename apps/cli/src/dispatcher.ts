@@ -18,7 +18,7 @@ const GROUP_TITLES: Record<CommandGroup, string> = {
   admin: 'Admin:',
   observability: 'Observability:',
   multiagent: 'Multi-agent (requires CARACAL_COORDINATOR_TOKEN):',
-  control: 'Agent control surface:',
+  control: 'External control surface:',
 }
 
 export interface DispatchOptions {
