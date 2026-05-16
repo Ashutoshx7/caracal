@@ -22,7 +22,9 @@ func TestStoreChecksAndRecordsRevokedSessions(t *testing.T) {
 	if store.IsRevoked("sid-1") {
 		t.Fatal("fresh session should not be revoked")
 	}
-	store.MarkRevoked("sid-1", time.Hour)
+	if err := store.MarkRevoked("sid-1", time.Hour); err != nil {
+		t.Fatalf("mark revoked: %v", err)
+	}
 	if !store.IsRevoked("sid-1") {
 		t.Fatal("stored session should be revoked")
 	}

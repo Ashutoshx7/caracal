@@ -12,6 +12,7 @@ import (
 	"time"
 
 	sharedcrypto "github.com/garudex-labs/caracal/core/crypto"
+	"github.com/garudex-labs/caracal/revocation"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -36,6 +37,8 @@ type Store struct {
 	timeout    time.Duration
 	failClosed bool
 }
+
+var _ revocation.Store = (*Store)(nil)
 
 // Option configures Store.
 type Option func(*Store)
@@ -99,16 +102,16 @@ func (s *Store) IsRevoked(sid string) bool {
 }
 
 // MarkRevoked records sid as revoked for ttl.
-func (s *Store) MarkRevoked(sid string, ttl time.Duration) {
+func (s *Store) MarkRevoked(sid string, ttl time.Duration) error {
 	if sid == "" {
-		return
+		return nil
 	}
 	if ttl <= 0 {
 		ttl = s.defaultTTL
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
 	defer cancel()
-	_ = s.redis.Set(ctx, s.key(sid), "1", ttl).Err()
+	return s.redis.Set(ctx, s.key(sid), "1", ttl).Err()
 }
 
 func (s *Store) key(sid string) string {
@@ -183,6 +186,9 @@ func NewConsumer(redis StreamClient, store *Store, consumer string, opts ...Cons
 	if c.consumer == "" {
 		return nil, fmt.Errorf("consumer is required")
 	}
+	if c.store == nil {
+		return nil, fmt.Errorf("store is required")
+	}
 	if c.batchSize <= 0 {
 		c.batchSize = 50
 	}
@@ -234,7 +240,9 @@ func (c *Consumer) processMessage(ctx context.Context, msg redis.XMessage) error
 	}
 	sid, _ := msg.Values["session_id"].(string)
 	if sid != "" {
-		c.store.MarkRevoked(sid, 0)
+		if err := c.store.MarkRevoked(sid, 0); err != nil {
+			return err
+		}
 	}
 	return c.redis.XAck(ctx, c.stream, c.group, msg.ID).Err()
 }

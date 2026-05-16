@@ -82,7 +82,9 @@ func TestAuthenticateRejectsRevokedSession(t *testing.T) {
 	token, issuer, closeServer := mintToken(t, jwt.MapClaims{"scope": "mcp:call", "sid": "sid-1"})
 	defer closeServer()
 	store := revocation.NewInMemoryStore(time.Hour)
-	store.MarkRevoked("sid-1", time.Hour)
+	if err := store.MarkRevoked("sid-1", time.Hour); err != nil {
+		t.Fatalf("mark revoked: %v", err)
+	}
 
 	_, authErr := transportmcp.Authenticate(token, transportmcp.Options{
 		Issuer:      issuer,
@@ -147,13 +149,17 @@ func mintToken(t *testing.T, claims jwt.MapClaims) (string, string, func()) {
 	}))
 	now := time.Now()
 	base := jwt.MapClaims{
-		"iss":     server.URL,
-		"aud":     "resource://api",
-		"sub":     "user-1",
-		"zone_id": "zone-1",
-		"scope":   "mcp:call",
-		"iat":     now.Unix(),
-		"exp":     now.Add(5 * time.Minute).Unix(),
+		"iss":       server.URL,
+		"aud":       "resource://api",
+		"sub":       "user-1",
+		"zone_id":   "zone-1",
+		"client_id": "app-1",
+		"sid":       "sid-1",
+		"use":       "per_call",
+		"jti":       "jti-1",
+		"scope":     "mcp:call",
+		"iat":       now.Unix(),
+		"exp":       now.Add(5 * time.Minute).Unix(),
 	}
 	for k, v := range claims {
 		base[k] = v
