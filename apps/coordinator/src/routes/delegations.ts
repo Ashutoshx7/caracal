@@ -4,12 +4,13 @@
 // Delegation graph routes for agent-to-agent authority edges.
 
 import type { FastifyPluginAsync } from 'fastify'
-import type { Pool, PoolClient } from 'pg'
+import type { Pool } from 'pg'
 import { z } from 'zod'
 import { v7 as uuidv7 } from 'uuid'
 import { scopesAllowed } from '@caracalai/core'
 import { enqueue, enqueueMany, Topics, type OutboxItem, type Queryable } from '../outbox.js'
 import { ownsApplication, requireScope } from '../auth.js'
+import { bumpDelegationEpoch } from '../delegationEpochs.js'
 import { MAX_DEPTH, terminateSubtree } from './agents.js'
 import { ZoneIdParams, ZoneParams, ZoneSessionParams, parseParams } from './params.js'
 
@@ -124,7 +125,7 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
           expiresAt,
         ],
       )
-      const epoch = await bumpEpoch(client, zoneId)
+      const epoch = await bumpDelegationEpoch(client, zoneId)
       await enqueue(client, Topics.DelegationsInvalidate, `edge_create:${edgeId}`, {
         event: 'edge_create',
         zone_id: zoneId,
@@ -242,7 +243,7 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
       )
       const terminated = await terminateSubtree(client, zoneId,
         targets.map((row) => row.id), 'delegation_revoked')
-      const epoch = await bumpEpoch(client, zoneId)
+      const epoch = await bumpDelegationEpoch(client, zoneId)
       await enqueue(client, Topics.DelegationsInvalidate, `edge_revoke:${id}`, {
         event: 'edge_revoke', zone_id: zoneId, edge_id: id,
         affected_edges: revoked.length, epoch,
@@ -394,16 +395,4 @@ async function wouldCreateCycle(
     [zoneId, targetId, sourceId, MAX_DEPTH],
   )
   return rows.length > 0
-}
-
-async function bumpEpoch(db: PoolClient, zoneId: string): Promise<number> {
-  const { rows } = await db.query<{ epoch: string }>(
-    `INSERT INTO delegation_graph_epochs (zone_id, epoch, updated_at)
-     VALUES ($1, 1, now())
-     ON CONFLICT (zone_id) DO UPDATE
-     SET epoch = delegation_graph_epochs.epoch + 1, updated_at = now()
-     RETURNING epoch`,
-    [zoneId],
-  )
-  return Number(rows[0].epoch)
 }

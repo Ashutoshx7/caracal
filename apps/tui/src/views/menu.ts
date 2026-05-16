@@ -23,7 +23,7 @@ import {
   type CliConfig,
 } from '@caracalai/core/cli'
 import { pad, truncate, ui } from '../ansi.ts'
-import { explainError } from '../errors.ts'
+import { explainError, maskSecretField } from '../errors.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
 import { DetailView } from './detail.ts'
@@ -140,11 +140,7 @@ function credentialEntry(): View {
       app.push(new DetailView({
         title: `credential / ${v.resource}`,
         load: async () => ({ resource: v.resource, access_token: token }),
-        mask: (_value, path) => {
-          const leaf = path[path.length - 1]
-          if (leaf === 'access_token' || leaf === 'refresh_token' || leaf === 'client_secret') return '••••'
-          return undefined
-        },
+        mask: maskSecretField,
       }))
     },
   })
@@ -252,6 +248,7 @@ class ControlMenuView implements View {
             traits: result.application.traits,
             note: 'store client_secret now — it cannot be retrieved later',
           }),
+          mask: maskSecretField,
         }))
       },
     })
@@ -287,6 +284,7 @@ class ControlMenuView implements View {
             client_secret: result.clientSecret,
             note: 'store client_secret now — it cannot be retrieved later',
           }),
+          mask: maskSecretField,
         }))
       },
     })

@@ -23,6 +23,17 @@ function isAdminApiError(err: unknown): err is AdminApiErrorLike {
 }
 
 const AUTH_HEADER = /Authorization:\s*\S+/gi
+const SECRET_LEAF_NAMES = new Set([
+  'access_token',
+  'refresh_token',
+  'client_secret',
+  'clientsecret',
+  'token',
+  'secret',
+  'api_key',
+  'apikey',
+  'password',
+])
 
 export function scrubTokens(s: string): string {
   return coreScrub(s).replace(AUTH_HEADER, 'Authorization: ***')
@@ -30,6 +41,15 @@ export function scrubTokens(s: string): string {
 
 export function explainError(err: unknown): string {
   return scrubTokens(rawExplain(err))
+}
+
+export function maskSecretField(_value: unknown, path: string[]): string | undefined {
+  const leaf = path[path.length - 1]
+  if (!leaf) return undefined
+  if (SECRET_LEAF_NAMES.has(leaf.replace(/[-_]/g, '').toLowerCase()) || SECRET_LEAF_NAMES.has(leaf.toLowerCase())) {
+    return '••••'
+  }
+  return undefined
 }
 
 function rawExplain(err: unknown): string {

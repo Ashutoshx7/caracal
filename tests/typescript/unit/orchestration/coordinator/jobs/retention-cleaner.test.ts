@@ -31,11 +31,18 @@ describe('runRetentionCleanup', () => {
     expect(client.query).not.toHaveBeenCalledWith(expect.stringContaining('DELETE FROM delegation_edges'), expect.anything())
   })
 
-  it('expires active edges and prunes terminal rows', async () => {
+  it('expires active edges, invalidates delegation caches, and prunes terminal rows', async () => {
     const client = clientWithRows([
       { rows: [] },
       { rows: [{ acquired: true }] },
-      { rowCount: 2 },
+      {
+        rows: [
+          { id: 'edge-1', zone_id: 'z1', source_session_id: 's1', target_session_id: 's2' },
+          { id: 'edge-2', zone_id: 'z1', source_session_id: 's2', target_session_id: 's3' },
+        ],
+      },
+      { rows: [{ epoch: '7' }] },
+      { rows: [] },
       { rowCount: 3 },
       { rowCount: 4 },
       { rows: [] },
@@ -46,7 +53,22 @@ describe('runRetentionCleanup', () => {
       deletedEdges: 3,
       deletedOutbox: 4,
     })
-    expect(client.query).toHaveBeenCalledWith(expect.stringContaining("status = 'expired'"))
+    expect(client.query).toHaveBeenCalledWith(expect.stringContaining("status = 'expired'"), [500])
+    expect(client.query).toHaveBeenCalledWith(expect.stringContaining('RETURNING epoch'), ['z1'])
+    expect(client.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO caracal_outbox'),
+      expect.arrayContaining([
+        'caracal.delegations.invalidate',
+        'edge_expire:z1:7',
+        expect.objectContaining({
+          event: 'edge_expire',
+          zone_id: 'z1',
+          affected_edges: 2,
+          edge_ids: ['edge-1', 'edge-2'],
+          epoch: 7,
+        }),
+      ]),
+    )
     expect(client.query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM delegation_edges d'), [90, 500])
     expect(client.query).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM caracal_outbox o'), [7, 500])
     expect(client.query).toHaveBeenCalledWith('COMMIT')

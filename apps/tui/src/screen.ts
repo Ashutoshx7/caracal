@@ -4,6 +4,7 @@
 // Screen and App: alt-buffer rendering, key dispatch, and view stack management.
 
 import { ansi, frame, hintText, pad, size, truncate, ui, visibleLength, type Size } from './ansi.ts'
+import { explainError } from './errors.ts'
 import { parseKey, type Key } from './keys.ts'
 
 export interface ViewContext {
@@ -211,15 +212,10 @@ export class App {
       const key = parseKey(text)
       this.dispatchKey(key)
         .then(() => { this.dirty = true })
-        .catch((err) => { this.setStatus(`error: ${explain(err)}`, 'error') })
+        .catch((err) => { this.setStatus(`error: ${explainError(err)}`, 'error') })
     })
 
     this.renderFrame()
     await new Promise<void>(() => { /* loop forever; exit() terminates */ })
   }
-}
-
-function explain(err: unknown): string {
-  if (err && typeof err === 'object' && 'message' in err) return String((err as { message: unknown }).message)
-  return String(err)
 }
