@@ -76,8 +76,19 @@ func buildReplay(log zerolog.Logger) (Replay, error) {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	s.mux.HandleFunc("/ready", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	s.mux.HandleFunc("/ready", s.handleReady)
 	s.mux.Handle("/v1/control/invoke", InvokeHandler(s.auth, s.disp, s.audit, s.rate, s.replay, s.log))
+}
+
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := s.replay.Ping(ctx); err != nil {
+		s.log.Warn().Err(err).Msg("readiness: replay backing store unavailable")
+		http.Error(w, "replay store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) Run(ctx context.Context) error {
@@ -93,7 +104,10 @@ func (s *Server) Run(ctx context.Context) error {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = httpSrv.Shutdown(shutdownCtx)
+		if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+			s.log.Error().Err(err).Msg("graceful shutdown failed; forcing close")
+			_ = httpSrv.Close()
+		}
 	}()
 	s.log.Info().Str("addr", s.addr).Msg("control surface listening")
 	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

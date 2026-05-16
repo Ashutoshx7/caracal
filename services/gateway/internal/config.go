@@ -8,6 +8,8 @@ package internal
 import (
 	"fmt"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,15 +50,18 @@ type Config struct {
 	JTIFailOpen           bool
 }
 
-// loadConfig reads configuration from environment variables.
-// It panics on missing required values or unsafe defaults.
-func loadConfig() Config {
+// loadConfig reads configuration from environment variables and returns an
+// error if any required value is missing or invalid.
+func loadConfig() (Config, error) {
 	config.ResolveFileSecrets("DATABASE_URL", "REDIS_URL", "STREAMS_HMAC_KEY")
+	if missing := config.MissingRequired("STS_URL", "DATABASE_URL", "REDIS_URL", "STREAMS_HMAC_KEY"); len(missing) > 0 {
+		return Config{}, fmt.Errorf("required env vars missing: %s", strings.Join(missing, ", "))
+	}
 	cfg := Config{
 		Mode:                  config.Mode(),
 		Port:                  config.Getenv("PORT", defaultPort),
 		LogLevel:              config.Getenv("LOG_LEVEL", "info"),
-		STSURL:                config.MustGetenv("STS_URL"),
+		STSURL:                os.Getenv("STS_URL"),
 		STSTimeout:            config.DurationEnv("STS_TIMEOUT", defaultSTSTimeout),
 		UpstreamTimeout:       config.DurationEnv("UPSTREAM_TIMEOUT", defaultUpstreamTO),
 		ReadHeaderTimeout:     config.DurationEnv("READ_HEADER_TIMEOUT", defaultReadHeader),
@@ -68,15 +73,15 @@ func loadConfig() Config {
 		TLSKeyFile:            config.Getenv("TLS_KEY_FILE", ""),
 		AllowPrivateUpstreams: config.BoolEnv("ALLOW_PRIVATE_UPSTREAMS", false),
 		UpstreamHostAllowlist: config.CSVEnv("UPSTREAM_HOST_ALLOWLIST"),
-		DatabaseURL:           config.MustGetenv("DATABASE_URL"),
-		RedisURL:              config.MustGetenv("REDIS_URL"),
-		StreamsHMACKey:        config.MustGetenv("STREAMS_HMAC_KEY"),
+		DatabaseURL:           os.Getenv("DATABASE_URL"),
+		RedisURL:              os.Getenv("REDIS_URL"),
+		StreamsHMACKey:        os.Getenv("STREAMS_HMAC_KEY"),
 		JTIFailOpen:           config.BoolEnv("JTI_FAIL_OPEN", false),
 	}
 	if err := cfg.validate(); err != nil {
-		panic("gateway config: " + err.Error())
+		return Config{}, fmt.Errorf("gateway config: %w", err)
 	}
-	return cfg
+	return cfg, nil
 }
 
 func (c Config) validate() error {
@@ -109,8 +114,9 @@ func (c Config) validate() error {
 	if c.StreamsHMACKey == "" {
 		return fmt.Errorf("STREAMS_HMAC_KEY is required")
 	}
-	if c.Port != defaultPort {
-		return fmt.Errorf("PORT must be %s", defaultPort)
+	port, err := strconv.Atoi(c.Port)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("PORT must be a valid TCP port (1-65535)")
 	}
 	if c.MaxRequestBytes <= 0 {
 		return fmt.Errorf("MAX_REQUEST_BYTES must be positive")

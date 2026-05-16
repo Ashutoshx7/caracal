@@ -9,13 +9,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/garudex-labs/caracal/core/config"
 	sharedcrypto "github.com/garudex-labs/caracal/core/crypto"
+	"github.com/garudex-labs/caracal/core/logging"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 )
@@ -35,13 +35,15 @@ type Consumer struct {
 }
 
 func New(_ context.Context) (*Consumer, error) {
-	redisURL := config.MustGetenv("REDIS_URL")
-	opts, err := redis.ParseURL(redisURL)
+	if missing := config.MissingRequired("REDIS_URL"); len(missing) > 0 {
+		return nil, fmt.Errorf("required env vars missing: %s", strings.Join(missing, ", "))
+	}
+	opts, err := redis.ParseURL(config.Getenv("REDIS_URL", ""))
 	if err != nil {
 		return nil, err
 	}
 	r := redis.NewClient(opts)
-	log := zerolog.New(os.Stderr).With().Timestamp().Logger()
+	log := logging.New("coordinator-relay")
 
 	base := config.Load()
 	streamHMACKey, err := sharedcrypto.DecodeStreamKey(config.Getenv("STREAMS_HMAC_KEY", ""))
@@ -69,14 +71,14 @@ func New(_ context.Context) (*Consumer, error) {
 	}, nil
 }
 
-func (c *Consumer) Run(ctx context.Context) {
+func (c *Consumer) Run(ctx context.Context) error {
 	if err := c.ensureGroup(ctx); err != nil {
 		c.log.Error().Err(err).Msg("ensure consumer group")
 	}
 
 	for {
 		if ctx.Err() != nil {
-			return
+			return nil
 		}
 		msgs, err := c.redis.XReadGroup(ctx, &redis.XReadGroupArgs{
 			Group:    consumerGroup,
@@ -87,13 +89,17 @@ func (c *Consumer) Run(ctx context.Context) {
 		}).Result()
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				return
+				return nil
 			}
 			if errors.Is(err, redis.Nil) {
 				continue
 			}
 			c.log.Error().Err(err).Msg("xreadgroup")
-			time.Sleep(time.Second)
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(time.Second):
+			}
 			continue
 		}
 		for _, stream := range msgs {

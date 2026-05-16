@@ -42,7 +42,10 @@ type Server struct {
 
 // New constructs a Server from environment configuration.
 func New(ctx context.Context) (*Server, error) {
-	cfg := loadConfig()
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
 	log := logging.New("gateway")
 	rdb, err := newRedis(cfg.RedisURL)
 	if err != nil {
@@ -53,7 +56,10 @@ func New(ctx context.Context) (*Server, error) {
 		return nil, fmt.Errorf("streams hmac key: %w", err)
 	}
 	rdb.SetStreamSigning(streamKey, cfg.Mode == "runtime")
-	tracker := newJTITracker(rdb, log, cfg.JTIFailOpen)
+	tracker, err := newJTITracker(rdb, log, cfg.JTIFailOpen)
+	if err != nil {
+		return nil, err
+	}
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, err
