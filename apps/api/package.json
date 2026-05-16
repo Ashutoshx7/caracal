@@ -10,6 +10,7 @@
     "test": "vitest run --root ../.. tests/typescript/unit/api tests/typescript/security/api tests/typescript/property/api tests/typescript/contract/api tests/typescript/fuzz/api tests/typescript/integration/api"
   },
   "dependencies": {
+    "@caracalai/admin": "workspace:*",
     "@caracalai/core": "workspace:*",
     "@fastify/swagger": "^9.4.0",
     "@fastify/swagger-ui": "^5.2.1",

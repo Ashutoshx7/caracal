@@ -38,6 +38,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@caracalai/admin':
+        specifier: workspace:*
+        version: link:../../packages/admin/ts
       '@caracalai/core':
         specifier: workspace:*
         version: link:../../packages/core/ts
@@ -115,6 +118,9 @@ importers:
 
   apps/coordinator:
     dependencies:
+      '@caracalai/admin':
+        specifier: workspace:*
+        version: link:../../packages/admin/ts
       '@caracalai/core':
         specifier: workspace:*
         version: link:../../packages/core/ts
@@ -198,6 +204,9 @@ importers:
       '@caracalai/core':
         specifier: 0.1.2
         version: link:../../core/ts
+      uuid:
+        specifier: ^14.0.0
+        version: 14.0.0
     devDependencies:
       '@types/node':
         specifier: ^24.12.2

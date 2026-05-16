@@ -4,11 +4,9 @@
 // Coordinator admin audit hook: records authenticated mutating calls to admin_audit_events.
 
 import { pathOnly } from '@caracalai/core'
-import { v7 as uuidv7 } from 'uuid'
+import { MUTATING_METHODS, insertAdminAuditRecord } from '@caracalai/admin/server'
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import type { Pool } from 'pg'
-
-const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 function entityFromUrl(url: string): { type: string | null; id: string | null } {
   const segments = pathOnly(url).split('/').filter(Boolean)
@@ -34,33 +32,24 @@ export function registerAdminAuditHook(app: FastifyInstance, db: Pool): void {
     const path = pathOnly(req.url)
     if (path === '/health' || path === '/ready' || path === '/metrics' || path === '/stats') return
     const success = reply.statusCode < 400
-    const mutating = MUTATING_METHODS.has(req.method)
-    if (!mutating && success) return
+    if (!MUTATING_METHODS.has(req.method) && success) return
     const auth = req.caracalAuth
     if (!auth) return
     const entity = entityFromUrl(req.url)
     try {
-      await db.query(
-        `INSERT INTO admin_audit_events
-         (id, request_id, actor_id, actor_name, actor_scope, action, method, path,
-          zone_id, entity_type, entity_id, status_code, payload_json)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)`,
-        [
-          uuidv7(),
-          req.id,
-          auth?.subject ?? null,
-          auth?.clientId ?? null,
-          auth ? auth.scopes.join(' ') : null,
-          `${req.method} ${req.url}`,
-          req.method,
-          req.url,
-          zoneFromParams(req, req.url),
-          entity.type,
-          entity.id,
-          reply.statusCode,
-          null,
-        ],
-      )
+      await insertAdminAuditRecord(db, {
+        requestId: req.id,
+        actorId: auth.subject,
+        actorName: auth.clientId,
+        actorScope: auth.scopes.join(' '),
+        action: `${req.method} ${req.url}`,
+        method: req.method,
+        path: req.url,
+        zoneId: zoneFromParams(req, req.url),
+        entityType: entity.type,
+        entityId: entity.id,
+        statusCode: reply.statusCode,
+      })
     } catch (err) {
       req.log.warn({ err, requestId: req.id }, 'failed to record admin audit event')
     }
