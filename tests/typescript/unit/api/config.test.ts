@@ -12,7 +12,7 @@ const CONFIG_PATH = '../../../../apps/api/src/config.ts'
 
 let dir: string
 let originalCwd: string
-const SAVED_KEYS = ['CARACAL_ENV_FILE', 'CARACAL_REPO_ROOT', 'API_TEST_VAR']
+const SAVED_KEYS = ['CARACAL_ENV_FILE', 'CARACAL_REPO_ROOT', 'API_TEST_VAR', 'DATABASE_URL', 'REDIS_URL', 'TRUST_PROXY']
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'caracal-api-cfg-'))
@@ -64,14 +64,11 @@ describe('api config loadEnvChain', () => {
 
 describe('api config trustProxy', () => {
   const REQ = {
-    POSTGRES_USER: 'u', POSTGRES_PASSWORD: 'p', POSTGRES_DB: 'd',
-    REDIS_PASSWORD: 'r',
+    DATABASE_URL: 'postgres://u:p@localhost:5432/d',
+    REDIS_URL: 'redis://:r@localhost:6379',
   }
   beforeEach(() => { for (const [k, v] of Object.entries(REQ)) process.env[k] = v })
-  afterEach(() => {
-    for (const k of Object.keys(REQ)) delete process.env[k]
-    delete process.env.TRUST_PROXY
-  })
+  afterEach(() => { for (const k of Object.keys(REQ)) delete process.env[k] })
 
   test('defaults to false when TRUST_PROXY unset', async () => {
     const { loadConfig } = await import(CONFIG_PATH) as typeof import('../../../../apps/api/src/config')

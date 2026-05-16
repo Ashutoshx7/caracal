@@ -28,7 +28,7 @@
 - Must not forward to private/loopback/link-local/CGNAT/metadata IPs unless ALLOW_PRIVATE_UPSTREAMS=true.
 
 ## Environment Variables
-- Required: STS_URL, DATABASE_URL.
+- Required: STS_URL, DATABASE_URL, REDIS_URL, STREAMS_HMAC_KEY.
 - TLS: TLS_CERT_FILE, TLS_KEY_FILE (both or neither).
 - Timeouts: STS_TIMEOUT, UPSTREAM_TIMEOUT, READ_HEADER_TIMEOUT, READ_TIMEOUT, WRITE_TIMEOUT, IDLE_TIMEOUT.
 - Limits: MAX_REQUEST_BYTES.
