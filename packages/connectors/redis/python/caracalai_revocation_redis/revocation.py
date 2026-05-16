@@ -8,7 +8,7 @@ from __future__ import annotations
 import hmac
 from collections.abc import Mapping, Sequence
 from hashlib import sha256
-from typing import Any, Protocol
+from typing import Protocol
 
 from redis.exceptions import RedisError, ResponseError
 
@@ -18,8 +18,19 @@ STREAM_SIG_FIELD = "_sig"
 
 
 class RedisClient(Protocol):
-    def get(self, key: str) -> Any: ...
-    def set(self, key: str, value: str, px: int) -> Any: ...
+    def get(self, key: str) -> object | None: ...
+    def set(self, key: str, value: str, px: int) -> object: ...
+
+
+StreamValues = Mapping[object, object] | Sequence[object]
+StreamMessage = tuple[object, StreamValues]
+StreamBatch = list[tuple[object, list[StreamMessage]]]
+
+
+class RedisStreamClient(RedisClient, Protocol):
+    def xgroup_create(self, *args: object, **kwargs: object) -> object: ...
+    def xreadgroup(self, *args: object, **kwargs: object) -> StreamBatch | None: ...
+    def xack(self, stream: str, group: str, message_id: str) -> object: ...
 
 
 class RedisRevocationStore:
@@ -57,7 +68,7 @@ class RedisRevocationStore:
 class RedisRevocationConsumer:
     def __init__(
         self,
-        redis: Any,
+        redis: RedisStreamClient,
         store: RedisRevocationStore,
         consumer: str,
         stream: str = REVOCATION_STREAM,
@@ -120,7 +131,7 @@ class RedisRevocationConsumer:
         return hmac.compare_digest(sig, want)
 
 
-def _normalize_values(values: Mapping[Any, Any] | Sequence[Any]) -> dict[str, str]:
+def _normalize_values(values: StreamValues) -> dict[str, str]:
     if isinstance(values, Mapping):
         return {_to_text(k): _to_text(v) for k, v in values.items()}
     out: dict[str, str] = {}
@@ -129,7 +140,7 @@ def _normalize_values(values: Mapping[Any, Any] | Sequence[Any]) -> dict[str, st
     return out
 
 
-def _to_text(value: Any) -> str:
+def _to_text(value: object) -> str:
     if isinstance(value, bytes):
         return value.decode()
     return str(value)
