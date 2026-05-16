@@ -24,6 +24,7 @@ export interface DispatchOptions {
   readonly binary: string
   readonly version: string
   readonly mode: 'dev' | 'runtime'
+  readonly sha: string
   readonly registry: CommandRegistry
   readonly extras?: readonly string[]
   readonly loadConfig?: boolean
@@ -108,13 +109,13 @@ export async function dispatch(opts: DispatchOptions, rawArgs: readonly string[]
     process.exit(0)
   }
   if (command === '--version' || command === '-v' || command === 'version') {
-    const tag = opts.mode === 'dev' ? `dev (sha ${process.env.CARACAL_DEV_SHA ?? 'unknown'})` : 'runtime'
+    const tag = opts.mode === 'dev' ? `dev (sha ${opts.sha})` : 'runtime'
     if (rest.includes('--json')) {
       process.stdout.write(JSON.stringify({
         binary: opts.binary,
         version: opts.version,
         mode: opts.mode,
-        sha: process.env.CARACAL_DEV_SHA ?? null,
+        sha: opts.sha,
       }) + '\n')
     } else {
       process.stdout.write(`${opts.binary} ${opts.version} [${tag}]\n`)

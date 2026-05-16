@@ -20,7 +20,7 @@ import { completionCommand } from './commands/completion.ts'
 import { controlCommand } from './commands/control.ts'
 import { checkMcpGovernance } from './mcp.ts'
 import { printError } from './style.ts'
-import { CARACAL_MODE, CARACAL_VERSION } from './runtime/version.ts'
+import { CARACAL_MODE, CARACAL_SHA, CARACAL_VERSION } from './runtime/version.gen.ts'
 import { CLI_COMMANDS } from '@caracalai/core/commands'
 import { buildRegistry, type Executor } from './registry.ts'
 import { dispatch, loadCliConfig, type DispatchOptions } from './dispatcher.ts'
@@ -63,6 +63,7 @@ const dispatchOptions: DispatchOptions = {
   binary: process.env.CARACAL_INVOKED_AS ?? 'caracal-cli',
   version: CARACAL_VERSION,
   mode: CARACAL_MODE,
+  sha: CARACAL_SHA,
   registry,
   loadConfig: true,
 }

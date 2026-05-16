@@ -3,7 +3,9 @@
 //
 // Coordinator configuration loaded strictly from environment.
 
-import { getenv, mustGetenv, intEnv, boolEnv } from '@caracalai/core'
+import { getenv, mustGetenv, intEnv, boolEnv, resolveFileSecrets } from '@caracalai/core'
+
+resolveFileSecrets(['DATABASE_URL', 'REDIS_URL', 'STREAMS_HMAC_KEY'])
 
 /**
  * Coordinator JWT audience. The STS issues ambient tokens with `aud=[ISSUER_URL]`

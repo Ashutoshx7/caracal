@@ -12,7 +12,7 @@ import {
   type StackMode,
   type StackPaths,
 } from '@caracalai/engine'
-import { CARACAL_MODE, CARACAL_REGISTRY, CARACAL_VERSION } from '../runtime/version.ts'
+import { CARACAL_MODE, CARACAL_REGISTRY, CARACAL_SHA, CARACAL_VERSION } from '../runtime/version.gen.ts'
 import { style, SYMBOL, printError, printInfo } from '../style.ts'
 
 function resolveMode(): StackMode {
@@ -37,7 +37,7 @@ export function resolvePaths(): StackPaths {
 function printBanner(paths: StackPaths): void {
   const tag =
     paths.mode === 'dev'
-      ? `dev (sha ${process.env.CARACAL_DEV_SHA ?? 'unknown'})`
+      ? `dev (sha ${CARACAL_SHA})`
       : `runtime (${CARACAL_VERSION})`
   process.stdout.write(`${style.label('caracal mode:')} ${style.header(tag)}\n`)
 }
@@ -48,8 +48,8 @@ function composeEnv(paths: StackPaths): Record<string, string | undefined> {
     if (!process.env.CARACAL_VERSION) env.CARACAL_VERSION = CARACAL_VERSION
     if (!process.env.CARACAL_REGISTRY) env.CARACAL_REGISTRY = CARACAL_REGISTRY
   }
-  if (paths.mode === 'dev' && !process.env.CARACAL_DEV_SHA) {
-    env.CARACAL_DEV_SHA = 'nogit'
+  if (paths.mode === 'dev') {
+    env.CARACAL_DEV_SHA = CARACAL_SHA
   }
   return env
 }

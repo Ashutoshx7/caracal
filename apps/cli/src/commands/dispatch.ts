@@ -70,6 +70,10 @@ export function execSibling(binName: string, argv: string[], hints: MissingHints
     throw new Error(`execSibling: refusing to dispatch to non-whitelisted binary '${binName}'`)
   }
   const shim = workspaceShim(binName)
+  if (!shim && process.env.CARACAL_REPO_ROOT) {
+    printError(`workspace shim for '${binName}' is missing under CARACAL_REPO_ROOT.`)
+    process.exit(127)
+  }
   const cmd = shim?.cmd ?? locate(binName)
   if (!cmd) {
     printError(`'${binName}' is not installed.`)

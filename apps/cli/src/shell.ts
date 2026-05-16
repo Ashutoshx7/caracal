@@ -10,7 +10,7 @@ import { installCrashHandlers } from './crash.ts'
 import { upCommand, downCommand, statusCommand } from './commands/stack.ts'
 import { purgeCommand } from './commands/purge.ts'
 import { cliDispatch, tuiDispatch } from './commands/dispatch.ts'
-import { CARACAL_MODE, CARACAL_VERSION } from './runtime/version.ts'
+import { CARACAL_MODE, CARACAL_SHA, CARACAL_VERSION } from './runtime/version.gen.ts'
 import { SHELL_COMMANDS } from '@caracalai/core/commands'
 import { buildRegistry, type Executor } from './registry.ts'
 import { dispatch } from './dispatcher.ts'
@@ -33,6 +33,7 @@ await dispatch(
     binary: 'caracal',
     version: CARACAL_VERSION,
     mode: CARACAL_MODE,
+    sha: CARACAL_SHA,
     registry,
   },
   process.argv.slice(2),

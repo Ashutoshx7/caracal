@@ -16,7 +16,7 @@ import {
   removeFsPath,
   removeImages,
 } from '@caracalai/engine'
-import { CARACAL_REGISTRY, CARACAL_VERSION } from '../runtime/version.ts'
+import { CARACAL_REGISTRY, CARACAL_VERSION } from '../runtime/version.gen.ts'
 import { runtimePaths } from '@caracalai/engine'
 import { resolvePaths } from './stack.ts'
 import { showHelp } from './shared.ts'
