@@ -341,9 +341,8 @@ func joinURLPath(upstreamPath, requestPath string) string {
 // copyResponse streams the upstream response back to the client, flushing on every chunk
 // so SSE consumers see real-time data without server-side buffering. Between chunks it
 // consults revocations: if the session id bound to the token is revoked mid-stream the
-// upstream body is closed and the response is truncated. This is the runtime side of
-// Issue K — without it, an attacker holding a leaked token keeps the SSE pipe open
-// indefinitely even after revocation.
+// upstream body is closed and the response is truncated so leaked tokens cannot
+// keep streaming indefinitely after revocation.
 func copyResponse(w http.ResponseWriter, resp *http.Response, revocations *revocationStore, sid string) {
 	// X-Caracal-Identity is the gateway-side mirror of the Caracal JWT for
 	// provider-native auth modes. Echoing it back to clients would surface a

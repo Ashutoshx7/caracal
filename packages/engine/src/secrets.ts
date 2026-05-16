@@ -25,6 +25,26 @@ export const SECRET_FILES: readonly SecretFile[] = [
   { envKey: 'STREAMS_HMAC_KEY', fileName: 'streamsHmacKey', bytes: 32 },
 ] as const
 
+// DerivedSecrets are composite secret files (e.g. fully formed URLs) materialised
+// from primary credentials. They are rewritten on every bootstrap so changes to
+// the source credentials propagate without manual intervention.
+interface DerivedSecret {
+  fileName: string
+  render: (values: Record<string, string>) => string
+}
+
+const DERIVED_SECRETS: readonly DerivedSecret[] = [
+  {
+    fileName: 'databaseUrl',
+    render: (v) =>
+      `postgres://${v.POSTGRES_USER ?? 'caracal'}:${v.POSTGRES_PASSWORD}@postgres:5432/${v.POSTGRES_DB ?? 'caracal'}`,
+  },
+  {
+    fileName: 'redisUrl',
+    render: (v) => `redis://:${v.REDIS_PASSWORD}@redis:6379`,
+  },
+] as const
+
 export interface BootstrapPaths {
   envFile: string
   envTemplate: string
@@ -108,7 +128,33 @@ export function bootstrapSecrets(paths: BootstrapPaths): BootstrapReport {
 
   const envCreated = ensureEnvFile(paths.envFile, paths.envTemplate)
   const envUpdated = syncEnv(paths.envFile, values)
+
+  const envValues = readDotenv(paths.envFile)
+  for (const k of ['POSTGRES_USER', 'POSTGRES_DB']) {
+    if (envValues[k]) values[k] = envValues[k]
+  }
+  for (const derived of DERIVED_SECRETS) {
+    const filePath = resolve(paths.secretsDir, derived.fileName)
+    const rendered = derived.render(values)
+    const existing = existsSync(filePath) ? readFileSync(filePath, 'utf8').trim() : ''
+    if (existing !== rendered) {
+      writeFileSync(filePath, rendered, { mode: 0o444 })
+      chmodSafe(filePath, 0o444)
+      if (!existing) filesCreated.push(derived.fileName)
+    }
+  }
+
   return { envCreated, envUpdated, filesCreated }
+}
+
+function readDotenv(path: string): Record<string, string> {
+  if (!existsSync(path)) return {}
+  const out: Record<string, string> = {}
+  for (const line of readFileSync(path, 'utf8').split('\n')) {
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/)
+    if (m) out[m[1]] = m[2]
+  }
+  return out
 }
 
 export function devBootstrapPaths(repoRoot: string): BootstrapPaths {
