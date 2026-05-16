@@ -22,8 +22,24 @@ describe('POST /v1/zones/:zoneId/invitations', () => {
     expect(db.query).not.toHaveBeenCalled()
   })
 
+  it('rejects creation when the zone does not exist', async () => {
+    const { app, db } = buildRouteApp(invitationsRoutes)
+    db.query.mockResolvedValueOnce({ rows: [] })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/invitations',
+      payload: { email: 'ops@example.com', role: 'admin', invited_by: 'user-1' },
+    })
+
+    expect(res.statusCode).toBe(404)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'zone_not_found' })
+  })
+
   it('creates invitation with explicit expiry', async () => {
     const { app, db } = buildRouteApp(invitationsRoutes)
+    db.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
     db.query.mockResolvedValueOnce({
       rows: [{ id: 'invite-1', zone_id: 'z1', email: 'ops@example.com', role: 'admin' }],
     })
@@ -40,7 +56,7 @@ describe('POST /v1/zones/:zoneId/invitations', () => {
       },
     })
 
-    const values = db.query.mock.calls[0][1] as unknown[]
+    const values = db.query.mock.calls[1][1] as unknown[]
     expect(res.statusCode).toBe(201)
     expect(JSON.parse(res.body)).toMatchObject({ id: 'invite-1', email: 'ops@example.com' })
     expect(values.slice(1)).toEqual(['z1', 'ops@example.com', 'admin', 'user-1', '2027-01-01T00:00:00.000Z'])
