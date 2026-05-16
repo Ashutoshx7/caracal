@@ -6,6 +6,7 @@
 package internal
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -22,10 +23,10 @@ type Config struct {
 	OPAPollSeconds     int
 }
 
-func loadConfig() Config {
+func loadConfig() (Config, error) {
 	config.ResolveFileSecrets("DATABASE_URL", "REDIS_URL", "ZONE_KEK", "AUDIT_HMAC_KEY", "STREAMS_HMAC_KEY")
 	if missing := config.MissingRequired("PORT", "DATABASE_URL", "REDIS_URL", "ISSUER_URL"); len(missing) > 0 {
-		panic("required env vars missing: " + strings.Join(missing, ", "))
+		return Config{}, fmt.Errorf("required env vars missing: %s", strings.Join(missing, ", "))
 	}
 	return Config{
 		Base:               config.Load(),
@@ -35,5 +36,5 @@ func loadConfig() Config {
 		AuditReplayDir:     config.Getenv("AUDIT_REPLAY_DIR", "/var/lib/caracal/audit-replay"),
 		StreamsHMACKey:     config.Getenv("STREAMS_HMAC_KEY", ""),
 		OPAPollSeconds:     config.IntEnv("OPA_POLL_SECONDS", 60),
-	}
+	}, nil
 }

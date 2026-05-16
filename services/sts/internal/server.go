@@ -42,7 +42,10 @@ type Server struct {
 
 // New initialises all dependencies and returns a ready-to-run Server.
 func New(ctx context.Context) (*Server, error) {
-	cfg := loadConfig()
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
 	log := logging.New("sts")
 
 	db, err := newDB(ctx, cfg.DatabaseURL)

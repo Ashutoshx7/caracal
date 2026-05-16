@@ -7,6 +7,8 @@ package internal
 
 import (
 	"encoding/hex"
+	"errors"
+	"fmt"
 
 	"github.com/garudex-labs/caracal/core/config"
 )
@@ -24,7 +26,7 @@ type Config struct {
 	TamperRollingHours int
 }
 
-func loadConfig() Config {
+func loadConfig() (Config, error) {
 	config.ResolveFileSecrets("AUDIT_HMAC_KEY")
 	hexKey := config.Getenv("AUDIT_HMAC_KEY", "")
 	var key []byte
@@ -32,14 +34,14 @@ func loadConfig() Config {
 	if hexKey != "" {
 		k, err := hex.DecodeString(hexKey)
 		if err != nil {
-			panic("AUDIT_HMAC_KEY: invalid hex: " + err.Error())
+			return Config{}, fmt.Errorf("AUDIT_HMAC_KEY: invalid hex: %w", err)
 		}
 		if len(k) < 32 {
-			panic("AUDIT_HMAC_KEY: must be at least 32 bytes")
+			return Config{}, errors.New("AUDIT_HMAC_KEY: must be at least 32 bytes")
 		}
 		key = k
 	} else if base.IsRuntime() {
-		panic("AUDIT_HMAC_KEY: required when CARACAL_MODE=runtime")
+		return Config{}, errors.New("AUDIT_HMAC_KEY: required when CARACAL_MODE=runtime")
 	}
 	retention := config.IntEnv("AUDIT_RETENTION_DAYS", 365)
 	maxDeliv := config.Int64Env("AUDIT_MAX_DELIVERIES", 8)
@@ -56,5 +58,5 @@ func loadConfig() Config {
 		MaxDeliveries:      maxDeliv,
 		ClaimIdleSecs:      idleSecs,
 		TamperRollingHours: rolling,
-	}
+	}, nil
 }

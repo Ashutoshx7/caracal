@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -47,7 +48,10 @@ type Server struct {
 }
 
 func New(ctx context.Context) (*Server, error) {
-	cfg := loadConfig()
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
 	log := logging.New("audit")
 
 	db, err := pgxpool.New(ctx, cfg.DatabaseURL)
