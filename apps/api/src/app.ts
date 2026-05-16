@@ -108,12 +108,26 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
   })
 
   if (cfg.v1RateLimitPerMin > 0) {
+    // Pre-auth bucket keyed by IP. After-auth re-evaluation happens in preHandler
+    // so authenticated callers are accounted by actor.id (preventing X-Forwarded-For evasion).
+    const tick = async (key: string): Promise<number> => {
+      const n = await redis.incr(key)
+      if (n === 1) await redis.expire(key, 90)
+      return n
+    }
     app.addHook('onRequest', async (req, reply) => {
       if (!req.url.startsWith('/v1/')) return
       const minute = Math.floor(Date.now() / 60_000)
-      const key = `api:v1_rl:${req.ip}:${minute}`
-      const count = await redis.incr(key)
-      if (count === 1) await redis.expire(key, 90)
+      const count = await tick(`api:v1_rl:ip:${req.ip}:${minute}`)
+      if (count > cfg.v1RateLimitPerMin) {
+        return reply.code(429).send({ error: 'rate_limited' })
+      }
+    })
+    app.addHook('preHandler', async (req, reply) => {
+      if (!req.url.startsWith('/v1/')) return
+      if (!req.actor?.id) return
+      const minute = Math.floor(Date.now() / 60_000)
+      const count = await tick(`api:v1_rl:actor:${req.actor.id}:${minute}`)
       if (count > cfg.v1RateLimitPerMin) {
         return reply.code(429).send({ error: 'rate_limited' })
       }
@@ -128,14 +142,16 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
   })
   registerAdminAuditHook(app, { db })
 
-  await app.register(swagger, {
-    openapi: {
-      info: { title: 'Caracal API', version: '0.1.0' },
-      servers: [{ url: `http://localhost:${cfg.port}` }],
-    },
-  })
-  if (!isRuntime()) {
-    await app.register(swaggerUI, { routePrefix: '/docs' })
+  if (cfg.enableDocs) {
+    await app.register(swagger, {
+      openapi: {
+        info: { title: 'Caracal API', version: '0.1.0' },
+        servers: [{ url: `http://localhost:${cfg.port}` }],
+      },
+    })
+    if (!isRuntime()) {
+      await app.register(swaggerUI, { routePrefix: '/docs' })
+    }
   }
 
   await app.register(zonesRoutes, { prefix: '/v1' })

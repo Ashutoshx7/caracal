@@ -17,6 +17,7 @@ import { sessionCommand } from './commands/session.ts'
 import { auditCommand, explainCommand } from './commands/audit.ts'
 import { agentCommand, delegationCommand } from './commands/agent.ts'
 import { completionCommand } from './commands/completion.ts'
+import { controlCommand } from './commands/control.ts'
 import { checkMcpGovernance } from './mcp.ts'
 import { printError } from './style.ts'
 import { CARACAL_MODE, CARACAL_VERSION } from './runtime/version.ts'
@@ -50,6 +51,7 @@ const executors: Record<string, Executor> = {
   explain: (argv, cfg) => explainCommand([...argv], cfg),
   agent: (argv, cfg) => agentCommand([...argv], cfg),
   delegation: (argv, cfg) => delegationCommand([...argv], cfg),
+  control: (argv, cfg) => controlCommand([...argv], cfg),
   completion: (argv) => completionCommand([...argv]),
 }
 
@@ -63,10 +65,6 @@ const dispatchOptions: DispatchOptions = {
   mode: CARACAL_MODE,
   registry,
   loadConfig: true,
-  extras: [
-    '  --zone <id>              Zone selector (default: zone_id from caracal.toml or $CARACAL_ZONE_ID)',
-    '  --json                   Emit JSON instead of a table',
-  ],
 }
 
 const args = process.argv.slice(2)

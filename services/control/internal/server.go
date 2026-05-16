@@ -12,6 +12,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 )
 
@@ -23,7 +24,7 @@ type Server struct {
 	disp   *Dispatcher
 	audit  EventSink
 	rate   *RateLimiter
-	replay *ReplayCache
+	replay Replay
 	stopCh chan struct{}
 }
 
@@ -40,6 +41,10 @@ func New(ctx context.Context, log zerolog.Logger) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	replay, err := buildReplay(log)
+	if err != nil {
+		return nil, err
+	}
 	srv := &Server{
 		addr:   addr,
 		mux:    http.NewServeMux(),
@@ -48,11 +53,25 @@ func New(ctx context.Context, log zerolog.Logger) (*Server, error) {
 		disp:   NewDispatcher(),
 		audit:  sink,
 		rate:   NewRateLimiter(60, time.Minute),
-		replay: NewReplayCache(time.Hour),
+		replay: replay,
 		stopCh: make(chan struct{}),
 	}
 	srv.routes()
 	return srv, nil
+}
+
+func buildReplay(log zerolog.Logger) (Replay, error) {
+	url := os.Getenv("CONTROL_REDIS_URL")
+	if url == "" {
+		log.Info().Msg("replay cache: in-memory (single replica)")
+		return NewReplayCache(time.Hour), nil
+	}
+	opt, err := redis.ParseURL(url)
+	if err != nil {
+		return nil, err
+	}
+	log.Info().Str("addr", opt.Addr).Msg("replay cache: redis (multi-replica safe)")
+	return NewRedisReplay(redis.NewClient(opt), time.Hour), nil
 }
 
 func (s *Server) routes() {

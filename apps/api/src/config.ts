@@ -56,6 +56,7 @@ export interface Config {
   adminAuthFailLimitPerMin: number
   lastUsedDebounceSec: number
   trustProxy: boolean
+  enableDocs: boolean
 }
 
 function buildDatabaseUrl(): string {
@@ -134,5 +135,6 @@ export function loadConfig(): Config {
     adminAuthFailLimitPerMin: parseNonNegIntEnv('ADMIN_AUTH_FAIL_LIMIT_PER_MIN', 60),
     lastUsedDebounceSec: parseNonNegIntEnv('ADMIN_TOKEN_LAST_USED_DEBOUNCE_SEC', 60),
     trustProxy: parseBool(process.env.TRUST_PROXY, false),
+    enableDocs: parseBool(process.env.API_ENABLE_DOCS, true),
   }
 }
