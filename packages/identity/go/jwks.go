@@ -97,16 +97,22 @@ func ResetJWKSCache() {
 // or when the X/Y coordinates fail base64url decoding.
 func ParseECJWK(raw json.RawMessage) (*ecdsa.PublicKey, string, error) {
 	var key struct {
-		Kty string `json:"kty"`
-		Crv string `json:"crv"`
-		Kid string `json:"kid"`
-		X   string `json:"x"`
-		Y   string `json:"y"`
+		Kty    string   `json:"kty"`
+		Crv    string   `json:"crv"`
+		Kid    string   `json:"kid"`
+		Alg    string   `json:"alg"`
+		Use    string   `json:"use"`
+		KeyOps []string `json:"key_ops"`
+		X      string   `json:"x"`
+		Y      string   `json:"y"`
 	}
 	if err := json.Unmarshal(raw, &key); err != nil {
 		return nil, "", err
 	}
-	if key.Kty != "EC" || key.Crv != "P-256" || key.Kid == "" {
+	if key.Kty != "EC" || key.Crv != "P-256" || key.Kid == "" || key.Alg != "ES256" || (key.Use != "" && key.Use != "sig") {
+		return nil, "", fmt.Errorf("unsupported jwk")
+	}
+	if len(key.KeyOps) > 0 && !containsKeyOp(key.KeyOps, "verify") {
 		return nil, "", fmt.Errorf("unsupported jwk")
 	}
 	xBytes, err := base64.RawURLEncoding.DecodeString(key.X)
@@ -117,5 +123,23 @@ func ParseECJWK(raw json.RawMessage) (*ecdsa.PublicKey, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	return &ecdsa.PublicKey{Curve: elliptic.P256(), X: new(big.Int).SetBytes(xBytes), Y: new(big.Int).SetBytes(yBytes)}, key.Kid, nil
+	if len(xBytes) != 32 || len(yBytes) != 32 {
+		return nil, "", fmt.Errorf("invalid jwk coordinates")
+	}
+	curve := elliptic.P256()
+	x := new(big.Int).SetBytes(xBytes)
+	y := new(big.Int).SetBytes(yBytes)
+	if !curve.IsOnCurve(x, y) {
+		return nil, "", fmt.Errorf("invalid jwk point")
+	}
+	return &ecdsa.PublicKey{Curve: curve, X: x, Y: y}, key.Kid, nil
+}
+
+func containsKeyOp(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }

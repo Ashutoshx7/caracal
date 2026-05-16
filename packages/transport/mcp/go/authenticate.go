@@ -97,7 +97,13 @@ func Authenticate(token string, opts Options) (identity.Claims, *AuthError) {
 			return identity.Claims{}, &AuthError{Code: ErrInvalidToken, Description: "Token validation failed"}
 		}
 	}
-	if opts.Revocations != nil && claims.Sid != "" && opts.Revocations.IsRevoked(claims.Sid) {
+	if opts.Revocations == nil {
+		return identity.Claims{}, &AuthError{Code: ErrInvalidToken, Description: "Revocation store required"}
+	}
+	if claims.Sid == "" {
+		return identity.Claims{}, &AuthError{Code: ErrInvalidToken, Description: "Token validation failed"}
+	}
+	if opts.Revocations.IsRevoked(claims.Sid) {
 		return identity.Claims{}, &AuthError{Code: ErrSessionRevoked, Description: "Session revoked"}
 	}
 	return claims, nil

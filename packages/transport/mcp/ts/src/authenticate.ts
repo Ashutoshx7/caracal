@@ -33,7 +33,13 @@ export async function authenticate(token: string, deps: AuthDeps): Promise<AuthR
   try {
     const { revocations, ...jwtConfig } = deps
     const claims = await verify(token, jwtConfig)
-    if (claims.sid && (await revocations.isRevoked(claims.sid))) {
+    if (!revocations || typeof revocations.isRevoked !== 'function') {
+      return { ok: false, error: { code: 'invalid_token', description: 'Revocation store required' } }
+    }
+    if (!claims.sid) {
+      return { ok: false, error: { code: 'invalid_token', description: 'Token validation failed' } }
+    }
+    if (await revocations.isRevoked(claims.sid)) {
       return { ok: false, error: { code: 'session_revoked', description: 'Session revoked' } }
     }
     return { ok: true, principal: claims }

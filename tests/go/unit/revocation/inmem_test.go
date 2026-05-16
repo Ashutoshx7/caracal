@@ -15,7 +15,9 @@ import (
 func TestInMemoryStoreRevokesUntilTTLExpiry(t *testing.T) {
 	store := revocation.NewInMemoryStore(10 * time.Millisecond)
 
-	store.MarkRevoked("sid-1", 0)
+	if err := store.MarkRevoked("sid-1", 0); err != nil {
+		t.Fatalf("mark revoked: %v", err)
+	}
 	if !store.IsRevoked("sid-1") {
 		t.Fatal("expected sid to be revoked")
 	}
@@ -31,7 +33,9 @@ func TestInMemoryStoreRevokesUntilTTLExpiry(t *testing.T) {
 func TestInMemoryStoreExplicitTTLOverridesDefault(t *testing.T) {
 	store := revocation.NewInMemoryStore(time.Hour)
 
-	store.MarkRevoked("sid-1", time.Millisecond)
+	if err := store.MarkRevoked("sid-1", time.Millisecond); err != nil {
+		t.Fatalf("mark revoked: %v", err)
+	}
 	time.Sleep(10 * time.Millisecond)
 	if store.IsRevoked("sid-1") {
 		t.Fatal("expected explicit short ttl to expire")
