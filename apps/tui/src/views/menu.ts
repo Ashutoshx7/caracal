@@ -92,7 +92,7 @@ function parseEnv(list: string): Record<string, string> {
   return out
 }
 
-const ENTRIES: Entry[] = [
+const BASE_ENTRIES: Entry[] = [
   { key: '1', label: 'zone',       group: 'admin', description: 'Manage zones', needsZone: false, open: zonesView },
   { key: '2', label: 'app',        group: 'admin', description: 'Manage applications', needsZone: true, open: applicationsView },
   { key: '3', label: 'resource',   group: 'admin', description: 'Manage protected resources', needsZone: true, open: resourcesView },
@@ -109,6 +109,11 @@ const ENTRIES: Entry[] = [
   { key: 'u', label: 'run',        group: 'runtime', description: 'Run a command with RESOURCE_TOKEN', needsZone: false, open: runEntry },
   { key: 't', label: 'control',    group: 'admin', description: 'Manage control API credentials', needsZone: true, open: controlEntry },
 ]
+
+function menuEntries(): Entry[] {
+  if (process.env.CARACAL_CONTROL_ENABLED === 'true') return BASE_ENTRIES
+  return BASE_ENTRIES.filter((entry) => entry.label !== 'control')
+}
 
 function auditExplainEntry(ctx: Ctx): View {
   return new FormView({
@@ -351,8 +356,10 @@ export class MenuView implements View {
     lines.push(' ' + ui.muted('Use arrow keys or hotkeys. Press z to choose a zone.'))
     lines.push('')
     let group = ''
-    for (let i = 0; i < ENTRIES.length; i++) {
-      const e = ENTRIES[i]!
+    const entries = menuEntries()
+    if (this.cursor >= entries.length) this.cursor = Math.max(0, entries.length - 1)
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i]!
       if (e.group !== group) {
         group = e.group
         lines.push(' ' + ui.accent(group))
@@ -368,16 +375,18 @@ export class MenuView implements View {
   }
 
   async onKey(key: Key, ctx: ViewContext): Promise<void> {
+    const entries = menuEntries()
     if (key === 'up' || key === 'k') { this.cursor = Math.max(0, this.cursor - 1); return }
-    if (key === 'down' || key === 'j') { this.cursor = Math.min(ENTRIES.length - 1, this.cursor + 1); return }
-    const direct = ENTRIES.findIndex((e) => e.key === key)
+    if (key === 'down' || key === 'j') { this.cursor = Math.min(entries.length - 1, this.cursor + 1); return }
+    const direct = entries.findIndex((e) => e.key === key)
     if (direct >= 0) { this.cursor = direct; this.open(ctx.app); return }
     if (key === 'enter') { this.open(ctx.app); return }
     if (key === 'z') return this.promptZone(ctx.app)
   }
 
   private open(app: App): void {
-    const e = ENTRIES[this.cursor]!
+    const entries = menuEntries()
+    const e = entries[this.cursor]!
     if (e.needsZone && !this.zoneId) {
       app.setStatus('zone required — press z to set one or pick Zones first', 'error')
       return
