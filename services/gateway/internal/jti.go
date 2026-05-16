@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -29,11 +30,11 @@ type jtiTracker struct {
 	failOpen bool
 }
 
-func newJTITracker(redis *RedisClient, log zerolog.Logger, failOpen bool) *jtiTracker {
+func newJTITracker(redis *RedisClient, log zerolog.Logger, failOpen bool) (*jtiTracker, error) {
 	if redis == nil {
-		panic("jti tracker requires redis")
+		return nil, errors.New("jti tracker requires redis")
 	}
-	return &jtiTracker{redis: redis, log: log, failOpen: failOpen}
+	return &jtiTracker{redis: redis, log: log, failOpen: failOpen}, nil
 }
 
 // Check records the JTI as seen with TTL = time-until-exp. Returns true when the

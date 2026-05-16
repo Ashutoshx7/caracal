@@ -59,10 +59,21 @@ func TestConfigValidateMaxBytesPositive(t *testing.T) {
 	}
 }
 
-func TestConfigValidateRejectsNonStandardPort(t *testing.T) {
+func TestConfigValidateRejectsInvalidPort(t *testing.T) {
+	c := Config{Mode: "dev", Port: "not-a-port", STSURL: "https://sts", MaxRequestBytes: 1, RedisURL: "redis://redis", StreamsHMACKey: "k"}
+	if err := c.validate(); err == nil || !strings.Contains(err.Error(), "PORT") {
+		t.Errorf("expected port validation, got %v", err)
+	}
+	c.Port = "70000"
+	if err := c.validate(); err == nil || !strings.Contains(err.Error(), "PORT") {
+		t.Errorf("expected out-of-range port to fail, got %v", err)
+	}
+}
+
+func TestConfigValidateAcceptsNonStandardPort(t *testing.T) {
 	c := Config{Mode: "dev", Port: "9090", STSURL: "https://sts", MaxRequestBytes: 1, RedisURL: "redis://redis", StreamsHMACKey: "k"}
-	if err := c.validate(); err == nil || !strings.Contains(err.Error(), "8081") {
-		t.Errorf("expected port enforcement, got %v", err)
+	if err := c.validate(); err != nil {
+		t.Errorf("any valid port should be accepted, got %v", err)
 	}
 }
 

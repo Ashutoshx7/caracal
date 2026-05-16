@@ -31,9 +31,13 @@ func main() {
 
 	srv, err := internal.New(ctx, log)
 	if err != nil {
-		log.Fatal().Err(err).Msg("init failed")
+		log.Error().Err(err).Msg("init failed")
+		cancel()
+		os.Exit(1)
 	}
 	if err := srv.Run(ctx); err != nil {
-		log.Fatal().Err(err).Msg("run failed")
+		log.Error().Err(err).Msg("run failed")
+		cancel()
+		os.Exit(1)
 	}
 }
