@@ -4,6 +4,7 @@
 // `caracal provider …` admin subcommands.
 
 import type { ProviderKind } from '@caracalai/admin'
+import type { JsonObject } from '@caracalai/core'
 import type { CliConfig } from '../config.ts'
 import { printSuccess } from '../style.ts'
 import {
@@ -21,10 +22,14 @@ import {
   usage,
 } from './shared.ts'
 
-function parseConfig(value: string | undefined): Record<string, unknown> | undefined {
+function parseConfig(value: string | undefined): JsonObject | undefined {
   if (!value) return undefined
   const text = readContent(value)
-  return JSON.parse(text) as Record<string, unknown>
+  const parsed: unknown = JSON.parse(text)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('provider config must be a JSON object')
+  }
+  return parsed as JsonObject
 }
 
 export async function providerCommand(argv: string[], cfg?: CliConfig): Promise<void> {

@@ -119,7 +119,7 @@ func validateSubjectToken(token string) error {
 	return nil
 }
 
-// Close is currently a no-op.
+// Close satisfies lifecycle interfaces for clients without open resources.
 func (c *Caracal) Close() error {
 	return nil
 }

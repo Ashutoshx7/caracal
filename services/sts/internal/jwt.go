@@ -85,9 +85,9 @@ func (k *KeyCache) Invalidate(zoneID string) {
 
 // ChainHop is a single step in the delegation chain attribution.
 type ChainHop struct {
-	AppID            string `json:"app"`
-	AgentSessionID   string `json:"session,omitempty"`
-	DelegationEdgeID string `json:"edge,omitempty"`
+	AppID            string `json:"application_id"`
+	AgentSessionID   string `json:"agent_session_id,omitempty"`
+	DelegationEdgeID string `json:"delegation_edge_id,omitempty"`
 }
 
 // Token use classes. Ambient tokens represent a session and may be re-presented to STS

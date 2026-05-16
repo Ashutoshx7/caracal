@@ -242,13 +242,13 @@ type DelegationEdge struct {
 
 // AgentSession holds coordinator graph node fields needed by STS.
 type AgentSession struct {
-	ID            string
-	ZoneID        string
-	ApplicationID string
-	SessionSID    string
-	Status        string
-	SpawnedAt     time.Time
-	TTLSeconds    int
+	ID               string
+	ZoneID           string
+	ApplicationID    string
+	SubjectSessionID string
+	Status           string
+	SpawnedAt        time.Time
+	TTLSeconds       int
 }
 
 func (d *DB) GetDelegationEdge(ctx context.Context, id string) (*DelegationEdge, error) {
@@ -294,9 +294,9 @@ func (d *DB) GetSession(ctx context.Context, sid string) (*Session, error) {
 func (d *DB) GetAgentSession(ctx context.Context, id string) (*AgentSession, error) {
 	var s AgentSession
 	err := d.pool.QueryRow(ctx,
-		`SELECT id, zone_id, application_id, session_sid, status, spawned_at, ttl_seconds
+		`SELECT id, zone_id, application_id, subject_session_id, status, spawned_at, ttl_seconds
 		 FROM agent_sessions WHERE id = $1`, id,
-	).Scan(&s.ID, &s.ZoneID, &s.ApplicationID, &s.SessionSID, &s.Status, &s.SpawnedAt, &s.TTLSeconds)
+	).Scan(&s.ID, &s.ZoneID, &s.ApplicationID, &s.SubjectSessionID, &s.Status, &s.SpawnedAt, &s.TTLSeconds)
 	if err != nil {
 		return nil, err
 	}

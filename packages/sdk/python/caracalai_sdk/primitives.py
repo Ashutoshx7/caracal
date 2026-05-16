@@ -52,7 +52,7 @@ async def spawn(
     framework worker) where the parent's contextvar is not visible.
     """
     parent = parent_ctx if parent_ctx is not None else current()
-    resolved_parent_id = parent_id or (parent.agent_session_id if parent else None)
+    parent_agent_session_id = parent_id or (parent.agent_session_id if parent else None)
     bearer = subject_token
 
     res = await spawn_agent(
@@ -61,7 +61,7 @@ async def spawn(
         SpawnRequest(
             zone_id=zone_id,
             application_id=application_id,
-            parent_id=resolved_parent_id,
+            parent_id=parent_agent_session_id,
             kind=kind,
             ttl_seconds=ttl_seconds,
             metadata=metadata,

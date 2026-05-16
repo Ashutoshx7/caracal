@@ -43,6 +43,7 @@ export interface CaracalConfig {
 export interface SpawnOptions {
   kind?: AgentKind;
   ttlSeconds?: number;
+  subjectSessionId?: string;
   parentId?: string;
   metadata?: JsonObject;
   traceId?: string;
@@ -105,7 +106,6 @@ export class Caracal {
   }
 
   async close(): Promise<void> {
-    // No-op until transport resources need teardown.
   }
 
   spawn<T>(fn: () => Promise<T>, opts: SpawnOptions = {}): Promise<T> {
@@ -116,6 +116,7 @@ export class Caracal {
       subjectToken: this.config.subjectToken,
       kind: opts.kind ?? this.config.defaultKind ?? AgentKind.Instance,
       ttlSeconds: opts.ttlSeconds ?? this.config.defaultTtlSeconds,
+      subjectSessionId: opts.subjectSessionId,
       parentId: opts.parentId,
       metadata: opts.metadata,
       traceId: opts.traceId,

@@ -75,7 +75,7 @@ func (s *Server) createChallenge(ctx context.Context, zoneID, sessionID, princip
 // verifyAndConsumeChallenge atomically marks a challenge as consumed iff every binding
 // matches: secret hash, zone, principal, resource set, satisfied, not expired, not yet consumed.
 // Returns ErrChallengeInvalid for any binding mismatch and ErrChallengeAlreadyConsumed when
-// a previously consumed challenge is replayed.
+// an already consumed challenge is replayed.
 func (s *Server) verifyAndConsumeChallenge(ctx context.Context, zoneID, principalID, challengeID, secret string, resources []string) error {
 	if challengeID == "" || secret == "" {
 		return ErrChallengeInvalid

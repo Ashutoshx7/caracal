@@ -20,4 +20,4 @@ require (
 	golang.org/x/sys v0.44.0 // indirect
 )
 
-replace github.com/garudex-labs/caracal/core => ../../../packages/core/go
+replace github.com/garudex-labs/caracal/core => ../../packages/core/go

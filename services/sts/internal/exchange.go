@@ -584,9 +584,9 @@ func delegationAuditMeta(d *delegationProof) map[string]any {
 	hops := make([]map[string]any, len(d.chain))
 	for i, h := range d.chain {
 		hops[i] = map[string]any{
-			"app":     h.AppID,
-			"session": h.AgentSessionID,
-			"edge":    h.DelegationEdgeID,
+			"application_id":     h.AppID,
+			"agent_session_id":   h.AgentSessionID,
+			"delegation_edge_id": h.DelegationEdgeID,
 		}
 	}
 	return map[string]any{

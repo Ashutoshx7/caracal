@@ -24,11 +24,11 @@ func makeCoordinatorServer(t *testing.T) (*httptest.Server, *[]string) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/agents"):
-			_, _ = w.Write([]byte(`{"id":"agent-1"}`))
+			_, _ = w.Write([]byte(`{"agent_session_id":"agent-1"}`))
 		case r.Method == http.MethodDelete:
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/delegations"):
-			_, _ = w.Write([]byte(`{"id":"edge-1"}`))
+			_, _ = w.Write([]byte(`{"delegation_edge_id":"edge-1"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

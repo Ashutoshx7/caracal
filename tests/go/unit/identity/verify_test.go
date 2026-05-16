@@ -83,7 +83,7 @@ func TestVerifyAcceptsValidTokenAndExtractsClaims(t *testing.T) {
 		"source_session_id":      "src-1",
 		"target_session_id":      "tgt-1",
 		"delegation_path":        []string{"edge-0", "edge-1"},
-		"delegation_chain":       []map[string]any{{"app": "app-parent", "session": "s1", "edge": "e1"}},
+		"delegation_chain":       []map[string]any{{"application_id": "app-parent", "agent_session_id": "s1", "delegation_edge_id": "e1"}},
 		"hop_count":              float64(2),
 		"delegation_graph_epoch": float64(7),
 	})
@@ -188,7 +188,7 @@ func TestVerifyRejectsHopCountExceeded(t *testing.T) {
 
 func TestVerifyRejectsChainMismatch(t *testing.T) {
 	token, issuer, closeServer := mintToken(t, jwt.MapClaims{
-		"delegation_chain": []map[string]any{{"app": "app-child"}},
+		"delegation_chain": []map[string]any{{"application_id": "app-child"}},
 	})
 	defer closeServer()
 
@@ -206,10 +206,10 @@ func TestVerifyRejectsChainMismatch(t *testing.T) {
 	}
 }
 
-func TestVerifyChainHopShortKeys(t *testing.T) {
+func TestVerifyChainHopNames(t *testing.T) {
 	token, issuer, closeServer := mintToken(t, jwt.MapClaims{
 		"delegation_chain": []map[string]any{
-			{"app": "app-parent", "session": "s1", "edge": "e1"},
+			{"application_id": "app-parent", "agent_session_id": "s1", "delegation_edge_id": "e1"},
 		},
 	})
 	defer closeServer()
@@ -228,10 +228,10 @@ func TestVerifyChainHopShortKeys(t *testing.T) {
 	}
 }
 
-func TestVerifyRejectsLongChainKeys(t *testing.T) {
+func TestVerifyRejectsCompactChainKeys(t *testing.T) {
 	token, issuer, closeServer := mintToken(t, jwt.MapClaims{
 		"delegation_chain": []map[string]any{
-			{"application_id": "app-parent", "agent_session_id": "s1", "delegation_edge_id": "e1"},
+			{"app": "app-parent", "session": "s1", "edge": "e1"},
 		},
 	})
 	defer closeServer()

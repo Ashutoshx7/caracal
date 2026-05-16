@@ -48,7 +48,7 @@ func TestAuthenticateAcceptsVerifiedTokenAndChecksRevocation(t *testing.T) {
 		"sid":                    "sid-1",
 		"agent_session_id":       "agent-1",
 		"delegation_edge_id":     "edge-1",
-		"delegation_chain":       []map[string]any{{"app": "app-parent"}},
+		"delegation_chain":       []map[string]any{{"application_id": "app-parent"}},
 		"hop_count":              2,
 		"client_id":              "app-1",
 		"source_session_id":      "agent-root",
@@ -105,7 +105,7 @@ func TestAuthenticateMapsIdentityErrors(t *testing.T) {
 		{name: "zone", opts: transportmcp.Options{ZoneID: "zone-2"}, claims: jwt.MapClaims{"scope": "mcp:call"}, code: transportmcp.ErrInvalidZone},
 		{name: "agent", opts: transportmcp.Options{RequireAgent: true}, claims: jwt.MapClaims{"scope": "mcp:call"}, code: transportmcp.ErrAgentRequired},
 		{name: "delegation", opts: transportmcp.Options{RequireDelegation: true}, claims: jwt.MapClaims{"scope": "mcp:call"}, code: transportmcp.ErrDelegationRequired},
-		{name: "chain", opts: transportmcp.Options{RequireChainContains: []string{"app-parent"}}, claims: jwt.MapClaims{"scope": "mcp:call", "delegation_chain": []map[string]any{{"app": "app-child"}}}, code: transportmcp.ErrChainMismatch},
+		{name: "chain", opts: transportmcp.Options{RequireChainContains: []string{"app-parent"}}, claims: jwt.MapClaims{"scope": "mcp:call", "delegation_chain": []map[string]any{{"application_id": "app-child"}}}, code: transportmcp.ErrChainMismatch},
 		{name: "hop", opts: transportmcp.Options{MaxHopCount: 1}, claims: jwt.MapClaims{"scope": "mcp:call", "hop_count": 2}, code: transportmcp.ErrHopCountExceeded},
 	}
 	for _, tt := range tests {

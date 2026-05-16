@@ -21,7 +21,7 @@ export interface SpawnInput {
   zoneId: string;
   applicationId: string;
   subjectToken: string;
-  sessionSid?: string;
+  subjectSessionId?: string;
   parentId?: string;
   kind?: AgentKind;
   ttlSeconds?: number;
@@ -39,7 +39,7 @@ export async function spawn<T>(input: SpawnInput, fn: () => Promise<T>): Promise
   const res = await spawnAgent(input.coordinator, bearer, {
     zoneId: input.zoneId,
     applicationId: input.applicationId,
-    sessionSid: input.sessionSid,
+    subjectSessionId: input.subjectSessionId,
     parentId,
     kind,
     ttlSeconds: input.ttlSeconds,
@@ -51,7 +51,7 @@ export async function spawn<T>(input: SpawnInput, fn: () => Promise<T>): Promise
     clientId: input.applicationId,
     agentSessionId: res.agent_session_id,
     parentEdgeId: parent?.delegationEdgeId,
-    sessionId: input.sessionSid ?? parent?.sessionId,
+    sessionId: input.subjectSessionId ?? parent?.sessionId,
     traceId: input.traceId ?? parent?.traceId,
     hop: parent?.hop ?? 0,
   };
@@ -111,7 +111,7 @@ export interface DelegateToSpawnInput {
   scopes: string[];
   constraints?: DelegationConstraints;
   delegationTtlSeconds?: number;
-  sessionSid?: string;
+  subjectSessionId?: string;
   kind?: AgentKind;
   ttlSeconds?: number;
   metadata?: JsonObject;
@@ -138,7 +138,7 @@ export async function delegateToSpawn<T>(
   const spawnRes = await spawnAgent(input.coordinator, input.subjectToken, {
     zoneId: input.zoneId,
     applicationId: input.applicationId,
-    sessionSid: input.sessionSid,
+    subjectSessionId: input.subjectSessionId,
     parentId: parent.agentSessionId,
     kind,
     ttlSeconds: input.ttlSeconds,
@@ -169,7 +169,7 @@ export async function delegateToSpawn<T>(
     agentSessionId: spawnRes.agent_session_id,
     delegationEdgeId: delRes.delegation_edge_id,
     parentEdgeId: parent.delegationEdgeId,
-    sessionId: input.sessionSid ?? parent.sessionId,
+    sessionId: input.subjectSessionId ?? parent.sessionId,
     traceId: input.traceId ?? parent.traceId,
     hop: parent.hop + 1,
   };

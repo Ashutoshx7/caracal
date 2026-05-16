@@ -261,5 +261,5 @@ def default_replay_dir(service: str) -> str:
     return str(Path(tempfile.gettempdir()) / "caracal-audit-replay" / service)
 
 
-def new_event_id() -> str:
+def create_event_id() -> str:
     return str(uuid.uuid4())

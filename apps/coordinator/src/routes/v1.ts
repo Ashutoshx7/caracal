@@ -12,7 +12,7 @@ import { cfg } from '../config.js'
 const BeginBody = z.object({
   zone_id: z.string().min(1),
   application_id: z.string().min(1),
-  session_sid: z.string().min(1),
+  subject_session_id: z.string().min(1),
   parent_id: z.string().nullable().default(null),
   capabilities: z.array(z.string()).default([]),
   ttl_seconds: z.number().int().min(1).max(86400).optional(),
@@ -20,7 +20,7 @@ const BeginBody = z.object({
 
 const EndBody = z.object({
   zone_id: z.string().min(1),
-  session_id: z.string().min(1),
+  agent_session_id: z.string().min(1),
   reason: z.string().min(1).max(256).optional(),
 })
 
@@ -76,7 +76,7 @@ export const v1Routes: FastifyPluginAsync = async (fastify) => {
       headers: { authorization: bearerOf(req), 'content-type': 'application/json' },
       payload: {
         application_id: body.application_id,
-        session_sid: body.session_sid,
+        subject_session_id: body.subject_session_id,
         parent_id: body.parent_id,
         capabilities: body.capabilities,
         ...(body.ttl_seconds ? { ttl_seconds: body.ttl_seconds } : {}),
@@ -91,7 +91,7 @@ export const v1Routes: FastifyPluginAsync = async (fastify) => {
     const reasonQs = body.reason ? `?reason=${encodeURIComponent(body.reason)}` : ''
     const res = await fastify.inject({
       method: 'DELETE',
-      url: `/zones/${encodeURIComponent(body.zone_id)}/agents/${encodeURIComponent(body.session_id)}${reasonQs}`,
+      url: `/zones/${encodeURIComponent(body.zone_id)}/agents/${encodeURIComponent(body.agent_session_id)}${reasonQs}`,
       headers: { authorization: bearerOf(req) },
     })
     if (res.statusCode === 204) return reply.code(204).send()

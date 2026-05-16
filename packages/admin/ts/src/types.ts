@@ -214,11 +214,11 @@ export interface SessionQuery {
 }
 
 export interface AgentSession {
-  id: string
+  agent_session_id: string
   zone_id: string
   application_id: string
   parent_id: string | null
-  session_sid: string
+  subject_session_id: string
   status: string
   depth: number
   spawned_at: string

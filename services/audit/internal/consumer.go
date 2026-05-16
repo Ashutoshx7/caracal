@@ -108,8 +108,8 @@ func (c *Consumer) Run(ctx context.Context) {
 	}
 }
 
-// drainPEL re-processes any messages previously delivered to this consumer
-// but never acknowledged (crashed in-flight).
+// drainPEL re-processes messages delivered to this consumer but never
+// acknowledged before a crash.
 func (c *Consumer) drainPEL(ctx context.Context) error {
 	cursor := "0"
 	for {

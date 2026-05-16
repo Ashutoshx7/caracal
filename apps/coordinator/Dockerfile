@@ -23,9 +23,9 @@ COPY services/sts/ services/sts/
 COPY services/audit/ services/audit/
 COPY services/gateway/ services/gateway/
 COPY services/control/ services/control/
-COPY apps/coordinator/relay/ apps/coordinator/relay/
+COPY services/coordinator-relay/ services/coordinator-relay/
 COPY tests/go/ tests/go/
-WORKDIR /build/apps/coordinator/relay
+WORKDIR /build/services/coordinator-relay
 RUN --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     go mod download && \

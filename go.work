@@ -1,7 +1,7 @@
 go 1.26
 
 use (
-	./apps/coordinator/relay
+	./services/coordinator-relay
 	./packages/connectors/nethttp/go
 	./packages/connectors/redis/go
 	./packages/core/go

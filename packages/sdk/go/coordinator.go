@@ -40,19 +40,18 @@ const (
 
 // SpawnRequest parameters for coordinator agent spawn.
 type SpawnRequest struct {
-	ZoneID         string
-	ApplicationID  string
-	SessionSID     string
-	ParentID       string
-	Kind           AgentKind
-	TTLSeconds     int
-	Metadata       map[string]any
-	IdempotencyKey string
+	ZoneID           string
+	ApplicationID    string
+	SubjectSessionID string
+	ParentID         string
+	Kind             AgentKind
+	TTLSeconds       int
+	Metadata         map[string]any
+	IdempotencyKey   string
 }
 
 // SpawnResponse from the coordinator.
 type SpawnResponse struct {
-	ID             string `json:"id"`
 	AgentSessionID string `json:"agent_session_id"`
 }
 
@@ -95,7 +94,6 @@ type DelegationRequest struct {
 
 // DelegationResponse from the coordinator.
 type DelegationResponse struct {
-	ID               string `json:"id"`
 	DelegationEdgeID string `json:"delegation_edge_id"`
 }
 
@@ -105,8 +103,8 @@ func SpawnAgent(ctx context.Context, client *CoordinatorClient, bearer string, r
 		"application_id": req.ApplicationID,
 		"kind":           string(req.Kind),
 	}
-	if req.SessionSID != "" {
-		body["session_sid"] = req.SessionSID
+	if req.SubjectSessionID != "" {
+		body["subject_session_id"] = req.SubjectSessionID
 	}
 	if req.ParentID != "" {
 		body["parent_id"] = req.ParentID
@@ -129,9 +127,6 @@ func SpawnAgent(ctx context.Context, client *CoordinatorClient, bearer string, r
 
 	var out SpawnResponse
 	err := doJSON(ctx, client, "POST", fmt.Sprintf("/zones/%s/agents", req.ZoneID), bearer, body, extra, &out)
-	if out.AgentSessionID == "" {
-		out.AgentSessionID = out.ID
-	}
 	return out, err
 }
 
@@ -139,10 +134,10 @@ func SpawnAgent(ctx context.Context, client *CoordinatorClient, bearer string, r
 // Returns empty when no stable inputs are present — in that case the caller's
 // retry would still require a fresh session.
 func deriveIdempotencyKey(req SpawnRequest) string {
-	if req.SessionSID == "" && req.ParentID == "" {
+	if req.SubjectSessionID == "" && req.ParentID == "" {
 		return ""
 	}
-	seed := req.ApplicationID + "|" + req.SessionSID + "|" + req.ParentID + "|" + string(req.Kind)
+	seed := req.ApplicationID + "|" + req.SubjectSessionID + "|" + req.ParentID + "|" + string(req.Kind)
 	sum := sha256.Sum256([]byte(seed))
 	return hex.EncodeToString(sum[:])
 }
@@ -170,9 +165,6 @@ func CreateDelegation(ctx context.Context, client *CoordinatorClient, bearer str
 
 	var out DelegationResponse
 	err := doJSON(ctx, client, "POST", fmt.Sprintf("/zones/%s/delegations", req.ZoneID), bearer, body, nil, &out)
-	if out.DelegationEdgeID == "" {
-		out.DelegationEdgeID = out.ID
-	}
 	return out, err
 }
 

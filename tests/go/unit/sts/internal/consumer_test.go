@@ -88,9 +88,7 @@ result := {"decision": "allow", "evaluation_status": "complete", "determining_po
 
 	s := &Server{db: db, opa: e}
 
-	// handlePolicyInvalidation calls Reload which calls loadZone.
-	// stubDB.GetActivePolicySetBinding returns error → storeFallback is called.
-	// The zone entry is replaced with a fallback (not removed), so it still exists.
+	// Reload failure installs a fallback policy entry instead of deleting the zone.
 	err = s.handlePolicyInvalidation(context.Background(), streamMessage{
 		ID:     "6-0",
 		Values: map[string]any{"zone_id": "z-reload"},

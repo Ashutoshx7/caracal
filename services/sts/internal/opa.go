@@ -258,7 +258,7 @@ func (e *OPAEngine) loadZone(ctx context.Context, zoneID string) error {
 	binding, err := e.db.GetActivePolicySetBinding(ctx, zoneID)
 	if err != nil {
 		// pgx.ErrNoRows == no policy bound for this zone → install fail-closed deny-all.
-		// Any other error is transient: keep the previously cached bundle so a flaky
+		// Any other error is transient: keep the cached bundle so a flaky
 		// database does not cause STS to self-DoS legitimate traffic.
 		if errors.Is(err, pgx.ErrNoRows) {
 			e.storeFallback(zoneID)

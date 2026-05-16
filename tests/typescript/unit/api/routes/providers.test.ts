@@ -22,7 +22,7 @@ describe('GET /v1/zones/:zoneId/providers/:id', () => {
       'z1',
     ])
   })
-}
+})
 
 describe('POST /v1/zones/:zoneId/providers', () => {
   it('stores provider kind in provider_kind', async () => {

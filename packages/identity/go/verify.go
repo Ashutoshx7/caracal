@@ -56,12 +56,12 @@ func readChain(raw any) []ChainHop {
 		if !ok {
 			continue
 		}
-		appID, _ := m["app"].(string)
+		appID, _ := m["application_id"].(string)
 		if appID == "" {
 			continue
 		}
-		session, _ := m["session"].(string)
-		edge, _ := m["edge"].(string)
+		session, _ := m["agent_session_id"].(string)
+		edge, _ := m["delegation_edge_id"].(string)
 		out = append(out, ChainHop{ApplicationID: appID, AgentSessionID: session, DelegationEdgeID: edge})
 	}
 	return out

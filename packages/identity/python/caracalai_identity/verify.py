@@ -69,14 +69,14 @@ def _read_chain(raw: object) -> list[ChainHop]:
     for item in raw:
         if not isinstance(item, dict):
             continue
-        application_id = item.get("app")
+        application_id = item.get("application_id")
         if not isinstance(application_id, str) or not application_id:
             continue
         out.append(
             ChainHop(
                 application_id=application_id,
-                agent_session_id=item.get("session"),
-                delegation_edge_id=item.get("edge"),
+                agent_session_id=item.get("agent_session_id"),
+                delegation_edge_id=item.get("delegation_edge_id"),
             )
         )
     return out

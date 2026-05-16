@@ -111,7 +111,7 @@ func TestHTTPClientInjects(t *testing.T) {
 	}
 }
 
-func TestCoordinatorResponsesUseIDFallback(t *testing.T) {
+func TestCoordinatorResponsesUseExplicitIDs(t *testing.T) {
 	var bodies []map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
@@ -123,9 +123,9 @@ func TestCoordinatorResponsesUseIDFallback(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/agents"):
-			_, _ = w.Write([]byte(`{"id":"agent-1"}`))
+			_, _ = w.Write([]byte(`{"agent_session_id":"agent-1"}`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/delegations"):
-			_, _ = w.Write([]byte(`{"id":"edge-1"}`))
+			_, _ = w.Write([]byte(`{"delegation_edge_id":"edge-1"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -177,7 +177,7 @@ func TestSpawnAgentDerivesIdempotencyKey(t *testing.T) {
 	defer srv.Close()
 	client := &sdk.CoordinatorClient{BaseURL: srv.URL}
 	_, err := sdk.SpawnAgent(context.Background(), client, "tok", sdk.SpawnRequest{
-		ZoneID: "z", ApplicationID: "app", SessionSID: "sid", ParentID: "parent",
+		ZoneID: "z", ApplicationID: "app", SubjectSessionID: "sid", ParentID: "parent",
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -3,11 +3,9 @@
 //
 // Non-blocking audit event buffer with on-disk fallback for unflushed events.
 //
-// This is the STS-specific buffer, kept here because it is tightly integrated with
-// STSMetrics atomics and the hot token-exchange path. New services that need to
-// emit audit events MUST use packages/core/go/audit.Client, which exposes the same
-// semantics (HMAC-signed XAdd to caracal.audit.events with disk-spill fallback)
-// behind a stable public API.
+// This STS-specific buffer is tightly integrated with STSMetrics atomics and the
+// hot token-exchange path. Other services emit audit events through
+// packages/core/go/audit.Client.
 
 package internal
 
@@ -250,8 +248,7 @@ func (a *AuditBuffer) replayFile(ctx context.Context, path string) error {
 }
 
 // start launches the background flusher goroutine. The caller must invoke
-// replayPending separately before start so that pending events are drained before
-// new ones are written.
+// replayPending separately before start so pending events drain before live writes.
 func (a *AuditBuffer) start(ctx context.Context) {
 	go func() {
 		ticker := time.NewTicker(auditFlushTTL)

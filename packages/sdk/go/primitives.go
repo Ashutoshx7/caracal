@@ -15,18 +15,18 @@ type LifecycleHook func(context.Context, CaracalContext) error
 
 // SpawnInput controls agent session spawning.
 type SpawnInput struct {
-	Coordinator   *CoordinatorClient
-	ZoneID        string
-	ApplicationID string
-	SubjectToken  string
-	SessionSID    string
-	ParentID      string
-	Kind          AgentKind
-	TTLSeconds    int
-	Metadata      map[string]any
-	TraceID       string
-	OnAgentStart  LifecycleHook
-	OnAgentEnd    LifecycleHook
+	Coordinator      *CoordinatorClient
+	ZoneID           string
+	ApplicationID    string
+	SubjectToken     string
+	SubjectSessionID string
+	ParentID         string
+	Kind             AgentKind
+	TTLSeconds       int
+	Metadata         map[string]any
+	TraceID          string
+	OnAgentStart     LifecycleHook
+	OnAgentEnd       LifecycleHook
 }
 
 // Spawn spawns an agent session, runs fn with the bound CaracalContext,
@@ -43,13 +43,13 @@ func Spawn(ctx context.Context, opts SpawnInput, fn func(context.Context) error)
 	}
 
 	res, err := SpawnAgent(ctx, opts.Coordinator, opts.SubjectToken, SpawnRequest{
-		ZoneID:        opts.ZoneID,
-		ApplicationID: opts.ApplicationID,
-		SessionSID:    opts.SessionSID,
-		ParentID:      parentID,
-		Kind:          kind,
-		TTLSeconds:    opts.TTLSeconds,
-		Metadata:      opts.Metadata,
+		ZoneID:           opts.ZoneID,
+		ApplicationID:    opts.ApplicationID,
+		SubjectSessionID: opts.SubjectSessionID,
+		ParentID:         parentID,
+		Kind:             kind,
+		TTLSeconds:       opts.TTLSeconds,
+		Metadata:         opts.Metadata,
 	})
 	if err != nil {
 		return err
@@ -59,7 +59,7 @@ func Spawn(ctx context.Context, opts SpawnInput, fn func(context.Context) error)
 	if traceID == "" {
 		traceID = parent.TraceID
 	}
-	sessionID := opts.SessionSID
+	sessionID := opts.SubjectSessionID
 	if sessionID == "" {
 		sessionID = parent.SessionID
 	}
@@ -145,7 +145,7 @@ type DelegateToSpawnInput struct {
 	Scopes               []string
 	Constraints          *DelegationConstraints
 	DelegationTTLSeconds int
-	SessionSID           string
+	SubjectSessionID     string
 	Kind                 AgentKind
 	TTLSeconds           int
 	Metadata             map[string]any
@@ -169,13 +169,13 @@ func DelegateToSpawn(ctx context.Context, opts DelegateToSpawnInput, fn func(con
 	}
 
 	spawnRes, err := SpawnAgent(ctx, opts.Coordinator, opts.SubjectToken, SpawnRequest{
-		ZoneID:        opts.ZoneID,
-		ApplicationID: opts.ApplicationID,
-		SessionSID:    opts.SessionSID,
-		ParentID:      parent.AgentSessionID,
-		Kind:          kind,
-		TTLSeconds:    opts.TTLSeconds,
-		Metadata:      opts.Metadata,
+		ZoneID:           opts.ZoneID,
+		ApplicationID:    opts.ApplicationID,
+		SubjectSessionID: opts.SubjectSessionID,
+		ParentID:         parent.AgentSessionID,
+		Kind:             kind,
+		TTLSeconds:       opts.TTLSeconds,
+		Metadata:         opts.Metadata,
 	})
 	if err != nil {
 		return err
@@ -202,7 +202,7 @@ func DelegateToSpawn(ctx context.Context, opts DelegateToSpawnInput, fn func(con
 	if traceID == "" {
 		traceID = parent.TraceID
 	}
-	sessionID := opts.SessionSID
+	sessionID := opts.SubjectSessionID
 	if sessionID == "" {
 		sessionID = parent.SessionID
 	}

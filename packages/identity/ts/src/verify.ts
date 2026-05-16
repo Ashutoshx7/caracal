@@ -69,12 +69,12 @@ function readChain(raw: unknown): ChainHop[] | undefined {
   for (const item of raw) {
     if (item && typeof item === 'object') {
       const r = item as Record<string, unknown>
-      const applicationId = typeof r['app'] === 'string' ? r['app'] : ''
+      const applicationId = typeof r['application_id'] === 'string' ? r['application_id'] : ''
       if (!applicationId) continue
       out.push({
         applicationId,
-        agentSessionId: typeof r['session'] === 'string' ? r['session'] : undefined,
-        delegationEdgeId: typeof r['edge'] === 'string' ? r['edge'] : undefined,
+        agentSessionId: typeof r['agent_session_id'] === 'string' ? r['agent_session_id'] : undefined,
+        delegationEdgeId: typeof r['delegation_edge_id'] === 'string' ? r['delegation_edge_id'] : undefined,
       })
     }
   }

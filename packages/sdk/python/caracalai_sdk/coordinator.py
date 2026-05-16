@@ -64,7 +64,7 @@ class DelegationConstraints:
 class SpawnRequest:
     zone_id: str
     application_id: str
-    session_sid: str | None = None
+    subject_session_id: str | None = None
     parent_id: str | None = None
     kind: AgentKind = AgentKind.INSTANCE
     ttl_seconds: int | None = None
@@ -75,7 +75,6 @@ class SpawnRequest:
 @dataclass
 class SpawnResponse:
     agent_session_id: str
-    id: str | None = None
 
 
 @dataclass
@@ -93,7 +92,6 @@ class DelegationRequest:
 @dataclass
 class DelegationResponse:
     delegation_edge_id: str
-    id: str | None = None
 
 
 async def spawn_agent(client: CoordinatorClient, bearer: str, req: SpawnRequest) -> SpawnResponse:
@@ -101,8 +99,8 @@ async def spawn_agent(client: CoordinatorClient, bearer: str, req: SpawnRequest)
         "application_id": req.application_id,
         "kind": str(req.kind),
     }
-    if req.session_sid:
-        body["session_sid"] = req.session_sid
+    if req.subject_session_id:
+        body["subject_session_id"] = req.subject_session_id
     if req.parent_id:
         body["parent_id"] = req.parent_id
     if req.ttl_seconds:
@@ -122,23 +120,23 @@ async def spawn_agent(client: CoordinatorClient, bearer: str, req: SpawnRequest)
     )
     resp.raise_for_status()
     data = resp.json()
-    agent_session_id = data.get("agent_session_id") or data.get("id")
+    agent_session_id = data.get("agent_session_id")
     if not agent_session_id:
         raise KeyError("agent_session_id")
-    return SpawnResponse(agent_session_id=agent_session_id, id=data.get("id"))
+    return SpawnResponse(agent_session_id=agent_session_id)
 
 
 def _derive_idempotency_key(req: SpawnRequest) -> str | None:
     """Stable key for SDK-issued spawn retries. Skipped when the caller has
-    given no stable inputs (no session_sid and no parent_id) — in that case a
+    given no stable inputs (no subject_session_id and no parent_id) — in that case a
     retry would still need a fresh session anyway."""
     import hashlib
 
-    if not req.session_sid and not req.parent_id:
+    if not req.subject_session_id and not req.parent_id:
         return None
     seed = "|".join([
         req.application_id,
-        req.session_sid or "",
+        req.subject_session_id or "",
         req.parent_id or "",
         str(req.kind),
     ])
@@ -177,7 +175,7 @@ async def create_delegation(
     )
     resp.raise_for_status()
     data = resp.json()
-    delegation_edge_id = data.get("delegation_edge_id") or data.get("id")
+    delegation_edge_id = data.get("delegation_edge_id")
     if not delegation_edge_id:
         raise KeyError("delegation_edge_id")
-    return DelegationResponse(delegation_edge_id=delegation_edge_id, id=data.get("id"))
+    return DelegationResponse(delegation_edge_id=delegation_edge_id)
