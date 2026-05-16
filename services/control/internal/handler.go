@@ -74,9 +74,9 @@ func InvokeHandler(auth *Authenticator, disp *Dispatcher, sink EventSink, rate *
 			sink.Emit(event)
 			switch {
 			case errors.Is(err, ErrDenied):
-				writeJSON(w, http.StatusBadRequest, Response{Error: err.Error()})
+				writeJSON(w, http.StatusBadRequest, Response{Error: "request denied"})
 			case errors.Is(err, ErrUnsupported):
-				writeJSON(w, http.StatusNotImplemented, Response{Error: err.Error()})
+				writeJSON(w, http.StatusNotImplemented, Response{Error: "command unsupported"})
 			default:
 				log.Err(err).Str("cmd", req.Command).Msg("upstream error")
 				writeJSON(w, http.StatusBadGateway, Response{Error: "upstream error"})

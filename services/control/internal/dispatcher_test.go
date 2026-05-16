@@ -55,6 +55,17 @@ func TestDispatchAllowsRegisteredCommand(t *testing.T) {
 	}
 }
 
+func TestDispatcherReportsUpstreamReadiness(t *testing.T) {
+	d := NewDispatcher()
+	if d.HasUpstreams() {
+		t.Fatal("empty dispatcher must not report upstream readiness")
+	}
+	d.Register("zone", func(_ context.Context, _ string, _ map[string]any) (any, error) { return nil, nil })
+	if !d.HasUpstreams() {
+		t.Fatal("registered dispatcher must report upstream readiness")
+	}
+}
+
 func TestDispatchUnsupportedWhenUpstreamMissing(t *testing.T) {
 	d := NewDispatcher()
 	_, err := d.Dispatch(context.Background(), Request{Command: "zone", Subcommand: "list"})

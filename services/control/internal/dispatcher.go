@@ -49,6 +49,10 @@ func (d *Dispatcher) Register(name string, u Upstream) {
 	d.upstream[name] = u
 }
 
+func (d *Dispatcher) HasUpstreams() bool {
+	return len(d.upstream) > 0
+}
+
 // Dispatch validates the request against the canonical allowlist and invokes the registered upstream.
 // Validation rules: command must exist and not be hidden; subcommand must be present in the descriptor's list;
 // the flag map must be flat and bounded so the JSON shape can't smuggle nested structures into upstreams.
