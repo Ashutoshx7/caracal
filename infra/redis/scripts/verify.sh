@@ -9,9 +9,20 @@ set -euo pipefail
 
 HOST="${REDIS_HOST:-localhost}"
 PORT="${REDIS_PORT:-6379}"
-PASS="${REDIS_PASSWORD:?REDIS_PASSWORD required}"
+PASS="${REDIS_PASSWORD:-}"
 
-cli() { redis-cli -h "$HOST" -p "$PORT" -a "$PASS" --no-auth-warning "$@"; }
+if [ -n "${REDIS_PASSWORD_FILE:-}" ]; then
+  PASS="$(cat "$REDIS_PASSWORD_FILE")"
+fi
+
+if [ -z "$PASS" ]; then
+  echo "REDIS_PASSWORD_FILE or REDIS_PASSWORD required" >&2
+  exit 1
+fi
+
+export REDISCLI_AUTH="$PASS"
+
+cli() { redis-cli -h "$HOST" -p "$PORT" --no-auth-warning "$@"; }
 
 STREAMS=(
   "caracal.audit.events"
@@ -63,7 +74,7 @@ done
 
 echo ""
 echo "=== Idempotency: re-run provisioner ==="
-bash "$(dirname "$0")/../provision-streams.sh"
+REDIS_HOST="$HOST" REDIS_PORT="$PORT" REDIS_PASSWORD="$PASS" bash "$(dirname "$0")/../provision-streams.sh"
 echo "  Re-run completed without error"
 
 echo ""

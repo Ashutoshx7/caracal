@@ -10,12 +10,23 @@ REDIS_HOST="${REDIS_HOST:-redis}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 REDIS_PASSWORD="${REDIS_PASSWORD:-}"
 
-cli() {
-    if [ -n "${REDIS_PASSWORD}" ]; then
-        redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" -a "${REDIS_PASSWORD}" --no-auth-warning "$@"
-    else
-        redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" "$@"
+if [ -n "${REDIS_PASSWORD_FILE:-}" ]; then
+    if [ ! -r "${REDIS_PASSWORD_FILE}" ]; then
+        echo "error: redis password file is not readable" >&2
+        exit 1
     fi
+    REDIS_PASSWORD="$(cat "${REDIS_PASSWORD_FILE}")"
+fi
+
+if [ -z "${REDIS_PASSWORD}" ]; then
+    echo "error: REDIS_PASSWORD_FILE or REDIS_PASSWORD is required" >&2
+    exit 1
+fi
+
+export REDISCLI_AUTH="${REDIS_PASSWORD}"
+
+cli() {
+    redis-cli -h "${REDIS_HOST}" -p "${REDIS_PORT}" --no-auth-warning "$@"
 }
 
 ensureGroup() {
