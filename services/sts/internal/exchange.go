@@ -26,7 +26,7 @@ const (
 	// (LLM completions, SSE, websockets) cannot rotate mid-stream. Callers
 	// initiating long streams must treat ttlPerCallSDK as the contract upper
 	// bound: streams running past it should expect upstream-side disconnect
-	// or a fresh exchange + reconnect orchestrated by the SDK (Issue J).
+	// or a fresh exchange and reconnect orchestrated by the SDK.
 	ttlPerCallSDK = 15 * time.Minute
 	ttlAmbient    = 60 * time.Minute
 )
@@ -664,8 +664,8 @@ func (s *Server) validateAgentSessionOwnership(ctx context.Context, zoneID, appI
 // exchange to user/agent sessions and delegation edges. When a delegation_edge_id
 // is present the source agent session's ownership is verified inside the
 // delegation block (source.ApplicationID == appID); otherwise the calling
-// application's ownership of the asserted agent_session_id is verified directly
-// (Issue I — consolidation prevents peer-app forgery via either path).
+// application's ownership of the asserted agent_session_id is verified directly,
+// preventing peer-app forgery through either path.
 func (s *Server) validateSessionReferences(ctx context.Context, zoneID, appID string, req TokenExchangeRequest, hasSubjectToken bool) (*delegationProof, *sharederr.CaracalError) {
 	now := time.Now()
 	if req.SessionID != "" {

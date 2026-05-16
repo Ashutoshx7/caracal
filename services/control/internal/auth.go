@@ -26,6 +26,8 @@ const requiredScope = "control:invoke"
 
 type Authenticator struct {
 	jwksURL  string
+	issuer   string
+	audience string
 	keys     map[string]*ecdsa.PublicKey
 	mu       sync.RWMutex
 	httpc    *http.Client
@@ -42,10 +44,20 @@ func NewAuthenticator(ctx context.Context) (*Authenticator, error) {
 	if url == "" {
 		return nil, errors.New("STS_JWKS_URL not set")
 	}
+	issuer := os.Getenv("STS_ISSUER_URL")
+	if issuer == "" {
+		return nil, errors.New("STS_ISSUER_URL not set")
+	}
+	audience := os.Getenv("CONTROL_AUDIENCE")
+	if audience == "" {
+		return nil, errors.New("CONTROL_AUDIENCE not set")
+	}
 	a := &Authenticator{
-		jwksURL: url,
-		keys:    map[string]*ecdsa.PublicKey{},
-		httpc:   &http.Client{Timeout: 5 * time.Second},
+		jwksURL:  url,
+		issuer:   issuer,
+		audience: audience,
+		keys:     map[string]*ecdsa.PublicKey{},
+		httpc:    &http.Client{Timeout: 5 * time.Second},
 	}
 	if err := a.refresh(ctx); err != nil {
 		return nil, fmt.Errorf("jwks load: %w", err)
@@ -53,19 +65,26 @@ func NewAuthenticator(ctx context.Context) (*Authenticator, error) {
 	return a, nil
 }
 
-// Verify parses bearer, validates signature against the JWKS, and asserts the required scope.
-// Returns the claims on success or an error describing the rejection reason.
+// Verify parses bearer, validates signature against the JWKS, enforces issuer/audience/expiry,
+// and asserts the required scope. Returns claims on success or an error describing rejection.
 func (a *Authenticator) Verify(ctx context.Context, header string) (*Claims, error) {
 	bearer := strings.TrimPrefix(header, "Bearer ")
 	if bearer == header || bearer == "" {
 		return nil, errors.New("missing bearer token")
 	}
+	parser := jwt.NewParser(
+		jwt.WithValidMethods([]string{jwt.SigningMethodES256.Alg()}),
+		jwt.WithIssuer(a.issuer),
+		jwt.WithAudience(a.audience),
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuedAt(),
+	)
 	claims := &Claims{}
-	tok, err := jwt.ParseWithClaims(bearer, claims, func(t *jwt.Token) (any, error) {
-		if t.Method.Alg() != jwt.SigningMethodES256.Alg() {
-			return nil, fmt.Errorf("unexpected alg %s", t.Method.Alg())
-		}
+	tok, err := parser.ParseWithClaims(bearer, claims, func(t *jwt.Token) (any, error) {
 		kid, _ := t.Header["kid"].(string)
+		if kid == "" {
+			return nil, errors.New("missing kid")
+		}
 		if k := a.lookup(kid); k != nil {
 			return k, nil
 		}
