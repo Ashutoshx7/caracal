@@ -12,3 +12,4 @@ export type { CoordinatorClient } from "./coordinator.js";
 export { AgentKind } from "./coordinator.js";
 export type { DelegationConstraints } from "./coordinator.js";
 export type { Envelope } from "./envelope.js";
+export type { JsonArray, JsonObject, JsonPrimitive, JsonValue } from "./json.js";

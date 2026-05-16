@@ -5,6 +5,7 @@
 
 from .audit import AUDIT_STREAM, AuditClient, AuditEvent, AuditStreamer, default_replay_dir, new_event_id
 from .errors import CaracalError, ErrorCode
+from .json_types import JsonObject, JsonPrimitive, JsonValue
 from .logging import (
     REDACT_VALUE,
     SECRET_KEYS,
@@ -27,6 +28,9 @@ __all__ = [
     "CaracalError",
     "DevLogger",
     "ErrorCode",
+    "JsonObject",
+    "JsonPrimitive",
+    "JsonValue",
     "REDACT_VALUE",
     "SECRET_KEYS",
     "create_logger",
@@ -40,4 +44,3 @@ __all__ = [
     "redact_string",
     "shutdown_logging",
 ]
-

@@ -7,7 +7,7 @@ Canonical error codes and exception type shared across Caracal Python packages.
 
 from __future__ import annotations
 
-from typing import Any
+from .json_types import JsonObject, JsonValue
 
 
 class ErrorCode:
@@ -41,7 +41,7 @@ class CaracalError(Exception):
         description: str,
         *,
         request_id: str | None = None,
-        details: dict[str, Any] | None = None,
+        details: JsonObject | None = None,
     ) -> None:
         super().__init__(description)
         self.code = code
@@ -52,8 +52,8 @@ class CaracalError(Exception):
     def __str__(self) -> str:
         return f"{self.code}: {self.description}"
 
-    def to_json(self) -> dict[str, Any]:
-        out: dict[str, Any] = {"error": self.code, "error_description": self.description}
+    def to_json(self) -> dict[str, JsonValue]:
+        out: dict[str, JsonValue] = {"error": self.code, "error_description": self.description}
         if self.request_id:
             out["requestId"] = self.request_id
         if self.details:
