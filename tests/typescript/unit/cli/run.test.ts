@@ -54,28 +54,41 @@ describe('runCommand', () => {
 
   it('injects exchanged credentials into child process env', async () => {
     let childEnv: Record<string, string> = {}
-    spawnMock.mockImplementationOnce((_cmd: string, _args: string[], opts: { env: Record<string, string> }) => {
-      childEnv = { ...opts.env }
-      return {
-        on: (event: string, handler: (code?: number, signal?: string) => void) => {
-          if (event === 'exit') queueMicrotask(() => handler(0))
-          return undefined
-        },
-      }
-    })
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ access_token: 'resource-token', expires_in: 3600 }),
-    })
-    vi.stubGlobal('fetch', fetchMock)
+    const originalAdminToken = process.env.CARACAL_ADMIN_TOKEN
+    const originalPath = process.env.PATH
+    process.env.CARACAL_ADMIN_TOKEN = 'admin-token'
+    process.env.PATH = '/usr/bin'
+    try {
+      spawnMock.mockImplementationOnce((_cmd: string, _args: string[], opts: { env: Record<string, string> }) => {
+        childEnv = { ...opts.env }
+        return {
+          on: (event: string, handler: (code?: number, signal?: string) => void) => {
+            if (event === 'exit') queueMicrotask(() => handler(0))
+            return undefined
+          },
+        }
+      })
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ access_token: 'resource-token', expires_in: 3600 }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
 
-    await expect(runCommand(['node', 'tool.js'], cfg)).rejects.toThrow('exit:0')
+      await expect(runCommand(['node', 'tool.js'], cfg)).rejects.toThrow('exit:0')
 
-    const body = fetchMock.mock.calls[0][1].body as URLSearchParams
-    expect(body.get('ttl_seconds')).toBe('3600')
-    expect(body.get('resource')).toBe('resource://api')
-    expect(spawnMock).toHaveBeenCalledWith('node', ['tool.js'], expect.objectContaining({ stdio: 'inherit' }))
-    expect(childEnv.RESOURCE_TOKEN).toBe('resource-token')
+      const body = fetchMock.mock.calls[0][1].body as URLSearchParams
+      expect(body.get('ttl_seconds')).toBe('3600')
+      expect(body.get('resource')).toBe('resource://api')
+      expect(spawnMock).toHaveBeenCalledWith('node', ['tool.js'], expect.objectContaining({ stdio: 'inherit' }))
+      expect(childEnv.RESOURCE_TOKEN).toBe('resource-token')
+      expect(childEnv.CARACAL_ADMIN_TOKEN).toBeUndefined()
+      expect(childEnv.PATH).toBe('/usr/bin')
+    } finally {
+      if (originalAdminToken === undefined) delete process.env.CARACAL_ADMIN_TOKEN
+      else process.env.CARACAL_ADMIN_TOKEN = originalAdminToken
+      if (originalPath === undefined) delete process.env.PATH
+      else process.env.PATH = originalPath
+    }
   })
 
   it('strips the pnpm separator before spawning the child command', async () => {
@@ -136,4 +149,5 @@ describe('runCommand', () => {
     expect(fetchMock).not.toHaveBeenCalled()
     expect(spawnMock).not.toHaveBeenCalled()
   })
+
 })

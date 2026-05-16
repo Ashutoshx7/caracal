@@ -31,7 +31,7 @@ var CLI = []Descriptor{
 	{Name: "run", Group: GroupRuntime, Summary: "Run a command with RESOURCE_TOKEN", RequiresConfig: true},
 	{Name: "credential", Group: GroupRuntime, Summary: "Read a resource credential", Subcommands: []string{"read"}, RequiresConfig: true},
 
-	{Name: "zone", Group: GroupAdmin, Summary: "Manage zones", Subcommands: []string{"list", "get", "create", "patch", "delete"}},
+	{Name: "zone", Group: GroupAdmin, Summary: "Manage zones", Subcommands: []string{"use", "list", "get", "create", "patch", "delete"}},
 	{Name: "app", Group: GroupAdmin, Summary: "Manage applications", Subcommands: []string{"list", "get", "create", "patch", "delete", "dcr"}},
 	{Name: "resource", Group: GroupAdmin, Summary: "Manage protected resources", Subcommands: []string{"list", "get", "create", "patch", "delete"}, RequiresZone: true},
 	{Name: "provider", Group: GroupAdmin, Summary: "Manage identity providers", Subcommands: []string{"list", "get", "create", "patch", "delete"}, RequiresZone: true},

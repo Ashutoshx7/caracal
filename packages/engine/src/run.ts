@@ -30,6 +30,35 @@ const BLOCKED_CREDENTIAL_ENV = new Set([
   'DYLD_LIBRARY_PATH',
 ])
 
+const INHERITED_ENV_KEYS = new Set([
+  'PATH',
+  'Path',
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'TMPDIR',
+  'TEMP',
+  'TMP',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  'TERM',
+  'COLORTERM',
+  'NO_COLOR',
+  'FORCE_COLOR',
+  'CI',
+  'XDG_RUNTIME_DIR',
+  'XDG_CONFIG_HOME',
+  'XDG_CACHE_HOME',
+  'XDG_DATA_HOME',
+  'DOCKER_HOST',
+  'DOCKER_CONTEXT',
+  'DOCKER_TLS_VERIFY',
+  'DOCKER_CERT_PATH',
+  'COMPOSE_PROJECT_NAME',
+])
+
 export type RunLineSink = (line: string, stream: 'stdout' | 'stderr') => void
 
 export interface RunExecOpts {
@@ -156,11 +185,23 @@ function validateArgv(argv: string[]): void {
   }
 }
 
+function shouldInheritEnv(key: string): boolean {
+  return INHERITED_ENV_KEYS.has(key) || key.startsWith('LC_')
+}
+
+function validateChildEnvKey(key: string): void {
+  if (!ENV_NAME.test(key)) throw new Error(`invalid_child_env:${key}`)
+  if (BLOCKED_CREDENTIAL_ENV.has(key)) throw new Error(`blocked_child_env:${key}`)
+}
+
 function buildChildEnv(extra: Record<string, string | undefined> | undefined): NodeJS.ProcessEnv {
-  // Always derive from a copy of process.env; never mutate the caller's env.
-  const env: NodeJS.ProcessEnv = { ...process.env }
+  const env: NodeJS.ProcessEnv = {}
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && shouldInheritEnv(key)) env[key] = value
+  }
   if (extra) {
     for (const [k, v] of Object.entries(extra)) {
+      validateChildEnvKey(k)
       if (v === undefined) delete env[k]
       else env[k] = v
     }

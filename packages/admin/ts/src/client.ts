@@ -54,6 +54,7 @@ interface RequestOptions {
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_RETRIES = 3
+const MAX_RETRY_AFTER_MS = 30_000
 
 function jitterBackoff(attempt: number): number {
   const base = Math.min(2 ** attempt * 250, 5_000)
@@ -64,13 +65,17 @@ function shouldRetry(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || (status >= 500 && status < 600)
 }
 
+function canRetryMethod(method: string): boolean {
+  return method === 'GET' || method === 'HEAD'
+}
+
 function retryAfterMs(res: Response): number | undefined {
   const h = res.headers.get('retry-after')
   if (!h) return undefined
   const secs = Number(h)
-  if (Number.isFinite(secs)) return Math.max(0, secs * 1000)
+  if (Number.isFinite(secs)) return Math.min(MAX_RETRY_AFTER_MS, Math.max(0, secs * 1000))
   const date = Date.parse(h)
-  if (!Number.isNaN(date)) return Math.max(0, date - Date.now())
+  if (!Number.isNaN(date)) return Math.min(MAX_RETRY_AFTER_MS, Math.max(0, date - Date.now()))
   return undefined
 }
 
@@ -115,9 +120,10 @@ export class AdminClient {
       body = JSON.stringify(opts.body)
     }
     const method = opts.method ?? 'GET'
+    const retries = canRetryMethod(method) ? this.retries : 0
 
     let lastErr: unknown
-    for (let attempt = 0; attempt <= this.retries; attempt++) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(new Error('admin_request_timeout')), this.timeoutMs)
       const onAbort = () => controller.abort((opts.signal ?? this.callerSignal)?.reason)
@@ -126,7 +132,7 @@ export class AdminClient {
       try {
         const res = await this.doFetch(url, { method, headers, body, signal: controller.signal })
         if (!res.ok) {
-          if (attempt < this.retries && shouldRetry(res.status)) {
+          if (attempt < retries && shouldRetry(res.status)) {
             const wait = retryAfterMs(res) ?? jitterBackoff(attempt)
             await new Promise(r => setTimeout(r, wait))
             continue
@@ -148,7 +154,7 @@ export class AdminClient {
         lastErr = err
         if (err instanceof AdminApiError) throw err
         if ((opts.signal ?? this.callerSignal)?.aborted) throw err
-        if (attempt < this.retries) {
+        if (attempt < retries) {
           await new Promise(r => setTimeout(r, jitterBackoff(attempt)))
           continue
         }

@@ -22,6 +22,7 @@ function fetchErr(status: number, body: unknown): typeof fetch {
     ok: false,
     status,
     statusText: 'Bad Request',
+    headers: new Headers(),
     text: async () => JSON.stringify(body),
     json: async () => body,
   }) as unknown as typeof fetch
@@ -84,7 +85,7 @@ describe('AdminClient', () => {
       ok: false, status: 500, statusText: 'Server Error',
       text: async () => '<html>nope</html>', json: async () => { throw new Error('x') },
     }) as unknown as typeof fetch
-    const c = new AdminClient({ apiUrl: 'http://api', adminToken: 't', fetchImpl: f })
+    const c = new AdminClient({ apiUrl: 'http://api', adminToken: 't', fetchImpl: f, retries: 0 })
     await expect(c.zones.list()).rejects.toMatchObject({ status: 500, code: 'Server Error' })
   })
 
@@ -137,5 +138,37 @@ describe('AdminClient', () => {
     expect(out).toEqual({ revoked_edges: 3, affected_sessions: 2 })
     const [, init] = (f as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0]
     expect(init.method).toBe('PATCH')
+  })
+
+  it('retries transient GET failures', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        statusText: 'Unavailable',
+        headers: new Headers({ 'retry-after': '0' }),
+        text: async () => JSON.stringify({ error: 'unavailable' }),
+        json: async () => ({ error: 'unavailable' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        headers: new Headers(),
+        text: async () => JSON.stringify([{ id: 'z1' }]),
+        json: async () => [{ id: 'z1' }],
+      }) as unknown as typeof fetch
+    const c = new AdminClient({ apiUrl: 'http://api', adminToken: 't', fetchImpl: f, retries: 1 })
+
+    await expect(c.zones.list()).resolves.toEqual([{ id: 'z1' }])
+    expect(f).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry mutating requests without idempotency support', async () => {
+    const f = fetchErr(503, { error: 'unavailable' })
+    const c = new AdminClient({ apiUrl: 'http://api', adminToken: 't', fetchImpl: f, retries: 3 })
+
+    await expect(c.zones.create({ name: 'Demo' })).rejects.toMatchObject({ status: 503 })
+    expect(f).toHaveBeenCalledTimes(1)
   })
 })
