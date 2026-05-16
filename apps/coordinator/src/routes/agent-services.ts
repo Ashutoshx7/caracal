@@ -7,6 +7,7 @@ import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { v7 as uuidv7 } from 'uuid'
 import { ownsApplication, requireScope } from '../auth.js'
+import { ZoneIdParams, ZoneParams, parseParams } from './params.js'
 
 const LIST_DEFAULT_LIMIT = 100
 const LIST_MAX_LIMIT = 500
@@ -37,7 +38,9 @@ const ListQuery = z.object({
 
 export const agentServicesRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/zones/:zoneId/agent-services', async (req, reply) => {
-    const { zoneId } = req.params as { zoneId: string }
+    const params = parseParams(ZoneParams, req, reply)
+    if (!params) return
+    const { zoneId } = params
     const body = ServiceBody.parse(req.body)
     if (!ownsApplication(req, body.application_id)
       && !requireScope(req, `coordinator.spawn_for:${body.application_id}`)) {
@@ -95,7 +98,9 @@ export const agentServicesRoutes: FastifyPluginAsync = async (fastify) => {
   })
 
   fastify.get('/zones/:zoneId/agent-services', async (req, reply) => {
-    const { zoneId } = req.params as { zoneId: string }
+    const params = parseParams(ZoneParams, req, reply)
+    if (!params) return
+    const { zoneId } = params
     const query = ListQuery.safeParse(req.query)
     if (!query.success) return reply.code(400).send({ error: 'invalid_query' })
     const { limit, cursor } = query.data
@@ -106,10 +111,10 @@ export const agentServicesRoutes: FastifyPluginAsync = async (fastify) => {
       )
       if (!probe[0]) return reply.code(400).send({ error: 'invalid_cursor' })
     }
-    const params: unknown[] = [zoneId, limit]
+    const queryParams: unknown[] = [zoneId, limit]
     let cursorClause = ''
     if (cursor) {
-      params.push(cursor)
+      queryParams.push(cursor)
       cursorClause = `AND id < $3`
     }
     const { rows } = await fastify.db.query(
@@ -118,14 +123,16 @@ export const agentServicesRoutes: FastifyPluginAsync = async (fastify) => {
        FROM agent_services
        WHERE zone_id = $1 ${cursorClause}
        ORDER BY id DESC LIMIT $2`,
-      params,
+      queryParams,
     )
     const nextCursor = rows.length === limit ? rows[rows.length - 1].id : null
     return { items: rows, next_cursor: nextCursor }
   })
 
   fastify.post('/zones/:zoneId/agents/:id/heartbeat', async (req, reply) => {
-    const { zoneId, id } = req.params as { zoneId: string; id: string }
+    const params = parseParams(ZoneIdParams, req, reply)
+    if (!params) return
+    const { zoneId, id } = params
     const body = HeartbeatBody.parse(req.body)
     const client = await fastify.db.connect()
     try {

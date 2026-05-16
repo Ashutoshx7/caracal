@@ -7,6 +7,7 @@ import { pathOnly } from '@caracalai/core'
 import { createRemoteJWKSet, decodeJwt, jwtVerify } from 'jose'
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { cfg } from './config.js'
+import { CoordinatorIdPattern } from './routes/params.js'
 
 // Per-zone JWKS resolvers. STS exposes one signing keyset per zone so a single
 // document never reveals every zone's keys; callers must pass ?zone_id=. Each
@@ -62,6 +63,8 @@ export function ownsApplication(req: FastifyRequest, applicationId: string): boo
 }
 
 const PUBLIC_PATHS = new Set(['/health', '/ready', '/v1/verify'])
+const BEARER_PREFIX = 'Bearer '
+const MAX_BEARER_BYTES = 4096
 
 function classifyError(err: unknown): string {
   const code = err && typeof err === 'object' && 'code' in err ? err.code : undefined
@@ -81,12 +84,12 @@ export async function verifyBearer(req: FastifyRequest, reply: FastifyReply): Pr
   if (PUBLIC_PATHS.has(path)) return
 
   const auth = req.headers.authorization
-  if (!auth?.startsWith('Bearer ')) {
+  if (typeof auth !== 'string' || !auth.startsWith(BEARER_PREFIX)) {
     reply.code(401).send({ error: 'missing_token' })
     return
   }
-  const token = auth.slice(7).trim()
-  if (!token) {
+  const token = auth.slice(BEARER_PREFIX.length).trim()
+  if (!token || token.length > MAX_BEARER_BYTES) {
     reply.code(401).send({ error: 'missing_token' })
     return
   }
@@ -95,7 +98,7 @@ export async function verifyBearer(req: FastifyRequest, reply: FastifyReply): Pr
   try {
     const claims = decodeJwt(token)
     const zoneClaim = claims['zone_id']
-    if (typeof zoneClaim !== 'string' || zoneClaim === '') {
+    if (typeof zoneClaim !== 'string' || !CoordinatorIdPattern.test(zoneClaim)) {
       reply.code(401).send({ error: 'invalid_token' })
       return
     }

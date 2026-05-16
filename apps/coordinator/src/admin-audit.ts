@@ -24,7 +24,12 @@ function zoneFromParams(req: FastifyRequest, url: string): string | null {
   const params = req.params as { zoneId?: string } | undefined
   if (params?.zoneId) return params.zoneId
   const match = pathOnly(url).match(/^\/zones\/([^/]+)/)
-  return match ? decodeURIComponent(match[1]) : null
+  if (!match) return null
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return null
+  }
 }
 
 export function registerAdminAuditHook(app: FastifyInstance, db: Pool): void {
