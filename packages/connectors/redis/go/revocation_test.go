@@ -96,9 +96,38 @@ func TestConsumerAcksInvalidSignatureWithoutMarkingSession(t *testing.T) {
 	}
 }
 
+func TestConsumerReplaysPendingMessages(t *testing.T) {
+	rdb := newFakeRedis()
+	store := NewStore(rdb)
+	key := []byte("0123456789abcdef0123456789abcdef")
+	values := map[string]any{"zone_id": "zone1", "session_id": "sid-pending"}
+	values[sharedcrypto.StreamSigField] = sharedcrypto.SignStream(key, RevocationStream, values)
+	rdb.pending = []redis.XMessage{{ID: "0-1", Values: values}}
+
+	consumer, err := NewConsumer(rdb, store, "resource-1", WithStreamHMAC(key, true))
+	if err != nil {
+		t.Fatalf("new consumer: %v", err)
+	}
+
+	n, err := consumer.PollOnce(context.Background())
+	if err != nil {
+		t.Fatalf("poll once: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("handled %d messages, want 1", n)
+	}
+	if !store.IsRevoked("sid-pending") {
+		t.Fatal("pending stream message should mark session revoked")
+	}
+	if len(rdb.acked) != 1 || rdb.acked[0] != "0-1" {
+		t.Fatalf("message should be acked once, got %v", rdb.acked)
+	}
+}
+
 type fakeRedis struct {
 	values   map[string]string
 	getErr   error
+	pending  []redis.XMessage
 	messages []redis.XMessage
 	acked    []string
 }
@@ -134,4 +163,11 @@ func (f *fakeRedis) XGroupCreateMkStream(_ context.Context, _ string, _ string, 
 
 func (f *fakeRedis) XReadGroup(_ context.Context, _ *redis.XReadGroupArgs) *redis.XStreamSliceCmd {
 	return redis.NewXStreamSliceCmdResult([]redis.XStream{{Stream: RevocationStream, Messages: f.messages}}, nil)
+}
+
+func (f *fakeRedis) XAutoClaim(ctx context.Context, _ *redis.XAutoClaimArgs) *redis.XAutoClaimCmd {
+	cmd := redis.NewXAutoClaimCmd(ctx)
+	cmd.SetVal(f.pending, "0-0")
+	f.pending = nil
+	return cmd
 }

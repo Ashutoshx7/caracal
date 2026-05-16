@@ -15,6 +15,12 @@ interface STSErrorResponse {
   acr_values?: string
 }
 
+interface STSSuccessResponse {
+  access_token?: unknown
+  token_type?: unknown
+  expires_in?: unknown
+}
+
 function parseSTSErrorResponse(body: string): STSErrorResponse {
   if (body === '') return {}
   return JSON.parse(body) as STSErrorResponse
@@ -86,6 +92,7 @@ export class OAuthClient {
       opts.sessionId ?? '',
       opts.agentSessionId ?? '',
       opts.delegationEdgeId ?? '',
+      this.authContext(opts),
       hashSecret(opts.clientAssertion),
     ].join('::')
   }
@@ -98,11 +105,20 @@ export class OAuthClient {
     return [...new Set(scopes ?? [])].sort().join(' ')
   }
 
+  private authContext(opts: ExchangeOptions): string {
+    return [
+      opts.clientSecret ? `secret:${hashSecret(opts.clientSecret)}` : '',
+      opts.clientAssertion ? 'assertion' : '',
+      opts.clientAssertionType ?? '',
+    ].join(':')
+  }
+
   private async doExchange(
     subjectToken: string,
     resource: string,
     opts: ExchangeOptions,
     isRetry: boolean,
+    deadlineMs = Date.now() + (opts.timeoutMs ?? 30_000),
   ): Promise<TokenExchangeResponse> {
     const body = new URLSearchParams({
       grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
@@ -123,40 +139,40 @@ export class OAuthClient {
     if (scope) body.set('scope', scope)
     if (opts.ttlSeconds) body.set('ttl_seconds', String(opts.ttlSeconds))
 
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), opts.timeoutMs ?? 30_000)
     const maxRetries = opts.retries ?? 3
     let res: Awaited<ReturnType<typeof fetch>> | undefined
-    try {
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let lastErr: unknown
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const remainingMs = deadlineMs - Date.now()
+      if (remainingMs <= 0) throw new Error('STS request timed out')
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), remainingMs)
+      try {
         res = await fetch(`${this.stsUrl}/oauth/2/token`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body,
           signal: controller.signal,
         })
-        const status = res.status
-        const transient = status === 408 || status === 425 || status === 429 || (status >= 500 && status < 600)
-        if (!transient || attempt === maxRetries) break
-        const retryAfter = res.headers?.get('retry-after')
-        let waitMs: number
-        if (retryAfter) {
-          const secs = Number(retryAfter)
-          if (Number.isFinite(secs)) waitMs = Math.max(0, secs * 1000)
-          else {
-            const date = Date.parse(retryAfter)
-            waitMs = Number.isNaN(date) ? 250 * 2 ** attempt : Math.max(0, date - Date.now())
-          }
-        } else {
-          const base = Math.min(2 ** attempt * 250, 5_000)
-          waitMs = base / 2 + Math.random() * (base / 2)
-        }
-        await new Promise(r => setTimeout(r, waitMs))
+      } catch (err) {
+        lastErr = err
+        if (attempt === maxRetries) throw err
+      } finally {
+        clearTimeout(timeout)
       }
-    } finally {
-      clearTimeout(timeout)
+      if (!res) {
+        await delayWithinDeadline(jitteredBackoff(attempt), deadlineMs)
+        continue
+      }
+      const status = res.status
+      const transient = status === 408 || status === 425 || status === 429 || (status >= 500 && status < 600)
+      if (!transient || attempt === maxRetries) break
+      await delayWithinDeadline(retryDelayMs(res, attempt), deadlineMs)
     }
-    if (!res) throw new Error('STS request failed: no response')
+    if (!res) {
+      if (lastErr instanceof Error) throw lastErr
+      throw new Error('STS request failed: no response')
+    }
 
     if (!res.ok) {
       let err: STSErrorResponse
@@ -174,7 +190,7 @@ export class OAuthClient {
         )
       }
       if (res.status === 401 && !isRetry) {
-        return this.doExchange(subjectToken, resource, opts, true)
+        return this.doExchange(subjectToken, resource, { ...opts, retries: 0 }, true, deadlineMs)
       }
       throw new Error(err['error_description'] ?? `STS error ${res.status}`)
     }
@@ -182,17 +198,49 @@ export class OAuthClient {
     if (!isJsonResponse(res)) {
       throw new Error('STS response invalid: expected application/json')
     }
-    const data = (await res.json()) as {
-      access_token: string
-      expires_in: number
-    }
-    return {
-      accessToken: data['access_token'],
-      tokenType: 'Bearer',
-      expiresIn: data['expires_in'],
-      issuedAt: Math.floor(Date.now() / 1000),
-    }
+    const data = (await res.json()) as STSSuccessResponse
+    return validateSuccessResponse(data)
   }
+}
+
+function validateSuccessResponse(data: STSSuccessResponse): TokenExchangeResponse {
+  if (typeof data.access_token !== 'string' || data.access_token === '') {
+    throw new Error('STS response invalid: access_token is required')
+  }
+  if (data.token_type !== undefined && data.token_type !== 'Bearer') {
+    throw new Error('STS response invalid: token_type must be Bearer')
+  }
+  if (!Number.isInteger(data.expires_in) || data.expires_in <= 0) {
+    throw new Error('STS response invalid: expires_in must be a positive integer')
+  }
+  return {
+    accessToken: data.access_token,
+    tokenType: 'Bearer',
+    expiresIn: data.expires_in,
+    issuedAt: Math.floor(Date.now() / 1000),
+  }
+}
+
+function retryDelayMs(res: Response, attempt: number): number {
+  const retryAfter = res.headers?.get('retry-after')
+  if (retryAfter) {
+    const secs = Number(retryAfter)
+    if (Number.isFinite(secs)) return Math.max(0, secs * 1000)
+    const date = Date.parse(retryAfter)
+    if (!Number.isNaN(date)) return Math.max(0, date - Date.now())
+  }
+  return jitteredBackoff(attempt)
+}
+
+function jitteredBackoff(attempt: number): number {
+  const base = Math.min(2 ** attempt * 250, 5_000)
+  return base / 2 + Math.random() * (base / 2)
+}
+
+async function delayWithinDeadline(waitMs: number, deadlineMs: number): Promise<void> {
+  const remainingMs = deadlineMs - Date.now()
+  if (remainingMs <= 0) throw new Error('STS request timed out')
+  await new Promise(resolve => setTimeout(resolve, Math.min(waitMs, remainingMs)))
 }
 
 function isJsonResponse(res: Response): boolean {

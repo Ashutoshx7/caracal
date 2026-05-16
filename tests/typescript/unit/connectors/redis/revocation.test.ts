@@ -16,6 +16,7 @@ class FakeRedis {
   readonly values = new Map<string, string>()
   readonly acked: string[] = []
   stream: RedisStreamResult | null = null
+  pending: [string, string[]][] = []
   failGet = false
 
   async get(key: string): Promise<string | null> {
@@ -31,6 +32,12 @@ class FakeRedis {
 
   async xreadgroup(): Promise<RedisStreamResult | null> {
     return this.stream
+  }
+
+  async xautoclaim(): Promise<[string, [string, string[]][]]> {
+    const pending = this.pending
+    this.pending = []
+    return ['0-0', pending]
   }
 
   async xack(_stream: string, _group: string, id: string): Promise<void> {
@@ -92,5 +99,25 @@ describe('RedisRevocationConsumer', () => {
     expect(await consumer.pollOnce()).toBe(1)
     expect(await store.isRevoked('sid-2')).toBe(false)
     expect(redis.acked).toEqual(['1-1'])
+  })
+
+  it('replays pending messages before reading new entries', async () => {
+    const redis = new FakeRedis()
+    const store = new RedisRevocationStore(redis)
+    const key = Buffer.alloc(32, 7)
+    const values = { zone_id: 'zone1', session_id: 'sid-pending' }
+    const sig = signStream(key, REVOCATION_STREAM, values)
+    redis.pending = [['0-1', ['zone_id', 'zone1', 'session_id', 'sid-pending', STREAM_SIG_FIELD, sig]]]
+    redis.stream = null
+
+    const consumer = new RedisRevocationConsumer(redis, store, {
+      consumer: 'resource-1',
+      streamHmacKey: key,
+      requireSignature: true,
+    })
+
+    expect(await consumer.pollOnce()).toBe(1)
+    expect(await store.isRevoked('sid-pending')).toBe(true)
+    expect(redis.acked).toEqual(['0-1'])
   })
 })
