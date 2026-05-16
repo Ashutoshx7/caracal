@@ -256,8 +256,8 @@ func (c *Consumer) processMessage(ctx context.Context, msg redis.XMessage) {
 	}
 	c.log.Info().
 		Str("id", msg.ID).
-		Interface("event", msg.Values["event"]).
-		Interface("zone_id", msg.Values["zone_id"]).
+		Str("event", stringVal(msg.Values["event"])).
+		Str("zone_id", stringVal(msg.Values["zone_id"])).
 		Msg("lifecycle event")
 	c.ack(ctx, msg.ID)
 }
@@ -295,4 +295,11 @@ func (c *Consumer) ensureGroup(ctx context.Context) error {
 		return nil
 	}
 	return err
+}
+
+func stringVal(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
 }
