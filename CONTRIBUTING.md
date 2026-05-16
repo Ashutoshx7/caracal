@@ -78,7 +78,7 @@ CLI and TUI are exact alternatives over the same engine: every command available
 The control service is an OAuth-protected HTTP API hosted by the engine — not a CLI command. It exposes `POST /v1/control/invoke` for any external client (script, AI agent, workflow, or another instance of CLI/TUI) that needs to drive Caracal programmatically. It is off by default.
 
 ```bash
-docker compose --profile control up control   # start the surface (CONTROL_MODE=on)
+docker compose --profile control up control   # start the surface (CARACAL_CONTROL_ENABLED=true)
 ```
 
 Clients authenticate with a standard OAuth2 client-credentials flow against STS, scoped to `control:invoke`. Tokens are short-lived ES256 JWTs.

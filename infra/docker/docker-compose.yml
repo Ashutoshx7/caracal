@@ -432,7 +432,7 @@ services:
       - caracalData
     environment:
       CARACAL_MODE: ${CARACAL_MODE:-dev}
-      CONTROL_MODE: ${CONTROL_MODE:-on}
+      CARACAL_CONTROL_ENABLED: ${CARACAL_CONTROL_ENABLED:-true}
       CONTROL_ADDR: ":8087"
       STS_JWKS_URL: http://sts:8080/.well-known/jwks.json
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}

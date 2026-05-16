@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Control service entry point: launches the external control HTTP surface only when CONTROL_MODE=on.
+// Control service entry point: launches the external control HTTP surface only when CARACAL_CONTROL_ENABLED=true.
 
 package main
 
@@ -20,9 +20,9 @@ func main() {
 	config.AssertRuntimeSafe()
 	log := logging.New("control")
 
-	mode := os.Getenv("CONTROL_MODE")
-	if mode != "on" {
-		log.Info().Str("mode", mode).Msg("control surface disabled; exiting (set CONTROL_MODE=on to enable)")
+	enabled := os.Getenv("CARACAL_CONTROL_ENABLED")
+	if enabled != "true" {
+		log.Info().Str("enabled", enabled).Msg("control surface disabled; exiting (set CARACAL_CONTROL_ENABLED=true to enable)")
 		return
 	}
 

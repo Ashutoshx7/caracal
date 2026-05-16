@@ -80,10 +80,10 @@ export const DEFAULT_SERVICE_PROBES: ServiceProbe[] = [
 ]
 
 // Returns probes for the active deployment surface. Includes the optional control
-// service only when CONTROL_MODE=on so default `up`/`status` flows stay unchanged.
+// service only when CARACAL_CONTROL_ENABLED=true so default `up`/`status` flows stay unchanged.
 export function defaultServiceProbes(): ServiceProbe[] {
   const probes = [...DEFAULT_SERVICE_PROBES]
-  if (process.env.CONTROL_MODE === 'on') {
+  if (process.env.CARACAL_CONTROL_ENABLED === 'true') {
     const port = Number(process.env.CONTROL_PORT ?? 8087)
     probes.push({ name: 'control', url: `http://localhost:${port}/health`, port })
   }
