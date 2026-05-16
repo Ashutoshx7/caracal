@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { dispatch } from '../../../../apps/cli/src/dispatcher.ts'
 import { buildRegistry, type Executor } from '../../../../apps/cli/src/registry.ts'
-import { SHELL_COMMANDS } from '../../../../packages/core/ts/src/commands.ts'
+import { CLI_COMMANDS, SHELL_COMMANDS } from '../../../../packages/core/ts/src/commands.ts'
 
 function makeOpts(run: Executor) {
   const executors = Object.fromEntries(SHELL_COMMANDS.map((c) => [c.name, run]))
@@ -59,6 +59,8 @@ describe('dispatch', () => {
     expect(exit).toHaveBeenCalledWith(0)
     const out = stdout.mock.calls.map((c) => String(c[0])).join('')
     for (const c of SHELL_COMMANDS) expect(out).toContain(c.name)
+    expect(out).not.toContain('NO_COLOR')
+    expect(out).not.toContain('FORCE_COLOR')
   })
 
   it('prints version on --version', async () => {
@@ -86,5 +88,20 @@ describe('dispatch', () => {
     ).rejects.toThrow('exit:0')
     const out = stdout.mock.calls.map((c) => String(c[0])).join('')
     expect(out).toContain('Usage: caracal cli')
+  })
+
+  it('keeps CLI help limited to visible commands and global options', async () => {
+    exitSpy()
+    const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
+    const executors = Object.fromEntries(CLI_COMMANDS.map((c) => [c.name, vi.fn() as Executor]))
+    const registry = buildRegistry(CLI_COMMANDS, executors)
+    await expect(
+      dispatch({ binary: 'caracal-cli', version: '0.0.0', mode: 'dev', registry }, ['--help']),
+    ).rejects.toThrow('exit:0')
+    const out = stdout.mock.calls.map((c) => String(c[0])).join('')
+    expect(out).toContain('zone')
+    expect(out).not.toMatch(/\bcompletion\b/)
+    expect(out).not.toContain('NO_COLOR')
+    expect(out).not.toContain('--json')
   })
 })

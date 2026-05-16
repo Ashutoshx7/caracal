@@ -28,6 +28,7 @@ function makeCfg(overrides: Partial<Config> = {}): Config {
     adminAuthFailLimitPerMin: 0,
     lastUsedDebounceSec: 0,
     trustProxy: false,
+    enableDocs: false,
     ...overrides,
   }
 }

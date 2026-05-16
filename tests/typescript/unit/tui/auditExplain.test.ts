@@ -49,4 +49,63 @@ describe('audit explain entry', () => {
     expect(body).toContain('"allow"')
     expect(byRequest).toHaveBeenCalledWith('z1', 'req-42')
   })
+
+  it('opens audit filters before tailing events', async () => {
+    const list = vi.fn(async () => [])
+    const client = { audit: { list, byRequest: vi.fn() } } as unknown as AdminClient
+    const menu = new MenuView(client, 'z1')
+    const app = fakeApp()
+    await menu.onKey('9', { app, size: { rows: 25, cols: 80 }, status: '' })
+    const pushed = (app as unknown as { _pushed: unknown[] })._pushed
+    const form = pushed[pushed.length - 1] as FormView
+    expect(form).toBeInstanceOf(FormView)
+    ;(form as unknown as { values: Record<string, string> }).values = {
+      decision: 'deny',
+      since: '2026-01-01T00:00:00Z',
+      until: '',
+      request_id: 'req-1',
+      event_type: 'authorization',
+      limit: '25',
+    }
+    ;(form as unknown as { focus: number }).focus = 6
+    await form.onKey('enter', { app, size: { rows: 25, cols: 80 }, status: '' })
+    const tail = pushed[pushed.length - 1] as { init: (app: App) => Promise<void> }
+    await tail.init(app)
+    expect(list).toHaveBeenCalledWith('z1', {
+      decision: 'deny',
+      since: '2026-01-01T00:00:00Z',
+      request_id: 'req-1',
+      event_type: 'authorization',
+      limit: 25,
+    })
+  })
+
+  it('opens control key get and loads the selected key', async () => {
+    const get = vi.fn(async () => ({
+      id: 'app-1',
+      name: 'control',
+      traits: ['control:invoke'],
+      registration_method: 'managed',
+      credential_type: 'token',
+    }))
+    const client = {
+      zones: { get: vi.fn(async () => ({})) },
+      applications: { get },
+    } as unknown as AdminClient
+    const menu = new MenuView(client, 'z1')
+    const app = fakeApp()
+    await menu.onKey('t', { app, size: { rows: 25, cols: 80 }, status: '' })
+    const pushed = (app as unknown as { _pushed: unknown[] })._pushed
+    const control = pushed[pushed.length - 1] as { onKey: MenuView['onKey'] }
+    await control.onKey('g', { app, size: { rows: 25, cols: 80 }, status: '' })
+    const form = pushed[pushed.length - 1] as FormView
+    ;(form as unknown as { values: Record<string, string> }).values = { id: 'app-1' }
+    ;(form as unknown as { focus: number }).focus = 1
+    await form.onKey('enter', { app, size: { rows: 25, cols: 80 }, status: '' })
+    const detail = pushed[pushed.length - 1] as DetailView
+    expect(detail).toBeInstanceOf(DetailView)
+    await detail.init(app)
+    expect(get).toHaveBeenCalledWith('z1', 'app-1')
+  })
+
 })

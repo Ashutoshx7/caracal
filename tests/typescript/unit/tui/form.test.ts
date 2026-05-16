@@ -45,6 +45,40 @@ describe('FormView focus', () => {
   })
 })
 
+describe('FormView input UX', () => {
+  it('renders required text fields as editable inputs', () => {
+    const view = new FormView({
+      title: 't',
+      fields: [{ key: 'name', label: 'name', kind: 'text', required: true }],
+      onSubmit: async () => {},
+    })
+    const lines = view.render({ app: fakeApp(), size: { rows: 10, cols: 80 }, status: '' }).join('\n')
+    expect(lines).toContain('Type or paste into fields')
+    expect(lines).toContain('name *')
+    expect(lines).toContain('[ <name> ]')
+  })
+
+  it('accepts pasted text chunks in text fields', async () => {
+    const view = new FormView({
+      title: 't',
+      fields: [{ key: 'id', label: 'application id', kind: 'text', required: true }],
+      onSubmit: async () => {},
+    })
+    await view.onKey('019e3025-999e-753c-8a09-7c8acc3f6480', { app: fakeApp(), size: { rows: 10, cols: 80 }, status: '' })
+    expect(view.values_().id).toBe('019e3025-999e-753c-8a09-7c8acc3f6480')
+  })
+
+  it('accepts bracketed paste in text fields', async () => {
+    const view = new FormView({
+      title: 't',
+      fields: [{ key: 'name', label: 'name', kind: 'text' }],
+      onSubmit: async () => {},
+    })
+    await view.onKey('\u001b[200~Ryan\'s Workflow\u001b[201~', { app: fakeApp(), size: { rows: 10, cols: 80 }, status: '' })
+    expect(view.values_().name).toBe('Ryan\'s Workflow')
+  })
+})
+
 describe('FormView validation', () => {
   it('blocks submit when required field empty', async () => {
     const submit = vi.fn(async () => {})
