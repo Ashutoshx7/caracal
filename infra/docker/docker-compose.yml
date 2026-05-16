@@ -406,7 +406,7 @@ services:
 
   control:
     <<: [*appService, *appResources]
-    profiles: ["agent"]
+    profiles: ["control"]
     build:
       context: ../..
       dockerfile: services/control/Dockerfile

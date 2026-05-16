@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// `caracal control token|revoke`: mint or revoke an STS token scoped for the agent control surface.
+// `caracal control token|revoke`: mint or revoke an STS token scoped for the external control surface.
 
 import { OAuthClient } from '@caracalai/oauth'
 import type { CliConfig } from '../config.ts'
@@ -11,7 +11,7 @@ import { style, printSuccess, printInfo } from '../style.ts'
 const HELP = `Usage: caracal-cli control <token|revoke> [options]
 
 Commands:
-  token    Mint an STS token with scope=control:invoke for an external agent
+  token    Mint an STS token with scope=control:invoke for an external client
   revoke   Revoke a previously issued control token by its JTI
 
 Options for token:
@@ -56,8 +56,8 @@ async function tokenVerb(argv: string[], cfg?: CliConfig): Promise<void> {
   process.stdout.write(`\n${style.label('Resource:  ')}${resource}\n`)
   process.stdout.write(`${style.label('Expires in:')} ${token.expires_in}s\n`)
   process.stdout.write(`${style.label('Token:     ')}${style.code(token.access_token)}\n\n`)
-  printInfo('Paste the token into your agent or workflow as a Bearer credential.')
-  printInfo(`Test: curl -sH "Authorization: Bearer $TOKEN" -d '{"command":"zone","subcommand":"list"}' ${resource}/v1/agent/invoke`)
+  printInfo('Use the token as a Bearer credential from any external client.')
+  printInfo(`Test: curl -sH "Authorization: Bearer $TOKEN" -d '{"command":"zone","subcommand":"list"}' ${resource}/v1/control/invoke`)
 }
 
 async function revokeVerb(argv: string[], cfg?: CliConfig): Promise<void> {

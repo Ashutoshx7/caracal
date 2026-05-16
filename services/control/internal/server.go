@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Control service HTTP server: registers /health, /ready, and the single /v1/agent/invoke endpoint.
+// Control service HTTP server: registers /health, /ready, and the single /v1/control/invoke endpoint.
 
 package internal
 
@@ -56,7 +56,7 @@ func New(ctx context.Context, log zerolog.Logger) (*Server, error) {
 func (s *Server) routes() {
 	s.mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	s.mux.HandleFunc("/ready", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	s.mux.Handle("/v1/agent/invoke", InvokeHandler(s.auth, s.disp, s.audit, s.rate, s.log))
+	s.mux.Handle("/v1/control/invoke", InvokeHandler(s.auth, s.disp, s.audit, s.rate, s.log))
 }
 
 func (s *Server) Run(ctx context.Context) error {
