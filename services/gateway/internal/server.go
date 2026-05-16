@@ -44,26 +44,16 @@ type Server struct {
 func New(ctx context.Context) (*Server, error) {
 	cfg := loadConfig()
 	log := logging.New("gateway")
-	var tracker *jtiTracker
-	var rdb *RedisClient
-	if cfg.RedisURL != "" {
-		var err error
-		rdb, err = newRedis(cfg.RedisURL)
-		if err != nil {
-			return nil, err
-		}
-		streamKey, err := sharedcrypto.DecodeStreamKey(cfg.StreamsHMACKey)
-		if err != nil {
-			return nil, fmt.Errorf("streams hmac key: %w", err)
-		}
-		if len(streamKey) == 0 {
-			log.Warn().Msg("STREAMS_HMAC_KEY not set; revocation stream messages will not be origin-verified")
-		}
-		rdb.SetStreamSigning(streamKey, cfg.Mode == "runtime")
-		tracker = newJTITracker(rdb, log, cfg.JTIFailOpen)
-	} else {
-		log.Warn().Msg("REDIS_URL unset; jti replay detection and revocation propagation disabled")
+	rdb, err := newRedis(cfg.RedisURL)
+	if err != nil {
+		return nil, err
 	}
+	streamKey, err := sharedcrypto.DecodeStreamKey(cfg.StreamsHMACKey)
+	if err != nil {
+		return nil, fmt.Errorf("streams hmac key: %w", err)
+	}
+	rdb.SetStreamSigning(streamKey, cfg.Mode == "runtime")
+	tracker := newJTITracker(rdb, log, cfg.JTIFailOpen)
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, err
@@ -166,12 +156,10 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if s.redis != nil {
-		if err := s.redis.Ping(ctx); err != nil {
-			s.log.Warn().Err(err).Msg("ready: redis unreachable")
-			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
-			return
-		}
+	if err := s.redis.Ping(ctx); err != nil {
+		s.log.Warn().Err(err).Msg("ready: redis unreachable")
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		return
 	}
 	if s.sts == nil {
 		s.log.Warn().Msg("ready: sts unavailable")

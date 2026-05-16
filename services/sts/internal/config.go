@@ -30,9 +30,9 @@ func loadConfig() Config {
 		Base:               config.Load(),
 		ZoneKEKProvider:    config.Getenv("ZONE_KEK_PROVIDER", "local"),
 		IssuerURL:          os.Getenv("ISSUER_URL"),
-		MaxGrantTTLSeconds: config.PositiveIntEnv("MAX_GRANT_TTL_SECONDS", 3600),
+		MaxGrantTTLSeconds: config.IntEnv("MAX_GRANT_TTL_SECONDS", 3600),
 		AuditReplayDir:     config.Getenv("AUDIT_REPLAY_DIR", "/var/lib/caracal/audit-replay"),
 		StreamsHMACKey:     config.Getenv("STREAMS_HMAC_KEY", ""),
-		OPAPollSeconds:     config.PositiveIntEnv("OPA_POLL_SECONDS", 60),
+		OPAPollSeconds:     config.IntEnv("OPA_POLL_SECONDS", 60),
 	}
 }

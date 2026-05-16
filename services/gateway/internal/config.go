@@ -68,8 +68,8 @@ func loadConfig() Config {
 		AllowPrivateUpstreams: config.BoolEnv("ALLOW_PRIVATE_UPSTREAMS", false),
 		UpstreamHostAllowlist: config.CSVEnv("UPSTREAM_HOST_ALLOWLIST"),
 		DatabaseURL:           config.MustGetenv("DATABASE_URL"),
-		RedisURL:              config.Getenv("REDIS_URL", ""),
-		StreamsHMACKey:        config.Getenv("STREAMS_HMAC_KEY", ""),
+		RedisURL:              config.MustGetenv("REDIS_URL"),
+		StreamsHMACKey:        config.MustGetenv("STREAMS_HMAC_KEY"),
 		JTIFailOpen:           config.BoolEnv("JTI_FAIL_OPEN", false),
 	}
 	if err := cfg.validate(); err != nil {
@@ -80,8 +80,8 @@ func loadConfig() Config {
 
 func (c Config) validate() error {
 	runtime := c.Mode == "runtime"
-	if runtime && c.RedisURL == "" {
-		return fmt.Errorf("REDIS_URL is required when CARACAL_MODE=runtime")
+	if c.RedisURL == "" {
+		return fmt.Errorf("REDIS_URL is required")
 	}
 	if runtime && c.JTIFailOpen {
 		return fmt.Errorf("JTI_FAIL_OPEN is forbidden when CARACAL_MODE=runtime")
@@ -105,8 +105,8 @@ func (c Config) validate() error {
 	if c.TLSCertFile != "" && c.TLSKeyFile == "" || c.TLSCertFile == "" && c.TLSKeyFile != "" {
 		return fmt.Errorf("TLS_CERT_FILE and TLS_KEY_FILE must both be set")
 	}
-	if runtime && c.StreamsHMACKey == "" {
-		return fmt.Errorf("STREAMS_HMAC_KEY is required when CARACAL_MODE=runtime")
+	if c.StreamsHMACKey == "" {
+		return fmt.Errorf("STREAMS_HMAC_KEY is required")
 	}
 	if c.Port != defaultPort {
 		return fmt.Errorf("PORT must be %s", defaultPort)

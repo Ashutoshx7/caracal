@@ -58,7 +58,7 @@ func newRevocationStore(log zerolog.Logger) *revocationStore {
 // IsRevoked reports whether the session id has been revoked recently enough that
 // any token bearing it must still be considered invalid.
 func (s *revocationStore) IsRevoked(sid string) bool {
-	if s == nil || sid == "" {
+	if sid == "" {
 		return false
 	}
 	s.mu.RLock()
@@ -95,15 +95,14 @@ func (s *revocationStore) prune() {
 }
 
 // startRevocationConsumer subscribes to the revocation stream and populates store.
-// It loops until ctx is cancelled. A nil redis client makes this a no-op so
-// deployments without REDIS_URL still serve traffic (with revocation propagation
-// disabled — STS validation at exchange time remains the trust root). Returns
-// an error when the consumer group cannot be ensured so the gateway refuses to
-// start with revocations silently broken.
+// It loops until ctx is cancelled. Returns an error when the consumer group cannot
+// be ensured so the gateway refuses to start with revocations broken.
 func startRevocationConsumer(ctx context.Context, redis revocationRedis, store *revocationStore, log zerolog.Logger) error {
-	if redis == nil || store == nil {
-		log.Warn().Msg("revocation consumer disabled (no redis client)")
-		return nil
+	if redis == nil {
+		return fmt.Errorf("revocation consumer requires redis")
+	}
+	if store == nil {
+		return fmt.Errorf("revocation consumer requires store")
 	}
 	if err := redis.EnsureGroup(ctx, streamRevoke, groupRevoke); err != nil {
 		return fmt.Errorf("revocation consumer ensure group: %w", err)
