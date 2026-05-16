@@ -4,28 +4,12 @@
 // Policy set route unit tests for activation contract checks and durable outbox enqueue.
 
 import { describe, it, expect, vi } from 'vitest'
-import Fastify from 'fastify'
-import type { DB } from '../../../../../apps/api/src/db.js'
-import type { RedisClient } from '../../../../../apps/api/src/redis.js'
-import '../../../../../apps/api/src/fastify-augmentation.js'
 import { policySetsRoutes } from '../../../../../apps/api/src/routes/policy-sets.js'
-
-function buildApp() {
-  const app = Fastify({ logger: false })
-  const db = {
-    query: vi.fn(),
-    connect: vi.fn(),
-  }
-  const redis = { xadd: vi.fn() }
-  app.decorate('db', db as unknown as DB)
-  app.decorate('redis', redis as unknown as RedisClient)
-  app.register(policySetsRoutes, { prefix: '/v1' })
-  return { app, db, redis }
-}
+import { buildRouteApp } from '../../../../shared/test-utils/typescript/fastify.js'
 
 describe('POST /v1/zones/:zoneId/policy-sets/:id/activate', () => {
   it('rejects policies that do not emit result', async () => {
-    const { app, db } = buildApp()
+    const { app, db } = buildRouteApp(policySetsRoutes)
     db.query
       .mockResolvedValueOnce({ rows: [{ id: 'psv-1', manifest_json: [{ policy_version_id: 'pv-1' }] }] })
       .mockResolvedValueOnce({ rows: [{ id: 'pv-1', content: 'package caracal.authz\ndefault allow = false', zone_id: 'z1' }] })
@@ -42,7 +26,7 @@ describe('POST /v1/zones/:zoneId/policy-sets/:id/activate', () => {
   })
 
   it('rejects manifests that reference policies in another zone', async () => {
-    const { app, db } = buildApp()
+    const { app, db } = buildRouteApp(policySetsRoutes)
     db.query
       .mockResolvedValueOnce({ rows: [{ id: 'psv-1', manifest_json: [{ policy_version_id: 'pv-1' }] }] })
       .mockResolvedValueOnce({ rows: [{ id: 'pv-1', content: 'package caracal.authz\nresult := {}', zone_id: 'z2' }] })
@@ -59,7 +43,7 @@ describe('POST /v1/zones/:zoneId/policy-sets/:id/activate', () => {
   })
 
   it('activates valid version, enqueues outbox row in TX, returns 202', async () => {
-    const { app, db } = buildApp()
+    const { app, db } = buildRouteApp(policySetsRoutes)
     const manifest = [{ policy_version_id: 'pv-1' }]
     const content = 'package caracal.authz\nresult := {"allow": true}'
     db.query

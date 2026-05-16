@@ -4,24 +4,8 @@
 // Delegated grant route unit tests for same-zone references and scope boundaries.
 
 import { describe, it, expect, vi } from 'vitest'
-import Fastify from 'fastify'
-import type { DB } from '../../../../../apps/api/src/db.js'
-import type { RedisClient } from '../../../../../apps/api/src/redis.js'
-import '../../../../../apps/api/src/fastify-augmentation.js'
 import { grantsRoutes } from '../../../../../apps/api/src/routes/grants.js'
-
-function buildApp() {
-  const app = Fastify({ logger: false })
-  const db = {
-    query: vi.fn(),
-    connect: vi.fn(),
-  }
-  const redis = { xadd: vi.fn() }
-  app.decorate('db', db as unknown as DB)
-  app.decorate('redis', redis as unknown as RedisClient)
-  app.register(grantsRoutes, { prefix: '/v1' })
-  return { app, db, redis }
-}
+import { buildRouteApp } from '../../../../shared/test-utils/typescript/fastify.js'
 
 const grantBody = {
   application_id: 'app-1',
@@ -32,7 +16,7 @@ const grantBody = {
 
 describe('POST /v1/zones/:zoneId/grants', () => {
   it('rejects application references outside the zone', async () => {
-    const { app, db } = buildApp()
+    const { app, db } = buildRouteApp(grantsRoutes)
     db.query
       .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
       .mockResolvedValueOnce({ rows: [{ application_exists: false, resource_scopes: ['read'] }] })
@@ -45,7 +29,7 @@ describe('POST /v1/zones/:zoneId/grants', () => {
   })
 
   it('rejects resource references outside the zone', async () => {
-    const { app, db } = buildApp()
+    const { app, db } = buildRouteApp(grantsRoutes)
     db.query
       .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
       .mockResolvedValueOnce({ rows: [{ application_exists: true, resource_scopes: null }] })
@@ -58,7 +42,7 @@ describe('POST /v1/zones/:zoneId/grants', () => {
   })
 
   it('rejects grant scopes outside the resource scope set', async () => {
-    const { app, db } = buildApp()
+    const { app, db } = buildRouteApp(grantsRoutes)
     db.query
       .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
       .mockResolvedValueOnce({ rows: [{ application_exists: true, resource_scopes: ['read'] }] })
@@ -75,7 +59,7 @@ describe('POST /v1/zones/:zoneId/grants', () => {
   })
 
   it('creates a grant with same-zone references and bounded scopes', async () => {
-    const { app, db } = buildApp()
+    const { app, db } = buildRouteApp(grantsRoutes)
     db.query
       .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
       .mockResolvedValueOnce({ rows: [{ application_exists: true, resource_scopes: ['read', 'write'] }] })
@@ -91,7 +75,7 @@ describe('POST /v1/zones/:zoneId/grants', () => {
 
 describe('DELETE /v1/zones/:zoneId/grants/:id bounded session revocation', () => {
   it('pages session revocation in batches of 1000 and stops at the short batch', async () => {
-    const { app, db } = buildApp()
+    const { app, db } = buildRouteApp(grantsRoutes)
 
     const fullBatch = Array.from({ length: 1000 }, (_, i) => ({ id: `s${i}` }))
     const tailBatch = [{ id: 's-tail' }]

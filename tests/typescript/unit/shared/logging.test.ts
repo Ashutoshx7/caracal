@@ -4,7 +4,7 @@
 // TypeScript shared logging tests for JSON emission and level filtering.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createLogger, redact, isSecretKey, SECRET_KEYS } from '../../../../packages/core/ts/src/logging.js'
+import { createLogger, redact, isSecretKey, SECRET_KEYS, buildPinoRedactPaths } from '../../../../packages/core/ts/src/logging.js'
 
 describe('createLogger', () => {
   afterEach(() => {
@@ -99,5 +99,12 @@ describe('redact', () => {
   it('exposes a frozen SECRET_KEYS list', () => {
     expect(Object.isFrozen(SECRET_KEYS)).toBe(true)
     expect(SECRET_KEYS).toContain('password')
+  })
+
+  it('builds Pino redact paths from the central secret list', () => {
+    const paths = buildPinoRedactPaths()
+    expect(paths).toContain('req.headers["authorization"]')
+    expect(paths).toContain('request.body["CLIENT_SECRET"]')
+    expect(new Set(paths).size).toBe(paths.length)
   })
 })
