@@ -108,7 +108,7 @@ const pyPaths = [
   "packages/connectors/fastmcp/python/pyproject.toml",
   "packages/connectors/redis/python/pyproject.toml",
 ];
-const containers = ["api", "coordinator", "audit", "gateway", "sts"];
+const containers = ["api", "coordinator", "audit", "gateway", "sts", "postgres", "redis"];
 
 const npm = Object.fromEntries(
   npmPaths.map((path) => {

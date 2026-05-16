@@ -8,8 +8,18 @@
 set -eu
 
 if [ -n "${PGPASSWORD_FILE:-}" ] && [ -r "${PGPASSWORD_FILE}" ]; then
-    PGPASSWORD=$(cat "${PGPASSWORD_FILE}")
-    export PGPASSWORD
+    : "${PGHOST:?PGHOST required when PGPASSWORD_FILE is set}"
+    : "${PGPORT:?PGPORT required when PGPASSWORD_FILE is set}"
+    : "${PGUSER:?PGUSER required when PGPASSWORD_FILE is set}"
+    : "${PGDATABASE:?PGDATABASE required when PGPASSWORD_FILE is set}"
+    pgpass="${PGPASSFILE:-/tmp/caracal.pgpass}"
+    printf '%s:%s:%s:%s:%s\n' "${PGHOST}" "${PGPORT}" "${PGDATABASE}" "${PGUSER}" "$(cat "${PGPASSWORD_FILE}")" > "${pgpass}"
+    chmod 0600 "${pgpass}"
+    export PGPASSFILE="${pgpass}"
+    unset PGPASSWORD
+elif [ -z "${PGPASSWORD:-}" ] && [ -z "${PGPASSFILE:-}" ]; then
+    echo "migrate: PGPASSWORD_FILE, PGPASSWORD, or PGPASSFILE is required" >&2
+    exit 1
 fi
 
 migrations_dir="${MIGRATIONS_DIR:-/migrations}"
@@ -22,7 +32,26 @@ case "${lock_key}" in
         ;;
 esac
 
-psql -v ON_ERROR_STOP=1 -c "
+psql_cmd() {
+    psql -w -v ON_ERROR_STOP=1 \
+        -h "${PGHOST:?PGHOST required}" \
+        -p "${PGPORT:?PGPORT required}" \
+        -U "${PGUSER:?PGUSER required}" \
+        -d "${PGDATABASE:?PGDATABASE required}" \
+        "$@"
+}
+
+tries=0
+until psql_cmd -c "SELECT 1;" >/dev/null 2>&1; do
+    tries=$((tries + 1))
+    if [ "${tries}" -gt "${MIGRATION_CONNECT_RETRIES:-30}" ]; then
+        echo "migrate: database did not become reachable" >&2
+        exit 1
+    fi
+    sleep "${MIGRATION_CONNECT_SLEEP_SECONDS:-1}"
+done
+
+psql_cmd -c "
   CREATE TABLE IF NOT EXISTS schema_migrations (
     version    TEXT PRIMARY KEY,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -44,16 +73,25 @@ for path in $(ls "${migrations_dir}"/*.up.sql 2>/dev/null | sort); do
             exit 1
             ;;
     esac
-    already=$(psql -tAXc "SELECT 1 FROM schema_migrations WHERE version = :'ver' LIMIT 1" -v ver="${version}")
-    if [ "${already}" = "1" ]; then
-        continue
-    fi
     echo "applying ${version}"
-    psql -v ON_ERROR_STOP=1 --single-transaction \
+    psql_cmd --single-transaction \
         -v ver="${version}" \
-        -c "SELECT pg_advisory_xact_lock(${lock_key});" \
-        -f "${path}" \
-        -c "INSERT INTO schema_migrations(version) VALUES (:'ver') ON CONFLICT DO NOTHING;"
+        -v lock_key="${lock_key}" \
+        -v migration="${path}" \
+        <<'SQL'
+SELECT pg_advisory_xact_lock(:lock_key);
+SELECT CASE
+    WHEN EXISTS (SELECT 1 FROM schema_migrations WHERE version = :'ver') THEN 'true'
+    ELSE 'false'
+END AS migration_applied;
+\gset
+\if :migration_applied
+SELECT :'ver' AS already_applied;
+\else
+\i :migration
+INSERT INTO schema_migrations(version) VALUES (:'ver');
+\endif
+SQL
 done
 
 echo "migrations up to date"

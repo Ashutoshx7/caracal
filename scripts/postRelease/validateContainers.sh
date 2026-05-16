@@ -37,20 +37,61 @@ validateStack() {
     return 0
   fi
   local dir; dir="$(mktemp -d)"
+  mkdir -p "$dir/secrets"
   cat >"$dir/stack.env" <<'EOF'
 POSTGRES_USER=caracal
-POSTGRES_PASSWORD=caracal-postrelease-postgres
 POSTGRES_DB=caracal
-REDIS_PASSWORD=caracal-postrelease-redis
+POSTGRES_PASSWORD=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+REDIS_PASSWORD=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+CARACAL_ADMIN_TOKEN=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 ZONE_KEK=1111111111111111111111111111111111111111111111111111111111111111
 AUDIT_HMAC_KEY=2222222222222222222222222222222222222222222222222222222222222222
 STREAMS_HMAC_KEY=3333333333333333333333333333333333333333333333333333333333333333
-CARACAL_ADMIN_TOKEN=caracal-postrelease-admin-token
 EOF
-  REG="$REGISTRY" PREFIX="$IMAGE_PREFIX" "$CARACAL_PYTHON" - "$MANIFEST" "$dir/docker-compose.release.yml" <<'PY'
+  cat >"$dir/secrets/postgresPassword" <<'EOF'
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+EOF
+  cat >"$dir/secrets/redisPassword" <<'EOF'
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+EOF
+  cat >"$dir/secrets/caracalAdminToken" <<'EOF'
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+EOF
+  cat >"$dir/secrets/zoneKek" <<'EOF'
+1111111111111111111111111111111111111111111111111111111111111111
+EOF
+  cat >"$dir/secrets/auditHmacKey" <<'EOF'
+2222222222222222222222222222222222222222222222222222222222222222
+EOF
+  cat >"$dir/secrets/streamsHmacKey" <<'EOF'
+3333333333333333333333333333333333333333333333333333333333333333
+EOF
+  cat >"$dir/secrets/databaseUrl" <<'EOF'
+postgres://caracal:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@postgres:5432/caracal
+EOF
+  cat >"$dir/secrets/redisUrl" <<'EOF'
+redis://:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb@redis:6379
+EOF
+  chmod 0444 "$dir"/secrets/*
+  REG="$REGISTRY" PREFIX="$IMAGE_PREFIX" SECRETS_DIR="$dir/secrets" "$CARACAL_PYTHON" - "$MANIFEST" "$dir/docker-compose.release.yml" <<'PY'
 import json, os, sys
 manifest = json.load(open(sys.argv[1]))
 out = open(sys.argv[2], "w")
+secrets_dir = os.environ["SECRETS_DIR"]
+secret_names = [
+    "postgresPassword",
+    "redisPassword",
+    "caracalAdminToken",
+    "zoneKek",
+    "auditHmacKey",
+    "streamsHmacKey",
+    "databaseUrl",
+    "redisUrl",
+]
+out.write("secrets:\n")
+for name in secret_names:
+    out.write(f"  {name}:\n")
+    out.write(f"    file: {secrets_dir}/{name}\n")
 out.write("services:\n")
 for svc, ver in manifest["containers"].items():
     out.write(f"  {svc}:\n")
@@ -67,11 +108,6 @@ PY
       return 0
     fi
   done
-  if ! runOrEcho docker compose --env-file "$dir/stack.env" -f "$COMPOSE_SRC" build postgres redis >"$dir/build" 2>&1; then
-    logFinding "$AREA" "stack" "linux-amd64" "compose" "docker" "$SEV_BLOCKER" "$STATUS_FAIL" "$(head -c 2000 "$dir/build")" "docker compose build postgres redis"
-    rm -rf "$dir"
-    return 0
-  fi
   if runOrEcho docker compose --env-file "$dir/stack.env" -f "$COMPOSE_SRC" -f "$dir/docker-compose.release.yml" up -d --no-build --pull never >"$dir/up" 2>&1; then
     sleep 5
     logFinding "$AREA" "stack" "linux-amd64" "compose" "docker" "$SEV_INFO" "$STATUS_PASS" "compose up succeeded" "docker compose up -d"
