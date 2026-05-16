@@ -31,7 +31,7 @@ func (allowVerifier) Verify(context.Context, string, string) error {
 
 type allowTracker struct{}
 
-func (allowTracker) Check(context.Context, string, time.Time, string, string, string, string, string) bool {
+func (allowTracker) Check(context.Context, string, time.Time, string, string, string, string, string, string) bool {
 	return true
 }
 
