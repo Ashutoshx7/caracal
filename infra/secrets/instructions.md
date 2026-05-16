@@ -1,8 +1,7 @@
 # caracal/secrets
 
 ## Scope
-- Covers only the secret-file layout consumed by the Caracal compose stack and
-  Kubernetes manifests under `caracal/infra/`.
+- Covers only the secret-file layout consumed by the Caracal compose stack under `caracal/infra/`.
 
 ## Required
 - Must generate dev secrets via `pnpm secrets:init`; output lands in `files/`.

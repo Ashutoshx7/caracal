@@ -1,11 +1,17 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 
-Operator scripts that talk to a running Caracal stack from the host.
+# caracal/scripts
 
-- `smokeTest.sh` - probes every service `/ready` path; exits non-zero on the
-  first failure. Intended for CI gates and post-deploy validation.
+## Scope
+- Covers only the operator scripts in `caracal/infra/scripts/`.
 
-Environment overrides:
+## Required
+- Must probe all app service `/ready` paths in `smokeTest.sh` for CI gates and post-deploy validation.
+- Must exit non-zero on the first failed probe.
+- Must default `CARACAL_SMOKE_HOST` to `127.0.0.1` and allow override via environment variable.
 
-- `CARACAL_SMOKE_HOST` (default: `127.0.0.1`)
+## Forbidden
+- Must not import or reference `caracalEnterprise/`.
+- Must not store secrets or credentials in any script.
+- Must not bypass or ignore service health gates.

@@ -48,12 +48,12 @@ shutdown() {
 }
 trap shutdown INT TERM
 
-ping() {
+redisPing() {
     redis-cli -h 127.0.0.1 -p 6379 --no-auth-warning PING 2>/dev/null
 }
 
 tries=0
-until [ "$(ping)" = "PONG" ]; do
+until [ "$(redisPing)" = "PONG" ]; do
     tries=$((tries + 1))
     if [ "${tries}" -gt 100 ]; then
         echo "redis did not become ready" >&2
