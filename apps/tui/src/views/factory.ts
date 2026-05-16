@@ -24,6 +24,7 @@ import type {
 } from '@caracalai/admin'
 import { readFileSync } from 'node:fs'
 import type { App, View } from '../screen.ts'
+import { maskSecretField } from '../errors.ts'
 import { AuditTailView } from './audit.ts'
 import { DetailView } from './detail.ts'
 import { ConfirmView, FormView } from './form.ts'
@@ -36,7 +37,7 @@ export interface Ctx {
 }
 
 function detail(title: string, load: () => Promise<unknown>): DetailView {
-  return new DetailView({ title, load })
+  return new DetailView({ title, load, mask: maskSecretField })
 }
 
 function open(app: App, view: View): void { app.push(view) }

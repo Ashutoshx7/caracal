@@ -154,6 +154,27 @@ describe('zones actions', () => {
 })
 
 describe('applications actions', () => {
+  it('masks secret-shaped fields in application details by default', async () => {
+    const { client, ctx } = newCtx()
+    client.applications.get.mockResolvedValueOnce({
+      id: 'a1',
+      name: 'app',
+      client_secret: 'secret-value',
+    })
+    const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>
+    setRows(list, [{ id: 'a1', name: 'app', registration_method: 'managed', credential_type: 'token', traits: [] }])
+    const app = fakeApp()
+
+    await list.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
+    const pushed = (app as unknown as { _pushed: unknown[] })._pushed
+    const detail = pushed[pushed.length - 1] as DetailView
+    await detail.init(app)
+    const out = detail.render({ app, size: { rows: 20, cols: 80 }, status: '' }).join('\n')
+
+    expect(out).toContain('••••')
+    expect(out).not.toContain('secret-value')
+  })
+
   it('n opens FormView with method/credential/secret/traits/consent fields', async () => {
     const { ctx } = newCtx()
     const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>

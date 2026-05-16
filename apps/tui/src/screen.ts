@@ -63,7 +63,7 @@ export class App {
     this.stack.push(view)
     this.dirty = true
     if (view.init) {
-      Promise.resolve(view.init(this)).catch((err) => this.setStatus(`init: ${explain(err)}`, 'error'))
+      Promise.resolve(view.init(this)).catch((err) => this.setStatus(`init: ${explainError(err)}`, 'error'))
     }
   }
 
@@ -84,7 +84,7 @@ export class App {
     this.stack.push(view)
     this.dirty = true
     if (view.init) {
-      Promise.resolve(view.init(this)).catch((err) => this.setStatus(`init: ${explain(err)}`, 'error'))
+      Promise.resolve(view.init(this)).catch((err) => this.setStatus(`init: ${explainError(err)}`, 'error'))
     }
   }
 
@@ -184,18 +184,18 @@ export class App {
     process.stdin.setEncoding('utf8')
 
     if (initial.init) {
-      try { await initial.init(this) } catch (err) { this.setStatus(`init: ${explain(err)}`, 'error') }
+      try { await initial.init(this) } catch (err) { this.setStatus(`init: ${explainError(err)}`, 'error') }
     }
 
     process.on('SIGWINCH', () => { this.dirty = true })
     process.on('SIGTERM', () => { void this.exit(0) })
     process.on('SIGHUP', () => { void this.exit(0) })
     process.on('uncaughtException', (err) => {
-      this.setStatus(`fatal: ${explain(err)}`, 'error')
+      this.setStatus(`fatal: ${explainError(err)}`, 'error')
       void this.exit(1)
     })
     process.on('unhandledRejection', (reason) => {
-      this.setStatus(`fatal: ${explain(reason)}`, 'error')
+      this.setStatus(`fatal: ${explainError(reason)}`, 'error')
       void this.exit(1)
     })
 
