@@ -134,6 +134,29 @@ describe('OAuthClient', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('does not share cache across client secrets', async () => {
+    const fetchMock = vi.fn().mockImplementation(async (_url, init) => {
+      const body = init.body as URLSearchParams
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          access_token: body.get('client_secret') === 'secret-a' ? 'tok-a' : 'tok-b',
+          expires_in: 900,
+        }),
+      }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new OAuthClient('http://sts:8080', 'zone1', 'app1')
+
+    const first = await client.exchange('subject-a', 'resource://api', { clientSecret: 'secret-a' })
+    const second = await client.exchange('subject-a', 'resource://api', { clientSecret: 'secret-b' })
+
+    expect(first.accessToken).toBe('tok-a')
+    expect(second.accessToken).toBe('tok-b')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('does not share cache across agent graph sessions', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -201,5 +224,17 @@ describe('OAuthClient', () => {
     const client = new OAuthClient('http://sts:8080', 'zone1', 'app1')
 
     await expect(client.exchange('subject-tok', 'resource://api')).rejects.toThrow('expected application/json')
+  })
+
+  it('rejects malformed successful STS responses', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: async () => ({ access_token: '', expires_in: 900 }),
+    }))
+    const client = new OAuthClient('http://sts:8080', 'zone1', 'app1')
+
+    await expect(client.exchange('subject-tok', 'resource://api')).rejects.toThrow('access_token is required')
   })
 })

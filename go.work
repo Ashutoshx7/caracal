@@ -6,6 +6,7 @@ use (
 	./packages/connectors/redis/go
 	./packages/core/go
 	./packages/identity/go
+	./packages/oauth/go
 	./packages/revocation/go
 	./packages/sdk/go
 	./packages/transport/mcp/go
