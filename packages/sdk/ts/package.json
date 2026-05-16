@@ -31,7 +31,6 @@
   },
   "files": [
     "dist",
-    "README.md",
     "LICENSE"
   ],
   "publishConfig": {
