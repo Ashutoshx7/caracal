@@ -5,7 +5,11 @@
 
 package config
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+	"time"
+)
 
 func TestGetenvUsesFallbackForMissingOrEmptyValue(t *testing.T) {
 	t.Setenv("CARACAL_TEST_EMPTY", "")
@@ -42,6 +46,26 @@ func TestPositiveIntEnvUsesFallbackForMissingOrInvalidValues(t *testing.T) {
 	}
 	if got := PositiveIntEnv("CARACAL_TEST_VALUE", 7); got != 12 {
 		t.Fatalf("want parsed env, got %d", got)
+	}
+}
+
+func TestStrictEnvParsers(t *testing.T) {
+	t.Setenv("CARACAL_TEST_DURATION", "3s")
+	t.Setenv("CARACAL_TEST_INT64", "42")
+	t.Setenv("CARACAL_TEST_BOOL", "true")
+	t.Setenv("CARACAL_TEST_CSV", "a, B ,c,, d ")
+
+	if got := DurationEnv("CARACAL_TEST_DURATION", time.Second); got != 3*time.Second {
+		t.Fatalf("want parsed duration, got %s", got)
+	}
+	if got := Int64Env("CARACAL_TEST_INT64", 7); got != 42 {
+		t.Fatalf("want parsed int64, got %d", got)
+	}
+	if got := BoolEnv("CARACAL_TEST_BOOL", false); !got {
+		t.Fatalf("want parsed bool")
+	}
+	if got := CSVEnv("CARACAL_TEST_CSV"); !reflect.DeepEqual(got, []string{"a", "b", "c", "d"}) {
+		t.Fatalf("want normalized csv values, got %v", got)
 	}
 }
 

@@ -31,11 +31,11 @@ function buildApp() {
   })
 
   app.post('/zones/:zoneId/agents', async (req, reply) => {
-    return reply.code(201).send({ id: 'sess-spawned', application_id: 'app-1' })
+    return reply.code(201).send({ agent_session_id: 'sess-spawned', application_id: 'app-1' })
   })
   app.delete('/zones/:zoneId/agents/:id', async (_req, reply) => reply.code(204).send())
   app.post('/zones/:zoneId/delegations', async (req, reply) => {
-    return reply.code(201).send({ id: 'edge-1', body: req.body })
+    return reply.code(201).send({ delegation_edge_id: 'edge-1', body: req.body })
   })
 
   app.register(v1Routes)
@@ -48,10 +48,10 @@ describe('POST /v1/begin', () => {
     await app.ready()
     const res = await app.inject({
       method: 'POST', url: '/v1/begin',
-      payload: { zone_id: 'z1', application_id: 'app-1', session_sid: 'sess-1' },
+      payload: { zone_id: 'z1', application_id: 'app-1', subject_session_id: 'sess-1' },
     })
     expect(res.statusCode).toBe(201)
-    expect(res.json()).toMatchObject({ id: 'sess-spawned' })
+    expect(res.json()).toMatchObject({ agent_session_id: 'sess-spawned' })
   })
 })
 
@@ -61,7 +61,7 @@ describe('POST /v1/end', () => {
     await app.ready()
     const res = await app.inject({
       method: 'POST', url: '/v1/end',
-      payload: { zone_id: 'z1', session_id: 'sess-1' },
+      payload: { zone_id: 'z1', agent_session_id: 'sess-1' },
     })
     expect(res.statusCode).toBe(204)
   })
@@ -83,7 +83,7 @@ describe('POST /v1/exchange', () => {
     })
     expect(res.statusCode).toBe(201)
     const body = res.json()
-    expect(body.id).toBe('edge-1')
+    expect(body.delegation_edge_id).toBe('edge-1')
     expect(body.body.zone_id).toBeUndefined()
     expect(body.body.source_session_id).toBe('s1')
   })
@@ -130,7 +130,7 @@ describe('rate limiting', () => {
     await app.ready()
     const res = await app.inject({
       method: 'POST', url: '/v1/begin',
-      payload: { zone_id: 'z1', application_id: 'app-1', session_sid: 'sess-1' },
+      payload: { zone_id: 'z1', application_id: 'app-1', subject_session_id: 'sess-1' },
     })
     expect(res.statusCode).toBe(429)
     expect(res.json()).toMatchObject({ error: 'rate_limited' })

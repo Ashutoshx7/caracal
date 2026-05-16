@@ -151,10 +151,10 @@ describe("agent lifecycle and delegation", () => {
     const fakeFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       calls.push({ url: String(input), init });
       if (init.method === "POST" && String(input).endsWith("/agents")) {
-        return new Response(JSON.stringify({ id: "agent-1" }), { status: 200 });
+        return new Response(JSON.stringify({ agent_session_id: "agent-1" }), { status: 200 });
       }
       if (init.method === "POST" && String(input).endsWith("/delegations")) {
-        return new Response(JSON.stringify({ id: "edge-1" }), { status: 200 });
+        return new Response(JSON.stringify({ delegation_edge_id: "edge-1" }), { status: 200 });
       }
       return new Response(null, { status: 204 });
     }) as unknown as typeof fetch;
@@ -202,12 +202,12 @@ describe("agent lifecycle and delegation", () => {
     });
   });
 
-  it("derives a stable Idempotency-Key on spawn when session_sid or parent_id is present", async () => {
+  it("derives a stable Idempotency-Key on spawn when subjectSessionId or parentId is present", async () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const fakeFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       calls.push({ url: String(input), init });
       if (init.method === "POST" && String(input).endsWith("/agents")) {
-        return new Response(JSON.stringify({ id: "agent-1" }), { status: 200 });
+        return new Response(JSON.stringify({ agent_session_id: "agent-1" }), { status: 200 });
       }
       return new Response(null, { status: 204 });
     }) as unknown as typeof fetch;
@@ -215,7 +215,7 @@ describe("agent lifecycle and delegation", () => {
       ...dummyConfig,
       coordinator: { baseUrl: "https://coordinator.example.com", fetchImpl: fakeFetch },
     });
-    await c.spawn(async () => { return; }, { sessionSid: "sid-1", parentId: "parent-1" });
+    await c.spawn(async () => { return; }, { subjectSessionId: "sid-1", parentId: "parent-1" });
     const headers = new Headers(calls[0].init.headers as HeadersInit);
     const key = headers.get("idempotency-key");
     expect(key).toBeTruthy();

@@ -60,7 +60,7 @@ describe('POST /v1/zones/:zoneId/agents — spawn', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/zones/z1/agents',
-      payload: { application_id: 'app-other-zone', session_sid: 'sid-1' },
+      payload: { application_id: 'app-other-zone', subject_session_id: 'sid-1' },
     })
     expect(res.statusCode).toBe(404)
     expect(JSON.parse(res.body)).toMatchObject({ error: 'application_not_found' })
@@ -73,7 +73,7 @@ describe('POST /v1/zones/:zoneId/agents — spawn', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/zones/z1/agents',
-      payload: { application_id: 'app-1', session_sid: 'sid-other-zone' },
+      payload: { application_id: 'app-1', subject_session_id: 'sid-other-zone' },
     })
     expect(res.statusCode).toBe(404)
     expect(JSON.parse(res.body)).toMatchObject({ error: 'session_not_found' })
@@ -89,7 +89,7 @@ describe('POST /v1/zones/:zoneId/agents — spawn', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/zones/z1/agents',
-      payload: { application_id: 'app-1', session_sid: 'sid-1' },
+      payload: { application_id: 'app-1', subject_session_id: 'sid-1' },
     })
     expect(res.statusCode).toBe(429)
     expect(JSON.parse(res.body)).toMatchObject({ error: 'agent_zone_limit_exceeded' })
@@ -106,7 +106,7 @@ describe('POST /v1/zones/:zoneId/agents — spawn', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/zones/z1/agents',
-      payload: { application_id: 'app-1', session_sid: 'sid-1', parent_id: 'missing-parent' },
+      payload: { application_id: 'app-1', subject_session_id: 'sid-1', parent_id: 'missing-parent' },
     })
     expect(res.statusCode).toBe(404)
     expect(JSON.parse(res.body)).toMatchObject({ error: 'parent_not_found' })
@@ -123,7 +123,7 @@ describe('POST /v1/zones/:zoneId/agents — spawn', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/zones/z1/agents',
-      payload: { application_id: 'app-1', session_sid: 'sid-1', parent_id: 'parent-1' },
+      payload: { application_id: 'app-1', subject_session_id: 'sid-1', parent_id: 'parent-1' },
     })
     expect(res.statusCode).toBe(429)
     expect(JSON.parse(res.body)).toMatchObject({ error: 'agent_children_limit_exceeded' })
@@ -140,7 +140,7 @@ describe('POST /v1/zones/:zoneId/agents — spawn', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/zones/z1/agents',
-      payload: { application_id: 'app-1', session_sid: 'sid-1', parent_id: 'parent-1' },
+      payload: { application_id: 'app-1', subject_session_id: 'sid-1', parent_id: 'parent-1' },
     })
     expect(res.statusCode).toBe(429)
     expect(JSON.parse(res.body)).toMatchObject({ error: 'agent_depth_limit_exceeded' })
@@ -151,7 +151,7 @@ describe('POST /v1/zones/:zoneId/agents — spawn', () => {
     const client = spawnClient({
       refs: { application_exists: true, session_exists: true },
       count: { app_n: '0', zone_n: '0' },
-      insert: { rows: [{ id: 'agent-new', zone_id: 'z1', application_id: 'app-1', parent_id: null }] },
+      insert: { rows: [{ agent_session_id: 'agent-new', zone_id: 'z1', application_id: 'app-1', parent_id: null }] },
       outbox: true,
     })
     db.connect.mockResolvedValueOnce(client)
@@ -159,7 +159,7 @@ describe('POST /v1/zones/:zoneId/agents — spawn', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/zones/z1/agents',
-      payload: { application_id: 'app-1', session_sid: 'sid-1' },
+      payload: { application_id: 'app-1', subject_session_id: 'sid-1' },
     })
     expect(res.statusCode).toBe(201)
     expect(client.query).toHaveBeenCalledWith(
@@ -170,12 +170,12 @@ describe('POST /v1/zones/:zoneId/agents — spawn', () => {
     expect(outboxCall?.[1]?.[1]).toBe('caracal.agents.lifecycle')
   })
 
-  it('defaults session_sid from the verified bearer and returns the agent row with id', async () => {
+  it('defaults subject_session_id from the verified bearer and returns the agent session id', async () => {
     const { app, db } = buildApp()
     const client = spawnClient({
       refs: { application_exists: true, session_exists: true },
       count: { app_n: '0', zone_n: '0' },
-      insert: { rows: [{ id: 'agent-sdk', zone_id: 'z1', application_id: 'app-1', parent_id: null }] },
+      insert: { rows: [{ agent_session_id: 'agent-sdk', zone_id: 'z1', application_id: 'app-1', parent_id: null }] },
       outbox: true,
     })
     db.connect.mockResolvedValueOnce(client)
@@ -186,7 +186,7 @@ describe('POST /v1/zones/:zoneId/agents — spawn', () => {
       payload: { application_id: 'app-1', kind: 'ephemeral', metadata: { purpose: 'sdk' } },
     })
     expect(res.statusCode).toBe(201)
-    expect(JSON.parse(res.body)).toMatchObject({ id: 'agent-sdk' })
+    expect(JSON.parse(res.body)).toMatchObject({ agent_session_id: 'agent-sdk' })
     const refsCall = client.query.mock.calls.find((call) => String(call[0]).includes('session_exists'))
     expect(refsCall?.[1]).toEqual(['z1', 'app-1', 'sid-test'])
   })
@@ -211,8 +211,8 @@ describe('DELETE /v1/zones/:zoneId/agents/:id — cascade terminate', () => {
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [{ application_id: 'app-1' }] })
         .mockResolvedValueOnce({ rows: [
-          { id: 'agent-root', session_sid: 'sid-root', parent_id: null },
-          { id: 'agent-child', session_sid: 'sid-child', parent_id: 'agent-root' },
+          { id: 'agent-root', subject_session_id: 'sid-root', parent_id: null },
+          { id: 'agent-child', subject_session_id: 'sid-child', parent_id: 'agent-root' },
         ] })
         .mockResolvedValue({ rows: [] }),
       release: vi.fn(),
