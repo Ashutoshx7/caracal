@@ -9,7 +9,7 @@
     "test": "vitest run --root ../.. tests/typescript/unit/orchestration/coordinator"
   },
   "dependencies": {
-    "@caracalai/admin": "workspace:*",
+    "@caracalai/admin-audit": "workspace:*",
     "@caracalai/core": "workspace:*",
     "@caracalai/identity": "workspace:*",
     "fastify": "^5.2.1",

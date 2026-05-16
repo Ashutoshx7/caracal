@@ -22,15 +22,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
-    },
-    "./server": {
-      "import": "./dist/server.js",
-      "types": "./dist/server.d.ts"
     }
   },
   "files": [
     "dist",
-    "README.md",
     "LICENSE"
   ],
   "publishConfig": {
@@ -43,8 +38,7 @@
     "prepublishOnly": "tsc"
   },
   "dependencies": {
-    "@caracalai/core": "0.1.2",
-    "uuid": "^14.0.0"
+    "@caracalai/core": "0.1.2"
   },
   "devDependencies": {
     "@types/node": "^24.12.2",
