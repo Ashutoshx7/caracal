@@ -23,7 +23,8 @@ function shortSha() {
 }
 
 const ciRelease = process.env.CARACAL_RELEASE_VERSION
-const version = ciRelease ?? `dev-${shortSha()}`
+const sha = shortSha()
+const version = ciRelease ?? `dev-${sha}`
 
 if (ciRelease && /\+dev\.|-dev\./.test(ciRelease)) {
   process.stderr.write(`stampRelease: refusing dev-suffixed CARACAL_RELEASE_VERSION '${ciRelease}'\n`)
@@ -38,6 +39,7 @@ const body =
 
 export const CARACAL_TUI_VERSION = '${version}'
 export const CARACAL_TUI_MODE: 'dev' | 'runtime' = 'runtime'
+export const CARACAL_TUI_SHA = '${sha}'
 `
 
 writeFileSync(resolve(tuiRoot, 'src/version.gen.ts'), body, 'utf8')

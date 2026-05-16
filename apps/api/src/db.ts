@@ -33,5 +33,8 @@ export function newDB(options: DBOptions): DB {
     application_name: options.applicationName ?? 'caracal-api',
     options: `-c statement_timeout=${stmt} -c idle_in_transaction_session_timeout=${idleTx}`,
   })
+  pool.on('connect', (client) => {
+    client.query("SELECT set_config('caracal.zone_id', '*', false)").catch(() => {})
+  })
   return pool
 }

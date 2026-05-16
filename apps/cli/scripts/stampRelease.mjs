@@ -28,7 +28,8 @@ function shortSha() {
 }
 
 const ciRelease = process.env.CARACAL_RELEASE_VERSION
-const version = ciRelease ?? `dev-${shortSha()}`
+const sha = shortSha()
+const version = ciRelease ?? `dev-${sha}`
 const registry = ciRelease ? 'ghcr.io/garudex-labs/' : 'localhost/'
 
 if (ciRelease && /\+dev\.|-dev\./.test(ciRelease)) {
@@ -45,6 +46,7 @@ const body =
 export const CARACAL_VERSION = '${version}'
 export const CARACAL_MODE: 'dev' | 'runtime' = 'runtime'
 export const CARACAL_REGISTRY = '${registry}'
+export const CARACAL_SHA = '${sha}'
 `
 
 writeFileSync(resolve(cliRoot, 'src/runtime/version.gen.ts'), body, 'utf8')

@@ -30,14 +30,14 @@ const AuditQuery = z.object({
   request_id: z.string().min(1).optional(),
   decision: z.enum(['allow', 'deny', 'partial']).optional(),
   event_type: z.string().min(1).optional(),
-  cursor: z.string().min(1).optional(),
+  cursor: z.string().min(1).max(512).optional(),
   limit: z.coerce.number().int().min(1).max(1000).default(100),
 })
 
 const SessionQuery = z.object({
   status: z.enum(['active', 'revoked', 'expired']).optional(),
   subject_id: z.string().min(1).optional(),
-  cursor: z.string().min(1).optional(),
+  cursor: z.string().min(1).max(512).optional(),
   limit: z.coerce.number().int().min(1).max(1000).default(100),
 })
 

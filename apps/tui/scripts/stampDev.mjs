@@ -27,8 +27,9 @@ function shortSha() {
   }
 }
 
+const sha = shortSha()
 const releaseVersion = process.env.CARACAL_RELEASE_VERSION
-const version = releaseVersion ?? `${baseVersion()}+dev.${shortSha()}`
+const version = releaseVersion ?? `${baseVersion()}+dev.${sha}`
 const mode = releaseVersion ? 'runtime' : 'dev'
 
 const body =
@@ -39,7 +40,8 @@ const body =
 
 export const CARACAL_TUI_VERSION = '${version}'
 export const CARACAL_TUI_MODE: 'dev' | 'runtime' = '${mode}'
+export const CARACAL_TUI_SHA = '${sha}'
 `
 
 writeFileSync(resolve(tuiRoot, 'src/version.gen.ts'), body, 'utf8')
-process.stdout.write(`${releaseVersion ?? shortSha()}\n`)
+process.stdout.write(`${releaseVersion ?? sha}\n`)

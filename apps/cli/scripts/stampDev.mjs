@@ -42,6 +42,7 @@ const body =
 export const CARACAL_VERSION = '${version}'
 export const CARACAL_MODE: 'dev' | 'runtime' = '${mode}'
 export const CARACAL_REGISTRY = '${registry}'
+export const CARACAL_SHA = '${sha}'
 `
 
 writeFileSync(resolve(cliRoot, 'src/runtime/version.gen.ts'), body, 'utf8')
