@@ -6,10 +6,9 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 import jwt
-from caracalai_core import CaracalError, ErrorCode
+from caracalai_core import CaracalError, ErrorCode, JsonValue
 
 from .jwks import JwksCache
 from .scope import has_scope
@@ -89,7 +88,7 @@ async def verify_token(
     audience: str,
     required_scopes: list[str] | None = None,
     expected_zone_id: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, JsonValue]:
     keys = await _cache.get_keys(issuer)
 
     try:
@@ -98,7 +97,7 @@ async def verify_token(
         raise TokenInvalidError(f"Token validation failed: {e}") from e
 
     token_kid = header.get("kid")
-    candidates: list[dict[str, Any]]
+    candidates: list[dict[str, JsonValue]]
     if token_kid:
         candidates = [k for k in keys if k.get("kid") == token_kid]
         if not candidates:
@@ -106,7 +105,7 @@ async def verify_token(
     else:
         candidates = list(keys)
 
-    decoded: dict[str, Any] | None = None
+    decoded: dict[str, JsonValue] | None = None
     last_err: Exception | None = None
     for key in candidates:
         try:

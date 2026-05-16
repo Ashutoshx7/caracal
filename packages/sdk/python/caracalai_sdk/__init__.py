@@ -10,6 +10,7 @@ from .context import CaracalContext
 from .coordinator import AgentKind, CoordinatorClient, DelegationConstraints
 from .envelope import Envelope
 from .http import CaracalASGIMiddleware
+from .json_types import JsonObject, JsonPrimitive, JsonValue
 from .primitives import LifecycleHook
 
 __all__ = [
@@ -21,6 +22,9 @@ __all__ = [
     "CoordinatorClient",
     "DelegationConstraints",
     "Envelope",
+    "JsonObject",
+    "JsonPrimitive",
+    "JsonValue",
     "LifecycleHook",
     "ResourceBinding",
 ]

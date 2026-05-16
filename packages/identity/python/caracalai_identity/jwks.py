@@ -6,14 +6,14 @@
 import asyncio
 import time
 import httpx
-from typing import Any
+from caracalai_core import JsonValue
 
 _TTL = 300.0
 
 
 class JwksCache:
     def __init__(self) -> None:
-        self._cache: dict[str, tuple[list[dict[str, Any]], float]] = {}
+        self._cache: dict[str, tuple[list[dict[str, JsonValue]], float]] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._locks_guard = asyncio.Lock()
 
@@ -25,7 +25,7 @@ class JwksCache:
                 self._locks[issuer] = lock
             return lock
 
-    async def get_keys(self, issuer: str) -> list[dict[str, Any]]:
+    async def get_keys(self, issuer: str) -> list[dict[str, JsonValue]]:
         url = issuer.rstrip("/") + "/.well-known/jwks.json"
         entry = self._cache.get(issuer)
         if entry and time.monotonic() - entry[1] < _TTL:
@@ -44,6 +44,7 @@ class JwksCache:
                 resp.raise_for_status()
                 body = resp.json()
 
-            keys: list[dict[str, Any]] = body.get("keys", [])
+            keys = body.get("keys", []) if isinstance(body, dict) else []
+            keys = [key for key in keys if isinstance(key, dict)]
             self._cache[issuer] = (keys, time.monotonic())
             return keys
