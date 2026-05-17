@@ -7,7 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.17
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.101.0
 	github.com/aws/smithy-go v1.25.1
-	github.com/garudex-labs/caracal/core v0.0.0
+	github.com/garudex-labs/caracal/packages/core/go v0.0.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/parquet-go/parquet-go v0.29.0
 	github.com/redis/go-redis/v9 v9.19.0
@@ -51,4 +51,4 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace github.com/garudex-labs/caracal/core => ../../packages/core/go
+replace github.com/garudex-labs/caracal/packages/core/go => ../../packages/core/go
