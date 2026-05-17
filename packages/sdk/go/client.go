@@ -236,6 +236,26 @@ func parseResourceBindings(raw string) ([]ResourceBinding, error) {
 	return out, nil
 }
 
+func resourceIDsFromEnv(raw string, bindings []ResourceBinding) []string {
+	if raw != "" {
+		out := []string{}
+		for _, value := range strings.Split(raw, ",") {
+			value = strings.TrimSpace(value)
+			if value != "" {
+				out = append(out, value)
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	out := make([]string, 0, len(bindings))
+	for _, binding := range bindings {
+		out = append(out, binding.ResourceID)
+	}
+	return out
+}
+
 // OnAgentStart registers a hook fired when Spawn binds a new agent session.
 func (c *Caracal) OnAgentStart(h LifecycleHook) {
 	c.agentStartHooks = append(c.agentStartHooks, h)
@@ -288,11 +308,15 @@ func (c *Caracal) Spawn(ctx context.Context, fn func(context.Context) error, opt
 	if len(c.agentEndHooks) > 0 {
 		onEnd = func(cx context.Context, cc CaracalContext) error { return c.fire(c.agentEndHooks, cx, cc) }
 	}
+	subjectToken, err := c.rootToken(ctx)
+	if err != nil {
+		return err
+	}
 	return Spawn(ctx, SpawnInput{
 		Coordinator:   c.Coordinator,
 		ZoneID:        c.ZoneID,
 		ApplicationID: c.ApplicationID,
-		SubjectToken:  c.SubjectToken,
+		SubjectToken:  subjectToken,
 		ParentID:      o.ParentID,
 		Kind:          kind,
 		TTLSeconds:    ttl,
@@ -358,11 +382,15 @@ func (c *Caracal) DelegateToSpawn(ctx context.Context, opts DelegateToSpawnOptio
 	if len(c.agentEndHooks) > 0 {
 		onEnd = func(cx context.Context, cc CaracalContext) error { return c.fire(c.agentEndHooks, cx, cc) }
 	}
+	subjectToken, err := c.rootToken(ctx)
+	if err != nil {
+		return err
+	}
 	return DelegateToSpawn(ctx, DelegateToSpawnInput{
 		Coordinator:          c.Coordinator,
 		ZoneID:               c.ZoneID,
 		ApplicationID:        c.ApplicationID,
-		SubjectToken:         c.SubjectToken,
+		SubjectToken:         subjectToken,
 		Scopes:               opts.Scopes,
 		Constraints:          opts.Constraints,
 		DelegationTTLSeconds: opts.DelegationTTLSeconds,
@@ -394,7 +422,11 @@ func (c *Caracal) Headers(ctx context.Context, opts ...RootOptions) (http.Header
 		if !allowRoot(opts) {
 			return nil, fmt.Errorf("caracal: Headers called without a bound CaracalContext; pass RootOptions{AllowRoot: true} to use the application subject token")
 		}
-		InjectHTTP(Envelope{SubjectToken: c.SubjectToken, Hop: 0}, h)
+		subjectToken, err := c.rootToken(ctx)
+		if err != nil {
+			return nil, err
+		}
+		InjectHTTP(Envelope{SubjectToken: subjectToken, Hop: 0}, h)
 		return h, nil
 	}
 	InjectHTTP(ToEnvelope(cur), h)
@@ -409,7 +441,11 @@ func (c *Caracal) BindFromRequest(ctx context.Context, r *http.Request, opts ...
 		if !allowRoot(opts) {
 			return ctx, fmt.Errorf("caracal: BindFromRequest missing bearer token")
 		}
-		env.SubjectToken = c.SubjectToken
+		subjectToken, err := c.rootToken(ctx)
+		if err != nil {
+			return ctx, err
+		}
+		env.SubjectToken = subjectToken
 	}
 	cc, err := FromEnvelope(env, c.ZoneID, c.ApplicationID)
 	if err != nil {
@@ -452,7 +488,11 @@ func (t *caracalTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		if !t.allowRoot {
 			return nil, fmt.Errorf("caracal: Transport request has no bound CaracalContext; pass RootOptions{AllowRoot: true} to use the application subject token")
 		}
-		env = Envelope{SubjectToken: t.client.SubjectToken, Hop: 0}
+		subjectToken, err := t.client.rootToken(req.Context())
+		if err != nil {
+			return nil, err
+		}
+		env = Envelope{SubjectToken: subjectToken, Hop: 0}
 	} else {
 		env = ToEnvelope(cur)
 	}
@@ -468,13 +508,19 @@ func (t *caracalTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		clone.Host = rewritten.url.Host
 		clone.RequestURI = ""
 		clone.Header.Set("X-Caracal-Resource", rewritten.resourceID)
-		token := env.SubjectToken
-		if token == "" {
-			token = t.client.SubjectToken
-		}
-		clone.Header.Set("Authorization", "Bearer "+token)
+		clone.Header.Set("Authorization", "Bearer "+env.SubjectToken)
 	}
 	return t.base.RoundTrip(clone)
+}
+
+func (c *Caracal) rootToken(ctx context.Context) (string, error) {
+	if c.TokenSource != nil {
+		return c.TokenSource(ctx)
+	}
+	if c.SubjectToken != "" {
+		return c.SubjectToken, nil
+	}
+	return "", fmt.Errorf("caracal: no subject token source configured")
 }
 
 type gatewayRoute struct {

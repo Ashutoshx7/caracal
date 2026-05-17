@@ -54,6 +54,42 @@ func TestExchangeDoesNotShareCacheAcrossClientSecrets(t *testing.T) {
 	}
 }
 
+func TestExchangeResourcesOmitsSubjectTokenForApplicationPrincipal(t *testing.T) {
+	var gotResources []string
+	var gotSubject string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		gotResources = r.Form["resource"]
+		gotSubject = r.Form.Get("subject_token")
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "token-app",
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "zone1", "app1", nil)
+	token, err := client.ExchangeResources(context.Background(), "", []string{"resource://a", "resource://b"}, ExchangeOptions{ClientSecret: "secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token.AccessToken != "token-app" {
+		t.Fatalf("expected token-app, got %q", token.AccessToken)
+	}
+	if gotSubject != "" {
+		t.Fatalf("expected no subject_token, got %q", gotSubject)
+	}
+	if len(gotResources) != 2 || gotResources[0] != "resource://a" || gotResources[1] != "resource://b" {
+		t.Fatalf("unexpected resources: %#v", gotResources)
+	}
+}
+
 func TestExchangeRejectsMalformedSuccessResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

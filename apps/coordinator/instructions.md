@@ -19,7 +19,7 @@
 - Must publish to Redis Streams with MAXLEN ~ STREAMS_MAXLEN for bounded retention.
 - Must rate-limit /v1/verify per client IP via Redis when VERIFY_RATE_LIMIT_PER_MIN > 0; /v1/verify is intentionally unauthenticated and language-neutral.
 - Must dedupe relay-side delivery on outbox_id within RELAY_DEDUPE_WINDOW_SEC; outbox→stream is at-least-once.
-- Must use github.com/garudex-labs/caracal/core/* for Go relay config and logging.
+- Must use github.com/garudex-labs/caracal/packages/core/go/* for Go relay config and logging.
 
 ## Forbidden
 - Must not import from caracalEnterprise/.

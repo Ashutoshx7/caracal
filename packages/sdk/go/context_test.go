@@ -9,7 +9,7 @@ import (
 	"context"
 	"testing"
 
-	sdk "github.com/garudex-labs/caracal/sdk"
+	sdk "github.com/garudex-labs/caracal/packages/sdk/go"
 )
 
 func TestBindCurrentRoundTrip(t *testing.T) {

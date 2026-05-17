@@ -73,10 +73,15 @@ func NewClient(stsURL, zoneID, applicationID string, cache TokenCache) *Client {
 
 // Exchange performs RFC 8693 token exchange or returns a safe cached response.
 func (c *Client) Exchange(ctx context.Context, subjectToken, resource string, opts ExchangeOptions) (TokenExchangeResponse, error) {
+	return c.ExchangeResources(ctx, subjectToken, []string{resource}, opts)
+}
+
+// ExchangeResources performs token exchange for one or more resources.
+func (c *Client) ExchangeResources(ctx context.Context, subjectToken string, resources []string, opts ExchangeOptions) (TokenExchangeResponse, error) {
 	timeout := timeoutFromOptions(opts)
 	preflightWindow := int64(timeout/time.Second) + 30
 	cacheSubject := c.cacheSubject(subjectToken, opts)
-	cacheResource := c.cacheResource(resource, opts)
+	cacheResource := c.cacheResource(resources, opts)
 	if cached, ok := c.cache.Get(cacheSubject, cacheResource); ok {
 		if cached.IssuedAt+int64(cached.ExpiresIn)-time.Now().Unix() > preflightWindow {
 			return cached, nil
@@ -96,7 +101,7 @@ func (c *Client) Exchange(ctx context.Context, subjectToken, resource string, op
 	defer c.clearInflight(inflightKey, call)
 	defer close(call.done)
 
-	call.token, call.err = c.doExchange(ctx, subjectToken, resource, opts, false, time.Now().Add(timeout))
+	call.token, call.err = c.doExchange(ctx, subjectToken, resourceList(resources), opts, false, time.Now().Add(timeout))
 	if call.err == nil {
 		c.cache.Set(cacheSubject, cacheResource, call.token)
 	}
@@ -136,8 +141,8 @@ func (c *Client) cacheSubject(subjectToken string, opts ExchangeOptions) string 
 	return strings.Join(parts, "::")
 }
 
-func (c *Client) cacheResource(resource string, opts ExchangeOptions) string {
-	return strings.Join([]string{resource, normalizedScopes(opts.Scopes), ttlString(opts.TTLSeconds)}, "::")
+func (c *Client) cacheResource(resources []string, opts ExchangeOptions) string {
+	return strings.Join([]string{strings.Join(resourceList(resources), " "), normalizedScopes(opts.Scopes), ttlString(opts.TTLSeconds)}, "::")
 }
 
 func (c *Client) authContext(opts ExchangeOptions) string {
@@ -152,14 +157,18 @@ func (c *Client) authContext(opts ExchangeOptions) string {
 	return strings.Join([]string{secret, assertion, opts.ClientAssertionType}, ":")
 }
 
-func (c *Client) doExchange(ctx context.Context, subjectToken, resource string, opts ExchangeOptions, isRetry bool, deadline time.Time) (TokenExchangeResponse, error) {
+func (c *Client) doExchange(ctx context.Context, subjectToken string, resources []string, opts ExchangeOptions, isRetry bool, deadline time.Time) (TokenExchangeResponse, error) {
 	form := url.Values{
-		"grant_type":         {"urn:ietf:params:oauth:grant-type:token-exchange"},
-		"subject_token":      {subjectToken},
-		"subject_token_type": {"urn:ietf:params:oauth:token-type:access_token"},
-		"resource":           {resource},
-		"zone_id":            {c.zoneID},
-		"application_id":     {c.applicationID},
+		"grant_type":     {"urn:ietf:params:oauth:grant-type:token-exchange"},
+		"zone_id":        {c.zoneID},
+		"application_id": {c.applicationID},
+	}
+	if subjectToken != "" {
+		form.Set("subject_token", subjectToken)
+		form.Set("subject_token_type", "urn:ietf:params:oauth:token-type:access_token")
+	}
+	for _, resource := range resources {
+		form.Add("resource", resource)
 	}
 	setFormValue(form, "client_secret", opts.ClientSecret)
 	setFormValue(form, "client_assertion", opts.ClientAssertion)
@@ -222,11 +231,11 @@ func (c *Client) doExchange(ctx context.Context, subjectToken, resource string, 
 			if msg == "" {
 				msg = "Step-up required"
 			}
-			return TokenExchangeResponse{}, &InteractionRequiredError{Message: msg, ChallengeID: body.ChallengeID, Resource: resource, ACRValues: body.ACRValues}
+			return TokenExchangeResponse{}, &InteractionRequiredError{Message: msg, ChallengeID: body.ChallengeID, Resource: firstResource(resources), ACRValues: body.ACRValues}
 		}
 		if res.StatusCode == http.StatusUnauthorized && !isRetry {
 			opts.Retries = 0
-			return c.doExchange(ctx, subjectToken, resource, opts, true, deadline)
+			return c.doExchange(ctx, subjectToken, resources, opts, true, deadline)
 		}
 		if body.ErrorDescription != "" {
 			return TokenExchangeResponse{}, errors.New(body.ErrorDescription)
@@ -274,6 +283,24 @@ func normalizedScopes(scopes []string) string {
 	}
 	sort.Strings(out)
 	return strings.Join(out, " ")
+}
+
+func resourceList(resources []string) []string {
+	out := []string{}
+	for _, resource := range resources {
+		resource = strings.TrimSpace(resource)
+		if resource != "" {
+			out = append(out, resource)
+		}
+	}
+	return out
+}
+
+func firstResource(resources []string) string {
+	if len(resources) == 0 {
+		return ""
+	}
+	return resources[0]
 }
 
 func transientStatus(status int) bool {
