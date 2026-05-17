@@ -64,24 +64,17 @@ pnpm --dir apps/cli typecheck
 pnpm caracal tui
 ```
 
-CLI and TUI are exact alternatives over the same engine: every command available in one is available in the other. Both consume the canonical catalog at `packages/core/ts/src/commands.ts` (mirrored in Go at `packages/core/go/commands/catalog.go`; parity enforced by `tests/typescript/scripts/catalog-parity.test.ts`).
-
-##### Parity contract
-
-- Every entry in `CLI_COMMANDS` must have a CLI executor (`apps/cli/src/registry.ts`) and a TUI surface (`apps/tui/src/views/menu.ts`); the parity test fails the build otherwise.
-- Catalog entries marked `hidden: true` (e.g. `completion`) are exempt from the TUI surface by design.
-- Top-level shell verbs (`up`, `down`, `status`, `purge`) live in `SHELL_COMMANDS` and are dispatched only by the `caracal` wrapper binary. They are intentionally absent from `caracal-cli` and from the control API surface, which accept only `CLI_COMMANDS`.
-- The control API (`/v1/control/invoke`) validates incoming `command`/`subcommand` against the same canonical catalog plus per-flag schema (primitives, strings, string arrays; bounded sizes).
+CLI and TUI are exact alternatives over the same engine.
 
 #### Control API (optional)
 
-The control service is an OAuth-protected HTTP API hosted by the engine — not a CLI command. It exposes `POST /v1/control/invoke` for any external client (script, AI agent, workflow, or another instance of CLI/TUI) that needs to drive Caracal programmatically. It is off by default.
+The control service is an OAuth-protected HTTP API hosted by the engine for any external client (script, AI agent, workflow, or another instance of CLI/TUI) that needs to drive Caracal programmatically. It is off by default.
 
 ```bash
 docker compose --profile control up control   # start the surface (CARACAL_CONTROL_ENABLED=true)
 ```
 
-Clients authenticate with a standard OAuth2 client-credentials flow against STS, scoped to `control:invoke`. Tokens are short-lived ES256 JWTs.
+Clients authenticate with a standard OAuth2 client-credentials flow against STS.
 
 ```bash
 # mint a token (any OAuth2 client; CLI/TUI use their caracal.toml app creds)
@@ -94,8 +87,6 @@ curl -sH "Authorization: Bearer $TOKEN" \
   -d '{"command":"zone","subcommand":"list"}' \
   http://localhost:8087/v1/control/invoke
 ```
-
-Key lifecycle (`caracal control …`) is the supported way to manage control-API credentials from CLI and TUI alike — `key`, `rotate`, and `revoke` subcommands wrap the engine's credential helpers and route through the admin API and STS so every change is audited on `caracal.audit.events`. Every accepted and rejected `/v1/control/invoke` request emits one `control.invoke` event; replay of a `jti` is rejected.
 
 ## Tests
 
@@ -113,22 +104,18 @@ scripts/testCi.sh --smoke | --go | --py | --ts
 
 ## Submitting Changes
 
-1. Branch off `main`. Keep commits focused.
-2. Add a changeset for any change to a published package: `pnpm changeset`.
-3. If you touched API / STS / CLI, smoke-test end-to-end: `pnpm caracal up && pnpm caracal zone create --name dev && pnpm caracal app create --zone <id> --name cli && pnpm caracal run -- printenv RESOURCE_TOKEN` (write `caracal.toml` between steps 3 and 4 with the returned ids/secret).
-4. `pnpm test` must pass.
-
-## Building Binaries
-
-`bun build --compile` produces self-contained executables (no Node / Bun on the target).
-
-```bash
-pnpm --dir apps/cli sync-embedded            # CLI only; required before `build:<os>-<arch>`
-pnpm --dir apps/<cli|tui> build              # all targets for that app
-pnpm --dir apps/<cli|tui> build:<os>-<arch>  # single target
-```
-
-Output: `apps/<cli|tui>/dist/caracal[-tui]-<os>-<arch>[.exe]` (Windows binaries have the `.exe` suffix). The release workflow renames these into versioned archives; locally you work with the raw dist files.
+1. Create a branch from `main` and keep changes focused.
+2. Keep the scope minimal (few files/components, small commits).
+3. Run a quick local sanity check:
+  - `pnpm caracal up`
+  - `pnpm caracal status`
+  - `pnpm caracal cli`
+  - `pnpm caracal tui`
+4. Ensure tests pass:
+  - `pnpm test`
+  - `scripts/testCi.sh --smoke` (post-commit parity)
+  - `scripts/testCi.sh` (daily-check parity)
+5. Commit with a clear message and open a PR.
 
 ## Releases
 
@@ -158,15 +145,11 @@ scripts/release.sh               # applies changesets, computes CalVer, tags, pu
 scripts/release.sh --dry-run     # preview without tagging
 ```
 
-Pushing the tag triggers `.github/workflows/release.yml`, which produces:
-
-- 10 archives (5 CLI + 5 TUI), `SHA256SUMS`, SLSA provenance
-- 6 multi-arch GHCR images with provenance + SBOM, tagged `v<calver>` and `vYYYY.MM`
-- A GitHub Release with archives, `SHA256SUMS`, `install.sh`, `install.ps1`
+Pushing the tag triggers `.github/workflows/release.yml`
 
 ### Post-release validation
 
-`postReleaseValidation.yml` runs automatically after `release.yml` succeeds (or trigger with `gh workflow run postReleaseValidation.yml -f release=v2026.05.14`). It exercises registries, archives, installers, containers, and provenance, then opens a PR with `releases/<tag>/validation.md`.
+`postReleaseValidation.yml` runs automatically after `release.yml` succeeds. It exercises registries, archives, installers, containers, and provenance, then opens a PR with `releases/<tag>/validation.md`.
 
 Reproduce one area locally:
 
