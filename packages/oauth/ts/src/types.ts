@@ -7,7 +7,7 @@ import { CaracalError } from '@caracalai/core'
 
 export interface TokenExchangeRequest {
   subjectToken: string
-  resource: string
+  resource: string | string[]
   clientId: string
   clientSecret?: string
   clientAssertion?: string

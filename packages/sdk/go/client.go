@@ -16,6 +16,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	oauth "github.com/garudex-labs/caracal/packages/oauth/go"
 )
 
 // Caracal binds the four config values needed to integrate with Caracal.
@@ -24,6 +26,7 @@ type Caracal struct {
 	ZoneID            string
 	ApplicationID     string
 	SubjectToken      string
+	TokenSource       TokenSource
 	GatewayURL        string
 	Resources         []ResourceBinding
 	DefaultKind       AgentKind
@@ -32,6 +35,9 @@ type Caracal struct {
 	agentStartHooks []LifecycleHook
 	agentEndHooks   []LifecycleHook
 }
+
+// TokenSource returns an application subject token for root SDK operations.
+type TokenSource func(context.Context) (string, error)
 
 // ResourceBinding maps a registered Caracal resource id to the upstream URL
 // prefix it serves. The prefix is matched against outbound request URLs so the
@@ -48,12 +54,13 @@ func FromEnv() (*Caracal, error) {
 	zone := os.Getenv("CARACAL_ZONE_ID")
 	app := os.Getenv("CARACAL_APPLICATION_ID")
 	tok := os.Getenv("CARACAL_SUBJECT_TOKEN")
+	clientSecret := os.Getenv("CARACAL_APP_CLIENT_SECRET")
+	stsURL := os.Getenv("CARACAL_STS_URL")
 	missing := []string{}
 	for k, v := range map[string]string{
 		"CARACAL_COORDINATOR_URL": url,
 		"CARACAL_ZONE_ID":         zone,
 		"CARACAL_APPLICATION_ID":  app,
-		"CARACAL_SUBJECT_TOKEN":   tok,
 	} {
 		if v == "" {
 			missing = append(missing, k)
@@ -62,11 +69,28 @@ func FromEnv() (*Caracal, error) {
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("caracal: FromEnv missing %v", missing)
 	}
-	if err := validateSubjectToken(tok); err != nil {
-		return nil, err
-	}
 	bindings, err := parseResourceBindings(os.Getenv("CARACAL_RESOURCES"))
 	if err != nil {
+		return nil, err
+	}
+	if clientSecret != "" {
+		if stsURL == "" {
+			return nil, fmt.Errorf("caracal: CARACAL_APP_CLIENT_SECRET requires CARACAL_STS_URL")
+		}
+		return FromClientSecret(ClientSecretOptions{
+			CoordinatorURL: url,
+			STSURL:         stsURL,
+			ZoneID:         zone,
+			ApplicationID:   app,
+			ClientSecret:   clientSecret,
+			Resources:      resourceIDsFromEnv(os.Getenv("CARACAL_APP_RESOURCES"), bindings),
+			GatewayURL:     os.Getenv("CARACAL_GATEWAY_URL"),
+		})
+	}
+	if tok == "" {
+		return nil, fmt.Errorf("caracal: FromEnv requires CARACAL_SUBJECT_TOKEN or CARACAL_APP_CLIENT_SECRET with CARACAL_STS_URL")
+	}
+	if err := validateSubjectToken(tok); err != nil {
 		return nil, err
 	}
 	return &Caracal{
@@ -77,6 +101,50 @@ func FromEnv() (*Caracal, error) {
 		GatewayURL:    os.Getenv("CARACAL_GATEWAY_URL"),
 		Resources:     sortBindingsLongestFirst(bindings),
 	}, nil
+}
+
+// ClientSecretOptions configures an SDK client backed by STS client-secret exchange.
+type ClientSecretOptions struct {
+	CoordinatorURL string
+	STSURL         string
+	ZoneID         string
+	ApplicationID   string
+	ClientSecret   string
+	Resources      []string
+	GatewayURL     string
+	Scope          string
+}
+
+// FromClientSecret returns a Caracal client that refreshes its application subject token through STS.
+func FromClientSecret(opts ClientSecretOptions) (*Caracal, error) {
+	if len(opts.Resources) == 0 {
+		return nil, fmt.Errorf("caracal: FromClientSecret requires at least one resource")
+	}
+	return &Caracal{
+		Coordinator:   &CoordinatorClient{BaseURL: opts.CoordinatorURL},
+		ZoneID:        opts.ZoneID,
+		ApplicationID: opts.ApplicationID,
+		TokenSource:   clientSecretTokenSource(opts),
+		GatewayURL:    opts.GatewayURL,
+	}, nil
+}
+
+func clientSecretTokenSource(opts ClientSecretOptions) TokenSource {
+	client := oauth.NewClient(opts.STSURL, opts.ZoneID, opts.ApplicationID, nil)
+	scope := opts.Scope
+	if scope == "" {
+		scope = "agent:lifecycle"
+	}
+	return func(ctx context.Context) (string, error) {
+		token, err := client.ExchangeResources(ctx, "", opts.Resources, oauth.ExchangeOptions{
+			ClientSecret: opts.ClientSecret,
+			Scopes:       []string{scope},
+		})
+		if err != nil {
+			return "", err
+		}
+		return token.AccessToken, nil
+	}
 }
 
 // sortBindingsLongestFirst returns a copy of bindings sorted by upstream prefix

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	sdk "github.com/garudex-labs/caracal/sdk"
+	sdk "github.com/garudex-labs/caracal/packages/sdk/go"
 )
 
 func TestFromEnvMissing(t *testing.T) {

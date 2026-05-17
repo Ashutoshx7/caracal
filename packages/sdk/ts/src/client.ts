@@ -23,17 +23,21 @@ import {
 } from "./primitives.js";
 import { AgentKind, type DelegationConstraints } from "./coordinator.js";
 import type { JsonObject } from "./json.js";
+import { OAuthClient } from "@caracalai/oauth";
 
 export interface ResourceBinding {
   resourceId: string;
   upstreamPrefix: string;
 }
 
+export type TokenSource = () => string | Promise<string>;
+
 export interface CaracalConfig {
   coordinator: CoordinatorClient;
   zoneId: string;
   applicationId: string;
-  subjectToken: string;
+  subjectToken?: string;
+  tokenSource?: TokenSource;
   gatewayUrl?: string;
   resources?: ResourceBinding[];
   defaultKind?: AgentKind;
@@ -73,11 +77,25 @@ export interface RootOptions {
   allowRoot?: boolean;
 }
 
+export interface ClientSecretOptions {
+  coordinatorUrl: string;
+  stsUrl: string;
+  zoneId: string;
+  applicationId: string;
+  clientSecret: string;
+  resources: string[] | ResourceBinding[];
+  gatewayUrl?: string;
+  scope?: string;
+}
+
 export class Caracal {
   private agentStartHooks: LifecycleHook[] = [];
   private agentEndHooks: LifecycleHook[] = [];
 
   constructor(public readonly config: CaracalConfig) {
+    if ((config.subjectToken === undefined) === (config.tokenSource === undefined)) {
+      throw new Error("CaracalConfig requires exactly one of subjectToken or tokenSource");
+    }
     if (config.resources && config.resources.length > 1) {
       this.config = { ...config, resources: sortBindingsLongestFirst(config.resources) };
     }
@@ -88,15 +106,32 @@ export class Caracal {
     const zoneId = env.CARACAL_ZONE_ID;
     const applicationId = env.CARACAL_APPLICATION_ID;
     const subjectToken = env.CARACAL_SUBJECT_TOKEN;
+    const clientSecret = env.CARACAL_APP_CLIENT_SECRET;
+    const stsUrl = env.CARACAL_STS_URL;
     const gatewayUrl = env.CARACAL_GATEWAY_URL;
     const missing = [
       ["CARACAL_COORDINATOR_URL", url],
       ["CARACAL_ZONE_ID", zoneId],
       ["CARACAL_APPLICATION_ID", applicationId],
-      ["CARACAL_SUBJECT_TOKEN", subjectToken],
     ].filter(([, v]) => !v).map(([k]) => k);
     if (missing.length) {
       throw new Error(`Caracal.fromEnv: missing ${missing.join(", ")}`);
+    }
+    const resources = parseResourceBindings(env.CARACAL_RESOURCES);
+    if (clientSecret) {
+      if (!stsUrl) throw new Error("Caracal.fromEnv: CARACAL_APP_CLIENT_SECRET requires CARACAL_STS_URL");
+      return Caracal.fromClientSecret({
+        coordinatorUrl: url!,
+        stsUrl,
+        zoneId: zoneId!,
+        applicationId: applicationId!,
+        clientSecret,
+        resources: resourceIdsFromEnv(env.CARACAL_APP_RESOURCES, resources),
+        gatewayUrl,
+      });
+    }
+    if (!subjectToken) {
+      throw new Error("Caracal.fromEnv: provide CARACAL_APP_CLIENT_SECRET (+ CARACAL_STS_URL) or CARACAL_SUBJECT_TOKEN");
     }
     validateSubjectToken(subjectToken!);
     return new Caracal({
@@ -105,19 +140,35 @@ export class Caracal {
       applicationId: applicationId!,
       subjectToken: subjectToken!,
       gatewayUrl,
-      resources: parseResourceBindings(env.CARACAL_RESOURCES),
+      resources,
+    });
+  }
+
+  static fromClientSecret(opts: ClientSecretOptions): Caracal {
+    const resourceIds = opts.resources.map((value) => typeof value === "string" ? value : value.resourceId);
+    if (!resourceIds.length) throw new Error("Caracal.fromClientSecret requires at least one resource");
+    const bindings = opts.resources.every((value) => typeof value !== "string")
+      ? opts.resources as ResourceBinding[]
+      : undefined;
+    return new Caracal({
+      coordinator: { baseUrl: opts.coordinatorUrl },
+      zoneId: opts.zoneId,
+      applicationId: opts.applicationId,
+      tokenSource: createClientSecretTokenSource(opts.stsUrl, opts.zoneId, opts.applicationId, opts.clientSecret, resourceIds, opts.scope),
+      gatewayUrl: opts.gatewayUrl,
+      resources: bindings,
     });
   }
 
   async close(): Promise<void> {
   }
 
-  spawn<T>(fn: () => Promise<T>, opts: SpawnOptions = {}): Promise<T> {
+  async spawn<T>(fn: () => Promise<T>, opts: SpawnOptions = {}): Promise<T> {
     const input: SpawnInput = {
       coordinator: this.config.coordinator,
       zoneId: this.config.zoneId,
       applicationId: this.config.applicationId,
-      subjectToken: this.config.subjectToken,
+      subjectToken: await this.rootToken(),
       kind: opts.kind ?? this.config.defaultKind ?? AgentKind.Instance,
       ttlSeconds: opts.ttlSeconds ?? this.config.defaultTtlSeconds,
       subjectSessionId: opts.subjectSessionId,
@@ -127,7 +178,7 @@ export class Caracal {
       onAgentStart: this.agentStartHooks.length ? (c) => this.fire(this.agentStartHooks, c) : undefined,
       onAgentEnd: this.agentEndHooks.length ? (c) => this.fire(this.agentEndHooks, c) : undefined,
     };
-    return spawnPrimitive(input, fn);
+    return await spawnPrimitive(input, fn);
   }
 
   delegate<T>(opts: DelegateOptions, fn: () => Promise<T>): Promise<T> {
@@ -142,12 +193,12 @@ export class Caracal {
     return delegatePrimitive(input, fn);
   }
 
-  delegateToSpawn<T>(opts: DelegateToSpawnOptions, fn: () => Promise<T>): Promise<T> {
+  async delegateToSpawn<T>(opts: DelegateToSpawnOptions, fn: () => Promise<T>): Promise<T> {
     const input: DelegateToSpawnInput = {
       coordinator: this.config.coordinator,
       zoneId: this.config.zoneId,
       applicationId: this.config.applicationId,
-      subjectToken: this.config.subjectToken,
+      subjectToken: await this.rootToken(),
       scopes: opts.scopes,
       constraints: opts.constraints,
       delegationTtlSeconds: opts.delegationTtlSeconds,
@@ -158,7 +209,7 @@ export class Caracal {
       onAgentStart: this.agentStartHooks.length ? (c) => this.fire(this.agentStartHooks, c) : undefined,
       onAgentEnd: this.agentEndHooks.length ? (c) => this.fire(this.agentEndHooks, c) : undefined,
     };
-    return delegateToSpawnPrimitive(input, fn);
+    return await delegateToSpawnPrimitive(input, fn);
   }
 
   bind<T>(ctx: CaracalContext, fn: () => Promise<T>): Promise<T> {
@@ -190,9 +241,22 @@ export class Caracal {
         );
       }
       return toHeaders({
-        subjectToken: this.config.subjectToken,
+        subjectToken: this.rootTokenSync(),
         hop: 0,
       });
+    }
+    return toHeaders(toEnvelope(ctx));
+  }
+
+  async headersAsync(opts: RootOptions = {}): Promise<Record<string, string>> {
+    const ctx = current();
+    if (!ctx) {
+      if (!opts.allowRoot) {
+        throw new Error(
+          "Caracal.headersAsync(): no Caracal context is bound. Pass { allowRoot: true } to use the application subject token.",
+        );
+      }
+      return toHeaders({ subjectToken: await this.rootToken(), hop: 0 });
     }
     return toHeaders(toEnvelope(ctx));
   }
@@ -220,7 +284,7 @@ export class Caracal {
           "Caracal.bindFromHeaders(): inbound request is missing a bearer token. Pass { allowRoot: true } only for trusted service-root ingress.",
         );
       }
-      env.subjectToken = this.config.subjectToken;
+      env.subjectToken = await this.rootToken();
     }
     const ctx = fromEnvelope(env as Envelope, {
       zoneId: this.config.zoneId,
@@ -245,7 +309,7 @@ export class Caracal {
           "Caracal.transport(): no Caracal context is bound. Pass { allowRoot: true } to use the application subject token.",
         );
       }
-      const env: Envelope = ctx ? toEnvelope(ctx) : { subjectToken: outer.config.subjectToken, hop: 0 };
+      const env: Envelope = ctx ? toEnvelope(ctx) : { subjectToken: await outer.rootToken(), hop: 0 };
       const merged = new Headers(init?.headers ?? {});
       for (const [k, v] of Object.entries(toHeaders(env))) {
         if (!merged.has(k)) merged.set(k, v);
@@ -256,7 +320,7 @@ export class Caracal {
       const rewritten = outer.routeThroughGateway(input, explicitResource);
       if (rewritten) {
         merged.set("X-Caracal-Resource", rewritten.resourceId);
-        merged.set("Authorization", `Bearer ${env.subjectToken ?? outer.config.subjectToken}`);
+        merged.set("Authorization", `Bearer ${env.subjectToken}`);
         return fetchImpl(rewritten.url as unknown as URL, { ...init, headers: merged });
       }
       return fetchImpl(input as URL, { ...init, headers: merged });
@@ -313,6 +377,17 @@ export class Caracal {
       }, opts).catch(next);
     };
   }
+
+  private rootTokenSync(): string {
+    if (this.config.subjectToken) return this.config.subjectToken;
+    throw new Error("Caracal.headers(): this client uses an async token source. Use headersAsync({ allowRoot: true }) for root headers.");
+  }
+
+  private async rootToken(): Promise<string> {
+    if (this.config.tokenSource) return await this.config.tokenSource();
+    if (this.config.subjectToken) return this.config.subjectToken;
+    throw new Error("Caracal client has no subject token source");
+  }
 }
 
 function sameOrigin(a: URL, b: string): boolean {
@@ -367,6 +442,28 @@ function parseResourceBindings(raw: string | undefined): ResourceBinding[] | und
     throw new Error(`Caracal.fromEnv: invalid CARACAL_RESOURCES:\n- ${errors.join("\n- ")}`);
   }
   return out.length ? sortBindingsLongestFirst(out) : undefined;
+}
+
+function resourceIdsFromEnv(raw: string | undefined, bindings: ResourceBinding[] | undefined): string[] {
+  const explicit = raw?.split(",").map((value) => value.trim()).filter(Boolean);
+  if (explicit?.length) return explicit;
+  if (bindings?.length) return bindings.map((binding) => binding.resourceId);
+  throw new Error("Caracal.fromEnv: client-secret mode requires resources via CARACAL_APP_RESOURCES or CARACAL_RESOURCES");
+}
+
+function createClientSecretTokenSource(
+  stsUrl: string,
+  zoneId: string,
+  applicationId: string,
+  clientSecret: string,
+  resources: string[],
+  scope = "agent:lifecycle",
+): TokenSource {
+  const client = new OAuthClient(stsUrl, zoneId, applicationId);
+  return async () => {
+    const token = await client.exchange("", resources, { clientSecret, scopes: [scope] });
+    return token.accessToken;
+  };
 }
 
 function sortBindingsLongestFirst(bindings: ResourceBinding[]): ResourceBinding[] {
