@@ -7,21 +7,13 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express'
 import type { Claims } from '@caracalai/identity'
 import { authenticate, extractBearer, type AuthDeps, type AuthError } from '@caracalai/transport-mcp'
 import {
-  AgentKind,
   bind,
   fromHeaders,
-  spawn,
   type CaracalContext,
-  type CoordinatorClient,
 } from '@caracalai/sdk/advanced'
 
 export interface MiddlewareOptions extends AuthDeps {
   bindContext?: boolean
-  /** When set, auto-spawn an ephemeral agent session per request. */
-  ephemeralAgent?: {
-    coordinator: CoordinatorClient
-    applicationId: string
-  }
 }
 
 export interface CaracalRequest extends Request {
@@ -65,26 +57,7 @@ export function caracalAuth(opts: MiddlewareOptions): RequestHandler {
       return
     }
 
-    if (opts.ephemeralAgent) {
-      const { coordinator, applicationId } = opts.ephemeralAgent
-      await spawn(
-        {
-          coordinator,
-          zoneId: baseCtx.zoneId,
-          applicationId,
-          subjectToken: token,
-          parentId: baseCtx.agentSessionId,
-          kind: AgentKind.Ephemeral,
-          traceId: baseCtx.traceId,
-        },
-        async () => {
-          next()
-        },
-      )
-      return
-    }
-
-    bind(baseCtx, async () => {
+    bind(baseCtx, () => {
       next()
     })
   }

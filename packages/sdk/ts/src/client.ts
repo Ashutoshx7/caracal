@@ -69,6 +69,10 @@ export interface DelegateToSpawnOptions {
 
 export type LifecycleHook = (ctx: CaracalContext) => void | Promise<void>;
 
+export interface RootOptions {
+  allowRoot?: boolean;
+}
+
 export class Caracal {
   private agentStartHooks: LifecycleHook[] = [];
   private agentEndHooks: LifecycleHook[] = [];
@@ -177,9 +181,14 @@ export class Caracal {
     return current();
   }
 
-  headers(): Record<string, string> {
+  headers(opts: RootOptions = {}): Record<string, string> {
     const ctx = current();
     if (!ctx) {
+      if (!opts.allowRoot) {
+        throw new Error(
+          "Caracal.headers(): no Caracal context is bound. Pass { allowRoot: true } to use the application subject token.",
+        );
+      }
       return toHeaders({
         subjectToken: this.config.subjectToken,
         hop: 0,
@@ -188,9 +197,10 @@ export class Caracal {
     return toHeaders(toEnvelope(ctx));
   }
 
-  bindFromHeaders<T>(
+  async bindFromHeaders<T>(
     headers: Record<string, string | string[] | undefined> | HeaderGetter,
     fn: () => Promise<T>,
+    opts: RootOptions = {},
   ): Promise<T> {
     const env = typeof headers === "function"
       ? decodeEnvelope(headers)
@@ -204,12 +214,19 @@ export class Caracal {
           }
           return undefined;
         });
-    if (!env.subjectToken) env.subjectToken = this.config.subjectToken;
+    if (!env.subjectToken) {
+      if (!opts.allowRoot) {
+        throw new Error(
+          "Caracal.bindFromHeaders(): inbound request is missing a bearer token. Pass { allowRoot: true } only for trusted service-root ingress.",
+        );
+      }
+      env.subjectToken = this.config.subjectToken;
+    }
     const ctx = fromEnvelope(env as Envelope, {
       zoneId: this.config.zoneId,
       clientId: this.config.applicationId,
     });
-    return bind(ctx, fn) as Promise<T>;
+    return await bind(ctx, fn) as T;
   }
 
   /**
@@ -218,13 +235,17 @@ export class Caracal {
    * `Authorization` header with the current subject token. Pass to any provider
    * SDK that accepts a custom fetch.
    */
-  transport(): typeof fetch {
+  transport(opts: RootOptions = {}): typeof fetch {
     const outer = this;
+    const rootAllowed = opts.allowRoot === true;
     const fn: typeof fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const ctx = current();
-      const env: Envelope = ctx
-        ? toEnvelope(ctx)
-        : { subjectToken: outer.config.subjectToken, hop: 0 };
+      if (!ctx && !rootAllowed) {
+        throw new Error(
+          "Caracal.transport(): no Caracal context is bound. Pass { allowRoot: true } to use the application subject token.",
+        );
+      }
+      const env: Envelope = ctx ? toEnvelope(ctx) : { subjectToken: outer.config.subjectToken, hop: 0 };
       const merged = new Headers(init?.headers ?? {});
       for (const [k, v] of Object.entries(toHeaders(env))) {
         if (!merged.has(k)) merged.set(k, v);
@@ -281,7 +302,7 @@ export class Caracal {
     return { url: target, resourceId: binding?.resourceId ?? explicitResource! };
   }
 
-  middleware() {
+  middleware(opts: RootOptions = {}) {
     return (
       req: { headers: Record<string, string | string[] | undefined> },
       _res: unknown,
@@ -289,7 +310,7 @@ export class Caracal {
     ): void => {
       this.bindFromHeaders(req.headers, async () => {
         next();
-      }).catch(next);
+      }, opts).catch(next);
     };
   }
 }
@@ -319,16 +340,31 @@ function urlMatchesPrefix(target: URL, prefix: string): boolean {
 function parseResourceBindings(raw: string | undefined): ResourceBinding[] | undefined {
   if (!raw) return undefined;
   const out: ResourceBinding[] = [];
-  for (const entry of raw.split(",")) {
+  const errors: string[] = [];
+  for (const [index, entry] of raw.split(",").entries()) {
     const trimmed = entry.trim();
     if (!trimmed) continue;
     const idx = trimmed.indexOf("=");
-    if (idx <= 0) continue;
+    if (idx <= 0) {
+      errors.push(`entry ${index + 1} must use resourceId=upstreamPrefix`);
+      continue;
+    }
     const resourceId = trimmed.slice(0, idx).trim();
     const upstreamPrefix = trimmed.slice(idx + 1).trim();
-    if (resourceId && upstreamPrefix) {
-      out.push({ resourceId, upstreamPrefix });
+    if (!resourceId || !upstreamPrefix) {
+      errors.push(`entry ${index + 1} must contain non-empty resourceId and upstreamPrefix`);
+      continue;
     }
+    try {
+      new URL(upstreamPrefix);
+    } catch {
+      errors.push(`entry ${index + 1} upstreamPrefix must be an absolute URL`);
+      continue;
+    }
+    out.push({ resourceId, upstreamPrefix });
+  }
+  if (errors.length) {
+    throw new Error(`Caracal.fromEnv: invalid CARACAL_RESOURCES:\n- ${errors.join("\n- ")}`);
   }
   return out.length ? sortBindingsLongestFirst(out) : undefined;
 }
