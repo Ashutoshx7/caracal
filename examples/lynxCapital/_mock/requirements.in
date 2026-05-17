@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+sse-starlette
+pydantic
+pyyaml
+httpx
+grpcio
+protobuf>=6.33,<7
+python-dotenv
