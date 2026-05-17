@@ -8,7 +8,7 @@ package internal
 import (
 	"encoding/json"
 
-	"github.com/garudex-labs/caracal/core/audit"
+	"github.com/garudex-labs/caracal/packages/core/go/audit"
 )
 
 // AuditEvent is the wire payload emitted by STS to caracal.audit.events.

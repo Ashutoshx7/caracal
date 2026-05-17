@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/garudex-labs/caracal/core/config"
+	"github.com/garudex-labs/caracal/packages/core/go/config"
 )
 
 const auditPort = "9090"

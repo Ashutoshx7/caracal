@@ -1,7 +1,7 @@
 # transport/mcp/go
 
 ## Scope
-- Covers only the `github.com/garudex-labs/caracal/transport-mcp` Go module under `packages/transport/mcp/go/`.
+- Covers only the `github.com/garudex-labs/caracal/packages/transport/mcp/go` Go module under `packages/transport/mcp/go/`.
 
 ## Required
 - Must consume only the `identity` and `revocation` Go modules.
