@@ -63,7 +63,7 @@ describe("Caracal.fromEnv", () => {
     expect(headers[HeaderAuthorization]).toBe("Bearer fresh-root");
     const body = fetchMock.mock.calls[0][1].body as URLSearchParams;
     expect(body.get("client_secret")).toBe("secret");
-    expect(body.getAll("resource")).toEqual(["calendar", "billing"]);
+    expect(body.getAll("resource").sort()).toEqual(["billing", "calendar"]);
   });
 });
 

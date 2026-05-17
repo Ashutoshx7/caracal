@@ -43,10 +43,10 @@
     "@caracalai/oauth": "0.1.2"
   },
   "scripts": {
-    "build": "tsc",
-    "typecheck": "tsc --noEmit",
+    "build": "pnpm --dir ../../oauth/ts build && tsc",
+    "typecheck": "pnpm --dir ../../oauth/ts build && tsc --noEmit",
     "test": "vitest run --root ../../.. tests/typescript/unit/sdk/client.test.ts",
-    "prepublishOnly": "tsc"
+    "prepublishOnly": "pnpm --dir ../../oauth/ts build && tsc"
   },
   "devDependencies": {
     "@types/node": "^24.12.2",

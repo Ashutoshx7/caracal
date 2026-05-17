@@ -81,7 +81,7 @@ func FromEnv() (*Caracal, error) {
 			CoordinatorURL: url,
 			STSURL:         stsURL,
 			ZoneID:         zone,
-			ApplicationID:   app,
+			ApplicationID:  app,
 			ClientSecret:   clientSecret,
 			Resources:      resourceIDsFromEnv(os.Getenv("CARACAL_APP_RESOURCES"), bindings),
 			GatewayURL:     os.Getenv("CARACAL_GATEWAY_URL"),
@@ -108,7 +108,7 @@ type ClientSecretOptions struct {
 	CoordinatorURL string
 	STSURL         string
 	ZoneID         string
-	ApplicationID   string
+	ApplicationID  string
 	ClientSecret   string
 	Resources      []string
 	GatewayURL     string
