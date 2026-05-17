@@ -41,14 +41,33 @@ func TestFromEnvOK(t *testing.T) {
 	}
 }
 
-func TestHeadersFallback(t *testing.T) {
+func TestHeadersRequiresRootOptIn(t *testing.T) {
 	c := &sdk.Caracal{SubjectToken: "tok"}
-	h := c.Headers(context.Background())
+	if _, err := c.Headers(context.Background()); err == nil {
+		t.Fatal("expected missing context error")
+	}
+	h, err := c.Headers(context.Background(), sdk.RootOptions{AllowRoot: true})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if h.Get(sdk.HeaderAuthorization) != "Bearer tok" {
 		t.Fatalf("missing authorization: %v", h)
 	}
 	if sdk.ParseTraceparent(h.Get(sdk.HeaderTraceparent)) == "" {
 		t.Fatalf("missing traceparent: %v", h)
+	}
+}
+
+func TestMiddlewareRejectsMissingBearer(t *testing.T) {
+	c := &sdk.Caracal{ZoneID: "z", ApplicationID: "a", SubjectToken: "fallback"}
+	handler := c.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not run")
+	}))
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
 	}
 }
 
@@ -108,6 +127,15 @@ func TestHTTPClientInjects(t *testing.T) {
 	}
 	if bag[sdk.BaggageHop] != "1" {
 		t.Fatalf("hop not injected: %v", got)
+	}
+}
+
+func TestHTTPClientRejectsUnboundRootByDefault(t *testing.T) {
+	c := &sdk.Caracal{ZoneID: "z", ApplicationID: "a", SubjectToken: "tok"}
+	client := c.Transport(nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", "https://example.com", nil)
+	if _, err := client.Do(req); err == nil {
+		t.Fatal("expected missing context error")
 	}
 }
 
@@ -237,5 +265,16 @@ func TestFromEnvSortsResourcesLongestFirst(t *testing.T) {
 	if len(c.Resources) != 3 || c.Resources[0].ResourceID != "long" ||
 		c.Resources[1].ResourceID != "mid" || c.Resources[2].ResourceID != "short" {
 		t.Fatalf("bindings not sorted longest-first: %+v", c.Resources)
+	}
+}
+
+func TestFromEnvRejectsMalformedResources(t *testing.T) {
+	t.Setenv("CARACAL_COORDINATOR_URL", "http://coord")
+	t.Setenv("CARACAL_ZONE_ID", "z")
+	t.Setenv("CARACAL_APPLICATION_ID", "app")
+	t.Setenv("CARACAL_SUBJECT_TOKEN", "tok")
+	t.Setenv("CARACAL_RESOURCES", "calendar=not-a-url")
+	if _, err := sdk.FromEnv(); err == nil {
+		t.Fatal("expected malformed resource error")
 	}
 }

@@ -38,7 +38,8 @@ class TransportMcpAuthenticateTests(unittest.IsolatedAsyncioTestCase):
 
     def test_extract_bearer(self) -> None:
         self.assertEqual(extract_bearer("Bearer token-1"), "token-1")
-        self.assertIsNone(extract_bearer("bearer token-1"))
+        self.assertEqual(extract_bearer("bearer token-1"), "token-1")
+        self.assertEqual(extract_bearer("BEARER token-1"), "token-1")
         self.assertIsNone(extract_bearer("Bearer   "))
         self.assertIsNone(extract_bearer(None))
 

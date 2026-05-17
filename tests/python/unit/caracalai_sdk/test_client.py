@@ -283,6 +283,25 @@ class AsgiMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(captured, {"sub": "inbound", "agent": "sess9", "hop": "3"})
         self.assertIsNone(current())
 
+    async def test_rejects_missing_bearer(self) -> None:
+        c = _build_caracal()
+        sent: list[dict] = []
+
+        async def app(scope, receive, send):
+            raise AssertionError("app should not run")
+
+        mw = CaracalASGIMiddleware(app, c)
+        scope = {"type": "http", "headers": []}
+
+        async def receive() -> dict[str, str]:
+            return {"type": "http.request"}
+
+        async def send(msg) -> None:
+            sent.append(msg)
+
+        await mw(scope, receive, send)
+        self.assertEqual(sent[0]["status"], 401)
+
 
 class TransportRootGuardTests(unittest.IsolatedAsyncioTestCase):
     """CP-1: gateway-routed requests must refuse to leak the bootstrap subject."""
@@ -393,6 +412,18 @@ class FromConfigBindingsTests(unittest.TestCase):
         rids = sorted(b.resource_id for b in c.config.resources)
         self.assertEqual(rids, ["billing", "calendar"])
 
+    def test_from_config_requires_resource_bindings(self) -> None:
+        cfg_path = self._write_toml(
+            'zone_id = "z"\n'
+            'application_id = "a"\n'
+            'app_client_secret = "s"\n'
+            'sts_url = "https://sts.example.com"\n'
+            'coordinator_url = "https://coord.example.com"\n'
+        )
+        with self.assertRaises(RuntimeError) as cm:
+            Caracal.from_config(cfg_path)
+        self.assertIn("at least one resource binding", str(cm.exception))
+
 
 class ResourceBindingsValidationTests(unittest.TestCase):
     """CP-4: malformed ``CARACAL_RESOURCES_FILE`` entries must raise."""
@@ -448,6 +479,14 @@ class ResourceBindingsValidationTests(unittest.TestCase):
         path = self._write('{"calendar":""}')
         with self.assertRaises(ValueError):
             _load_resource_bindings_file(path)
+
+    def test_invalid_url_raises(self) -> None:
+        from caracalai_sdk.client import _load_resource_bindings_file
+
+        path = self._write('{"calendar":"not-a-url"}')
+        with self.assertRaises(ValueError) as cm:
+            _load_resource_bindings_file(path)
+        self.assertIn("absolute URL", str(cm.exception))
 
     def test_unsupported_top_level_raises(self) -> None:
         from caracalai_sdk.client import _load_resource_bindings_file
