@@ -654,7 +654,7 @@ class Caracal:
         """Release the coordinator's HTTP client. Idempotent."""
         await self.config.coordinator.close()
 
-    def middleware(self) -> Callable[[ASGIApp], CaracalASGIMiddleware]:
+    def middleware(self, *, allow_root: bool = False) -> Callable[[ASGIApp], CaracalASGIMiddleware]:
         """ASGI middleware factory. Install at module load — `app.add_middleware()`
         only registers middleware before Starlette/FastAPI startup, so this cannot
         be called from inside a `lifespan` context manager.
@@ -668,7 +668,7 @@ class Caracal:
         outer = self
 
         def factory(app: ASGIApp) -> CaracalASGIMiddleware:
-            return CaracalASGIMiddleware(app, outer)
+            return CaracalASGIMiddleware(app, outer, allow_root=allow_root)
 
         return factory
 

@@ -372,8 +372,8 @@ func (c *Caracal) Transport(base *http.Client, opts ...RootOptions) *http.Client
 }
 
 type caracalTransport struct {
-	base   http.RoundTripper
-	client *Caracal
+	base      http.RoundTripper
+	client    *Caracal
 	allowRoot bool
 }
 

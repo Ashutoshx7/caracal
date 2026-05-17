@@ -4,7 +4,7 @@ description: Add the caracalAuth middleware to Express routes to verify mandates
 pageType: workflow
 ---
 
-The Express connector provides `caracalAuth`, a request-level middleware that extracts the bearer mandate from the `Authorization` header, verifies the ES256 signature against the zone JWKS, checks revocation, enforces scope requirements, and optionally opens an ephemeral agent session for the request. Validated claims are attached to `req.caracalClaims`.
+The Express connector provides `caracalAuth`, a request-level middleware that extracts the bearer mandate from the `Authorization` header, verifies the ES256 signature against the zone JWKS, checks revocation, and enforces scope requirements. Validated claims are attached to `req.caracalClaims`.
 
 ## Prerequisites
 
@@ -68,7 +68,6 @@ app.get('/items', (req: CaracalRequest, res) => {
 | `maxHopCount` | `number` | No | Rejects mandates with `hop_count` above this value |
 | `revocations` | `RevocationStore` | Yes | Checked against the mandate's `sid` claim |
 | `bindContext` | `boolean` | No | Bind Caracal context from inbound headers (default: `true`) |
-| `ephemeralAgent` | `{ coordinator, applicationId }` | No | Open an ephemeral agent session per request and expose it on `req.caracalContext` |
 
 ## Per-route scope requirements
 
@@ -101,31 +100,6 @@ app.delete(
   caracalAuth({ ...baseAuth, requiredScopes: ['api:write', 'api:delete'] }),
   (req: CaracalRequest, res) => res.status(204).send()
 );
-```
-
-## Ephemeral agent per request
-
-When `ephemeralAgent` is set, the middleware opens a fresh agent session for each request and terminates it when the response finishes. The active context is available on `req.caracalContext`:
-
-```typescript
-app.use(
-  caracalAuth({
-    issuer: process.env.CARACAL_STS_URL!,
-    audience: 'resource://my-api',
-    revocations,
-    ephemeralAgent: {
-      coordinator: { baseUrl: process.env.CARACAL_COORDINATOR_URL! },
-      applicationId: process.env.CARACAL_APPLICATION_ID!,
-    },
-  })
-);
-
-app.post('/workflow', async (req: CaracalRequest, res) => {
-  const ctx = req.caracalContext!;
-  // ctx.agentSessionId — the per-request ephemeral session
-  // Use caracal.current() if you also loaded the SDK with Caracal.fromEnv()
-  res.json({ session: ctx.agentSessionId });
-});
 ```
 
 ## Error responses

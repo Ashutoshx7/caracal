@@ -24,15 +24,11 @@ Returns an Express middleware function. Attach it globally on the router or per-
 
 ### `MiddlewareOptions`
 
-`MiddlewareOptions` extends `AuthDeps` from `@caracalai/transport-mcp` with two additional fields:
+`MiddlewareOptions` extends `AuthDeps` from `@caracalai/transport-mcp` with one additional field:
 
 ```typescript
 interface MiddlewareOptions extends AuthDeps {
   bindContext?: boolean;           // Bind verified identity to SDK async context; default: true
-  ephemeralAgent?: {
-    coordinator: CoordinatorClient;
-    applicationId: string;
-  };
 }
 
 // AuthDeps fields (all required unless marked optional):
@@ -50,8 +46,6 @@ interface AuthDeps {
 ```
 
 `bindContext: true` (the default) binds the verified identity into the SDK's `AsyncLocalStorage` context, making `caracal.current()` available inside the handler. Set `bindContext: false` to skip this — useful when you only need `req.caracalClaims` without SDK context propagation.
-
-`ephemeralAgent` is optional. When provided, the middleware spawns a short-lived agent session with the Coordinator for the duration of the request, attaching it to both the request object and the SDK context.
 
 ---
 
