@@ -3,6 +3,6 @@
 //
 // Go module definition for the Caracal SDK.
 
-module github.com/garudex-labs/caracal/sdk
+module github.com/garudex-labs/caracal/packages/sdk/go
 
 go 1.26

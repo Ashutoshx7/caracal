@@ -1,4 +1,4 @@
-module github.com/garudex-labs/caracal/core
+module github.com/garudex-labs/caracal/packages/core/go
 
 go 1.26
 

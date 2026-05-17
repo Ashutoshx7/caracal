@@ -3,6 +3,6 @@
 //
 // Go module definition for the revocation package.
 
-module github.com/garudex-labs/caracal/revocation
+module github.com/garudex-labs/caracal/packages/revocation/go
 
 go 1.26

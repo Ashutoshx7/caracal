@@ -3,13 +3,13 @@
 //
 // Go module definition for the Redis revocation connector.
 
-module github.com/garudex-labs/caracal/revocationredis
+module github.com/garudex-labs/caracal/packages/connectors/redis/go
 
 go 1.26
 
 require (
-	github.com/garudex-labs/caracal/core v0.0.0
-	github.com/garudex-labs/caracal/revocation v0.0.0
+	github.com/garudex-labs/caracal/packages/core/go v0.0.0
+	github.com/garudex-labs/caracal/packages/revocation/go v0.0.0
 	github.com/redis/go-redis/v9 v9.19.0
 )
 
@@ -23,6 +23,6 @@ require (
 	golang.org/x/sys v0.44.0 // indirect
 )
 
-replace github.com/garudex-labs/caracal/core => ../../../core/go
+replace github.com/garudex-labs/caracal/packages/core/go => ../../../core/go
 
-replace github.com/garudex-labs/caracal/revocation => ../../../revocation/go
+replace github.com/garudex-labs/caracal/packages/revocation/go => ../../../revocation/go
