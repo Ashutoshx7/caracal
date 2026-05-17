@@ -1,159 +1,121 @@
 # Threat Model
 
-*Last updated: 2026-March*
-
 ## Purpose
 
-This document defines the threat model for **caracal**. It identifies the primary assets, trust boundaries, attacker capabilities, threat categories, and security controls that shape the system’s defense posture. The goal is to make risk explicit, align engineering decisions with security requirements, and keep incident response grounded in the actual design of the product.
+This model identifies what can go wrong, who owns the response, what mitigation is expected, and how maintainers verify the system remains safe.
 
-This threat model is intended to be used alongside the project’s security reporting process and incident response plan. It should be reviewed whenever the codebase, execution model, or provider integrations change in a meaningful way.
+## Scope
 
----
+In scope:
 
-## System Context
+- `apps/api`: Fastify control plane for zones, applications, resources, providers, policies, grants, invitations, teams, step-up challenges, and admin audit.
+- `apps/coordinator`: Fastify agent lifecycle, delegation, invocation, TTL, retention, and outbox service.
+- `services/sts`: OAuth 2.0 token exchange, ES256 signing, JWKS, policy evaluation, step-up, replay, revocation, and audit emission.
+- `services/gateway`: reverse proxy that exchanges inbound credentials with STS, validates bindings, enforces replay/revocation checks, and forwards authorized requests.
+- `services/audit`: Redis Streams consumer, append-only PostgreSQL audit ledger, tamper checks, retention, and Parquet export.
+- `services/control`: optional control invocation endpoint gated by explicit enablement, ES256 bearer auth, command allowlists, replay checks, rate limits, and audit.
+- `services/coordinator-relay`: Redis Streams lifecycle relay with signature verification and dedupe.
+- `packages/*`: shared identity, OAuth, revocation, transport, connector, SDK, admin, and core libraries.
+- `infra/docker`: local-dev and runtime Compose stacks, secrets, hardened containers, PostgreSQL, Redis, migrations, and health checks.
 
-caracal is a security-sensitive system for controlling delegated AI-driven actions. It sits between user intent, agent execution, and provider/tool access. The system is designed to ensure that actions are authorized before execution, that behavior is traceable, and that unsafe or unintended actions can be contained quickly.
+Out of scope: enterprise-only code, customer deployments outside the provided runtime model, external identity providers, external upstream services, host OS hardening beyond the Compose controls, and private incident details.
 
-The most important security property is that an agent or integration must never gain more capability than it has been explicitly granted. Every action should be evaluated against policy, scope, and execution context before it is allowed to proceed.
+## Assets / What we are protecting
 
----
-
-## Security Objectives
-
-The main security objectives for caracal are confidentiality, integrity, authorization correctness, traceability, and controlled recovery.
-
-Confidentiality means secrets, credentials, internal policies, and incident details must not be exposed to unauthorized parties. Integrity means actions, logs, and enforcement decisions must not be tampered with. Authorization correctness means every agent action must be validated against the proper policy before it runs. Traceability means important decisions and executions must be auditable. Controlled recovery means vulnerable behavior can be restricted or disabled quickly when risk is identified.
-
----
-
-## Assets
-
-The most sensitive assets in caracal are execution authority, policy data, credentials, audit records, and provider connectivity. Execution authority refers to the ability to perform actions through the system. Policy data includes rules, constraints, allowlists, denylists, and any metadata used to decide whether an action is permitted. Credentials include API keys, tokens, service accounts, and any secret material required to reach external systems. Audit records include logs, traces, event records, and incident notes. Provider connectivity includes the interfaces through which the system reaches tools, services, repositories, or remote APIs.
-
-A compromise of any one of these assets can affect the safety of the whole system.
-
----
+| Asset | Why it matters | Primary owners |
+|---|---|---|
+| Agent and application authority | Controls what autonomous agents can access and do. | API, STS, coordinator, gateway maintainers |
+| Policies, grants, zones, resource bindings | Define authorization boundaries and proxy destinations. | API, STS, gateway maintainers |
+| Signing keys, KEKs, admin tokens, client secrets, Redis/PostgreSQL credentials | Compromise enables impersonation, data access, or service takeover. | API, STS, infra maintainers |
+| Tokens, sessions, JTIs, revocations, step-up state | Enforce identity, replay prevention, expiry, and emergency denial. | STS, gateway, coordinator maintainers |
+| Audit events and chain state | Provide evidence for authorization, incidents, and tamper detection. | Audit, API, STS, gateway, coordinator, control maintainers |
+| Redis Streams and outbox rows | Carry lifecycle, invalidation, audit, and revocation events. | API, coordinator, STS, audit, relay maintainers |
+| Container images, installers, release artifacts, dependency lockfiles | Define what users execute. | Release and infra maintainers |
 
 ## Trust Boundaries
 
-caracal has several trust boundaries that must be treated carefully.
+| Boundary | Decision |
+|---|---|
+| User, CLI, TUI, and admin clients to API/coordinator | Treat all request input, headers, tokens, and trace data as untrusted; validate with schemas and authorization before mutation. |
+| API/coordinator to PostgreSQL and Redis | PostgreSQL is the durable source of truth; Redis is transport/cache state and must not override database authority. |
+| STS to policy, signing keys, sessions, and step-up state | STS is the token-issuing choke point and must fail closed on policy, key, replay, revocation, and signing errors. |
+| Gateway to upstream resources | Gateway is the runtime enforcement point; it must exchange credentials per request, strip routing headers, enforce safe upstreams, and never trust caller-supplied destinations without bindings. |
+| Service producers to Redis Streams consumers | Runtime streams require HMAC signing; consumers must dedupe, verify origin where configured, and acknowledge only after durable handling. |
+| Audit producers to audit service | Audit records must not contain plaintext secrets or claims; the audit ledger must be append-only and tamper-evident. |
+| Runtime containers to host | Published service ports bind to localhost; containers run with dropped capabilities, read-only filesystems where applicable, tmpfs scratch, secrets files, health checks, and bounded resources. |
+| OSS repository to enterprise code | The open-source product must not import, reference, or rely on enterprise-only code or controls. |
 
-The first boundary is between a user or operator and the system itself. User intent may be legitimate, but it still must be normalized and constrained before becoming executable action.
+## Assumptions
 
-The second boundary is between the policy layer and the execution layer. Policy decisions must be enforced, not merely recorded. Any mismatch between decision and execution is a serious security risk.
+- Runtime mode is the security baseline; development defaults are not production controls.
+- PostgreSQL, Redis, and service secrets are reachable only by the intended local/runtime stack.
+- Operators generate, store, rotate, and protect Docker secrets and admin tokens outside Git.
+- STS-issued ES256 tokens are the only accepted authority for runtime service calls that require bearer auth.
+- OPA/Rego remains the sole policy engine for STS authorization decisions.
+- Gateway is the only supported path for proxied upstream access.
+- Audit events may be delayed during dependency outages, but accepted events must become durable or remain recoverable.
+- External upstreams, registries, package mirrors, S3-compatible export targets, and user-provided provider data are untrusted.
+- Maintainers can challenge any assumption during design review, incident response, or release hardening.
 
-The third boundary is between internal logic and external providers. Providers, APIs, and tool integrations must be assumed untrusted until their outputs are validated.
+## What Can Go Wrong
 
-The fourth boundary is between normal operation and incident response. During a security event, the system must be able to shift into a restricted mode without losing traceability or control.
+| ID | Threat | Target area | Primary owner |
+|---|---|---|---|
+| T1 | A request bypasses auth, zone ownership, scope checks, or input schemas and mutates control-plane state. | `apps/api`, `apps/coordinator` | API/coordinator maintainers |
+| T2 | STS issues a token with excessive authority because policy, grant, session, step-up, replay, or key validation fails open. | `services/sts`, policy/grant storage | STS maintainers |
+| T3 | Gateway forwards a request to an unsafe or unintended upstream, leaks routing headers, reuses authority, or misses replay/revocation state. | `services/gateway`, resource bindings | Gateway maintainers |
+| T4 | Agent lifecycle or delegation state becomes inconsistent through races, missing transactions, outbox gaps, or relay replay. | `apps/coordinator`, `services/coordinator-relay`, Redis Streams | Coordinator/relay maintainers |
+| T5 | Secrets or sensitive claims appear in logs, API responses, audit payloads, metrics, config, fixtures, release artifacts, or examples. | All services, apps, packages, infra | Owning component maintainer |
+| T6 | Audit evidence is missing, forgeable, mutable, unverifiable, or loses ordering during dependency failures. | `services/audit`, audit producers, Redis Streams, PostgreSQL | Audit and producer maintainers |
+| T7 | Redis Streams messages are forged, replayed, dropped, processed twice, or acknowledged before durable handling. | STS, API, coordinator, audit, relay, gateway revocation consumers | Stream producer/consumer maintainers |
+| T8 | Runtime availability degrades enough to disable enforcement, token exchange, audit, revocation, or control invocation. | Compose stack, PostgreSQL, Redis, STS, gateway, audit, control | Infra and service maintainers |
+| T9 | Optional control invocation becomes a command execution path outside the canonical command catalog or without audit. | `services/control`, `packages/core/go/commands` | Control maintainers |
+| T10 | A compromised dependency, generated artifact, installer, image, or release process ships malicious or vulnerable code. | `package.json`, `pnpm-lock.yaml`, Go modules, Dockerfiles, installers, releases | Release maintainers |
+| T11 | Security boundaries drift when new services, ports, packages, transports, provider integrations, or enterprise references are added. | Repo architecture and governance | Maintainers approving the change |
 
----
+## Mitigations / Actions
 
-## Trust Assumptions
+| Threats | Required mitigation | Target area | Owner |
+|---|---|---|---|
+| T1 | Keep auth plugins/hooks mandatory for protected routes; validate every request with schemas before database or Redis access; enforce zone, application, team, and scope guards at mutation points. | API/coordinator routes | API/coordinator maintainers |
+| T2 | Keep STS deny-by-default; reject partial policy results; verify stored ownership/session state; require step-up where configured; fail closed on policy, key, replay, revocation, and signing errors. | STS exchange, OPA, key cache, session and grant queries | STS maintainers |
+| T3 | Perform fresh STS exchange per proxied request; strip hop-by-hop and `X-Caracal-*` headers; enforce request size/timeouts; block private, loopback, link-local, CGNAT, and metadata upstreams unless explicitly allowed. | Gateway proxy and safety guard | Gateway maintainers |
+| T4 | Use transactions and advisory locks for graph mutations; publish lifecycle/delegation/invalidation events through the outbox; keep relay dedupe and idle-claim behavior bounded. | Coordinator DB writes, jobs, relay | Coordinator/relay maintainers |
+| T5 | Resolve secrets from secret files; redact known sensitive log paths; never return plaintext key material, client secrets, bearer tokens, subject claims, database URLs, or Redis URLs. | Logging, responses, audit payloads, config | Owning component maintainer |
+| T6 | Keep `audit_events` append-only; sign audit chain entries with HMAC when configured; acknowledge streams only after insert, duplicate handling, or DLQ routing; run tamper sweeps and retention/export jobs under leader locks. | Audit service and producers | Audit maintainers |
+| T7 | Require stream HMAC keys in runtime mode; verify producer signatures where configured; dedupe stream messages; leave transient failures in the pending-entry list for reclaim. | Redis Streams producers and consumers | Stream producer/consumer maintainers |
+| T8 | Preserve bounded request bodies, timeouts, rate limits, health/readiness checks, resource limits, restart policies, and localhost-only port bindings; fail readiness when PostgreSQL, Redis, STS, or required upstreams are unavailable. | Compose, service servers, config | Infra and service maintainers |
+| T9 | Keep control disabled unless `CARACAL_CONTROL_ENABLED=true`; allow only `POST /v1/control/invoke`; require `control:invoke`; validate commands against the canonical catalog; audit accepted and rejected requests; never shell out. | Control service and command catalog | Control maintainers |
+| T10 | Keep lockfiles and module sums reviewed; publish versioned images and archives only from trusted release paths; verify installers, Dockerfiles, and generated artifacts do not embed secrets or uncontrolled network fetches. | Release tooling and dependencies | Release maintainers |
+| T11 | Update this model, service instructions, tests, and governance when boundaries change; reject OSS changes that depend on enterprise-only code or undocumented controls. | Architecture and governance | Reviewing maintainers |
 
-caracal assumes that internal code may contain bugs, that external services may behave unpredictably, and that reporters may provide incomplete or adversarial inputs. The system does not assume that agent behavior is safe by default. It does not assume that a successful API call was necessarily authorized in the intended scope. It does not assume that logs are correct unless their integrity has been preserved.
+## Validation / How to Verify
 
-The system also assumes that any feature that can execute code, invoke tools, or forward requests can become an attack surface if it is not tightly controlled.
-
----
-
-## Threat Actors
-
-The primary threat actors are malicious external users, compromised agents, unauthorized contributors, and trusted users making dangerous mistakes. External users may attempt to abuse exposed interfaces, over-permissioned agents, or weak enforcement paths. Compromised agents may attempt to expand their own capability or trigger unsafe actions. Unauthorized contributors may try to introduce malicious changes through code, configuration, or dependencies. Trusted users may unintentionally create risk through misconfiguration, excessive permissions, or unsafe operational choices.
-
-A secondary threat actor is the environment itself, including misbehaving services, inconsistent provider responses, and dependency-chain failures.
-
----
-
-## Threat Categories
-
-### Unauthorized Action Execution
-
-An attacker may try to make the system perform an action that was never intended or approved. This includes bypassing authorization, abusing permissions, exploiting race conditions, or triggering actions through an unvalidated path. This is one of the highest-risk threat categories because it directly affects the core safety property of the system.
-
-### Policy Bypass
-
-An attacker may attempt to evade policy checks by routing actions through alternate code paths, malformed inputs, edge cases, or provider forwarding behavior. Any place where policy is evaluated in one layer but not enforced in another is a potential bypass point.
-
-### Privilege Escalation
-
-An attacker may seek to increase the authority of a principal, agent, or request beyond its intended scope. This can happen through confused-deputy behavior, scope confusion, insecure defaults, or incorrect inheritance of privileges.
-
-### Secret Exposure
-
-Secrets may be exposed through logs, error messages, misrouted requests, debug output, or unprotected configuration paths. Exposed secrets can rapidly expand the blast radius of an incident.
-
-### Audit Tampering
-
-If logs or incident records can be modified, deleted, or forged, it becomes difficult to determine what happened and whether a fix is sufficient. Integrity of the audit trail is therefore a first-class security requirement.
-
-### Unsafe Provider Interaction
-
-External providers may execute actions that exceed the intended scope if requests are forwarded without strict validation. Any provider integration can become unsafe if the system trusts provider responses more than the local policy decision.
-
-### Supply Chain and Dependency Risk
-
-Dependencies, build steps, and contributed changes can introduce vulnerabilities. A compromised dependency or unsafe code contribution may create an attack path before runtime even begins.
-
-### Denial of Service
-
-Attackers may try to overwhelm enforcement, logging, or provider pathways in order to reduce availability or delay incident response. Resource exhaustion can also reduce the system’s ability to enforce policy in real time.
-
-### Incident Response Delay
-
-A threat may not exploit the code directly, but instead exploit delays in triage, communication, or containment. Slow response can materially increase the impact of an otherwise manageable issue.
-
----
-
-## Attack Surfaces
-
-The main attack surfaces are the SDK boundary, policy evaluation layer, provider/action routing, CLI and TUI interfaces, direct API calls, forwarded tool calls, and any code paths that transform user intent into executable commands.
-
-Each of these surfaces must be assumed attackable unless the code explicitly restricts input, validates context, and enforces policy at the correct point.
-
----
-
-## Core Failure Modes
-
-The most important failure modes are the ones that produce unsafe execution without clear visibility.
-
-The first failure mode is enforcing policy too late, after side effects have already begun. The second is evaluating policy correctly but failing to carry the decision all the way to execution. The third is using overly broad permissions or default allow behavior. The fourth is assuming that one component will protect another component without explicit checks. The fifth is failing to detect or preserve evidence when a security event occurs.
-
-These failure modes are especially dangerous because they can appear normal until the system is under attack.
-
----
-
-## Primary Mitigations
-
-caracal should defend itself using deny-by-default behavior, explicit authorization, least privilege, strict input validation, and centralized enforcement. Sensitive operations should be validated at the narrowest practical choke point before execution. Provider access should be constrained to the minimum required scope. Audit logs should be tamper-resistant and captured consistently. Secrets should be stored and transmitted with strict handling rules. Changes to enforcement logic should be covered by tests that focus on both happy paths and bypass attempts.
-
-During a live incident, the system should be able to disable or restrict risky paths quickly without requiring a major redesign.
-
----
-
-## Detection and Response
-
-A threat model is only useful if it maps to action. caracal should treat alerts, report quality, reproduction steps, and exploit evidence as inputs to incident handling. When a plausible issue is identified, the response should begin with validation, then containment, then a minimal mitigation, and finally a structured fix and review.
-
-This response approach matches the project’s incident process and is intended to keep the system stable even when the team is under pressure. fileciteturn1file0
-
----
-
-## Residual Risk
-
-No system of this type can eliminate all risk. Residual risk remains in external dependencies, operator mistakes, provider behavior, and unknown logic gaps. The objective is not to claim perfect security, but to make harmful outcomes harder, narrower, and easier to detect and contain.
-
-Residual risk should be accepted only when it is understood, monitored, and documented.
-
----
+| Threats | Verification |
+|---|---|
+| T1 | Run API/coordinator route, security, property, fuzz, and contract tests; review new routes for auth hooks, schema validation, zone guards, and admin audit coverage. |
+| T2 | Run `go test ./services/sts/...`; include negative tests for policy denial, partial evaluation, bad keys, revoked sessions, replayed JTIs, expired step-up, and malformed JWT claims. |
+| T3 | Run `go test ./services/gateway/...`; include SSRF, metadata IP, private network, header stripping, request-size, timeout, replay, revocation, and STS-failure cases. |
+| T4 | Run coordinator tests and relay tests; verify graph mutations use transactions/locks and lifecycle events are produced through outbox or relay-safe paths. |
+| T5 | Review logs, metrics, API responses, audit events, fixtures, and generated artifacts for secrets; confirm redaction paths cover new credential fields. |
+| T6 | Run `go test ./services/audit/...`; verify append-only writes, HMAC chain checks, tamper mismatch metrics, DLQ paths, retention rotation, and export behavior. |
+| T7 | Run stream consumer tests for valid signature, missing signature in runtime, duplicate message, transient dependency failure, PEL reclaim, and DLQ routing. |
+| T8 | Run service readiness checks in the Compose stack; confirm dependency outages return unavailable status and do not produce success-shaped responses. |
+| T9 | Run `go test ./services/control/...`; verify disabled startup, missing scope, invalid command, replay, rate limit, upstream failure, and audit emission cases. |
+| T10 | Run dependency review, lockfile diff review, release smoke tests, image build checks, and installer/archive secret scans before publishing. |
+| T11 | During review, compare changed files against this model, `go.work`, workspace packages, service instructions, and Compose boundaries. |
 
 ## Review Triggers
 
-This threat model should be reviewed when authorization logic changes, when provider integrations are added or modified, when execution paths become more autonomous, when new sensitive data is introduced, or when an incident reveals a weakness that was not previously modeled.
+Review and update this threat model when any of the following occurs:
 
-It should also be reviewed after major structural changes to the codebase or deployment model.
+- Authorization, policy, token, key, revocation, replay, step-up, or scope logic changes.
+- API, coordinator, gateway, STS, audit, control, relay, transport, connector, or SDK boundaries change.
+- A new service, route, package, stream, database table, port, container, secret, provider integration, export target, or release artifact is introduced.
+- Compose, Dockerfile, installer, image registry, runtime mode, secret handling, or deployment defaults change.
+- Dependency updates affect auth, crypto, HTTP, parsing, policy, database, Redis, build, installer, or release behavior.
+- A security incident, near miss, audit finding, bug bounty report, or operational outage exposes an unmodeled risk.
+- Enterprise isolation, licensing, or shared-interface assumptions change.
+- Before each major release and after any high-risk dependency or platform update.
 
----
-
-## Final Note
-
-This threat model is intended to remain practical and grounded. It should help guide design decisions, prioritize hardening work, and support incident response with a clear understanding of what must be protected and where the system is most exposed.
+This threat model and the incident response process are best-effort open-source governance artifacts; Caracal is provided under the Apache License 2.0 without warranties or liability as stated in [`LICENSE`](../LICENSE). For contractual assurances, support, or enterprise terms, contact Caracal Enterprise at [contact@caracal.run](mailto:contact@caracal.run).

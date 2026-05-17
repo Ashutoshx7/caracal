@@ -1,215 +1,146 @@
-# Incident Response Plan (IRP)
-
-*Last updated: 2026-March*
+# Incident Response
 
 ## Purpose
 
-This Incident Response Plan defines how **caracal** responds to security incidents with **clear ownership**, **immediate containment**, and **controlled remediation**. The process is designed to be executed without ambiguity. Each phase specifies **what must be done**, **who is responsible**, and **what artifact must be recorded**.
+Give maintainers a fast, repeatable way to detect, contain, recover from, and learn from security or reliability incidents in Caracal.
 
----
+One Incident Lead owns sequencing, decisions, evidence, and closure. One Driver makes changes. One Reviewer checks risk. On a IR team, one person may cover multiple roles, but ownership must be explicit.
 
-## Operating Model
+## Scope
 
-Each incident has a single **Incident Lead (IL)** who owns decisions, sequencing, and final approval. All work is centralized in a **private GitHub Security Advisory**, which serves as the authoritative record. **No parallel sources of truth are allowed.**
+Use this process for incidents affecting:
 
-Two coordinated teams operate under the IL.
+- `apps/api`: control-plane routes, admin auth, policies, grants, zones, applications, resources, providers, teams, invitations, and step-up APIs.
+- `apps/coordinator`: agent lifecycle, delegation, invocation, TTL, retention, outbox, and lifecycle events.
+- `services/sts`: token exchange, OPA policy decisions, signing keys, JWKS, replay, revocation, step-up, and audit emission.
+- `services/gateway`: proxy enforcement, upstream safety, STS exchange, bindings, replay, and revocation checks.
+- `services/audit`: audit stream consumption, append-only ledger, HMAC chain, tamper sweeps, retention, and export.
+- `services/control`: optional control invocation, command catalog enforcement, replay, rate limits, and audit.
+- `services/coordinator-relay`, Redis Streams, PostgreSQL, Docker runtime, installers, releases, dependencies, and shared `packages/*`.
 
-* **Red Team** focuses on immediate risk reduction through minimal, targeted changes.
-* **Blue Team** focuses on root cause correction, validation, and long-term safety.
+Use the public issue tracker for non-security bugs. Use a private GitHub Security Advisory for suspected vulnerabilities, credential exposure, unsafe execution, policy bypass, or exploitable operational failures.
 
-All responsibilities are handled within the **Red Team** and **Blue Team** structure. The Incident Lead participates across both teams and is responsible for continuity between phases.
+## Severity Levels
 
----
+| Level | Use when | First action |
+|---|---|---|
+| SEV0 | Active exploit, credential/signing-key exposure, policy bypass, unsafe execution, malicious release, or evidence destruction. | Contain immediately; restrict, revoke, rotate, disable, or stop the affected path. |
+| SEV1 | Plausible exploit with high impact, auth boundary weakness, unsafe gateway/control behavior, audit integrity risk, or dependency compromise. | Add a guardrail or temporary restriction before root-cause work. |
+| SEV2 | Reproducible security or reliability weakness with limited blast radius and no active exploit. | Reproduce, patch, and validate through targeted tests. |
+| SEV3 | Hardening, suspicious signal, low-risk misconfiguration, or unconfirmed report. | Track, investigate, and close or promote with evidence. |
 
-## Incident Classification
+Escalate severity immediately if tokens, secrets, keys, policy enforcement, audit integrity, release artifacts, or runtime availability are affected.
 
-Classification is based on the **first required action**.
+## Detection and Intake
 
-* **Type A: Immediate Containment Required**
-  Active exploitation, privilege escalation, token leakage, policy bypass, or unsafe execution. Action must begin with restriction or shutdown of affected paths.
+| Check | Action | Evidence | Move on when |
+|---|---|---|---|
+| Source of signal: advisory, email, issue, logs, CI, dependency alert, runtime health, audit metrics, or maintainer observation. | Create or update the private advisory for security incidents; assign an Incident Lead. | Reporter text, timestamps, URLs, affected refs, service names, versions, and initial severity. | There is one source of truth and an owner. |
+| Affected boundary: API, coordinator, STS, gateway, audit, control, relay, package, infra, release, or dependency. | Map the signal to the threat model target area. | File paths, endpoints, stream names, containers, images, package names, and config keys. | The suspected blast radius is named. |
+| Sensitive data risk. | Remove secrets from public channels; preserve private copies only in the advisory or approved secure storage. | Redacted samples plus location of original evidence. | No sensitive data is exposed in public discussion. |
 
-* **Type B: Guardrail Required**
-  Authorization flaws, partial bypasses, or unsafe integrations with realistic exploit potential. Action must begin with adding restrictive checks or gating.
+## Triage
 
-* **Type C: Logic Weakness**
-  Reproducible issues with limited scope or edge-case impact. Action begins with reliable reproduction and a failing test.
+| Check | Action | Evidence | Move on when |
+|---|---|---|---|
+| Reproducibility. | Reproduce locally or in an isolated runtime using the smallest safe proof. Do not run destructive payloads against shared systems. | Exact request, command, token shape, config, commit, container version, and observed result. | The issue is confirmed, rejected, or needs more data. |
+| Security impact. | Determine whether the issue affects auth, policy, keys, secrets, audit, stream integrity, upstream routing, command invocation, releases, or availability. | Impact statement and affected assets from the threat model. | Severity is assigned or revised. |
+| Current exposure. | Check if the affected path is reachable in runtime mode, exposed by Compose ports, shipped in a release, or gated by a feature flag/profile. | Runtime mode, image tag, package version, route, port, or profile status. | The Incident Lead knows whether immediate containment is needed. |
 
-* **Type D: Hardening**
-  No direct exploit path. Action is backlog with tests and documentation.
+## Containment
 
-Classification can be revised as evidence improves.
+| Check | Action | Evidence | Move on when |
+|---|---|---|---|
+| Unsafe execution or policy bypass. | Disable the route/profile/path, tighten scopes, deny the policy, revoke sessions, block the upstream, or stop the affected service. | Exact control changed, owner, time, and rollback path. | The exploit path no longer succeeds. |
+| Secret, token, or key exposure. | Rotate affected secrets, admin tokens, client secrets, signing keys, Redis/PostgreSQL credentials, and stream/audit HMAC keys as applicable. Revoke active sessions and JTIs. | Key IDs, token/session scope, rotation confirmation, revocation event, and affected versions. | Exposed credentials no longer authenticate. |
+| Malicious or vulnerable release/dependency. | Pull or supersede the artifact, pin or revert the dependency, publish a patched version, and warn users through the advisory path. | Artifact digest, package version, lockfile diff, image tag, and replacement version. | Users have a safe upgrade path or the artifact is no longer distributed. |
+| Audit or stream integrity risk. | Preserve Redis pending entries, PostgreSQL rows, audit exports, DLQ records, service logs, and tamper metrics before cleanup. | Snapshot location, checksums where practical, and query/log summary. | Evidence is preserved and the risky path is restricted. |
 
----
+Contain first for SEV0/SEV1. Root-cause work waits until the blast radius is bounded.
 
-## End-to-End Sequence (Runbook)
+## Eradication
 
-The following sequence defines the required flow for handling a security incident. Each step must be executed in order and documented within the private advisory to maintain **clarity**, **traceability**, and **control**.
+| Check | Action | Evidence | Move on when |
+|---|---|---|---|
+| Root cause. | Identify the exact missing guard, unsafe default, race, dependency flaw, release failure, or operational gap. | Minimal root-cause note with files, functions, routes, streams, config, or artifacts. | The fix target is precise. |
+| Code/config fix. | Make the smallest complete change that removes the unsafe path. Prefer deny-by-default, explicit validation, scoped authorization, safe retries, and bounded timeouts. | Diff, tests added, config changed, migration or release notes if needed. | The vulnerable behavior is removed, not hidden. |
+| Related paths. | Search for duplicate enforcement gaps across API, coordinator, STS, gateway, audit, control, relay, packages, and infra. | Search terms, matching files, and decision for each match. | No known sibling path remains exposed. |
 
-### Step 1: Intake and Initial Decision
+## Recovery
 
-A maintainer is assigned as **Incident Lead (IL)** based on availability. The IL performs an initial evaluation to determine whether the report represents a valid security issue requiring formal handling. If the issue is not security-relevant or lacks sufficient impact, the reporter is directed to raise it through the [public issue tracker](https://github.com/Garudex-Labs/caracal/issues). If the report is valid, the IL acknowledges it privately, may request clarification, and ensures the **reporter maintains confidentiality**. An initial incident brief is prepared capturing the summary, suspected impact, affected areas, and preliminary classification. Ownership may be reassigned at this stage if deeper expertise is required.
+| Check | Action | Evidence | Move on when |
+|---|---|---|---|
+| Service safety. | Restore disabled routes, profiles, services, or upstreams only after the fix and containment controls are both verified. | Recovery command, config diff, release version, and readiness output. | Services are healthy without re-opening the incident path. |
+| State consistency. | Reconcile PostgreSQL records, Redis streams, pending entries, revocations, sessions, audit rows, exports, and outbox state. | Queries, counts, DLQ/Pending Entry List status, tamper sweep result, and manual corrections. | Durable state matches expected behavior. |
+| User/runtime impact. | Identify affected versions, operators, actions, tokens, policies, or audit records. | Impact window, affected artifacts, upgrade path, and known limitations. | Operators know what to update or rotate. |
 
-### Step 2: Team Formation and Ownership
-
-The IL establishes a working group by selecting available maintainers and contributors and dividing them into a **Red Team** and a **Blue Team** based on capability and current load. The IL records the final ownership structure clearly, including all participating members. This structure serves as the execution boundary for the incident, and all actions must be coordinated within it.
-
-### Step 3: Containment
-
-The Red Team immediately initiates containment to reduce risk before detailed analysis. Actions are chosen to be **minimal**, **effective**, and **reversible**, such as disabling affected functionality, restricting access paths, tightening policies, or rotating credentials. The focus is on limiting exposure quickly rather than achieving a complete fix. All actions are documented with scope and rollback considerations.
-
-### Step 4: Red Team Mitigation
-
-The Red Team implements a minimal patch that blocks or significantly reduces the exploit path. Changes are kept localized and small to minimize unintended impact. These changes are committed in a manner consistent with normal development activity, while maintaining a detailed internal record of all modifications and reasoning.
-
-### Step 5: Red to Blue Handoff
-
-After mitigation, the Red Team prepares a structured internal report describing the changes made, the reasoning behind them, and any assumptions or risks. This report is shared with the Blue Team, along with continuous updates if new observations arise. This handoff ensures continuity and provides a clear baseline for deeper analysis.
-
-### Step 6: Blue Team Analysis and Planning
-
-The Blue Team reviews the mitigation, validates its effectiveness, and examines whether it introduces side effects or incomplete coverage. The team identifies the root cause of the issue and designs a comprehensive fix that resolves the problem correctly. This phase focuses on **correctness**, **completeness**, and **long-term stability** rather than speed.
-
-### Step 7: Blue Team Implementation
-
-The Blue Team implements the final patch based on its analysis. The implementation includes proper validation, safeguards, and test coverage to ensure reliability. The patch is prepared and documented internally but is not released until it passes full review.
-
-### Step 8: Final Review and Release Planning
-
-The Red Team, Blue Team, and Incident Lead jointly review the final implementation and associated reports. The review confirms that the vulnerability is resolved, no new issues are introduced, and the system remains stable. A controlled release plan is prepared along with a carefully scoped public disclosure strategy to ensure no unintended information is exposed.
-
-### Step 9: Disclosure and Improvement
-
-The fix is released through the standard process, and a public advisory is issued with appropriate details. Care is taken to disclose only what is necessary. Following release, the team documents lessons learned and updates internal practices, safeguards, or tooling to improve future incident response.
-
----
-
-## Reporter Participation
-
-If the reporter wants to contribute, they may request involvement. The Incident Lead may allow participation if it improves resolution speed or quality.
-
-The reporter may provide patches, proof-of-concept code, or validation help. All contributions remain controlled and must go through internal review by the Red Team or Blue Team. Direct merge access is not granted.
-
-The reporter is treated as an external contributor and does not hold any internal role. All decisions remain with the Incident Lead and internal teams.
-
----
-
-## Fix Strategy
-
-Use a two-layer approach.
-
-* **Immediate Guard**: smallest change that blocks or reduces risk.
-* **Structural Fix**: root cause correction with tests and safeguards.
-
-Ship the guard first, then follow with the structural fix in the sequence.
-
----
-
-## Verification and Recovery
-
-Before closure, verify that the exploit path is blocked and no new issues are introduced. Keep temporary restrictions until confidence is established, then remove them deliberately.
-
-**Artifact:** **Final Verification Report**.
-
----
+Recovery must be rollback-safe: keep the last known safe version, containment toggle, or denial rule available until validation is complete.
 
 ## Communication
 
-All communication remains private until mitigation exists. Provide updates only at checkpoints: containment applied, mitigation verified, fix ready, release completed.
+| Check | Action | Evidence | Move on when |
+|---|---|---|---|
+| Internal coordination. | Keep all facts, decisions, commands, and artifacts in the private advisory. Avoid parallel notes. | Advisory timeline and owner updates. | Maintainers share one current state. |
+| Reporter updates. | Acknowledge, request missing reproduction details, confirm containment, confirm fix availability, and coordinate disclosure. | Message summaries and timestamps. | Reporter has enough information without exposing users. |
+| Public disclosure. | Publish only after containment or fix is available. Include affected versions, impact, mitigation, fixed version, and credit if appropriate. | Advisory, release note, or security notice. | Users can act without receiving exploit instructions. |
 
-**Artifact:** **Checkpoint Updates** in advisory.
+For SEV0/SEV1, communicate checkpoints: acknowledged, contained, fix ready, release published, closed.
 
----
+## Evidence and Audit Trail
 
-## Response Timeline
+Capture enough to prove what happened and what changed:
 
-Initial review target is up to 7 days. **Type A** incidents require immediate containment. Resolution timing depends on complexity.
+- Incident ID, severity, Incident Lead, Driver, Reviewer, and timestamps.
+- Affected services, packages, routes, streams, ports, images, versions, commits, and config keys.
+- Sanitized logs, metrics, audit events, DLQ/Pending Entry List data, tamper results, database query summaries, and reproduction steps.
+- Containment actions, rotations, revocations, denials, disabled paths, and rollback handles.
+- Patch diffs, test output, release artifacts, image digests, dependency diffs, and validation notes.
 
----
+Do not paste secrets, private keys, bearer tokens, customer data, or exploitable payloads into public issues, logs, AI prompts, or release notes.
 
-## Red Team Execution Prompt
+## Automation and AI-Assisted Workflows
 
-The following prompt is mandatory for Red Team. Fill all placeholders before use and paste into the advisory or tool.
+Use automation to reduce time-to-context, not to replace maintainer judgment.
 
-```text
-ROLE
-You are a security-focused engineer performing rapid mitigation in the caracal codebase.
+| Workflow | Use | Guardrail |
+|---|---|---|
+| Code search and dependency diffing | Find affected routes, auth hooks, policy checks, stream consumers, package versions, and release artifacts. | Review results manually before patching. |
+| Test selection | Run targeted service tests first, then broader suites when the fix touches shared packages or boundaries. | Do not treat unrelated green tests as proof of security. |
+| Log and audit summarization | Cluster timestamps, request IDs, JTIs, zone IDs, service names, tamper metrics, DLQ entries, and failure classes. | Redact secrets and keep sensitive data in approved private systems. |
+| AI-assisted investigation | Ask local or approved AI tooling to summarize code paths, compare diffs, generate hypotheses, or draft validation checklists. | Never provide secrets, embargoed exploit details, private keys, bearer tokens, or customer data. Verify every conclusion against code and evidence. |
+| AI-assisted validation | Generate negative test ideas for auth bypass, SSRF, replay, revocation, stream forgery, audit tamper, and unsafe control invocation. | Maintainers choose and run the final tests. |
 
-CONTEXT
-[Clear description of the vulnerability. Where it exists, why it is dangerous, and the likely entry point.]
+Useful commands are the existing repository commands: targeted `go test ./services/<service>/...`, targeted `pnpm --dir <app-or-package> test`, `pnpm run test:go`, `pnpm run test:typescript`, `pnpm run test:python`, `pnpm run typecheck`, and `pnpm run ci`.
 
-REPRODUCTION
-[Exact steps or proof-of-concept. Include inputs, requests, environment, and expected vs actual behavior.]
+## Validation / Recovery Verification
 
-AFFECTED AREA
-[Files, modules, functions, endpoints, providers, policies.]
+| Check | Action | Evidence | Close when |
+|---|---|---|---|
+| Exploit regression. | Re-run the original reproduction and at least one negative variant. | Before/after result and test name or command. | The exploit fails for the right reason. |
+| Boundary coverage. | Validate affected trust boundaries from `THREAT_MODEL.md`: auth, policy, gateway upstreams, streams, audit, secrets, runtime, release, or enterprise isolation. | Checklist tied to impacted threats. | Each affected boundary has a guard and a test/review note. |
+| Targeted tests. | Run the smallest relevant suite first: API, coordinator, STS, gateway, audit, control, relay, package, infra, installer, or release check. | Command output or CI link. | Relevant tests pass or failures are explained as unrelated. |
+| Broader safety. | Run broader tests/typecheck/CI when shared packages, auth, crypto, config, release, or infra changed. | Command output or CI link. | No changed boundary remains unvalidated. |
+| Runtime readiness. | Check `/health`, `/ready`, metrics, stream lag, audit tamper metrics, and dependency status in the affected stack. | Health/readiness output and metric summary. | Runtime behavior is stable under the recovered configuration. |
 
-OBJECTIVE
-- Block or significantly reduce the exploit path immediately
-- Apply the smallest safe change possible
-- Keep changes localized and reversible
+## Postmortem and Lessons Learned
 
-STRICT DOs
-- Add explicit validation, authorization checks, or deny rules at the narrowest choke point
-- Prefer fail-closed behavior
-- Restrict capabilities via flags, scopes, or guards
-- Keep the diff minimal and focused on affected code only
-- Preserve existing behavior for unaffected paths
-- Add a minimal assertion or test when feasible
-- Document assumptions in concise form
+| Check | Action | Evidence | Close when |
+|---|---|---|---|
+| What happened and what was affected. | Write a short factual timeline and impact summary. | Detection source, affected services/packages/artifacts, severity changes, and impact window. | The incident can be understood without reading raw logs. |
+| What contained and fixed it. | Record containment, root cause, final fix, and validation. | Containment action, commit/PR, test output, release version, and recovery checks. | The fix path is traceable from report to recovery. |
+| What must change. | Create follow-up issues only for concrete work with an owner. Update tests, automation, docs, threat model, release process, or architecture when needed. | Issue links, owner, target area, and security review notes. | Follow-ups are tracked or explicitly rejected with a reason. |
 
-STRICT DON'Ts
-- Do not refactor unrelated code
-- Do not introduce new features or expand scope
-- Do not remove existing security checks unless replaced with stricter ones
-- Do not modify multiple subsystems in a single patch
-- Do not add new dependencies unless strictly necessary
-- Do not implement complex logic when a simple guard is sufficient
-- Do not expose sensitive data or debugging output
+Close the incident when the fix is shipped, validation is recorded, communication is complete, and follow-ups are owned.
 
-PATCH STRATEGY
-1. Identify the exact exploit entry point and propagation path
-2. Insert the narrowest guard to block it (validation, authorization, restriction)
-3. Ensure safe fallback behavior (error or no-op)
-4. Verify unaffected flows remain unchanged
+## Review Triggers
 
-OUTPUT FORMAT
-1. One-line summary of the fix
-2. Exact code changes (minimal diff)
-3. Why this blocks the exploit (2 to 3 lines)
-4. Limitations or follow-up required
+Review this process when:
 
-QUALITY BAR
-- Exploit path is demonstrably blocked
-- No new privilege or bypass introduced
-- Patch is minimal, readable, and reversible
+- An incident, near miss, outage, or security report shows the runbook was unclear or too slow.
+- Authorization, policy, token, key, revocation, replay, step-up, audit, stream, gateway, control, release, or dependency handling changes.
+- New services, routes, streams, ports, packages, transports, providers, installers, images, secrets, or export targets are added.
+- The threat model changes or identifies a new failure mode.
+- Automation, AI tooling, logging, metrics, CI, release, or advisory workflows change.
+- A fix requires security review, architectural change, or threat model update to prevent recurrence.
 
-THINKING MODE
-Act under time pressure. Prioritize containment over completeness. Make the smallest change that removes the risk.
-```
-
----
-
-## Review Checklist (Required)
-
-* Exploit reproduction fails after patch
-* No permission widening or new access paths
-* Affected paths covered by at least one test or assertion
-* Diff is minimal and localized
-* No sensitive data exposure introduced
-
----
-
-## Post-Incident Summary Template
-
-* Summary: one paragraph of what happened
-* Root Cause: specific condition or logic gap
-* Containment: actions taken and when
-* Fix: mitigation and final correction
-* Impact: scope and affected components
-* Improvement: one concrete change to prevent recurrence
-
----
-
-## Final Note
-
-This IRP is intended to be followed step by step. Each phase produces explicit artifacts, and all work is recorded in a single advisory. The emphasis is on **fast containment**, **minimal change**, and **verifiable outcomes.**
+This incident response process is a best-effort open-source governance artifact; Caracal is provided under the Apache License 2.0 without warranties or liability as stated in [`LICENSE`](../LICENSE). For contractual assurances, support, or enterprise terms, contact Caracal Enterprise.
