@@ -3,18 +3,15 @@
 #
 # Lynx Capital application container.
 
-FROM python:3.14-slim
+FROM python:3.14-slim@sha256:7a500125bc50693f2214e842a621440a1b1b9cbb2188f74ab045d29ed2ea5856
 
 WORKDIR /app
 
 COPY pyproject.toml ./
+COPY requirements.lock ./
 COPY app ./app
 
-RUN pip install --no-cache-dir \
-        "fastapi" "uvicorn[standard]" "sse-starlette" "pydantic" "pyyaml" \
-        "httpx" "grpcio" "python-dotenv" "jinja2" "redis>=5.2" \
-        "openai" "langchain" "langchain-openai" "langgraph" "deepagents" \
-        "caracalai-sdk>=0.1.1"
+RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock
 
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
