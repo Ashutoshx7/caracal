@@ -1,6 +1,6 @@
 ---
 title: Revocation Package
-description: RevocationStore interface, InMemoryRevocationStore implementation, and how revocation integrates with mandate verification — TypeScript and Python.
+description: Revocation store interfaces, in-memory implementations, and mandate verification integration across TypeScript, Python, and Go.
 pageType: reference
 ---
 
@@ -115,6 +115,31 @@ result = await authenticate(
     audience='resource://api',
     revocations=revocations,  # required
 )
+```
+
+**Go (`github.com/garudex-labs/caracal/packages/revocation/go`):**
+
+```go
+import (
+    "errors"
+    "time"
+
+    revocation "github.com/garudex-labs/caracal/packages/revocation/go"
+)
+
+store := revocation.NewInMemoryStore(24 * time.Hour)
+if store.IsRevoked(sessionID) {
+    return errors.New("session revoked")
+}
+```
+
+The Go package defines:
+
+```go
+type Store interface {
+    IsRevoked(sid string) bool
+    MarkRevoked(sid string, ttl time.Duration) error
+}
 ```
 
 ## Production: Redis-backed store

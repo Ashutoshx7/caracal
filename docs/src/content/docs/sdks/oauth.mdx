@@ -1,12 +1,20 @@
 ---
 title: OAuth Package
-description: Complete API reference for @caracalai/oauth — RFC 8693 token exchange, intelligent caching, retry logic, and step-up error handling.
+description: API reference for the Caracal OAuth token-exchange packages across TypeScript, Python, and Go.
 pageType: reference
 ---
 
-`@caracalai/oauth` implements RFC 8693 (OAuth 2.0 Token Exchange) for TypeScript. It exchanges a long-lived ambient token for a short-lived per-resource mandate, caches the result keyed on the full exchange context, and surfaces step-up challenges as a typed error. The main SDK uses this package internally; install it directly only when building custom exchange logic or tools that call the STS directly.
+The OAuth packages implement RFC 8693 token exchange. They exchange a long-lived ambient token, client secret, or delegated context for a short-lived per-resource mandate, cache the result by the full exchange context, and surface step-up challenges as typed errors where the language surface supports it. The main SDKs use these packages internally; install them directly only when building custom exchange logic or tools that call STS directly.
 
 ## Install
+
+| Language | Package | Install |
+| --- | --- | --- |
+| TypeScript | `@caracalai/oauth` | `npm install @caracalai/oauth` |
+| Python | `caracalai-oauth` | `pip install caracalai-oauth` |
+| Go | `github.com/garudex-labs/caracal/packages/oauth/go` | `go get github.com/garudex-labs/caracal/packages/oauth/go` |
+
+### TypeScript
 
 ```bash
 npm install @caracalai/oauth
@@ -144,3 +152,46 @@ Backoff formula (when no `Retry-After` header): `min(250ms × 2^attempt, 5000ms)
 If the server sends a `Retry-After` header, that value overrides the computed backoff.
 
 The `timeoutMs` limit applies per attempt, not across all retries. An `AbortController` enforces it.
+
+---
+
+## Python — `caracalai-oauth`
+
+```python
+from caracalai_oauth import ExchangeOptions, OAuthClient
+
+client = OAuthClient("https://sts.example.com", "zone1", "app1")
+
+token = await client.exchange(
+    subject_token,
+    "resource://api",
+    ExchangeOptions(client_secret="client-secret", scopes=["read"]),
+)
+```
+
+The Python client validates successful STS responses before caching them. Cache keys include subject token, actor token, session and delegation context, scopes, TTL, and client authentication context. The default cache is in-memory and process-local.
+
+Close the underlying HTTP client when the OAuth client owns it:
+
+```python
+await client.aclose()
+```
+
+---
+
+## Go — `github.com/garudex-labs/caracal/packages/oauth/go`
+
+```go
+client := oauth.NewClient("https://sts.example.com", "zone1", "app1", nil)
+
+token, err := client.Exchange(ctx, subjectToken, "resource://api", oauth.ExchangeOptions{
+    ClientSecret: "client-secret",
+    Scopes:       []string{"read"},
+})
+if err != nil {
+    return err
+}
+_ = token.AccessToken
+```
+
+Pass `nil` as the cache to use the default bounded in-memory cache. Use `ExchangeResources` when one exchange must request a mandate for more than one resource audience.

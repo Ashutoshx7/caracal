@@ -22,7 +22,7 @@ The Gateway owns:
 - **JTI replay detection** — records JTI claims in Redis with a per-token TTL to detect token reuse.
 - **Revocation sync** — subscribes to `caracal.sessions.revoke` to maintain an in-process revocation set.
 - **Binding management** — reads application-to-resource upstream URL mappings from PostgreSQL and refreshes them every 30 seconds.
-- **TLS enforcement** — requires TLS in production; refuses to start without a cert unless `INSECURE_HTTP=true`.
+- **Runtime hardening** — rejects unsafe runtime settings such as `JTI_FAIL_OPEN=true`, missing stream signatures, invalid ports, or private upstreams without an allowlist.
 
 The Gateway does **not** evaluate policies (STS does this during the exchange it triggers), manage configuration, issue tokens, or persist any data.
 
@@ -34,7 +34,7 @@ Every request processed by the Gateway follows this path:
 
 1. **Extract bearer** — reads `Authorization: Bearer <token>` from the request. Returns 401 if absent or malformed.
 2. **Verify JWT** — fetches the zone's JWKS from the STS (cached 5 min, stale-while-revalidate) and verifies the ES256 signature, `exp`, and `aud` claims. Returns 401 on failure.
-3. **Check JTI** — if Redis is configured, checks whether the JWT's `jti` claim has already been seen. Returns 403 if replayed.
+3. **Check JTI** — checks Redis to determine whether the JWT's `jti` claim has already been seen. Returns 403 if replayed.
 4. **Check revocation** — checks the in-process revocation set (populated from `caracal.sessions.revoke`). Returns 401 if the session is revoked.
 5. **Exchange mandate** — calls `POST {STS_URL}/oauth/2/token` with the caller's token as `subject_token` and the target resource as `resource`. Returns 401 or 403 if the STS denies.
 6. **Forward request** — sends the original request to the upstream URL, replacing the `Authorization` header with the new per-call mandate. Adds `X-Request-Id` header.
@@ -78,7 +78,7 @@ The Gateway verifies each bearer token locally using JWKS from the STS. It does 
 
 ## JTI replay detection
 
-When Redis is configured, the Gateway records each JWT's `jti` claim in a Redis set keyed as `gateway:jti:{jti_hash}` with a TTL matching the token's remaining lifetime. A second request with the same `jti` returns 403.
+The Gateway records each JWT's `jti` claim in Redis with a TTL matching the token's remaining lifetime. A second request with the same `jti` returns 403. `REDIS_URL` is required at startup because JTI replay detection and revocation sync are part of the Gateway's request safety boundary.
 
 `JTI_FAIL_OPEN=true` allows requests through if the Redis JTI lookup itself fails (development only; the default `false` rejects the request if JTI tracking is unavailable).
 
@@ -92,16 +92,16 @@ Revocation propagates from the API → Redis stream → Gateway's in-process set
 
 ---
 
-## TLS
+## TLS and runtime mode
 
-In production (`CARACAL_ENV=production`), the Gateway requires:
+The Gateway serves HTTPS when both TLS files are configured:
 
 - `TLS_CERT_FILE` — path to a PEM certificate file.
 - `TLS_KEY_FILE` — path to the matching PEM private key.
 
-The STS URL must also be HTTPS unless `INSECURE_STS=true` is set. Setting `INSECURE_HTTP=true` or `INSECURE_STS=true` in production is a startup error.
+If neither file is set, the Gateway serves plain HTTP. Use that only for the local compose stack or behind a trusted TLS-terminating ingress.
 
-In development (`CARACAL_ENV=dev`), both flags may be set to allow plaintext for local testing.
+`CARACAL_MODE=runtime` enables startup safety checks. It rejects `INSECURE_HTTP`, `INSECURE_STS`, and `JTI_FAIL_OPEN`; requires `REDIS_URL`, `STREAMS_HMAC_KEY`, and `AUDIT_HMAC_KEY`; requires port `8081`; and requires `UPSTREAM_HOST_ALLOWLIST` when private upstreams are enabled. `STS_URL` must be absolute. Runtime mode allows an HTTP STS URL only for internal hosts such as `sts`, `localhost`, loopback, or another single-label service name.
 
 ---
 
@@ -126,11 +126,11 @@ In development (`CARACAL_ENV=dev`), both flags may be set to allow plaintext for
 3. Create STS client.
 4. Create JWKS cache.
 5. Create upstream guard (SSRF allowlist).
-6. Connect to Redis (if `REDIS_URL` is set).
-7. Create JTI tracker (if Redis configured).
+6. Connect to Redis.
+7. Create JTI tracker.
 8. Start binding refresh goroutine (every 30 s).
-9. Start revocation consumer goroutine (if Redis configured).
-10. Listen on `0.0.0.0:8081` with TLS (or plaintext if `INSECURE_HTTP=true`).
+9. Start revocation consumer goroutine.
+10. Listen on `0.0.0.0:8081`; use TLS when both `TLS_CERT_FILE` and `TLS_KEY_FILE` are set.
 
 ---
 
@@ -148,19 +148,20 @@ The Gateway is stateless per request. Scale horizontally for throughput. Per-ins
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `PORT` | `8081` | HTTP(S) listen port (production: must be 8081) |
-| `CARACAL_ENV` | `production` | `production` or `dev`; controls security enforcement |
-| `STS_URL` | — | STS base URL (must be HTTPS in production) |
+| `PORT` | `8081` | HTTP(S) listen port; must be `8081` |
+| `CARACAL_MODE` | `runtime` | `runtime` or `dev`; controls runtime safety checks |
+| `STS_URL` | — | **Required.** STS base URL with scheme. In runtime mode, HTTP is allowed only for internal hosts. |
 | `STS_TIMEOUT` | `5s` | Timeout for STS token exchange calls |
 | `UPSTREAM_TIMEOUT` | `30s` | Timeout for upstream resource calls |
-| `DATABASE_URL` | — | PostgreSQL (bindings) |
-| `REDIS_URL` | `""` | Redis (optional; enables JTI tracking and revocation sync) |
-| `STREAMS_HMAC_KEY` | `""` | Hex key to verify stream message signatures |
-| `TLS_CERT_FILE` | — | TLS certificate (required in production) |
-| `TLS_KEY_FILE` | — | TLS private key (required in production) |
-| `INSECURE_HTTP` | `false` | Allow plaintext (development only) |
-| `INSECURE_STS` | `false` | Allow STS over HTTP (development only) |
+| `DATABASE_URL` | — | **Required.** PostgreSQL connection string for bindings |
+| `REDIS_URL` | — | **Required.** Redis connection string for JTI tracking and revocation sync |
+| `STREAMS_HMAC_KEY` | — | **Required.** Hex key to verify stream message signatures |
+| `AUDIT_HMAC_KEY` | — | Required when `CARACAL_MODE=runtime`; verifies audit-linked stream events |
+| `TLS_CERT_FILE` | — | TLS certificate; must be set with `TLS_KEY_FILE` |
+| `TLS_KEY_FILE` | — | TLS private key; must be set with `TLS_CERT_FILE` |
+| `INSECURE_HTTP` | `false` | Developer-only flag; forbidden when `CARACAL_MODE=runtime` |
+| `INSECURE_STS` | `false` | Developer-only flag; forbidden when `CARACAL_MODE=runtime` |
 | `ALLOW_PRIVATE_UPSTREAMS` | `false` | Allow RFC 1918 upstream hosts |
 | `UPSTREAM_HOST_ALLOWLIST` | `""` | Comma-separated upstream host allowlist |
-| `JTI_FAIL_OPEN` | `false` | Allow requests if JTI Redis lookup fails (development only) |
+| `JTI_FAIL_OPEN` | `false` | Allow requests if JTI Redis lookup fails; forbidden when `CARACAL_MODE=runtime` |
 | `LOG_LEVEL` | `info` | Logging verbosity |

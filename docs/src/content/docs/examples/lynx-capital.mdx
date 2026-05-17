@@ -4,7 +4,7 @@ description: A FastAPI and LangGraph multi-agent swarm that processes a weekly i
 pageType: workflow
 ---
 
-The Lynx Capital example is a complete Python application at `examples/lynxCapital/` that runs a realistic weekly payout cycle: 4,200 invoices, 5 geographic regions, approximately $8.5M USD in payments, multi-currency settlement, regional tax compliance, vendor contract verification, and threshold-based routing across banking rails.
+The Lynx Capital example is a complete Python application at `examples/lynxCapital/` that runs a realistic weekly payout cycle: 4,200 invoices, 5 geographic regions, approximately $8.5M USD in payments, multi-currency settlement, regional tax compliance, vendor contract verification, and threshold-based routing across banking rails. Caracal is real in this example: the Python SDK, STS token exchange, coordinator sessions, gateway resource routing, TUI, and control API are the actual integration path. Only the third-party financial providers are deterministic mocks.
 
 The application is not a tutorial scaffold. It is a production-pattern reference that demonstrates how Caracal's authorization model maps to real enterprise workloads — specifically the patterns of hierarchical agent spawning, delegation scope enforcement, ephemeral single-operation agents, and multi-protocol transport across REST, gRPC, MCP, and SSE endpoints.
 
@@ -49,7 +49,7 @@ examples/lynxCapital/
 │   │   ├── bus.py              # Event pub/sub for SSE streaming to UI
 │   │   └── types.py            # Typed event factories
 │   └── api/
-│       ├── run.py              # POST /api/start, GET /api/{id}/events
+│       ├── run.py              # POST /api/run/start, GET /api/run/{id}/events
 │       └── ...
 ├── config/
 │   └── company.yaml            # Regions, providers, agent layers, system prompts
@@ -82,12 +82,60 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-### Start mock providers
+### Start Caracal through TUI + control API
 
-All 14 external providers run as deterministic mock services in Docker. Start them before the application:
+Install the released CLI and TUI, then start the Caracal stack:
 
 ```bash
-docker compose -f _mock/docker-compose.yml up -d --build
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-cli.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-tui.sh | sh
+caracal up
+CARACAL_CONTROL_ENABLED=true caracal-tui
+```
+
+In the TUI, create or inspect:
+
+| Caracal object | Lynx value | Purpose |
+| --- | --- | --- |
+| Zone | `Lynx Capital` | Groups the Lynx resources and applications |
+| Control key | `lynx-control` | Real application credential used by Lynx as `application_id` + `app_client_secret` |
+| Resources | `lynx/<provider>` | One protected resource per provider in `config/company.yaml` |
+
+The setup page also exposes an auto-setup button that runs the same automation
+as the command-line script:
+
+```bash
+python setupCaracal.py
+```
+
+The script starts Caracal, creates the zone, creates the control API key,
+registers every provider resource, writes `~/.config/caracal/caracal.toml`, and
+copies `.env.example` to `.env` if needed. The generated config includes SDK
+resource bindings:
+
+```toml
+zone_url = "http://127.0.0.1:8080"
+sts_url = "http://127.0.0.1:8080"
+coordinator_url = "http://127.0.0.1:4000"
+gateway_url = "http://127.0.0.1:8081"
+zone_id = "<zone id>"
+application_id = "<control key client_id>"
+app_client_secret = "<control key client_secret>"
+
+[[credentials]]
+env = "LYNX_MERCURY_BANK_TOKEN"
+resource = "lynx/mercury-bank"
+upstream_prefix = "http://127.0.0.1:8800"
+```
+
+### Start mock providers
+
+All 14 external providers run as deterministic mock services in Docker. The
+mock network joins `caracalData` so the real Caracal gateway can forward REST
+resource calls to provider aliases such as `mercury-bank.mock`:
+
+```bash
+docker compose -f _mock/docker-compose.yml up -d --build --wait
 ```
 
 This starts:
@@ -125,7 +173,10 @@ LYNX_WISE_KEY=dev-wise-payouts-key
 # ... (see .env.example for the full list)
 ```
 
-`LYNX_MOCK_FAST=1` speeds up mock response latencies during development.
+`LYNX_MOCK_FAST=1` speeds up mock response latencies during development. The
+`dev-*` provider credentials are accepted only by the mock third-party
+providers. They are not Caracal credentials and should be replaced if you point
+Lynx at real provider APIs.
 
 ### Start the application
 
@@ -133,7 +184,11 @@ LYNX_WISE_KEY=dev-wise-payouts-key
 uvicorn app.main:app --reload --port 8000
 ```
 
-Open `http://localhost:8000`. The landing page shows the scenario summary. Navigate to `/demo` to interact with the agent swarm.
+Open `http://localhost:8000`. The landing page shows the scenario summary.
+Navigate to `/setup` first: validate the OpenAI key, Caracal service URLs,
+`caracal.toml` resource bindings, gateway/coordinator health, and webhook
+secrets. Then open `/demo` to interact with the agent swarm while
+`caracal-tui` remains open for live session inspection.
 
 ---
 
@@ -241,7 +296,7 @@ The following traces a complete execution from user input to completion.
 ### 1. User submits a prompt
 
 ```http
-POST /api/start
+POST /api/run/start
 Content-Type: application/json
 
 {"prompt": "Process US payouts for this week"}
@@ -256,7 +311,7 @@ Response:
 The application starts a background task and returns immediately. The client connects to the SSE stream to receive real-time events:
 
 ```http
-GET /api/019500a2-.../events
+GET /api/run/019500a2-.../events
 Accept: text/event-stream
 ```
 
@@ -417,7 +472,7 @@ async for rate_update in sse_stream("http://127.0.0.1:8810/v1/stream"):
 
 ### Live event stream
 
-All events are available over SSE at `/api/{run_id}/events`. The event types in emission order:
+All events are available over SSE at `/api/run/{run_id}/events`. The event types in emission order:
 
 | Event type | Description |
 | --- | --- |
@@ -435,14 +490,31 @@ All events are available over SSE at `/api/{run_id}/events`. The event types in 
 ### Agent lineage
 
 ```http
-GET /api/{run_id}/lineage
+GET /api/run/{run_id}/lineage
 ```
 
 Returns the complete agent spawn tree with delegation edges, timing, and per-agent status. Use this to verify the hierarchy formed correctly and to trace which agent called which service.
 
 ### Logs
 
-`GET /api/{run_id}/events` streams structured logs alongside agent events. The web UI at `/logs` shows them color-coded by category: service calls in teal, agent actions in blue, errors in red.
+`GET /api/run/{run_id}/events` streams structured logs alongside agent events. The web UI at `/logs` shows them color-coded by category: service calls in teal, agent actions in blue, errors in red.
+
+### Control API reference
+
+The browser demo uses the FastAPI control routes under `/api/run`:
+
+| Route | Method | Purpose |
+| --- | --- | --- |
+| `/api/run/start` | `POST` | Starts a run from `{ "prompt": "..." }` and returns `{ "runId": "..." }` |
+| `/api/run/{run_id}/events` | `GET` | Streams typed lifecycle, tool, service, and chat events over SSE |
+| `/api/run/{run_id}/status` | `GET` | Returns whether the run exists, is active, and how many events were emitted |
+| `/api/run/{run_id}/cancel` | `POST` | Cooperatively cancels a running swarm |
+| `/api/run/{run_id}/lineage` | `GET` | Returns the agent spawn tree with timing and status |
+| `/api/run/{run_id}/graph` | `GET` | Returns graph nodes and edges for the topology view |
+
+Setup routes live under `/api/setup`: `GET /api/setup/validate` checks
+configuration, and `POST /api/setup/caracal/auto` runs the Lynx Caracal setup
+script from the setup page.
 
 ---
 
@@ -454,7 +526,7 @@ Returns the complete agent spawn tree with delegation edges, timing, and per-age
 
 **Partial completion.** A failed invoice does not abort the entire regional batch. The Regional Orchestrator continues processing remaining invoices and reports failures in its result. Finance Control aggregates partial results across regions.
 
-**Cancellation.** `POST /api/{run_id}/cancel` triggers `runner.cancel_subtree(root_agent_id)`, which terminates all running agents in the tree from the bottom up.
+**Cancellation.** `POST /api/run/{run_id}/cancel` triggers `runner.cancel_subtree(root_agent_id)`, which terminates all running agents in the tree from the bottom up.
 
 ---
 
@@ -464,7 +536,9 @@ Returns the complete agent spawn tree with delegation edges, timing, and per-age
 pytest tests/ -v
 ```
 
-Tests cover agent lifecycle behavior, topology graph correctness, and provider transport logic. They run against the same mock services and do not require a live Caracal stack.
+Tests cover agent lifecycle behavior, topology graph correctness, provider
+transport logic, and the Caracal boundary. Provider tests use the same mock
+services and do not require live third-party credentials.
 
 ---
 
@@ -474,6 +548,6 @@ The Lynx Capital application demonstrates the authorization patterns that Caraca
 
 **To add a new agent layer:** Define a role in `app/agents/roles.py` with a scope template and permitted tools. Add the spawn logic to the orchestrator that should create it. The scope template becomes the Caracal scope claim when delegation is used.
 
-**To add a new provider:** Add the provider to `config/company.yaml`, create a `cases.json` in `_mock/`, add a router in `_mock/rest/routers/`, and register the dispatch handler in `app/services/registry.py`.
+**To add a new provider:** Add the provider to `config/company.yaml`, create a `cases.json` in `_mock/`, add a router in `_mock/rest/routers/`, register the dispatch handler in `app/services/registry.py`, and add a `lynx/<provider>` resource to Caracal with an SDK `upstream_prefix` binding.
 
-**To wire in the Caracal SDK:** The authorization patterns in this example — spawn, delegate, scoped mandates, transport headers — map directly to `Caracal.from_env()`, `caracal.spawn()`, `caracal.delegate()`, and `caracal.transport()` in the Python SDK. The application's `AgentRunner.spawn()` and event delegation edges are the conceptual equivalents. Replace them with the SDK to get cryptographic enforcement of scope boundaries instead of application-level simulation.
+**To keep Caracal minimal:** Keep SDK usage at the application boundary: `app/caracal.py` loads `caracal.toml`, orchestration opens `caracal.spawn()` or `caracal.delegate_to_spawn()` contexts, and transports pass Caracal envelopes plus `X-Caracal-Resource` for gateway-routed calls. Provider-specific behavior belongs in `app/services/registry.py` or `_mock/`, not in the Caracal wrapper.

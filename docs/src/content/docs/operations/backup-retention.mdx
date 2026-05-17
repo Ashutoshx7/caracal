@@ -127,7 +127,7 @@ LIMIT  20;
 
 ## Audit DLQ
 
-`caracal.audit.events.dlq` receives audit events that failed delivery more than `AUDIT_MAX_DELIVERIES` (default 5) times. Events in the DLQ are not inserted into Postgres.
+`caracal.audit.events.dlq` receives audit events that failed delivery more than `AUDIT_MAX_DELIVERIES` (default 8) times. Events in the DLQ are not inserted into Postgres.
 
 Monitor DLQ depth:
 

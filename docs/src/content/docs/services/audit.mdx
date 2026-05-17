@@ -178,12 +178,12 @@ Increase the number of replicas to reduce consumer lag. Each additional replica 
 | `PORT` | `9090` | HTTP listen port |
 | `DATABASE_URL` | — | PostgreSQL connection string |
 | `REDIS_URL` | — | Redis connection string |
-| `AUDIT_HMAC_KEY` | `""` | Hex key for event chain HMAC (required in production) |
+| `AUDIT_HMAC_KEY` | `""` | Hex key for event chain HMAC; required when `CARACAL_MODE=runtime` |
 | `AUDIT_EXPORT_S3_ENDPOINT` | `""` | S3-compatible endpoint (empty = export disabled) |
 | `AUDIT_EXPORT_S3_BUCKET` | `""` | S3 bucket name |
 | `AUDIT_EXPORT_S3_REGION` | `us-east-1` | S3 region |
 | `AUDIT_RETENTION_DAYS` | `365` | Event retention duration in days |
-| `AUDIT_MAX_DELIVERIES` | `5` | Max delivery attempts before DLQ |
+| `AUDIT_MAX_DELIVERIES` | `8` | Max delivery attempts before DLQ |
 | `AUDIT_CLAIM_IDLE_SECS` | `30` | PEL orphan timeout for XAUTOCLAIM |
 | `AUDIT_TAMPER_ROLLING_HOURS` | `4` | Rolling window for tamper sweep |
 | `HOSTNAME` | `audit-worker-0` | Consumer name (should be unique per replica) |

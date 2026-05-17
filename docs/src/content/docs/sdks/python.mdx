@@ -19,9 +19,13 @@ pip install caracalai-sdk
 | `CARACAL_COORDINATOR_URL` | Yes | Coordinator base URL (e.g., `http://coordinator:4000`) |
 | `CARACAL_ZONE_ID` | Yes | Zone identifier |
 | `CARACAL_APPLICATION_ID` | Yes | Registered application ID |
-| `CARACAL_SUBJECT_TOKEN` | Yes | Ambient bearer token |
+| `CARACAL_SUBJECT_TOKEN` | Token mode | Ambient bearer token |
+| `CARACAL_APP_CLIENT_SECRET` | Client-secret mode | Application secret used to refresh subject tokens through STS |
+| `CARACAL_STS_URL` | Client-secret mode | STS base URL |
+| `CARACAL_APP_RESOURCES` | Client-secret mode if no bindings are set | Comma-separated resource IDs for token exchange |
 | `CARACAL_GATEWAY_URL` | No | Gateway base URL for resource-routed calls |
 | `CARACAL_RESOURCES` | No | Comma-separated `resourceId=upstreamPrefix` pairs |
+| `CARACAL_RESOURCES_FILE` | No | JSON resource-binding file |
 
 ## `Caracal` class
 
@@ -50,29 +54,55 @@ caracal = Caracal(CaracalConfig(
 
 ### `Caracal.from_env(env?)`
 
-Reads all `CARACAL_*` environment variables and constructs a `Caracal` instance.
+Reads all `CARACAL_*` environment variables and constructs a `Caracal` instance. Static-token mode uses `CARACAL_SUBJECT_TOKEN`. Client-secret mode uses `CARACAL_APP_CLIENT_SECRET`, `CARACAL_STS_URL`, and resources from `CARACAL_APP_RESOURCES`, `CARACAL_RESOURCES`, or `CARACAL_RESOURCES_FILE`.
 
 ```python
 @classmethod
 def from_env(cls, env: Mapping[str, str] | None = None) -> Caracal: ...
 ```
 
+### `Caracal.from_client_secret(...)`
+
+Builds a client with an SDK-managed token source. The token source exchanges the application client secret with STS and refreshes the subject token before expiry.
+
+```python
+@classmethod
+def from_client_secret(
+    cls,
+    *,
+    coordinator_url: str,
+    sts_url: str,
+    zone_id: str,
+    application_id: str,
+    client_secret: str,
+    resources: list[str] | list[ResourceBinding],
+    gateway_url: str | None = None,
+    scope: str = "agent:lifecycle",
+) -> Caracal: ...
+```
+
+`resources` may be resource IDs or `ResourceBinding` objects. When bindings are supplied, their `resource_id` values are used as STS audiences and the bindings are also used for Gateway routing.
+
 ## Data types
 
 ```python
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Callable
 
-@dataclass
 class CaracalConfig:
-    coordinator: CoordinatorClient
-    zone_id: str
-    application_id: str
-    subject_token: str
-    gateway_url: str | None = None
-    resources: list[ResourceBinding] = field(default_factory=list)
-    default_kind: AgentKind = AgentKind.INSTANCE
-    default_ttl_seconds: int | None = None
+    def __init__(
+        self,
+        *,
+        coordinator: CoordinatorClient,
+        zone_id: str,
+        application_id: str,
+        subject_token: str | None = None,
+        token_source: Callable[[], str] | None = None,
+        gateway_url: str | None = None,
+        resources: list[ResourceBinding] | None = None,
+        default_kind: AgentKind = AgentKind.INSTANCE,
+        default_ttl_seconds: int | None = None,
+    ) -> None: ...
 
 @dataclass
 class CoordinatorClient:

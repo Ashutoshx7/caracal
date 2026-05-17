@@ -8,7 +8,7 @@ The TypeScript SDK provides `Caracal.fromEnv()` as the entry point, `spawn()` to
 
 ## Prerequisites
 
-- Node.js 20 or later.
+- Node.js 24 or later.
 - A registered application in a Caracal zone with a `client_secret`.
 - The Caracal stack running with the Coordinator reachable.
 
@@ -27,7 +27,10 @@ Set these in your process environment or `.env` file:
 | `CARACAL_COORDINATOR_URL` | Yes | Base URL of the Coordinator service (e.g., `http://localhost:4000`) |
 | `CARACAL_ZONE_ID` | Yes | Zone identifier |
 | `CARACAL_APPLICATION_ID` | Yes | Registered application ID |
-| `CARACAL_SUBJECT_TOKEN` | Yes | Ambient bearer token for this application |
+| `CARACAL_SUBJECT_TOKEN` | Token mode | Ambient bearer token for this application |
+| `CARACAL_APP_CLIENT_SECRET` | Client-secret mode | Application secret used to refresh subject tokens through STS |
+| `CARACAL_STS_URL` | Client-secret mode | STS base URL |
+| `CARACAL_APP_RESOURCES` | Client-secret mode if `CARACAL_RESOURCES` is unset | Comma-separated resource IDs for token exchange |
 | `CARACAL_GATEWAY_URL` | No | Gateway base URL for resource-routed calls |
 | `CARACAL_RESOURCES` | No | Comma-separated resource bindings: `resourceId=upstreamPrefix,other=prefix` |
 

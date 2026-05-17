@@ -1,187 +1,131 @@
 ---
 title: Configuration Reference
-description: Every configuration key for every Caracal service, the caracal.toml client config schema, and SDK config types.
+description: Where Caracal configuration lives, which pages own each configuration surface, and the client-side schemas used by tools and SDKs.
 pageType: reference
 ---
 
-Caracal services are configured entirely through environment variables. There are no config files for services. Client-side tooling uses `caracal.toml`. SDKs accept typed config structs.
+Caracal has three configuration surfaces:
 
-Jump to: [Postgres](#postgres) · [Redis](#redis) · [STS](#sts) · [API](#api) · [Gateway](#gateway) · [Coordinator](#coordinator) · [Audit](#audit) · [caracal.toml](#caracaltoml) · [SDK config types](#sdk-config-types) · [CLI env vars](#cli-environment-variables)
+| Surface | Owner | Use |
+| --- | --- | --- |
+| Service environment variables | [Environment Variables](../operations/env-vars/) | Runtime configuration for STS, API, Gateway, Coordinator, Audit, infrastructure, and optional services |
+| `caracal.toml` | CLI and TUI | Local client identity, API targets, credential forwarding, and governance mode |
+| SDK constructors and environment variables | SDK packages | Application integration, context propagation, and client-secret token refresh |
 
----
-
-## Postgres
-
-All services read `DATABASE_URL` to connect to Postgres.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `DATABASE_URL` | Yes | — | PostgreSQL connection string (`postgres://user:pass@host:port/db`) |
+Use [Environment Variables](../operations/env-vars/) as the source of truth for service startup requirements and defaults. This page keeps the client-facing configuration schemas together so CLI, TUI, SDK, and agent integrations can use one reference without duplicating service tables.
 
 ---
 
-## Redis
+## Service configuration
 
-All services read `REDIS_URL` to connect to Redis.
+All services are configured through environment variables. Required variables fail at startup when absent. Optional variables use implementation defaults.
 
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `REDIS_URL` | Yes | — | Redis connection URL (`redis://:pass@host:6379`) |
-| `REDIS_PASSWORD` | No | — | Alternative to embedding the password in `REDIS_URL` |
+Read the canonical service table in [Environment Variables](../operations/env-vars/). It is grouped by service and covers:
 
-Redis must be configured with `maxmemory-policy noeviction`. Stream data uses db0; rate limit data uses db1.
-
----
-
-## STS
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `DATABASE_URL` | Yes | — | Postgres connection string |
-| `REDIS_URL` | Yes | — | Redis connection string |
-| `ZONE_KEK` | Yes | — | 32-byte hex-encoded Key Encryption Key for zone signing keys; must not be all zeros |
-| `OPA_URL` | Yes | — | OPA REST API base URL (e.g., `http://opa:8181`) |
-| `AUDIT_STREAM_URL` | No | `REDIS_URL` | Redis URL for audit event publishing, if separate from main Redis |
-| `STREAMS_HMAC_KEY` | No | — | Hex-encoded key for HMAC-signing audit stream messages; if unset, messages are unsigned |
-| `TLS_CERT_FILE` | No | — | Path to TLS certificate PEM for HTTPS; both `TLS_CERT_FILE` and `TLS_KEY_FILE` must be set together |
-| `TLS_KEY_FILE` | No | — | Path to TLS private key PEM |
-| `INSECURE_HTTP` | No | `false` | Allow HTTP (no TLS) in production mode; unsafe — for local development only |
-| `LOG_LEVEL` | No | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
-| `PORT` | No | `8080` | Listening port |
-
-**Key cache:** Zone signing keys are cached in-memory for 15 minutes. Changes to zone keys (e.g., after rotation) take effect within one cache TTL.
+- Shared secrets: `ZONE_KEK`, `AUDIT_HMAC_KEY`, `STREAMS_HMAC_KEY`
+- Infrastructure: Postgres and Redis
+- Core services: STS, API, Gateway, Audit, Coordinator
+- Optional control service
+- Runtime mode: `CARACAL_MODE=dev` for local development, `CARACAL_MODE=runtime` for runtime safety checks
 
 ---
 
-## API
+## Key local ports
 
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `DATABASE_URL` | Yes | — | Postgres connection string |
-| `REDIS_URL` | Yes | — | Redis connection string |
-| `ADMIN_TOKEN` | Yes | — | Bearer token required for all `/v1/*` admin routes |
-| `STS_URL` | Yes | — | Internal URL of the STS service (e.g., `http://sts:8080`) |
-| `INSECURE_STS` | No | `false` | Skip TLS verification when calling STS; for internal networks with self-signed certs only |
-| `OUTBOX_POLL_MS` | No | `250` | Milliseconds between outbox poll cycles |
-| `OUTBOX_BATCH_SIZE` | No | `32` | Events per outbox poll batch |
-| `OUTBOX_MAX_ATTEMPTS` | No | `100` | Maximum delivery attempts per outbox row before marking dead |
-| `TLS_CERT_FILE` | No | — | Path to TLS certificate PEM |
-| `TLS_KEY_FILE` | No | — | Path to TLS private key PEM |
-| `LOG_LEVEL` | No | `info` | Log verbosity |
-| `PORT` | No | `3000` | Listening port |
+| Service | Local binding | Purpose |
+| --- | --- | --- |
+| API | `127.0.0.1:3000` | Control-plane REST and CLI target |
+| STS | `127.0.0.1:8080` | Token exchange and JWKS endpoint |
+| Gateway | `127.0.0.1:8081` | Reverse proxy for protected resources |
+| Coordinator | `127.0.0.1:4000` | Agent lifecycle, invocations, and delegation graph |
+| Audit | `127.0.0.1:9090` | Audit ingestion status, query, and export status |
+| Control | `127.0.0.1:8087` | Optional CLI/TUI command surface enabled by the `control` compose profile |
+| PostgreSQL | `127.0.0.1:5432` | Database access from local tools |
+| Redis | `127.0.0.1:6379` | Redis CLI debugging |
 
----
-
-## Gateway
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `DATABASE_URL` | Yes | — | Postgres connection string |
-| `REDIS_URL` | Yes | — | Redis connection string |
-| `STS_URL` | Yes | — | Internal URL of the STS service |
-| `BINDINGS_RELOAD_MS` | No | `30000` | How often (ms) to reload resource bindings from Postgres |
-| `JTI_CACHE_SIZE` | No | `10000` | Maximum entries in the JTI replay cache |
-| `TLS_CERT_FILE` | No | — | Path to TLS certificate PEM |
-| `TLS_KEY_FILE` | No | — | Path to TLS private key PEM |
-| `LOG_LEVEL` | No | `info` | Log verbosity |
-| `PORT` | No | `8081` | Listening port |
-
----
-
-## Coordinator
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `DATABASE_URL` | Yes | — | Postgres connection string |
-| `REDIS_URL` | Yes | — | Redis connection string |
-| `OUTBOX_POLL_MS` | No | `1000` | Milliseconds between outbox poll cycles |
-| `OUTBOX_BATCH_SIZE` | No | `50` | Events per outbox poll batch |
-| `OUTBOX_MAX_ATTEMPTS` | No | `10` | Maximum delivery attempts per outbox row before marking dead |
-| `MAX_DEPTH` | No | `10` | Maximum agent session nesting depth |
-| `MAX_CHILDREN` | No | `10` | Maximum child sessions per parent |
-| `MAX_PER_ZONE` | No | `50` | Maximum concurrent agent sessions per zone |
-| `MAX_PER_APP` | No | `200` | Maximum concurrent agent sessions per application |
-| `DEFAULT_TTL_SECONDS` | No | `3600` | Default agent session TTL in seconds |
-| `TLS_CERT_FILE` | No | — | Path to TLS certificate PEM |
-| `TLS_KEY_FILE` | No | — | Path to TLS private key PEM |
-| `LOG_LEVEL` | No | `info` | Log verbosity |
-| `PORT` | No | `4000` | Listening port |
-
----
-
-## Audit
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `DATABASE_URL` | Yes | — | Postgres connection string |
-| `REDIS_URL` | Yes | — | Redis connection string |
-| `AUDIT_HMAC_KEY` | Yes | — | Hex-encoded key for HMAC-SHA256 chain verification |
-| `STREAMS_HMAC_KEY` | No | — | Hex-encoded key for verifying stream message signatures from STS |
-| `AUDIT_RETENTION_DAYS` | No | `365` | How many days of audit events to retain; partitions older than this are dropped |
-| `AUDIT_MAX_DELIVERIES` | No | `5` | Maximum delivery attempts per audit event before routing to DLQ |
-| `AUDIT_EXPORT_S3_BUCKET` | No | — | S3 bucket name for Parquet export; export is disabled if unset |
-| `AUDIT_EXPORT_S3_ENDPOINT` | No | AWS default | S3-compatible endpoint URL (use for MinIO or other non-AWS stores) |
-| `AUDIT_EXPORT_S3_REGION` | No | `us-east-1` | S3 region |
-| `AWS_ACCESS_KEY_ID` | No | — | AWS credentials for S3 export; uses instance profile if unset |
-| `AWS_SECRET_ACCESS_KEY` | No | — | AWS credentials for S3 export |
-| `TLS_CERT_FILE` | No | — | Path to TLS certificate PEM |
-| `TLS_KEY_FILE` | No | — | Path to TLS private key PEM |
-| `LOG_LEVEL` | No | `info` | Log verbosity |
-| `PORT` | No | `9090` | Listening port |
+The reference compose stack binds every port to `127.0.0.1`. Production deployments should keep API, STS, Coordinator, Audit, Postgres, and Redis on private networks. Expose the Gateway, or a TLS-terminating load balancer in front of it, only when it is the intended public ingress.
 
 ---
 
 ## `caracal.toml`
 
-`caracal.toml` is the client-side configuration file used by the CLI. It is discovered in this order:
+`caracal.toml` is the client-side configuration file used by the CLI and TUI. It is discovered in this order:
 
-1. Path in `CARACAL_CONFIG` environment variable (if set)
+1. `CARACAL_CONFIG`, when set
 2. `./caracal.toml` in the current working directory
-3. `$XDG_CONFIG_HOME/caracal/caracal.toml` (defaults to `~/.config/caracal/caracal.toml`)
+3. `$XDG_CONFIG_HOME/caracal/caracal.toml`, or `~/.config/caracal/caracal.toml` when `XDG_CONFIG_HOME` is unset
 
 ### Schema
 
 ```toml
-# Required fields
-zone_url          = "https://your-caracal-api.example.com"
+zone_url          = "http://localhost:3000"
 zone_id           = "zone-abc123"
 application_id    = "app-xyz456"
 app_client_secret = "secret-..."
+continue_on_failure = false
 
-# Optional fields
-continue_on_failure = false   # If true, CLI continues after non-fatal errors
-
-# Named credentials forwarded to external services
 [[credentials]]
-env      = "DATABASE_URL"     # Environment variable holding the credential value
-resource = "postgres"         # Resource identifier this credential is for
+env      = "DATABASE_URL"
+resource = "postgres"
 
-# Optional credentials that warn or error if missing
 [[optional_credentials]]
 env        = "SLACK_TOKEN"
 resource   = "slack"
-on_failure = "warn"           # "warn" or "error"
+on_failure = "warn"
 
-# MCP governance mode
 [mcp_governance]
-mode = "block"                # "block" or "log"
+mode = "block"
 ```
 
 ### Field reference
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `zone_url` | string | Yes | Base URL of the Caracal API service |
+| `zone_url` | string | Yes | Control-plane API base URL used by CLI admin commands |
 | `zone_id` | string | Yes | Zone this client operates in |
-| `application_id` | string | Yes | Application identity for credential exchange |
-| `app_client_secret` | string | Yes | Client secret for application authentication |
-| `continue_on_failure` | boolean | No | Whether to continue after non-fatal errors (default: `false`) |
-| `credentials` | array | No | Named credentials to forward to external services |
-| `credentials[].env` | string | Yes (in block) | Environment variable containing the credential value |
-| `credentials[].resource` | string | Yes (in block) | Resource identifier the credential is for |
-| `optional_credentials` | array | No | Credentials that may be absent; controls failure behavior |
-| `optional_credentials[].on_failure` | string | Yes (in block) | `"warn"` or `"error"` |
-| `mcp_governance.mode` | string | No | `"block"` (reject unauthorized tool calls) or `"log"` (permit but record) |
+| `application_id` | string | Yes | Registered application identity |
+| `app_client_secret` | string | Yes | Application secret used for STS token exchange |
+| `continue_on_failure` | boolean | No | Continue after non-fatal command failures; default `false` |
+| `credentials` | array | No | Required external credentials forwarded to named resources |
+| `credentials[].env` | string | Yes, inside each item | Environment variable containing the credential value |
+| `credentials[].resource` | string | Yes, inside each item | Resource identifier associated with the credential |
+| `optional_credentials` | array | No | External credentials that may be absent |
+| `optional_credentials[].env` | string | Yes, inside each item | Environment variable containing the credential value |
+| `optional_credentials[].resource` | string | Yes, inside each item | Resource identifier associated with the credential |
+| `optional_credentials[].on_failure` | `"warn" \| "error"` | Yes, inside each item | Whether absence should warn or fail |
+| `mcp_governance.mode` | `"block" \| "log"` | No | Whether unauthorized MCP tool calls are blocked or only recorded |
+
+---
+
+## SDK environment variables
+
+The TypeScript, Python, and Go SDKs support two authentication modes:
+
+| Mode | Required variables | Use |
+| --- | --- | --- |
+| Static subject token | `CARACAL_COORDINATOR_URL`, `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`, `CARACAL_SUBJECT_TOKEN` | Use when another trusted component already issued the ambient subject token |
+| Client secret | `CARACAL_COORDINATOR_URL`, `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`, `CARACAL_APP_CLIENT_SECRET`, `CARACAL_STS_URL`, plus resources | Use when the SDK should exchange the application secret for a subject token and refresh it automatically |
+
+Client-secret mode needs at least one resource. Supply resources with `CARACAL_APP_RESOURCES`, `CARACAL_RESOURCES`, or `CARACAL_RESOURCES_FILE` depending on SDK support.
+
+| Variable | Description |
+| --- | --- |
+| `CARACAL_COORDINATOR_URL` | Coordinator base URL, for example `http://localhost:4000` |
+| `CARACAL_ZONE_ID` | Zone identifier |
+| `CARACAL_APPLICATION_ID` | Registered application identifier |
+| `CARACAL_SUBJECT_TOKEN` | Ambient bearer token for static-token mode |
+| `CARACAL_APP_CLIENT_SECRET` | Application secret for client-secret mode |
+| `CARACAL_STS_URL` | STS base URL for client-secret mode |
+| `CARACAL_APP_RESOURCES` | Comma-separated resource IDs used as STS audiences |
+| `CARACAL_GATEWAY_URL` | Gateway base URL for resource-routed calls |
+| `CARACAL_RESOURCES` | Comma-separated `resourceId=upstreamPrefix` bindings |
+| `CARACAL_RESOURCES_FILE` | JSON resource-binding file supported by the Python SDK |
+
+See the language references for exact constructors:
+
+- [TypeScript SDK](../sdks/typescript/)
+- [Python SDK](../sdks/python/)
+- [Go SDK](../sdks/go/)
 
 ---
 
@@ -190,69 +134,44 @@ mode = "block"                # "block" or "log"
 ### TypeScript
 
 ```typescript
-import { Caracal } from '@caracalai/sdk';
-import { CoordinatorClient } from '@caracalai/sdk';
+import { Caracal, AgentKind } from '@caracalai/sdk';
 
 const client = new Caracal({
-  coordinator: new CoordinatorClient({ baseUrl: 'http://localhost:4000' }),
+  coordinator: { baseUrl: 'http://localhost:4000' },
   zoneId: 'zone-abc123',
   applicationId: 'app-xyz456',
   subjectToken: 'subject-jwt-...',
-
-  // Optional
   gatewayUrl: 'http://localhost:8081',
   resources: [
-    { resourceId: 'api', upstreamPrefix: 'http://upstream:3000' }
+    { resourceId: 'resource://inventory', upstreamPrefix: 'http://inventory:8080' },
   ],
-  defaultKind: 'instance',    // AgentKind: 'instance' | 'ephemeral'
+  defaultKind: AgentKind.Instance,
   defaultTtlSeconds: 3600,
 });
 ```
 
-**`CaracalConfig` interface:**
-
-| Field | Type | Required | Description |
-| --- | --- | --- | --- |
-| `coordinator` | `CoordinatorClient` | Yes | Coordinator connection |
-| `zoneId` | `string` | Yes | Zone identifier |
-| `applicationId` | `string` | Yes | Application identifier |
-| `subjectToken` | `string` | Yes | Subject identity token |
-| `gatewayUrl` | `string` | No | Gateway URL for resource routing |
-| `resources` | `ResourceBinding[]` | No | Resource-to-upstream mappings |
-| `defaultKind` | `AgentKind` | No | Default agent kind for spawned sessions |
-| `defaultTtlSeconds` | `number` | No | Default TTL for spawned sessions |
-
 ### Python
 
 ```python
-from caracalai_sdk import Caracal, CaracalConfig, CoordinatorClient, ResourceBinding
+from caracalai_sdk import Caracal, CaracalConfig
+from caracalai_sdk.advanced import AgentKind, CoordinatorClient, ResourceBinding
 
 client = Caracal(CaracalConfig(
     coordinator=CoordinatorClient(base_url='http://localhost:4000'),
     zone_id='zone-abc123',
     application_id='app-xyz456',
     subject_token='subject-jwt-...',
-
-    # Optional
     gateway_url='http://localhost:8081',
-    resources=[ResourceBinding(resource_id='api', upstream_prefix='http://upstream:3000')],
+    resources=[
+        ResourceBinding(
+            resource_id='resource://inventory',
+            upstream_prefix='http://inventory:8080',
+        ),
+    ],
     default_kind=AgentKind.INSTANCE,
     default_ttl_seconds=3600,
 ))
 ```
-
-**`CaracalConfig` dataclass:**
-
-| Field | Type | Required | Description |
-| --- | --- | --- | --- |
-| `coordinator` | `CoordinatorClient` | Yes | Coordinator connection |
-| `zone_id` | `str` | Yes | Zone identifier |
-| `application_id` | `str` | Yes | Application identifier |
-| `subject_token` | `str` | Yes | Subject identity token |
-| `gateway_url` | `str \| None` | No | Gateway URL for resource routing |
-| `resources` | `list[ResourceBinding]` | No | Resource-to-upstream mappings |
-| `default_kind` | `AgentKind` | No | Default agent kind for spawned sessions |
-| `default_ttl_seconds` | `int \| None` | No | Default TTL for spawned sessions |
 
 ### Go
 
@@ -262,52 +181,36 @@ import (
 )
 
 client := &sdk.Caracal{
-    Coordinator:       coordinator,     // *CoordinatorClient
+    Coordinator:       &sdk.CoordinatorClient{BaseURL: "http://localhost:4000"},
     ZoneID:            "zone-abc123",
     ApplicationID:     "app-xyz456",
     SubjectToken:      "subject-jwt-...",
-
-    // Optional
     GatewayURL:        "http://localhost:8081",
-    Resources:         []sdk.ResourceBinding{
-        {ResourceID: "api", UpstreamPrefix: "http://upstream:3000"},
+    Resources: []sdk.ResourceBinding{
+        {ResourceID: "resource://inventory", UpstreamPrefix: "http://inventory:8080"},
     },
-    DefaultKind:       sdk.AgentKindInstance,
+    DefaultKind:       sdk.KindInstance,
     DefaultTTLSeconds: 3600,
 }
 ```
-
-**`Caracal` struct:**
-
-| Field | Type | Required | Description |
-| --- | --- | --- | --- |
-| `Coordinator` | `*CoordinatorClient` | Yes | Coordinator connection |
-| `ZoneID` | `string` | Yes | Zone identifier |
-| `ApplicationID` | `string` | Yes | Application identifier |
-| `SubjectToken` | `string` | Yes | Subject identity token |
-| `GatewayURL` | `string` | No | Gateway URL for resource routing |
-| `Resources` | `[]ResourceBinding` | No | Resource-to-upstream mappings |
-| `DefaultKind` | `AgentKind` | No | Default agent kind for spawned sessions |
-| `DefaultTTLSeconds` | `int` | No | Default TTL for spawned sessions |
 
 ---
 
 ## CLI environment variables
 
-Environment variables that affect the CLI and SDK runtime when `caracal.toml` is not in use:
-
 | Variable | Description |
 | --- | --- |
-| `CARACAL_CONFIG` | Override path to `caracal.toml` |
-| `CARACAL_ENV_FILE` | Override path to `.env` file loaded by the CLI |
-| `CARACAL_API_URL` | API base URL (default: `http://localhost:3000`) |
-| `CARACAL_COORDINATOR_URL` | Coordinator base URL (default: `http://localhost:4000`) |
+| `CARACAL_CONFIG` | Override `caracal.toml` discovery |
+| `CARACAL_ENV_FILE` | Override `.env` file loaded by CLI stack commands |
+| `CARACAL_MODE` | Stack mode: `dev` or `runtime` |
+| `CARACAL_API_URL` | Control-plane API base URL; default `http://localhost:3000` |
+| `CARACAL_COORDINATOR_URL` | Coordinator base URL; default `http://localhost:4000` |
 | `CARACAL_COORDINATOR_TOKEN` | JWT with `agent:lifecycle` scope for coordinator routes |
 | `CARACAL_ADMIN_TOKEN` | Bearer token for admin API routes |
 | `CARACAL_ZONE_ID` | Default zone ID for admin commands |
 | `CARACAL_APPLICATION_ID` | Application ID for SDK initialization |
 | `CARACAL_SUBJECT_TOKEN` | Subject token for SDK initialization |
 | `CARACAL_GATEWAY_URL` | Gateway URL for resource routing |
-| `CARACAL_RESOURCES` | Comma-separated resource bindings: `resourceId=prefix,resourceId2=prefix2` |
+| `CARACAL_RESOURCES` | Comma-separated resource bindings |
 | `XDG_CONFIG_HOME` | Base directory for `caracal.toml` discovery |
 | `XDG_DATA_HOME` | Base directory for runtime assets |
