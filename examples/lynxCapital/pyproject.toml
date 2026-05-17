@@ -39,7 +39,7 @@ dev = [
     "grpcio-tools>=1.80",
 ]
 
-# Local-only packages (mock provider SDKs). They are not published; install
+# Local-only provider SDK fixtures. They are not published; install
 # them as editables alongside the project — see the install line in README.
 
 # Global resolution floors for transitive deps (Dependabot / GHSA minima).

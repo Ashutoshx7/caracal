@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Lynx Capital application stack. The mock provider network and Caracal
+# Lynx Capital application stack. The local provider network and Caracal
 # control-plane (coordinator, gateway, STS, redis) run independently via
 # `_mock/docker-compose.yml` and `caracal up`; this compose file only owns
 # the application container and joins both external networks.
@@ -26,13 +26,13 @@ services:
     ports:
       - "8000:8000"
     networks:
-      - lynx-mock
-      - caracal
+      - providers
+      - caracalData
 
 networks:
-  lynx-mock:
+  providers:
     external: true
-    name: lynxcapital_lynx-mock
-  caracal:
+    name: lynxcapital_providers
+  caracalData:
     external: true
-    name: caracal
+    name: caracalData

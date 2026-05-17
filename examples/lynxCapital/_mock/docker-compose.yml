@@ -20,7 +20,22 @@ services:
     ports:
       - "8800:8800"
     networks:
-      lynx-mock:
+      providers:
+        aliases:
+          - mercury-bank.mock
+          - wise-payouts.mock
+          - stripe-treasury.mock
+          - quickbooks.mock
+          - netsuite.mock
+          - sap-erp.mock
+          - ocr-vision.mock
+          - close-engine.mock
+          - regulatory-filings.mock
+          - customer-billing.mock
+          - tax-rules.mock
+          - compliance-nexus.mock
+          - fx-rates.mock
+      caracalData:
         aliases:
           - mercury-bank.mock
           - wise-payouts.mock
@@ -54,7 +69,7 @@ services:
       LYNX_MOCK_FAST: "${LYNX_MOCK_FAST:-0}"
     ports:
       - "8810:8810"
-    networks: [lynx-mock]
+    networks: [providers]
 
   treasury-grpc:
     build:
@@ -69,7 +84,7 @@ services:
       LYNX_HOOK_BASE: "${LYNX_HOOK_BASE:-http://host.docker.internal:8000}"
     ports:
       - "50051:50051"
-    networks: [lynx-mock]
+    networks: [providers]
 
   compliance-grpc:
     build:
@@ -83,7 +98,7 @@ services:
       LYNX_MOCK_FAST: "${LYNX_MOCK_FAST:-0}"
     ports:
       - "50052:50052"
-    networks: [lynx-mock]
+    networks: [providers]
 
   vendor-mcp:
     build:
@@ -98,8 +113,12 @@ services:
       LYNX_MOCK_FAST: "${LYNX_MOCK_FAST:-0}"
     ports:
       - "7800:7800"
-    networks: [lynx-mock]
+    networks: [providers]
 
 networks:
-  lynx-mock:
+  providers:
     driver: bridge
+    name: lynxcapital_providers
+  caracalData:
+    external: true
+    name: caracalData
