@@ -3,7 +3,7 @@
 //
 // RFC 8693 token exchange client with pluggable token cache and 401-retry.
 
-import { createHash } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 import { InMemoryTokenCache, type TokenCache } from './cache.js'
 import { InteractionRequiredError } from './types.js'
 import type { ExchangeOptions, TokenExchangeResponse } from './types.js'
@@ -20,6 +20,8 @@ interface STSSuccessResponse {
   token_type?: unknown
   expires_in?: unknown
 }
+
+const SECRET_CACHE_KEY = randomBytes(32)
 
 function parseSTSErrorResponse(body: string): STSErrorResponse {
   if (body === '') return {}
@@ -87,13 +89,13 @@ export class OAuthClient {
   private cacheSubject(subjectToken: string, opts: ExchangeOptions): string {
     return [
       this.identityKey,
-      hashSecret(subjectToken),
-      hashSecret(opts.actorToken),
+      secretCacheId(subjectToken),
+      secretCacheId(opts.actorToken),
       opts.sessionId ?? '',
       opts.agentSessionId ?? '',
       opts.delegationEdgeId ?? '',
       this.authContext(opts),
-      hashSecret(opts.clientAssertion),
+      secretCacheId(opts.clientAssertion),
     ].join('::')
   }
 
@@ -107,7 +109,7 @@ export class OAuthClient {
 
   private authContext(opts: ExchangeOptions): string {
     return [
-      opts.clientSecret ? `secret:${hashSecret(opts.clientSecret)}` : '',
+      opts.clientSecret ? `secret:${secretCacheId(opts.clientSecret)}` : '',
       opts.clientAssertion ? 'assertion' : '',
       opts.clientAssertionType ?? '',
     ].join(':')
@@ -253,9 +255,9 @@ function isJsonResponse(res: Response): boolean {
   return mediaType === 'application/json' || mediaType.endsWith('+json')
 }
 
-function hashSecret(value: string | undefined): string {
+function secretCacheId(value: string | undefined): string {
   if (!value) return ''
-  return createHash('sha256').update(value).digest('hex')
+  return createHmac('sha256', SECRET_CACHE_KEY).update(value).digest('hex')
 }
 
 function resourceList(resource: string | string[]): string[] {

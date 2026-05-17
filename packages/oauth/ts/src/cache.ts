@@ -1,9 +1,9 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// TokenCache interface and bounded in-memory default keyed by hashed subject+resource.
+// TokenCache interface and bounded in-memory default keyed by protected subject-resource identifiers.
 
-import { createHash } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 import type { TokenExchangeResponse } from './types.js'
 
 export interface TokenCache {
@@ -16,6 +16,7 @@ export interface InMemoryTokenCacheOptions {
 }
 
 const DEFAULT_MAX_ENTRIES = 10_000
+const CACHE_KEY = randomBytes(32)
 
 export class InMemoryTokenCache implements TokenCache {
   private readonly map = new Map<string, { token: TokenExchangeResponse; expiresAt: number }>()
@@ -60,5 +61,5 @@ export class InMemoryTokenCache implements TokenCache {
 }
 
 function cacheKey(subjectToken: string, resource: string): string {
-  return createHash('sha256').update(subjectToken).update('\0').update(resource).digest('hex')
+  return createHmac('sha256', CACHE_KEY).update(subjectToken).update('\0').update(resource).digest('hex')
 }
