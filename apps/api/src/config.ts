@@ -11,7 +11,7 @@ import { getenv, mustGetenv, intEnv, boolEnv, resolveFileSecrets } from '@caraca
 function loadEnvChain(): void {
   const seen = new Set<string>()
   const candidates: string[] = []
-  const isDevMode = process.env.CARACAL_MODE !== 'runtime' && process.env.NODE_ENV !== 'production'
+  const isDevMode = process.env.CARACAL_MODE === 'dev' && process.env.NODE_ENV !== 'production'
 
   if (process.env.CARACAL_ENV_FILE) candidates.push(resolve(process.env.CARACAL_ENV_FILE))
   if (isDevMode && process.env.CARACAL_REPO_ROOT) {
@@ -76,7 +76,7 @@ function deriveWorkerId(): string {
 export function loadConfig(): Config {
   return {
     port: intEnv('PORT', 3000, 1),
-    host: getenv('HOST', process.env.CARACAL_MODE === 'runtime' ? '0.0.0.0' : '127.0.0.1'),
+    host: getenv('HOST', process.env.CARACAL_MODE === 'rc' || process.env.CARACAL_MODE === 'stable' ? '0.0.0.0' : '127.0.0.1'),
     databaseUrl: mustGetenv('DATABASE_URL'),
     redisUrl: mustGetenv('REDIS_URL'),
     logLevel: getenv('LOG_LEVEL', 'info'),

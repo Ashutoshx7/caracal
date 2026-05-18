@@ -14,7 +14,7 @@ describe('statusCommand', () => {
 
   beforeEach(() => {
     stdout = ''
-    vi.stubEnv('CARACAL_MODE', 'runtime')
+    vi.stubEnv('CARACAL_MODE', 'stable')
     vi.stubEnv('CARACAL_HOME', mkdtempSync(join(tmpdir(), 'caracal-home-')))
     vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
       stdout += chunk.toString()

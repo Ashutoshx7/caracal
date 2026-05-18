@@ -5,7 +5,7 @@
 #
 # Triggers:
 # - Tag push vYYYY.MM.DD[.N]: stable release (binaries → GitHub Release, images → GHCR, attestations), then best-effort postReleaseValidation.
-# - Tag push vYYYY.MM.DD[.N]-rc.*: rc (same artifact channels, GitHub Release marked as rc).
+# - Tag push vYYYY.MM.DD[.N]-rc.*: rc (same artifact destinations, GitHub Release marked as rc).
 # - workflow_dispatch: build-only validation (CLI artifact upload; images built with buildx — no GHCR push). No GitHub Release.
 #   Use ref to checkout a branch or tag; leave empty to use the caller's default ref.
 # - dryRun is informational for dispatch only (publishing is already gated on tag push).
