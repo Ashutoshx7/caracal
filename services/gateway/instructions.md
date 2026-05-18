@@ -10,7 +10,7 @@
 
 ## Required
 - Must use Go 1.26, `net/http`, and `packages/core/go`.
-- Must require STS, database, Redis, and stream HMAC configuration needed by runtime mode.
+- Must require STS, database, Redis, and stream HMAC configuration needed by rc and stable.
 - Must perform a fresh STS exchange for every proxied request.
 - Must strip hop-by-hop and `X-Caracal-*` routing headers before forwarding.
 - Must replace inbound Authorization with the STS-issued bearer token.
@@ -24,4 +24,3 @@
 
 ## Validation
 - Validate with `go test ./services/gateway/...` when gateway code changes.
-

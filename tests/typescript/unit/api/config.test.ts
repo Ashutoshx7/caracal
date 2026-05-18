@@ -61,10 +61,10 @@ describe('api config loadEnvChain', () => {
     expect(process.env.API_TEST_VAR).toBe('repo-value')
   })
 
-  test('does not load repo env files in runtime mode', async () => {
+  test('does not load repo env files in stable mode', async () => {
     mkdirSync(join(dir, 'infra', 'docker'), { recursive: true })
-    writeFileSync(join(dir, 'infra', 'docker', '.env'), 'API_TEST_VAR=runtime-leak\n')
-    process.env.CARACAL_MODE = 'runtime'
+    writeFileSync(join(dir, 'infra', 'docker', '.env'), 'API_TEST_VAR=stable-leak\n')
+    process.env.CARACAL_MODE = 'stable'
     process.env.CARACAL_REPO_ROOT = dir
     await import(CONFIG_PATH)
     expect(process.env.API_TEST_VAR).toBeUndefined()
