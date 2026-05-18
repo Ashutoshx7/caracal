@@ -193,6 +193,17 @@ describe('loadEnv secret resolution', () => {
     const values = loadEnv({ mode: 'dev', overrideFile: override, processEnv: {} })
     expect(values.POSTGRES_PASSWORD).toBeUndefined()
   })
+
+  it('fails closed when *_FILE points to a non-readable path', () => {
+    const nonReadable = join(dir, 'not-a-file')
+    mkdirSync(nonReadable, { recursive: true })
+    expect(() =>
+      loadEnv({
+        mode: 'dev',
+        processEnv: { POSTGRES_PASSWORD_FILE: nonReadable },
+      }),
+    ).toThrow()
+  })
 })
 
 describe('composeSubstitutions', () => {
@@ -216,6 +227,13 @@ describe('composeSubstitutions', () => {
     const subs = composeSubstitutions(values)
     expect('CARACAL_VERSION' in subs).toBe(true)
     expect(subs.CARACAL_VERSION).toBe('1.0.0')
+  })
+
+  it('preserves empty-string overrides for non-secret entries', () => {
+    const values = loadEnv({ mode: 'dev', processEnv: { LOG_LEVEL: '' } })
+    const subs = composeSubstitutions(values)
+    expect('LOG_LEVEL' in subs).toBe(true)
+    expect(subs.LOG_LEVEL).toBe('')
   })
 })
 
@@ -243,6 +261,12 @@ describe('readDotenv parser', () => {
     const file = join(dir, 'eq.env')
     writeFileSync(file, 'URL=postgres://u:p=1@h/db\n')
     expect(readDotenv(file).URL).toBe('postgres://u:p=1@h/db')
+  })
+
+  it('uses the last value when a key appears multiple times', () => {
+    const file = join(dir, 'dup.env')
+    writeFileSync(file, 'LOG_LEVEL=info\nLOG_LEVEL=warn\n')
+    expect(readDotenv(file).LOG_LEVEL).toBe('warn')
   })
 })
 

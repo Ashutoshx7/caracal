@@ -20,7 +20,19 @@ function repoFixture(): string {
 
 describe('resolvePaths', () => {
   afterEach(() => {
+    vi.restoreAllMocks()
     vi.unstubAllEnvs()
+  })
+
+  it('defaults to dev mode when CARACAL_REPO_ROOT is set and CARACAL_MODE is unset', () => {
+    const repoRoot = repoFixture()
+    vi.stubEnv('CARACAL_REPO_ROOT', repoRoot)
+    vi.stubEnv('CARACAL_MODE', undefined)
+
+    const paths = resolvePaths()
+
+    expect(paths.mode).toBe('dev')
+    expect(paths.cwd).toBe(repoRoot)
   })
 
   it('uses dev mode and points envFiles at dev.env when no local.env exists', () => {
@@ -50,6 +62,19 @@ describe('resolvePaths', () => {
     ])
   })
 
+  it('honours CARACAL_COMPOSE_FILE in dev mode', () => {
+    const repoRoot = repoFixture()
+    const customCompose = join(repoRoot, 'infra', 'docker', 'custom-compose.yml')
+    writeFileSync(customCompose, 'name: custom\n')
+    vi.stubEnv('CARACAL_MODE', 'dev')
+    vi.stubEnv('CARACAL_REPO_ROOT', repoRoot)
+    vi.stubEnv('CARACAL_COMPOSE_FILE', customCompose)
+
+    const paths = resolvePaths()
+
+    expect(paths.composeFile).toBe(customCompose)
+  })
+
   it('uses stable mode and resolves a single operator override env file', () => {
     const home = mkdtempSync(join(tmpdir(), 'caracal-home-'))
     vi.stubEnv('CARACAL_MODE', 'stable')
@@ -64,6 +89,23 @@ describe('resolvePaths', () => {
     expect(existsSync(join(home, 'caracal.env'))).toBe(true)
   })
 
+  it('honours CARACAL_COMPOSE_FILE and CARACAL_ENV_FILE in stable mode', () => {
+    const home = mkdtempSync(join(tmpdir(), 'caracal-home-'))
+    const customCompose = join(home, 'operator-compose.yml')
+    const customEnv = join(home, 'operator.env')
+    writeFileSync(customCompose, 'name: operator\n')
+    writeFileSync(customEnv, '# operator\n')
+    vi.stubEnv('CARACAL_MODE', 'stable')
+    vi.stubEnv('CARACAL_HOME', home)
+    vi.stubEnv('CARACAL_COMPOSE_FILE', customCompose)
+    vi.stubEnv('CARACAL_ENV_FILE', customEnv)
+
+    const paths = resolvePaths()
+
+    expect(paths.composeFile).toBe(customCompose)
+    expect(paths.envFiles).toEqual([customEnv])
+  })
+
   it('rc mode resolves the same layout as stable', () => {
     const home = mkdtempSync(join(tmpdir(), 'caracal-home-'))
     vi.stubEnv('CARACAL_MODE', 'rc')
@@ -73,5 +115,26 @@ describe('resolvePaths', () => {
 
     expect(paths.mode).toBe('rc')
     expect(paths.envFiles).toEqual([join(home, 'caracal.env')])
+  })
+
+  it('exits when CARACAL_MODE is invalid', () => {
+    vi.stubEnv('CARACAL_MODE', 'broken')
+    const exit = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
+      throw new Error(`exit:${code}`)
+    })
+
+    expect(() => resolvePaths()).toThrow('exit:1')
+    expect(exit).toHaveBeenCalledWith(1)
+  })
+
+  it('exits when dev mode is requested without CARACAL_REPO_ROOT', () => {
+    vi.stubEnv('CARACAL_MODE', 'dev')
+    vi.stubEnv('CARACAL_REPO_ROOT', undefined)
+    const exit = vi.spyOn(process, 'exit').mockImplementation((code?: string | number | null) => {
+      throw new Error(`exit:${code}`)
+    })
+
+    expect(() => resolvePaths()).toThrow('exit:1')
+    expect(exit).toHaveBeenCalledWith(1)
   })
 })
