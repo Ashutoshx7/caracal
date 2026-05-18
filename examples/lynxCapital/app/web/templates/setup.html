@@ -1,5 +1,9 @@
-{# Copyright (C) 2026 Garudex Labs.  All Rights Reserved. #}
-{# Lynx Capital setup checklist: confirms required environment variables are present. #}
+{#
+Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+Caracal, a product of Garudex Labs
+
+Lynx Capital setup checklist for Caracal and provider configuration.
+#}
 {% extends "layout.html" %}
 {% block title %}Setup — {{ company }}{% endblock %}
 
@@ -33,34 +37,73 @@
   <p class="sub">Confirm your environment is ready to run the {{ company }} demo.</p>
 
   <div class="panel">
-    <h2>1 · Start the Caracal stack</h2>
-    <p>Coordinator + Gateway from the monorepo's <code>infra/docker</code> compose. Lynx Capital uses these for identity, delegation, and resource-aware provider access.</p>
-<pre class="cmd"><span class="c"># from repo root</span>
-docker compose -f infra/docker/docker-compose.yml up -d</pre>
+    <h2>1 · Connect Caracal through TUI + control API</h2>
+    <p>Install the released CLI/TUI, start Caracal, then use <code>caracal-tui</code> to create or confirm the Lynx zone, control key, and protected resources.</p>
+<pre class="cmd">curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-cli.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-tui.sh | sh
+caracal up
+CARACAL_CONTROL_ENABLED=true caracal-tui</pre>
   </div>
 
   <div class="panel">
-    <h2>2 · Start the provider mocks</h2>
-    <p>13 REST providers, 2 gRPC services, and 1 MCP server, behaving like real external APIs (auth, idempotency, webhooks, rate limits).</p>
-<pre class="cmd"><span class="c"># from examples/lynxCapital</span>
-docker compose -f _mock/docker-compose.yml up -d --build</pre>
+    <h2>2 · Create the Lynx Caracal objects</h2>
+    <p>In the TUI, create a <code>Lynx Capital</code> zone, create a <code>lynx-control</code> control key, copy its client secret once, and add one <code>lynx/&lt;provider&gt;</code> resource for each provider in <code>config/company.yaml</code>. REST resources should point upstream to the provider alias such as <code>http://mercury-bank.mock:8800</code>.</p>
+<pre class="cmd"><span class="c"># Required resource identifiers</span>
+lynx/mercury-bank
+lynx/wise-payouts
+lynx/stripe-treasury
+lynx/quickbooks
+lynx/netsuite
+lynx/sap-erp
+lynx/ocr-vision
+lynx/close-engine
+lynx/regulatory-filings
+lynx/customer-billing
+lynx/tax-rules
+lynx/compliance-nexus
+lynx/fx-rates
+lynx/treasury-ops
+lynx/vendor-portal</pre>
   </div>
 
   <div class="panel">
-    <h2>3 · Configure environment</h2>
-    <p>Copy the template and fill in <code>OPENAI_API_KEY</code>. Caracal vars already point at the local stack.</p>
+    <h2>3 · Write caracal.toml</h2>
+    <p>Create <code>~/.config/caracal/caracal.toml</code> from the TUI values. The SDK reads this file directly, so keep the control key secret here and do not put Caracal credentials in <code>.env</code>.</p>
+<pre class="cmd">zone_url = "http://127.0.0.1:8080"
+sts_url = "http://127.0.0.1:8080"
+coordinator_url = "http://127.0.0.1:4000"
+gateway_url = "http://127.0.0.1:8081"
+zone_id = "&lt;zone id from TUI&gt;"
+application_id = "&lt;control key client_id&gt;"
+app_client_secret = "&lt;control key client_secret&gt;"
+
+[[credentials]]
+env = "LYNX_MERCURY_BANK_TOKEN"
+resource = "lynx/mercury-bank"
+upstream_prefix = "http://127.0.0.1:8800"</pre>
+  </div>
+
+  <div class="panel">
+    <h2>4 · Configure environment</h2>
+    <p>Copy the template and fill in <code>OPENAI_API_KEY</code>. Provider credentials are normal integration settings; Caracal credentials come from <code>caracal.toml</code>.</p>
 <pre class="cmd">cp .env.example .env
 <span class="c"># edit .env → set OPENAI_API_KEY=sk-...</span></pre>
   </div>
 
   <div class="panel">
-    <h2>4 · Run Lynx Capital</h2>
+    <h2>5 · Start the local provider network</h2>
+    <p>The local provider network is isolated under <code>_mock/</code>. The Lynx app still calls providers through its real registry and transport clients.</p>
+<pre class="cmd">docker compose -f _mock/docker-compose.yml up -d --build --wait</pre>
+  </div>
+
+  <div class="panel">
+    <h2>6 · Run Lynx Capital</h2>
 <pre class="cmd">uv run uvicorn app.main:app --reload --port 8000</pre>
   </div>
 
   <div class="panel">
-    <h2>5 · Validate</h2>
-    <p>Confirms <code>OPENAI_API_KEY</code> is set, all four <code>CARACAL_*</code> env vars are present, and the coordinator + gateway are reachable.</p>
+    <h2>7 · Validate</h2>
+    <p>Confirms <code>OPENAI_API_KEY</code>, Caracal URLs, <code>caracal.toml</code> resource bindings, gateway/coordinator health, and provider webhook secrets.</p>
 
     <div class="validate-bar">
       <button id="validate-btn">Validate configuration</button>

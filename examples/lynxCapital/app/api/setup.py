@@ -7,6 +7,8 @@ Setup validation endpoint confirming OpenAI credentials and the Caracal stack ar
 from __future__ import annotations
 
 import os
+import tomllib
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter
@@ -19,6 +21,59 @@ _CARACAL_ENV = (
     "CARACAL_GATEWAY_URL",
     "CARACAL_STS_URL",
 )
+_REQUIRED_RESOURCES = {
+    "lynx/mercury-bank",
+    "lynx/wise-payouts",
+    "lynx/stripe-treasury",
+    "lynx/quickbooks",
+    "lynx/netsuite",
+    "lynx/sap-erp",
+    "lynx/ocr-vision",
+    "lynx/close-engine",
+    "lynx/regulatory-filings",
+    "lynx/customer-billing",
+    "lynx/tax-rules",
+    "lynx/compliance-nexus",
+    "lynx/fx-rates",
+    "lynx/treasury-ops",
+    "lynx/vendor-portal",
+}
+
+
+def _config_path() -> Path:
+    explicit = os.environ.get("CARACAL_CONFIG")
+    if explicit:
+        return Path(explicit)
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "caracal" / "caracal.toml"
+
+
+def _config_status() -> tuple[bool, str]:
+    path = _config_path()
+    if not path.exists():
+        return False, f"{path} not found. Create it from the values shown in caracal-tui."
+    try:
+        cfg = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        return False, f"{path} is invalid TOML: {exc}"
+    required = ("zone_id", "application_id", "app_client_secret")
+    missing = [key for key in required if not isinstance(cfg.get(key), str) or not cfg.get(key)]
+    creds = cfg.get("credentials")
+    if missing:
+        return False, f"{path} missing: {', '.join(missing)}"
+    if not isinstance(creds, list) or not creds:
+        return False, f"{path} needs [[credentials]] entries for Lynx resources."
+    bad = [
+        str(i)
+        for i, item in enumerate(creds, start=1)
+        if not isinstance(item, dict) or not item.get("resource") or not item.get("upstream_prefix")
+    ]
+    if bad:
+        return False, f"{path} has incomplete credentials at index: {', '.join(bad)}"
+    resources = {item.get("resource") for item in creds if isinstance(item, dict)}
+    missing_resources = sorted(_REQUIRED_RESOURCES - resources)
+    if missing_resources:
+        return False, f"{path} missing resource bindings: {', '.join(missing_resources)}"
+    return True, f"{path} contains {len(creds)} resource bindings."
 
 
 async def _ping(url: str) -> tuple[bool, str]:
@@ -48,13 +103,21 @@ async def validate_setup():
         "id": "caracal_env",
         "label": "Caracal env vars set",
         "ok": not missing,
-        "detail": "All four CARACAL_* variables present." if not missing
+        "detail": "All required CARACAL_* variables present." if not missing
                   else f"Missing: {', '.join(missing)}",
+    })
+
+    ok, detail = _config_status()
+    steps.append({
+        "id": "caracal_config",
+        "label": "caracal.toml has Lynx resources",
+        "ok": ok,
+        "detail": detail,
     })
 
     coord = os.environ.get("CARACAL_COORDINATOR_URL", "")
     if coord:
-        ok, detail = await _ping(coord.rstrip("/") + "/healthz")
+        ok, detail = await _ping(coord.rstrip("/") + "/health")
         steps.append({"id": "caracal_coord", "label": "Caracal coordinator reachable",
                       "ok": ok, "detail": detail})
     else:
@@ -63,8 +126,14 @@ async def validate_setup():
 
     gw = os.environ.get("CARACAL_GATEWAY_URL", "")
     if gw:
-        ok, detail = await _ping(gw.rstrip("/") + "/healthz")
+        ok, detail = await _ping(gw.rstrip("/") + "/health")
         steps.append({"id": "caracal_gateway", "label": "Caracal gateway reachable",
+                      "ok": ok, "detail": detail})
+
+    sts = os.environ.get("CARACAL_STS_URL", "")
+    if sts:
+        ok, detail = await _ping(sts.rstrip("/") + "/health")
+        steps.append({"id": "caracal_sts", "label": "Caracal STS reachable",
                       "ok": ok, "detail": detail})
 
     from app.api.hooks import required_secret_envs
@@ -79,4 +148,3 @@ async def validate_setup():
 
     overall = all(s["ok"] for s in steps)
     return JSONResponse({"ok": overall, "steps": steps})
-

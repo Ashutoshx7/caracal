@@ -16,17 +16,33 @@ from app.agents.roles import ROLES
 
 
 _caracal: Caracal | None = None
+_init_error: str | None = None
 
 
-def init() -> Caracal:
-    global _caracal
+def init(*, required: bool = True) -> Caracal | None:
+    global _caracal, _init_error
     if _caracal is None:
-        _caracal = Caracal.from_config()
+        try:
+            _caracal = Caracal.from_config()
+            _init_error = None
+        except (RuntimeError, ValueError, OSError) as exc:
+            _init_error = str(exc)
+            if required:
+                raise RuntimeError(f"Caracal is not configured: {_init_error}") from exc
+            return None
     return _caracal
 
 
 def get() -> Caracal | None:
     return _caracal
+
+
+def ready() -> bool:
+    return _caracal is not None or init(required=False) is not None
+
+
+def init_error() -> str | None:
+    return _init_error
 
 
 def headers() -> dict[str, str]:
