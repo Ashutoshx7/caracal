@@ -103,9 +103,9 @@ services:
       - source: postgresPassword
         target: postgresPassword
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_USER: ${POSTGRES_USER:-caracal}
       POSTGRES_PASSWORD_FILE: /run/secrets/postgresPassword
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_DB: ${POSTGRES_DB:-caracal}
     command:
       - "postgres"
       - "-c"
@@ -224,9 +224,9 @@ services:
     environment:
       PGHOST: postgres
       PGPORT: "5432"
-      PGUSER: ${POSTGRES_USER}
+      PGUSER: ${POSTGRES_USER:-caracal}
       PGPASSWORD_FILE: /run/secrets/postgresPassword
-      PGDATABASE: ${POSTGRES_DB}
+      PGDATABASE: ${POSTGRES_DB:-caracal}
       PGSSLMODE: disable
     entrypoint: ["/bin/sh", "/usr/local/bin/caracal-migrate"]
 
