@@ -1,0 +1,29 @@
+{
+  "name": "@caracalai/control",
+  "version": "0.1.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --root ../.. tests/typescript/unit/control tests/typescript/integration/control"
+  },
+  "dependencies": {
+    "@caracalai/admin": "workspace:*",
+    "@caracalai/core": "workspace:*",
+    "@caracalai/engine": "workspace:*",
+    "fastify": "^5.2.1",
+    "ioredis": "^5.6.0",
+    "jose": "^6.2.3",
+    "pino": "^10.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
