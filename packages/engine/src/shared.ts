@@ -4,8 +4,9 @@
 // Shared helpers for engine verbs: AdminClient bootstrap and file content reads.
 
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { AdminClient } from '@caracalai/admin'
-import { discoverAdminToken, installedEnvFile } from '@caracalai/core'
+import { discoverAdminToken, installedHome } from '@caracalai/core'
 import {
   DEFAULT_API_URL,
   DEFAULT_COORDINATOR_URL,
@@ -23,7 +24,7 @@ export function buildAdminClient(cfg?: CliConfig): AdminContext {
   const adminToken = discoverAdminToken()
   if (!adminToken) {
     throw new Error(
-      `CARACAL_ADMIN_TOKEN not set; export it or run \`caracal up\` (writes ${installedEnvFile()})`,
+      `CARACAL_ADMIN_TOKEN not set; export it or run \`caracal up\` (writes ${join(installedHome(), 'secrets', 'caracalAdminToken')})`,
     )
   }
   const apiUrl = resolveServiceUrl('CARACAL_API_URL', DEFAULT_API_URL)

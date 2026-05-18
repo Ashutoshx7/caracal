@@ -24,30 +24,39 @@ export function readEnvFile(path: string): Record<string, string> {
 
 /**
  * Resolve the installed home written to by `caracal up`.
- * Mirrors the layout in packages/engine/src/runtime.ts so consumers
- * outside the CLI (SDK helpers, tests, scripts) reach the same file.
+ * Mirrors the layout in packages/engine/src/runtime.ts.
  */
-export function installedEnvFile(): string {
-  if (process.env.CARACAL_HOME) return join(process.env.CARACAL_HOME, '.env');
+export function installedHome(): string {
+  if (process.env.CARACAL_HOME) return process.env.CARACAL_HOME;
   if (platform() === 'darwin') {
-    return join(homedir(), 'Library', 'Application Support', 'caracal', '.env');
+    return join(homedir(), 'Library', 'Application Support', 'caracal');
   }
   const xdg = process.env.XDG_DATA_HOME;
   const base = xdg && xdg.length > 0 ? xdg : join(homedir(), '.local', 'share');
-  return join(base, 'caracal', '.env');
+  return join(base, 'caracal');
+}
+
+function readSecretFile(path: string): string | undefined {
+  if (!existsSync(path)) return undefined;
+  const value = readFileSync(path, 'utf8').trim();
+  return value.length > 0 ? value : undefined;
 }
 
 export function discoverAdminToken(explicit?: string): string | undefined {
   if (explicit) return explicit;
   if (process.env.CARACAL_ADMIN_TOKEN) return process.env.CARACAL_ADMIN_TOKEN;
-  const candidates: string[] = [];
-  if (process.env.CARACAL_ENV_FILE) candidates.push(process.env.CARACAL_ENV_FILE);
-  candidates.push(installedEnvFile());
-  if (process.env.CARACAL_REPO_ROOT) {
-    candidates.push(join(process.env.CARACAL_REPO_ROOT, 'infra', 'docker', '.env'));
+  if (process.env.CARACAL_ADMIN_TOKEN_FILE) {
+    const value = readSecretFile(process.env.CARACAL_ADMIN_TOKEN_FILE);
+    if (value) return value;
   }
-  for (const path of candidates) {
-    const env = readEnvFile(path);
+  const installed = readSecretFile(join(installedHome(), 'secrets', 'caracalAdminToken'));
+  if (installed) return installed;
+  if (process.env.CARACAL_REPO_ROOT) {
+    const dev = readSecretFile(join(process.env.CARACAL_REPO_ROOT, 'infra', 'secrets', 'files', 'caracalAdminToken'));
+    if (dev) return dev;
+  }
+  if (process.env.CARACAL_ENV_FILE) {
+    const env = readEnvFile(process.env.CARACAL_ENV_FILE);
     if (env.CARACAL_ADMIN_TOKEN) return env.CARACAL_ADMIN_TOKEN;
   }
   return undefined;
