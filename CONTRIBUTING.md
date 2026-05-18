@@ -81,7 +81,7 @@ Clients authenticate with a standard OAuth2 client-credentials flow against STS.
 # mint a token (any OAuth2 client; CLI/TUI use their caracal.toml app creds)
 curl -sX POST "$ZONE_URL/oauth/2/token" \
   -u "$APP_CLIENT_ID:$APP_CLIENT_SECRET" \
-  -d "grant_type=client_credentials&scope=control:invoke" | jq -r .access_token
+  -d "grant_type=client_credentials&scope=control:zone:read" | jq -r .access_token
 
 # invoke
 curl -sH "Authorization: Bearer $TOKEN" \

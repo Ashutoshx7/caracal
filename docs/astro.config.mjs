@@ -219,6 +219,7 @@ export default defineConfig({
             { label: 'STS', link: '/services/sts/' },
             { label: 'Gateway', link: '/services/gateway/' },
             { label: 'Audit', link: '/services/audit/' },
+            { label: 'Control', link: '/services/control/' },
           ],
         },
         {

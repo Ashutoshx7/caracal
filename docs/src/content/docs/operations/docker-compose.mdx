@@ -128,7 +128,8 @@ profiles: [control]
 ports: 127.0.0.1:8087:8087
 environment:
   CARACAL_CONTROL_ENABLED: "true"
-  CONTROL_ADDR: ":8087"
+  CONTROL_PORT: "8087"
+  CONTROL_HOST: "0.0.0.0"
 ```
 
 The control service is disabled by default. Start it explicitly with Docker Compose's `control` profile after setting its authentication variables:
@@ -137,9 +138,9 @@ The control service is disabled by default. Start it explicitly with Docker Comp
 docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml --profile control up --build control
 ```
 
-**Required when enabled:** `CARACAL_CONTROL_ENABLED=true`, `STS_JWKS_URL`, `STS_ISSUER_URL`, `CONTROL_AUDIENCE`
+**Required when enabled:** `CARACAL_CONTROL_ENABLED=true`, `STS_JWKS_URL`, `STS_ISSUER_URL`, `CONTROL_AUDIENCE`, `CARACAL_API_URL`, `CONTROL_API_TOKEN`.
 
-When `CARACAL_MODE=rc` or `CARACAL_MODE=stable`, the control service also requires `CONTROL_REDIS_URL`, `AUDIT_HMAC_KEY`, and at least one registered upstream implementation. The current reference compose profile is intended for development validation of the surface, not as a complete production control-plane deployment.
+When `CARACAL_MODE=rc` or `CARACAL_MODE=stable`, the control service additionally requires `CONTROL_REDIS_URL` (single-replica memory replay is rejected) and `AUDIT_HMAC_KEY` (audit rows must be signed). The image is built from `apps/control/Dockerfile`; the container runs the TypeScript service that wraps the shared `@caracalai/engine` dispatch.
 
 ---
 
