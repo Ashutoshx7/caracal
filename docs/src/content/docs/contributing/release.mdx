@@ -1,47 +1,82 @@
 ---
 title: Release and Versioning
-description: CalVer tags, CLI binaries, container images, and local npm/PyPI publishing.
+description: Dev builds, release candidates, stable releases, and package publishing.
 pageType: workflow
 ---
 
-Caracal uses CalVer for all release artifacts. A single git tag triggers the CI release pipeline for CLI binaries and container images. npm and PyPI packages are published from a maintainer workstation using the scripts in `scripts/`.
+Caracal separates local developer builds, release candidates, and stable releases. Stable and rc artifacts use the same production artifact channels; dev artifacts stay local to source-linked workflows.
 
 ---
 
 ## Version scheme
 
-All release artifacts share the same version format:
+| Channel | Purpose | Runtime/OCI example | npm example | PyPI example |
+| --- | --- | --- | --- | --- |
+| dev | Local source-linked development only | `2026.05.14-dev.shaabc1234` | `1.4.2-dev.shaabc1234` | not published |
+| rc | Release-candidate validation through production artifact channels | `2026.05.14-rc.shaabc1234` | `1.4.2-rc.shaabc1234` | `1.4.2rc0+shaabc1234` |
+| stable | Official production release | `2026.05.14` | `1.4.2` | `1.4.2` |
 
-```
-vYYYY.MM.DD[.N]
-```
+The PyPI rc form is PEP 440 compatible while preserving the same rc/sha meaning used by npm, OCI tags, binaries, and GitHub prerelease tags.
 
-- `vYYYY.MM.DD` — primary release for that date.
-- `vYYYY.MM.DD.1`, `.2`, … — subsequent releases on the same date (hotfixes or corrections).
+Git tags use a leading `v`:
 
-Examples: `v2026.05.12`, `v2026.05.12.1`, `v2026.06.01`.
+- Stable: `vYYYY.MM.DD[.N]`
+- RC: `vYYYY.MM.DD[.N]-rc.<number>` or `vYYYY.MM.DD[.N]-rc.sha<gitsha>`
 
-The version is set by the git tag. The release pipeline reads the tag and propagates it to all artifact types.
+The tag drives binaries, OCI image tags, GitHub Releases, and release manifests. Package metadata drives npm and PyPI publishing.
 
 ---
 
-## Release trigger
+## RC workflow
 
-Releases are triggered by pushing a CalVer tag to `main`:
+Use rc when a downstream project must consume Caracal as a normal third-party dependency before a final stable release. The consumer changes only package versions and registry/index endpoints; it must not reference Caracal source paths, workspace links, editable installs, or Docker build contexts from the Caracal checkout.
+
+```sh
+scripts/rc.sh prepare
+git add -A
+git commit -m "rc: vYYYY.MM.DD-rc.sha<gitsha>"
+git tag -a vYYYY.MM.DD-rc.sha<gitsha> -m vYYYY.MM.DD-rc.sha<gitsha>
+git push origin HEAD
+git push origin vYYYY.MM.DD-rc.sha<gitsha>
+```
+
+`scripts/rc.sh prepare` writes `releases/<rc-tag>/manifest.json`, stamps npm package versions as `<base>-rc.sha<gitsha>`, and stamps PyPI versions as `<base>rc0+sha<gitsha>`. Use `scripts/rc.sh version` only when you need to preview the manifest without stamping package metadata. Pushing the rc tag runs the release workflow, publishes GHCR images, and creates a GitHub Release marked as prerelease.
+
+Publish packages after `prepare`:
+
+```sh
+./scripts/publishNpm.sh       # rc versions publish with dist-tag rc
+./scripts/publishPypi.sh      # rc versions use PEP 440 rc metadata
+```
+
+Switch a downstream project to the rc:
+
+```sh
+scripts/rc.sh select --manifest releases/vYYYY.MM.DD-rc.sha<gitsha>/manifest.json --consumer /path/to/downstream
+scripts/rc.sh revert --consumer /path/to/downstream
+```
+
+`select` updates package manifests, compose image references, `.npmrc`, and `caracal.rc.env` using only artifact channels and exact rc versions. It refreshes recognized lockfiles (`pnpm-lock.yaml`, `package-lock.json`, `uv.lock`, or `poetry.lock`) against the selected registry/index endpoints; pass `--skip-lock-refresh` only when the consumer repo intentionally refreshes locks in a separate CI job. `revert` restores the files saved by `select`.
+
+---
+
+## Stable release trigger
+
+Stable releases are triggered by pushing a CalVer tag to `main`:
 
 ```sh
 git tag v2026.05.12
 git push origin v2026.05.12
 ```
 
-This triggers `release.yml` in GitHub Actions. The pipeline:
+This triggers `release.yml` in GitHub Actions. The stable pipeline:
 
 1. Verifies the pushing actor is listed in `.github/MAINTAINERS`.
 2. Builds CLI/TUI binaries and container images in parallel.
 3. Pushes images to GHCR with SLSA provenance and SBOM.
 4. Creates a GitHub Release with generated release notes, binaries, checksums, and provenance attestations.
 
-Only maintainers push release tags. Do not push CalVer tags from feature branches.
+Only maintainers push stable release tags. Do not push CalVer tags from feature branches.
 
 ---
 
@@ -57,7 +92,7 @@ The shell (`caracal`), CLI command binary (`caracal-cli`), and TUI (`caracal-tui
 | `darwin-arm64` | `caracal-shell-darwin-arm64-vYYYY.MM.DD.tar.gz` | `caracal-cli-darwin-arm64-vYYYY.MM.DD.tar.gz` | `caracal-tui-darwin-arm64-vYYYY.MM.DD.tar.gz` |
 | `windows-amd64` | `caracal-shell-windows-amd64-vYYYY.MM.DD.zip` | `caracal-cli-windows-amd64-vYYYY.MM.DD.zip` | `caracal-tui-windows-amd64-vYYYY.MM.DD.zip` |
 
-Archives are attached to the GitHub Release with a `SHA256SUMS` file and SLSA provenance attestations.
+Archives are attached to the GitHub Release with a `SHA256SUMS` file and SLSA provenance attestations. RC tags create GitHub Releases with the prerelease flag; stable tags create final releases.
 
 ### Install
 
@@ -93,7 +128,7 @@ Windows: delete `%LOCALAPPDATA%\Programs\caracal` and remove the user PATH entry
 
 ## Container images
 
-Six container images are published to GitHub Container Registry on every release:
+Seven container images are published to GitHub Container Registry on every release:
 
 | Image | Service |
 | --- | --- |
@@ -102,6 +137,7 @@ Six container images are published to GitHub Container Registry on every release
 | `ghcr.io/garudex-labs/caracal-gateway` | Gateway |
 | `ghcr.io/garudex-labs/caracal-coordinator` | Coordinator |
 | `ghcr.io/garudex-labs/caracal-audit` | Audit service |
+| `ghcr.io/garudex-labs/caracal-postgres` | PostgreSQL runtime image |
 | `ghcr.io/garudex-labs/caracal-redis` | Redis runtime image |
 
 All images are multi-arch (`linux/amd64`, `linux/arm64`) and are tagged with the CalVer version, the `vYYYY.MM` series, and `latest`.
@@ -110,7 +146,7 @@ All images are multi-arch (`linux/amd64`, `linux/arm64`) and are tagged with the
 
 ## npm and PyPI packages
 
-npm and PyPI packages are published from a maintainer workstation using the scripts in `scripts/`. Each script opens an interactive picker (up/down, space to toggle, `a` toggles all, enter confirms), prompts for the registry token, builds the selected packages, and uploads them — skipping versions already present on the registry.
+npm and PyPI packages are published from a maintainer workstation using the scripts in `scripts/`. Each script opens an interactive picker (up/down, space to toggle, `a` toggles all, enter confirms), prompts for the registry token, builds the selected packages, and uploads them — skipping versions already present on the registry. npm rc versions publish with the `rc` dist-tag; stable versions publish with `latest`.
 
 ```sh
 ./scripts/publishNpm.sh
@@ -151,7 +187,7 @@ Tags must point to commits reachable from `main`.
 
 Every release tag has a directory under `caracal/releases/<tag>/` that owns all of its metadata:
 
-- `manifest.json` — pins every published artifact (binaries, containers, PyPI, npm) to a version, committed alongside the changeset version bump.
+- `manifest.json` — pins every artifact (binaries, containers, PyPI, npm) to a channel and version, committed alongside the changeset version bump or rc preparation commit.
 - `validation.md` — the aggregated post-release validation report.
 - `findings/*.jsonl` — raw per-area findings.
 

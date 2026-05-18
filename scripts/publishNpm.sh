@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Publishes all @caracalai/* npm packages from a local machine using a manually entered npm token, skipping versions already on the registry.
+# Publishes selected @caracalai/* npm packages to npm, using the rc dist-tag for release candidates and latest for stable releases.
 
 set -euo pipefail
 
@@ -66,23 +66,25 @@ say_step "publishNpm: building TypeScript packages"
 pnpm install --frozen-lockfile --prefer-offline
 pnpm run build:typescript
 
-say_header "publishNpm: publishing"
+say_header "publishNpm: publishing stable/latest or rc packages"
 for d in "${packages[@]}"; do
     name="$(jq -r .name "$d/package.json")"
     ver="$(jq -r .version "$d/package.json")"
-    if [[ "$ver" == *"-dev."* || "$ver" == *"+dev."* ]]; then
+    if [[ "$ver" == *"dev.sha"* || "$ver" == *"dev."* ]]; then
         say_error "refusing to publish dev-stamped version: ${name}@${ver}"
         exit 1
     fi
+    dist_tag="latest"
+    [[ "$ver" == *"-rc."* ]] && dist_tag="rc"
     if npm view "${name}@${ver}" version >/dev/null 2>&1; then
         say_warn "skip ${name}@${ver} (already published)"
         continue
     fi
-    say_step "publishing ${name}@${ver}"
+    say_step "publishing ${name}@${ver} with ${dist_tag} dist-tag"
     while true; do
         otp_args=()
         [[ -n "$NPM_OTP" ]] && otp_args=(--otp "$NPM_OTP")
-        if ( cd "$d" && npm publish --access public "${otp_args[@]}" ); then
+        if ( cd "$d" && npm publish --access public --tag "$dist_tag" "${otp_args[@]}" ); then
             say_success "${name}@${ver}"
             break
         fi
