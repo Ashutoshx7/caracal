@@ -47,7 +47,7 @@ func New(ctx context.Context, log zerolog.Logger) (*Server, error) {
 		return nil, err
 	}
 	disp := NewDispatcher()
-	if config.Mode() == "runtime" && !disp.HasUpstreams() {
+	if config.Mode() != "dev" && !disp.HasUpstreams() {
 		return nil, errors.New("control upstreams not configured")
 	}
 	srv := &Server{
@@ -68,8 +68,8 @@ func New(ctx context.Context, log zerolog.Logger) (*Server, error) {
 func buildReplay(log zerolog.Logger) (Replay, error) {
 	url := os.Getenv("CONTROL_REDIS_URL")
 	if url == "" {
-		if config.Mode() == "runtime" {
-			return nil, errors.New("CONTROL_REDIS_URL is required when CARACAL_MODE=runtime")
+		if config.Mode() != "dev" {
+			return nil, errors.New("CONTROL_REDIS_URL is required when CARACAL_MODE=rc or CARACAL_MODE=stable")
 		}
 		log.Info().Msg("replay cache: in-memory (single replica)")
 		return NewReplayCache(time.Hour), nil

@@ -55,13 +55,13 @@ func NewEventSink(ctx context.Context, log zerolog.Logger) (EventSink, error) {
 	config.ResolveFileSecrets("CONTROL_REDIS_URL", "AUDIT_HMAC_KEY")
 	url := os.Getenv("CONTROL_REDIS_URL")
 	if url == "" {
-		if config.Mode() == "runtime" {
-			return nil, errors.New("CONTROL_REDIS_URL is required for control audit when CARACAL_MODE=runtime")
+		if config.Mode() != "dev" {
+			return nil, errors.New("CONTROL_REDIS_URL is required for control audit when CARACAL_MODE=rc or CARACAL_MODE=stable")
 		}
 		log.Warn().Msg("control audit sink: log-only")
 		return &logSink{log: log}, nil
 	}
-	key, err := auditKey(config.Mode() == "runtime")
+	key, err := auditKey(config.Mode() != "dev")
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func auditKey(required bool) ([]byte, error) {
 	raw := os.Getenv("AUDIT_HMAC_KEY")
 	if raw == "" {
 		if required {
-			return nil, errors.New("AUDIT_HMAC_KEY is required when CARACAL_MODE=runtime")
+			return nil, errors.New("AUDIT_HMAC_KEY is required when CARACAL_MODE=rc or CARACAL_MODE=stable")
 		}
 		return nil, nil
 	}
