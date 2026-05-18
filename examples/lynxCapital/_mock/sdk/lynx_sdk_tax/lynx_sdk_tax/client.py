@@ -35,13 +35,12 @@ class TaxIdValidation:
 
 class TaxClient:
     def __init__(self, api_key: str, base_url: str = "http://tax-rules.mock",
-                 timeout: float = 4.0, snapshot_ttl_s: float = 300.0,
-                 transport: httpx.BaseTransport | None = None):
+                  timeout: float = 4.0, snapshot_ttl_s: float = 300.0,
+                  transport: httpx.BaseTransport | None = None,
+                  http_client: httpx.Client | None = None):
         self._api_key = api_key
-        self._http = httpx.Client(
-            base_url=base_url,
-            timeout=timeout,
-            transport=transport,
+        self._http = http_client or httpx.Client(
+            base_url=base_url, timeout=timeout, transport=transport,
             headers={"X-API-Key": api_key, "User-Agent": "lynx-sdk-tax/0.1.0"},
         )
         self._snapshot: dict | None = None

@@ -32,14 +32,85 @@ The `caracalai-sdk>=0.1.1` pin lives in `pyproject.toml`.
 cp .env.example .env
 ```
 
-Open `.env` and set `OPENAI_API_KEY=sk-...`. Everything else has working
-defaults for the local mock network.
+Open `.env` and set `OPENAI_API_KEY=sk-...`. Provider credentials are normal
+integration settings; Caracal credentials come from `caracal.toml`.
 
-### 3 — Start the mock provider network
+### 3 — Start Caracal through TUI + control API
 
-The mock network simulates all 11 external financial services (banking, ERP,
-OCR, FX, compliance, vendor portal, tax) across REST, SSE, gRPC, and MCP.
-The image is built locally — it is not published to any registry.
+Caracal (API + Coordinator + Gateway + STS + Redis) must be running before
+Lynx starts. Install the released CLI/TUI and bring up the stack the same way
+an end user would — **do not build from the caracal source tree**:
+
+```bash
+# Install the CLI and TUI once (no sudo, lands in ~/.local/bin)
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-cli.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-tui.sh | sh
+
+# Bring up the OSS stack
+caracal up
+
+# Open the TUI. Use it to inspect/create:
+#   1. zone: Lynx Capital
+#   2. control key: lynx-control (copy client_secret once)
+#   3. resources: lynx/<provider> for every provider in config/company.yaml
+CARACAL_CONTROL_ENABLED=true caracal-tui
+```
+
+The TUI talks to the same control plane as the CLI. The control key is a real
+Caracal application credential with the `control:invoke` trait; Lynx stores
+its `client_id` as `application_id` and its one-time `client_secret` as
+`app_client_secret` in `caracal.toml`.
+
+### 4 — Write `caracal.toml` from TUI values
+
+After creating the Lynx zone, control key, and resources in the TUI, write
+`~/.config/caracal/caracal.toml`. The Python SDK reads this file directly, so
+Caracal credentials stay out of `.env`.
+
+```toml
+zone_url = "http://127.0.0.1:8080"
+sts_url = "http://127.0.0.1:8080"
+coordinator_url = "http://127.0.0.1:4000"
+gateway_url = "http://127.0.0.1:8081"
+zone_id = "<zone id from TUI>"
+application_id = "<control key client_id>"
+app_client_secret = "<control key client_secret>"
+
+[[credentials]]
+env = "LYNX_MERCURY_BANK_TOKEN"
+resource = "lynx/mercury-bank"
+upstream_prefix = "http://127.0.0.1:8800"
+```
+
+Repeat `[[credentials]]` for every `lynx/<provider>` resource in
+`config/company.yaml`. REST provider bindings use
+`upstream_prefix = "http://127.0.0.1:8800"` for local Python runs; direct
+protocol providers use their own local endpoints, such as
+`http://127.0.0.1:50051` for `lynx/treasury-ops` and
+`http://127.0.0.1:7800` for `lynx/vendor-portal`.
+
+The stack listens on:
+
+- API         → `http://localhost:3000`
+- Coordinator → `http://localhost:4000`
+- Gateway     → `http://localhost:8081`
+- STS         → `http://localhost:8080`
+
+The defaults in `.env.example` already point at these. If you run Caracal on
+different hosts/ports, edit the `CARACAL_*` block in `.env` and the URLs in
+`caracal.toml`.
+
+> If you already had the Caracal monorepo cloned and used `pnpm i -g` from it,
+> remove the stale workspace shim first so the released binary wins:
+> `rm "$(pnpm bin -g)/caracal" 2>/dev/null || true`.
+
+### 5 — Start the local provider network
+
+The local provider network lives under `_mock/` and supplies the demo's
+third-party provider fixtures across REST, SSE, gRPC, and MCP. The Lynx app
+still calls providers through its registry and transport clients, and the image
+joins `caracalData` so the Caracal gateway can forward to REST providers by
+resource.
 
 ```bash
 docker compose -f _mock/docker-compose.yml up -d --build --wait
@@ -51,58 +122,7 @@ To re-check status later:
 docker compose -f _mock/docker-compose.yml ps -a
 ```
 
-### 4 — Start Caracal
-
-Caracal (Coordinator + Gateway + STS + Redis) must be running before Lynx
-starts. Install the latest CLI (`v2026.05.14` channel) and bring up the
-stack the same way any end user would — **do not build from the caracal
-source tree**:
-
-```bash
-# Install the CLI and TUI once (no sudo, lands in ~/.local/bin)
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-cli.sh | sh
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-tui.sh | sh
-
-# Bring up the OSS stack (coordinator, gateway, STS, postgres, redis, ...)
-caracal up
-
-# Provision a zone + application. `caracal zone create` returns the zone id;
-# `caracal app create` returns the client secret. Author
-# ~/.config/caracal/caracal.toml with the returned zone_id / application_id /
-# app_client_secret. Lynx reads the file at startup and exchanges the
-# client_secret for a real STS access token.
-caracal zone create --name lynx
-caracal app  create --zone <id> --name lynx
-
-# Register every external provider as a Caracal resource so the gateway
-# knows where to forward calls. The mock REST aggregator hosts all 13
-# providers behind a single prefix.
-for p in mercury-bank wise-payouts stripe-treasury netsuite sap-erp \
-         ocr-vision close-engine regulatory-filings customer-billing \
-         compliance-nexus treasury-ops; do
-  caracal resource add "lynx/${p}" --upstream "http://${p}.mock"
-done
-
-# Inspect live agent sessions, tickets, and delegation tree
-caracal-tui
-```
-
-The stack listens on:
-
-- API         → `http://localhost:3000`
-- Coordinator → `http://localhost:4000`
-- Gateway     → `http://localhost:8081`
-- STS         → `http://localhost:8080`
-
-The defaults in `.env.example` already point at these. If you run Caracal on
-different hosts/ports, edit the `CARACAL_*` block in your `.env`.
-
-> The Caracal CLI is the *only* end-user surface. If you already had the
-> Caracal monorepo cloned and used `pnpm i -g` from it, remove the stale
-> workspace shim first so the released binary wins:
-> `rm "$(pnpm bin -g)/caracal" 2>/dev/null || true`.
-
-### 5 — Run Lynx Capital
+### 6 — Run Lynx Capital
 
 Pick one path:
 
@@ -110,11 +130,24 @@ Pick one path:
 # Local Python (development)
 python -m uvicorn app.main:app --reload --port 8000
 
-# Container (production-like — joins the mock and caracal networks)
+# Container (production-like — joins the provider and caracalData networks)
 docker compose up -d --build
 ```
 
 Open **http://localhost:8000**.
+
+## Demo flow
+
+1. Open `CARACAL_CONTROL_ENABLED=true caracal-tui` and verify the Lynx zone,
+   control key, resources, live agent sessions, tickets, and delegation tree.
+2. Open `http://localhost:8000/setup`, follow the TUI and `caracal.toml`
+   checklist, then validate.
+3. Open `/demo` and submit a prompt. The browser uses the Lynx control API:
+   `POST /api/run/start`, `GET /api/run/{runId}/events`,
+   `GET /api/run/{runId}/status`, `POST /api/run/{runId}/cancel`, and
+   `GET /api/run/{runId}/lineage`.
+4. Keep the TUI open while the run executes to inspect Caracal sessions and
+   delegated child agents in the real control plane.
 
 ## Routes
 
@@ -155,7 +188,7 @@ caracal purge --include-destructive all
 ```
 app/             FastAPI app (api, web, agents, orchestration, services, events, core)
 config/          company.yaml (copy, regions, providers, swarm caps, theme)
-_mock/           Deterministic mock provider network (local only — not published)
-tests/           Topology, lifecycle, and mock determinism tests
+_mock/           Local provider fixtures (not published)
+tests/           Topology, lifecycle, and provider transport tests
 INSTRUCTIONS.md  Build rules
 ```

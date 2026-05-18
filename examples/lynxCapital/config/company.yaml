@@ -234,8 +234,9 @@ content:
   tagline: "Autonomous financial execution for global companies."
   scenarioTitle: "Weekly payout cycle"
   disclaimer: >
-    This is a simulation environment. No real payments are processed.
-    All provider responses are deterministic mocks.
+    This is a simulation environment. No real payments are submitted.
+    Local provider fixtures live under _mock; application code uses provider
+    clients and transports as it would for real integrations.
 
 prompts:
   financeControl: |
