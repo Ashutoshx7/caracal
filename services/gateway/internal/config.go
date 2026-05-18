@@ -94,14 +94,14 @@ func loadConfig() (Config, error) {
 }
 
 func (c Config) validate() error {
-	runtime := c.Mode == "runtime"
+	published := c.Mode != "dev"
 	if c.RedisURL == "" {
 		return fmt.Errorf("REDIS_URL is required")
 	}
-	if runtime && c.JTIFailOpen {
+	if published && c.JTIFailOpen {
 		return fmt.Errorf("JTI_FAIL_OPEN is forbidden when CARACAL_MODE=rc or CARACAL_MODE=stable")
 	}
-	if runtime && c.AllowPrivateUpstreams && len(c.UpstreamHostAllowlist) == 0 {
+	if published && c.AllowPrivateUpstreams && len(c.UpstreamHostAllowlist) == 0 {
 		return fmt.Errorf("UPSTREAM_HOST_ALLOWLIST is required when ALLOW_PRIVATE_UPSTREAMS=true under CARACAL_MODE=rc or CARACAL_MODE=stable")
 	}
 	u, err := url.Parse(c.STSURL)
@@ -111,7 +111,7 @@ func (c Config) validate() error {
 	switch u.Scheme {
 	case "https":
 	case "http":
-		if runtime && !isInternalHost(u.Hostname()) {
+		if published && !isInternalHost(u.Hostname()) {
 			return fmt.Errorf("STS_URL must use https when CARACAL_MODE=rc or CARACAL_MODE=stable and target is not an internal host")
 		}
 	default:
@@ -123,7 +123,7 @@ func (c Config) validate() error {
 	if c.StreamsHMACKey == "" {
 		return fmt.Errorf("STREAMS_HMAC_KEY is required")
 	}
-	if runtime && len(c.AuditHMACKey) == 0 {
+	if published && len(c.AuditHMACKey) == 0 {
 		return fmt.Errorf("AUDIT_HMAC_KEY is required when CARACAL_MODE=rc or CARACAL_MODE=stable")
 	}
 	port, err := strconv.Atoi(c.Port)

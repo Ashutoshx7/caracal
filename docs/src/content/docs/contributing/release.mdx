@@ -1,27 +1,27 @@
 ---
 title: Release and Versioning
-description: Dev builds, release candidates, stable releases, and package publishing.
+description: dev, rc, stable, and package publishing.
 pageType: workflow
 ---
 
-Caracal separates local developer builds, release candidates, and stable releases. Stable and rc artifacts use the same production artifact channels; dev artifacts stay local to source-linked workflows.
+Caracal uses only three versioning modes: dev, rc, and stable. rc and stable artifacts use the same artifact channels; dev artifacts stay local.
 
 ---
 
 ## Version scheme
 
-| Channel | Purpose | Runtime/OCI example | npm example | PyPI example |
+| Mode | Purpose | OCI/binary example | npm example | PyPI example |
 | --- | --- | --- | --- | --- |
-| dev | Local source-linked development only | `2026.05.14-dev.shaabc1234` | `1.4.2-dev.shaabc1234` | not published |
-| rc | Release-candidate validation through production artifact channels | `2026.05.14-rc.shaabc1234` | `1.4.2-rc.shaabc1234` | `1.4.2rc0+shaabc1234` |
-| stable | Official production release | `2026.05.14` | `1.4.2` | `1.4.2` |
+| dev | Development builds | `2026.05.14-dev.shaabc1234` | `1.4.2-dev.shaabc1234` | not published |
+| rc | rc builds | `2026.05.14-rc.shaabc1234` | `1.4.2-rc.shaabc1234` | `1.4.2rc0+shaabc1234` |
+| stable | Released production versions | `2026.05.14` | `1.4.2` | `1.4.2` |
 
-The PyPI rc form is PEP 440 compatible while preserving the same rc/sha meaning used by npm, OCI tags, binaries, and GitHub prerelease tags.
+The PyPI rc form is PEP 440 compatible while preserving the same rc/sha meaning used by npm, OCI tags, binaries, and GitHub tags.
 
 Git tags use a leading `v`:
 
-- Stable: `vYYYY.MM.DD[.N]`
-- RC: `vYYYY.MM.DD[.N]-rc.<number>` or `vYYYY.MM.DD[.N]-rc.sha<gitsha>`
+- stable: `vYYYY.MM.DD[.N]`
+- rc: `vYYYY.MM.DD[.N]-rc.<number>` or `vYYYY.MM.DD[.N]-rc.sha<gitsha>`
 
 The tag drives binaries, OCI image tags, GitHub Releases, and release manifests. Package metadata drives npm and PyPI publishing.
 
@@ -29,7 +29,7 @@ The tag drives binaries, OCI image tags, GitHub Releases, and release manifests.
 
 ## RC workflow
 
-Use rc when a downstream project must consume Caracal as a normal third-party dependency before a final stable release. The consumer changes only package versions and registry/index endpoints; it must not reference Caracal source paths, workspace links, editable installs, or Docker build contexts from the Caracal checkout.
+Use rc when a downstream project must consume Caracal as a normal third-party dependency before stable. The consumer changes only package versions and registry/index endpoints; it must not reference Caracal source paths, workspace links, editable installs, or Docker build contexts from the Caracal checkout.
 
 ```sh
 scripts/rc.sh prepare
@@ -40,7 +40,7 @@ git push origin HEAD
 git push origin vYYYY.MM.DD-rc.sha<gitsha>
 ```
 
-`scripts/rc.sh prepare` writes `releases/<rc-tag>/manifest.json`, stamps npm package versions as `<base>-rc.sha<gitsha>`, and stamps PyPI versions as `<base>rc0+sha<gitsha>`. Use `scripts/rc.sh version` only when you need to preview the manifest without stamping package metadata. Pushing the rc tag runs the release workflow, publishes GHCR images, and creates a GitHub Release marked as prerelease.
+`scripts/rc.sh prepare` writes `releases/<rc-tag>/manifest.json`, stamps npm package versions as `<base>-rc.sha<gitsha>`, and stamps PyPI versions as `<base>rc0+sha<gitsha>`. Use `scripts/rc.sh version` only when you need to preview the manifest without stamping package metadata. Pushing the rc tag runs the release workflow, publishes GHCR images, and creates a GitHub Release for rc.
 
 Publish packages after `prepare`:
 
@@ -60,9 +60,9 @@ scripts/rc.sh revert --consumer /path/to/downstream
 
 ---
 
-## Stable release trigger
+## stable workflow
 
-Stable releases are triggered by pushing a CalVer tag to `main`:
+stable is created by pushing a CalVer tag to `main`:
 
 ```sh
 git tag v2026.05.12
@@ -76,7 +76,7 @@ This triggers `release.yml` in GitHub Actions. The stable pipeline:
 3. Pushes images to GHCR with SLSA provenance and SBOM.
 4. Creates a GitHub Release with generated release notes, binaries, checksums, and provenance attestations.
 
-Only maintainers push stable release tags. Do not push CalVer tags from feature branches.
+Only maintainers push stable tags. Do not push CalVer tags from feature branches.
 
 ---
 
@@ -92,7 +92,7 @@ The shell (`caracal`), CLI command binary (`caracal-cli`), and TUI (`caracal-tui
 | `darwin-arm64` | `caracal-shell-darwin-arm64-vYYYY.MM.DD.tar.gz` | `caracal-cli-darwin-arm64-vYYYY.MM.DD.tar.gz` | `caracal-tui-darwin-arm64-vYYYY.MM.DD.tar.gz` |
 | `windows-amd64` | `caracal-shell-windows-amd64-vYYYY.MM.DD.zip` | `caracal-cli-windows-amd64-vYYYY.MM.DD.zip` | `caracal-tui-windows-amd64-vYYYY.MM.DD.zip` |
 
-Archives are attached to the GitHub Release with a `SHA256SUMS` file and SLSA provenance attestations. RC tags create GitHub Releases with the prerelease flag; stable tags create final releases.
+Archives are attached to the GitHub Release with a `SHA256SUMS` file and SLSA provenance attestations. rc tags create GitHub Releases for rc; stable tags create GitHub Releases for stable.
 
 ### Install
 
@@ -187,7 +187,7 @@ Tags must point to commits reachable from `main`.
 
 Every release tag has a directory under `caracal/releases/<tag>/` that owns all of its metadata:
 
-- `manifest.json` — pins every artifact (binaries, containers, PyPI, npm) to a channel and version, committed alongside the changeset version bump or rc preparation commit.
+- `manifest.json` — pins every artifact (binaries, containers, PyPI, npm) to a mode and version, committed alongside the changeset version bump or rc preparation commit.
 - `validation.md` — the aggregated post-release validation report.
 - `findings/*.jsonl` — raw per-area findings.
 

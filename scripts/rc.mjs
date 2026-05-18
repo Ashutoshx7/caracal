@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Release-candidate workflow for production-like artifact validation.
+// rc workflow for artifact validation and consumer selection.
 
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -138,7 +138,7 @@ function makeManifest(options = {}) {
   const reg = registries(options)
   return {
     release: tag,
-    channel: 'rc',
+    mode: 'rc',
     version,
     baseVersion,
     suffix,
@@ -155,7 +155,6 @@ function makeManifest(options = {}) {
     npm,
     pypi,
     githubRelease: {
-      prerelease: true,
       tag,
       assets: `${reg.githubReleases.replace(/\/$/, '')}/${tag}`,
     },
@@ -290,7 +289,7 @@ function writeConsumerEndpoints(consumer, manifest) {
   const envFile = join(consumer, 'caracal.rc.env')
   const envText = existsSync(envFile) ? readFileSync(envFile, 'utf8') : ''
   const body = [
-    `CARACAL_CHANNEL=rc`,
+    `CARACAL_MODE=rc`,
     `CARACAL_VERSION=${manifest.version}`,
     `CARACAL_REGISTRY=${manifest.registries.oci.replace(/\/?$/, '/')}`,
     `CARACAL_RC_NPM_REGISTRY=${manifest.registries.npm}`,
