@@ -9,7 +9,6 @@ set -eu
 REPO="Garudex-Labs/caracal"
 INSTALL_DIR="${CARACAL_INSTALL_DIR:-${HOME}/.local/bin}"
 VERSION="${CARACAL_VERSION:-latest}"
-BASE_URL="${CARACAL_RELEASE_BASE_URL:-}"
 
 err() {
     printf 'caracal-install: %s\n' "$1" >&2
@@ -21,14 +20,13 @@ usage() {
 caracal-install: download the Caracal TUI binaries from GitHub Releases.
 
 Usage:
-  install-tui.sh [--version vYYYY.MM.DD[.N]] [--install-dir PATH] [--base-url URL]
+  install-tui.sh [--version vYYYY.MM.DD[.N]] [--install-dir PATH]
 
 Installs the thin 'caracal' shell and the 'caracal-tui' terminal UI binary.
 
 Environment overrides:
   CARACAL_VERSION       same as --version
   CARACAL_INSTALL_DIR   same as --install-dir
-  CARACAL_RELEASE_BASE_URL same as --base-url
 EOF
 }
 
@@ -36,7 +34,6 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --version) [ $# -ge 2 ] || err "--version requires a value"; VERSION="$2"; shift ;;
         --install-dir) [ $# -ge 2 ] || err "--install-dir requires a value"; INSTALL_DIR="$2"; shift ;;
-        --base-url) [ $# -ge 2 ] || err "--base-url requires a value"; BASE_URL="$2"; shift ;;
         --help|-h) usage; exit 0 ;;
         *) err "unknown argument: $1 (use --help for usage)" ;;
     esac
@@ -98,11 +95,7 @@ if [ "${VERSION}" = "latest" ]; then
 else
     tag="${VERSION}"
 fi
-if [ -n "${BASE_URL}" ]; then
-    base="${BASE_URL%/}"
-else
-    base="https://github.com/${REPO}/releases/download/${tag}"
-fi
+base="https://github.com/${REPO}/releases/download/${tag}"
 
 printf 'caracal-install: target release %s (%s-%s)\n' "${tag}" "${os}" "${arch}"
 printf 'caracal-install: downloading SHA256SUMS\n'

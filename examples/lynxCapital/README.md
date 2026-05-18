@@ -15,11 +15,8 @@ with a live agent topology view and SSE log stream.
 ### 1 — Install dependencies
 
 ```bash
-cd /path/to/lynxCapital
+cd caracal/examples/lynxCapital
 python -m venv .venv && source .venv/bin/activate
-set -a
-. ./caracal.prerelease.env
-set +a
 
 pip install -e .
 pip install \
@@ -27,41 +24,27 @@ pip install \
   -e _mock/sdk/lynx_sdk_tax
 ```
 
-This project is selected to the Caracal rc package in `pyproject.toml`; the
-package still resolves from the prerelease Python index, not from a local source
-path.
+The `caracalai-sdk>=0.1.1` pin lives in `pyproject.toml`.
 
 ### 2 — Configure environment
 
 ```bash
 cp .env.example .env
-set -a
-. ./caracal.prerelease.env
-set +a
 ```
 
 Open `.env` and set `OPENAI_API_KEY=sk-...`. Provider credentials are normal
-integration settings; Caracal credentials come from `caracal.toml`. The
-`caracal.prerelease.env` file selects the rc npm/PyPI/container/binary
-endpoints for production-like local testing.
+integration settings; Caracal credentials come from `caracal.toml`.
 
 ### 3 — Start Caracal through TUI + control API
 
 Caracal (API + Coordinator + Gateway + STS + Redis) must be running before
-Lynx starts. Install the rc CLI/TUI binaries from the prerelease binary channel
-and bring up the stack the same way an end user would:
+Lynx starts. Install the released CLI/TUI and bring up the stack the same way
+an end user would — **do not build from the caracal source tree**:
 
 ```bash
-set -a
-. ./caracal.prerelease.env
-set +a
-
-channel="${CARACAL_PRERELEASE_BINARY_CHANNEL%/}"
-base="$channel/${CARACAL_VERSION}"
-curl -fsSL "$channel/install-cli.sh" \
-  | sh -s -- --version "$CARACAL_VERSION" --base-url "$base"
-curl -fsSL "$channel/install-tui.sh" \
-  | sh -s -- --version "$CARACAL_VERSION" --base-url "$base"
+# Install the CLI and TUI once (no sudo, lands in ~/.local/bin)
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-cli.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-tui.sh | sh
 
 # Bring up the OSS stack
 caracal up

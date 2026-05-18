@@ -75,7 +75,6 @@ vendor/
 
 # Local caches and temp files
 .cache/
-.prereleases/
 tmp/
 temp/
 
