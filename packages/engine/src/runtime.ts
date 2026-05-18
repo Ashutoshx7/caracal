@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Runtime mode helpers: locate $CARACAL_HOME, install bundled assets.
+// Installed stack helpers: locate $CARACAL_HOME and install bundled assets.
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, platform } from 'node:os'
@@ -54,4 +54,3 @@ export function installRuntimeAssets(paths: RuntimePaths = runtimePaths()): Inst
   }
   return { created, filesCreated: report.filesCreated }
 }
-

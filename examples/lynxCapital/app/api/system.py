@@ -2,7 +2,7 @@
 Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 Caracal, a product of Garudex Labs
 
-System health, config, and runtime model switcher endpoints.
+System health, config, and model switcher endpoints.
 """
 from __future__ import annotations
 
@@ -74,4 +74,3 @@ def set_model(body: ModelChangeRequest) -> ModelResponse:
         allowed=list(ALLOWED_MODELS),
         contextLimit=MODEL_CONTEXT_LIMITS.get(settings.model, 128_000),
     )
-
