@@ -134,7 +134,7 @@ environment:
 The control service is disabled by default. Start it explicitly with Docker Compose's `control` profile after setting its authentication variables:
 
 ```bash
-docker compose --profile control up
+docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml --profile control up --build control
 ```
 
 **Required when enabled:** `CARACAL_CONTROL_ENABLED=true`, `STS_JWKS_URL`, `STS_ISSUER_URL`, `CONTROL_AUDIENCE`

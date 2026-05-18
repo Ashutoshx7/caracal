@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -28,9 +29,13 @@ type Authenticator struct {
 	jwksURL  string
 	issuer   string
 	audience string
-	keys     map[string]*ecdsa.PublicKey
+	zones    map[string]*zoneKeys
 	mu       sync.RWMutex
 	httpc    *http.Client
+}
+
+type zoneKeys struct {
+	keys     map[string]*ecdsa.PublicKey
 	lastLoad time.Time
 }
 
@@ -58,11 +63,8 @@ func NewAuthenticator(ctx context.Context) (*Authenticator, error) {
 		jwksURL:  url,
 		issuer:   issuer,
 		audience: audience,
-		keys:     map[string]*ecdsa.PublicKey{},
+		zones:    map[string]*zoneKeys{},
 		httpc:    &http.Client{Timeout: 5 * time.Second},
-	}
-	if err := a.refresh(ctx); err != nil {
-		return nil, fmt.Errorf("jwks load: %w", err)
 	}
 	return a, nil
 }
@@ -87,13 +89,16 @@ func (a *Authenticator) Verify(ctx context.Context, header string) (*Claims, err
 		if kid == "" {
 			return nil, errors.New("missing kid")
 		}
-		if k := a.lookup(kid); k != nil {
+		if claims.ZoneID == "" {
+			return nil, errors.New("missing zone_id")
+		}
+		if k := a.lookup(claims.ZoneID, kid); k != nil {
 			return k, nil
 		}
-		if err := a.refresh(ctx); err != nil {
+		if err := a.refresh(ctx, claims.ZoneID); err != nil {
 			return nil, fmt.Errorf("jwks refresh: %w", err)
 		}
-		if k := a.lookup(kid); k != nil {
+		if k := a.lookup(claims.ZoneID, kid); k != nil {
 			return k, nil
 		}
 		return nil, fmt.Errorf("unknown kid %s", kid)
@@ -104,22 +109,37 @@ func (a *Authenticator) Verify(ctx context.Context, header string) (*Claims, err
 	if !scope.Has(claims.Scope, requiredScope) {
 		return nil, fmt.Errorf("missing scope %q", requiredScope)
 	}
+	if claims.ZoneID == "" {
+		return nil, errors.New("missing zone_id")
+	}
 	return claims, nil
 }
 
-func (a *Authenticator) lookup(kid string) *ecdsa.PublicKey {
+func (a *Authenticator) lookup(zoneID string, kid string) *ecdsa.PublicKey {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return a.keys[kid]
-}
-
-func (a *Authenticator) refresh(ctx context.Context) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if !a.lastLoad.IsZero() && time.Since(a.lastLoad) < 30*time.Second {
+	zone := a.zones[zoneID]
+	if zone == nil {
 		return nil
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.jwksURL, nil)
+	return zone.keys[kid]
+}
+
+func (a *Authenticator) refresh(ctx context.Context, zoneID string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	zone := a.zones[zoneID]
+	if zone != nil && !zone.lastLoad.IsZero() && time.Since(zone.lastLoad) < 30*time.Second {
+		return nil
+	}
+	u, err := url.Parse(a.jwksURL)
+	if err != nil {
+		return err
+	}
+	q := u.Query()
+	q.Set("zone_id", zoneID)
+	u.RawQuery = q.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -137,13 +157,14 @@ func (a *Authenticator) refresh(ctx context.Context) error {
 	if err := json.NewDecoder(resp.Body).Decode(&jwks); err != nil {
 		return err
 	}
+	keys := map[string]*ecdsa.PublicKey{}
 	for _, raw := range jwks.Keys {
 		key, kid, err := identity.ParseECJWK(raw)
 		if err != nil {
 			continue
 		}
-		a.keys[kid] = key
+		keys[kid] = key
 	}
-	a.lastLoad = time.Now()
+	a.zones[zoneID] = &zoneKeys{keys: keys, lastLoad: time.Now()}
 	return nil
 }
