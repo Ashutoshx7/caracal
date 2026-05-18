@@ -108,16 +108,17 @@ These environment variables are read by the CLI. Most of them override what is i
 
 | Variable | Default | Affects |
 | --- | --- | --- |
-| `CARACAL_ADMIN_TOKEN` | From `.env` discovery | All admin commands |
+| `CARACAL_ADMIN_TOKEN` | From secret-file discovery | All admin commands |
+| `CARACAL_ADMIN_TOKEN_FILE` | — | Explicit path to a file containing the admin token |
 | `CARACAL_API_URL` | `http://localhost:3000` (dev) | Admin commands API base URL |
 | `CARACAL_ZONE_ID` | From `caracal.toml` | Zone ID for admin commands |
 | `CARACAL_COORDINATOR_URL` | `http://localhost:4000` (dev) | `agent` and `delegation` commands |
 | `CARACAL_COORDINATOR_TOKEN` | — | `agent` and `delegation` commands |
 | `CARACAL_CONFIG` | Auto-resolved | Config file path |
 | `CARACAL_REPO_ROOT` | Auto-searched | Root for `infra/docker/` stack commands |
-| `CARACAL_ENV_FILE` | Auto-resolved | `.env` path for docker-compose |
+| `CARACAL_HOME` | Platform default | Installed runtime home (compose, overrides, secrets) |
 
-`CARACAL_ADMIN_TOKEN` is discovered in order: the environment variable itself → `infra/docker/.env` → `.env` in the current directory. In production (`NODE_ENV !== 'development'`), `CARACAL_API_URL` and `CARACAL_COORDINATOR_URL` must be set explicitly — no localhost defaults are applied.
+`CARACAL_ADMIN_TOKEN` is discovered in order: the environment variable itself → `CARACAL_ADMIN_TOKEN_FILE` → `$CARACAL_HOME/secrets/caracalAdminToken` → `$CARACAL_REPO_ROOT/infra/secrets/files/caracalAdminToken` (dev only). In production (`NODE_ENV !== 'development'`), `CARACAL_API_URL` and `CARACAL_COORDINATOR_URL` must be set explicitly — no localhost defaults are applied.
 
 ---
 
