@@ -82,7 +82,7 @@ services:
   postgres:
     build:
       context: ../postgres
-    image: localhost/caracal-postgres:dev-${CARACAL_DEV_SHA:-local}
+    image: localhost/caracal-postgres:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.14}-dev.sha${CARACAL_DEV_SHA:-local}}
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
@@ -163,7 +163,7 @@ services:
   redis:
     build:
       context: ../redis
-    image: localhost/caracal-redis:dev-${CARACAL_DEV_SHA:-local}
+    image: localhost/caracal-redis:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.14}-dev.sha${CARACAL_DEV_SHA:-local}}
     restart: unless-stopped
     init: true
     stop_grace_period: 20s
@@ -200,7 +200,7 @@ services:
           memory: "${CARACAL_REDIS_MEM_RESERVE:-128M}"
 
   dbMigrate:
-    image: localhost/caracal-postgres:dev-${CARACAL_DEV_SHA:-local}
+    image: localhost/caracal-postgres:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.14}-dev.sha${CARACAL_DEV_SHA:-local}}
     build:
       context: ../postgres
     restart: "no"
@@ -239,7 +239,7 @@ services:
         SERVICE: sts
         PORT: "8080"
         STATE_DIRS: "audit-replay"
-    image: localhost/caracal-sts:dev-${CARACAL_DEV_SHA:-local}
+    image: localhost/caracal-sts:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.14}-dev.sha${CARACAL_DEV_SHA:-local}}
     depends_on:
       postgres:
         condition: service_healthy
@@ -288,7 +288,7 @@ services:
     build:
       context: ../..
       dockerfile: apps/api/Dockerfile
-    image: localhost/caracal-api:dev-${CARACAL_DEV_SHA:-local}
+    image: localhost/caracal-api:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.14}-dev.sha${CARACAL_DEV_SHA:-local}}
     depends_on:
       sts:
         condition: service_healthy
@@ -338,7 +338,7 @@ services:
       args:
         SERVICE: gateway
         PORT: "8081"
-    image: localhost/caracal-gateway:dev-${CARACAL_DEV_SHA:-local}
+    image: localhost/caracal-gateway:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.14}-dev.sha${CARACAL_DEV_SHA:-local}}
     depends_on:
       sts:
         condition: service_healthy
@@ -383,7 +383,7 @@ services:
       args:
         SERVICE: audit
         PORT: "9090"
-    image: localhost/caracal-audit:dev-${CARACAL_DEV_SHA:-local}
+    image: localhost/caracal-audit:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.14}-dev.sha${CARACAL_DEV_SHA:-local}}
     depends_on:
       postgres:
         condition: service_healthy
@@ -425,7 +425,7 @@ services:
     build:
       context: ../..
       dockerfile: apps/coordinator/Dockerfile
-    image: localhost/caracal-coordinator:dev-${CARACAL_DEV_SHA:-local}
+    image: localhost/caracal-coordinator:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.14}-dev.sha${CARACAL_DEV_SHA:-local}}
     depends_on:
       sts:
         condition: service_healthy
@@ -470,7 +470,7 @@ services:
       args:
         SERVICE: control
         PORT: "8087"
-    image: localhost/caracal-control:dev-${CARACAL_DEV_SHA:-local}
+    image: localhost/caracal-control:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.14}-dev.sha${CARACAL_DEV_SHA:-local}}
     depends_on:
       sts:
         condition: service_healthy
