@@ -23,11 +23,11 @@ export function readEnvFile(path: string): Record<string, string> {
 }
 
 /**
- * Resolve the runtime home written to by `caracal up` in installed mode.
+ * Resolve the installed home written to by `caracal up`.
  * Mirrors the layout in packages/engine/src/runtime.ts so consumers
  * outside the CLI (SDK helpers, tests, scripts) reach the same file.
  */
-export function runtimeEnvFile(): string {
+export function installedEnvFile(): string {
   if (process.env.CARACAL_HOME) return join(process.env.CARACAL_HOME, '.env');
   if (platform() === 'darwin') {
     return join(homedir(), 'Library', 'Application Support', 'caracal', '.env');
@@ -42,7 +42,7 @@ export function discoverAdminToken(explicit?: string): string | undefined {
   if (process.env.CARACAL_ADMIN_TOKEN) return process.env.CARACAL_ADMIN_TOKEN;
   const candidates: string[] = [];
   if (process.env.CARACAL_ENV_FILE) candidates.push(process.env.CARACAL_ENV_FILE);
-  candidates.push(runtimeEnvFile());
+  candidates.push(installedEnvFile());
   if (process.env.CARACAL_REPO_ROOT) {
     candidates.push(join(process.env.CARACAL_REPO_ROOT, 'infra', 'docker', '.env'));
   }
