@@ -45,7 +45,7 @@ Escalate severity immediately if tokens, secrets, keys, policy enforcement, audi
 |---|---|---|---|
 | Reproducibility. | Reproduce locally or in an isolated runtime using the smallest safe proof. Do not run destructive payloads against shared systems. | Exact request, command, token shape, config, commit, container version, and observed result. | The issue is confirmed, rejected, or needs more data. |
 | Security impact. | Determine whether the issue affects auth, policy, keys, secrets, audit, stream integrity, upstream routing, command invocation, releases, or availability. | Impact statement and affected assets from the threat model. | Severity is assigned or revised. |
-| Current exposure. | Check if the affected path is reachable in runtime mode, exposed by Compose ports, shipped in a release, or gated by a feature flag/profile. | Runtime mode, image tag, package version, route, port, or profile status. | The Incident Lead knows whether immediate containment is needed. |
+| Current exposure. | Check if the affected path is reachable in rc or stable mode, exposed by Compose ports, shipped in a release, or gated by a feature flag/profile. | Mode, image tag, package version, route, port, or profile status. | The Incident Lead knows whether immediate containment is needed. |
 
 ## Containment
 

@@ -18,7 +18,7 @@
 - Must keep tests under `tests/` and mock SDK shims under `_mock/sdk/`.
 
 ## Forbidden
-- Must not add runtime mode switches, fallback providers, alternate orchestration frameworks, Celery, Temporal, or message brokers.
+- Must not add mode switches, fallback providers, alternate orchestration frameworks, Celery, Temporal, or message brokers.
 - Must not hard-code company copy, product labels, providers, regions, scenarios, or theme values outside `config/company.yaml`.
 - Must not put mock-shaped code under `app/`.
 - Must not use Node, npm, Vite, React, or bundled frontend assets.

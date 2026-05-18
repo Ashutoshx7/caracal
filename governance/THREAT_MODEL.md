@@ -18,7 +18,7 @@ In scope:
 - `packages/*`: shared identity, OAuth, revocation, transport, connector, SDK, admin, and core libraries.
 - `infra/docker`: local-dev and runtime Compose stacks, secrets, hardened containers, PostgreSQL, Redis, migrations, and health checks.
 
-Out of scope: enterprise-only code, customer deployments outside the provided runtime model, external identity providers, external upstream services, host OS hardening beyond the Compose controls, and private incident details.
+Out of scope: enterprise-only code, customer deployments outside the provided deployment model, external identity providers, external upstream services, host OS hardening beyond the Compose controls, and private incident details.
 
 ## Assets / What we are protecting
 
@@ -47,7 +47,7 @@ Out of scope: enterprise-only code, customer deployments outside the provided ru
 
 ## Assumptions
 
-- Runtime mode is the security baseline; development defaults are not production controls.
+- rc and stable are the security baseline; dev defaults are not production controls.
 - PostgreSQL, Redis, and service secrets are reachable only by the intended local/runtime stack.
 - Operators generate, store, rotate, and protect Docker secrets and admin tokens outside Git.
 - STS-issued ES256 tokens are the only accepted authority for runtime service calls that require bearer auth.
@@ -83,7 +83,7 @@ Out of scope: enterprise-only code, customer deployments outside the provided ru
 | T4 | Use transactions and advisory locks for graph mutations; publish lifecycle/delegation/invalidation events through the outbox; keep relay dedupe and idle-claim behavior bounded. | Coordinator DB writes, jobs, relay | Coordinator/relay maintainers |
 | T5 | Resolve secrets from secret files; redact known sensitive log paths; never return plaintext key material, client secrets, bearer tokens, subject claims, database URLs, or Redis URLs. | Logging, responses, audit payloads, config | Owning component maintainer |
 | T6 | Keep `audit_events` append-only; sign audit chain entries with HMAC when configured; acknowledge streams only after insert, duplicate handling, or DLQ routing; run tamper sweeps and retention/export jobs under leader locks. | Audit service and producers | Audit maintainers |
-| T7 | Require stream HMAC keys in runtime mode; verify producer signatures where configured; dedupe stream messages; leave transient failures in the pending-entry list for reclaim. | Redis Streams producers and consumers | Stream producer/consumer maintainers |
+| T7 | Require stream HMAC keys in rc and stable; verify producer signatures where configured; dedupe stream messages; leave transient failures in the pending-entry list for reclaim. | Redis Streams producers and consumers | Stream producer/consumer maintainers |
 | T8 | Preserve bounded request bodies, timeouts, rate limits, health/readiness checks, resource limits, restart policies, and localhost-only port bindings; fail readiness when PostgreSQL, Redis, STS, or required upstreams are unavailable. | Compose, service servers, config | Infra and service maintainers |
 | T9 | Keep control disabled unless `CARACAL_CONTROL_ENABLED=true`; allow only `POST /v1/control/invoke`; require `control:invoke`; validate commands against the canonical catalog; audit accepted and rejected requests; never shell out. | Control service and command catalog | Control maintainers |
 | T10 | Keep lockfiles and module sums reviewed; publish versioned images and archives only from trusted release paths; verify installers, Dockerfiles, and generated artifacts do not embed secrets or uncontrolled network fetches. | Release tooling and dependencies | Release maintainers |
@@ -112,7 +112,7 @@ Review and update this threat model when any of the following occurs:
 - Authorization, policy, token, key, revocation, replay, step-up, or scope logic changes.
 - API, coordinator, gateway, STS, audit, control, relay, transport, connector, or SDK boundaries change.
 - A new service, route, package, stream, database table, port, container, secret, provider integration, export target, or release artifact is introduced.
-- Compose, Dockerfile, installer, image registry, runtime mode, secret handling, or deployment defaults change.
+- Compose, Dockerfile, installer, image registry, mode, secret handling, or deployment defaults change.
 - Dependency updates affect auth, crypto, HTTP, parsing, policy, database, Redis, build, installer, or release behavior.
 - A security incident, near miss, audit finding, bug bounty report, or operational outage exposes an unmodeled risk.
 - Enterprise isolation, licensing, or shared-interface assumptions change.
