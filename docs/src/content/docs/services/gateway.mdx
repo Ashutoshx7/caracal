@@ -92,7 +92,7 @@ Revocation propagates from the API → Redis stream → Gateway's in-process set
 
 ---
 
-## TLS and runtime mode
+## TLS and mode
 
 The Gateway serves HTTPS when both TLS files are configured:
 
@@ -101,7 +101,7 @@ The Gateway serves HTTPS when both TLS files are configured:
 
 If neither file is set, the Gateway serves plain HTTP. Use that only for the local compose stack or behind a trusted TLS-terminating ingress.
 
-`CARACAL_MODE=runtime` enables startup safety checks. It rejects `INSECURE_HTTP`, `INSECURE_STS`, and `JTI_FAIL_OPEN`; requires `REDIS_URL`, `STREAMS_HMAC_KEY`, and `AUDIT_HMAC_KEY`; requires port `8081`; and requires `UPSTREAM_HOST_ALLOWLIST` when private upstreams are enabled. `STS_URL` must be absolute. Runtime mode allows an HTTP STS URL only for internal hosts such as `sts`, `localhost`, loopback, or another single-label service name.
+`CARACAL_MODE=rc` and `CARACAL_MODE=stable` enable startup safety checks. They reject `INSECURE_HTTP`, `INSECURE_STS`, and `JTI_FAIL_OPEN`; require `REDIS_URL`, `STREAMS_HMAC_KEY`, and `AUDIT_HMAC_KEY`; require port `8081`; and require `UPSTREAM_HOST_ALLOWLIST` when private upstreams are enabled. `STS_URL` must be absolute. rc and stable allow an HTTP STS URL only for internal hosts such as `sts`, `localhost`, loopback, or another single-label service name.
 
 ---
 
@@ -150,18 +150,18 @@ The Gateway is stateless per request. Scale horizontally for throughput. Per-ins
 | --- | --- | --- |
 | `PORT` | `8081` | HTTP(S) listen port; must be `8081` |
 | `CARACAL_MODE` | `runtime` | `runtime` or `dev`; controls runtime safety checks |
-| `STS_URL` | — | **Required.** STS base URL with scheme. In runtime mode, HTTP is allowed only for internal hosts. |
+| `STS_URL` | — | **Required.** STS base URL with scheme. In rc or stable mode, HTTP is allowed only for internal hosts. |
 | `STS_TIMEOUT` | `5s` | Timeout for STS token exchange calls |
 | `UPSTREAM_TIMEOUT` | `30s` | Timeout for upstream resource calls |
 | `DATABASE_URL` | — | **Required.** PostgreSQL connection string for bindings |
 | `REDIS_URL` | — | **Required.** Redis connection string for JTI tracking and revocation sync |
 | `STREAMS_HMAC_KEY` | — | **Required.** Hex key to verify stream message signatures |
-| `AUDIT_HMAC_KEY` | — | Required when `CARACAL_MODE=runtime`; verifies audit-linked stream events |
+| `AUDIT_HMAC_KEY` | — | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`; verifies audit-linked stream events |
 | `TLS_CERT_FILE` | — | TLS certificate; must be set with `TLS_KEY_FILE` |
 | `TLS_KEY_FILE` | — | TLS private key; must be set with `TLS_CERT_FILE` |
-| `INSECURE_HTTP` | `false` | Developer-only flag; forbidden when `CARACAL_MODE=runtime` |
-| `INSECURE_STS` | `false` | Developer-only flag; forbidden when `CARACAL_MODE=runtime` |
+| `INSECURE_HTTP` | `false` | Developer-only flag; forbidden when `CARACAL_MODE=rc` or `CARACAL_MODE=stable` |
+| `INSECURE_STS` | `false` | Developer-only flag; forbidden when `CARACAL_MODE=rc` or `CARACAL_MODE=stable` |
 | `ALLOW_PRIVATE_UPSTREAMS` | `false` | Allow RFC 1918 upstream hosts |
 | `UPSTREAM_HOST_ALLOWLIST` | `""` | Comma-separated upstream host allowlist |
-| `JTI_FAIL_OPEN` | `false` | Allow requests if JTI Redis lookup fails; forbidden when `CARACAL_MODE=runtime` |
+| `JTI_FAIL_OPEN` | `false` | Allow requests if JTI Redis lookup fails; forbidden when `CARACAL_MODE=rc` or `CARACAL_MODE=stable` |
 | `LOG_LEVEL` | `info` | Logging verbosity |

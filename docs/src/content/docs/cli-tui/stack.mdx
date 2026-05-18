@@ -4,7 +4,7 @@ description: caracal up, down, and status — start, stop, and probe the local C
 pageType: reference
 ---
 
-Stack commands manage the local Caracal stack. They delegate to `docker compose` and do not require `CARACAL_ADMIN_TOKEN`. In runtime mode (installed binary), the compose file and env file are resolved automatically from the Caracal runtime home — no flags needed. In dev mode, run via `pnpm caracal` from inside the repo, which sets `CARACAL_REPO_ROOT` automatically.
+Stack commands manage the local Caracal stack. They delegate to `docker compose` and do not require `CARACAL_ADMIN_TOKEN`. In rc or stable mode, the compose file and env file are resolved automatically from the Caracal home — no flags needed. In dev mode, run via `pnpm caracal` from inside the repo, which sets `CARACAL_REPO_ROOT` automatically.
 
 ---
 
@@ -16,7 +16,7 @@ Start the stack.
 caracal up
 ```
 
-Equivalent to `docker compose up -d`. In development mode, passes `--build` to rebuild images before starting. In runtime mode (detected automatically), runs without `--build` and injects `CARACAL_VERSION` into the compose environment.
+Equivalent to `docker compose up -d`. In dev mode, passes `--build` to rebuild images before starting. In rc or stable mode, runs without `--build` and injects `CARACAL_VERSION` into the compose environment.
 
 Forwards all `docker compose` output to stdout and exits with the compose exit code.
 
