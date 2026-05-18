@@ -17,7 +17,7 @@ from app import caracal as caracal_module
 from app.config import load_config
 
 load_dotenv(Path(__file__).parent.parent / ".env")
-caracal = caracal_module.init()
+caracal = caracal_module.init(required=False)
 
 
 @asynccontextmanager
@@ -33,7 +33,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Lynx Capital", lifespan=lifespan)
-app.add_middleware(caracal.middleware())
+if caracal is not None:
+    app.add_middleware(caracal.middleware())
 
 _static = Path(__file__).parent / "web" / "static"
 if _static.exists():

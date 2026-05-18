@@ -12,6 +12,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from app import caracal as caracal_module
 from app.services.resilience import RetryPolicy, idempotency_key
 from app.services.transport.rest import AuthSpec, RestClient, RestEndpoint
 
@@ -202,9 +203,23 @@ def _stripe_client():
     if c is not None:
         return c
     from lynx_sdk_stripe_treasury import StripeTreasuryClient
+    base_url = _required_env("LYNX_STRIPE_URL")
+    caracal = caracal_module.get()
+    http_client = None
+    if caracal is not None:
+        http_client = caracal.sync_transport(
+            base_url=base_url,
+            timeout=5.0,
+            headers={
+                "Authorization": f"Bearer {_required_env('LYNX_STRIPE_KEY')}",
+                "User-Agent": "lynx-sdk-stripe/0.1.0",
+                "X-Caracal-Resource": "lynx/stripe-treasury",
+            },
+        )
     c = StripeTreasuryClient(
         api_key=_required_env("LYNX_STRIPE_KEY"),
-        base_url=_required_env("LYNX_STRIPE_URL"),
+        base_url=base_url,
+        http_client=http_client,
     )
     _CLIENT_CACHE["stripe-treasury"] = c
     return c
@@ -215,9 +230,23 @@ def _tax_client():
     if c is not None:
         return c
     from lynx_sdk_tax import TaxClient
+    base_url = _required_env("LYNX_TAX_URL")
+    caracal = caracal_module.get()
+    http_client = None
+    if caracal is not None:
+        http_client = caracal.sync_transport(
+            base_url=base_url,
+            timeout=4.0,
+            headers={
+                "X-API-Key": _required_env("LYNX_TAX_KEY"),
+                "User-Agent": "lynx-sdk-tax/0.1.0",
+                "X-Caracal-Resource": "lynx/tax-rules",
+            },
+        )
     c = TaxClient(
         api_key=_required_env("LYNX_TAX_KEY"),
-        base_url=_required_env("LYNX_TAX_URL"),
+        base_url=base_url,
+        http_client=http_client,
     )
     _CLIENT_CACHE["tax-rules"] = c
     return c
