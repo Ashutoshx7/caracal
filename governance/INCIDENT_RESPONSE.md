@@ -15,7 +15,7 @@ Use this process for incidents affecting:
 - `services/sts`: token exchange, OPA policy decisions, signing keys, JWKS, replay, revocation, step-up, and audit emission.
 - `services/gateway`: proxy enforcement, upstream safety, STS exchange, bindings, replay, and revocation checks.
 - `services/audit`: audit stream consumption, append-only ledger, HMAC chain, tamper sweeps, retention, and export.
-- `services/control`: optional control invocation, command catalog enforcement, replay, rate limits, and audit.
+- `apps/control`: optional control invocation, engine catalog enforcement, JTI replay, rate limits, and audit.
 - `services/coordinator-relay`, Redis Streams, PostgreSQL, Docker runtime, installers, releases, dependencies, and shared `packages/*`.
 
 Use the public issue tracker for non-security bugs. Use a private GitHub Security Advisory for suspected vulnerabilities, credential exposure, unsafe execution, policy bypass, or exploitable operational failures.
