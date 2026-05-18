@@ -5,8 +5,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { ENV_EXAMPLE } from './embedded.js'
+import { resolve } from 'node:path'
 
 const isPosix = process.platform !== 'win32'
 
@@ -46,14 +45,15 @@ const DERIVED_SECRETS: readonly DerivedSecret[] = [
 ] as const
 
 export interface BootstrapPaths {
-  envFile: string
-  envTemplate: string
   secretsDir: string
+  // Postgres role / db name materialised into derived URLs. Read from the env
+  // schema defaults; callers pass the resolved values explicitly so this module
+  // stays decoupled from any specific override layer.
+  postgresUser?: string
+  postgresDb?: string
 }
 
 export interface BootstrapReport {
-  envCreated: boolean
-  envUpdated: boolean
   filesCreated: string[]
 }
 
@@ -80,45 +80,15 @@ function readOrCreateSecretFile(path: string, bytes: number): { value: string; c
   return { value, created: true }
 }
 
-function ensureEnvFile(envFile: string, template: string): boolean {
-  if (existsSync(envFile)) return false
-  mkdirSync(dirname(envFile), { recursive: true })
-  writeFileSync(envFile, template, { mode: 0o600 })
-  return true
-}
-
-function syncEnv(envFile: string, values: Record<string, string>): boolean {
-  const lines = readFileSync(envFile, 'utf8').split('\n')
-  let mutated = false
-  for (const [key, value] of Object.entries(values)) {
-    const re = new RegExp(`^${key}=(.*)$`)
-    let found = false
-    for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(re)
-      if (!m) continue
-      found = true
-      if (m[1] !== value) {
-        lines[i] = `${key}=${value}`
-        mutated = true
-      }
-      break
-    }
-    if (!found) {
-      lines.push(`${key}=${value}`)
-      mutated = true
-    }
-  }
-  if (mutated) writeFileSync(envFile, lines.join('\n'))
-  chmodSafe(envFile, 0o600)
-  return mutated
-}
-
 export function bootstrapSecrets(paths: BootstrapPaths): BootstrapReport {
   mkdirSync(paths.secretsDir, { recursive: true })
   chmodSafe(paths.secretsDir, 0o700)
 
   const filesCreated: string[] = []
-  const values: Record<string, string> = {}
+  const values: Record<string, string> = {
+    POSTGRES_USER: paths.postgresUser ?? 'caracal',
+    POSTGRES_DB: paths.postgresDb ?? 'caracal',
+  }
   for (const spec of SECRET_FILES) {
     const filePath = resolve(paths.secretsDir, spec.fileName)
     const { value, created } = readOrCreateSecretFile(filePath, spec.bytes)
@@ -126,13 +96,6 @@ export function bootstrapSecrets(paths: BootstrapPaths): BootstrapReport {
     if (created) filesCreated.push(spec.fileName)
   }
 
-  const envCreated = ensureEnvFile(paths.envFile, paths.envTemplate)
-  const envUpdated = syncEnv(paths.envFile, values)
-
-  const envValues = readDotenv(paths.envFile)
-  for (const k of ['POSTGRES_USER', 'POSTGRES_DB']) {
-    if (envValues[k]) values[k] = envValues[k]
-  }
   for (const derived of DERIVED_SECRETS) {
     const filePath = resolve(paths.secretsDir, derived.fileName)
     const rendered = derived.render(values)
@@ -144,31 +107,17 @@ export function bootstrapSecrets(paths: BootstrapPaths): BootstrapReport {
     }
   }
 
-  return { envCreated, envUpdated, filesCreated }
-}
-
-function readDotenv(path: string): Record<string, string> {
-  if (!existsSync(path)) return {}
-  const out: Record<string, string> = {}
-  for (const line of readFileSync(path, 'utf8').split('\n')) {
-    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/)
-    if (m) out[m[1]] = m[2]
-  }
-  return out
+  return { filesCreated }
 }
 
 export function devBootstrapPaths(repoRoot: string): BootstrapPaths {
   return {
-    envFile: resolve(repoRoot, 'infra', 'docker', '.env'),
-    envTemplate: readFileSync(resolve(repoRoot, 'infra', 'docker', '.env.example'), 'utf8'),
     secretsDir: resolve(repoRoot, 'infra', 'secrets', 'files'),
   }
 }
 
 export function runtimeBootstrapPaths(home: string): BootstrapPaths {
   return {
-    envFile: resolve(home, '.env'),
-    envTemplate: ENV_EXAMPLE,
     secretsDir: resolve(home, 'secrets'),
   }
 }

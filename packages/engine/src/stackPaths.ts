@@ -3,6 +3,7 @@
 //
 // Resolves StackPaths for dev, rc, and stable modes.
 
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { bootstrapSecrets, devBootstrapPaths } from './secrets.js'
 import { installRuntimeAssets, runtimePaths } from './runtime.js'
@@ -40,21 +41,30 @@ function devPaths(opts: ResolveStackPathsOptions): StackPaths {
     )
   }
   const composeFile = process.env.CARACAL_COMPOSE_FILE ?? join(repoRoot, 'infra', 'docker', 'docker-compose.yml')
-  const envFile = process.env.CARACAL_ENV_FILE ?? join(repoRoot, 'infra', 'docker', '.env')
+  const defaultsEnvFile = join(repoRoot, 'infra', 'docker', 'dev.env')
+  const overrideEnvFile = join(repoRoot, 'infra', 'docker', 'local.env')
   const report = bootstrapSecrets(devBootstrapPaths(repoRoot))
-  if (report.envCreated) opts.onInfo?.(`created ${envFile} from .env.example`)
   if (report.filesCreated.length > 0) {
     opts.onInfo?.(`generated ${report.filesCreated.length} secret file(s) under infra/secrets/files`)
   }
-  if (report.envUpdated && !report.envCreated) opts.onInfo?.(`synced secrets → ${envFile}`)
-  return { composeFile, envFile, cwd: repoRoot, mode: 'dev' }
+  return {
+    composeFile,
+    envFiles: existsSync(overrideEnvFile) ? [defaultsEnvFile, overrideEnvFile] : [defaultsEnvFile],
+    cwd: repoRoot,
+    mode: 'dev',
+  }
 }
 
 function installedPaths(opts: ResolveStackPathsOptions, mode: Exclude<StackMode, 'dev'>): StackPaths {
   const paths = runtimePaths()
-  const report = installRuntimeAssets(paths)
+  const report = installRuntimeAssets(paths, mode)
   if (report.created) opts.onInfo?.(`provisioned runtime assets at ${paths.home}`)
   const composeFile = process.env.CARACAL_COMPOSE_FILE ?? paths.composeFile
-  const envFile = process.env.CARACAL_ENV_FILE ?? paths.envFile
-  return { composeFile, envFile, cwd: paths.home, mode }
+  const overrideEnvFile = process.env.CARACAL_ENV_FILE ?? paths.overrideEnvFile
+  return {
+    composeFile,
+    envFiles: [overrideEnvFile],
+    cwd: paths.home,
+    mode,
+  }
 }

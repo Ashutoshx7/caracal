@@ -10,7 +10,7 @@ import { isControlEnabled } from './controlState.js'
 
 export interface StackPaths {
   composeFile: string
-  envFile: string
+  envFiles: string[]
   cwd: string
   mode: 'dev' | 'rc' | 'stable'
 }
@@ -29,7 +29,8 @@ export interface StackComposeHandle {
 
 function composeArgv(paths: StackPaths, args: string[]): string[] {
   const profile = isControlEnabled() ? ['--profile', 'control'] : []
-  return ['docker', 'compose', '--env-file', paths.envFile, '-f', paths.composeFile, ...profile, ...args]
+  const envFlags = paths.envFiles.flatMap((f) => existsSync(f) ? ['--env-file', f] : [])
+  return ['docker', 'compose', ...envFlags, '-f', paths.composeFile, ...profile, ...args]
 }
 
 export function stackUp(opts: StackComposeOpts): StackComposeHandle {
