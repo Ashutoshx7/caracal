@@ -169,7 +169,7 @@ checkShadow() {
 checkShadow caracal-tui
 
 printf 'caracal-install: done. Next steps:\n'
-printf '  installed release %s (mode: runtime)\n' "${tag}"
+printf '  installed release %s (mode: stable)\n' "${tag}"
 printf '  hash -r            # refresh your shell command cache\n'
 [ "${installedShell}" = "1" ] && printf '  caracal tui        # launch the interactive TUI through the shell\n'
 printf '  caracal-tui        # launch the interactive TUI directly\n'

@@ -171,7 +171,7 @@ checkShadow caracal
 [ "${installedCli}" = caracal-cli ] && checkShadow caracal-cli
 
 printf 'caracal-install: done. Next steps:\n'
-printf '  installed release %s (mode: runtime)\n' "${tag}"
+printf '  installed release %s (mode: stable)\n' "${tag}"
 printf '  hash -r            # refresh your shell command cache\n'
 printf '  caracal up         # start stack (Docker required)\n'
 printf '  caracal status     # probe service health\n'

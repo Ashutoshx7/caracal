@@ -1,11 +1,11 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Release pipeline: builds CLI binaries, pushes runtime images to GHCR, and creates stable or rc GitHub Releases. npm and PyPI packages are published via scripts/publishNpm.sh and scripts/publishPypi.sh.
+# Release pipeline: builds CLI binaries, pushes images to GHCR, and creates stable or rc GitHub Releases. npm and PyPI packages are published via scripts/publishNpm.sh and scripts/publishPypi.sh.
 #
 # Triggers:
 # - Tag push vYYYY.MM.DD[.N]: stable release (binaries → GitHub Release, images → GHCR, attestations), then best-effort postReleaseValidation.
-# - Tag push vYYYY.MM.DD[.N]-rc.*: release candidate (same artifact channels, GitHub Release marked prerelease).
+# - Tag push vYYYY.MM.DD[.N]-rc.*: rc (same artifact channels, GitHub Release marked as rc).
 # - workflow_dispatch: build-only validation (CLI artifact upload; images built with buildx — no GHCR push). No GitHub Release.
 #   Use ref to checkout a branch or tag; leave empty to use the caller's default ref.
 # - dryRun is informational for dispatch only (publishing is already gated on tag push).
@@ -93,8 +93,8 @@ jobs:
           const [manifestPath, release, version] = process.argv.slice(2);
           const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
           if (manifest.release !== release) throw new Error(`manifest release ${manifest.release} does not match ${release}`);
-          const channel = version.includes("-rc.") ? "rc" : "stable";
-          if (manifest.channel !== channel) throw new Error(`manifest channel ${manifest.channel} does not match ${channel}`);
+          const mode = version.includes("-rc.") ? "rc" : "stable";
+          if (manifest.mode !== mode) throw new Error(`manifest mode ${manifest.mode} does not match ${mode}`);
           for (const [kind, value] of Object.entries(manifest.binaries)) {
             if (value !== version) throw new Error(`binary ${kind} version ${value} does not match ${version}`);
           }
