@@ -29,7 +29,7 @@ dependencies = [
     "grpcio>=1.80",
     "protobuf>=6.33,<7",
     "python-dotenv>=1.2",
-    "caracalai-sdk>=0.1.1",
+    "caracalai-sdk==0.1.1rc0+shae1f4fd7f",
     "redis>=5.2",
 ]
 

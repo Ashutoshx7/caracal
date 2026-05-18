@@ -38,9 +38,16 @@ Lynx Capital setup checklist for Caracal and provider configuration.
 
   <div class="panel">
     <h2>1 · Connect Caracal through TUI + control API</h2>
-    <p>Install the released CLI/TUI, start Caracal, then use <code>caracal-tui</code> to create or confirm the Lynx zone, control key, and protected resources.</p>
-<pre class="cmd">curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-cli.sh | sh
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-tui.sh | sh
+    <p>Load <code>caracal.prerelease.env</code>, install the rc CLI/TUI from the prerelease binary channel, start Caracal, then use <code>caracal-tui</code> to create or confirm the Lynx zone, control key, and protected resources.</p>
+<pre class="cmd">set -a
+. ./caracal.prerelease.env
+set +a
+channel="${CARACAL_PRERELEASE_BINARY_CHANNEL%/}"
+base="$channel/${CARACAL_VERSION}"
+curl -fsSL "$channel/install-cli.sh" \
+  | sh -s -- --version "$CARACAL_VERSION" --base-url "$base"
+curl -fsSL "$channel/install-tui.sh" \
+  | sh -s -- --version "$CARACAL_VERSION" --base-url "$base"
 caracal up
 CARACAL_CONTROL_ENABLED=true caracal-tui</pre>
   </div>
@@ -85,8 +92,11 @@ upstream_prefix = "http://127.0.0.1:8800"</pre>
 
   <div class="panel">
     <h2>4 · Configure environment</h2>
-    <p>Copy the template and fill in <code>OPENAI_API_KEY</code>. Provider credentials are normal integration settings; Caracal credentials come from <code>caracal.toml</code>.</p>
+    <p>Copy the template, source <code>caracal.prerelease.env</code>, and fill in <code>OPENAI_API_KEY</code>. Provider credentials are normal integration settings; Caracal credentials come from <code>caracal.toml</code>.</p>
 <pre class="cmd">cp .env.example .env
+set -a
+. ./caracal.prerelease.env
+set +a
 <span class="c"># edit .env → set OPENAI_API_KEY=sk-...</span></pre>
   </div>
 
