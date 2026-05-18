@@ -34,6 +34,7 @@ process.env.CARACAL_REPO_ROOT = root
 
 const tsBuilds = [
   'packages/core/ts/dist/index.js',
+  'packages/oauth/ts/dist/index.js',
   'packages/admin/ts/dist/index.js',
   'packages/engine/dist/index.js',
 ]
