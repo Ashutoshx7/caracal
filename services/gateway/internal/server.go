@@ -71,7 +71,7 @@ func New(ctx context.Context) (*Server, error) {
 	return &Server{
 		cfg:         cfg,
 		log:         log,
-		sts:         newSTSClient(cfg.STSURL, cfg.STSTimeout),
+		sts:         newSTSClient(cfg.STSURL, cfg.STSTimeout, cfg.STSExchangeHMACKey),
 		jwks:        newJWKSCache(cfg.STSURL, cfg.STSTimeout, log),
 		guard:       newUpstreamGuard(cfg.UpstreamHostAllowlist, cfg.AllowPrivateUpstreams),
 		tracker:     tracker,

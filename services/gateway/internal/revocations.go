@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Revocation cache: tracks revoked session ids and aborts in-flight gateway streams when a session is revoked.
+// Revocation cache: tracks revoked session and agent ids and aborts affected gateway streams.
 
 package internal
 
@@ -40,19 +40,20 @@ type revocationRedis interface {
 	Del(ctx context.Context, key string) error
 }
 
-// revocationStore answers IsRevoked(sid) lookups for the gateway. It is populated
+// revocationStore answers revocation lookups for the gateway. It is populated
 // by a background consumer reading the same caracal.sessions.revoke stream STS
 // uses, so revocations propagate to the gateway in near real time. Entries are
 // pruned after revocationTTL — by then any per-call token bound to that session
 // has long since expired (max ttlPerCallSDK = 15m).
 type revocationStore struct {
-	mu      sync.RWMutex
-	entries map[string]time.Time
-	log     zerolog.Logger
+	mu       sync.RWMutex
+	sessions map[string]time.Time
+	agents   map[string]time.Time
+	log      zerolog.Logger
 }
 
 func newRevocationStore(log zerolog.Logger) *revocationStore {
-	return &revocationStore{entries: map[string]time.Time{}, log: log}
+	return &revocationStore{sessions: map[string]time.Time{}, agents: map[string]time.Time{}, log: log}
 }
 
 // IsRevoked reports whether the session id has been revoked recently enough that
@@ -62,14 +63,30 @@ func (s *revocationStore) IsRevoked(sid string) bool {
 		return false
 	}
 	s.mu.RLock()
-	expiresAt, ok := s.entries[sid]
+	expiresAt, ok := s.sessions[sid]
 	s.mu.RUnlock()
 	return ok && time.Now().Before(expiresAt)
 }
 
-func (s *revocationStore) mark(sid string) {
+func (s *revocationStore) IsAgentRevoked(agentSessionID string) bool {
+	if agentSessionID == "" {
+		return false
+	}
+	s.mu.RLock()
+	expiresAt, ok := s.agents[agentSessionID]
+	s.mu.RUnlock()
+	return ok && time.Now().Before(expiresAt)
+}
+
+func (s *revocationStore) markSession(sid string) {
 	s.mu.Lock()
-	s.entries[sid] = time.Now().Add(revocationTTL)
+	s.sessions[sid] = time.Now().Add(revocationTTL)
+	s.mu.Unlock()
+}
+
+func (s *revocationStore) markAgent(agentSessionID string) {
+	s.mu.Lock()
+	s.agents[agentSessionID] = time.Now().Add(revocationTTL)
 	s.mu.Unlock()
 }
 
@@ -80,15 +97,20 @@ func (s *revocationStore) Size() int {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return len(s.entries)
+	return len(s.sessions) + len(s.agents)
 }
 
 func (s *revocationStore) prune() {
 	cutoff := time.Now()
 	s.mu.Lock()
-	for sid, expiresAt := range s.entries {
+	for sid, expiresAt := range s.sessions {
 		if !cutoff.Before(expiresAt) {
-			delete(s.entries, sid)
+			delete(s.sessions, sid)
+		}
+	}
+	for agentSessionID, expiresAt := range s.agents {
+		if !cutoff.Before(expiresAt) {
+			delete(s.agents, agentSessionID)
 		}
 	}
 	s.mu.Unlock()
@@ -163,14 +185,38 @@ func processRevocationMessage(ctx context.Context, redis revocationRedis, store 
 		return
 	}
 	sid, _ := msg.Values["session_id"].(string)
-	if sid == "" {
-		trackRevocationFailure(ctx, redis, msg, fmt.Errorf("missing session_id"), log)
+	agentSessionID, _ := msg.Values["agent_session_id"].(string)
+	if sid == "" && agentSessionID == "" {
+		trackRevocationFailure(ctx, redis, msg, fmt.Errorf("missing session_id or agent_session_id"), log)
 		return
 	}
-	store.mark(sid)
+	if sid != "" {
+		store.markSession(sid)
+	}
+	if agentSessionID != "" {
+		store.markAgent(agentSessionID)
+	}
 	if err := redis.XAck(ctx, streamRevoke, groupRevoke, msg.ID); err != nil {
 		log.Error().Err(err).Str("id", msg.ID).Msg("revocation xack failed")
 	}
+}
+
+func jwtAgentSessionID(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var claims struct {
+		AgentSessionID string `json:"agent_session_id"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+	return claims.AgentSessionID
 }
 
 func trackRevocationFailure(ctx context.Context, redis revocationRedis, msg redis.XMessage, cause error, log zerolog.Logger) {

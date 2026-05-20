@@ -34,3 +34,16 @@ func TestLoadConfigRejectsSlowOPAPoll(t *testing.T) {
 		t.Fatalf("slow OPA polling must fail, got %v", err)
 	}
 }
+
+func TestLoadConfigRejectsPublishedModeWithoutGatewayHMAC(t *testing.T) {
+	t.Setenv("CARACAL_MODE", "stable")
+	t.Setenv("PORT", "8080")
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("REDIS_URL", "redis://example")
+	t.Setenv("ISSUER_URL", "https://issuer.example")
+
+	_, err := loadConfig()
+	if err == nil || !strings.Contains(err.Error(), "GATEWAY_STS_HMAC_KEY") {
+		t.Fatalf("stable STS must require gateway HMAC key, got %v", err)
+	}
+}
