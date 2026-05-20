@@ -433,28 +433,9 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 	// Build per-resource upstream directives so the gateway can substitute the
 	// provider-native credential where the resource expects one.
 	for _, identifier := range grantedResources {
-		resource := grantedResourceRows[identifier]
-		directive := UpstreamDirective{
-			AuthMode:   UpstreamAuthCaracalJWT,
-			AuthHeader: "Authorization",
-			AuthScheme: "Bearer",
-		}
-		if resource.UpstreamURL != nil {
-			directive.URL = *resource.UpstreamURL
-		}
-		if req.GatewayAuthenticated && resource.CredentialProviderID != nil {
-			userID, _ := subjectClaims["sub"].(string)
-			if userID != "" {
-				if grant, gerr := s.db.GetDelegatedGrant(ctx, zoneID, userID, resource.ID); gerr == nil && len(grant.AccessTokenCt) > 0 {
-					if at, openErr := openZEK(s.keys.zek, grant.AccessTokenCt); openErr == nil {
-						directive.AuthMode = UpstreamAuthProviderOAuth
-						directive.ProviderToken = string(at)
-						if grant.ExpiresAt != nil {
-							directive.ExpiresAt = grant.ExpiresAt.Unix()
-						}
-					}
-				}
-			}
+		directive, err := s.buildUpstreamDirective(ctx, zoneID, subjectClaims, grantedResourceRows[identifier], req.GatewayAuthenticated)
+		if err != nil {
+			return nil, nil, http.StatusInternalServerError, sharederr.New(sharederr.Internal, "upstream directive build failed")
 		}
 		grantedDirectives[identifier] = directive
 	}
@@ -468,6 +449,38 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 		TargetResources: grantedResources,
 		Upstreams:       grantedDirectives,
 	}, nil, http.StatusOK, nil
+}
+
+func (s *Server) buildUpstreamDirective(ctx context.Context, zoneID string, subjectClaims map[string]any, resource *Resource, gatewayAuthenticated bool) (UpstreamDirective, error) {
+	directive := UpstreamDirective{
+		AuthMode:   UpstreamAuthCaracalJWT,
+		AuthHeader: "Authorization",
+		AuthScheme: "Bearer",
+	}
+	if resource.UpstreamURL != nil {
+		directive.URL = *resource.UpstreamURL
+	}
+	if !gatewayAuthenticated || resource.CredentialProviderID == nil {
+		return directive, nil
+	}
+	userID, _ := subjectClaims["sub"].(string)
+	if userID == "" {
+		return directive, fmt.Errorf("provider directive requires subject")
+	}
+	grant, err := s.db.GetDelegatedGrant(ctx, zoneID, userID, resource.ID)
+	if err != nil || grant == nil || len(grant.AccessTokenCt) == 0 {
+		return directive, fmt.Errorf("provider grant unavailable")
+	}
+	at, err := openZEK(s.keys.zek, grant.AccessTokenCt)
+	if err != nil {
+		return directive, fmt.Errorf("provider grant decrypt failed")
+	}
+	directive.AuthMode = UpstreamAuthProviderOAuth
+	directive.ProviderToken = string(at)
+	if grant.ExpiresAt != nil {
+		directive.ExpiresAt = grant.ExpiresAt.Unix()
+	}
+	return directive, nil
 }
 
 func (s *Server) authenticateApp(ctx context.Context, req TokenExchangeRequest) (*Application, string, error) {

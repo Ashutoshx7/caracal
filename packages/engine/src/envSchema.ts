@@ -122,6 +122,12 @@ export const ENV_SCHEMA = {
     secret: true,
     file: 'streamsHmacKey',
   },
+  GATEWAY_STS_HMAC_KEY: {
+    kind: 'secret',
+    description: 'HMAC key used by Gateway to authenticate brokered STS exchanges.',
+    secret: true,
+    file: 'gatewayStsHmacKey',
+  },
 
   // ─── Networking / public surface ───────────────────────────────────────────
   CARACAL_STS_ISSUER_URL: {

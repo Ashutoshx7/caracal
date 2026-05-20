@@ -169,6 +169,8 @@ type stubDB struct {
 	appErr        error
 	resource      *Resource
 	resErr        error
+	grant         *DelegatedGrant
+	grantErr      error
 	session       *Session
 	sessionErr    error
 	agentSessions []*AgentSession
@@ -192,6 +194,12 @@ func (s *stubDB) GetResourceByIdentifier(_ context.Context, _, _ string) (*Resou
 	return s.resource, s.resErr
 }
 func (s *stubDB) GetDelegatedGrant(_ context.Context, _, _, _ string) (*DelegatedGrant, error) {
+	if s.grantErr != nil {
+		return nil, s.grantErr
+	}
+	if s.grant != nil {
+		return s.grant, nil
+	}
 	return nil, errors.New("stub")
 }
 func (s *stubDB) UpdateGrantTokens(_ context.Context, _ string, _ int, _, _ []byte, _ time.Time) error {
@@ -317,6 +325,53 @@ func TestAuthenticateAppRejectsGatewayBootstrapWithoutSubjectToken(t *testing.T)
 		GatewayAuthenticated: true,
 	}); err == nil {
 		t.Fatalf("gateway-authenticated exchanges must not bootstrap ambient tokens")
+	}
+}
+
+func TestBuildUpstreamDirectiveHidesProviderTokenFromPublicExchange(t *testing.T) {
+	providerID := "provider1"
+	upstreamURL := "https://upstream.example"
+	resource := &Resource{
+		ID:                   "res1",
+		Identifier:           "resource://api",
+		UpstreamURL:          &upstreamURL,
+		CredentialProviderID: &providerID,
+	}
+	srv := &Server{db: &stubDB{}}
+	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, false)
+	if err != nil {
+		t.Fatalf("public directive should not require provider token: %v", err)
+	}
+	if directive.ProviderToken != "" || directive.AuthMode != UpstreamAuthCaracalJWT {
+		t.Fatalf("public exchange must not expose provider token, got %#v", directive)
+	}
+}
+
+func TestBuildUpstreamDirectiveIncludesProviderTokenOnlyForGateway(t *testing.T) {
+	providerID := "provider1"
+	upstreamURL := "https://upstream.example"
+	resource := &Resource{
+		ID:                   "res1",
+		Identifier:           "resource://api",
+		UpstreamURL:          &upstreamURL,
+		CredentialProviderID: &providerID,
+	}
+	zek := []byte("12345678901234567890123456789012")
+	token, err := sealZEK(zek, []byte("provider-access-token"))
+	if err != nil {
+		t.Fatalf("seal provider token: %v", err)
+	}
+	expiresAt := time.Now().Add(time.Minute)
+	srv := &Server{
+		db:   &stubDB{grant: &DelegatedGrant{AccessTokenCt: token, ExpiresAt: &expiresAt}},
+		keys: &KeyCache{zek: zek},
+	}
+	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true)
+	if err != nil {
+		t.Fatalf("gateway directive should decrypt provider token: %v", err)
+	}
+	if directive.ProviderToken != "provider-access-token" || directive.AuthMode != UpstreamAuthProviderOAuth {
+		t.Fatalf("gateway exchange must receive brokered provider token, got %#v", directive)
 	}
 }
 
