@@ -3,6 +3,8 @@
 //
 // Shared graceful shutdown registry for TypeScript services.
 
+import { withTimeout } from './async.js';
+
 export type ShutdownFn = () => Promise<void> | void;
 
 interface Entry {
@@ -63,7 +65,11 @@ export class ShutdownRegistry {
         break;
       }
       try {
-        await entry.fn();
+        await withTimeout(
+          Promise.resolve(entry.fn()),
+          remaining,
+          `shutdown step ${entry.name} did not complete within ${remaining}ms`,
+        );
         this.opts.log('info', 'shutdown step completed', { entry: entry.name });
       } catch (err) {
         this.opts.log('error', 'shutdown step failed', {

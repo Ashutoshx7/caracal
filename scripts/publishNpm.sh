@@ -13,6 +13,9 @@ cd "$(dirname "$0")/.."
 # shellcheck source=lib/select.sh
 . "scripts/lib/select.sh"
 
+# Keep this list and .changeset/config.json `ignore` in sync: every workspace
+# npm package versioned by changesets must appear here, and every package in
+# `ignore` must NOT appear here. CI does not currently enforce this coupling.
 packages=(
     packages/core/ts
     packages/oauth/ts
