@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rs/zerolog"
-
+	"github.com/garudex-labs/caracal/packages/core/go/audit"
 	corests "github.com/garudex-labs/caracal/packages/core/go/sts"
+	"github.com/rs/zerolog"
 )
 
 type allowVerifier struct{}
@@ -43,6 +43,14 @@ func (allowRevocations) IsRevoked(string) bool {
 
 func (allowRevocations) IsAgentRevoked(string) bool {
 	return false
+}
+
+type recordAudit struct {
+	events []audit.Event
+}
+
+func (r *recordAudit) Emit(event audit.Event) {
+	r.events = append(r.events, event)
 }
 
 // makeJWT builds an unsigned-but-shaped token whose exp is offset seconds in the future.
@@ -83,7 +91,7 @@ func newFakeSTS(t *testing.T, upstream string, calls *int32) *httptest.Server {
 func newProxyForTest(_ *testing.T, sts *httptest.Server, allowPrivate bool) *proxy {
 	stsClient := newSTSClient(sts.URL, 2*time.Second, nil)
 	guard := newUpstreamGuard(nil, allowPrivate)
-	return newProxy(stsClient, allowVerifier{}, guard, zerolog.New(io.Discard), 1<<20, 5*time.Second, testBindings(), allowTracker{}, allowRevocations{}, &GatewayMetrics{})
+	return newProxy(stsClient, allowVerifier{}, guard, zerolog.New(io.Discard), 1<<20, 5*time.Second, testBindings(), allowTracker{}, allowRevocations{}, &GatewayMetrics{}, nil)
 }
 
 // testBindings returns a bindingStore preloaded with the resource identifiers used
@@ -406,7 +414,7 @@ func TestProxyBodySizeLimitEnforced(t *testing.T) {
 
 	stsClient := newSTSClient(sts.URL, 2*time.Second, nil)
 	guard := newUpstreamGuard(nil, true)
-	p := newProxy(stsClient, allowVerifier{}, guard, zerolog.New(io.Discard), 16, 2*time.Second, testBindings(), allowTracker{}, allowRevocations{}, &GatewayMetrics{})
+	p := newProxy(stsClient, allowVerifier{}, guard, zerolog.New(io.Discard), 16, 2*time.Second, testBindings(), allowTracker{}, allowRevocations{}, &GatewayMetrics{}, nil)
 
 	tok := makeJWT(t, time.Hour)
 	hdr := http.Header{
@@ -445,6 +453,105 @@ func TestProxySTSDeniedSurfacesError(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), "access_denied") {
 		t.Errorf("error code not propagated: %s", body)
+	}
+}
+
+func TestProxyEmitsCredentialFreeActionAudit(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "ApiKey provider-secret" {
+			t.Fatalf("upstream Authorization = %q", got)
+		}
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer upstream.Close()
+
+	sts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		resource := r.Form.Get("resource")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(stsResponseFixture{
+			AccessToken: "sts-issued-token",
+			Upstreams: map[string]corests.UpstreamDirective{resource: {
+				URL:           upstream.URL,
+				AuthMode:      "provider_apikey",
+				AuthScheme:    "ApiKey",
+				ProviderToken: "provider-secret",
+			}},
+		})
+	}))
+	defer sts.Close()
+
+	rec := &recordAudit{}
+	p := newProxyForTest(t, sts, true)
+	p.audit = rec
+
+	tok := makeJWT(t, time.Hour)
+	hdr := http.Header{
+		"Authorization":      {"Bearer " + tok},
+		"X-Caracal-Resource": {"r1"},
+	}
+	resp := doProxiedRequest(t, p, "POST", "/x", strings.NewReader("sensitive-body"), hdr)
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 201, got %d: %s", resp.StatusCode, body)
+	}
+	if len(rec.events) != 1 {
+		t.Fatalf("audit events = %d, want 1", len(rec.events))
+	}
+	event := rec.events[0]
+	if event.EventType != gatewayResourceRequestEvent {
+		t.Fatalf("event type = %q", event.EventType)
+	}
+	if event.ZoneID != "z" || event.RequestID == "" || event.Decision != "allow" || event.EvaluationStatus != "executed" {
+		t.Fatalf("unexpected event envelope: %+v", event)
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(event.MetadataJSON, &meta); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"application_id", "resource", "subject_fingerprint", "method", "upstream_host", "auth_mode", "gateway_status", "upstream_status", "latency_ms"} {
+		if _, ok := meta[want]; !ok {
+			t.Fatalf("missing audit metadata %q in %#v", want, meta)
+		}
+	}
+	rawMeta := string(event.MetadataJSON)
+	for _, secret := range []string{"sts-issued-token", "provider-secret", "Bearer", "sensitive-body", tok} {
+		if strings.Contains(rawMeta, secret) {
+			t.Fatalf("audit metadata leaked %q: %s", secret, rawMeta)
+		}
+	}
+}
+
+func TestProxyAuditsUpstreamTransportFailure(t *testing.T) {
+	sts := newFakeSTS(t, "http://127.0.0.1:1", nil)
+	defer sts.Close()
+	rec := &recordAudit{}
+	p := newProxyForTest(t, sts, true)
+	p.audit = rec
+
+	tok := makeJWT(t, time.Hour)
+	hdr := http.Header{
+		"Authorization":      {"Bearer " + tok},
+		"X-Caracal-Resource": {"r1"},
+	}
+	resp := doProxiedRequest(t, p, "GET", "/x", nil, hdr)
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", resp.StatusCode)
+	}
+	if len(rec.events) != 1 {
+		t.Fatalf("audit events = %d, want 1", len(rec.events))
+	}
+	event := rec.events[0]
+	if event.EvaluationStatus != "upstream_error" {
+		t.Fatalf("status = %q", event.EvaluationStatus)
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(event.MetadataJSON, &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta["error_kind"] != "transport_error" {
+		t.Fatalf("metadata = %#v", meta)
 	}
 }
 

@@ -26,6 +26,7 @@ const (
 	defaultIdleTimeout    = 120 * time.Second
 	defaultSTSTimeout     = 5 * time.Second
 	defaultUpstreamTO     = 30 * time.Second
+	defaultAuditReplayDir = "/var/lib/caracal/audit-replay"
 )
 
 // Config holds gateway runtime configuration.
@@ -50,6 +51,7 @@ type Config struct {
 	RedisURL              string
 	StreamsHMACKey        string
 	AuditHMACKey          []byte
+	AuditReplayDir        string
 	JTIFailOpen           bool
 }
 
@@ -84,6 +86,7 @@ func loadConfig() (Config, error) {
 		DatabaseURL:           os.Getenv("DATABASE_URL"),
 		RedisURL:              os.Getenv("REDIS_URL"),
 		StreamsHMACKey:        os.Getenv("STREAMS_HMAC_KEY"),
+		AuditReplayDir:        config.Getenv("AUDIT_REPLAY_DIR", defaultAuditReplayDir),
 		JTIFailOpen:           config.BoolEnv("JTI_FAIL_OPEN", false),
 	}
 	if raw := os.Getenv("AUDIT_HMAC_KEY"); raw != "" {

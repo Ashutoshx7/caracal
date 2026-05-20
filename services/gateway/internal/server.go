@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/garudex-labs/caracal/packages/core/go/audit"
 	sharedcrypto "github.com/garudex-labs/caracal/packages/core/go/crypto"
 	"github.com/garudex-labs/caracal/packages/core/go/logging"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,6 +37,7 @@ type Server struct {
 	tracker     *jtiTracker
 	bindings    *bindingStore
 	redis       *RedisClient
+	audit       *audit.Client
 	revocations *revocationStore
 	metrics     *GatewayMetrics
 }
@@ -68,6 +70,15 @@ func New(ctx context.Context) (*Server, error) {
 	if err := bindings.Reload(ctx); err != nil {
 		return nil, err
 	}
+	auditClient, err := audit.NewClient(rdb, audit.ClientConfig{
+		AuditHMACKey: cfg.AuditHMACKey,
+		ReplayDir:    cfg.AuditReplayDir,
+		Logger:       log,
+		Production:   cfg.Mode != "dev",
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &Server{
 		cfg:         cfg,
 		log:         log,
@@ -77,6 +88,7 @@ func New(ctx context.Context) (*Server, error) {
 		tracker:     tracker,
 		bindings:    bindings,
 		redis:       rdb,
+		audit:       auditClient,
 		revocations: newRevocationStore(log),
 		metrics:     &GatewayMetrics{},
 	}, nil
@@ -85,10 +97,12 @@ func New(ctx context.Context) (*Server, error) {
 // Run starts the HTTP(S) listener and blocks until ctx is cancelled.
 func (s *Server) Run(ctx context.Context) error {
 	go s.bindings.StartPolling(ctx)
+	s.audit.ReplayPending(ctx)
+	s.audit.Start(ctx)
 	if err := startRevocationConsumer(ctx, s.redis, s.revocations, s.log); err != nil {
 		return err
 	}
-	p := newProxy(s.sts, s.jwks, s.guard, s.log, s.cfg.MaxRequestBytes, s.cfg.UpstreamTimeout, s.bindings, s.tracker, s.revocations, s.metrics)
+	p := newProxy(s.sts, s.jwks, s.guard, s.log, s.cfg.MaxRequestBytes, s.cfg.UpstreamTimeout, s.bindings, s.tracker, s.revocations, s.metrics, s.audit)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -164,6 +178,11 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.redis.Ping(ctx); err != nil {
 		s.log.Warn().Err(err).Msg("ready: redis unreachable")
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.audit.Ready(); err != nil {
+		s.log.Warn().Err(err).Msg("ready: audit replay unavailable")
 		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 		return
 	}
