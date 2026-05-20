@@ -24,7 +24,7 @@ An ambient token is issued at the start of an agent session when no `subject_tok
 A per-call token is issued when an ambient token is presented as the `subject_token`. It is scoped to a specific set of resources and presented to the Gateway or a resource directly.
 
 - **TTL**: 15 minutes
-- **Purpose**: authorizes one call or a set of calls within that window to specific resources
+- **Purpose**: authorizes one Gateway-proxied request, or a direct connector call when that connector owns replay and revocation checks
 - **Re-use**: cannot be presented as `subject_token` for further exchange — this prevents subject confusion across the ambient/per-call boundary (RFC 8693 §2.1 mitigation)
 
 The distinction exists because the STS needs to know whether a token is being used to identify an agent (ambient) or to authorize a specific action (per-call). Mixing the two roles leads to confusion about delegation scope.
@@ -78,6 +78,18 @@ Each mandate carries a unique `jti` (JWT ID). Per-call tokens are subject to rep
 
 Ambient tokens bypass Gateway JTI replay checks because they are intended to be re-presented to the STS multiple times.
 
+## Exchange, caching, and replay
+
+The term "per-call" describes the authority boundary, not a guarantee that every SDK method invocation always calls STS. The safe behavior depends on where enforcement happens:
+
+| Path | Exchange behavior | Replay behavior |
+| ---- | ----------------- | --------------- |
+| Gateway-proxied HTTP | Gateway performs an STS exchange for each inbound request and forwards only after replay and revocation checks pass | Gateway rejects a repeated per-call JTI before the upstream sees it |
+| SDK-managed direct call | SDK may cache a token for the same subject session, agent session, delegation edge, resource, and scope context until the token expires | The connector or resource-side verifier must enforce replay/revocation if the Gateway is not in the path |
+| Ambient-to-STS exchange | SDK re-presents the ambient token to STS to mint narrower per-call authority | Ambient tokens are not accepted by Gateway as upstream authorization |
+
+This is why provider and tool integrations are safest when routed through the Gateway: Caracal owns credential brokering, replay detection, revocation checks, and action audit in one enforcement point.
+
 ## Mandate lifetime and the exchange chain
 
 ```
@@ -91,7 +103,7 @@ Agent credentials → STS → ambient mandate (60 min)
                               └─ present to Gateway → upstream
 ```
 
-The ambient token is the long-lived session credential. It is exchanged at session start and stored in the agent's execution environment (injected by `caracal run` as `CARACAL_SUBJECT_TOKEN`). The SDK exchanges this ambient token for per-call tokens as needed for each outbound call.
+The ambient token is the session credential. It is exchanged at session start and stored in the agent's execution environment (injected by `caracal run` as `CARACAL_SUBJECT_TOKEN`). The SDK exchanges this ambient token for per-call tokens as needed for outbound calls. Delegated per-call mandates are capped by the shortest effective authority bound: STS TTL limit, delegation edge expiry, and any typed `ttl_seconds` constraint on the edge.
 
 ## Token response shape
 
@@ -118,7 +130,7 @@ The STS token exchange response:
 
 ## What a mandate is not
 
-A mandate is not a session cookie, an API key, or a long-lived secret. It expires within minutes, is bound to a specific zone, and (for per-call tokens) can be used exactly once via the Gateway. An agent that loses its mandate simply requests a new one.
+A mandate is not a session cookie, an API key, or a long-lived secret. It expires within minutes, is bound to a specific zone, and (for per-call tokens) can be used exactly once via the Gateway. An agent that loses its mandate requests a new one only if its STS session, agent session, delegation edge, and policy still allow it.
 
 ## Next steps
 

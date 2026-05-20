@@ -45,7 +45,7 @@ A mandate is an ES256-signed JWT. The claims it carries go beyond standard OAuth
 Two token types exist:
 
 - **Ambient tokens** (`use = "ambient"`) are issued when an agent starts a session. They carry the agent's identity and can be re-presented to the STS to exchange for narrower per-call tokens bound to a specific resource. TTL: 60 minutes.
-- **Per-call tokens** (`use = "per-call"`) are the tokens an agent presents to the Gateway or a resource. They are scoped to specific resources and cannot be re-used as a subject token for further exchange. TTL: 15 minutes.
+- **Per-call tokens** (`use = "per_call"`) are the tokens an agent presents to the Gateway or a resource. They are scoped to specific resources and cannot be re-used as a subject token for further exchange. TTL: 15 minutes.
 
 ## The Gateway
 

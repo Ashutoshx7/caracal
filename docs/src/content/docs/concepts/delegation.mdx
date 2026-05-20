@@ -100,6 +100,15 @@ For each revoked session, the Coordinator enqueues a revocation event through th
 
 Revocation propagates in near real-time via the Redis stream. The Gateway's revocation cache holds entries for 24 hours after revocation — sufficient to cover any in-flight per-call token's 15-minute TTL.
 
+The revocation event includes both identifiers when available:
+
+| Field | Why it is included |
+| ----- | ------------------ |
+| `session_id` | STS `sessions.id`; lets STS mark the credential session revoked and reject future exchanges |
+| `agent_session_id` | Coordinator `agent_sessions.id`; lets Gateway reject already-issued mandates by agent authority record |
+
+This dual identifier is what connects the session tree, STS session state, and already-issued mandates.
+
 ## The delegation chain in mandates
 
 Every mandate issued to a delegated agent carries the full lineage:

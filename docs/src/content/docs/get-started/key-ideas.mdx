@@ -6,6 +6,18 @@ pageType: concept
 
 This page condenses the core Caracal concepts into a quick reference. Read it as a map before diving into the detailed concept pages, or use it to orient yourself after the quickstart.
 
+## The operator model
+
+Most users should not operate Caracal by thinking about every internal object. The practical workflow is:
+
+1. Register the agent application that will act.
+2. Register the resources, tools, or providers the agent may use.
+3. Attach a policy that says when access is allowed.
+4. Run the agent through Caracal's SDK, CLI, Gateway, or connector.
+5. Inspect the audit trail to see what was allowed, denied, proxied, or revoked.
+
+The lower-level concepts on this page explain how Caracal keeps that workflow safe. Zones isolate tenants, applications identify workloads, resources describe targets, mandates carry short-lived authority, delegation links agent sessions, and audit records what happened. End users should usually see those as configuration and observability details, not as separate operational steps.
+
 ## The seven core concepts
 
 ### Zone
@@ -36,6 +48,7 @@ A policy is a versioned Rego document with the entry point `data.caracal.authz.r
 
 ```json
 {
+  "schema_version": "2026-05-20",
   "principal": { "type": "application", "id": "...", "zone_id": "...", "agent_session_id": "..." },
   "resource": { "type": "resource", "id": "...", "identifier": "...", "scopes": ["..."] },
   "action": { "id": "TokenExchange" },
@@ -73,6 +86,8 @@ Per-call tokens carry a `target` claim (the specific resources they cover), prev
 
 JTI replay protection: each issued token ID is recorded in Redis. The Gateway rejects any per-call token whose JTI has been seen before.
 
+Gateway-proxied resources use an exchange-per-request flow: the Gateway verifies the inbound mandate, exchanges it with STS for the bound resource, substitutes any brokered provider credential, forwards the upstream request, and audits the execution result. SDKs may cache STS exchange results for the same session, resource, delegation, and scope context, but the Gateway still enforces replay and revocation at request time.
+
 ### Delegation
 
 Delegation is a directed edge in the Coordinator's agent graph:
@@ -100,6 +115,8 @@ Every token exchange and OPA evaluation produces an `AuditEvent` with:
 - A chain HMAC-SHA256 over consecutive events, enabling tamper detection
 
 Events flow: STS → Redis stream (`caracal.audit.events`) → Audit service → PostgreSQL append-only table.
+
+Gateway-proxied external calls also emit action audit events after STS authorization. Those events record whether request construction failed, upstream transport failed, or the upstream returned a status code; they do not store provider credentials or response bodies.
 
 Nothing in the audit table is ever updated or deleted. Use `caracal audit tail` (live stream) or `caracal explain <request-id>` (full decision trace for a specific exchange) to query it.
 
