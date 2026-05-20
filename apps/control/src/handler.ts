@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// /v1/control/invoke handler: authenticates, blocks JTI replay, rate-limits, and dispatches through the shared engine.
+// /v1/control/invoke handler: rate-limits, authenticates, blocks JTI replay, and dispatches through the shared engine.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { dispatch, DispatchError, type DispatchContext, type FlagMap, type Principal } from '@caracalai/engine'
@@ -18,10 +18,16 @@ interface InvokeBody {
   flags?: unknown
 }
 
+interface RouteRateLimit {
+  readonly max: number
+  readonly timeWindow: number
+}
+
 export interface InvokeDeps {
   auth: Authenticator
   replay: Replay
   rate: RateLimiter
+  routeRateLimit: RouteRateLimit
   sink: EventSink
   ctx: DispatchContext
 }
@@ -29,7 +35,7 @@ export interface InvokeDeps {
 export function registerInvokeRoute(app: FastifyInstance, deps: InvokeDeps): void {
   app.post('/v1/control/invoke', {
     bodyLimit: MAX_BODY_BYTES,
-    config: { rawBody: false },
+    config: { rawBody: false, rateLimit: deps.routeRateLimit },
   }, (req, reply) => handle(req, reply, deps))
 }
 

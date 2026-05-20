@@ -4,6 +4,7 @@
 // Control HTTP server: wires /health, /ready, and /v1/control/invoke through the shared engine dispatch.
 
 import Fastify, { type FastifyInstance } from 'fastify'
+import rateLimit from '@fastify/rate-limit'
 import { Redis } from 'ioredis'
 import { AdminClient } from '@caracalai/admin'
 import type { Logger } from '@caracalai/core'
@@ -45,7 +46,8 @@ export async function buildServer(cfg: Config, log: Logger): Promise<ServerDeps>
     log.warn('control audit sink: log-only')
   }
 
-  const rate = new RateLimiter(cfg.rateCapacity, cfg.rateWindowSec * 1000)
+  const rateWindowMs = cfg.rateWindowSec * 1000
+  const rate = new RateLimiter(cfg.rateCapacity, rateWindowMs)
   const admin = new AdminClient({ apiUrl: cfg.apiUrl, adminToken: cfg.apiToken })
 
   const app = Fastify({
@@ -65,7 +67,20 @@ export async function buildServer(cfg: Config, log: Logger): Promise<ServerDeps>
     }
   })
 
-  registerInvokeRoute(app, { auth, replay, rate, sink: auditSink, ctx: { admin } })
+  await app.register(rateLimit, {
+    global: false,
+    max: cfg.rateCapacity,
+    timeWindow: rateWindowMs,
+  })
+
+  registerInvokeRoute(app, {
+    auth,
+    replay,
+    rate,
+    routeRateLimit: { max: cfg.rateCapacity, timeWindow: rateWindowMs },
+    sink: auditSink,
+    ctx: { admin },
+  })
 
   return {
     app,

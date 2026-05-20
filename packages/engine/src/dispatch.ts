@@ -304,21 +304,23 @@ const delegationHandler = bySubcommand({
   revoke: ({ principal, flags, ctx }) => ctx.admin.delegations.revoke(requireZone(principal), mustStr(flags, 'id')),
 })
 
-/** Commands the Control API exposes. Local-only descriptors (`run`, `credential`, `control`, `completion`) are intentionally absent. */
-const HANDLERS: ReadonlyMap<string, Handler> = new Map<string, Handler>([
-  ['zone', zoneHandler],
-  ['app', appHandler],
-  ['resource', resourceHandler],
-  ['provider', providerHandler],
-  ['policy', policyHandler],
-  ['policy-set', policySetHandler],
-  ['grant', grantHandler],
-  ['session', sessionHandler],
-  ['audit', auditHandler],
-  ['explain', explainHandler],
-  ['agent', agentHandler],
-  ['delegation', delegationHandler],
-])
+function commandHandler(command: string): Handler | undefined {
+  switch (command) {
+    case 'zone': return zoneHandler
+    case 'app': return appHandler
+    case 'resource': return resourceHandler
+    case 'provider': return providerHandler
+    case 'policy': return policyHandler
+    case 'policy-set': return policySetHandler
+    case 'grant': return grantHandler
+    case 'session': return sessionHandler
+    case 'audit': return auditHandler
+    case 'explain': return explainHandler
+    case 'agent': return agentHandler
+    case 'delegation': return delegationHandler
+    default: return undefined
+  }
+}
 
 /**
  * Validate and execute a dispatch request against the canonical catalog. Throws DispatchError on rejection.
@@ -342,7 +344,7 @@ export async function dispatch(
   }
   validateFlags(req.flags)
   assertScope(principal, desc, req.subcommand)
-  const handler = HANDLERS.get(req.command)
+  const handler = commandHandler(desc.name)
   if (!handler) unsupported(`command "${req.command}" has no handler`)
   return handler({
     sub: req.subcommand,
@@ -357,7 +359,7 @@ export function describeRemoteSurface(): readonly { command: string; subcommand:
   const out: { command: string; subcommand: string; scope: string }[] = []
   for (const desc of CLI_COMMANDS) {
     if (desc.hidden) continue
-    if (!HANDLERS.has(desc.name)) continue
+    if (!commandHandler(desc.name)) continue
     const subs = desc.subcommands && desc.subcommands.length > 0 ? desc.subcommands : ['']
     for (const sub of subs) {
       out.push({ command: desc.name, subcommand: sub, scope: scopeName(desc, sub) })
