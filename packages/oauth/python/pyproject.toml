@@ -12,8 +12,8 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
   "httpx>=0.28.0",
+  "idna>=3.15",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["caracalai_oauth"]
-
