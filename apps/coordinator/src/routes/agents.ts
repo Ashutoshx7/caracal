@@ -23,7 +23,7 @@ const SpawnBody = z.object({
   application_id: z.string().min(1),
   subject_session_id: z.string().min(1).optional(),
   parent_id: z.string().nullable().default(null),
-  kind: z.enum(['service', 'instance', 'ephemeral']).optional(),
+  kind: z.enum(['service', 'instance', 'ephemeral']).default('ephemeral'),
   capabilities: z.array(z.string()).default([]),
   ttl_seconds: z.number().int().min(1).max(86400).default(DEFAULT_TTL),
   metadata: z.record(z.string(), z.unknown()).default({}),
@@ -67,7 +67,7 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
       )
       if (idempotencyKey) {
         const { rows: existing } = await client.query(
-          `SELECT id AS agent_session_id, zone_id, application_id, parent_id, subject_session_id, status, depth, spawned_at
+          `SELECT id AS agent_session_id, zone_id, application_id, parent_id, subject_session_id, agent_kind AS kind, capabilities, status, depth, spawned_at
            FROM agent_sessions
            WHERE zone_id = $1 AND application_id = $2 AND subject_session_id = $3
              AND COALESCE(parent_id, '') = COALESCE($4, '')
@@ -151,11 +151,11 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
       }
       const { rows } = await client.query(
         `INSERT INTO agent_sessions
-         (id, zone_id, application_id, parent_id, subject_session_id, depth, capabilities, max_children, ttl_seconds, metadata_json)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-         RETURNING id AS agent_session_id, zone_id, application_id, parent_id, subject_session_id, status, depth, spawned_at`,
+         (id, zone_id, application_id, parent_id, subject_session_id, agent_kind, depth, capabilities, max_children, ttl_seconds, metadata_json)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         RETURNING id AS agent_session_id, zone_id, application_id, parent_id, subject_session_id, agent_kind AS kind, capabilities, status, depth, spawned_at`,
         [id, zoneId, body.application_id, body.parent_id, subjectSessionId,
-          depth, body.capabilities, MAX_CHILDREN, body.ttl_seconds, body.metadata],
+          body.kind, depth, body.capabilities, MAX_CHILDREN, body.ttl_seconds, body.metadata],
       )
       if (body.parent_id) {
         await client.query(
@@ -205,8 +205,8 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
       cursorClause = `AND id < $3`
     }
     const { rows } = await fastify.db.query(
-      `SELECT id AS agent_session_id, zone_id, application_id, parent_id, subject_session_id, status, depth, spawned_at, terminated_at
-       FROM agent_sessions WHERE zone_id = $1 ${cursorClause}
+       `SELECT id AS agent_session_id, zone_id, application_id, parent_id, subject_session_id, agent_kind AS kind, capabilities, status, depth, spawned_at, terminated_at
+        FROM agent_sessions WHERE zone_id = $1 ${cursorClause}
        ORDER BY id DESC LIMIT $2`,
       queryParams,
     )
@@ -219,8 +219,8 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
     if (!params) return
     const { zoneId, id } = params
     const { rows } = await fastify.db.query(
-      `SELECT id AS agent_session_id, zone_id, application_id, parent_id, subject_session_id, status, depth, spawned_at, terminated_at
-       FROM agent_sessions WHERE id = $1 AND zone_id = $2`,
+       `SELECT id AS agent_session_id, zone_id, application_id, parent_id, subject_session_id, agent_kind AS kind, capabilities, status, depth, spawned_at, terminated_at
+        FROM agent_sessions WHERE id = $1 AND zone_id = $2`,
       [id, zoneId],
     )
     if (!rows[0]) return reply.code(404).send({ error: 'agent_not_found' })
@@ -232,7 +232,7 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
     if (!params) return
     const { zoneId, id } = params
     const { rows } = await fastify.db.query(
-      `SELECT s.id AS agent_session_id, s.zone_id, s.application_id, s.parent_id, s.subject_session_id, s.status, s.depth, s.spawned_at
+      `SELECT s.id AS agent_session_id, s.zone_id, s.application_id, s.parent_id, s.subject_session_id, s.agent_kind AS kind, s.capabilities, s.status, s.depth, s.spawned_at
        FROM agent_sessions s
        JOIN agent_topology t ON t.child_id = s.id
        WHERE t.parent_id = $1 AND s.zone_id = $2

@@ -14,6 +14,7 @@ const BeginBody = z.object({
   application_id: z.string().min(1),
   subject_session_id: z.string().min(1),
   parent_id: z.string().nullable().default(null),
+  kind: z.enum(['service', 'instance', 'ephemeral']).default('ephemeral'),
   capabilities: z.array(z.string()).default([]),
   ttl_seconds: z.number().int().min(1).max(86400).optional(),
 })
@@ -78,6 +79,7 @@ export const v1Routes: FastifyPluginAsync = async (fastify) => {
         application_id: body.application_id,
         subject_session_id: body.subject_session_id,
         parent_id: body.parent_id,
+        kind: body.kind,
         capabilities: body.capabilities,
         ...(body.ttl_seconds ? { ttl_seconds: body.ttl_seconds } : {}),
       },
