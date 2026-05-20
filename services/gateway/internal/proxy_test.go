@@ -57,6 +57,14 @@ func (revokedDelegation) IsDelegationRevoked(edgeID string) bool {
 	return edgeID == "edge-revoked"
 }
 
+type revokedRoot struct {
+	allowRevocations
+}
+
+func (revokedRoot) IsRevoked(sid string) bool {
+	return sid == "root-revoked"
+}
+
 type recordAudit struct {
 	events []audit.Event
 }
@@ -85,6 +93,18 @@ func makeJWTWithDelegation(t *testing.T, offset time.Duration, edgeID string) st
 		ZoneID           string `json:"zone_id"`
 		DelegationEdgeID string `json:"delegation_edge_id"`
 	}{Exp: time.Now().Add(offset).Unix(), ZoneID: "z", DelegationEdgeID: edgeID})
+	body := base64.RawURLEncoding.EncodeToString(payload)
+	return header + "." + body + ".sig"
+}
+
+func makeJWTWithRoot(t *testing.T, offset time.Duration, rootSID string) string {
+	t.Helper()
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
+	payload, _ := json.Marshal(struct {
+		Exp     int64  `json:"exp"`
+		ZoneID  string `json:"zone_id"`
+		RootSID string `json:"root_sid"`
+	}{Exp: time.Now().Add(offset).Unix(), ZoneID: "z", RootSID: rootSID})
 	body := base64.RawURLEncoding.EncodeToString(payload)
 	return header + "." + body + ".sig"
 }
@@ -276,6 +296,25 @@ func TestProxyRejectsRevokedDelegationEdge(t *testing.T) {
 	}
 }
 
+func TestProxyRejectsRevokedRootSession(t *testing.T) {
+	var calls int32
+	sts := newFakeSTS(t, "http://127.0.0.1:1", &calls)
+	defer sts.Close()
+	p := newProxyForTestWithRevocations(t, sts, revokedRoot{})
+
+	tok := makeJWTWithRoot(t, time.Hour, "root-revoked")
+	resp := doProxiedRequest(t, p, "GET", "/x", nil, http.Header{
+		"Authorization":      {"Bearer " + tok},
+		"X-Caracal-Resource": {"r1"},
+	})
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected revoked root session to return 401, got %d", resp.StatusCode)
+	}
+	if atomic.LoadInt32(&calls) != 0 {
+		t.Fatalf("revoked root session must not reach STS")
+	}
+}
+
 func TestProxySSRFBlocksLoopback(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -399,6 +438,74 @@ func TestProxyProviderAPIKeyDoesNotLeakInboundAuthorizationOrIdentity(t *testing
 		t.Fatalf("inbound Authorization leaked upstream: %q", got)
 	}
 	if got := seen.Header.Get("X-Api-Key"); got != "provider-secret" {
+		t.Fatalf("provider API key header = %q", got)
+	}
+	if got := seen.Header.Get("X-Caracal-Identity"); got != "" {
+		t.Fatalf("Caracal identity leaked upstream by default: %q", got)
+	}
+}
+
+func TestProxySignedExchangeBrokersProviderCredentialWithoutIdentityLeak(t *testing.T) {
+	var seen *http.Request
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Clone(context.Background())
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	key := []byte("12345678901234567890123456789012")
+	sts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		if r.Form.Get("client_secret") != "" || r.Form.Get("client_assertion") != "" {
+			t.Fatalf("gateway exchange must not use public client credentials")
+		}
+		if r.Form.Get("subject_token") == "" {
+			t.Fatal("gateway exchange must present the ambient subject token")
+		}
+		if err := corests.VerifyGatewayExchange(
+			key,
+			time.Now().UTC(),
+			time.Minute,
+			r.Header.Get(corests.GatewayTimestampHeader),
+			r.Header.Get(corests.GatewayRequestHeader),
+			r.Header.Get(corests.GatewaySignatureHeader),
+			[]byte(r.PostForm.Encode()),
+		); err != nil {
+			t.Fatalf("gateway exchange signature invalid: %v", err)
+		}
+		resource := r.Form.Get("resource")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(stsResponseFixture{
+			AccessToken: "caracal-identity-token",
+			ExpiresIn:   300,
+			Upstreams: map[string]corests.UpstreamDirective{resource: {
+				URL:           upstream.URL,
+				AuthMode:      "provider_apikey",
+				AuthHeader:    "X-Api-Key",
+				ProviderToken: "brokered-provider-secret",
+			}},
+		})
+	}))
+	defer sts.Close()
+
+	stsClient := newSTSClient(sts.URL, 2*time.Second, key)
+	guard := newUpstreamGuard(nil, true)
+	p := newProxy(stsClient, allowVerifier{}, guard, zerolog.New(io.Discard), 1<<20, 5*time.Second, testBindings(), allowTracker{}, allowRevocations{}, &GatewayMetrics{}, nil)
+	resp := doProxiedRequest(t, p, "GET", "/x", nil, http.Header{
+		"Authorization":      {"Bearer " + makeJWT(t, time.Hour)},
+		"X-Api-Key":          {"caller-supplied"},
+		"X-Caracal-Resource": {"r1"},
+	})
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 204, got %d: %s", resp.StatusCode, body)
+	}
+	if seen == nil {
+		t.Fatal("upstream never received request")
+	}
+	if got := seen.Header.Get("X-Api-Key"); got != "brokered-provider-secret" {
 		t.Fatalf("provider API key header = %q", got)
 	}
 	if got := seen.Header.Get("X-Caracal-Identity"); got != "" {

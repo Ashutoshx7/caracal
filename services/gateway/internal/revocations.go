@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 )
@@ -24,6 +25,7 @@ const (
 	groupRevoke       = "gateway-revocation"
 	revocationTTL     = 24 * time.Hour
 	revocationGCPause = 30 * time.Minute
+	snapshotPoll      = 30 * time.Second
 	pendingIdle       = 30 * time.Second
 	failureTTL        = 24 * time.Hour
 	maxFailures       = 5
@@ -107,6 +109,18 @@ func (s *revocationStore) markDelegation(delegationEdgeID string) {
 	s.mu.Unlock()
 }
 
+func applyRevocationSnapshot(store *revocationStore, sessions, agents, edges []string) {
+	for _, sid := range sessions {
+		store.markSession(sid)
+	}
+	for _, agentSessionID := range agents {
+		store.markAgent(agentSessionID)
+	}
+	for _, delegationEdgeID := range edges {
+		store.markDelegation(delegationEdgeID)
+	}
+}
+
 // Size reports how many active revocations are currently tracked.
 func (s *revocationStore) Size() int {
 	if s == nil {
@@ -155,6 +169,81 @@ func startRevocationConsumer(ctx context.Context, redis revocationRedis, store *
 	go runRevocationLoop(ctx, redis, store, consumer, log)
 	go runRevocationGC(ctx, store)
 	return nil
+}
+
+func reloadRevocationSnapshot(ctx context.Context, pool *pgxpool.Pool, store *revocationStore) error {
+	if pool == nil {
+		return fmt.Errorf("revocation snapshot requires postgres")
+	}
+	if store == nil {
+		return fmt.Errorf("revocation snapshot requires store")
+	}
+	sessions, err := queryRevocationIDs(ctx, pool,
+		`SELECT id FROM sessions
+		 WHERE status = 'revoked'
+		   AND expires_at > now() - ($1::int * interval '1 second')`,
+		int(revocationTTL.Seconds()),
+	)
+	if err != nil {
+		return err
+	}
+	agents, err := queryRevocationIDs(ctx, pool,
+		`SELECT id FROM agent_sessions
+		 WHERE status IN ('suspended', 'terminated')
+		   AND updated_at > now() - ($1::int * interval '1 second')`,
+		int(revocationTTL.Seconds()),
+	)
+	if err != nil {
+		return err
+	}
+	edges, err := queryRevocationIDs(ctx, pool,
+		`SELECT id FROM delegation_edges
+		 WHERE status = 'revoked'
+		   AND revoked_at IS NOT NULL
+		   AND revoked_at > now() - ($1::int * interval '1 second')`,
+		int(revocationTTL.Seconds()),
+	)
+	if err != nil {
+		return err
+	}
+	applyRevocationSnapshot(store, sessions, agents, edges)
+	return nil
+}
+
+func queryRevocationIDs(ctx context.Context, pool *pgxpool.Pool, sql string, args ...any) ([]string, error) {
+	rows, err := pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		if id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids, rows.Err()
+}
+
+func startRevocationSnapshotPolling(ctx context.Context, pool *pgxpool.Pool, store *revocationStore, log zerolog.Logger) {
+	ticker := time.NewTicker(snapshotPoll)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := reloadRevocationSnapshot(ctx, pool, store); err != nil {
+					log.Error().Err(err).Msg("revocation snapshot reload failed")
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 }
 
 func runRevocationLoop(ctx context.Context, redis revocationRedis, store *revocationStore, consumer string, log zerolog.Logger) {

@@ -104,6 +104,20 @@ func TestProcessRevocationMessageMarksSignedDelegation(t *testing.T) {
 	}
 }
 
+func TestApplyRevocationSnapshotMarksAllAuthorityAnchors(t *testing.T) {
+	store := newRevocationStore(zerolog.New(io.Discard))
+	applyRevocationSnapshot(store, []string{"sid1"}, []string{"agent1"}, []string{"edge1"})
+	if !store.IsRevoked("sid1") {
+		t.Fatalf("snapshot should mark session revoked")
+	}
+	if !store.IsAgentRevoked("agent1") {
+		t.Fatalf("snapshot should mark agent session revoked")
+	}
+	if !store.IsDelegationRevoked("edge1") {
+		t.Fatalf("snapshot should mark delegation revoked")
+	}
+}
+
 func TestProcessRevocationMessageDeadLettersPoisonMessage(t *testing.T) {
 	store := newRevocationStore(zerolog.New(io.Discard))
 	redis := &fakeRevocationRedis{verify: true}

@@ -70,6 +70,10 @@ func New(ctx context.Context) (*Server, error) {
 	if err := bindings.Reload(ctx); err != nil {
 		return nil, err
 	}
+	revocations := newRevocationStore(log)
+	if err := reloadRevocationSnapshot(ctx, pool, revocations); err != nil {
+		return nil, fmt.Errorf("revocation snapshot: %w", err)
+	}
 	auditClient, err := audit.NewClient(rdb, audit.ClientConfig{
 		AuditHMACKey: cfg.AuditHMACKey,
 		ReplayDir:    cfg.AuditReplayDir,
@@ -89,7 +93,7 @@ func New(ctx context.Context) (*Server, error) {
 		bindings:    bindings,
 		redis:       rdb,
 		audit:       auditClient,
-		revocations: newRevocationStore(log),
+		revocations: revocations,
 		metrics:     &GatewayMetrics{},
 	}, nil
 }
@@ -102,6 +106,7 @@ func (s *Server) Run(ctx context.Context) error {
 	if err := startRevocationConsumer(ctx, s.redis, s.revocations, s.log); err != nil {
 		return err
 	}
+	startRevocationSnapshotPolling(ctx, s.bindings.pool, s.revocations, s.log)
 	p := newProxy(s.sts, s.jwks, s.guard, s.log, s.cfg.MaxRequestBytes, s.cfg.UpstreamTimeout, s.bindings, s.tracker, s.revocations, s.metrics, s.audit)
 
 	mux := http.NewServeMux()
