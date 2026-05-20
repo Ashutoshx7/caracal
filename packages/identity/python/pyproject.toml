@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+# Caracal, a product of Garudex Labs
+#
+# Python package metadata for identity verification helpers.
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -11,7 +16,7 @@ license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-  "caracalai-core",
+  "caracalai-core==0.1.1",
   "PyJWT>=2.10.0",
   "httpx>=0.28.0",
 ]

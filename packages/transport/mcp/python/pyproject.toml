@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+# Caracal, a product of Garudex Labs
+#
+# Python package metadata for MCP transport authentication.
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -11,8 +16,8 @@ license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-  "caracalai-identity",
-  "caracalai-revocation",
+  "caracalai-identity==0.1.1",
+  "caracalai-revocation==0.1.1",
 ]
 
 [tool.hatch.build.targets.wheel]
