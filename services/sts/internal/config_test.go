@@ -21,3 +21,16 @@ func TestLoadConfigRejectsNonStandardPort(t *testing.T) {
 		t.Fatalf("nonstandard STS port must fail, got %v", err)
 	}
 }
+
+func TestLoadConfigRejectsSlowOPAPoll(t *testing.T) {
+	t.Setenv("PORT", "8080")
+	t.Setenv("DATABASE_URL", "postgres://example")
+	t.Setenv("REDIS_URL", "redis://example")
+	t.Setenv("ISSUER_URL", "https://issuer.example")
+	t.Setenv("OPA_POLL_SECONDS", "301")
+
+	_, err := loadConfig()
+	if err == nil || !strings.Contains(err.Error(), "OPA_POLL_SECONDS") {
+		t.Fatalf("slow OPA polling must fail, got %v", err)
+	}
+}

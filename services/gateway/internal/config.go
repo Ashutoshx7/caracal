@@ -21,7 +21,7 @@ const (
 	defaultPort           = "8081"
 	defaultMaxRequestSize = 10 * 1024 * 1024
 	defaultReadHeader     = 5 * time.Second
-	defaultReadTimeout    = 30 * time.Second
+	defaultReadTimeout    = 45 * time.Second
 	defaultWriteTimeout   = 60 * time.Second
 	defaultIdleTimeout    = 120 * time.Second
 	defaultSTSTimeout     = 5 * time.Second
@@ -135,6 +135,9 @@ func (c Config) validate() error {
 	}
 	if c.MaxRequestBytes <= 0 {
 		return fmt.Errorf("MAX_REQUEST_BYTES must be positive")
+	}
+	if c.ReadTimeout <= c.STSTimeout+c.UpstreamTimeout {
+		return fmt.Errorf("READ_TIMEOUT must be greater than STS_TIMEOUT plus UPSTREAM_TIMEOUT")
 	}
 	return nil
 }

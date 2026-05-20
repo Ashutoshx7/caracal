@@ -14,6 +14,7 @@ import (
 )
 
 const stsPort = "8080"
+const maxOPAPollSeconds = 300
 
 type Config struct {
 	config.Base
@@ -34,6 +35,10 @@ func loadConfig() (Config, error) {
 	if base.Port != stsPort {
 		return Config{}, fmt.Errorf("PORT must be %s for sts", stsPort)
 	}
+	opaPollSeconds := config.IntEnv("OPA_POLL_SECONDS", 60)
+	if opaPollSeconds > maxOPAPollSeconds {
+		return Config{}, fmt.Errorf("OPA_POLL_SECONDS must be <= %d", maxOPAPollSeconds)
+	}
 	return Config{
 		Base:               base,
 		ZoneKEKProvider:    config.Getenv("ZONE_KEK_PROVIDER", "local"),
@@ -41,6 +46,6 @@ func loadConfig() (Config, error) {
 		MaxGrantTTLSeconds: config.IntEnv("MAX_GRANT_TTL_SECONDS", 3600),
 		AuditReplayDir:     config.Getenv("AUDIT_REPLAY_DIR", "/var/lib/caracal/audit-replay"),
 		StreamsHMACKey:     config.Getenv("STREAMS_HMAC_KEY", ""),
-		OPAPollSeconds:     config.IntEnv("OPA_POLL_SECONDS", 60),
+		OPAPollSeconds:     opaPollSeconds,
 	}, nil
 }

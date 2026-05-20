@@ -8,6 +8,7 @@ package internal
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 var gatewayAuditKey = make([]byte, 32)
@@ -58,6 +59,27 @@ func TestConfigValidateMaxBytesPositive(t *testing.T) {
 	c := Config{Mode: "dev", Port: "8081", STSURL: "https://sts", MaxRequestBytes: 0, RedisURL: "redis://redis", StreamsHMACKey: "k"}
 	if err := c.validate(); err == nil {
 		t.Error("zero MaxRequestBytes should fail")
+	}
+}
+
+func TestConfigValidateReadTimeoutCoversSTSAndUpstream(t *testing.T) {
+	c := Config{
+		Mode:            "dev",
+		Port:            "8081",
+		STSURL:          "https://sts",
+		MaxRequestBytes: 1,
+		RedisURL:        "redis://redis",
+		StreamsHMACKey:  "k",
+		STSTimeout:      5 * time.Second,
+		UpstreamTimeout: 30 * time.Second,
+		ReadTimeout:     30 * time.Second,
+	}
+	if err := c.validate(); err == nil || !strings.Contains(err.Error(), "READ_TIMEOUT") {
+		t.Errorf("short read timeout should fail, got %v", err)
+	}
+	c.ReadTimeout = 45 * time.Second
+	if err := c.validate(); err != nil {
+		t.Errorf("read timeout covering dependencies should pass, got %v", err)
 	}
 }
 
