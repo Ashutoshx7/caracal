@@ -47,6 +47,7 @@ CARACAL_ADMIN_TOKEN=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 ZONE_KEK=1111111111111111111111111111111111111111111111111111111111111111
 AUDIT_HMAC_KEY=2222222222222222222222222222222222222222222222222222222222222222
 STREAMS_HMAC_KEY=3333333333333333333333333333333333333333333333333333333333333333
+GATEWAY_STS_HMAC_KEY=4444444444444444444444444444444444444444444444444444444444444444
 EOF
   cat >"$dir/secrets/postgresPassword" <<'EOF'
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -65,6 +66,9 @@ EOF
 EOF
   cat >"$dir/secrets/streamsHmacKey" <<'EOF'
 3333333333333333333333333333333333333333333333333333333333333333
+EOF
+  cat >"$dir/secrets/gatewayStsHmacKey" <<'EOF'
+4444444444444444444444444444444444444444444444444444444444444444
 EOF
   cat >"$dir/secrets/databaseUrl" <<'EOF'
 postgres://caracal:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@postgres:5432/caracal
@@ -85,6 +89,7 @@ secret_names = [
     "zoneKek",
     "auditHmacKey",
     "streamsHmacKey",
+    "gatewayStsHmacKey",
     "databaseUrl",
     "redisUrl",
 ]

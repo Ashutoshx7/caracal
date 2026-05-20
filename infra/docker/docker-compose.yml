@@ -73,6 +73,8 @@ secrets:
     file: ../secrets/files/auditHmacKey
   streamsHmacKey:
     file: ../secrets/files/streamsHmacKey
+  gatewayStsHmacKey:
+    file: ../secrets/files/gatewayStsHmacKey
   databaseUrl:
     file: ../secrets/files/databaseUrl
   redisUrl:
@@ -258,6 +260,8 @@ services:
         target: auditHmacKey
       - source: streamsHmacKey
         target: streamsHmacKey
+      - source: gatewayStsHmacKey
+        target: gatewayStsHmacKey
     environment:
       CARACAL_MODE: ${CARACAL_MODE:-dev}
       DATABASE_URL_FILE: /run/secrets/databaseUrl
@@ -265,6 +269,7 @@ services:
       ZONE_KEK_FILE: /run/secrets/zoneKek
       AUDIT_HMAC_KEY_FILE: /run/secrets/auditHmacKey
       STREAMS_HMAC_KEY_FILE: /run/secrets/streamsHmacKey
+      GATEWAY_STS_HMAC_KEY_FILE: /run/secrets/gatewayStsHmacKey
       ZONE_KEK_PROVIDER: local
       ISSUER_URL: ${CARACAL_STS_ISSUER_URL:-http://sts:8080}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
@@ -305,6 +310,8 @@ services:
         target: zoneKek
       - source: streamsHmacKey
         target: streamsHmacKey
+      - source: gatewayStsHmacKey
+        target: gatewayStsHmacKey
       - source: caracalAdminToken
         target: caracalAdminToken
     environment:
@@ -314,6 +321,7 @@ services:
       STS_URL: http://sts:8080
       ZONE_KEK_FILE: /run/secrets/zoneKek
       STREAMS_HMAC_KEY_FILE: /run/secrets/streamsHmacKey
+      GATEWAY_STS_HMAC_KEY_FILE: /run/secrets/gatewayStsHmacKey
       CARACAL_ADMIN_TOKEN_FILE: /run/secrets/caracalAdminToken
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
