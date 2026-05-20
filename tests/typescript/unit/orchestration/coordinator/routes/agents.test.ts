@@ -265,5 +265,10 @@ describe('DELETE /v1/zones/:zoneId/agents/:id — cascade terminate', () => {
       'terminate:agent-root', 'terminate:agent-child',
       'agent_terminate:agent-root', 'agent_terminate:agent-child',
     ]))
+    const payloads = params.filter((_, i) => i % 4 === 3)
+    expect(payloads).toEqual(expect.arrayContaining([
+      expect.objectContaining({ session_id: 'sid-root', agent_session_id: 'agent-root' }),
+      expect.objectContaining({ session_id: 'sid-child', agent_session_id: 'agent-child' }),
+    ]))
   })
 })

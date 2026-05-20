@@ -271,18 +271,18 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
         await client.query('ROLLBACK')
         return reply.code(403).send({ error: 'application_ownership_required' })
       }
-      const { rows: changed } = await client.query<{ id: string; parent_id: string | null }>(
+      const { rows: changed } = await client.query<{ id: string; subject_session_id: string; parent_id: string | null }>(
         `WITH RECURSIVE tree AS (
-           SELECT id, parent_id FROM agent_sessions
+           SELECT id, subject_session_id, parent_id FROM agent_sessions
            WHERE id = $1 AND zone_id = $2 AND status = 'active'
            UNION ALL
-           SELECT s.id, s.parent_id FROM agent_sessions s
+           SELECT s.id, s.subject_session_id, s.parent_id FROM agent_sessions s
            JOIN tree t ON s.parent_id = t.id
            WHERE s.zone_id = $2 AND s.status = 'active'
          )
          UPDATE agent_sessions SET status = 'suspended', updated_at = now()
          WHERE id IN (SELECT id FROM tree) AND zone_id = $2
-         RETURNING id, parent_id`,
+         RETURNING id, subject_session_id, parent_id`,
         [id, zoneId],
       )
       if (changed.length === 0) {
@@ -297,7 +297,10 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
       await enqueueMany(client, changed.map((row): OutboxItem => ({
         topic: Topics.SessionsRevoke,
         dedupeKey: `agent_suspend:${row.id}`,
-        payload: { zone_id: zoneId, agent_session_id: row.id, reason: 'agent_suspended' },
+        payload: {
+          zone_id: zoneId, session_id: row.subject_session_id,
+          agent_session_id: row.id, reason: 'agent_suspended',
+        },
       })))
       await client.query('COMMIT')
       return { suspended: changed.length }
@@ -469,7 +472,7 @@ export async function terminateSubtree(
     items.push({
       topic: Topics.SessionsRevoke,
       dedupeKey: `agent_terminate:${row.id}`,
-      payload: { zone_id: zoneId, agent_session_id: row.id, reason },
+      payload: { zone_id: zoneId, session_id: row.subject_session_id, agent_session_id: row.id, reason },
     })
   }
   await enqueueMany(client as Queryable, items)

@@ -257,7 +257,10 @@ export const delegationsRoutes: FastifyPluginAsync = async (fastify) => {
         sessionItems.push({
           topic: Topics.SessionsRevoke,
           dedupeKey: `delegation:${id}:subject:${row.subject_session_id}`,
-          payload: { zone_id: zoneId, session_id: row.subject_session_id, reason: 'delegation_revoked' },
+          payload: {
+            zone_id: zoneId, session_id: row.subject_session_id,
+            agent_session_id: row.id, reason: 'delegation_revoked',
+          },
         })
       }
       await enqueueMany(client, sessionItems)
