@@ -18,6 +18,7 @@ A resource is registered in a zone with these attributes:
 | `name` | string | Human-readable label |
 | `identifier` | string | Logical name used in policy rules and mandate `target` claims (e.g. `resource://payments`) |
 | `upstream_url` | string \| null | The actual URL the Gateway proxies to, if routing through Gateway |
+| `gateway_application_id` | string \| null | Application identity the Gateway uses when exchanging an inbound mandate for this resource |
 | `prefix` | boolean | If true, `upstream_url` is a URL prefix; path is appended from the request |
 | `scopes` | string[] | Full set of scopes available for this resource |
 | `credential_provider_id` | string \| null | Provider to use for credential substitution, if any |
@@ -66,9 +67,9 @@ At each stage, scopes can only be narrowed, never widened. An exchange request c
 
 ## Credential providers
 
-A resource can be associated with a credential provider via `credential_provider_id`. When this is set, the STS retrieves the relevant provider credential (an OAuth token or API key stored encrypted under the zone DEK) and includes it in the `upstreams` directive of the token response.
+A resource can be associated with a credential provider via `credential_provider_id`. When this is set, the STS retrieves the relevant provider credential for authenticated Gateway broker exchanges and includes it only in the internal upstream directive returned to the Gateway.
 
-The Gateway reads the `upstreams` directive and substitutes the provider credential as the Authorization header sent to the upstream. The agent never holds the provider credential — it only presents its mandate to the Gateway, and the Gateway handles the provider authentication.
+The Gateway reads the `upstreams` directive and substitutes the provider credential as the Authorization header sent to the upstream. Normal STS clients do not receive the provider-native credential. The agent only presents its mandate to the Gateway, and the Gateway handles provider authentication.
 
 Provider `kind` values:
 
@@ -86,10 +87,12 @@ Provider secrets are encrypted before storage. Any field whose name matches the 
 When a request arrives at the Gateway, the Gateway:
 
 1. Reads the `X-Caracal-Resource` header from the request to identify the target resource.
-2. Looks up the resource binding in its binding store (populated from the database) to find the upstream URL.
+2. Looks up the resource binding in its binding store (populated from `gateway_resource_bindings`) to find the zone and Gateway application identity for the resource.
 3. Verifies the resource identifier appears in the mandate's `target` claim.
 4. If the resource has a credential provider, reads the `upstreams` directive from the mandate to determine the credential substitution mode.
 5. Forwards the request to the upstream with the appropriate Authorization header.
+
+The Control-Plane API maintains `gateway_resource_bindings` from resource writes. A resource with `upstream_url` must also specify `gateway_application_id`; deleting the resource or clearing `upstream_url` removes the binding.
 
 Without a `credential_provider_id`, the Gateway forwards the mandate as the `Authorization: Bearer` header to the upstream. The upstream is responsible for verifying the mandate against the zone JWKS.
 

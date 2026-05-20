@@ -201,6 +201,7 @@ All fields optional. Cannot downgrade `credential_type` to `"public"` if an acti
     "name": "MCP Server",
     "identifier": "resource://my-mcp-server",
     "upstream_url": "https://mcp.internal/",
+    "gateway_application_id": "app1",
     "prefix": false,
     "scopes": ["read", "write"],
     "credential_provider_id": null,
@@ -220,10 +221,20 @@ All fields optional. Cannot downgrade `credential_type` to `"public"` if an acti
 | `scopes` | string[] | Yes | 1+ scopes |
 | `name` | string | No | Defaults to `identifier` |
 | `upstream_url` | string | No | Must be `http://` or `https://` |
+| `gateway_application_id` | string | Conditional | Required when `upstream_url` is set; must reference an active application in the zone |
 | `prefix` | boolean | No | `false` — if true, `identifier` is a prefix match |
 | `credential_provider_id` | UUID | No | Provider must exist in zone |
 
-**Error 404:** `provider_not_found` — referenced provider does not exist.
+The API maintains the Gateway binding automatically. Creating a resource with `upstream_url` inserts a `gateway_resource_bindings` row for `gateway_application_id`; changing the resource identifier moves the binding; clearing `upstream_url` or deleting the resource removes the binding.
+
+**Errors:**
+
+| Code | Status | Condition |
+| --- | --- | --- |
+| `gateway_application_required` | 400 | `upstream_url` is set without `gateway_application_id` |
+| `gateway_application_requires_upstream` | 400 | `gateway_application_id` is set without `upstream_url` |
+| `provider_not_found` | 404 | Referenced provider does not exist |
+| `gateway_application_not_found` | 404 | Referenced Gateway application does not exist or is inactive |
 
 ### `GET /v1/zones/{zoneId}/resources/{id}`
 ### `PATCH /v1/zones/{zoneId}/resources/{id}`
