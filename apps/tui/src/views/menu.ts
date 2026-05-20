@@ -406,10 +406,10 @@ export class MenuView implements View {
     const entries = menuEntries()
     if (key === 'up' || key === 'k') { this.cursor = Math.max(0, this.cursor - 1); return }
     if (key === 'down' || key === 'j') { this.cursor = Math.min(entries.length - 1, this.cursor + 1); return }
+    if (key === 'z' || key === 'Z') return this.promptZone(ctx.app)
     const direct = entries.findIndex((e) => e.key === key)
     if (direct >= 0) { this.cursor = direct; this.open(ctx.app); return }
     if (key === 'enter') { this.open(ctx.app); return }
-    if (key === 'z') return this.promptZone(ctx.app)
   }
 
   private open(app: App): void {
