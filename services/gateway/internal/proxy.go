@@ -42,6 +42,7 @@ type proxy struct {
 	tracker     replayTracker
 	revocations revocationChecker
 	metrics     *GatewayMetrics
+	audit       auditEmitter
 }
 
 type tokenVerifier interface {
@@ -62,7 +63,7 @@ type tokenRevocationIDs struct {
 	AgentSessionID string
 }
 
-func newProxy(sts *stsClient, jwks tokenVerifier, guard *upstreamGuard, log zerolog.Logger, maxBytes int64, upstreamTimeout time.Duration, bindings *bindingStore, tracker replayTracker, revocations revocationChecker, metrics *GatewayMetrics) *proxy {
+func newProxy(sts *stsClient, jwks tokenVerifier, guard *upstreamGuard, log zerolog.Logger, maxBytes int64, upstreamTimeout time.Duration, bindings *bindingStore, tracker replayTracker, revocations revocationChecker, metrics *GatewayMetrics, audit auditEmitter) *proxy {
 	if jwks == nil {
 		panic("proxy requires jwks verifier")
 	}
@@ -94,6 +95,7 @@ func newProxy(sts *stsClient, jwks tokenVerifier, guard *upstreamGuard, log zero
 		tracker:     tracker,
 		revocations: revocations,
 		metrics:     metrics,
+		audit:       audit,
 	}
 }
 
@@ -231,6 +233,18 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, requestID, http.StatusBadGateway, sharederr.Internal, "upstream not addressable")
 		p.metrics.UpstreamErrors.Add(1)
 		logger.Error().Err(err).Str("upstream_raw", res.Upstream.URL).Msg("upstream rejected by guard")
+		p.emitActionAudit(gatewayAuditInput{
+			RequestID:          requestID,
+			ZoneID:             bind.ZoneID,
+			ApplicationID:      bind.ApplicationID,
+			Resource:           resource,
+			SubjectFingerprint: tokenFingerprint(bearer),
+			Method:             r.Method,
+			AuthMode:           res.Upstream.AuthMode,
+			GatewayStatus:      http.StatusBadGateway,
+			EvaluationStatus:   "upstream_rejected",
+			ErrorKind:          "upstream_not_addressable",
+		})
 		return
 	}
 	logger = logger.With().
@@ -247,16 +261,44 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, requestID, http.StatusBadRequest, sharederr.Internal, "upstream request build failed")
 		p.metrics.UpstreamErrors.Add(1)
 		logger.Error().Err(err).Msg("build upstream request")
+		p.emitActionAudit(gatewayAuditInput{
+			RequestID:          requestID,
+			ZoneID:             bind.ZoneID,
+			ApplicationID:      bind.ApplicationID,
+			Resource:           resource,
+			SubjectFingerprint: tokenFingerprint(bearer),
+			Method:             r.Method,
+			UpstreamHost:       upstreamURL.Host,
+			AuthMode:           res.Upstream.AuthMode,
+			GatewayStatus:      http.StatusBadRequest,
+			EvaluationStatus:   "build_failed",
+			ErrorKind:          "request_build_failed",
+		})
 		return
 	}
 
 	start := time.Now()
 	resp, err := p.client.Do(upstreamReq)
+	latency := time.Since(start)
 	if err != nil {
 		status, code, msg := classifyUpstreamError(err)
 		writeErr(w, requestID, status, code, msg)
 		p.metrics.UpstreamErrors.Add(1)
 		logger.Error().Err(err).Int("status", status).Msg("upstream request failed")
+		p.emitActionAudit(gatewayAuditInput{
+			RequestID:          requestID,
+			ZoneID:             bind.ZoneID,
+			ApplicationID:      bind.ApplicationID,
+			Resource:           resource,
+			SubjectFingerprint: tokenFingerprint(bearer),
+			Method:             r.Method,
+			UpstreamHost:       upstreamURL.Host,
+			AuthMode:           res.Upstream.AuthMode,
+			GatewayStatus:      status,
+			Latency:            latency,
+			EvaluationStatus:   "upstream_error",
+			ErrorKind:          "transport_error",
+		})
 		return
 	}
 	defer resp.Body.Close()
@@ -267,10 +309,30 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	copyResponse(w, resp, p.revocations, revocationIDs)
 	p.metrics.RequestsAllowed.Add(1)
+	p.emitActionAudit(gatewayAuditInput{
+		RequestID:          requestID,
+		ZoneID:             bind.ZoneID,
+		ApplicationID:      bind.ApplicationID,
+		Resource:           resource,
+		SubjectFingerprint: tokenFingerprint(bearer),
+		Method:             r.Method,
+		UpstreamHost:       upstreamURL.Host,
+		AuthMode:           res.Upstream.AuthMode,
+		GatewayStatus:      resp.StatusCode,
+		UpstreamStatus:     resp.StatusCode,
+		Latency:            latency,
+		EvaluationStatus:   "executed",
+	})
 	logger.Info().
 		Int("status", resp.StatusCode).
-		Dur("upstream_latency_ms", time.Since(start)).
+		Dur("upstream_latency_ms", latency).
 		Msg("proxied")
+}
+
+func (p *proxy) emitActionAudit(input gatewayAuditInput) {
+	emitGatewayActionAudit(p.audit, func(err error) {
+		p.log.Error().Err(err).Str("request_id", input.RequestID).Str("zone_id", input.ZoneID).Msg("gateway audit event creation failed")
+	}, input)
 }
 
 // buildUpstreamRequest constructs the outbound request with safe headers, joined path,
