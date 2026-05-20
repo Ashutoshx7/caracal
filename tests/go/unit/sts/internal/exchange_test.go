@@ -19,6 +19,10 @@ import (
 	"github.com/open-policy-agent/opa/rego"
 )
 
+func strPtr(value string) *string {
+	return &value
+}
+
 func TestDerefStr(t *testing.T) {
 	s := "hello"
 	if got := derefStr(&s); got != "hello" {
@@ -171,6 +175,7 @@ type stubDB struct {
 	resErr        error
 	grant         *DelegatedGrant
 	grantErr      error
+	provider      *ProviderConfig
 	session       *Session
 	sessionErr    error
 	agentSessions []*AgentSession
@@ -193,11 +198,14 @@ func (s *stubDB) GetApplicationByID(_ context.Context, _, _ string) (*Applicatio
 func (s *stubDB) GetResourceByIdentifier(_ context.Context, _, _ string) (*Resource, error) {
 	return s.resource, s.resErr
 }
-func (s *stubDB) GetDelegatedGrant(_ context.Context, _, _, _ string) (*DelegatedGrant, error) {
+func (s *stubDB) GetDelegatedGrant(_ context.Context, _, _, _ string, providerID *string) (*DelegatedGrant, error) {
 	if s.grantErr != nil {
 		return nil, s.grantErr
 	}
 	if s.grant != nil {
+		if providerID != nil && (s.grant.ProviderID == nil || *s.grant.ProviderID != *providerID) {
+			return nil, errors.New("stub: provider mismatch")
+		}
 		return s.grant, nil
 	}
 	return nil, errors.New("stub")
@@ -206,6 +214,9 @@ func (s *stubDB) UpdateGrantTokens(_ context.Context, _ string, _ int, _, _ []by
 	return nil
 }
 func (s *stubDB) GetProvider(_ context.Context, _ string) (*ProviderConfig, error) {
+	if s.provider != nil {
+		return s.provider, nil
+	}
 	return nil, errors.New("stub")
 }
 func (s *stubDB) GetDelegationEdge(_ context.Context, id string) (*DelegationEdge, error) {
@@ -363,7 +374,10 @@ func TestBuildUpstreamDirectiveIncludesProviderTokenOnlyForGateway(t *testing.T)
 	}
 	expiresAt := time.Now().Add(time.Minute)
 	srv := &Server{
-		db:   &stubDB{grant: &DelegatedGrant{AccessTokenCt: token, ExpiresAt: &expiresAt}},
+		db: &stubDB{
+			grant:    &DelegatedGrant{ProviderID: &providerID, AccessTokenCt: token, ExpiresAt: &expiresAt},
+			provider: &ProviderConfig{ID: providerID, ProviderKind: strPtr("oauth2")},
+		},
 		keys: &KeyCache{zek: zek},
 	}
 	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true)
@@ -372,6 +386,64 @@ func TestBuildUpstreamDirectiveIncludesProviderTokenOnlyForGateway(t *testing.T)
 	}
 	if directive.ProviderToken != "provider-access-token" || directive.AuthMode != UpstreamAuthProviderOAuth {
 		t.Fatalf("gateway exchange must receive brokered provider token, got %#v", directive)
+	}
+}
+
+func TestBuildUpstreamDirectiveBindsGrantToConfiguredProvider(t *testing.T) {
+	providerID := "provider1"
+	otherProviderID := "provider2"
+	upstreamURL := "https://upstream.example"
+	resource := &Resource{
+		ID:                   "res1",
+		Identifier:           "resource://api",
+		UpstreamURL:          &upstreamURL,
+		CredentialProviderID: &providerID,
+	}
+	zek := []byte("12345678901234567890123456789012")
+	token, err := sealZEK(zek, []byte("provider-access-token"))
+	if err != nil {
+		t.Fatalf("seal provider token: %v", err)
+	}
+	srv := &Server{
+		db:   &stubDB{grant: &DelegatedGrant{ProviderID: &otherProviderID, AccessTokenCt: token}},
+		keys: &KeyCache{zek: zek},
+	}
+	if _, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true); err == nil {
+		t.Fatal("gateway directive must reject grants from a different provider")
+	}
+}
+
+func TestBuildUpstreamDirectiveSupportsAPIKeyProviderShape(t *testing.T) {
+	providerID := "provider1"
+	upstreamURL := "https://upstream.example"
+	resource := &Resource{
+		ID:                   "res1",
+		Identifier:           "resource://api",
+		UpstreamURL:          &upstreamURL,
+		CredentialProviderID: &providerID,
+	}
+	zek := []byte("12345678901234567890123456789012")
+	token, err := sealZEK(zek, []byte("api-key-value"))
+	if err != nil {
+		t.Fatalf("seal provider token: %v", err)
+	}
+	srv := &Server{
+		db: &stubDB{
+			grant: &DelegatedGrant{ProviderID: &providerID, AccessTokenCt: token},
+			provider: &ProviderConfig{
+				ID:           providerID,
+				ProviderKind: strPtr("apikey"),
+				ConfigJSON:   []byte(`{"header_name":"X-Api-Key"}`),
+			},
+		},
+		keys: &KeyCache{zek: zek},
+	}
+	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true)
+	if err != nil {
+		t.Fatalf("gateway directive should support API key provider shape: %v", err)
+	}
+	if directive.AuthMode != UpstreamAuthProviderAPIKey || directive.AuthHeader != "X-Api-Key" || directive.AuthScheme != "" || directive.ProviderToken != "api-key-value" {
+		t.Fatalf("unexpected apikey directive: %#v", directive)
 	}
 }
 
@@ -435,7 +507,7 @@ result := {"decision": "partial", "evaluation_status": "partial", "determining_p
 
 func TestValidateSessionReferencesRequiresAgentSessionForDelegation(t *testing.T) {
 	srv := &Server{db: &stubDB{}}
-	_, err := srv.validateSessionReferences(context.Background(), "zone1", "app1", TokenExchangeRequest{
+	_, _, err := srv.validateSessionReferences(context.Background(), "zone1", "app1", TokenExchangeRequest{
 		DelegationEdgeID: "edge1",
 	}, true)
 	if err == nil || err.Description != "delegation edge requires target agent session" {
@@ -478,13 +550,40 @@ func TestValidateSessionReferencesAcceptsActiveGraphEdge(t *testing.T) {
 		},
 	}
 	srv := &Server{db: db}
-	proof, err := srv.validateSessionReferences(context.Background(), "zone1", "app2", TokenExchangeRequest{
+	proof, agentSession, err := srv.validateSessionReferences(context.Background(), "zone1", "app2", TokenExchangeRequest{
 		AgentSessionID:   target.ID,
 		DelegationEdgeID: "edge1",
 		Scope:            "read",
 	}, true)
 	if err != nil || proof == nil || proof.edge.ID != "edge1" || proof.graphEpoch != 7 {
 		t.Fatalf("want active delegation proof, got proof=%#v err=%#v", proof, err)
+	}
+	if agentSession == nil || agentSession.ID != target.ID {
+		t.Fatalf("target agent session not returned for policy input: %#v", agentSession)
+	}
+}
+
+func TestAgentSessionMetadataIsPolicyAndAuditInput(t *testing.T) {
+	session := &AgentSession{
+		ID:           "agent-1",
+		Kind:         "ephemeral",
+		Capabilities: []string{"browser", "code"},
+	}
+	if got := agentSessionKind(session); got != "ephemeral" {
+		t.Fatalf("kind = %q", got)
+	}
+	caps := agentSessionCapabilities(session)
+	caps[0] = "mutated"
+	if session.Capabilities[0] != "browser" {
+		t.Fatal("capabilities must be copied before policy evaluation")
+	}
+	meta := agentAuditMeta(session)
+	if meta["agent_kind"] != "ephemeral" {
+		t.Fatalf("audit metadata missing kind: %#v", meta)
+	}
+	gotCaps, ok := meta["agent_capabilities"].([]string)
+	if !ok || len(gotCaps) != 2 || gotCaps[1] != "code" {
+		t.Fatalf("audit metadata missing capabilities: %#v", meta)
 	}
 }
 
@@ -521,7 +620,7 @@ func TestValidateSessionReferencesRejectsSourceUsingDelegationEdge(t *testing.T)
 		},
 	}
 	srv := &Server{db: db}
-	_, err := srv.validateSessionReferences(context.Background(), "zone1", "app1", TokenExchangeRequest{
+	_, _, err := srv.validateSessionReferences(context.Background(), "zone1", "app1", TokenExchangeRequest{
 		AgentSessionID:   source.ID,
 		DelegationEdgeID: "edge1",
 		Scope:            "read",
@@ -566,7 +665,7 @@ func TestValidateSessionReferencesRejectsDelegationBudget(t *testing.T) {
 		},
 	}
 	srv := &Server{db: db}
-	_, err := srv.validateSessionReferences(context.Background(), "zone1", "app2", TokenExchangeRequest{
+	_, _, err := srv.validateSessionReferences(context.Background(), "zone1", "app2", TokenExchangeRequest{
 		AgentSessionID:   target.ID,
 		DelegationEdgeID: "edge1",
 		Scope:            "read write",
@@ -611,7 +710,7 @@ func TestValidateSessionReferencesRejectsDelegationTTLConstraint(t *testing.T) {
 		},
 	}
 	srv := &Server{db: db}
-	_, err := srv.validateSessionReferences(context.Background(), "zone1", "app2", TokenExchangeRequest{
+	_, _, err := srv.validateSessionReferences(context.Background(), "zone1", "app2", TokenExchangeRequest{
 		AgentSessionID:   target.ID,
 		DelegationEdgeID: "edge1",
 		Scope:            "read",
@@ -656,7 +755,7 @@ func TestValidateSessionReferencesRejectsMalformedDelegationConstraints(t *testi
 		},
 	}
 	srv := &Server{db: db}
-	_, err := srv.validateSessionReferences(context.Background(), "zone1", "app2", TokenExchangeRequest{
+	_, _, err := srv.validateSessionReferences(context.Background(), "zone1", "app2", TokenExchangeRequest{
 		AgentSessionID:   target.ID,
 		DelegationEdgeID: "edge1",
 		Scope:            "read",
@@ -768,7 +867,7 @@ func TestValidateSessionReferencesRejectsInvalidDelegationPath(t *testing.T) {
 		},
 	}
 	srv := &Server{db: db, metrics: &STSMetrics{}}
-	_, err := srv.validateSessionReferences(context.Background(), "zone1", "app2", TokenExchangeRequest{
+	_, _, err := srv.validateSessionReferences(context.Background(), "zone1", "app2", TokenExchangeRequest{
 		AgentSessionID:   target.ID,
 		DelegationEdgeID: "edge1",
 		Scope:            "read",
@@ -816,7 +915,7 @@ func TestValidateSessionReferencesRejectsMaxHopOverflow(t *testing.T) {
 		},
 	}
 	srv := &Server{db: db}
-	_, err := srv.validateSessionReferences(context.Background(), "zone1", "app2", TokenExchangeRequest{
+	_, _, err := srv.validateSessionReferences(context.Background(), "zone1", "app2", TokenExchangeRequest{
 		AgentSessionID:   target.ID,
 		DelegationEdgeID: "edge1",
 		Scope:            "read",
@@ -888,7 +987,7 @@ func TestValidateSessionReferencesAcceptsDeepDelegationPath(t *testing.T) {
 		},
 	}
 	srv := &Server{db: db}
-	proof, err := srv.validateSessionReferences(context.Background(), "zone1", "app2", TokenExchangeRequest{
+	proof, _, err := srv.validateSessionReferences(context.Background(), "zone1", "app2", TokenExchangeRequest{
 		AgentSessionID:   target.ID,
 		DelegationEdgeID: "edge1",
 		Scope:            "read",

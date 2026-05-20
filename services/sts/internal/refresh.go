@@ -62,11 +62,11 @@ func openZEK(zek, packed []byte) ([]byte, error) {
 
 // tryRefreshBrokeredGrant fetches the delegated grant for userID+resourceID,
 // refreshes the provider access token if expired, and updates the grant.
-func (s *Server) tryRefreshBrokeredGrant(ctx context.Context, zoneID, userID, resourceID string) *sharederr.CaracalError {
+func (s *Server) tryRefreshBrokeredGrant(ctx context.Context, zoneID, userID, resourceID string, providerID *string) *sharederr.CaracalError {
 	if userID == "" {
 		return nil
 	}
-	grant, err := s.db.GetDelegatedGrant(ctx, zoneID, userID, resourceID)
+	grant, err := s.db.GetDelegatedGrant(ctx, zoneID, userID, resourceID, providerID)
 	if err != nil {
 		return nil
 	}
@@ -78,6 +78,9 @@ func (s *Server) tryRefreshBrokeredGrant(ctx context.Context, zoneID, userID, re
 	}
 	provider, err := s.db.GetProvider(ctx, *grant.ProviderID)
 	if err != nil {
+		return sharederr.New(sharederr.CredentialExpired, "credential_expired_not_renewable")
+	}
+	if kind := derefStr(provider.ProviderKind); kind != "" && kind != "oauth2" && kind != "oidc" {
 		return sharederr.New(sharederr.CredentialExpired, "credential_expired_not_renewable")
 	}
 	var provCfg struct {
@@ -171,7 +174,7 @@ func (s *Server) persistRefreshedGrant(
 		if !errors.Is(err, ErrConcurrentGrantUpdate) {
 			return err
 		}
-		latest, readErr := s.db.GetDelegatedGrant(ctx, zoneID, userID, resourceID)
+		latest, readErr := s.db.GetDelegatedGrant(ctx, zoneID, userID, resourceID, grant.ProviderID)
 		if readErr != nil {
 			return readErr
 		}

@@ -47,7 +47,7 @@ type DBQuerier interface {
 	Ping(ctx context.Context) error
 	GetApplicationByID(ctx context.Context, id, zoneID string) (*Application, error)
 	GetResourceByIdentifier(ctx context.Context, zoneID, identifier string) (*Resource, error)
-	GetDelegatedGrant(ctx context.Context, zoneID, userID, resourceID string) (*DelegatedGrant, error)
+	GetDelegatedGrant(ctx context.Context, zoneID, userID, resourceID string, providerID *string) (*DelegatedGrant, error)
 	UpdateGrantTokens(ctx context.Context, id string, expectedVersion int, accessCt, refreshCt []byte, expiresAt time.Time) error
 	GetProvider(ctx context.Context, id string) (*ProviderConfig, error)
 	GetDelegationEdge(ctx context.Context, id string) (*DelegationEdge, error)
@@ -254,6 +254,8 @@ type AgentSession struct {
 	ZoneID           string
 	ApplicationID    string
 	SubjectSessionID string
+	Kind             string
+	Capabilities     []string
 	Status           string
 	SpawnedAt        time.Time
 	TTLSeconds       int
@@ -302,9 +304,9 @@ func (d *DB) GetSession(ctx context.Context, sid string) (*Session, error) {
 func (d *DB) GetAgentSession(ctx context.Context, id string) (*AgentSession, error) {
 	var s AgentSession
 	err := d.pool.QueryRow(ctx,
-		`SELECT id, zone_id, application_id, subject_session_id, status, spawned_at, ttl_seconds
+		`SELECT id, zone_id, application_id, subject_session_id, agent_kind, capabilities, status, spawned_at, ttl_seconds
 		 FROM agent_sessions WHERE id = $1`, id,
-	).Scan(&s.ID, &s.ZoneID, &s.ApplicationID, &s.SubjectSessionID, &s.Status, &s.SpawnedAt, &s.TTLSeconds)
+	).Scan(&s.ID, &s.ZoneID, &s.ApplicationID, &s.SubjectSessionID, &s.Kind, &s.Capabilities, &s.Status, &s.SpawnedAt, &s.TTLSeconds)
 	if err != nil {
 		return nil, err
 	}
@@ -535,14 +537,15 @@ type DelegatedGrant struct {
 	RefreshTokenVersion int
 }
 
-func (d *DB) GetDelegatedGrant(ctx context.Context, zoneID, userID, resourceID string) (*DelegatedGrant, error) {
+func (d *DB) GetDelegatedGrant(ctx context.Context, zoneID, userID, resourceID string, providerID *string) (*DelegatedGrant, error) {
 	var g DelegatedGrant
 	err := d.pool.QueryRow(ctx,
 		`SELECT id, zone_id, user_id, resource_id, provider_id,
 		        access_token_ct, refresh_token_ct, expires_at, refresh_token_version
 		 FROM delegated_grants
 		 WHERE zone_id = $1 AND user_id = $2 AND resource_id = $3 AND status = 'active'
-		 ORDER BY created_at DESC LIMIT 1`, zoneID, userID, resourceID,
+		   AND ($4::uuid IS NULL OR provider_id = $4::uuid)
+		 ORDER BY created_at DESC LIMIT 1`, zoneID, userID, resourceID, providerID,
 	).Scan(&g.ID, &g.ZoneID, &g.UserID, &g.ResourceID, &g.ProviderID,
 		&g.AccessTokenCt, &g.RefreshTokenCt, &g.ExpiresAt, &g.RefreshTokenVersion)
 	if err != nil {
@@ -572,15 +575,16 @@ func (d *DB) UpdateGrantTokens(ctx context.Context, id string, expectedVersion i
 
 // ProviderConfig holds the provider config needed for token refresh.
 type ProviderConfig struct {
-	ID         string
-	ConfigJSON json.RawMessage
+	ID           string
+	ProviderKind *string
+	ConfigJSON   json.RawMessage
 }
 
 func (d *DB) GetProvider(ctx context.Context, id string) (*ProviderConfig, error) {
 	var p ProviderConfig
 	err := d.pool.QueryRow(ctx,
-		`SELECT id, config_json FROM providers WHERE id = $1`, id,
-	).Scan(&p.ID, &p.ConfigJSON)
+		`SELECT id, provider_kind, config_json FROM providers WHERE id = $1`, id,
+	).Scan(&p.ID, &p.ProviderKind, &p.ConfigJSON)
 	if err != nil {
 		return nil, err
 	}
