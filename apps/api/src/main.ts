@@ -9,10 +9,9 @@ import { newDB } from './db.js'
 import { newRedis } from './redis.js'
 import { startDCRGC } from './jobs/dcr-gc.js'
 import { startSessionsReaper } from './jobs/sessions-reaper.js'
-import { ShutdownRegistry } from './lifecycle.js'
 import { OutboxDispatcher } from './outbox.js'
 import { seedBootstrapAdminToken } from './auth.js'
-import { assertPublishedSafe, createLogger } from '@caracalai/core'
+import { assertPublishedSafe, createLogger, ShutdownRegistry } from '@caracalai/core'
 
 assertPublishedSafe()
 
@@ -86,10 +85,10 @@ try {
     await app.listen({ port: cfg.port, host: cfg.host })
   } catch (err) {
     app.log.error(err)
-    await shutdown.fire('listen-failed')
+    await shutdown.fire('listen-failed', 1)
   }
 } catch (err) {
   const reason = err instanceof Error ? err.message : String(err)
   log('error', `startup failed: ${reason}`)
-  await shutdown.fire('startup-failed')
+  await shutdown.fire('startup-failed', 1)
 }
