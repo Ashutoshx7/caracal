@@ -111,6 +111,9 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
   if (cfg.v1RateLimitPerMin > 0) {
     // Pre-auth bucket keyed by IP. After-auth re-evaluation happens in preHandler
     // so authenticated callers are accounted by actor.id (preventing X-Forwarded-For evasion).
+    // Deployment requirement when trustProxy=true: the upstream proxy must strip any
+    // client-supplied X-Forwarded-For; otherwise unauthenticated callers can rotate the
+    // header to bypass the per-IP bucket.
     const tick = async (key: string): Promise<number> => {
       const n = await redis.incr(key)
       if (n === 1) await redis.expire(key, 90)
@@ -146,7 +149,7 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
   if (cfg.enableDocs) {
     await app.register(swagger, {
       openapi: {
-        info: { title: 'Caracal API', version: '0.1.0' },
+        info: { title: 'Caracal API', version: process.env.CARACAL_VERSION ?? '0.0.0-dev' },
         servers: [{ url: `http://localhost:${cfg.port}` }],
       },
     })

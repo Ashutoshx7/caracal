@@ -11,7 +11,7 @@ import { startDCRGC } from './jobs/dcr-gc.js'
 import { startSessionsReaper } from './jobs/sessions-reaper.js'
 import { OutboxDispatcher } from './outbox.js'
 import { seedBootstrapAdminToken } from './auth.js'
-import { assertPublishedSafe, createLogger, ShutdownRegistry } from '@caracalai/core'
+import { assertPublishedSafe, createLogger, ShutdownRegistry, withTimeout } from '@caracalai/core'
 
 assertPublishedSafe()
 
@@ -48,9 +48,10 @@ const shutdown = new ShutdownRegistry({
 })
 shutdown.register('redis', async () => { await redis.quit() })
 shutdown.register('postgres', () => db.end())
+shutdown.install()
 
 try {
-  await redis.ping()
+  await withTimeout(redis.ping(), cfg.shutdownGraceMs, 'startup redis ping timed out')
   await seedBootstrapAdminToken(db, {
     envToken: cfg.bootstrapAdminToken,
     log: (msg) => log('info', msg),
@@ -77,7 +78,6 @@ try {
   shutdown.register('sessions-reaper', () => { clearInterval(sessionsReaperTimer) })
   shutdown.register('outbox-dispatcher', () => dispatcher.stop())
   shutdown.register('fastify', () => app.close())
-  shutdown.install()
 
   dispatcher.start()
 

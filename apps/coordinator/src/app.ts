@@ -32,6 +32,7 @@ export interface CoordinatorDeps {
   cfg: Cfg
   db: Pool
   redis: RedisClient
+  isDraining?: () => boolean
 }
 
 interface RuntimeStats {
@@ -43,7 +44,7 @@ interface RuntimeStats {
 const RUNTIME_STATS_TTL_MS = 15_000
 const READY_CHECK_TIMEOUT_MS = 5_000
 
-export async function buildApp({ cfg, db, redis }: CoordinatorDeps) {
+export async function buildApp({ cfg, db, redis, isDraining }: CoordinatorDeps) {
   let runtimeStats: RuntimeStats | null = null
   let runtimeStatsRefresh: Promise<RuntimeStats> | null = null
   const loadRuntimeStats = async (): Promise<RuntimeStats> => {
@@ -126,6 +127,19 @@ export async function buildApp({ cfg, db, redis }: CoordinatorDeps) {
   registerAdminAuditHook(app, db)
   app.get('/health', async () => ({ ok: true }))
   app.get('/ready', async (req, reply) => {
+    if (cfg.readyRateLimitPerMin > 0) {
+      const minute = Math.floor(Date.now() / 60_000)
+      const key = `coordinator:ready_rl:${req.ip}:${minute}`
+      const count = await redis.incr(key)
+      if (count === 1) await redis.expire(key, 90)
+      if (count > cfg.readyRateLimitPerMin) {
+        return reply.code(429).send({ error: 'rate_limited' })
+      }
+    }
+    if (isDraining?.()) {
+      reply.code(503)
+      return { ok: false, draining: true }
+    }
     try {
       await withTimeout(app.db.query('SELECT 1'), READY_CHECK_TIMEOUT_MS, 'ready postgres check timed out')
       const pong = await withTimeout(app.redis.ping(), READY_CHECK_TIMEOUT_MS, 'ready redis check timed out')
