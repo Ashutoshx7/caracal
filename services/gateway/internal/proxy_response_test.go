@@ -28,7 +28,10 @@ func TestCopyResponseStripsIdentityHeader(t *testing.T) {
 		Body: io.NopCloser(strings.NewReader(`{"ok":true}`)),
 	}
 	rec := httptest.NewRecorder()
-	copyResponse(rec, resp, store, tokenRevocationIDs{SID: "sid-1"})
+	result := copyResponse(rec, resp, store, tokenRevocationIDs{SID: "sid-1"})
+	if result.Bytes == 0 || result.Revoked {
+		t.Fatalf("expected copied bytes without revocation, got %#v", result)
+	}
 	if got := rec.Header().Get("X-Caracal-Identity"); got != "" {
 		t.Fatalf("X-Caracal-Identity must not surface to clients, got %q", got)
 	}
@@ -74,7 +77,10 @@ func TestCopyResponseEmitsRevocationTrailer(t *testing.T) {
 		time.Sleep(15 * time.Millisecond)
 		store.markSession("sid-stream")
 	}()
-	copyResponse(rec, resp, store, tokenRevocationIDs{SID: "sid-stream"})
+	result := copyResponse(rec, resp, store, tokenRevocationIDs{SID: "sid-stream"})
+	if !result.Revoked {
+		t.Fatalf("expected copy result to record revocation")
+	}
 	if got := rec.Header().Get("Trailer"); got != "X-Caracal-Revoked" {
 		t.Fatalf("expected Trailer announcement, got %q", got)
 	}

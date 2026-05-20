@@ -156,6 +156,14 @@ func TestJWTDelegationEdgeIDReadsClaim(t *testing.T) {
 	}
 }
 
+func TestJWTRootSIDReadsClaim(t *testing.T) {
+	payload := `{"sid":"sess-123","root_sid":"root-123"}`
+	tok := "header." + base64.RawURLEncoding.EncodeToString([]byte(payload)) + ".sig"
+	if got := jwtRootSID(tok); got != "root-123" {
+		t.Fatalf("want root-123, got %q", got)
+	}
+}
+
 func TestJWTSIDMalformed(t *testing.T) {
 	if got := jwtSID("notajwt"); got != "" {
 		t.Fatalf("malformed token should return empty sid, got %q", got)

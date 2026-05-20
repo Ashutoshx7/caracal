@@ -92,6 +92,30 @@ func TestTokenTTL(t *testing.T) {
 	}
 }
 
+func TestRootSessionIDTracksAuthorityRoot(t *testing.T) {
+	if got := rootSessionID(nil, "ambient-1", UseAmbient); got != "ambient-1" {
+		t.Fatalf("ambient root should be its own sid, got %q", got)
+	}
+	claims := map[string]any{"sid": "ambient-1"}
+	if got := rootSessionID(claims, "per-call-1", UsePerCall); got != "ambient-1" {
+		t.Fatalf("per-call root should default to parent sid, got %q", got)
+	}
+	claims["root_sid"] = "root-1"
+	if got := rootSessionID(claims, "per-call-1", UsePerCall); got != "root-1" {
+		t.Fatalf("per-call root should preserve inherited root, got %q", got)
+	}
+}
+
+func TestParentSessionIDOnlyForDerivedTokens(t *testing.T) {
+	if got := parentSessionID("ambient-1", UseAmbient); got != nil {
+		t.Fatalf("ambient sessions must not have a parent, got %q", *got)
+	}
+	got := parentSessionID("ambient-1", UsePerCall)
+	if got == nil || *got != "ambient-1" {
+		t.Fatalf("per-call sessions must link to parent ambient session, got %#v", got)
+	}
+}
+
 func TestBuildAuditEventFields(t *testing.T) {
 	result := &OPAResult{
 		Decision:         "allow",
