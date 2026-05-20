@@ -73,23 +73,25 @@ The Gateway reads the `upstreams` directive and substitutes the provider credent
 
 Provider `kind` values:
 
-| Kind | Description |
+| Kind | Current runtime behavior |
 | ---- | ----------- |
-| `oauth2` | OAuth 2.0 access token |
-| `oidc` | OpenID Connect token |
-| `apikey` | Static API key |
-| `workload` | Machine-to-machine workload identity |
+| `oauth2` | OAuth 2.0 bearer-style token forwarding and refresh from an active delegated provider grant |
+| `oidc` | OIDC bearer-style token forwarding and refresh from an active delegated provider grant |
+| `apikey` | API-key forwarding from an active delegated provider grant; header shape comes from provider config |
+| `workload` | Registered metadata only; no automatic workload assertion minting in the current OSS runtime |
 
 Provider secrets are encrypted before storage. Any field whose name matches the pattern `/(secret|password|token|api[_-]?key|private[_-]?key|credential|passphrase)/i` is sealed under the zone KEK and never returned in API responses.
+
+STS binds provider-native forwarding to the exact provider configured on the resource. A delegated grant for one provider cannot satisfy a resource configured for another provider. If a provider credential is missing or cannot be refreshed, STS denies the exchange and the Gateway does not call the upstream.
 
 ## How the Gateway uses resources
 
 When a request arrives at the Gateway, the Gateway:
 
-1. Reads the `X-Caracal-Resource` header from the request to identify the target resource.
-2. Looks up the resource binding in its binding store (populated from `gateway_resource_bindings`) to find the zone and Gateway application identity for the resource.
-3. Verifies the resource identifier appears in the mandate's `target` claim.
-4. If the resource has a credential provider, reads the `upstreams` directive from the mandate to determine the credential substitution mode.
+1. Reads the bearer token's `zone_id` claim and the `X-Caracal-Resource` header.
+2. Looks up the zone/resource binding in `gateway_resource_bindings` to find the Gateway application identity for that resource.
+3. Verifies the mandate and asks STS for a narrowed per-resource exchange as that Gateway application.
+4. If the resource has a credential provider, reads the STS `upstreams` directive from the internal Gateway exchange response.
 5. Forwards the request to the upstream with the appropriate Authorization header.
 
 The Control-Plane API maintains `gateway_resource_bindings` from resource writes. A resource with `upstream_url` must also specify `gateway_application_id`; deleting the resource or clearing `upstream_url` removes the binding.

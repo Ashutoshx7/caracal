@@ -89,9 +89,9 @@ depends_on:
 healthcheck: wget -qO- http://127.0.0.1:8081/ready || exit 1
 ```
 
-Go binary. The only service exposed externally in production. Requires TLS in production (`TLS_CERT_FILE`, `TLS_KEY_FILE`). In development, set `INSECURE_HTTP=true` and `INSECURE_STS=true`.
+Go binary. The only service exposed externally in production. Use TLS at the Gateway (`TLS_CERT_FILE`, `TLS_KEY_FILE`) or at a trusted fronting ingress. Internal compose traffic to STS may use the private service network.
 
-**Required:** `DATABASE_URL`, `REDIS_URL`, `STS_URL`, `STREAMS_HMAC_KEY`
+**Required:** `DATABASE_URL`, `REDIS_URL`, `STS_URL`, `STREAMS_HMAC_KEY`, `AUDIT_HMAC_KEY`, `GATEWAY_STS_HMAC_KEY`
 
 ### `audit`
 
@@ -220,7 +220,6 @@ All bindings use `127.0.0.1` only. In production, services communicate over a pr
 - Run multiple replicas of stateless services (STS, API, Gateway, Coordinator) behind a load balancer.
 - Supply secrets from a vault or secrets manager; do not use `.env` files.
 - Set `CARACAL_MODE=stable`.
-- Keep `INSECURE_HTTP=false` and `INSECURE_STS=false`.
 - Provide `TLS_CERT_FILE` and `TLS_KEY_FILE` for the Gateway, or terminate TLS at a trusted ingress before traffic reaches it.
-- Set `STREAMS_HMAC_KEY` on all services that publish or consume signed Redis streams.
+- Set `STREAMS_HMAC_KEY`, `AUDIT_HMAC_KEY`, and `GATEWAY_STS_HMAC_KEY` on services that require them.
 - Scale the Audit service to a single replica with leader election active (the service uses advisory locks to elect an export leader and a retention leader).

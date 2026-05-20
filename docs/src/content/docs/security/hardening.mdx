@@ -23,13 +23,13 @@ Every service must run with TLS in production. The Gateway enforces this explici
 | Coordinator | Operator-managed | Same |
 | Control-Plane API | Operator-managed | Same |
 
-The Gateway rejects `INSECURE_HTTP=true` and `INSECURE_STS=true` in production. Set neither variable, or explicitly set both to `false`. Setting `INSECURE_STS=true` allows the Gateway to communicate with the STS over plaintext HTTP — any token in transit is exposed.
+The Gateway accepts HTTP `STS_URL` only for internal hosts in `rc` or `stable` mode. Use TLS or platform mTLS for non-internal service-to-service traffic, and keep the Gateway behind a trusted TLS-terminating ingress unless `TLS_CERT_FILE` and `TLS_KEY_FILE` are configured directly.
 
 TLS minimum version is 1.2 (enforced in the Gateway's `tls.Config`). Do not configure a lower minimum at the termination layer.
 
 ### Service-to-service communication
 
-All inter-service calls (Gateway → STS, Coordinator → STS) must use `https://` scheme URLs. The STS URL supplied to the Gateway via `STS_URL` must start with `https://` in production.
+All non-internal inter-service calls (Gateway → STS, Coordinator → STS) must use `https://` scheme URLs. Internal Docker/Kubernetes service names may use HTTP only when the network boundary is private and independently protected.
 
 ---
 
@@ -240,7 +240,7 @@ Run through this list before sending production traffic to any Caracal zone:
 - [ ] `JTI_FAIL_OPEN` not set or explicitly `false`
 - [ ] `ALLOW_PRIVATE_UPSTREAMS` not set or explicitly `false`
 - [ ] `UPSTREAM_HOST_ALLOWLIST` set to the expected upstream hostnames
-- [ ] `INSECURE_HTTP` and `INSECURE_STS` not set or explicitly `false`
+- [ ] `GATEWAY_STS_HMAC_KEY` set for Gateway and STS
 - [ ] Database connections use `sslmode=require` or `sslmode=verify-full`
 - [ ] Active policy set deployed to every zone before traffic arrives
 - [ ] Admin tokens generated with ≥ 32 bytes entropy; bootstrap token replaced

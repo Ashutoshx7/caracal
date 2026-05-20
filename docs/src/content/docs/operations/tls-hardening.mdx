@@ -49,13 +49,12 @@ rc and stable enforce these Gateway checks at startup:
 
 | Check | rc and stable behavior |
 | --- | --- |
-| `INSECURE_HTTP` | Must not be truthy |
-| `INSECURE_STS` | Must not be truthy |
 | `JTI_FAIL_OPEN` | Must not be `true` |
 | `PORT` | Must be `8081` |
 | `REDIS_URL` | Required |
 | `STREAMS_HMAC_KEY` | Required |
 | `AUDIT_HMAC_KEY` | Required |
+| `GATEWAY_STS_HMAC_KEY` | Required |
 | `UPSTREAM_HOST_ALLOWLIST` | Required when `ALLOW_PRIVATE_UPSTREAMS=true` |
 | `STS_URL` | Must be absolute; HTTP is allowed only for internal hosts such as `sts`, `localhost`, or loopback |
 
@@ -67,12 +66,7 @@ Any value other than `dev` or `runtime` is rejected.
 
 Two flags exist for local development compatibility:
 
-| Variable | Effect | Forbidden when |
-| --- | --- | --- |
-| `INSECURE_HTTP=true` | Marks plaintext Gateway operation as intentional | `CARACAL_MODE=rc` or `CARACAL_MODE=stable` |
-| `INSECURE_STS=true` | Marks plaintext STS calls as intentional | `CARACAL_MODE=rc` or `CARACAL_MODE=stable` |
-
-Do not set either flag in deployments that handle real credentials or tokens.
+Plain HTTP should be limited to private service networks or local development. For public ingress, terminate TLS before traffic reaches the Gateway or configure `TLS_CERT_FILE` and `TLS_KEY_FILE` directly.
 
 ---
 
@@ -132,8 +126,8 @@ Tune `UPSTREAM_TIMEOUT` to the protected service's P99 response time. A timeout 
 
 - Set `CARACAL_MODE=stable`.
 - Provide `TLS_CERT_FILE` and `TLS_KEY_FILE`, or terminate TLS at a trusted ingress before traffic reaches the Gateway.
-- Keep `INSECURE_HTTP`, `INSECURE_STS`, and `JTI_FAIL_OPEN` unset or explicitly `false`.
-- Set `STREAMS_HMAC_KEY` and `AUDIT_HMAC_KEY` to 32-byte hex secrets.
+- Keep `JTI_FAIL_OPEN` unset or explicitly `false`.
+- Set `STREAMS_HMAC_KEY`, `AUDIT_HMAC_KEY`, and `GATEWAY_STS_HMAC_KEY` to 32-byte hex secrets.
 - Keep `ALLOW_PRIVATE_UPSTREAMS=false` unless the Gateway must reach private upstreams.
 - Set `UPSTREAM_HOST_ALLOWLIST` when private upstreams are enabled.
 - Keep API, STS, Coordinator, Audit, Postgres, and Redis on private networks.

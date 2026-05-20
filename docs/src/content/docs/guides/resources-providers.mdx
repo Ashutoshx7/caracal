@@ -4,7 +4,7 @@ description: Register upstream resources with scopes and optional credential pro
 pageType: workflow
 ---
 
-Resources are the protected targets in a zone. Each resource has a string identifier, a list of scopes, an optional upstream URL for Gateway routing, and an optional credential provider for downstream authentication. Providers supply the credentials (OAuth2 tokens, API keys, workload assertions) that the Gateway injects into forwarded requests.
+Resources are the protected targets in a zone. Each resource has a string identifier, a list of scopes, an optional upstream URL for Gateway routing, and an optional credential provider for downstream authentication. Providers describe the credential source the Gateway may use when an authenticated, user-bound provider grant exists.
 
 ## Prerequisites
 
@@ -29,10 +29,11 @@ caracal resource create \
   --identifier "resource://inventory" \
   --scopes "inventory:read,inventory:write" \
   --name "Inventory Service" \
-  --upstream-url "http://inventory:8080"
+  --upstream-url "http://inventory:8080" \
+  --gateway-application-id "app-gateway"
 ```
 
-The Gateway uses the upstream URL to forward requests after verifying the mandate. Without an upstream URL, the resource can still be used for mandate issuance but the Gateway has no destination to route to.
+The Gateway uses the upstream URL to forward requests after verifying the mandate. `gateway_application_id` is required with `upstream_url`; it names the same-zone application identity the Gateway uses for its internal STS exchange. Without an upstream URL, the resource can still be used for mandate issuance but the Gateway has no destination to route to.
 
 ### Resource options
 
@@ -42,6 +43,7 @@ The Gateway uses the upstream URL to forward requests after verifying the mandat
 | `--scopes` | Required. Comma-separated list of valid scope strings |
 | `--name` | Human-readable display name |
 | `--upstream-url` | URL the Gateway forwards matching requests to |
+| `--gateway-application-id` | Same-zone application identity used by Gateway for this resource |
 | `--prefix` | If set, the Gateway uses prefix matching rather than exact path matching |
 | `--provider` | Attach an existing credential provider ID |
 
@@ -66,7 +68,15 @@ caracal resource patch res-abc123 \
 
 ## Register a credential provider
 
-Providers define how the Gateway authenticates to the upstream after verifying the client mandate. Supported kinds: `oauth2`, `oidc`, `apikey`, `workload`.
+Providers define credential metadata for upstream authentication. Registration supports `oauth2`, `oidc`, `apikey`, and `workload`, but Gateway brokered forwarding currently has explicit runtime behavior only for:
+
+| Kind | Runtime behavior |
+| --- | --- |
+| `oauth2` / `oidc` | Forwards a user-bound delegated provider access token as a bearer-style provider credential. Refresh is supported when the active provider grant has an encrypted refresh token and provider config includes `token_endpoint`. |
+| `apikey` | Forwards an encrypted provider grant value as an API-key credential using `header_name` or `auth_header` from provider config. Caracal does not mint API keys; the key must already exist in the provider-grant storage path. |
+| `workload` | Registration metadata only in the current OSS runtime. Workload assertion minting is not brokered by STS/Gateway yet. |
+
+If no active provider grant exists for the configured resource/provider pair, STS denies the Gateway exchange instead of falling back to a different provider or exposing provider credentials to the caller.
 
 ### API key provider
 
@@ -103,7 +113,8 @@ caracal provider create \
 
 ```json
 {
-  "token_url": "https://auth.payments.example.com/oauth/token",
+  "token_endpoint": "https://auth.payments.example.com/oauth/token",
+  "allowed_token_hosts": ["auth.payments.example.com"],
   "client_id": "svc-caracal",
   "client_secret": "super-secret-value",
   "scopes": ["payments.read", "payments.write"]
@@ -132,7 +143,7 @@ caracal provider create \
 
 ### Workload provider
 
-The workload provider is used for mTLS or workload identity federation (e.g., AWS IAM roles for service accounts). The exact configuration fields depend on the workload identity platform:
+The workload provider kind records metadata for mTLS or workload identity federation (e.g., AWS IAM roles for service accounts). The current OSS STS/Gateway path does not mint workload assertions from this registration; use it for inventory and future connector integration, not for automatic Gateway credential substitution.
 
 ```bash
 caracal provider create \
@@ -169,6 +180,7 @@ caracal resource create \
   --scopes "payment:read,payment:submit,payment:void" \
   --name "Payments API" \
   --upstream-url "http://payments:8080" \
+  --gateway-application-id "app-gateway" \
   --provider prov-abc123
 # → ID: res-def456
 
