@@ -8,6 +8,7 @@ import { buildDB } from './db.js'
 import { buildRedis, closeRedis } from './redis.js'
 import { startOutboxPublisher } from './jobs/outbox-publisher.js'
 import { startTTLSweeper } from './jobs/ttl-sweeper.js'
+import { startServiceLeaseSweeper } from './jobs/service-lease-sweeper.js'
 import { startDeadlineEnforcer } from './jobs/deadline-enforcer.js'
 import { startRetentionCleaner } from './jobs/retention-cleaner.js'
 import { cfg } from './config.js'
@@ -48,11 +49,13 @@ try {
 
   const outbox = startOutboxPublisher(db, redis, { log: app.log })
   const ttl = startTTLSweeper(db, { log: app.log })
+  const serviceLease = startServiceLeaseSweeper(db, { log: app.log })
   const deadline = startDeadlineEnforcer(db, { log: app.log })
   const retention = startRetentionCleaner(db, { log: app.log })
 
   shutdown.register('retention-cleaner', () => retention.stop())
   shutdown.register('deadline-enforcer', () => deadline.stop())
+  shutdown.register('service-lease-sweeper', () => serviceLease.stop())
   shutdown.register('ttl-sweeper', () => ttl.stop())
   shutdown.register('outbox-publisher', () => outbox.stop())
   shutdown.register('fastify', () => app.close())

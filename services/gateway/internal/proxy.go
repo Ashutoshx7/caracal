@@ -61,6 +61,7 @@ type revocationChecker interface {
 
 type tokenRevocationIDs struct {
 	SID              string
+	RootSID          string
 	AgentSessionID   string
 	DelegationEdgeID string
 }
@@ -203,10 +204,12 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	revocationIDs := tokenRevocationIDs{
 		SID:              jwtSID(bearer),
+		RootSID:          jwtRootSID(bearer),
 		AgentSessionID:   jwtAgentSessionID(bearer),
 		DelegationEdgeID: jwtDelegationEdgeID(bearer),
 	}
 	if p.revocations.IsRevoked(revocationIDs.SID) ||
+		p.revocations.IsRevoked(revocationIDs.RootSID) ||
 		p.revocations.IsAgentRevoked(revocationIDs.AgentSessionID) ||
 		p.revocations.IsDelegationRevoked(revocationIDs.DelegationEdgeID) {
 		writeErr(w, requestID, http.StatusUnauthorized, sharederr.InvalidToken, "session revoked")
@@ -215,6 +218,7 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		logger.Info().
 			Int("status", http.StatusUnauthorized).
 			Str("sid", revocationIDs.SID).
+			Str("root_sid", revocationIDs.RootSID).
 			Str("agent_session_id", revocationIDs.AgentSessionID).
 			Str("delegation_edge_id", revocationIDs.DelegationEdgeID).
 			Msg("denied: session revoked")
@@ -316,7 +320,7 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if exp.After(time.Now()) {
 		w.Header().Set("X-Caracal-Token-Expires-In", strconv.FormatInt(int64(time.Until(exp).Seconds()), 10))
 	}
-	copyResponse(w, resp, p.revocations, revocationIDs)
+	copyResult := copyResponse(w, resp, p.revocations, revocationIDs)
 	p.metrics.RequestsAllowed.Add(1)
 	p.emitActionAudit(gatewayAuditInput{
 		RequestID:          requestID,
@@ -330,6 +334,8 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		GatewayStatus:      resp.StatusCode,
 		UpstreamStatus:     resp.StatusCode,
 		Latency:            latency,
+		ResponseBytes:      copyResult.Bytes,
+		RevocationHit:      copyResult.Revoked,
 		EvaluationStatus:   "executed",
 	})
 	logger.Info().
@@ -457,7 +463,12 @@ func joinURLPath(upstreamPath, requestPath string) string {
 // consults revocations: if the session id bound to the token is revoked mid-stream the
 // upstream body is closed and the response is truncated so leaked tokens cannot
 // keep streaming indefinitely after revocation.
-func copyResponse(w http.ResponseWriter, resp *http.Response, revocations revocationChecker, ids tokenRevocationIDs) {
+type responseCopyResult struct {
+	Bytes   int64
+	Revoked bool
+}
+
+func copyResponse(w http.ResponseWriter, resp *http.Response, revocations revocationChecker, ids tokenRevocationIDs) responseCopyResult {
 	// X-Caracal-Identity is the gateway-side mirror of the Caracal JWT for
 	// provider-native auth modes. Echoing it back to clients would surface a
 	// short-TTL but still usable bearer; strip it before fan-out.
@@ -470,15 +481,17 @@ func copyResponse(w http.ResponseWriter, resp *http.Response, revocations revoca
 	flusher, _ := w.(http.Flusher)
 	if flusher == nil {
 		w.WriteHeader(resp.StatusCode)
-		_, _ = io.Copy(w, resp.Body)
-		return
+		n, _ := io.Copy(w, resp.Body)
+		return responseCopyResult{Bytes: n}
 	}
 	w.Header().Add("Trailer", "X-Caracal-Revoked")
 	w.WriteHeader(resp.StatusCode)
 	flusher.Flush()
-	if streamCopy(w, resp.Body, flusher, revocations, ids) {
+	n, revoked := streamCopy(w, resp.Body, flusher, revocations, ids)
+	if revoked {
 		w.Header().Set("X-Caracal-Revoked", "true")
 	}
+	return responseCopyResult{Bytes: n, Revoked: revoked}
 }
 
 // streamCopy reads from src in small chunks and flushes after every successful write.
@@ -486,24 +499,27 @@ func copyResponse(w http.ResponseWriter, resp *http.Response, revocations revoca
 // stream if the session has been revoked while data is in flight. Returns true when
 // the stream was truncated due to revocation so the caller can emit the
 // X-Caracal-Revoked trailer.
-func streamCopy(w io.Writer, src io.ReadCloser, flusher http.Flusher, revocations revocationChecker, ids tokenRevocationIDs) bool {
+func streamCopy(w io.Writer, src io.ReadCloser, flusher http.Flusher, revocations revocationChecker, ids tokenRevocationIDs) (int64, bool) {
 	buf := make([]byte, 4*1024)
+	var total int64
 	for {
 		if revocations.IsRevoked(ids.SID) ||
+			revocations.IsRevoked(ids.RootSID) ||
 			revocations.IsAgentRevoked(ids.AgentSessionID) ||
 			revocations.IsDelegationRevoked(ids.DelegationEdgeID) {
 			_ = src.Close()
-			return true
+			return total, true
 		}
 		n, rerr := src.Read(buf)
 		if n > 0 {
 			if _, werr := w.Write(buf[:n]); werr != nil {
-				return false
+				return total, false
 			}
+			total += int64(n)
 			flusher.Flush()
 		}
 		if rerr != nil {
-			return false
+			return total, false
 		}
 	}
 }
