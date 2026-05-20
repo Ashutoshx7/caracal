@@ -403,6 +403,7 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 		ZoneID:          zoneID,
 		SessionType:     sessionType,
 		SubjectID:       &subjectID,
+		ParentID:        parentSessionID(req.SessionID, use),
 		Status:          "active",
 		ExpiresAt:       now.Add(ttl),
 		AuthenticatedAt: now,
@@ -418,6 +419,7 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 		SubType:        subType,
 		Use:            use,
 		SID:            sessID,
+		RootSID:        rootSessionID(subjectClaims, sessID, use),
 		Scopes:         req.Scope,
 		Resources:      grantedResources,
 		TTL:            ttl,
@@ -656,6 +658,26 @@ func (s *Server) validateTokenSession(ctx context.Context, zoneID, appID, sessio
 		return "", sharederr.New(sharederr.AccessDenied, "session client mismatch")
 	}
 	return sid, nil
+}
+
+func parentSessionID(sessionID string, use string) *string {
+	if use != UsePerCall || sessionID == "" {
+		return nil
+	}
+	return &sessionID
+}
+
+func rootSessionID(claims map[string]any, sid string, use string) string {
+	if use == UseAmbient {
+		return sid
+	}
+	if root := claimString(claims, "root_sid"); root != "" {
+		return root
+	}
+	if parent := claimString(claims, "sid"); parent != "" {
+		return parent
+	}
+	return sid
 }
 
 func (s *Server) emitAuditEvent(requestID, zoneID, decision, status string, result *OPAResult, meta map[string]any) *sharederr.CaracalError {

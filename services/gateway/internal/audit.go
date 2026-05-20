@@ -31,6 +31,8 @@ type gatewayAuditInput struct {
 	GatewayStatus      int
 	UpstreamStatus     int
 	Latency            time.Duration
+	ResponseBytes      int64
+	RevocationHit      bool
 	EvaluationStatus   string
 	ErrorKind          string
 }
@@ -56,6 +58,13 @@ func gatewayActionEvent(input gatewayAuditInput) (audit.Event, error) {
 	}
 	if input.UpstreamStatus > 0 {
 		meta["upstream_status"] = input.UpstreamStatus
+		meta["result_class"] = resultClass(input.UpstreamStatus)
+	}
+	if input.ResponseBytes >= 0 {
+		meta["response_bytes"] = input.ResponseBytes
+	}
+	if input.RevocationHit {
+		meta["revocation_interrupted"] = true
 	}
 	if input.ErrorKind != "" {
 		meta["error_kind"] = input.ErrorKind
@@ -77,6 +86,21 @@ func gatewayActionEvent(input gatewayAuditInput) (audit.Event, error) {
 		MetadataJSON:            metaJSON,
 		OccurredAt:              time.Now(),
 	}, nil
+}
+
+func resultClass(status int) string {
+	switch {
+	case status >= 200 && status < 300:
+		return "success"
+	case status >= 300 && status < 400:
+		return "redirect"
+	case status >= 400 && status < 500:
+		return "client_error"
+	case status >= 500:
+		return "server_error"
+	default:
+		return "unknown"
+	}
 }
 
 func emitGatewayActionAudit(emitter auditEmitter, logEvent func(error), input gatewayAuditInput) {
