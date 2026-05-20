@@ -13,6 +13,7 @@ export function buildDB(config: Cfg = cfg): pg.Pool {
     idleTimeoutMillis: config.dbIdleTimeoutMs,
     connectionTimeoutMillis: config.dbConnectionTimeoutMs,
     statement_timeout: config.dbStatementTimeoutMs,
+    options: `-c statement_timeout=${config.dbStatementTimeoutMs}`,
   })
   return pool
 }

@@ -15,7 +15,7 @@ import type { DB } from './db.js'
 import type { RedisClient } from './redis.js'
 import { adminAuthPlugin } from './auth.js'
 import { registerAdminAuditHook } from './admin-audit.js'
-import { isPublished, getTraceContext, parseTraceparent, bindTrace, renderObservabilityMetrics, buildPinoRedactPaths } from '@caracalai/core'
+import { isPublished, getTraceContext, parseTraceparent, bindTrace, renderObservabilityMetrics, buildPinoRedactPaths, withTimeout } from '@caracalai/core'
 import { zonesRoutes } from './routes/zones.js'
 import { applicationsRoutes } from './routes/applications.js'
 import { resourcesRoutes } from './routes/resources.js'
@@ -30,6 +30,8 @@ import { policyTemplatesRoutes } from './routes/policy-templates.js'
 import { zoneEventsRoutes } from './routes/zone-events.js'
 
 import './fastify-augmentation.js'
+
+const READY_CHECK_TIMEOUT_MS = 5_000
 
 export interface AppDeps {
   cfg: Config
@@ -186,8 +188,8 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
       return { ok: false, draining: true }
     }
     try {
-      await db.query('SELECT 1')
-      const pong = await redis.ping()
+      await withTimeout(db.query('SELECT 1'), READY_CHECK_TIMEOUT_MS, 'ready postgres check timed out')
+      const pong = await withTimeout(redis.ping(), READY_CHECK_TIMEOUT_MS, 'ready redis check timed out')
       if (pong !== 'PONG') throw new Error(`unexpected redis ping reply: ${pong}`)
       return { ok: true }
     } catch (err) {

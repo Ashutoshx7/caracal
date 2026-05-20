@@ -9,7 +9,7 @@ import pino from 'pino'
 import type { Pool } from 'pg'
 import type { Redis as RedisClient } from 'ioredis'
 import { ZodError } from 'zod'
-import { getTraceContext, parseTraceparent, bindTrace, renderObservabilityMetrics, devLogMetrics, buildPinoRedactPaths } from '@caracalai/core'
+import { getTraceContext, parseTraceparent, bindTrace, renderObservabilityMetrics, devLogMetrics, buildPinoRedactPaths, withTimeout } from '@caracalai/core'
 import { agentsRoutes } from './routes/agents.js'
 import { agentServicesRoutes } from './routes/agent-services.js'
 import { delegationsRoutes } from './routes/delegations.js'
@@ -41,6 +41,7 @@ interface RuntimeStats {
 }
 
 const RUNTIME_STATS_TTL_MS = 15_000
+const READY_CHECK_TIMEOUT_MS = 5_000
 
 export async function buildApp({ cfg, db, redis }: CoordinatorDeps) {
   let runtimeStats: RuntimeStats | null = null
@@ -126,8 +127,8 @@ export async function buildApp({ cfg, db, redis }: CoordinatorDeps) {
   app.get('/health', async () => ({ ok: true }))
   app.get('/ready', async (req, reply) => {
     try {
-      await app.db.query('SELECT 1')
-      const pong = await app.redis.ping()
+      await withTimeout(app.db.query('SELECT 1'), READY_CHECK_TIMEOUT_MS, 'ready postgres check timed out')
+      const pong = await withTimeout(app.redis.ping(), READY_CHECK_TIMEOUT_MS, 'ready redis check timed out')
       if (pong !== 'PONG') throw new Error(`unexpected redis ping reply: ${pong}`)
       return { ok: true }
     } catch (err) {

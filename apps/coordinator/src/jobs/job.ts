@@ -3,6 +3,8 @@
 //
 // Shared interval-job infrastructure for coordinator background workers.
 
+import { withTimeout } from '@caracalai/core'
+
 export interface JobLogger {
   error: (obj: object, msg?: string) => void
 }
@@ -10,6 +12,8 @@ export interface JobLogger {
 export interface JobHandle {
   stop: () => Promise<void>
 }
+
+const JOB_STOP_TIMEOUT_MS = 5_000
 
 export function makeIntervalJob(
   run: () => Promise<unknown>,
@@ -35,7 +39,11 @@ export function makeIntervalJob(
     stop: async () => {
       stopped = true
       clearInterval(timer)
-      await pending
+      await withTimeout(
+        pending,
+        JOB_STOP_TIMEOUT_MS,
+        `background job did not stop within ${JOB_STOP_TIMEOUT_MS}ms`,
+      ).catch(onError)
     },
   }
 }
