@@ -346,6 +346,7 @@ services:
       args:
         SERVICE: gateway
         PORT: "8081"
+        STATE_DIRS: "audit-replay"
     image: localhost/caracal-gateway:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.14}-dev.sha${CARACAL_DEV_SHA:-local}}
     depends_on:
       sts:
@@ -363,12 +364,18 @@ services:
         target: redisUrl
       - source: streamsHmacKey
         target: streamsHmacKey
+      - source: auditHmacKey
+        target: auditHmacKey
+      - source: gatewayStsHmacKey
+        target: gatewayStsHmacKey
     environment:
       CARACAL_MODE: ${CARACAL_MODE:-dev}
       DATABASE_URL_FILE: /run/secrets/databaseUrl
       REDIS_URL_FILE: /run/secrets/redisUrl
       STS_URL: http://sts:8080
       STREAMS_HMAC_KEY_FILE: /run/secrets/streamsHmacKey
+      AUDIT_HMAC_KEY_FILE: /run/secrets/auditHmacKey
+      GATEWAY_STS_HMAC_KEY_FILE: /run/secrets/gatewayStsHmacKey
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_SERVICE_NAME: caracal-gateway
@@ -376,6 +383,8 @@ services:
       PORT: 8081
     ports:
       - "127.0.0.1:8081:8081"
+    volumes:
+      - gatewayReplay:/var/lib/caracal
     healthcheck:
       test: ["CMD", "/healthcheck"]
       interval: 5s
@@ -518,6 +527,7 @@ volumes:
   postgresData:
   redisData:
   stsReplay:
+  gatewayReplay:
 
 # The control service is disabled by default. Start it explicitly with:
 #   docker compose --env-file infra/docker/.env -f infra/docker/docker-compose.yml --profile control up --build control
