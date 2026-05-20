@@ -1,10 +1,10 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Unit tests for the ordered ShutdownRegistry teardown.
+// Unit tests for the shared ordered ShutdownRegistry teardown.
 
 import { describe, it, expect, vi } from 'vitest'
-import { ShutdownRegistry } from '../../../../apps/api/src/lifecycle.js'
+import { ShutdownRegistry } from '../../../../packages/core/ts/src/lifecycle.js'
 
 function makeRegistry(timeoutMs = 1000) {
   const exit = vi.fn()
@@ -33,6 +33,13 @@ describe('ShutdownRegistry', () => {
     r.register('c', () => { calls.push('c') })
     await r.fire('test')
     expect(calls).toEqual(['c', 'a'])
+    expect(exit).toHaveBeenCalledWith(1)
+  })
+
+  it('preserves caller failure code when teardown succeeds', async () => {
+    const { r, exit } = makeRegistry()
+    r.register('a', () => {})
+    await r.fire('startup-failed', 1)
     expect(exit).toHaveBeenCalledWith(1)
   })
 
