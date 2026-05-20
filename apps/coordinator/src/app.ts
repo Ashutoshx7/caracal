@@ -19,6 +19,7 @@ import type { Cfg } from './config.js'
 import { verifyBearer } from './auth.js'
 import { registerAdminAuditHook } from './admin-audit.js'
 import { ttlSweeperStats } from './jobs/ttl-sweeper.js'
+import { serviceLeaseSweeperStats } from './jobs/service-lease-sweeper.js'
 import { retentionCleanerStats } from './jobs/retention-cleaner.js'
 
 declare module 'fastify' {
@@ -167,6 +168,9 @@ export async function buildApp({ cfg, db, redis, isDraining }: CoordinatorDeps) 
     lines.push('# HELP caracal_ttl_sweeper_runs_total Ttl sweeper iterations')
     lines.push('# TYPE caracal_ttl_sweeper_runs_total counter')
     lines.push(`caracal_ttl_sweeper_runs_total ${ttlSweeperStats.runs ?? 0}`)
+    lines.push('# HELP caracal_service_lease_sweeper_runs_total Service lease sweeper iterations')
+    lines.push('# TYPE caracal_service_lease_sweeper_runs_total counter')
+    lines.push(`caracal_service_lease_sweeper_runs_total ${serviceLeaseSweeperStats.runs ?? 0}`)
     lines.push('# HELP caracal_retention_cleaner_runs_total Retention cleaner iterations')
     lines.push('# TYPE caracal_retention_cleaner_runs_total counter')
     lines.push(`caracal_retention_cleaner_runs_total ${retentionCleanerStats.runs ?? 0}`)
@@ -179,6 +183,7 @@ export async function buildApp({ cfg, db, redis, isDraining }: CoordinatorDeps) 
       invocations: stats.invocations,
       outbox: stats.outbox,
       ttl_sweeper: { ...ttlSweeperStats },
+      service_lease_sweeper: { ...serviceLeaseSweeperStats },
       retention_cleaner: { ...retentionCleanerStats },
       log: devLogMetrics(),
     }
