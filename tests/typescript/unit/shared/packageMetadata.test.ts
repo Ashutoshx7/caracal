@@ -4,8 +4,11 @@
 // Package metadata tests for deterministic internal dependency resolution.
 
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
 
 const pyProjects = [
   'packages/core/python',
@@ -18,7 +21,7 @@ const pyProjects = [
 ]
 
 function readPyProject(dir: string): { name: string; version: string; dependencies: string[] } {
-  const text = readFileSync(join(process.cwd(), dir, 'pyproject.toml'), 'utf8')
+  const text = readFileSync(join(repoRoot, dir, 'pyproject.toml'), 'utf8')
   const name = text.match(/^name = "([^"]+)"/m)?.[1]
   const version = text.match(/^version = "([^"]+)"/m)?.[1]
   if (!name || !version) throw new Error(`missing package name or version in ${dir}`)

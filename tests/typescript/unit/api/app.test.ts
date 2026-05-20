@@ -128,3 +128,26 @@ describe('/metrics endpoint', () => {
     await app.close()
   })
 })
+
+describe('/ready endpoint', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('returns 503 instead of hanging when a dependency check times out', async () => {
+    const cfg = makeCfg()
+    const db = {
+      query: vi.fn(() => new Promise(() => {})),
+      connect: vi.fn(),
+      end: vi.fn(),
+    } as unknown as DB
+    const app = await buildApp({ cfg, db, redis: makeRedis() })
+
+    const response = app.inject({ method: 'GET', url: '/ready' })
+    await vi.advanceTimersByTimeAsync(5_000)
+    const res = await response
+
+    expect(res.statusCode).toBe(503)
+    expect(res.json()).toMatchObject({ ok: false, error: 'dependency_check_failed' })
+    await app.close()
+  })
+})

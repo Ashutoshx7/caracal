@@ -3,7 +3,7 @@
 //
 // Coordinator application factory tests for operational endpoint behavior.
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import '../../../../shared/test-utils/typescript/coordinatorEnv.js'
 
 vi.mock('../../../../../apps/coordinator/src/auth.js', () => ({
@@ -42,5 +42,31 @@ describe('buildApp operational endpoints', () => {
     })
     expect(db.query).toHaveBeenCalledTimes(2)
     await app.close()
+  })
+
+  describe('/ready endpoint', () => {
+    beforeEach(() => { vi.useFakeTimers() })
+    afterEach(() => { vi.useRealTimers() })
+
+    it('returns 503 instead of hanging when a dependency check times out', async () => {
+      const db = { query: vi.fn(() => new Promise(() => {})) }
+      const app = await buildApp({
+        cfg: {
+          requestTimeoutMs: 1000,
+          trustProxy: false,
+          coordinatorRateLimitPerMin: 0,
+        },
+        db,
+        redis: { ping: vi.fn(async () => 'PONG') },
+      } as never)
+
+      const response = app.inject({ method: 'GET', url: '/ready' })
+      await vi.advanceTimersByTimeAsync(5_000)
+      const res = await response
+
+      expect(res.statusCode).toBe(503)
+      expect(res.json()).toMatchObject({ ok: false, error: 'dependency_check_failed' })
+      await app.close()
+    })
   })
 })
