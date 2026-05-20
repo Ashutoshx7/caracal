@@ -42,11 +42,11 @@ The `max_depth` field in the SDK's `DelegationConstraints` type is normalized to
 
 ### `budget`
 
-A list of scopes that B is allowed to request. This is an additional restriction on top of the edge's `scopes` array.
+An integer cap on how many scopes B can request in a single token exchange. This is an additional restriction on top of the edge's `scopes` array.
 
-The `budget` caveat is useful when A wants to delegate a broad set of scopes but limit B to a narrower operational set. For example: the edge `scopes` are `["read", "write", "transfer"]` but the budget is `["read"]`, so B can only request `read` regardless of the edge scopes.
+The `budget` caveat is useful when A wants to delegate a broad set of scopes but prevent broad per-call mandates. For example: the edge `scopes` are `["read", "write", "transfer"]` but the budget is `1`, so B can request only one of those scopes per exchange.
 
-The STS checks that the exchange's requested scopes are contained within the budget before evaluating the policy.
+The STS first checks that the exchange's requested scopes are contained within the edge scopes, then checks that the number of requested scopes does not exceed the budget before evaluating the policy.
 
 ### `policy_approved`
 
@@ -62,7 +62,7 @@ At token exchange, after the delegation edge is loaded and validated as active, 
 1. Is the edge active and not expired?        → reject if no
 2. Does the target session match?             → reject if no
 3. Are requested scopes ⊆ edge scopes?        → reject if no
-4. Are requested scopes ⊆ budget?            → reject if budget set and no
+4. Is requested scope count ≤ budget?         → reject if budget set and no
 5. Is the token TTL ≤ edge ttl_seconds?       → cap to edge limit
 6. Is the hop count ≤ max_hops?              → reject if exceeded
 7. Pass edge metadata to OPA for evaluation  → allow / deny
