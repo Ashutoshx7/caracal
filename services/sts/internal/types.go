@@ -42,6 +42,7 @@ type TokenExchangeRequest struct {
 	AgentSessionID      string
 	DelegationEdgeID    string
 	TTLSeconds          int
+	GatewayAuthenticated bool
 }
 
 // UpstreamAuthMode classifies how the gateway must authenticate to a resource.

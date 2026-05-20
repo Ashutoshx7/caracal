@@ -6,6 +6,7 @@
 package internal
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -23,11 +24,12 @@ type Config struct {
 	MaxGrantTTLSeconds int
 	AuditReplayDir     string
 	StreamsHMACKey     string
+	GatewayHMACKey     []byte
 	OPAPollSeconds     int
 }
 
 func loadConfig() (Config, error) {
-	config.ResolveFileSecrets("DATABASE_URL", "REDIS_URL", "ZONE_KEK", "AUDIT_HMAC_KEY", "STREAMS_HMAC_KEY")
+	config.ResolveFileSecrets("DATABASE_URL", "REDIS_URL", "ZONE_KEK", "AUDIT_HMAC_KEY", "STREAMS_HMAC_KEY", "GATEWAY_STS_HMAC_KEY")
 	if missing := config.MissingRequired("PORT", "DATABASE_URL", "REDIS_URL", "ISSUER_URL"); len(missing) > 0 {
 		return Config{}, fmt.Errorf("required env vars missing: %s", strings.Join(missing, ", "))
 	}
@@ -39,6 +41,13 @@ func loadConfig() (Config, error) {
 	if opaPollSeconds > maxOPAPollSeconds {
 		return Config{}, fmt.Errorf("OPA_POLL_SECONDS must be <= %d", maxOPAPollSeconds)
 	}
+	gatewayKey, err := decodeGatewayHMACKey(os.Getenv("GATEWAY_STS_HMAC_KEY"))
+	if err != nil {
+		return Config{}, err
+	}
+	if base.IsPublished() && len(gatewayKey) == 0 {
+		return Config{}, fmt.Errorf("GATEWAY_STS_HMAC_KEY is required when CARACAL_MODE=rc or CARACAL_MODE=stable")
+	}
 	return Config{
 		Base:               base,
 		ZoneKEKProvider:    config.Getenv("ZONE_KEK_PROVIDER", "local"),
@@ -46,6 +55,18 @@ func loadConfig() (Config, error) {
 		MaxGrantTTLSeconds: config.IntEnv("MAX_GRANT_TTL_SECONDS", 3600),
 		AuditReplayDir:     config.Getenv("AUDIT_REPLAY_DIR", "/var/lib/caracal/audit-replay"),
 		StreamsHMACKey:     config.Getenv("STREAMS_HMAC_KEY", ""),
+		GatewayHMACKey:     gatewayKey,
 		OPAPollSeconds:     opaPollSeconds,
 	}, nil
+}
+
+func decodeGatewayHMACKey(raw string) ([]byte, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	key, err := hex.DecodeString(raw)
+	if err != nil || len(key) < 32 {
+		return nil, fmt.Errorf("GATEWAY_STS_HMAC_KEY must be hex-encoded with at least 32 bytes")
+	}
+	return key, nil
 }
