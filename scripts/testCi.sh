@@ -148,8 +148,19 @@ if $run_go; then
 fi
 
 if $run_py; then
+  py_venv="$(mktemp -d)"
+  cleanup_py() {
+    rm -rf "$py_venv"
+  }
+  trap cleanup_py EXIT
+
+  step "py: create virtualenv"
+  python -m venv "$py_venv"
+  py_python="$py_venv/bin/python"
+  py_coverage="$py_venv/bin/coverage"
+
   step "py: install editable packages"
-  python -m pip install \
+  "$py_python" -m pip install \
     -e packages/core/python \
     -e packages/identity/python \
     -e packages/revocation/python \
@@ -162,10 +173,10 @@ if $run_py; then
   step "py: coverage run"
   mkdir -p coverage/python
   PYTHONPATH="$root/packages/core/python:$root/packages/identity/python:$root/packages/revocation/python:$root/packages/sdk/python:$root/packages/transport/mcp/python:$root/packages/connectors/fastmcp/python:$root/packages/connectors/redis/python:$root/tests/shared/test-utils/python" \
-    coverage run --source=packages/core/python/caracalai_core,packages/identity/python/caracalai_identity,packages/revocation/python/caracalai_revocation,packages/sdk/python/caracalai_sdk,packages/transport/mcp/python/caracalai_transport_mcp,packages/connectors/fastmcp/python/caracalai_mcp_fastmcp,packages/connectors/redis/python/caracalai_revocation_redis \
+    "$py_coverage" run --source=packages/core/python/caracalai_core,packages/identity/python/caracalai_identity,packages/revocation/python/caracalai_revocation,packages/sdk/python/caracalai_sdk,packages/transport/mcp/python/caracalai_transport_mcp,packages/connectors/fastmcp/python/caracalai_mcp_fastmcp,packages/connectors/redis/python/caracalai_revocation_redis \
     -m unittest discover -s tests/python -p 'test_*.py' -v
-  coverage xml -o coverage/python/coverage.xml
-  coverage report --show-missing
+  "$py_coverage" xml -o coverage/python/coverage.xml
+  "$py_coverage" report --show-missing
 fi
 
 if $run_docs; then
