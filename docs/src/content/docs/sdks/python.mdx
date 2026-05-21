@@ -19,8 +19,8 @@ pip install caracalai-sdk
 | `CARACAL_COORDINATOR_URL` | Yes | Coordinator base URL (e.g., `http://coordinator:4000`) |
 | `CARACAL_ZONE_ID` | Yes | Zone identifier |
 | `CARACAL_APPLICATION_ID` | Yes | Registered application ID |
-| `CARACAL_SUBJECT_TOKEN` | Token mode | Session bearer token |
-| `CARACAL_APP_CLIENT_SECRET` | Client-secret mode | Application secret used to refresh subject tokens through STS |
+| `CARACAL_SUBJECT_TOKEN` | Token mode | Session mandate |
+| `CARACAL_APP_CLIENT_SECRET` | Client-secret mode | Application secret used to refresh session mandates through STS |
 | `CARACAL_STS_URL` | Client-secret mode | STS base URL |
 | `CARACAL_APP_RESOURCES` | Client-secret mode if no bindings are set | Comma-separated resource IDs for token exchange |
 | `CARACAL_GATEWAY_URL` | No | Gateway base URL for resource-routed calls |
@@ -63,7 +63,7 @@ def from_env(cls, env: Mapping[str, str] | None = None) -> Caracal: ...
 
 ### `Caracal.from_client_secret(...)`
 
-Builds a client with an SDK-managed token source. The token source exchanges the application client secret with STS and refreshes the subject token before expiry.
+Builds a client with an SDK-managed token source. The token source exchanges the application client secret with STS and refreshes the session mandate before expiry.
 
 ```python
 @classmethod

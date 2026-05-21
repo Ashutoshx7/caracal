@@ -14,7 +14,7 @@ Caracal operates four services. Each has a distinct role in the trust hierarchy.
 
 ```
 Caller (agent/user)
-  │  ambient token (ES256 JWT)
+  │  session mandate (ES256 JWT)
   ▼
 Gateway  ─── verifies signature ───► STS JWKS
   │  exchanges for per-resource mandate
@@ -47,7 +47,7 @@ Postgres + Redis outbox
 
 The Gateway is the sole inbound entry point for MCP tool calls. Its attack surface is:
 
-- Inbound HTTP from any caller bearing an ambient token
+- Inbound HTTP from any caller bearing a session mandate
 - Outbound HTTP/2 to upstream MCP servers (URLs supplied by the STS, not by callers)
 - Redis (revocation stream consumer + JTI store)
 - Postgres (upstream binding lookup)
@@ -94,19 +94,19 @@ The API accepts admin tokens stored as SHA-256 hashes. Its attack surface is:
 
 ---
 
-### T2 — Replay of a per-call mandate
+### T2 — Replay of a resource mandate
 
-**Threat:** An attacker captures a valid per-call mandate and reuses it after the original request completed.
+**Threat:** An attacker captures a valid resource mandate and reuses it after the original request completed.
 
-**Mitigation:** Per-call mandates (`"use": "per_call"`) have their `jti` recorded in Redis with a TTL equal to the token's remaining lifetime (`seen:jti:{jti}`). The Gateway checks this on every inbound request using SETNX semantics. A second presentation of the same JTI returns `401 InvalidToken`. The STS records JTIs at issuance time and rejects JTI collisions.
+**Mitigation:** Resource mandates (`"use": "resource"`) have their `jti` recorded in Redis with a TTL equal to the token's remaining lifetime (`seen:jti:{jti}`). The Gateway checks this on every inbound request using SETNX semantics. A second presentation of the same JTI returns `401 InvalidToken`. The STS records JTIs at issuance time and rejects JTI collisions.
 
-**Residual risk:** If Redis is unavailable and `JTI_FAIL_OPEN=true`, replay protection is disabled. In production, `JTI_FAIL_OPEN=false` is required; the Gateway rejects all per-call tokens when Redis is unreachable. Ambient tokens (`"use": "ambient"`) are intentionally reusable session tokens — they are not subject to JTI replay checks and are instead revoked via the session revocation stream.
+**Residual risk:** If Redis is unavailable and `JTI_FAIL_OPEN=true`, replay protection is disabled. In production, `JTI_FAIL_OPEN=false` is required; the Gateway rejects all resource mandates when Redis is unreachable. Session mandates (`"use": "session"`) are intentionally reusable session tokens — they are not subject to JTI replay checks and are instead revoked via the session revocation stream.
 
 ---
 
-### T3 — Replay of an ambient token after session revocation
+### T3 — Replay of a session mandate after session revocation
 
-**Threat:** An attacker with a captured ambient token continues to use it after the victim's session is revoked.
+**Threat:** An attacker with a captured session mandate continues to use it after the victim's session is revoked.
 
 **Mitigation (inbound check):** The Gateway checks the session `sid` claim against its in-memory revocation cache on every request. The cache is populated from the `caracal.sessions.revoke` Redis stream, typically within one second of revocation.
 
@@ -114,13 +114,13 @@ The API accepts admin tokens stored as SHA-256 hashes. Its attack surface is:
 
 **Mitigation (mid-stream):** During streaming responses the Gateway re-checks revocation at every 4 KB chunk boundary. A revoked session causes the stream to be truncated and the `X-Caracal-Revoked: true` HTTP trailer to be set.
 
-**Residual risk:** An ambient token presented to the Gateway before the revocation event arrives (sub-second window) may succeed. A per-call mandate issued before revocation remains valid until its TTL (≤ 15 minutes) expires — but it cannot generate further mandates because the STS will reject subsequent exchanges. The maximum exposure window for an already-issued per-call mandate is its TTL.
+**Residual risk:** A session mandate presented to the Gateway before the revocation event arrives (sub-second window) may succeed. A resource mandate issued before revocation remains valid until its TTL (≤ 15 minutes) expires — but it cannot generate further mandates because the STS will reject subsequent exchanges. The maximum exposure window for an already-issued resource mandate is its TTL.
 
 ---
 
 ### T4 — Token expiry preflight bypass
 
-**Threat:** An attacker presents an ambient token that is seconds from expiry, knowing it will expire before the Gateway can exchange it with the STS and forward the request.
+**Threat:** An attacker presents a session mandate that is seconds from expiry, knowing it will expire before the Gateway can exchange it with the STS and forward the request.
 
 **Mitigation:** The Gateway performs an unverified expiry preflight before making any STS call. If the token expires within 35 seconds, the request is rejected with `401 CredentialExpired`. The 35-second window accounts for STS exchange latency (typically < 5 seconds) and upstream request processing.
 

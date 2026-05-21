@@ -4,7 +4,7 @@ description: Agent-to-agent delegated call transport — a2aCall() function, wir
 pageType: reference
 ---
 
-`@caracalai/transport-a2a` executes delegated calls between agents over HTTP. It performs a two-step operation: exchange the caller's subject token for a per-resource mandate at the STS, then POST the call to the target agent's `/a2a` endpoint with that mandate and the full Caracal context envelope.
+`@caracalai/transport-a2a` executes delegated calls between agents over HTTP. It performs a two-step operation: exchange the caller's session mandate for a resource mandate at the STS, then POST the call to the target agent's `/a2a` endpoint with that mandate and the full Caracal context envelope.
 
 The package is TypeScript-only. There is no Python or Go equivalent.
 
