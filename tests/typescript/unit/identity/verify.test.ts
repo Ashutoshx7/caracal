@@ -46,6 +46,7 @@ async function mintToken(
       sid: 'sid-1',
       root_sid: 'root-1',
       use: 'resource',
+      sub_type: 'user',
       jti: 'jti-1',
       scope: scopes,
       target: ['resource://api'],
@@ -89,6 +90,7 @@ describe('verify', () => {
     expect(claims.clientId).toBe('app-1')
     expect(claims.sid).toBe('sid-1')
     expect(claims.rootSid).toBe('root-1')
+    expect(claims.subType).toBe('user')
     expect(claims.issuedAt).toBeGreaterThan(0)
     expect(claims.expiresAt).toBeGreaterThan(claims.issuedAt)
     expect(claims.targetResources).toEqual(['resource://api'])
@@ -121,6 +123,16 @@ describe('verify', () => {
 
   it('throws TokenInvalidError when sid is absent', async () => {
     const { token, issuer } = await mintToken({ sid: undefined })
+    await expect(verify(token, { issuer, audience: 'resource://api' })).rejects.toBeInstanceOf(TokenInvalidError)
+  })
+
+  it('throws TokenInvalidError when root_sid is absent', async () => {
+    const { token, issuer } = await mintToken({ root_sid: undefined })
+    await expect(verify(token, { issuer, audience: 'resource://api' })).rejects.toBeInstanceOf(TokenInvalidError)
+  })
+
+  it('throws TokenInvalidError when sub_type is absent', async () => {
+    const { token, issuer } = await mintToken({ sub_type: undefined })
     await expect(verify(token, { issuer, audience: 'resource://api' })).rejects.toBeInstanceOf(TokenInvalidError)
   })
 
@@ -214,21 +226,21 @@ describe('verify', () => {
 describe('verifyChainContains', () => {
   it('matches by clientId', () => {
     expect(verifyChainContains(
-      { sub: '', zoneId: '', clientId: 'app-1', sid: '', use: 'resource', jti: 'jti-1', scope: '' },
+      { sub: '', zoneId: '', clientId: 'app-1', sid: '', rootSid: 'root-1', use: 'resource', subType: 'user', jti: 'jti-1', scope: '' },
       'app-1',
     )).toBe(true)
   })
 
   it('matches by delegation chain hop', () => {
     expect(verifyChainContains(
-      { sub: '', zoneId: '', clientId: 'other', sid: '', use: 'resource', jti: 'jti-1', scope: '', delegationChain: [{ applicationId: 'app-parent' }] },
+      { sub: '', zoneId: '', clientId: 'other', sid: '', rootSid: 'root-1', use: 'resource', subType: 'user', jti: 'jti-1', scope: '', delegationChain: [{ applicationId: 'app-parent' }] },
       'app-parent',
     )).toBe(true)
   })
 
   it('returns false when the application is absent', () => {
     expect(verifyChainContains(
-      { sub: '', zoneId: '', clientId: 'app-1', sid: '', use: 'resource', jti: 'jti-1', scope: '', delegationChain: [{ applicationId: 'app-parent' }] },
+      { sub: '', zoneId: '', clientId: 'app-1', sid: '', rootSid: 'root-1', use: 'resource', subType: 'user', jti: 'jti-1', scope: '', delegationChain: [{ applicationId: 'app-parent' }] },
       'app-unknown',
     )).toBe(false)
   })

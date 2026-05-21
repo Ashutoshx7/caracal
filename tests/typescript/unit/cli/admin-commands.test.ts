@@ -4,13 +4,16 @@
 // End-to-end CLI command tests using a stubbed fetch and admin token env.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { auditCommand, explainCommand } from '../../../../apps/cli/src/commands/audit.ts'
 import { zoneCommand } from '../../../../apps/cli/src/commands/zone.ts'
 import { agentCommand, delegationCommand } from '../../../../apps/cli/src/commands/agent.ts'
 import { policyCommand } from '../../../../apps/cli/src/commands/policy.ts'
+import { doctorCommand } from '../../../../apps/cli/src/commands/doctor.ts'
+import { manifestCommand } from '../../../../apps/cli/src/commands/manifest.ts'
+import { protectCommand } from '../../../../apps/cli/src/commands/protect.ts'
 
 const ORIG_ENV = { ...process.env }
 
@@ -35,7 +38,7 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
   let exit: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
-    process.env = { ...ORIG_ENV, CARACAL_ADMIN_TOKEN: 'secret', CARACAL_API_URL: 'http://api', CARACAL_COORDINATOR_URL: 'http://coordinator', CARACAL_ZONE_ID: 'z1' }
+    process.env = { ...ORIG_ENV, CARACAL_ADMIN_TOKEN: 'secret', CARACAL_API_URL: 'http://api', CARACAL_COORDINATOR_URL: 'http://coordinator', CARACAL_STS_URL: 'http://sts', CARACAL_ZONE_ID: 'z1' }
     delete process.env.CARACAL_COORDINATOR_TOKEN
     stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
@@ -152,6 +155,95 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
     expect(out).toContain('Scope checks')
   })
 
+  it('policy sample-input prints a local fixture without admin API access', async () => {
+    delete process.env.CARACAL_ADMIN_TOKEN
+
+    await policyCommand(['sample-input', '--resource', 'resource://calendar', '--scopes', 'calendar:read,calendar:write', '--principal', 'user-1', '--zone', 'zone-1'])
+
+    const body = JSON.parse(stdout.mock.calls.map((c) => c[0]).join(''))
+    expect(body).toMatchObject({
+      schema_version: '2026-05-20',
+      principal: { id: 'user-1', zone_id: 'zone-1' },
+      resource: { identifier: 'resource://calendar', scopes: ['calendar:read', 'calendar:write'] },
+      action: { id: 'calendar:read' },
+      context: { requested_scopes: ['calendar:read', 'calendar:write'] },
+    })
+  })
+
+  it('policy validate posts Rego to the validation endpoint', async () => {
+    stubFetch((url, init) => {
+      expect(url).toBe('http://api/v1/policies/validate')
+      expect(init.method).toBe('POST')
+      expect(JSON.parse(String(init.body))).toEqual({
+        content: 'package caracal.authz\nresult := {}',
+        schema_version: '2026-05-20',
+      })
+      return {
+        valid: true,
+        schema_version: '2026-05-20',
+        input_schema_version: '2026-05-20',
+        output_contract: { package: 'caracal.authz', rule: 'result', decision: ['allow', 'deny'], evaluation_status: ['complete'] },
+        warnings: [],
+      }
+    })
+
+    await policyCommand(['validate', '--content', 'package caracal.authz\nresult := {}', '--schema-version', '2026-05-20'])
+
+    expect(JSON.parse(stdout.mock.calls.map((c) => c[0]).join(''))).toMatchObject({ valid: true })
+  })
+
+  it('manifest validate accepts Gateway upstream manifests offline', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'caracal-manifest-'))
+    const file = join(dir, 'gateway.json')
+    writeFileSync(file, JSON.stringify({
+      schema_version: '2026-05-21',
+      name: 'calendar-api',
+      version: '1.0.0',
+      resource_identifier: 'resource://calendar',
+      protocols: ['http/1.1'],
+      auth_modes: ['caracal_jwt'],
+      scopes: ['calendar:read'],
+      identity_forwarding: 'never',
+      required_headers: ['authorization', 'traceparent', 'baggage'],
+      health: { path: '/healthz', success_status: 200 },
+      audit: { action_result_required: true, metadata_fields: [] },
+      conformance: { fixture_url: 'https://docs.caracal.run/schemas/caracal-gateway-upstream-manifest-2026-05-21.schema.json', tested_with_caracal: '0.1.2' },
+    }))
+
+    await manifestCommand(['validate', '--file', file, '--json'])
+
+    expect(JSON.parse(stdout.mock.calls.map((c) => c[0]).join(''))).toMatchObject({
+      valid: true,
+      kind: 'gateway-upstream',
+      schema_url: 'https://docs.caracal.run/schemas/caracal-gateway-upstream-manifest-2026-05-21.schema.json',
+      errors: [],
+    })
+  })
+
+  it('manifest validate rejects provider plugins that expose credentials outside Gateway', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'caracal-manifest-'))
+    const file = join(dir, 'provider.json')
+    writeFileSync(file, JSON.stringify({
+      schema_version: '2026-05-21',
+      name: 'unsafe-provider',
+      version: '1.0.0',
+      provider_kinds: ['oauth2'],
+      config_schema: { type: 'object' },
+      secret_schema: { type: 'object' },
+      lifecycle: { hooks: ['validate', 'resolve'] },
+      audit_metadata: { fields: [] },
+      execution: { isolation: 'external_service', credential_exposure: 'agent_visible' },
+    }))
+
+    await manifestCommand(['validate', '--file', file, '--json'])
+
+    expect(JSON.parse(stdout.mock.calls.map((c) => c[0]).join(''))).toMatchObject({
+      valid: false,
+      kind: 'provider-credential-plugin',
+      errors: ['execution.credential_exposure must be gateway_only'],
+    })
+  })
+
   it('policy template use creates a policy from template content', async () => {
     const fetchMock = stubFetch((url, init) => {
       if (url === 'http://api/v1/policy-templates') {
@@ -169,6 +261,105 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
     await policyCommand(['template', 'use', 'baseline-scopes', '--name', 'Agent Gateway Policy'])
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(stdout.mock.calls.map((c) => c[0]).join('')).toContain('policy-1')
+  })
+
+  it('protect provisions the Gateway-first local path', async () => {
+    const calls: string[] = []
+    stubFetch((url, init) => {
+      calls.push(`${init.method ?? 'GET'} ${url}`)
+      const body = init.body ? JSON.parse(String(init.body)) : undefined
+      if (url === 'http://api/v1/zones/z1') {
+        return { id: 'z1', name: 'Local', slug: 'local' }
+      }
+      if (url === 'http://api/v1/zones/z1/applications' && (init.method ?? 'GET') === 'GET') {
+        return []
+      }
+      if (url === 'http://api/v1/zones/z1/applications' && init.method === 'POST') {
+        expect(body).toMatchObject({ name: 'local-gateway-app', registration_method: 'managed', credential_type: 'token', traits: ['gateway'] })
+        expect(body.client_secret).toMatch(/^cs_/)
+        return { id: 'app-1', name: body.name, registration_method: 'managed', credential_type: 'token', traits: ['gateway'], consent: 'false', created_at: 't' }
+      }
+      if (url === 'http://api/v1/zones/z1/resources' && (init.method ?? 'GET') === 'GET') {
+        return []
+      }
+      if (url === 'http://api/v1/zones/z1/resources' && init.method === 'POST') {
+        expect(body).toMatchObject({ identifier: 'resource://local-tool', upstream_url: 'http://host.docker.internal:8090', gateway_application_id: 'app-1', scopes: ['tool:read'] })
+        return { id: 'res-1', zone_id: 'z1', name: body.name, identifier: body.identifier, upstream_url: body.upstream_url, gateway_application_id: body.gateway_application_id, prefix: false, scopes: body.scopes, credential_provider_id: null, created_at: 't', updated_at: 't' }
+      }
+      if (url === 'http://api/v1/zones/z1/policies' && (init.method ?? 'GET') === 'GET') {
+        return []
+      }
+      if (url === 'http://api/v1/zones/z1/policies' && init.method === 'POST') {
+        expect(body).toMatchObject({ name: 'Local Gateway Scope Policy', schema_version: '2026-05-20' })
+        expect(body.content).toContain('every scope in input.context.requested_scopes')
+        return { id: 'pol-1', zone_id: 'z1', name: body.name, description: body.description, owner_type: 'customer', created_by: 'admin', created_at: 't', version: { id: 'pver-1', policy_id: 'pol-1', version: 1, content_sha256: 'sha', schema_version: '2026-05-20', created_at: 't' } }
+      }
+      if (url === 'http://api/v1/zones/z1/policy-sets' && (init.method ?? 'GET') === 'GET') {
+        return []
+      }
+      if (url === 'http://api/v1/zones/z1/policy-sets' && init.method === 'POST') {
+        return { id: 'pset-1', zone_id: 'z1', name: body.name, description: body.description, active_version_id: null, created_at: 't' }
+      }
+      if (url === 'http://api/v1/zones/z1/policy-sets/pset-1/versions') {
+        expect(body).toEqual({ manifest: [{ policy_version_id: 'pver-1' }], schema_version: '2026-05-20' })
+        return { id: 'psver-1', policy_set_id: 'pset-1', version: 1, manifest_sha256: 'sha', schema_version: '2026-05-20', created_at: 't' }
+      }
+      if (url === 'http://api/v1/zones/z1/policy-sets/pset-1/activate') {
+        expect(body).toEqual({ version_id: 'psver-1' })
+        return { activated: true, version_id: 'psver-1', shadow_version_id: null }
+      }
+      if (url === 'http://api/v1/zones/z1/grants' && (init.method ?? 'GET') === 'GET') {
+        return []
+      }
+      if (url === 'http://api/v1/zones/z1/grants' && init.method === 'POST') {
+        expect(body).toEqual({ application_id: 'app-1', user_id: 'local-user', resource_id: 'res-1', scopes: ['tool:read'] })
+        return { id: 'grant-1', zone_id: 'z1', application_id: 'app-1', user_id: 'local-user', resource_id: 'res-1', scopes: ['tool:read'], status: 'active', created_at: 't' }
+      }
+      throw new Error(`unexpected request ${init.method ?? 'GET'} ${url}`)
+    })
+
+    await protectCommand(['http', '--zone', 'z1', '--identifier', 'resource://local-tool', '--upstream-url', 'http://host.docker.internal:8090', '--scopes', 'tool:read', '--user', 'local-user'])
+
+    expect(calls).toEqual([
+      'GET http://api/v1/zones/z1',
+      'GET http://api/v1/zones/z1/applications',
+      'POST http://api/v1/zones/z1/applications',
+      'GET http://api/v1/zones/z1/resources',
+      'POST http://api/v1/zones/z1/resources',
+      'GET http://api/v1/zones/z1/policies',
+      'POST http://api/v1/zones/z1/policies',
+      'GET http://api/v1/zones/z1/policy-sets',
+      'POST http://api/v1/zones/z1/policy-sets',
+      'POST http://api/v1/zones/z1/policy-sets/pset-1/versions',
+      'POST http://api/v1/zones/z1/policy-sets/pset-1/activate',
+      'GET http://api/v1/zones/z1/grants',
+      'POST http://api/v1/zones/z1/grants',
+    ])
+    const out = stdout.mock.calls.map((c) => c[0]).join('')
+    expect(out).toContain('protected resource')
+    expect(out).toContain('zone_url = "http://sts"')
+    expect(out).toContain('application_id = "app-1"')
+    expect(out).toContain('resource = "resource://local-tool"')
+  })
+
+  it('doctor reports control-plane readiness checks', async () => {
+    stubFetch((url) => {
+      if (url === 'http://api/health') return { ok: true }
+      if (url === 'http://api/v1/zones') return [{ id: 'z1', name: 'Local', slug: 'local' }]
+      if (url === 'http://api/v1/zones/z1') return { id: 'z1', name: 'Local', slug: 'local' }
+      if (url === 'http://api/v1/zones/z1/resources') return [{ id: 'res-1' }]
+      if (url === 'http://api/v1/zones/z1/policy-sets') return [{ id: 'pset-1', active_version_id: 'psver-1' }]
+      if (url === 'http://api/v1/zones/z1/grants') return [{ id: 'grant-1' }]
+      if (url === 'http://api/v1/zones/z1/audit?limit=1') return []
+      throw new Error(`unexpected request ${url}`)
+    })
+
+    await doctorCommand(['--zone', 'z1'])
+
+    const out = stdout.mock.calls.map((c) => c[0]).join('')
+    expect(out).toContain('api health')
+    expect(out).toContain('admin auth')
+    expect(out).toContain('audit query')
   })
 
   it('audit command exits 1 when CARACAL_ADMIN_TOKEN is missing', async () => {
