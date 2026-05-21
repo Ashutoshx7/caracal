@@ -152,7 +152,7 @@ func TestAuthenticateMapsIdentityErrors(t *testing.T) {
 	}{
 		{name: "scope", opts: transportmcp.Options{RequiredScopes: []string{"admin:call"}}, claims: jwt.MapClaims{"scope": "mcp:call"}, code: transportmcp.ErrInsufficientScope},
 		{name: "target", opts: transportmcp.Options{RequiredTargets: []string{"resource://tools/calendar"}}, claims: jwt.MapClaims{"scope": "mcp:call", "target": []string{"resource://tools/files"}}, code: transportmcp.ErrInvalidToken},
-		{name: "ambient", opts: transportmcp.Options{}, claims: jwt.MapClaims{"scope": "mcp:call", "use": "ambient"}, code: transportmcp.ErrInvalidToken},
+		{name: "session mandate", opts: transportmcp.Options{}, claims: jwt.MapClaims{"scope": "mcp:call", "use": "session"}, code: transportmcp.ErrInvalidToken},
 		{name: "zone", opts: transportmcp.Options{ZoneID: "zone-2"}, claims: jwt.MapClaims{"scope": "mcp:call"}, code: transportmcp.ErrInvalidZone},
 		{name: "agent", opts: transportmcp.Options{RequireAgent: true}, claims: jwt.MapClaims{"scope": "mcp:call"}, code: transportmcp.ErrAgentRequired},
 		{name: "delegation", opts: transportmcp.Options{RequireDelegation: true}, claims: jwt.MapClaims{"scope": "mcp:call"}, code: transportmcp.ErrDelegationRequired},
@@ -204,7 +204,7 @@ func mintToken(t *testing.T, claims jwt.MapClaims) (string, string, func()) {
 		"zone_id":   "zone-1",
 		"client_id": "app-1",
 		"sid":       "sid-1",
-		"use":       "per_call",
+		"use":       "resource",
 		"jti":       "jti-1",
 		"scope":     "mcp:call",
 		"iat":       now.Unix(),

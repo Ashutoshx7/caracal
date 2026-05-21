@@ -45,7 +45,7 @@ func mintToken(t *testing.T, extra jwt.MapClaims) (string, string, func()) {
 		"zone_id":   "zone-1",
 		"client_id": "app-1",
 		"sid":       "sid-1",
-		"use":       "per_call",
+		"use":       "resource",
 		"jti":       "jti-1",
 		"scope":     "read write",
 		"iat":       now.Unix(),
@@ -165,10 +165,10 @@ func TestVerifyRejectsMissingSessionID(t *testing.T) {
 }
 
 func TestVerifyRejectsWrongTokenUse(t *testing.T) {
-	token, issuer, closeServer := mintToken(t, jwt.MapClaims{"use": "ambient"})
+	token, issuer, closeServer := mintToken(t, jwt.MapClaims{"use": "session"})
 	defer closeServer()
 
-	_, err := identity.Verify(token, identity.Config{Issuer: issuer, Audience: "resource://api", RequiredUse: "per_call"})
+	_, err := identity.Verify(token, identity.Config{Issuer: issuer, Audience: "resource://api", RequiredUse: "resource"})
 	if err != identity.ErrTokenInvalid {
 		t.Fatalf("expected ErrTokenInvalid, got %v", err)
 	}

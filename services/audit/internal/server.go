@@ -12,6 +12,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -45,6 +47,8 @@ type Server struct {
 	exportDurMs  atomic.Int64
 	consumerLag  atomic.Int64
 	pelOldestAge atomic.Int64
+	dlqSize      atomic.Int64
+	dlqOldestAge atomic.Int64
 }
 
 func New(ctx context.Context) (*Server, error) {
@@ -141,7 +145,7 @@ func (s *Server) Run(ctx context.Context) error {
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	if !s.consumer.Healthy() {
-		http.Error(w, "consumer unhealthy", http.StatusServiceUnavailable)
+		writeReadyFailure(w, "consumer_unhealthy")
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -149,22 +153,23 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	if !s.consumer.Healthy() {
-		http.Error(w, "consumer unhealthy", http.StatusServiceUnavailable)
+		writeReadyFailure(w, "consumer_unhealthy")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 	if err := s.pg.Ping(ctx); err != nil {
 		s.log.Warn().Err(err).Msg("ready: pg unreachable")
-		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		writeReadyFailure(w, "postgres_unreachable")
 		return
 	}
 	if err := s.redis.Ping(ctx).Err(); err != nil {
 		s.log.Warn().Err(err).Msg("ready: redis unreachable")
-		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		writeReadyFailure(w, "redis_unreachable")
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"ready": true})
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
@@ -176,6 +181,8 @@ func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 		"export_duration_ms":       s.exportDurMs.Load(),
 		"consumer_lag":             s.consumerLag.Load(),
 		"consumer_pel_oldest_secs": s.pelOldestAge.Load(),
+		"dlq_size":                 s.dlqSize.Load(),
+		"dlq_oldest_age_secs":      s.dlqOldestAge.Load(),
 		"parse_errors_total":       s.consumer.parseErrors.Load(),
 		"dlq_total":                s.consumer.dlqTotal.Load(),
 		"retries_total":            s.consumer.retriesTotal.Load(),
@@ -221,6 +228,47 @@ func (s *Server) pollConsumerLag(ctx context.Context) {
 			} else {
 				s.pelOldestAge.Store(0)
 			}
+			s.pollDLQ(ctx)
 		}
 	}
+}
+
+func (s *Server) pollDLQ(ctx context.Context) {
+	size, err := s.redis.XLen(ctx, auditDLQStream).Result()
+	if err != nil {
+		s.log.Warn().Err(err).Msg("dlq size poll")
+		return
+	}
+	s.dlqSize.Store(size)
+	msgs, err := s.redis.XRangeN(ctx, auditDLQStream, "-", "+", 1).Result()
+	if err != nil || len(msgs) == 0 {
+		s.dlqOldestAge.Store(0)
+		return
+	}
+	s.dlqOldestAge.Store(redisIDAgeSeconds(msgs[0].ID, time.Now()))
+}
+
+func redisIDAgeSeconds(id string, now time.Time) int64 {
+	ms, _, ok := strings.Cut(id, "-")
+	if !ok {
+		return 0
+	}
+	unixMs, err := strconv.ParseInt(ms, 10, 64)
+	if err != nil || unixMs <= 0 {
+		return 0
+	}
+	age := now.Sub(time.UnixMilli(unixMs))
+	if age < 0 {
+		return 0
+	}
+	return int64(age / time.Second)
+}
+
+func writeReadyFailure(w http.ResponseWriter, reason string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ready":  false,
+		"reason": reason,
+	})
 }
