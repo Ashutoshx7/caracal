@@ -14,6 +14,7 @@ import (
 
 	"github.com/garudex-labs/caracal/coordinator-relay/internal"
 	"github.com/garudex-labs/caracal/packages/core/go/logging"
+	"github.com/garudex-labs/caracal/packages/core/go/telemetry"
 )
 
 func main() {
@@ -21,6 +22,13 @@ func main() {
 	defer cancel()
 
 	log := logging.New("coordinator-relay")
+	shutdownTelemetry, err := telemetry.Setup(ctx, "caracal-coordinator-relay")
+	if err != nil {
+		log.Error().Err(err).Msg("telemetry init failed")
+		os.Exit(1)
+	}
+	defer func() { _ = shutdownTelemetry(context.Background()) }()
+
 	c, err := internal.New(ctx)
 	if err != nil {
 		log.Error().Err(err).Msg("startup failed")

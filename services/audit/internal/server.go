@@ -171,6 +171,18 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		writeReadyFailure(w, "redis_unreachable")
 		return
 	}
+	if s.cfg.ReadyDLQMax > 0 && s.dlqSize.Load() > s.cfg.ReadyDLQMax {
+		writeReadyFailure(w, "audit_dlq_threshold")
+		return
+	}
+	if s.cfg.ReadyLagMax > 0 && s.consumerLag.Load() > s.cfg.ReadyLagMax {
+		writeReadyFailure(w, "audit_lag_threshold")
+		return
+	}
+	if s.cfg.ReadyPELOldestMax > 0 && s.pelOldestAge.Load() > s.cfg.ReadyPELOldestMax {
+		writeReadyFailure(w, "audit_pel_oldest_threshold")
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"ready": true})
 }

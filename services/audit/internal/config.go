@@ -26,6 +26,9 @@ type Config struct {
 	MaxDeliveries      int64
 	ClaimIdleSecs      int64
 	TamperRollingHours int
+	ReadyDLQMax        int64
+	ReadyLagMax        int64
+	ReadyPELOldestMax  int64
 }
 
 func loadConfig() (Config, error) {
@@ -52,6 +55,9 @@ func loadConfig() (Config, error) {
 	maxDeliv := config.Int64Env("AUDIT_MAX_DELIVERIES", 8)
 	idleSecs := config.Int64Env("AUDIT_CLAIM_IDLE_SECS", 30)
 	rolling := config.IntEnv("AUDIT_TAMPER_ROLLING_HOURS", 4)
+	readyDLQ := config.Int64Env("AUDIT_READY_DLQ_MAX", 0)
+	readyLag := config.Int64Env("AUDIT_READY_LAG_MAX", 0)
+	readyPEL := config.Int64Env("AUDIT_READY_PEL_OLDEST_SECS_MAX", 0)
 	return Config{
 		Base:               base,
 		S3Endpoint:         config.Getenv("AUDIT_EXPORT_S3_ENDPOINT", ""),
@@ -63,5 +69,8 @@ func loadConfig() (Config, error) {
 		MaxDeliveries:      maxDeliv,
 		ClaimIdleSecs:      idleSecs,
 		TamperRollingHours: rolling,
+		ReadyDLQMax:        readyDLQ,
+		ReadyLagMax:        readyLag,
+		ReadyPELOldestMax:  readyPEL,
 	}, nil
 }
