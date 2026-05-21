@@ -32,6 +32,7 @@ export interface A2AOptions {
   timeoutMs?: number
   retries?: number
   retryBaseMs?: number
+  retryTransientStatuses?: boolean
   fetchImpl?: FetchLike
   oauthClient?: Pick<OAuthClient, 'exchange'>
 }

@@ -36,8 +36,11 @@ type Claims struct {
 	ZoneID           string
 	ClientID         string
 	Sid              string
+	RootSid          string
 	Use              string
 	JTI              string
+	IssuedAt         int64
+	ExpiresAt        int64
 	Scope            string
 	AgentSessionID   string
 	DelegationEdgeID string

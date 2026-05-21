@@ -21,6 +21,7 @@ class JwtConfig:
     audience: str
     expected_zone_id: str | None = None
     required_scopes: list[str] = field(default_factory=list)
+    required_targets: list[str] = field(default_factory=list)
     required_use: str | None = None
     require_agent: bool = False
     require_delegation: bool = False
@@ -44,6 +45,10 @@ class Claims:
     use: str
     jti: str
     scope: str
+    issued_at: int
+    expires_at: int
+    target_resources: list[str] = field(default_factory=list)
+    root_sid: str | None = None
     agent_session_id: str | None = None
     delegation_edge_id: str | None = None
     source_session_id: str | None = None

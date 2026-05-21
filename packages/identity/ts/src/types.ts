@@ -14,6 +14,7 @@ export interface JwtConfig {
   audience: string
   zoneId?: string
   requiredScopes?: string[]
+  requiredTargets?: string[]
   requiredUse?: string
   requireAgent?: boolean
   requireDelegation?: boolean
@@ -32,9 +33,13 @@ export interface Claims {
   zoneId: string
   clientId: string
   sid: string
+  rootSid?: string
   use: string
   jti: string
+  issuedAt: number
+  expiresAt: number
   scope: string
+  targetResources?: string[]
   agentSessionId?: string
   delegationEdgeId?: string
   sourceSessionId?: string
