@@ -58,10 +58,10 @@ A PEL count of 0 for `sts-revocation` means the STS has acknowledged the revocat
 **Step 4 — Check Gateway metrics:**
 
 ```bash
-curl http://localhost:8081/metrics | jq '.revocations_active, .denials_revoked'
+curl http://localhost:8081/metrics | grep -E 'caracal_gateway_(revocations_active|denials_revoked_total)'
 ```
 
-`revocations_active` should reflect the revoked session. `denials_revoked` should increment if the session's mandates are still being presented.
+`caracal_gateway_revocations_active` should reflect the revoked session. `caracal_gateway_denials_revoked_total` should increment if the session's mandates are still being presented.
 
 **Important timing note:** Resource mandates have a 15-minute TTL. A mandate issued before revocation and still within its TTL will be rejected by the Gateway (which checks the revocation store on every request) but will be accepted by any service that does not run a `RedisRevocationConsumer`. Services behind the Gateway are protected immediately. Services accessed directly (bypassing the Gateway) accept revoked mandates until their TTL expires unless they subscribe to the revocation stream.
 
@@ -118,7 +118,7 @@ caracal audit tail --zone <zone-id> --since <ISO-8601-start> --until <ISO-8601-e
 
 ## Playbook: Audit chain tamper alert
 
-**Detection:** `tamper_mismatch_total > 0` or `tamper_chain_breaks > 0` in Audit `/metrics`, or an entry in `audit_ingest_alerts`.
+**Detection:** `caracal_audit_tamper_mismatch_total > 0` or `caracal_audit_tamper_chain_breaks_total > 0` in Audit `/metrics`, or an entry in `audit_ingest_alerts`.
 
 **Severity: P1 if chain_breaks > 0; P2 if mismatch only.**
 
@@ -199,16 +199,16 @@ curl http://localhost:8080/ready
 If the STS was down for longer than the audit replay buffer TTL, some audit events may have been dropped. Check:
 
 ```bash
-curl http://localhost:8080/metrics | jq '.sts.audit_dropped, .sts.audit_replay_pending'
+curl http://localhost:8080/metrics | grep -E 'caracal_sts_audit_(dropped_total|replay_pending)'
 ```
 
-A non-zero `audit_dropped` value means audit events were lost during the outage. Document the outage window for audit record purposes.
+A non-zero `caracal_sts_audit_dropped_total` value means audit events were lost during the outage. Document the outage window for audit record purposes.
 
 ---
 
 ## Playbook: Audit DLQ growing
 
-**Detection:** `dlq_total` increasing in Audit `/metrics`, or `XLEN caracal.audit.events.dlq > 0`.
+**Detection:** `caracal_audit_dlq_total` increasing in Audit `/metrics`, or `XLEN caracal.audit.events.dlq > 0`.
 
 **Impact:** Audit events are not being persisted. Regulatory compliance is at risk if this persists.
 

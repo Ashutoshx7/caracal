@@ -29,7 +29,8 @@ The STS is the sole issuer of mandates. It receives RFC 8693 token exchange requ
 | `GET /step-up/{id}` | Step-up challenge status query |
 | `GET /health` | Liveness probe (always 200) |
 | `GET /ready` | Startup probe (Postgres + Redis) |
-| `GET /metrics` | JSON metrics snapshot |
+| `GET /metrics` | Prometheus text metrics |
+| `GET /metrics.json` | Compatibility JSON metrics snapshot |
 
 **Connections:** Postgres (read sessions, applications, resources, policies, grants; write sessions, step-up challenges), Redis (consume: `caracal.sessions.revoke`, `caracal.policy.invalidate`, `caracal.keys.invalidate`; publish: `caracal.audit.events`).
 
@@ -51,7 +52,8 @@ The Gateway is the ingress point for agent calls to Gateway-routable resources. 
 | ---- | ------- |
 | `GET /health` | Liveness probe |
 | `GET /ready` | Startup probe (Postgres, Redis, STS) |
-| `GET /metrics` | JSON metrics |
+| `GET /metrics` | Prometheus text metrics |
+| `GET /metrics.json` | Compatibility JSON metrics snapshot |
 | `/*` | Reverse proxy handler |
 
 **Connections:** Postgres (SELECT: zones, resources, providers, gateway_resource_bindings), Redis (JTI deduplication, stream signature verification, `caracal.sessions.revoke` via `gateway-revocation`), STS (JWKS fetch, resource mandate exchange).

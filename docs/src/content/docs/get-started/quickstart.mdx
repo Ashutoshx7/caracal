@@ -95,82 +95,54 @@ If a service is not healthy within two minutes, check its logs:
 docker logs caracal-sts-1 --tail 50
 ```
 
-## Step 4: Provision the golden path
+## Step 4: Protect one HTTP resource
 
-The stack starts with an empty database. Create the product objects needed for a Gateway-mediated agent call. The admin token is read from `$CARACAL_HOME/secrets/caracalAdminToken` automatically — no manual export is needed.
+The stack starts with an empty database. Use the golden-path command to create or update the product objects needed for a Gateway-mediated call: zone, Gateway app, resource route, policy, policy set, activation, grant, and local config values. The admin token is read from `$CARACAL_HOME/secrets/caracalAdminToken` automatically — no manual export is needed.
 
 ```sh
-caracal zone create --name local
-# → captures the new zone id, e.g. zone_abc123
-
-LOCAL_AGENT_SECRET="$(openssl rand -hex 32)"
-caracal app create \
-  --zone zone_abc123 \
-  --name local-agent \
-  --credential-type password \
-  --client-secret "$LOCAL_AGENT_SECRET"
-# → captures the agent application id, e.g. app_def456
-
-caracal resource create \
-  --zone zone_abc123 \
+caracal protect http \
   --identifier "resource://local-tool" \
-  --scopes "tool:read,tool:write" \
-  --name "Local Tool" \
   --upstream-url "http://host.docker.internal:8090" \
-  --gateway-application-id app_def456
-# → creates the tool/provider resource and its Gateway provider route
-
-caracal policy template list
-caracal policy template use baseline-scopes --zone zone_abc123 --name "Local Gateway Policy"
-# → creates a policy from the baseline scopes template
-```
-
-Create a policy set, add the created policy version, activate it, then grant the agent app the resource scopes:
-
-```sh
-caracal policy-set create --zone zone_abc123 --name "Local Policies"
-caracal policy-set version pset_abc123 --zone zone_abc123 --policy-versions pver_abc123
-caracal policy-set activate pset_abc123 --zone zone_abc123 --version psetver_abc123
-
-caracal grant create \
-  --zone zone_abc123 \
-  --app app_def456 \
+  --scopes "tool:read,tool:write" \
   --user local-user \
-  --resource res_abc123 \
-  --scopes tool:read,tool:write
+  --write-config caracal.toml
 ```
 
-The `--gateway-application-id` value is the same-zone service identity Gateway uses for the internal STS exchange. In production, use a dedicated Gateway application identity; for local smoke tests, reusing the local agent app is acceptable.
+The command prints the generated `caracal.toml` and writes it with file mode `0600` when `--write-config` is supplied. The `app_client_secret` is shown once; store it as you would any other application secret.
 
-Author `caracal.toml` in your project directory with the values from the previous step:
+The generated file looks like this:
 
 ```toml
 zone_url = "http://localhost:8080"
-zone_id  = "zone_abc123"
+zone_id = "zone_abc123"
 
-application_id     = "app_def456"
-app_client_secret  = "<value of LOCAL_AGENT_SECRET>"
+application_id = "app_def456"
+app_client_secret = "cs_generated_once"
 
 [[credentials]]
-env      = "RESOURCE_TOKEN"
+env = "RESOURCE_TOKEN"
 resource = "resource://local-tool"
 
 [mcp_governance]
 mode = "block"
 ```
 
-Set the file mode to `0600` — it contains your application's client secret.
+The Gateway application identity is same-zone service identity used for internal STS exchange. In production, use a dedicated Gateway application identity and review the generated policy before activation.
+
+Run the readiness doctor if the credential step below fails:
 
 ```sh
-chmod 600 caracal.toml
+caracal doctor
 ```
+
+It checks API reachability, admin authentication, selected zone, resource registration, active policy sets, grants, and audit queryability.
 
 ## Step 5: Verify scoped access
 
 With the stack and `caracal.toml` in place, request a short-lived access token for the registered resource:
 
 ```sh
-caracal credential read resource://my-api
+caracal credential read resource://local-tool
 ```
 
 If successful, a signed Caracal access token is printed to stdout. This proves the public STS allowed the agent app to access the resource; provider-native credentials are not returned to the CLI.
@@ -178,7 +150,7 @@ If successful, a signed Caracal access token is printed to stdout. This proves t
 Decode it to inspect the claims:
 
 ```sh
-caracal credential read resource://my-api | cut -d. -f2 | base64 -d | jq .
+caracal credential read resource://local-tool | cut -d. -f2 | base64 -d | jq .
 ```
 
 You should see claims including `zone_id`, `scope`, `target`, and an expiry (`exp`) 15 minutes from now.

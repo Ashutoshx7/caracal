@@ -67,19 +67,15 @@ For MinIO or other S3-compatible stores, set `AUDIT_EXPORT_S3_ENDPOINT` to the c
 - Exports the most recently completed whole hour of `ingested_at` data.
 - On fresh deployment, exports only the most recent complete hour (no historical catch-up).
 - After the first export, tracks a watermark in `audit_export_watermark` and catches up hour-by-hour if the exporter was down.
-- Each export run emits `export_events_total`, `export_errors_total`, `export_duration_ms`, and `is_export_leader` metrics.
+- Each export run emits `caracal_audit_export_events_total`, `caracal_audit_export_errors_total`, `caracal_audit_export_duration_seconds`, and `caracal_audit_is_export_leader` metrics.
 
 **Verifying export health:**
 
 ```bash
-curl http://localhost:9090/metrics | jq '{
-  export_events_total,
-  export_errors_total,
-  is_export_leader
-}'
+curl http://localhost:9090/metrics | grep -E 'caracal_audit_(export_events_total|export_errors_total|is_export_leader)'
 ```
 
-If `export_errors_total` is increasing and `export_events_total` is not, check S3 connectivity and credentials.
+If `caracal_audit_export_errors_total` is increasing and `caracal_audit_export_events_total` is not, check S3 connectivity and credentials.
 
 **Check the watermark:**
 
@@ -105,14 +101,14 @@ Tamper metrics from `GET /metrics` on the Audit service:
 
 | Metric | Meaning |
 | --- | --- |
-| `tamper_checked_total` | Events verified by the sweeper |
-| `tamper_mismatch_total` | Events where hash or HMAC does not match |
-| `tamper_chain_breaks` | Chain sequence breaks detected |
-| `tamper_hmac_failures` | HMAC verification failures |
-| `tamper_last_sweep_unix` | Unix timestamp of the last rolling sweep |
-| `tamper_last_full_unix` | Unix timestamp of the last full sweep |
+| `caracal_audit_tamper_checked_total` | Events verified by the sweeper |
+| `caracal_audit_tamper_mismatch_total` | Events where hash or HMAC does not match |
+| `caracal_audit_tamper_chain_breaks_total` | Chain sequence breaks detected |
+| `caracal_audit_tamper_hmac_failures_total` | HMAC verification failures |
+| `caracal_audit_tamper_last_sweep_unix` | Unix timestamp of the last rolling sweep |
+| `caracal_audit_tamper_last_full_unix` | Unix timestamp of the last full sweep |
 
-`tamper_mismatch_total > 0` or `tamper_chain_breaks > 0` indicates that audit event data has been modified after ingest. This is a security event — see [Incident Response](./incident-response/).
+`caracal_audit_tamper_mismatch_total > 0` or `caracal_audit_tamper_chain_breaks_total > 0` indicates that audit event data has been modified after ingest. This is a security event — see [Incident Response](./incident-response/).
 
 Tamper alerts are also written to the `audit_ingest_alerts` table:
 
