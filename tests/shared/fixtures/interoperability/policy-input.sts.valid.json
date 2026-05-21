@@ -1,0 +1,54 @@
+{
+  "schema_version": "2026-05-20",
+  "principal": {
+    "type": "user",
+    "id": "user-1",
+    "zone_id": "zone-1",
+    "credential_type": "jwt",
+    "agent_session_id": "agent-session-1",
+    "agent_kind": "planner",
+    "capabilities": ["files.read"]
+  },
+  "resource": {
+    "type": "http",
+    "id": "resource-1",
+    "identifier": "resource://api",
+    "scopes": ["read", "write"]
+  },
+  "action": {
+    "id": "read"
+  },
+  "session": {
+    "id": "sid-1"
+  },
+  "delegation_edge": {
+    "id": "edge-1",
+    "source_session_id": "sid-parent",
+    "target_session_id": "sid-child",
+    "issuer_application_id": "app-parent",
+    "receiver_application_id": "app-1",
+    "resource_id": "resource-1",
+    "scopes": ["read"],
+    "edge_version": 1,
+    "path": ["edge-root", "edge-1"],
+    "graph_epoch": 7,
+    "constraints_json": {
+      "max_cost_usd": 5
+    }
+  },
+  "context": {
+    "actor_claims": {
+      "sub": "user-1",
+      "client_id": "app-1"
+    },
+    "subject_claims": {
+      "sub": "user-1"
+    },
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "session_id": "sid-1",
+    "agent_session_id": "agent-session-1",
+    "delegation_edge_id": "edge-1",
+    "challenge_resolved": false,
+    "requested_scopes": ["read"]
+  }
+}
