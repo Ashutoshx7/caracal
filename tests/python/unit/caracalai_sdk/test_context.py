@@ -14,6 +14,7 @@ from caracalai_sdk.advanced import (
     Envelope,
     abind,
     bind,
+    describe_authority,
     current,
     from_envelope,
     to_envelope,
@@ -96,6 +97,7 @@ class ToEnvelopeTests(unittest.TestCase):
             agent_session_id="agent-1",
             delegation_edge_id="edge-1",
             parent_edge_id="parent-1",
+            session_id="sid-1",
             trace_id="a" * 32,
             hop=3,
         )
@@ -104,6 +106,7 @@ class ToEnvelopeTests(unittest.TestCase):
         self.assertEqual(env.agent_session_id, "agent-1")
         self.assertEqual(env.delegation_edge_id, "edge-1")
         self.assertEqual(env.parent_edge_id, "parent-1")
+        self.assertEqual(env.session_id, "sid-1")
         self.assertEqual(env.trace_id, "a" * 32)
         self.assertEqual(env.hop, 3)
 
@@ -113,6 +116,7 @@ class FromEnvelopeTests(unittest.TestCase):
         env = Envelope(
             subject_token="tok",
             agent_session_id="agent-1",
+            session_id="sid-1",
             hop=2,
         )
         ctx = from_envelope(env, zone_id="z1", client_id="app-1")
@@ -120,12 +124,33 @@ class FromEnvelopeTests(unittest.TestCase):
         self.assertEqual(ctx.zone_id, "z1")
         self.assertEqual(ctx.client_id, "app-1")
         self.assertEqual(ctx.agent_session_id, "agent-1")
+        self.assertEqual(ctx.session_id, "sid-1")
         self.assertEqual(ctx.hop, 2)
 
     def test_raises_when_envelope_has_no_subject_token(self) -> None:
         env = Envelope()
         with self.assertRaises(ValueError):
             from_envelope(env, zone_id="z", client_id="app")
+
+
+class DescribeAuthorityTests(unittest.TestCase):
+    def test_returns_redacted_authority_chain(self) -> None:
+        ctx = CaracalContext(
+            subject_token="tok",
+            zone_id="z",
+            client_id="app",
+            session_id="sid-1",
+            agent_session_id="agent-1",
+            delegation_edge_id="edge-1",
+            hop=2,
+        )
+        summary = describe_authority(ctx)
+        self.assertIsNotNone(summary)
+        assert summary is not None
+        self.assertEqual(summary.application_id, "app")
+        self.assertEqual(summary.authority_session_id, "sid-1")
+        self.assertEqual(summary.chain, ("authority:sid-1", "agent-run:agent-1", "delegated-permission:edge-1"))
+        self.assertNotIn("tok", repr(summary))
 
 
 if __name__ == "__main__":

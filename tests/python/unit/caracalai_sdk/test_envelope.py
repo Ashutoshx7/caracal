@@ -16,6 +16,7 @@ from caracalai_sdk.advanced import (
     HEADER_AUTHORIZATION,
     HEADER_BAGGAGE,
     HEADER_TRACEPARENT,
+    BAGGAGE_SESSION,
     MAX_HOP,
     Envelope,
     decode_envelope,
@@ -128,6 +129,7 @@ class EncodeDecodeRoundtripTests(unittest.TestCase):
             agent_session_id="agent-1",
             delegation_edge_id="edge-1",
             parent_edge_id="parent-1",
+            session_id="sid-1",
             trace_id="a" * 32,
             hop=2,
         )
@@ -141,6 +143,7 @@ class EncodeDecodeRoundtripTests(unittest.TestCase):
         self.assertEqual(recovered.agent_session_id, "agent-1")
         self.assertEqual(recovered.delegation_edge_id, "edge-1")
         self.assertEqual(recovered.parent_edge_id, "parent-1")
+        self.assertEqual(recovered.session_id, "sid-1")
         self.assertEqual(recovered.hop, 2)
 
     def test_baggage_contains_only_hop_when_no_optional_fields_present(self) -> None:

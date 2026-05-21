@@ -6,7 +6,7 @@ Public surface of the Caracal Python SDK.
 """
 
 from .client import Caracal, CaracalConfig, ResourceBinding
-from .context import CaracalContext
+from .context import AuthoritySummary, CaracalContext, capture_context, describe_authority
 from .coordinator import AgentKind, CoordinatorClient, DelegationConstraints
 from .envelope import Envelope
 from .http import CaracalASGIMiddleware
@@ -17,6 +17,9 @@ __all__ = [
     "Caracal",
     "CaracalConfig",
     "CaracalContext",
+    "AuthoritySummary",
+    "capture_context",
+    "describe_authority",
     "CaracalASGIMiddleware",
     "AgentKind",
     "CoordinatorClient",
