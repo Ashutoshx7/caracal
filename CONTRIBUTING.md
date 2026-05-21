@@ -71,15 +71,7 @@ CLI and TUI are exact alternatives over the same engine.
 
 The control service is an OAuth-protected HTTP API hosted by the engine for any external client (script, AI agent, workflow, or another instance of CLI/TUI) that needs to drive Caracal programmatically. It is unmounted by default.
 
-The control service reads its admin token from `infra/secrets/files/caracalAdminToken`, which is generated on the first `pnpm caracal up` or `pnpm secrets:init`. Run one of those before starting the control surface.
-
-```bash
-pnpm caracal control mount
-pnpm caracal control enable
-pnpm caracal control status
-pnpm caracal control disable
-pnpm caracal control unmount
-```
+The control service reads its admin token from `infra/secrets/files/caracalAdminToken`, which is generated on the first `pnpm caracal up` or `pnpm secrets:init`. Lifecycle management must run through the authenticated, interactive `caracal-cli control ...` flow or the TUI Control menu. Do not call the underlying Node entrypoints, thin scripts, or Docker profiles directly; lifecycle commands require a controlling terminal, the local managed admin secret, and explicit human confirmation before changing runtime state.
 
 If you created `infra/docker/local.env` for operator overrides, pass it after `dev.env` so local entries win.
 

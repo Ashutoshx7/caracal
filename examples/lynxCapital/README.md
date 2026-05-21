@@ -48,12 +48,12 @@ curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-t
 
 # Bring up the OSS stack
 caracal up
-caracal control enable
 
 # Open the TUI. Use it to inspect/create:
-#   1. zone: Lynx Capital
-#   2. control key: lynx-control (copy client_secret once)
-#   3. resources: lynx/<provider> for every provider in config/company.yaml
+#   1. control endpoint: enable from the Control menu
+#   2. zone: Lynx Capital
+#   3. control key: lynx-control (copy client_secret once)
+#   4. resources: lynx/<provider> for every provider in config/company.yaml
 caracal-tui
 ```
 
