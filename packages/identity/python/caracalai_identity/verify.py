@@ -12,7 +12,7 @@ from caracalai_core import CaracalError, ErrorCode, JsonValue
 
 from .jwks import JwksCache
 from .scope import has_scope
-from .types import DEFAULT_MAX_HOP_COUNT, ChainHop, Claims, JwtConfig
+from .types import DEFAULT_MAX_HOP_COUNT, MANDATE_USE_RESOURCE, MANDATE_USE_SESSION, ChainHop, Claims, JwtConfig
 
 _cache = JwksCache()
 
@@ -176,6 +176,8 @@ async def verify_token(
     _required_str(decoded, "sid")
     _required_str(decoded, "client_id")
     token_use = _required_str(decoded, "use")
+    if token_use not in {MANDATE_USE_SESSION, MANDATE_USE_RESOURCE}:
+        raise TokenInvalidError("Token use validation failed")
     if required_use is not None and token_use != required_use:
         raise TokenInvalidError("Token use validation failed")
 

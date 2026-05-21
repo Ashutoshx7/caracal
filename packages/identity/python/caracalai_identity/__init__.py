@@ -5,7 +5,7 @@
 
 from .jwks import JwksCache
 from .scope import has_scope
-from .types import ChainHop, Claims, JwtConfig
+from .types import MANDATE_USE_RESOURCE, MANDATE_USE_SESSION, ChainHop, Claims, JwtConfig
 from .verify import (
     AgentIdentityRequiredError,
     ChainMismatchError,
@@ -28,6 +28,8 @@ __all__ = [
     "HopCountExceededError",
     "JwksCache",
     "JwtConfig",
+    "MANDATE_USE_RESOURCE",
+    "MANDATE_USE_SESSION",
     "ScopeInsufficientError",
     "TokenInvalidError",
     "ZoneInvalidError",

@@ -25,7 +25,7 @@ class CaracalAuth:
         revocations: RevocationStore,
         required_scopes: list[str] | None = None,
         required_targets: list[str] | None = None,
-        required_use: str | None = "per_call",
+        required_use: str | None = "resource",
         expected_zone_id: str | None = None,
         require_agent: bool = False,
         require_delegation: bool = False,

@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 # that would have been blocked at spawn time cannot pass a permissive resource
 # server.
 DEFAULT_MAX_HOP_COUNT = 10
+MANDATE_USE_SESSION = "session"
+MANDATE_USE_RESOURCE = "resource"
 
 
 @dataclass
