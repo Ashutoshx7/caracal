@@ -37,12 +37,19 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --root ../../.. tests/typescript/unit/shared",
+    "test": "vitest run --root ../../.. tests/typescript/unit/shared tests/typescript/contract/interoperability",
     "prepublishOnly": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc"
   },
   "devDependencies": {
     "@types/node": "^24.12.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.218.0",
+    "@opentelemetry/resources": "^2.7.1",
+    "@opentelemetry/sdk-trace-base": "^2.7.1",
+    "@opentelemetry/sdk-trace-node": "^2.7.1"
   }
 }

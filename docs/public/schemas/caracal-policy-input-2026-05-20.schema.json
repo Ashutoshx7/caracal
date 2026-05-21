@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.caracal.run/schemas/caracal-policy-input-2026-05-20.schema.json",
+  "title": "Caracal OPA Policy Input",
+  "description": "The JSON object passed to data.caracal.authz.result for each STS resource authorization decision.",
+  "type": "object",
+  "required": ["schema_version", "principal", "resource", "action", "context"],
+  "properties": {
+    "schema_version": {
+      "const": "2026-05-20"
+    },
+    "principal": {
+      "type": "object",
+      "required": ["type", "id", "zone_id"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "zone_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "credential_type": {
+          "type": "string"
+        },
+        "agent_session_id": {
+          "type": "string"
+        },
+        "agent_kind": {
+          "type": "string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "resource": {
+      "type": "object",
+      "required": ["type", "id", "identifier", "scopes"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "identifier": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "action": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "session": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": ["id"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "delegation_edge": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": ["id"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source_session_id": {
+              "type": "string"
+            },
+            "target_session_id": {
+              "type": "string"
+            },
+            "issuer_application_id": {
+              "type": "string"
+            },
+            "receiver_application_id": {
+              "type": "string"
+            },
+            "resource_id": {
+              "type": "string"
+            },
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "edge_version": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "path": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "graph_epoch": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "constraints_json": {
+              "type": ["object", "array", "string", "number", "boolean", "null"]
+            }
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "context": {
+      "type": "object",
+      "required": ["actor_claims", "challenge_resolved", "requested_scopes"],
+      "properties": {
+        "actor_claims": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "subject_claims": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "trace_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "agent_session_id": {
+          "type": "string"
+        },
+        "delegation_edge_id": {
+          "type": "string"
+        },
+        "challenge_resolved": {
+          "type": "boolean"
+        },
+        "requested_scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
