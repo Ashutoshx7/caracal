@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/garudex-labs/caracal/packages/core/go/logging"
+	coremetrics "github.com/garudex-labs/caracal/packages/core/go/metrics"
+	"github.com/garudex-labs/caracal/packages/core/go/telemetry"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
@@ -116,10 +118,11 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /ready", s.handleReady)
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
+	mux.HandleFunc("GET /metrics.json", s.handleMetricsJSON)
 
 	srv := &http.Server{
 		Addr:              ":" + s.cfg.Port,
-		Handler:           mux,
+		Handler:           telemetry.HTTPHandler("caracal.audit.http", mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -173,32 +176,99 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
+	snap := s.metricsSnapshot()
+	w.Header().Set("Content-Type", coremetrics.ContentType)
+	_, _ = w.Write([]byte(coremetrics.Render([]coremetrics.Sample{
+		{Name: "caracal_audit_inserts_total", Help: "Audit events inserted into storage", Type: coremetrics.Counter, Value: float64(snap.InsertsTotal)},
+		{Name: "caracal_audit_export_events_total", Help: "Audit events exported to archive storage", Type: coremetrics.Counter, Value: float64(snap.ExportEventsTotal)},
+		{Name: "caracal_audit_export_errors_total", Help: "Audit export failures", Type: coremetrics.Counter, Value: float64(snap.ExportErrorsTotal)},
+		{Name: "caracal_audit_export_duration_seconds", Help: "Most recent audit export duration", Type: coremetrics.Gauge, Value: float64(snap.ExportDurationMs) / 1000},
+		{Name: "caracal_audit_consumer_lag", Help: "Audit stream pending entry count", Type: coremetrics.Gauge, Value: float64(snap.ConsumerLag)},
+		{Name: "caracal_audit_consumer_pel_oldest_seconds", Help: "Oldest audit pending entry age", Type: coremetrics.Gauge, Value: float64(snap.ConsumerPELOldestSecs)},
+		{Name: "caracal_audit_dlq_size", Help: "Audit dead-letter stream size", Type: coremetrics.Gauge, Value: float64(snap.DLQSize)},
+		{Name: "caracal_audit_dlq_oldest_age_seconds", Help: "Oldest audit dead-letter event age", Type: coremetrics.Gauge, Value: float64(snap.DLQOldestAgeSecs)},
+		{Name: "caracal_audit_parse_errors_total", Help: "Audit stream parse errors", Type: coremetrics.Counter, Value: float64(snap.ParseErrorsTotal)},
+		{Name: "caracal_audit_dlq_total", Help: "Audit events moved to the dead-letter stream", Type: coremetrics.Counter, Value: float64(snap.DLQTotal)},
+		{Name: "caracal_audit_retries_total", Help: "Audit event delivery retries", Type: coremetrics.Counter, Value: float64(snap.RetriesTotal)},
+		{Name: "caracal_audit_hmac_failures_total", Help: "Audit producer HMAC verification failures", Type: coremetrics.Counter, Value: float64(snap.HMACFailuresTotal)},
+		{Name: "caracal_audit_tamper_replay_total", Help: "Audit replayed events rejected as tamper attempts", Type: coremetrics.Counter, Value: float64(snap.TamperReplayTotal)},
+		{Name: "caracal_audit_tamper_checked_total", Help: "Audit chain events checked for tamper evidence", Type: coremetrics.Counter, Value: float64(snap.TamperCheckedTotal)},
+		{Name: "caracal_audit_tamper_mismatch_total", Help: "Audit chain hash mismatches detected", Type: coremetrics.Counter, Value: float64(snap.TamperMismatchTotal)},
+		{Name: "caracal_audit_tamper_chain_breaks_total", Help: "Audit chain ordering breaks detected", Type: coremetrics.Counter, Value: float64(snap.TamperChainBreaks)},
+		{Name: "caracal_audit_tamper_hmac_failures_total", Help: "Audit stored HMAC mismatches detected", Type: coremetrics.Counter, Value: float64(snap.TamperHMACFailures)},
+		{Name: "caracal_audit_tamper_last_sweep_unix", Help: "Unix timestamp of the last audit tamper sweep", Type: coremetrics.Gauge, Value: float64(snap.TamperLastSweepUnix)},
+		{Name: "caracal_audit_tamper_last_full_unix", Help: "Unix timestamp of the last full audit tamper sweep", Type: coremetrics.Gauge, Value: float64(snap.TamperLastFullUnix)},
+		{Name: "caracal_audit_retention_created_total", Help: "Audit retention partitions created", Type: coremetrics.Counter, Value: float64(snap.RetentionCreatedTotal)},
+		{Name: "caracal_audit_retention_dropped_total", Help: "Audit retention partitions dropped", Type: coremetrics.Counter, Value: float64(snap.RetentionDroppedTotal)},
+		{Name: "caracal_audit_is_export_leader", Help: "Whether this Audit replica holds the export lease", Type: coremetrics.Gauge, Value: boolFloat(snap.IsExportLeader)},
+		{Name: "caracal_audit_is_retention_leader", Help: "Whether this Audit replica holds the retention lease", Type: coremetrics.Gauge, Value: boolFloat(snap.IsRetentionLeader)},
+	})))
+}
+
+func (s *Server) handleMetricsJSON(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"inserts_total":            s.inserts.Load(),
-		"export_events_total":      s.exportEvents.Load(),
-		"export_errors_total":      s.exportErrors.Load(),
-		"export_duration_ms":       s.exportDurMs.Load(),
-		"consumer_lag":             s.consumerLag.Load(),
-		"consumer_pel_oldest_secs": s.pelOldestAge.Load(),
-		"dlq_size":                 s.dlqSize.Load(),
-		"dlq_oldest_age_secs":      s.dlqOldestAge.Load(),
-		"parse_errors_total":       s.consumer.parseErrors.Load(),
-		"dlq_total":                s.consumer.dlqTotal.Load(),
-		"retries_total":            s.consumer.retriesTotal.Load(),
-		"hmac_failures_total":      s.consumer.hmacFailTotal.Load(),
-		"tamper_replay_total":      s.consumer.tamperReplay.Load(),
-		"tamper_checked_total":     s.sweeper.checkedTotal.Load(),
-		"tamper_mismatch_total":    s.sweeper.mismatchTotal.Load(),
-		"tamper_chain_breaks":      s.sweeper.chainBreak.Load(),
-		"tamper_hmac_failures":     s.sweeper.hmacMismatch.Load(),
-		"tamper_last_sweep_unix":   s.sweeper.lastSweepUnix.Load(),
-		"tamper_last_full_unix":    s.sweeper.lastFullUnix.Load(),
-		"retention_created_total":  s.retention.createdTotal.Load(),
-		"retention_dropped_total":  s.retention.droppedTotal.Load(),
-		"is_export_leader":         s.exporterLead.Held(),
-		"is_retention_leader":      s.retentLead.Held(),
-	})
+	_ = json.NewEncoder(w).Encode(s.metricsSnapshot())
+}
+
+type auditMetricsSnapshot struct {
+	InsertsTotal          int64 `json:"inserts_total"`
+	ExportEventsTotal     int64 `json:"export_events_total"`
+	ExportErrorsTotal     int64 `json:"export_errors_total"`
+	ExportDurationMs      int64 `json:"export_duration_ms"`
+	ConsumerLag           int64 `json:"consumer_lag"`
+	ConsumerPELOldestSecs int64 `json:"consumer_pel_oldest_secs"`
+	DLQSize               int64 `json:"dlq_size"`
+	DLQOldestAgeSecs      int64 `json:"dlq_oldest_age_secs"`
+	ParseErrorsTotal      int64 `json:"parse_errors_total"`
+	DLQTotal              int64 `json:"dlq_total"`
+	RetriesTotal          int64 `json:"retries_total"`
+	HMACFailuresTotal     int64 `json:"hmac_failures_total"`
+	TamperReplayTotal     int64 `json:"tamper_replay_total"`
+	TamperCheckedTotal    int64 `json:"tamper_checked_total"`
+	TamperMismatchTotal   int64 `json:"tamper_mismatch_total"`
+	TamperChainBreaks     int64 `json:"tamper_chain_breaks"`
+	TamperHMACFailures    int64 `json:"tamper_hmac_failures"`
+	TamperLastSweepUnix   int64 `json:"tamper_last_sweep_unix"`
+	TamperLastFullUnix    int64 `json:"tamper_last_full_unix"`
+	RetentionCreatedTotal int64 `json:"retention_created_total"`
+	RetentionDroppedTotal int64 `json:"retention_dropped_total"`
+	IsExportLeader        bool  `json:"is_export_leader"`
+	IsRetentionLeader     bool  `json:"is_retention_leader"`
+}
+
+func (s *Server) metricsSnapshot() auditMetricsSnapshot {
+	return auditMetricsSnapshot{
+		InsertsTotal:          s.inserts.Load(),
+		ExportEventsTotal:     s.exportEvents.Load(),
+		ExportErrorsTotal:     s.exportErrors.Load(),
+		ExportDurationMs:      s.exportDurMs.Load(),
+		ConsumerLag:           s.consumerLag.Load(),
+		ConsumerPELOldestSecs: s.pelOldestAge.Load(),
+		DLQSize:               s.dlqSize.Load(),
+		DLQOldestAgeSecs:      s.dlqOldestAge.Load(),
+		ParseErrorsTotal:      s.consumer.parseErrors.Load(),
+		DLQTotal:              s.consumer.dlqTotal.Load(),
+		RetriesTotal:          s.consumer.retriesTotal.Load(),
+		HMACFailuresTotal:     s.consumer.hmacFailTotal.Load(),
+		TamperReplayTotal:     s.consumer.tamperReplay.Load(),
+		TamperCheckedTotal:    s.sweeper.checkedTotal.Load(),
+		TamperMismatchTotal:   s.sweeper.mismatchTotal.Load(),
+		TamperChainBreaks:     s.sweeper.chainBreak.Load(),
+		TamperHMACFailures:    s.sweeper.hmacMismatch.Load(),
+		TamperLastSweepUnix:   s.sweeper.lastSweepUnix.Load(),
+		TamperLastFullUnix:    s.sweeper.lastFullUnix.Load(),
+		RetentionCreatedTotal: s.retention.createdTotal.Load(),
+		RetentionDroppedTotal: s.retention.droppedTotal.Load(),
+		IsExportLeader:        s.exporterLead.Held(),
+		IsRetentionLeader:     s.retentLead.Held(),
+	}
+}
+
+func boolFloat(value bool) float64 {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func (s *Server) pollConsumerLag(ctx context.Context) {

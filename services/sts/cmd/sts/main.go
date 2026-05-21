@@ -13,6 +13,7 @@ import (
 
 	"github.com/garudex-labs/caracal/packages/core/go/config"
 	"github.com/garudex-labs/caracal/packages/core/go/logging"
+	"github.com/garudex-labs/caracal/packages/core/go/telemetry"
 	"github.com/garudex-labs/caracal/sts/internal"
 )
 
@@ -21,6 +22,12 @@ func main() {
 	log := logging.New("sts")
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	shutdownTelemetry, err := telemetry.Setup(ctx, "caracal-sts")
+	if err != nil {
+		log.Error().Err(err).Msg("telemetry init failed")
+		os.Exit(1)
+	}
+	defer func() { _ = shutdownTelemetry(context.Background()) }()
 
 	srv, err := internal.New(ctx)
 	if err != nil {
