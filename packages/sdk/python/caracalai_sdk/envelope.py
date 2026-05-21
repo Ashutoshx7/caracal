@@ -5,7 +5,7 @@ Caracal, a product of Garudex Labs
 Wire envelope using W3C Trace Context (traceparent) and W3C Baggage.
 
 Subject token rides in Authorization. Caracal-specific cross-cutting fields
-(agent_session, delegation_edge, parent_edge, hop) ride in Baggage under the
+(session, agent_session, delegation_edge, parent_edge, hop) ride in Baggage under the
 caracal.* namespace. Trace identifiers ride in traceparent.
 """
 
@@ -24,6 +24,7 @@ HEADER_BAGGAGE = "baggage"
 BAGGAGE_AGENT_SESSION = "caracal.agent_session"
 BAGGAGE_DELEGATION_EDGE = "caracal.delegation_edge"
 BAGGAGE_PARENT_EDGE = "caracal.parent_edge"
+BAGGAGE_SESSION = "caracal.session"
 BAGGAGE_HOP = "caracal.hop"
 
 MAX_HOP = 32
@@ -37,6 +38,7 @@ class Envelope:
     agent_session_id: str | None = None
     delegation_edge_id: str | None = None
     parent_edge_id: str | None = None
+    session_id: str | None = None
     trace_id: str | None = None
     hop: int = 0
 
@@ -119,6 +121,7 @@ def decode_envelope(get: HeaderGetter) -> Envelope:
         agent_session_id=bag.get(BAGGAGE_AGENT_SESSION) or None,
         delegation_edge_id=bag.get(BAGGAGE_DELEGATION_EDGE) or None,
         parent_edge_id=bag.get(BAGGAGE_PARENT_EDGE) or None,
+        session_id=bag.get(BAGGAGE_SESSION) or None,
         trace_id=trace_id,
         hop=hop,
     )
@@ -134,6 +137,7 @@ def encode_envelope(env: Envelope, set_header: HeaderSetter) -> None:
             BAGGAGE_AGENT_SESSION: env.agent_session_id,
             BAGGAGE_DELEGATION_EDGE: env.delegation_edge_id,
             BAGGAGE_PARENT_EDGE: env.parent_edge_id,
+            BAGGAGE_SESSION: env.session_id,
             BAGGAGE_HOP: str(env.hop),
         }
     )

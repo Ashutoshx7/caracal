@@ -34,6 +34,19 @@ class CaracalContext:
     hop: int = 0
 
 
+@dataclass(frozen=True)
+class AuthoritySummary:
+    zone_id: str
+    application_id: str
+    authority_session_id: str | None
+    agent_run_id: str | None
+    delegated_permission_id: str | None
+    parent_delegated_permission_id: str | None
+    trace_id: str | None
+    hop: int
+    chain: tuple[str, ...]
+
+
 class CaracalContextPatch(TypedDict):
     subject_token: NotRequired[str]
     zone_id: NotRequired[str]
@@ -48,6 +61,10 @@ class CaracalContextPatch(TypedDict):
 
 def current() -> CaracalContext | None:
     return _ctx_var.get(None)
+
+
+def capture_context() -> CaracalContext | None:
+    return current()
 
 
 def bind(ctx: CaracalContext, fn: Callable[[], T]) -> T:
@@ -79,6 +96,7 @@ def to_envelope(ctx: CaracalContext) -> Envelope:
         agent_session_id=ctx.agent_session_id,
         delegation_edge_id=ctx.delegation_edge_id,
         parent_edge_id=ctx.parent_edge_id,
+        session_id=ctx.session_id,
         trace_id=ctx.trace_id,
         hop=ctx.hop,
     )
@@ -99,6 +117,34 @@ def from_envelope(
         agent_session_id=env.agent_session_id,
         delegation_edge_id=env.delegation_edge_id,
         parent_edge_id=env.parent_edge_id,
+        session_id=env.session_id,
         trace_id=env.trace_id,
         hop=env.hop,
+    )
+
+
+def describe_authority(ctx: CaracalContext | None = None) -> AuthoritySummary | None:
+    if ctx is None:
+        ctx = current()
+    if ctx is None:
+        return None
+    chain: list[str] = []
+    if ctx.session_id:
+        chain.append(f"authority:{ctx.session_id}")
+    if ctx.agent_session_id:
+        chain.append(f"agent-run:{ctx.agent_session_id}")
+    if ctx.parent_edge_id:
+        chain.append(f"parent-delegated-permission:{ctx.parent_edge_id}")
+    if ctx.delegation_edge_id:
+        chain.append(f"delegated-permission:{ctx.delegation_edge_id}")
+    return AuthoritySummary(
+        zone_id=ctx.zone_id,
+        application_id=ctx.client_id,
+        authority_session_id=ctx.session_id,
+        agent_run_id=ctx.agent_session_id,
+        delegated_permission_id=ctx.delegation_edge_id,
+        parent_delegated_permission_id=ctx.parent_edge_id,
+        trace_id=ctx.trace_id,
+        hop=ctx.hop,
+        chain=tuple(chain),
     )
