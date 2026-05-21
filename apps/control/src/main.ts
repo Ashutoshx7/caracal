@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Control service entry point: launches the external control HTTP surface only when CARACAL_CONTROL_ENABLED=true.
+// Control service entry point: launches the managed Control HTTP surface only when explicitly enabled.
 
 import { assertPublishedSafe, createLogger } from '@caracalai/core'
 import { loadConfig } from './config.js'

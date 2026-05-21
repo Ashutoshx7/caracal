@@ -9,7 +9,6 @@ import '@caracalai/engine/scrubCwdEnv'
 import { installCrashHandlers } from './crash.ts'
 import { upCommand, downCommand, statusCommand } from './commands/stack.ts'
 import { purgeCommand } from './commands/purge.ts'
-import { controlToggleCommand } from './commands/controlToggle.ts'
 import { cliDispatch, tuiDispatch } from './commands/dispatch.ts'
 import { CARACAL_MODE, CARACAL_SHA, CARACAL_VERSION } from './runtime/version.gen.ts'
 import { SHELL_COMMANDS } from '@caracalai/engine/commands'
@@ -23,7 +22,7 @@ const executors: Record<string, Executor> = {
   down: (argv) => downCommand([...argv]),
   status: () => statusCommand(),
   purge: (argv) => purgeCommand([...argv]),
-  control: (argv) => controlToggleCommand([...argv]),
+  control: (argv) => { cliDispatch(['control', ...argv]) },
   cli: (argv) => { cliDispatch([...argv]) },
   tui: (argv) => { tuiDispatch([...argv]) },
 }

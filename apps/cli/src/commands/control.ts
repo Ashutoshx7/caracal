@@ -12,6 +12,7 @@ import {
 } from '@caracalai/engine'
 import type { CliConfig } from '../config.ts'
 import { printSuccess } from '../style.ts'
+import { controlToggleCommand } from './controlToggle.ts'
 import {
   buildAdminClient,
   fail,
@@ -28,6 +29,9 @@ import {
 
 export async function controlCommand(argv: string[], cfg?: CliConfig): Promise<void> {
   const [verb, sub, ...rest] = argv
+  if (verb === 'mount' || verb === 'enable' || verb === 'disable' || verb === 'unmount' || verb === 'status') {
+    return controlToggleCommand(argv, cfg)
+  }
   const ctx = buildAdminClient(cfg)
   const { client } = ctx
   const { positional, flags } = parseArgs(rest)
@@ -56,12 +60,15 @@ export async function controlCommand(argv: string[], cfg?: CliConfig): Promise<v
             const result = await controlKeyCreate(client, zoneId, {
               name,
               clientSecret: flagString(flags, 'client-secret'),
+              audience: flagString(flags, 'audience'),
             })
             printJSON({
               id: result.application.id,
               name: result.application.name,
               client_id: result.application.id,
               client_secret: result.clientSecret,
+              resource: result.resource.identifier,
+              scopes: result.resource.scopes,
               traits: result.application.traits,
               note: 'store client_secret now — it cannot be retrieved later',
             })
@@ -115,10 +122,16 @@ function help(): never {
       'Usage: caracal control <verb> [...]',
       '',
       'Verbs:',
+      '  mount                      Prepare Control without exposing the endpoint',
+      '  enable                     Start the mounted endpoint for authenticated automation',
+      '  disable                    Stop the endpoint but keep runtime for fast re-enable',
+      '  unmount                    Remove the Control runtime for long-term idle state',
+      '  status                     Show Control enablement, endpoint, and lifecycle status',
       '  key list                   List control API credentials in a zone',
       '  key get <id>               Show one control API credential',
       '  key create --name <n>      Mint a new control API credential',
       '    --client-secret <s>        Use a pre-shared secret instead of generating one',
+      '    --audience <aud>           Control token audience resource (default caracal-control)',
       '  rotate <id>                Rotate the client secret for a control API credential',
       '  revoke <id>                Delete a control API credential (invalidates it immediately)',
       '',
