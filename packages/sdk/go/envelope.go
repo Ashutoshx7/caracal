@@ -4,7 +4,7 @@
 // Wire envelope using W3C Trace Context (traceparent) and W3C Baggage.
 //
 // Subject token rides in Authorization. Caracal-specific cross-cutting fields
-// (agent_session, delegation_edge, parent_edge, hop) ride in Baggage under
+// (session, agent_session, delegation_edge, parent_edge, hop) ride in Baggage under
 // the caracal.* namespace. Trace identifiers ride in traceparent.
 
 package sdk
@@ -27,6 +27,7 @@ const (
 	BaggageAgentSession   = "caracal.agent_session"
 	BaggageDelegationEdge = "caracal.delegation_edge"
 	BaggageParentEdge     = "caracal.parent_edge"
+	BaggageSession        = "caracal.session"
 	BaggageHop            = "caracal.hop"
 
 	MaxHop = 32
@@ -43,6 +44,7 @@ type Envelope struct {
 	AgentSessionID   string
 	DelegationEdgeID string
 	ParentEdgeID     string
+	SessionID        string
 	TraceID          string
 	Hop              int
 }
@@ -142,6 +144,7 @@ func DecodeEnvelope(get func(string) string) Envelope {
 		AgentSessionID:   bag[BaggageAgentSession],
 		DelegationEdgeID: bag[BaggageDelegationEdge],
 		ParentEdgeID:     bag[BaggageParentEdge],
+		SessionID:        bag[BaggageSession],
 		TraceID:          traceID,
 		Hop:              hop,
 	}
@@ -161,6 +164,7 @@ func EncodeEnvelope(env Envelope, set func(name, value string)) {
 		BaggageAgentSession:   env.AgentSessionID,
 		BaggageDelegationEdge: env.DelegationEdgeID,
 		BaggageParentEdge:     env.ParentEdgeID,
+		BaggageSession:        env.SessionID,
 		BaggageHop:            strconv.Itoa(env.Hop),
 	})
 	if bag != "" {
