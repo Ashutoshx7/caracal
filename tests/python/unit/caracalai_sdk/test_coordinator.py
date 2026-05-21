@@ -234,15 +234,23 @@ class DelegationConstraintsTests(unittest.TestCase):
     def test_to_wire_includes_set_fields(self) -> None:
         c = DelegationConstraints(
             resources=["res"],
-            actions=["read"],
             max_depth=3,
+            max_hops=3,
+            ttl_seconds=30,
+            budget=1,
+            policy_approved=True,
             expires_at="2026-12-31T00:00:00Z",
+            broad_reason="operator approved",
         )
         wire = c.to_wire()
         self.assertEqual(wire["resources"], ["res"])
-        self.assertEqual(wire["actions"], ["read"])
         self.assertEqual(wire["max_depth"], 3)
+        self.assertEqual(wire["max_hops"], 3)
+        self.assertEqual(wire["ttl_seconds"], 30)
+        self.assertEqual(wire["budget"], 1)
+        self.assertEqual(wire["policy_approved"], True)
         self.assertEqual(wire["expires_at"], "2026-12-31T00:00:00Z")
+        self.assertEqual(wire["broad_reason"], "operator approved")
 
 
 if __name__ == "__main__":

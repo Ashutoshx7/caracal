@@ -16,6 +16,7 @@ type Config struct {
 	Audience             string
 	ZoneID               string
 	RequiredScopes       []string
+	RequiredTargets      []string
 	RequiredUse          string
 	RequireAgent         bool
 	RequireDelegation    bool
@@ -42,6 +43,7 @@ type Claims struct {
 	IssuedAt         int64
 	ExpiresAt        int64
 	Scope            string
+	TargetResources  []string
 	AgentSessionID   string
 	DelegationEdgeID string
 	SourceSessionID  string

@@ -24,6 +24,8 @@ class CaracalAuth:
         audience: str,
         revocations: RevocationStore,
         required_scopes: list[str] | None = None,
+        required_targets: list[str] | None = None,
+        required_use: str | None = "per_call",
         expected_zone_id: str | None = None,
         require_agent: bool = False,
         require_delegation: bool = False,
@@ -34,6 +36,8 @@ class CaracalAuth:
         self.audience = audience
         self.expected_zone_id = expected_zone_id
         self.required_scopes = required_scopes or []
+        self.required_targets = required_targets or []
+        self.required_use = required_use
         self.revocations = revocations
         self.require_agent = require_agent
         self.require_delegation = require_delegation
@@ -52,6 +56,8 @@ class CaracalAuth:
             require_delegation=self.require_delegation,
             require_chain_contains=self.require_chain_contains,
             max_hop_count=self.max_hop_count,
+            required_targets=self.required_targets,
+            required_use=self.required_use,
         )
         if result.error is not None:
             raise CaracalAuthError(result.error.code, result.error.description)
