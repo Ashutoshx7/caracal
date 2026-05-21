@@ -532,6 +532,6 @@ volumes:
   gatewayReplay:
 
 # The control service is disabled by default and managed by the engine.
-# Use `caracal-cli control mount|enable|disable|unmount|status`
-# or the TUI Control menu so lifecycle state, endpoint status, and cleanup remain consistent.
+# Use the authenticated interactive CLI Control flow or the TUI Control menu
+# so lifecycle state, endpoint status, and cleanup remain consistent.
 # Direct compose profile use does not enable the endpoint.

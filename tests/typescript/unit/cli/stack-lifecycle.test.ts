@@ -37,6 +37,10 @@ vi.mock('../../../../packages/engine/src/controlState.js', () => ({
   setControlMounted: setControlMountedMock,
 }))
 
+vi.mock('../../../../packages/engine/src/controlAccess.js', () => ({
+  authorizeControlManagementAccess: vi.fn(),
+}))
+
 import {
   applyControlLifecycleAction,
   composeRun,
