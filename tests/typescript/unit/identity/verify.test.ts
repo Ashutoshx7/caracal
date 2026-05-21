@@ -45,7 +45,7 @@ async function mintToken(
       client_id: 'app-1',
       sid: 'sid-1',
       root_sid: 'root-1',
-      use: 'per_call',
+      use: 'resource',
       jti: 'jti-1',
       scope: scopes,
       target: ['resource://api'],
@@ -125,9 +125,9 @@ describe('verify', () => {
   })
 
   it('throws TokenInvalidError when required use does not match', async () => {
-    const { token, issuer } = await mintToken({ use: 'ambient' })
+    const { token, issuer } = await mintToken({ use: 'session' })
     await expect(
-      verify(token, { issuer, audience: 'resource://api', requiredUse: 'per_call' }),
+      verify(token, { issuer, audience: 'resource://api', requiredUse: 'resource' }),
     ).rejects.toBeInstanceOf(TokenInvalidError)
   })
 
@@ -214,21 +214,21 @@ describe('verify', () => {
 describe('verifyChainContains', () => {
   it('matches by clientId', () => {
     expect(verifyChainContains(
-      { sub: '', zoneId: '', clientId: 'app-1', sid: '', use: 'per_call', jti: 'jti-1', scope: '' },
+      { sub: '', zoneId: '', clientId: 'app-1', sid: '', use: 'resource', jti: 'jti-1', scope: '' },
       'app-1',
     )).toBe(true)
   })
 
   it('matches by delegation chain hop', () => {
     expect(verifyChainContains(
-      { sub: '', zoneId: '', clientId: 'other', sid: '', use: 'per_call', jti: 'jti-1', scope: '', delegationChain: [{ applicationId: 'app-parent' }] },
+      { sub: '', zoneId: '', clientId: 'other', sid: '', use: 'resource', jti: 'jti-1', scope: '', delegationChain: [{ applicationId: 'app-parent' }] },
       'app-parent',
     )).toBe(true)
   })
 
   it('returns false when the application is absent', () => {
     expect(verifyChainContains(
-      { sub: '', zoneId: '', clientId: 'app-1', sid: '', use: 'per_call', jti: 'jti-1', scope: '', delegationChain: [{ applicationId: 'app-parent' }] },
+      { sub: '', zoneId: '', clientId: 'app-1', sid: '', use: 'resource', jti: 'jti-1', scope: '', delegationChain: [{ applicationId: 'app-parent' }] },
       'app-unknown',
     )).toBe(false)
   })

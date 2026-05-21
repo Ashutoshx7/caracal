@@ -83,6 +83,33 @@ describe('GET /v1/zones/:zoneId/audit/by-request/:requestId', () => {
   })
 })
 
+describe('GET /v1/zones/:zoneId/audit/by-request/:requestId/explain', () => {
+  it('returns a why-denied summary with redacted metadata', async () => {
+    const { app, db } = buildRouteApp(zoneEventsRoutes)
+    db.query.mockResolvedValueOnce({
+      rows: [{
+        id: 'a1',
+        event_type: 'token_exchange',
+        request_id: 'r1',
+        decision: 'deny',
+        evaluation_status: 'complete',
+        determining_policies_json: [{ policy: 'baseline-scopes' }],
+        diagnostics_json: [{ reason: 'missing_scope' }],
+        metadata_json: { token: 'secret', requested_scopes: ['write'] },
+      }],
+    })
+
+    await app.ready()
+    const res = await app.inject({ method: 'GET', url: '/v1/zones/z1/audit/by-request/r1/explain' })
+
+    expect(res.statusCode).toBe(200)
+    const body = JSON.parse(res.body)
+    expect(body.final_decision).toBe('deny')
+    expect(body.denied[0].diagnostics[0].reason).toBe('missing_scope')
+    expect(body.denied[0].metadata.token).toBe('[redacted]')
+  })
+})
+
 describe('GET /v1/zones/:zoneId/sessions', () => {
   it('returns zone-scoped sessions', async () => {
     const { app, db } = buildRouteApp(zoneEventsRoutes)
