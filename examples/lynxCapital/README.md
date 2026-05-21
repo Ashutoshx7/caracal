@@ -48,12 +48,13 @@ curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-t
 
 # Bring up the OSS stack
 caracal up
+caracal control enable
 
 # Open the TUI. Use it to inspect/create:
 #   1. zone: Lynx Capital
 #   2. control key: lynx-control (copy client_secret once)
 #   3. resources: lynx/<provider> for every provider in config/company.yaml
-CARACAL_CONTROL_ENABLED=true caracal-tui
+caracal-tui
 ```
 
 The TUI talks to the same control plane as the CLI. The control key is a real
@@ -138,7 +139,7 @@ Open **http://localhost:8000**.
 
 ## Demo flow
 
-1. Open `CARACAL_CONTROL_ENABLED=true caracal-tui` and verify the Lynx zone,
+1. Open `caracal-tui` and verify the Lynx zone,
    control key, resources, live agent sessions, tickets, and delegation tree.
 2. Open `http://localhost:8000/setup`, follow the TUI and `caracal.toml`
    checklist, then validate.

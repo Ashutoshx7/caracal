@@ -531,8 +531,6 @@ volumes:
   stsReplay:
   gatewayReplay:
 
-# The control service is disabled by default. Start it explicitly with:
-#   docker compose --env-file infra/docker/dev.env -f infra/docker/docker-compose.yml --profile control up --build control
-#
-# CARACAL_CONTROL_ENABLED=true, STS_JWKS_URL, STS_ISSUER_URL, and CONTROL_AUDIENCE
-# must be set in dev.env or a local override file before enabling this profile.
+# The control service is disabled by default and managed by the engine.
+# Use `caracal control mount|enable|disable|unmount|status`
+# or the TUI Control menu so lifecycle state, endpoint status, and cleanup remain consistent.
