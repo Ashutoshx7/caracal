@@ -6,6 +6,20 @@ pageType: reference
 
 Terms are listed alphabetically. Where a term has a specific representation in code (struct name, JWT claim, config key), the code name is shown alongside the definition.
 
+## Read this first
+
+If you are learning Caracal, start with the product terms used in getting-started pages:
+
+| Product term | Reference terms you may see in APIs and claims |
+| --- | --- |
+| Agent app | Application, principal |
+| Agent run | Execution session, agent session, session ID |
+| Mandate | Caracal access token, ambient mandate, per-call mandate |
+| Resource | Resource identifier, provider route, Gateway binding |
+| Delegated permission | Delegation edge, caveat, constraint |
+
+The reference names exist so policy, audit, and service internals can be precise. They are not separate concepts a new user needs to learn all at once.
+
 ---
 
 ## Agent session
@@ -35,9 +49,9 @@ Exceeding any limit returns a 429 response with an `agent_*_limit_exceeded` erro
 
 ## Ambient mandate
 
-A JWT with `"use": "ambient"` and a 60-minute TTL. Ambient mandates represent long-running identity — they are issued for an entire session rather than for a single call. Use them for background tasks, streaming sessions, or any context where a per-call exchange for every request is impractical.
+A JWT with `"use": "ambient"` and a 60-minute TTL. Ambient mandates represent re-presentable session authority — they are issued for an execution session and presented back to the STS to derive narrower per-call mandates.
 
-Ambient mandates carry the full delegation chain but are not scoped to a specific resource or operation. They are accepted by services that do not perform per-operation resource validation.
+Ambient mandates are not accepted by the Gateway as upstream authorization credentials. They should not be accepted by production resources directly because they are not scoped to a specific resource or operation.
 
 Contrast with [Per-call mandate](#per-call-mandate).
 
@@ -103,7 +117,7 @@ Data Encryption Key. In Caracal's key management model, each zone's ECDSA P-256 
 
 ## Delegation edge
 
-A record in the `delegation_edges` table representing one step of authority transfer from a parent agent session to a child agent session. The edge carries the delegating session ID, the receiving session ID, the scope granted, and any [caveats](#caveat) attached by the parent. Delegation edges are immutable once created.
+A record in the `delegation_edges` table representing one typed narrowing of authority from a source agent session to a target agent session. The edge carries source and target sessions, issuer and receiver applications, optional resource binding, scopes, expiry, and [caveats](#caveat). Delegation edges are immutable once created except for lifecycle status.
 
 In a JWT, the current delegation edge is identified by `delegation_edge_id`. The full chain is carried in `delegation_chain` as an ordered array of `ChainHop` records.
 
@@ -137,7 +151,7 @@ The Caracal service (port 8081) that enforces mandate validity on every inbound 
 
 ## Grant
 
-An authorization decision that permits a specific principal to perform a specific action on a specific resource, within a specific session scope. Grants are evaluated by OPA at mandate issuance time. A grant is the result of a successful OPA evaluation combined with a scope match.
+An administrative binding that permits a principal to use a subset of a resource's scopes, optionally on behalf of a user. A grant is necessary context for policy, not an issued credential and not the final authorization decision. The STS still evaluates OPA before issuing a mandate.
 
 ---
 
@@ -200,7 +214,7 @@ Coordinator outbox: 1000ms poll, batch size 50, max 10 delivery attempts.
 
 ## Per-call mandate
 
-A JWT with `"use": "per_call"` and a 15-minute TTL. Per-call mandates are scoped to a specific resource and operation. They are issued fresh for each outbound call by the SDK's transport layer. Because they are short-lived and resource-scoped, they are the preferred form for most operations.
+A JWT with `"use": "per_call"` and a 15-minute TTL. Per-call mandates are scoped to specific target resources and scopes. They are the preferred form for Gateway-mediated and connector-verified operations because they are short-lived, resource-bound, and rejected as `subject_token` inputs for further exchange.
 
 Contrast with [Ambient mandate](#ambient-mandate).
 

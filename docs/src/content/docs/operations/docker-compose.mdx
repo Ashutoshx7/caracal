@@ -6,6 +6,8 @@ pageType: config
 
 The Docker Compose stack at `infra/docker/docker-compose.yml` is the reference deployment for all five core Caracal services plus their infrastructure dependencies. It is the canonical local development environment and the blueprint for adapting to Kubernetes, ECS, or other orchestrators.
 
+For local users, the stack is intentionally operated through one small surface: `caracal up`, `caracal status`, and `caracal down`. The service split below is an internal trust-boundary design, not a requirement for users to manage each process by hand.
+
 ## Services and startup order
 
 The stack defines the core application containers, infrastructure containers, and one-shot initialization containers. Health-based dependencies enforce this startup sequence:

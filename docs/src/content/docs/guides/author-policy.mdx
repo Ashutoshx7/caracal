@@ -104,7 +104,9 @@ The STS populates `input` on every evaluation:
 }
 ```
 
-`schema_version` identifies the STS policy input contract. Policies should check it explicitly if they depend on fields introduced after their original authoring. `principal.agent_kind` and `principal.capabilities` are present when the exchange asserts an active Coordinator agent session. `delegation_edge` is present only when the exchange involves a delegation edge. `context.actor_claims` carries custom claims injected by the credential provider (e.g., from an OIDC userinfo endpoint).
+`schema_version` identifies the STS policy input contract. The current contract is `2026-05-20`; policy creation, policy set creation, and activation reject unsupported or mixed schema versions. Policies should check it explicitly if they depend on fields introduced after their original authoring. `principal.agent_kind` and `principal.capabilities` are present when the exchange asserts an active Coordinator agent session. `delegation_edge` is present only when the exchange involves a delegation edge. `context.actor_claims` carries custom claims injected by the credential provider (e.g., from an OIDC userinfo endpoint).
+
+Use `POST /v1/zones/{zone_id}/policy-sets/{policy_set_id}/simulate` before activation to dry-run the rollout contract. The simulation endpoint validates the policy set version, schema compatibility, manifest integrity, and optional OPA input shape without mutating active bindings. It does not replace STS runtime evaluation; it is a deployment safety check for operators.
 
 ## Forbidden builtins
 

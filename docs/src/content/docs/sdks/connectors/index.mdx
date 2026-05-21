@@ -1,10 +1,12 @@
 ---
 title: Connectors
-description: Framework-specific packages and adapter requirements for Caracal direct-verifier integrations.
+description: Framework-specific packages and adapter requirements for Caracal connector-verified integrations.
 pageType: landing
 ---
 
-Connectors wrap the primitive transport and revocation packages and expose framework-native interfaces — middleware functions, callable auth classes, and backend implementations. They are for direct-verifier and adapter paths. For a new provider or tool integration, use the Gateway first unless the transport cannot be proxied safely.
+Connectors wrap the primitive transport and revocation packages and expose framework-native interfaces — middleware functions, callable auth classes, and backend implementations. They are for connector-verified services and enforcement adapters. For a new provider or tool integration, use the Gateway first unless the transport cannot be proxied safely.
+
+Connectors are not a promise that Caracal natively governs every protocol. They are boundary helpers: a connector is production-ready only when it verifies mandates, checks revocation anchors, preserves trace context, enforces resource/scope requirements, and emits or forwards action-result audit.
 
 Choose the connector for your framework. If your framework is not listed, use the transport packages directly: [`@caracalai/transport-mcp`](../transport-mcp/) (TypeScript) or [`caracalai_transport_mcp`](../transport-mcp/) (Python) call `authenticate()` without any framework dependency.
 
@@ -19,15 +21,15 @@ Choose the connector for your framework. If your framework is not listed, use th
 | [`@caracalai/revocation-redis`](./redis/) | TypeScript | Any | Redis-backed `RevocationStore` and stream consumer |
 | [`caracalai-revocation-redis`](./redis/) | Python | Any | Python equivalent with synchronous `poll_once()` |
 
-## Certification matrix
+## Flow status matrix
 
 | Integration style | Status | Required boundary |
 | --- | --- | --- |
-| Gateway-routed HTTP, REST, or MCP-over-HTTP | Gateway-supported | Gateway verifies Caracal token, brokers provider credential, and emits action audit. |
-| Express, FastMCP, Go `net/http` services you own | Direct-verifier-supported | Connector verifies token and revocation; service emits result audit if action proof is required. |
-| Third-party provider SDKs that hide HTTP/gRPC transport | Adapter-required | Wrapper must preserve Caracal identity, revocation, trace context, and action audit without exposing provider secrets to agents. |
-| gRPC, queues, webhooks, external MCP servers you cannot modify | Adapter-required | Adapter acts as the Caracal-enforced boundary before provider execution. |
-| Workload-identity credential minting | Unsupported in OSS runtime | Registration can describe the provider, but automatic assertion minting is not implemented. |
+| Gateway-mediated HTTP, REST, or MCP-over-HTTP | Implemented default | Gateway verifies Caracal token, brokers provider credential, and emits action audit. |
+| Express, FastMCP, Go `net/http` services you own | Supported connector pattern | Connector verifies token and revocation; service emits result audit if action proof is required. |
+| Application-managed external provider calls | Supported attribution pattern | Application attaches Caracal context for traceability; Caracal is not the provider enforcement boundary unless the application performs equivalent checks. |
+| gRPC, queues, webhooks, external MCP servers you cannot modify | Adapter-required supported pattern | Adapter acts as the Caracal-enforced boundary before provider execution. It must verify mandates, check revocation, preserve trace context, and emit result audit. |
+| Workload-identity credential minting and native broker plugins | Future direction | Registration can describe the provider, but automatic assertion minting is not implemented in the OSS runtime. |
 
 ## Relationship to transport packages
 
@@ -45,9 +47,9 @@ inbound request
 
 The Redis and Postgres connectors sit on a separate axis — they are storage backends consumed by the verification path, not middleware themselves.
 
-## Certified adapter requirements
+## Adapter enforcement requirements
 
-Provider SDKs often hide their HTTP, gRPC, queue, or streaming transport. If a provider SDK cannot call the Gateway directly, wrap it with a Caracal-certified adapter before using it in production. A certified adapter must:
+Provider SDKs often hide their HTTP, gRPC, queue, or streaming transport. If a provider SDK cannot call the Gateway directly, wrap it with an adapter that preserves the Caracal enforcement contract before using it in production. Such an adapter must:
 
 - acquire Caracal access tokens through the SDK or Gateway path instead of holding provider-native credentials in agent code;
 - attach Caracal authorization and trace context to every provider operation it controls;
@@ -55,7 +57,7 @@ Provider SDKs often hide their HTTP, gRPC, queue, or streaming transport. If a p
 - emit action-result audit events with request ID, resource, provider or grant ID when brokered, provider operation, auth mode, status, latency, result class, and revocation interruption state;
 - avoid forwarding Caracal identity tokens to third-party providers unless the resource is explicitly configured as a trusted sidecar.
 
-The safe default is to route provider SDK traffic through the Gateway. Direct adapters are for transports the Gateway cannot proxy or for trusted internal services that can enforce the same verification, revocation, and audit boundaries.
+The safe default is to route provider SDK traffic through the Gateway. Direct adapters are for transports the Gateway cannot proxy or for trusted internal services that can enforce the same verification, revocation, and audit boundaries. Do not describe an adapter as production-supported until those checks are automated and tested.
 
 ## Transport enforcement contracts
 
@@ -66,9 +68,9 @@ Different transports need different boundaries. Do not pretend one universal pro
 | HTTP / REST / MCP-over-HTTP | Route through Gateway by default. Gateway owns exchange, replay, revocation, provider brokering, streaming checks, and action audit. |
 | gRPC | Use a Gateway-compatible HTTP/2 route only when request metadata can carry Caracal headers safely; otherwise use an adapter that verifies metadata, checks revocation before and during streams, and emits action audit. |
 | Queues and background jobs | Put the Caracal envelope in message headers, not in the body. Consumers must re-bind the authority context, reject expired or revoked authority before execution, and write execution audit for the job result. |
-| Provider SDKs | Prefer a custom HTTP client/transport that still calls Gateway. If the SDK hides transport, wrap it with a certified adapter and never pass provider-native credentials to agent code. |
+| Provider SDKs | Prefer a custom HTTP client/transport that still calls Gateway. If the SDK hides transport, wrap it with an enforcement adapter and never pass provider-native credentials to agent code. |
 | Local tools | Treat the tool runner as the resource. It must verify or receive a Gateway-approved mandate, enforce scopes locally, and emit a result event. |
-| External MCP servers | If you control the server, use Gateway or a direct verifier. If you do not, place a Caracal adapter in front of it and keep identity forwarding off unless explicitly trusted. |
+| External MCP servers | If you control the server, use Gateway or a connector-verified service. If you do not, place a Caracal adapter in front of it and keep identity forwarding off unless explicitly trusted. |
 
 ## Production revocation
 

@@ -6,32 +6,32 @@ pageType: workflow
 
 Resources are the protected targets in a zone. Each resource has a string identifier, a list of scopes, an optional upstream URL for Gateway routing, and an optional credential provider for downstream authentication. Providers describe the credential source the Gateway may use when an authenticated, user-bound provider grant exists.
 
-The default product path is a Gateway provider route: register the resource with an upstream URL, attach a provider when the upstream needs OAuth or API-key authentication, and let the Gateway enforce Caracal access before it brokers the provider call. Direct verification and adapters are advanced paths.
+The default product path is Gateway-mediated HTTP: register the resource with an upstream URL, attach a provider when the upstream needs OAuth or API-key authentication, and let the Gateway enforce Caracal access before it brokers the provider call. Other flows should be described as connector-verified services, application-managed external provider calls, or future native broker plugins.
 
-Conceptually, a resource plus its provider configuration forms a connector. Operators should reason about connectors with five explicit choices:
+Conceptually, a resource plus its provider configuration forms a Gateway route. Operators should reason about routes and connector-verified services with five explicit choices:
 
 | Connector field | Current source of truth |
 | --- | --- |
-| Protocol | The upstream URL and integration surface, such as REST, MCP-over-HTTP, gRPC-over-HTTP, webhook, or a direct verifier |
+| Protocol | The upstream URL and integration surface, such as REST, MCP-over-HTTP, gRPC-over-HTTP, webhook, or a connector-verified service |
 | Auth mode | `caracal_jwt` when no provider is attached; brokered OAuth/OIDC/API-key when a supported provider grant is attached |
-| Gateway mode | Gateway proxy when `upstream_url` and `gateway_application_id` are set; direct verifier otherwise |
+| Gateway mode | Gateway-mediated when `upstream_url` and `gateway_application_id` are set; connector-verified otherwise |
 | Identity forwarding | Off by default; enabled only by provider config `forward_caracal_identity: true` for trusted sidecars or controlled MCP servers |
-| Audit mode | Gateway-proxied connectors record authorization and execution outcome; direct connectors must emit their own result audit if they need action-proof records |
+| Audit mode | Gateway-mediated routes record authorization and execution outcome; connector-verified services must emit their own result audit if they need action-proof records |
 
-## Connector support matrix
+## Provider flow matrix
 
 Use this matrix to set expectations before registering a provider or integration:
 
-| Protocol/provider style | Product status | Credential handling | Recommended path |
+| Protocol/provider style | Status | Credential handling | Recommended path |
 | --- | --- | --- | --- |
-| HTTP REST / JSON API | Gateway-supported | Caracal token to Gateway; optional brokered OAuth/OIDC/API key upstream | Register a resource with `upstream_url` and call through Gateway |
-| MCP over HTTP you control | Gateway-supported | Caracal token to Gateway; optional `X-Caracal-Identity` only when explicitly enabled | Register as a Gateway resource |
-| Express, FastMCP, Go `net/http` services you own | Direct-verifier-supported | Service verifies Caracal token and consumes revocation stream | Use connector middleware only when Gateway proxying is not the right boundary |
-| OAuth2/OIDC provider credentials | Gateway-supported | Provider token remains inside Gateway/broker path | Attach provider and user-bound provider grant |
-| API-key provider credentials | Gateway-supported | API key remains inside Gateway/broker path and is substituted into the configured header | Attach `apikey` provider with `header_name` or `auth_header` |
-| Third-party provider SDKs that hide transport | Adapter-required | Provider SDK must not receive Caracal internals or expose provider secrets to agents | Use a certified wrapper or route traffic through Gateway if possible |
-| gRPC, queues, webhooks, external MCP servers you cannot modify | Adapter-required | Adapter enforces Caracal verification, revocation, trace, and result audit | Build or certify an adapter before production use |
-| Workload identity federation | Unsupported for runtime substitution in OSS | Registration metadata only | Do not rely on automatic Gateway credential minting yet |
+| HTTP REST / JSON API | Implemented default | Caracal token to Gateway; optional brokered OAuth/OIDC/API key upstream | Register a resource with `upstream_url` and call through Gateway |
+| MCP over HTTP you control | Implemented default | Caracal token to Gateway; optional `X-Caracal-Identity` only when explicitly enabled | Register as a Gateway resource |
+| Express, FastMCP, Go `net/http` services you own | Supported pattern | Service verifies Caracal token and consumes revocation stream | Use connector middleware only when Gateway-mediated routing is not the right boundary |
+| OAuth2/OIDC provider credentials | Implemented Gateway behavior | Provider token remains inside Gateway/broker path | Attach provider and user-bound provider grant |
+| API-key provider credentials | Implemented Gateway behavior | API key remains inside Gateway/broker path and is substituted into the configured header | Attach `apikey` provider with `header_name` or `auth_header` |
+| Third-party provider SDKs that hide transport | Application-managed attribution unless wrapped | Provider SDK must not receive Caracal internals or expose provider secrets to agents | Route traffic through Gateway if possible; otherwise attach Caracal context and document the enforcement gap |
+| gRPC, queues, webhooks, external MCP servers you cannot modify | Adapter-required supported pattern | Adapter enforces Caracal verification, revocation, trace, and result audit | Build an enforcement adapter before production use |
+| Workload identity federation | Future direction in OSS | Registration metadata only | Do not rely on automatic Gateway credential minting yet |
 
 Do not document or operate an integration as Gateway-supported unless it has end-to-end registration, credential brokering, revocation, and action-result audit coverage.
 

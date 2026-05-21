@@ -4,13 +4,21 @@ description: Gateway-first access control, credential brokering, audit, and revo
 pageType: concept
 ---
 
-Caracal lets you run agents with scoped access to tools and providers without putting provider secrets in agent code. This page explains the default product path and where the advanced paths fit.
+Caracal lets you run agents with scoped, traceable, revocable authority without putting provider secrets in agent code. This page explains the default product path, the few supported alternatives, and what is future direction.
 
 ## The core problem
 
 AI agents and autonomous workflows need access to tools, APIs, and data. Giving them long-lived credentials causes two problems: you cannot know what the agent will do with them before it acts, and you cannot revoke access granularly once something goes wrong.
 
 Caracal addresses both problems by giving the agent a short-lived, scoped Caracal access token only after policy allows the requested action. The token expires quickly, can be revoked by multiple authority anchors, and never contains provider-native credentials.
+
+## The authority-plane model
+
+Caracal's product model is small: an **agent app** starts an **agent run**, asks for a **mandate**, uses it against a **resource**, and may grant a narrower **delegated permission** to another run. The reference model underneath those names is principal, execution session, mandate, resource, delegation edge, policy decision, and audit event.
+
+The system issues authority, narrows it, traces it, and revokes it. Gateway routing, SDK context propagation, MCP helpers, and provider credential brokering are implementation surfaces that preserve that model at execution boundaries.
+
+Caracal is not trying to wrap every provider SDK, scheduler, prompt router, or protocol abstraction. If an integration path cannot preserve mandate verification, revocation, policy context, and audit, it should stay outside the core authority plane until it has a clear enforcement boundary.
 
 ## The golden path
 
@@ -65,6 +73,8 @@ receiver uses the delegated permission
 
 Parenthood alone does not grant access. Each delegated permission narrows authority through explicit scope, resource, TTL, hop, and policy constraints. The source cannot use the receiver's delegated permission, unrelated agents cannot use it, and revocation terminates downstream authority.
 
+Delegation is a same-zone runtime contract. Cross-zone federation and cross-zone delegation are deliberately not part of the current model; the priority is making same-zone authority issuance, narrowing, tracing, and revocation excellent before adding federation semantics.
+
 ## The audit ledger
 
 Every authorization decision produces an append-only audit event. Gateway-proxied calls also produce action execution audit events. Together they answer:
@@ -81,16 +91,29 @@ Nothing is ever updated or deleted in the audit table. Query the trail through t
 
 Caracal does not replace your LLM framework, agent scheduler, or prompt router. It sits alongside those systems as the access-control and audit boundary. Caracal does not inspect or filter tool-call content; it enforces whether the call may happen, which credential is used, how it is audited, and how quickly it can be revoked.
 
-## Advanced paths
+## Provider flow patterns
 
-Use these only when the Gateway path does not fit:
+Use the Gateway path by default. The full product surface collapses into four patterns:
 
-| Path | When to use |
+| Pattern | Status | Enforcement meaning |
+| --- | --- | --- |
+| Gateway-mediated HTTP | Implemented default | Gateway verifies the mandate, checks replay and revocation, brokers provider credentials, proxies the call, and writes action-result audit. |
+| Connector-verified service/tool | Supported pattern | Your service or tool verifies mandates, replay, revocation, and result audit itself. Use this when you own the boundary. |
+| Application-managed external provider call | Supported attribution pattern | Your application calls the provider directly and attaches Caracal context for traceability. The provider call is not Caracal-enforced unless your code performs the same checks. |
+| Native broker plugins | Future direction | A plugin contract may later move provider-specific credential brokering behind a native Caracal boundary. This is not current runtime behavior. |
+
+Connector and application-managed paths are not production boundaries merely because a package exists. They are production boundaries only when mandate verification, replay protection, revocation checks, and action-result audit are implemented end to end.
+
+## Status labels
+
+The docs use these labels intentionally:
+
+| Label | Meaning |
 | --- | --- |
-| Direct verification | You own the resource and can verify Caracal tokens, replay, and revocation in that service. |
-| External MCP adapter | The MCP server cannot be modified but can sit behind a trusted adapter. |
-| Custom gRPC adapter | The provider uses a protocol the Gateway cannot proxy safely. |
-| Provider SDK wrapper | A provider SDK hides transport and needs a certified wrapper to preserve Caracal headers, revocation, and action audit. |
+| Implemented behavior | Runtime behavior available in the OSS stack. |
+| Supported pattern | A documented path with a clear enforcement contract that operators can adopt when they meet the requirements. |
+| Example-only pattern | Demo or sample-app code that illustrates usage but is not a production integration contract. |
+| Future direction | Product direction that is not current runtime behavior. |
 
 ## Next step
 
