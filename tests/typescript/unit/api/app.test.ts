@@ -147,7 +147,7 @@ describe('/ready endpoint', () => {
     const res = await response
 
     expect(res.statusCode).toBe(503)
-    expect(res.json()).toMatchObject({ ok: false, error: 'dependency_check_failed' })
+    expect(res.json()).toMatchObject({ ok: false, error: 'postgres_unreachable', dependency: 'postgres' })
     await app.close()
   })
 })

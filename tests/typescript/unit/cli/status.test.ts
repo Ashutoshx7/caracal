@@ -73,4 +73,25 @@ describe('statusCommand', () => {
     const body = JSON.parse(stdout)
     expect(body.mode).toBe('ready')
   })
+
+  it('includes readiness failure reasons in machine output', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200 })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        text: async () => JSON.stringify({ ok: false, reason: 'stream_consumers_not_ready' }),
+      })
+      .mockResolvedValue({ ok: true, status: 200 })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(statusCommand(['--ready', '--json'])).rejects.toThrow('exit:1')
+
+    const body = JSON.parse(stdout)
+    expect(body.services[1]).toMatchObject({
+      name: 'sts',
+      ok: false,
+      detail: '503 stream_consumers_not_ready',
+    })
+  })
 })

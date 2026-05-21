@@ -144,14 +144,20 @@ export async function buildApp({ cfg, db, redis, isDraining }: CoordinatorDeps) 
     }
     try {
       await withTimeout(app.db.query('SELECT 1'), READY_CHECK_TIMEOUT_MS, 'ready postgres check timed out')
-      const pong = await withTimeout(app.redis.ping(), READY_CHECK_TIMEOUT_MS, 'ready redis check timed out')
-      if (pong !== 'PONG') throw new Error(`unexpected redis ping reply: ${pong}`)
-      return { ok: true }
     } catch (err) {
       reply.code(503)
-      req.log.warn({ err }, 'ready_dependency_check_failed')
-      return { ok: false, error: 'dependency_check_failed' }
+      req.log.warn({ err }, 'ready_postgres_unreachable')
+      return { ok: false, error: 'postgres_unreachable', dependency: 'postgres' }
     }
+    try {
+      const pong = await withTimeout(app.redis.ping(), READY_CHECK_TIMEOUT_MS, 'ready redis check timed out')
+      if (pong !== 'PONG') throw new Error(`unexpected redis ping reply: ${pong}`)
+    } catch (err) {
+      reply.code(503)
+      req.log.warn({ err }, 'ready_redis_unreachable')
+      return { ok: false, error: 'redis_unreachable', dependency: 'redis' }
+    }
+    return { ok: true }
   })
   app.get('/metrics', async (_req, reply) => {
     const stats = await loadRuntimeStats()

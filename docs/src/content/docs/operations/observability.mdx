@@ -6,6 +6,13 @@ pageType: config
 
 Every Caracal service exposes three HTTP endpoints for operational visibility: `/health` for liveness, `/ready` for readiness, and `/metrics` for Prometheus-compatible service metrics. Go services also expose `/metrics.json` as a compatibility/debug snapshot for operators that still depend on the previous JSON shape.
 
+Use the endpoints in this order during triage:
+
+1. `caracal status --ready` to identify the failing service and readiness reason.
+2. `caracal doctor --extended --json` to collect service readiness and operator metric summaries.
+3. Service `/metrics` or `/metrics.json` for the component-specific counter or backlog.
+4. `caracal audit tail --request-id <id>` and `caracal explain <request_id>` when a user-facing request was denied or partially evaluated.
+
 ## Endpoint summary
 
 | Service | Port | `/health` | `/ready` | `/metrics` |
@@ -28,15 +35,26 @@ HTTP 200 with empty body. Always succeeds if the process is running.
 
 ### `GET /ready`
 
-HTTP 200 on success. HTTP 503 with a plain-text error message if any dependency is unavailable:
+HTTP 200 on success:
 
-```
-postgres unreachable: <error>
-redis unreachable: <error>
-audit replay unavailable: <error>
+```json
+{
+  "ok": true,
+  "ready": true
+}
 ```
 
-Checks: Postgres `Ping()`, Redis connectivity, audit replay buffer readiness.
+HTTP 503 with a structured reason if any dependency is unavailable:
+
+```json
+{
+  "ok": false,
+  "ready": false,
+  "reason": "postgres_unreachable"
+}
+```
+
+Reasons include `postgres_unreachable`, `redis_unavailable`, `redis_unreachable`, `audit_replay_unavailable`, and `stream_consumers_not_ready`. Checks: Postgres `Ping()`, Redis connectivity, audit replay buffer readiness, and stream consumer initialization.
 
 ### `GET /metrics`
 
@@ -97,11 +115,12 @@ On failure:
 ```json
 {
   "ok": false,
-  "error": "<reason>"
+  "error": "postgres_unreachable",
+  "dependency": "postgres"
 }
 ```
 
-Checks: draining flag (set during graceful shutdown), Postgres `SELECT 1`, Redis `PING`.
+Reasons include `draining`, `postgres_unreachable`, and `redis_unreachable`. Checks: draining flag (set during graceful shutdown), Postgres `SELECT 1`, Redis `PING`.
 
 ### `GET /metrics`
 
@@ -117,7 +136,17 @@ HTTP 200 with empty body.
 
 ### `GET /ready`
 
-HTTP 200 or 503. Checks: bindings reload health, Postgres connectivity, Redis connectivity, STS `/health` reachable.
+HTTP 200 or 503, JSON:
+
+```json
+{
+  "ok": false,
+  "ready": false,
+  "reason": "sts_unreachable"
+}
+```
+
+Reasons include `bindings_unavailable`, `postgres_unreachable`, `redis_unreachable`, `audit_replay_unavailable`, `sts_unavailable`, and `sts_unreachable`. Checks: bindings reload health, Postgres connectivity, Redis connectivity, audit replay buffer readiness, and STS `/health` reachability.
 
 ### `GET /metrics`
 
@@ -166,11 +195,12 @@ On failure:
 ```json
 {
   "ok": false,
-  "error": "<reason>"
+  "error": "redis_unreachable",
+  "dependency": "redis"
 }
 ```
 
-Checks: Postgres `SELECT 1`, Redis `PING`.
+Reasons include `draining`, `postgres_unreachable`, and `redis_unreachable`. Checks: Postgres `SELECT 1`, Redis `PING`.
 
 ### `GET /metrics`
 
@@ -196,7 +226,17 @@ HTTP 200 or 503. Checks `consumer.Healthy()` — the audit stream consumer must 
 
 ### `GET /ready`
 
-HTTP 200 or 503. Checks: Postgres `Ping()`, Redis `Ping()`.
+HTTP 200 or 503, JSON:
+
+```json
+{
+  "ok": false,
+  "ready": false,
+  "reason": "audit_lag_threshold"
+}
+```
+
+Reasons include `consumer_unhealthy`, `postgres_unreachable`, `redis_unreachable`, `audit_dlq_threshold`, `audit_lag_threshold`, and `audit_pel_oldest_threshold`. Checks: consumer health, Postgres `Ping()`, Redis `Ping()`, DLQ size, stream lag, and oldest pending-entry age.
 
 ### `GET /metrics`
 

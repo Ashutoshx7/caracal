@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Audit service HTTP probe and metrics tests.
+// Audit service HTTP probe, metrics, and search endpoint tests.
 
 package internal
 
@@ -34,7 +34,7 @@ func TestReadyFailureReturnsReason(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["ready"] != false || body["reason"] != "redis_unreachable" {
+	if body["ok"] != false || body["ready"] != false || body["reason"] != "redis_unreachable" {
 		t.Fatalf("unexpected body: %#v", body)
 	}
 }
@@ -89,5 +89,51 @@ func TestMetricsJSONPreservesCompatibilityFields(t *testing.T) {
 	}
 	if body["consumer_lag"] != float64(7) || body["dlq_size"] != float64(3) || body["dlq_oldest_age_secs"] != float64(60) {
 		t.Fatalf("missing backlog metrics: %#v", body)
+	}
+}
+
+func searchServer(adminToken string) *Server {
+	s := &Server{
+		consumer:     &Consumer{},
+		sweeper:      &TamperSweeper{},
+		retention:    &Retention{},
+		exporterLead: &Leader{},
+		retentLead:   &Leader{},
+	}
+	s.cfg.AdminToken = adminToken
+	return s
+}
+
+func TestSearchDisabledWithoutAdminToken(t *testing.T) {
+	s := searchServer("")
+	w := httptest.NewRecorder()
+	s.handleSearch(w, httptest.NewRequest(http.MethodGet, "/api/audit/search?zone_id=z1", nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestSearchRejectsWrongBearer(t *testing.T) {
+	s := searchServer("correct-token")
+	req := httptest.NewRequest(http.MethodGet, "/api/audit/search?zone_id=z1", nil)
+	req.Header.Set("Authorization", "Bearer wrong-token")
+	w := httptest.NewRecorder()
+	s.handleSearch(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", w.Code)
+	}
+	if w.Header().Get("WWW-Authenticate") == "" {
+		t.Fatal("missing WWW-Authenticate header")
+	}
+}
+
+func TestSearchRejectsMissingZoneID(t *testing.T) {
+	s := searchServer("tok")
+	req := httptest.NewRequest(http.MethodGet, "/api/audit/search", nil)
+	req.Header.Set("Authorization", "Bearer tok")
+	w := httptest.NewRecorder()
+	s.handleSearch(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
 	}
 }

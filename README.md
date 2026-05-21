@@ -27,9 +27,11 @@
 
 # Overview
 
-**Caracal** is a **security-first AI authority, delegation, and identity system** for **autonomous agents**. It enables organizations to control **what AI agents can access**, **what actions they can perform**, **how authority is delegated between agents**, and how every decision is governed through **policies**, **trust boundaries**, and **verifiable execution flows**.
+**Caracal** is an authority plane for operating AI agents safely in real environments. It solves a concrete platform problem: agents need access to tools, APIs, and providers, but platform teams need that access to be scoped, short-lived, revocable, and auditable without placing provider secrets inside agent code.
 
-**Caracal** works by introducing a **secure control plane** built around **zones**, **identity**, **delegation**, and **policy enforcement** for AI agents. The **STS** issues and verifies agent identity, the **gateway** enforces access and policy decisions at runtime, and the **coordinator** manages agent lifecycle and delegation flows, ensuring every action performed by an autonomous agent is **authenticated**, **authorized**, **traceable**, and restricted to **explicitly granted authority boundaries**.
+The default product path is intentionally small: register an **agent app**, run an **agent run**, request a short-lived **mandate**, call a **resource** through the **Gateway**, and inspect the resulting **audit** trail. The STS evaluates policy and issues Caracal access tokens, the Gateway enforces token validity and provider routing, the Coordinator tracks runtime and delegation state, and Audit records why access was allowed or denied and what happened upstream.
+
+Platform teams can evaluate Caracal locally with `caracal up`, check dependency-aware readiness with `caracal status --ready`, inspect production-style diagnostics with `caracal doctor --extended`, and trace individual decisions with `caracal audit tail` and `caracal explain <request_id>`.
 
 -----
 

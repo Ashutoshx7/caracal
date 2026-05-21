@@ -88,14 +88,32 @@ async function runCheck(checks: DoctorCheck[], name: string, fn: () => Promise<s
 
 async function fetchOk(url: string): Promise<string> {
   const res = await fetch(url)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}${await failureReason(res)}`)
   return url
 }
 
 async function fetchJSON(url: string): Promise<unknown> {
   const res = await fetch(url)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}${await failureReason(res)}`)
   return await res.json()
+}
+
+async function failureReason(res: Response): Promise<string> {
+  const body = await res.text()
+  const value = body.trim()
+  if (!value) return ''
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ''
+    const record = parsed as Record<string, unknown>
+    for (const key of ['reason', 'error', 'detail']) {
+      const field = record[key]
+      if (typeof field === 'string' && field !== '') return ` ${field}`
+    }
+    return ''
+  } catch {
+    return ` ${value.split(/\r?\n/, 1)[0]?.slice(0, 120)}`
+  }
 }
 
 async function runExtendedChecks(checks: DoctorCheck[], targets: ServiceTarget[]): Promise<void> {

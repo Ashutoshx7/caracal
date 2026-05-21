@@ -21,6 +21,7 @@ type Config struct {
 	S3Bucket           string
 	S3Region           string
 	AuditHMACKey       []byte
+	AdminToken         string
 	RetentionDays      int
 	ConsumerName       string
 	MaxDeliveries      int64
@@ -33,6 +34,7 @@ type Config struct {
 
 func loadConfig() (Config, error) {
 	config.ResolveFileSecrets("AUDIT_HMAC_KEY")
+	config.ResolveFileSecrets("AUDIT_ADMIN_TOKEN")
 	hexKey := config.Getenv("AUDIT_HMAC_KEY", "")
 	var key []byte
 	base := config.Load()
@@ -64,6 +66,7 @@ func loadConfig() (Config, error) {
 		S3Bucket:           config.Getenv("AUDIT_EXPORT_S3_BUCKET", ""),
 		S3Region:           config.Getenv("AUDIT_EXPORT_S3_REGION", "us-east-1"),
 		AuditHMACKey:       key,
+		AdminToken:         config.Getenv("AUDIT_ADMIN_TOKEN", ""),
 		RetentionDays:      retention,
 		ConsumerName:       config.Getenv("HOSTNAME", "audit-worker-0"),
 		MaxDeliveries:      maxDeliv,

@@ -28,5 +28,32 @@ spec:
         - protocol: TCP
           port: {{ .Values.services.gateway.port }}
   egress:
-    - {}
+    {{- if .Values.networkPolicy.allowOpenDns }}
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "caracal.selectorLabels" . | nindent 14 }}
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.secrets.database.port }}
+        - protocol: TCP
+          port: {{ .Values.secrets.redis.port }}
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    {{- if .Values.networkPolicy.allowOpenHttps }}
+    - ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+    {{- with .Values.networkPolicy.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- end }}

@@ -176,35 +176,46 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	if s.bindings == nil {
 		s.log.Warn().Msg("ready: bindings unavailable")
-		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		writeReadyFailure(w, "bindings_unavailable")
 		return
 	}
 	if err := s.bindings.Reload(ctx); err != nil {
 		s.log.Warn().Err(err).Msg("ready: postgres unreachable")
-		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		writeReadyFailure(w, "postgres_unreachable")
 		return
 	}
 	if err := s.redis.Ping(ctx); err != nil {
 		s.log.Warn().Err(err).Msg("ready: redis unreachable")
-		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		writeReadyFailure(w, "redis_unreachable")
 		return
 	}
 	if err := s.audit.Ready(); err != nil {
 		s.log.Warn().Err(err).Msg("ready: audit replay unavailable")
-		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		writeReadyFailure(w, "audit_replay_unavailable")
 		return
 	}
 	if s.sts == nil {
 		s.log.Warn().Msg("ready: sts unavailable")
-		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		writeReadyFailure(w, "sts_unavailable")
 		return
 	}
 	if err := s.sts.Health(ctx); err != nil {
 		s.log.Warn().Err(err).Msg("ready: sts unreachable")
-		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		writeReadyFailure(w, "sts_unreachable")
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "ready": true})
+}
+
+func writeReadyFailure(w http.ResponseWriter, reason string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":     false,
+		"ready":  false,
+		"reason": reason,
+	})
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {

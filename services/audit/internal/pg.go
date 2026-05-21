@@ -195,7 +195,77 @@ type EventRow struct {
 	ChainSeq          int64
 }
 
-// LoadWatermark returns the last completed export hour for a watermark name,
+// SearchParams filters for Search queries. ZoneID is required; all other
+// fields are optional and a zero value means "no filter".
+type SearchParams struct {
+	ZoneID    string
+	Decision  string
+	RequestID string
+	Since     time.Time
+	Until     time.Time
+	Limit     int
+	Cursor    int64
+}
+
+// Search returns audit events matching p. Results are ordered by chain_seq
+// ascending within the zone. Cursor resumes after the given chain_seq.
+func (w *PGWriter) Search(ctx context.Context, p SearchParams) ([]EventRow, error) {
+	rows, err := w.db.Query(ctx,
+		`SELECT id, zone_id, event_type,
+		        COALESCE(request_id,''), COALESCE(decision,''),
+		        COALESCE(policy_set_id,''), COALESCE(policy_set_version_id,''),
+		        COALESCE(manifest_sha,''), COALESCE(evaluation_status,''),
+		        COALESCE(determining_policies_json::text,'null'),
+		        COALESCE(diagnostics_json::text,'null'),
+		        COALESCE(metadata_json::text,'null'),
+		        occurred_at, ingested_at,
+		        COALESCE(content_sha256,''), COALESCE(prev_content_sha256,''),
+		        COALESCE(chain_hmac,''), COALESCE(chain_seq,0)
+		 FROM audit_events
+		 WHERE zone_id = $1
+		   AND occurred_at >= $2
+		   AND occurred_at < $3
+		   AND ($4 = '' OR decision = $4)
+		   AND ($5 = '' OR request_id = $5)
+		   AND ($6 = 0 OR chain_seq > $6)
+		 ORDER BY chain_seq ASC
+		 LIMIT $7`,
+		p.ZoneID, p.Since, p.Until, p.Decision, p.RequestID, p.Cursor, p.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []EventRow
+	for rows.Next() {
+		var r EventRow
+		var detJSON, diagJSON, metaJSON string
+		if err := rows.Scan(
+			&r.Event.ID, &r.Event.ZoneID, &r.Event.EventType,
+			&r.Event.RequestID, &r.Event.Decision,
+			&r.Event.PolicySetID, &r.Event.PolicySetVersionID, &r.Event.ManifestSHA,
+			&r.Event.EvaluationStatus, &detJSON, &diagJSON, &metaJSON,
+			&r.Event.OccurredAt, &r.IngestedAt,
+			&r.ContentSHA256, &r.PrevContentSHA256, &r.ChainHMAC, &r.ChainSeq,
+		); err != nil {
+			return nil, err
+		}
+		if detJSON != "null" {
+			r.Event.DeterminingPoliciesJSON = []byte(detJSON)
+		}
+		if diagJSON != "null" {
+			r.Event.DiagnosticsJSON = []byte(diagJSON)
+		}
+		if metaJSON != "null" {
+			r.Event.MetadataJSON = []byte(metaJSON)
+		}
+		results = append(results, r)
+	}
+	return results, rows.Err()
+}
+
+
 // or zero time if absent.
 func (w *PGWriter) LoadWatermark(ctx context.Context, name string) (time.Time, error) {
 	var t time.Time

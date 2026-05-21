@@ -47,6 +47,13 @@ migrations:
 
 networkPolicy:
   enabled: true
+  # When extraEgress is empty, the policy allows: DNS (53), Postgres ({{ .secrets.database.port }}),
+  # Redis ({{ .secrets.redis.port }}), OTLP (4317/4318), HTTPS (443) to any destination. Platform teams
+  # should set extraEgress to a stricter allowlist (named peers, CIDRs) and remove allowOpenHttps in
+  # locked-down clusters.
+  allowOpenHttps: true
+  allowOpenDns: true
+  extraEgress: []
 
 serviceMonitor:
   enabled: false
@@ -76,7 +83,7 @@ services:
         memory: 768Mi
     pdb:
       enabled: true
-      minAvailable: 1
+      minAvailable: "50%"
     hpa:
       enabled: true
       minReplicas: 2
@@ -96,7 +103,7 @@ services:
         memory: 768Mi
     pdb:
       enabled: true
-      minAvailable: 1
+      minAvailable: "50%"
     hpa:
       enabled: true
       minReplicas: 2
@@ -116,7 +123,7 @@ services:
         memory: 1Gi
     pdb:
       enabled: true
-      minAvailable: 1
+      minAvailable: "50%"
     hpa:
       enabled: true
       minReplicas: 2
@@ -136,7 +143,7 @@ services:
         memory: 1Gi
     pdb:
       enabled: true
-      minAvailable: 1
+      minAvailable: "50%"
     hpa:
       enabled: true
       minReplicas: 2
@@ -156,7 +163,7 @@ services:
         memory: 768Mi
     pdb:
       enabled: true
-      minAvailable: 1
+      minAvailable: "50%"
     hpa:
       enabled: true
       minReplicas: 2
@@ -176,7 +183,7 @@ services:
         memory: 512Mi
     pdb:
       enabled: false
-      minAvailable: 1
+      minAvailable: "50%"
     hpa:
       enabled: false
       minReplicas: 1

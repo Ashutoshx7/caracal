@@ -156,12 +156,36 @@ async function probeOne(svc: ServiceProbe, timeoutMs: number): Promise<ProbeResu
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
     const res = await fetch(svc.url, { signal: ctrl.signal })
-    return { ...svc, ok: res.ok, detail: `${res.status}` }
+    return { ...svc, ok: res.ok, detail: await probeDetail(res) }
   } catch (err) {
     const desc = err instanceof Error ? err.message : String(err)
     return { ...svc, ok: false, detail: desc.includes('aborted') ? 'timeout' : 'unreachable' }
   } finally {
     clearTimeout(timer)
+  }
+}
+
+async function probeDetail(res: Response): Promise<string> {
+  if (res.ok) return `${res.status}`
+  const body = await res.text()
+  const reason = readinessReason(body)
+  return reason ? `${res.status} ${reason}` : `${res.status}`
+}
+
+function readinessReason(body: string): string | undefined {
+  const value = body.trim()
+  if (!value) return undefined
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
+    const record = parsed as Record<string, unknown>
+    for (const key of ['reason', 'error', 'detail']) {
+      const field = record[key]
+      if (typeof field === 'string' && field !== '') return field
+    }
+    return undefined
+  } catch {
+    return value.split(/\r?\n/, 1)[0]?.slice(0, 120)
   }
 }
 

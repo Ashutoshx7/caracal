@@ -8,6 +8,7 @@ package internal
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -119,6 +120,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("GET /ready", s.handleReady)
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
 	mux.HandleFunc("GET /metrics.json", s.handleMetricsJSON)
+	mux.HandleFunc("GET /api/audit/search", s.handleSearch)
 
 	srv := &http.Server{
 		Addr:              ":" + s.cfg.Port,
@@ -220,6 +222,84 @@ func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleMetricsJSON(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(s.metricsSnapshot())
+}
+
+// handleSearch serves GET /api/audit/search for operator forensics queries.
+// The endpoint is disabled (404) when AUDIT_ADMIN_TOKEN is not configured.
+func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.AdminToken == "" {
+		http.NotFound(w, r)
+		return
+	}
+	auth := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if subtle.ConstantTimeCompare([]byte(auth), []byte(s.cfg.AdminToken)) != 1 {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="caracal-audit"`)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	q := r.URL.Query()
+	zoneID := q.Get("zone_id")
+	if zoneID == "" {
+		http.Error(w, "zone_id is required", http.StatusBadRequest)
+		return
+	}
+
+	now := time.Now().UTC()
+	since := now.Add(-24 * time.Hour)
+	until := now
+	if s := q.Get("since"); s != "" {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			since = t.UTC()
+		}
+	}
+	if u := q.Get("until"); u != "" {
+		if t, err := time.Parse(time.RFC3339, u); err == nil {
+			until = t.UTC()
+		}
+	}
+
+	limit := 100
+	if l := q.Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	var cursor int64
+	if c := q.Get("cursor"); c != "" {
+		cursor, _ = strconv.ParseInt(c, 10, 64)
+	}
+
+	params := SearchParams{
+		ZoneID:    zoneID,
+		Decision:  q.Get("decision"),
+		RequestID: q.Get("request_id"),
+		Since:     since,
+		Until:     until,
+		Limit:     limit,
+		Cursor:    cursor,
+	}
+	results, err := s.pg.Search(r.Context(), params)
+	if err != nil {
+		s.log.Error().Err(err).Msg("audit search")
+		http.Error(w, "search failed", http.StatusInternalServerError)
+		return
+	}
+
+	nextCursor := ""
+	if len(results) > 0 {
+		nextCursor = strconv.FormatInt(results[len(results)-1].ChainSeq, 10)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"events":      results,
+		"next_cursor": nextCursor,
+	})
 }
 
 type auditMetricsSnapshot struct {
@@ -350,6 +430,7 @@ func writeReadyFailure(w http.ResponseWriter, reason string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusServiceUnavailable)
 	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":     false,
 		"ready":  false,
 		"reason": reason,
 	})
