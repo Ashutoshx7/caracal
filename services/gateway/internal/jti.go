@@ -43,22 +43,21 @@ func newJTITracker(redis *RedisClient, log zerolog.Logger, failOpen bool, auditK
 }
 
 // Check records the JTI as seen with TTL = time-until-exp. Returns true when the
-// caller may proceed (first use or ambient session token).
-// Returns false on a confirmed replay of a per-call token, after emitting a
+// caller may proceed (first use or session mandate).
+// Returns false on a confirmed replay of a resource mandate, after emitting a
 // replay_detected audit event. Errors talking to Redis are governed by failOpen:
 // when false (production default) the request is rejected so a flaky Redis cannot
 // silently widen the replay window; when true the request proceeds and the error
 // is logged.
 //
-// Ambient session tokens are explicitly reusable — they are the long-lived bearer
-// the SDK presents to the gateway across many calls. Per-call tokens are minted
-// per request and must never be re-presented; replay protection only fires for
-// those.
+// Session mandates are explicitly reusable because their only valid audience is
+// STS exchange. Resource mandates are minted for resource execution and must not
+// be re-presented; replay protection only fires for those.
 func (t *jtiTracker) Check(ctx context.Context, jti string, exp time.Time, use, requestID, resource, zoneID, clientID, subjectFP string) bool {
 	if jti == "" {
 		return true
 	}
-	if use == "ambient" {
+	if use == "session" {
 		return true
 	}
 	ttl := time.Until(exp)
@@ -139,7 +138,7 @@ func jwtJTI(token string) string {
 	return claims.Jti
 }
 
-// jwtUse extracts the use claim ("ambient" or "per_call") without signature
+// jwtUse extracts the use claim ("session" or "resource") without signature
 // verification. Used to gate replay tracking; the trust root is STS validation
 // when the bearer is exchanged.
 func jwtUse(token string) string {

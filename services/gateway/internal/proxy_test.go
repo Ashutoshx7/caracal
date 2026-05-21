@@ -497,7 +497,7 @@ func TestProxySignedExchangeBrokersProviderCredentialWithoutIdentityLeak(t *test
 			t.Fatalf("gateway exchange must not use public client credentials")
 		}
 		if r.Form.Get("subject_token") == "" {
-			t.Fatal("gateway exchange must present the ambient subject token")
+			t.Fatal("gateway exchange must present the session mandate")
 		}
 		if err := corests.VerifyGatewayExchange(
 			key,

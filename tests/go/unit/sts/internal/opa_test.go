@@ -61,6 +61,19 @@ result := {"decision": "allow", "evaluation_status": "complete", "determining_po
 	}
 }
 
+func TestOPARejectsUnsupportedInputSchema(t *testing.T) {
+	e := newOPAEngine(nil)
+	e.storeFallback("z1")
+
+	if _, err := e.Evaluate(context.Background(), OPAInput{
+		SchemaVersion: "2099-01-01",
+		Principal:     OPAPrincipal{ZoneID: "z1"},
+		Action:        OPAAction{ID: "TokenExchange"},
+	}); err == nil {
+		t.Fatal("unsupported schema_version must be rejected")
+	}
+}
+
 func TestOPADenyPolicy(t *testing.T) {
 	denyRego := `
 package caracal.authz
@@ -90,7 +103,7 @@ result := {"decision": "deny", "evaluation_status": "complete", "determining_pol
 	}
 }
 
-func TestOPANonCompleteStatusPassthrough(t *testing.T) {
+func TestOPANonCompleteStatusRejected(t *testing.T) {
 	partialRego := `
 package caracal.authz
 result := {"decision": "deny", "evaluation_status": "partial", "determining_policies": [], "diagnostics": []}
@@ -107,15 +120,11 @@ result := {"decision": "deny", "evaluation_status": "partial", "determining_poli
 	e.zones["z1"] = &opaZoneState{query: &pq}
 	e.mu.Unlock()
 
-	res, err := e.Evaluate(context.Background(), OPAInput{
+	if _, err := e.Evaluate(context.Background(), OPAInput{
 		Principal: OPAPrincipal{ZoneID: "z1"},
 		Action:    OPAAction{ID: "TokenExchange"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.EvaluationStatus != "partial" {
-		t.Errorf("want partial, got %s", res.EvaluationStatus)
+	}); err == nil {
+		t.Fatal("non-complete evaluation_status must be rejected")
 	}
 }
 
