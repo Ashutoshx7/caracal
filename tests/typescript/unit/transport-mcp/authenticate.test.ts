@@ -4,7 +4,7 @@
 // Transport MCP authentication unit tests.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { authenticate, extractBearer } from '../../../../packages/transport/mcp/ts/src/authenticate.js'
+import { authenticate, checkActiveAuthority, extractBearer } from '../../../../packages/transport/mcp/ts/src/authenticate.js'
 
 const revocations = {
   isRevoked: vi.fn(),
@@ -117,6 +117,7 @@ describe('transport-mcp authentication', () => {
     const { token, issuer, audience } = await mintToken({
       agent_session_id: 'agent-1',
       delegation_edge_id: 'edge-1',
+      root_sid: 'root-1',
       delegation_chain: [{ application_id: 'app-parent' }],
       hop_count: 2,
     })
@@ -141,6 +142,7 @@ describe('transport-mcp authentication', () => {
         zoneId: 'zone-1',
         clientId: 'app-1',
         sid: 'sid-1',
+        rootSid: 'root-1',
         scope: 'mcp:call',
         agentSessionId: 'agent-1',
         delegationEdgeId: 'edge-1',
@@ -148,6 +150,9 @@ describe('transport-mcp authentication', () => {
       },
     })
     expect(revocations.isRevoked).toHaveBeenCalledWith('sid-1')
+    expect(revocations.isRevoked).toHaveBeenCalledWith('root-1')
+    expect(revocations.isRevoked).toHaveBeenCalledWith('agent-1')
+    expect(revocations.isRevoked).toHaveBeenCalledWith('edge-1')
   })
 
   it('authenticates tokens from multiple issuers minted in one test', async () => {
@@ -178,6 +183,42 @@ describe('transport-mcp authentication', () => {
     })).resolves.toEqual({
       ok: false,
       error: { code: 'session_revoked', description: 'Session revoked' },
+    })
+  })
+
+  it.each([
+    ['root authority', { root_sid: 'root-1' }, 'root-1'],
+    ['agent run', { agent_session_id: 'agent-1' }, 'agent-1'],
+    ['delegated permission', { delegation_edge_id: 'edge-1' }, 'edge-1'],
+  ])('rejects %s revocation anchors after verification', async (_label, claims, revoked) => {
+    const { token, issuer, audience } = await mintToken(claims)
+    revocations.isRevoked.mockImplementation(async (anchor: string) => anchor === revoked)
+
+    await expect(authenticate(token, {
+      issuer,
+      audience,
+      revocations,
+    })).resolves.toEqual({
+      ok: false,
+      error: { code: 'session_revoked', description: 'Session revoked' },
+    })
+  })
+
+  it('supports active-execution checks after initial authentication', async () => {
+    revocations.isRevoked.mockResolvedValue(false)
+    await expect(checkActiveAuthority({
+      sub: 'user-1',
+      zoneId: 'zone-1',
+      clientId: 'app-1',
+      sid: 'sid-1',
+      use: 'per_call',
+      jti: 'jti-1',
+      issuedAt: 10,
+      expiresAt: 20,
+      scope: 'mcp:call',
+    }, revocations, 21_000)).resolves.toEqual({
+      code: 'invalid_token',
+      description: 'Token expired during execution',
     })
   })
 

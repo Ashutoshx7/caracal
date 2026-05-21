@@ -8,6 +8,7 @@ package transportmcp
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/garudex-labs/caracal/packages/identity/go"
 	"github.com/garudex-labs/caracal/packages/revocation/go"
@@ -104,8 +105,40 @@ func Authenticate(token string, opts Options) (identity.Claims, *AuthError) {
 	if claims.Sid == "" {
 		return identity.Claims{}, &AuthError{Code: ErrInvalidToken, Description: "Token validation failed"}
 	}
-	if opts.Revocations.IsRevoked(claims.Sid) {
-		return identity.Claims{}, &AuthError{Code: ErrSessionRevoked, Description: "Session revoked"}
+	if authErr := CheckActiveAuthority(claims, opts.Revocations, time.Now()); authErr != nil {
+		return identity.Claims{}, authErr
 	}
 	return claims, nil
+}
+
+// CheckActiveAuthority validates expiry and all revocation anchors for active direct execution.
+func CheckActiveAuthority(claims identity.Claims, revocations revocation.Store, now time.Time) *AuthError {
+	if claims.Sid == "" {
+		return &AuthError{Code: ErrInvalidToken, Description: "Token validation failed"}
+	}
+	if claims.ExpiresAt > 0 && claims.ExpiresAt <= now.Unix() {
+		return &AuthError{Code: ErrInvalidToken, Description: "Token expired during execution"}
+	}
+	if revocations == nil {
+		return &AuthError{Code: ErrInvalidToken, Description: "Revocation store required"}
+	}
+	for _, anchor := range revocationAnchors(claims) {
+		if revocations.IsRevoked(anchor) {
+			return &AuthError{Code: ErrSessionRevoked, Description: "Session revoked"}
+		}
+	}
+	return nil
+}
+
+func revocationAnchors(claims identity.Claims) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, anchor := range []string{claims.Sid, claims.RootSid, claims.AgentSessionID, claims.DelegationEdgeID} {
+		if anchor == "" || seen[anchor] {
+			continue
+		}
+		seen[anchor] = true
+		out = append(out, anchor)
+	}
+	return out
 }

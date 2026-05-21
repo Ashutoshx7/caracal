@@ -78,9 +78,37 @@ async def authenticate(
 
     if revocations is None:
         return AuthResult(None, AuthError("invalid_token", "Revocation store required"))
-    if not claims.sid:
-        return AuthResult(None, AuthError("invalid_token", "Token validation failed"))
-    if revocations.is_revoked(claims.sid):
-        return AuthResult(None, AuthError("session_revoked", "Session revoked"))
+    active_error = check_active_authority(claims, revocations)
+    if active_error is not None:
+        return AuthResult(None, active_error)
 
     return AuthResult(claims, None)
+
+
+def check_active_authority(claims: object, revocations: RevocationStore, now_seconds: int | None = None) -> AuthError | None:
+    import time
+
+    sid = getattr(claims, "sid", "")
+    if not sid:
+        return AuthError("invalid_token", "Token validation failed")
+    expires_at = getattr(claims, "expires_at", 0)
+    if expires_at and expires_at <= (now_seconds if now_seconds is not None else int(time.time())):
+        return AuthError("invalid_token", "Token expired during execution")
+    for anchor in _revocation_anchors(claims):
+        if revocations.is_revoked(anchor):
+            return AuthError("session_revoked", "Session revoked")
+    return None
+
+
+def _revocation_anchors(claims: object) -> list[str]:
+    anchors = [
+        getattr(claims, "sid", None),
+        getattr(claims, "root_sid", None),
+        getattr(claims, "agent_session_id", None),
+        getattr(claims, "delegation_edge_id", None),
+    ]
+    out: list[str] = []
+    for anchor in anchors:
+        if isinstance(anchor, str) and anchor and anchor not in out:
+            out.append(anchor)
+    return out

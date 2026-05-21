@@ -15,7 +15,7 @@ import {
   type JwtConfig,
 } from '@caracalai/identity'
 import type { RevocationStore } from '@caracalai/revocation'
-import type { AuthResult } from './types.js'
+import type { AuthError, AuthResult, Principal } from './types.js'
 
 export type AuthDeps = JwtConfig & { revocations: RevocationStore }
 
@@ -40,11 +40,9 @@ export async function authenticate(token: string, deps: AuthDeps): Promise<AuthR
     if (!revocations || typeof revocations.isRevoked !== 'function') {
       return { ok: false, error: { code: 'invalid_token', description: 'Revocation store required' } }
     }
-    if (!claims.sid) {
-      return { ok: false, error: { code: 'invalid_token', description: 'Token validation failed' } }
-    }
-    if (await revocations.isRevoked(claims.sid)) {
-      return { ok: false, error: { code: 'session_revoked', description: 'Session revoked' } }
+    const activeError = await checkActiveAuthority(claims, revocations)
+    if (activeError) {
+      return { ok: false, error: activeError }
     }
     return { ok: true, principal: claims }
   } catch (err) {
@@ -71,4 +69,29 @@ export async function authenticate(token: string, deps: AuthDeps): Promise<AuthR
     }
     return { ok: false, error: { code: 'invalid_token', description: 'Token validation failed' } }
   }
+}
+
+export async function checkActiveAuthority(claims: Principal, revocations: RevocationStore, nowMs = Date.now()): Promise<AuthError | null> {
+  if (!claims.sid) {
+    return { code: 'invalid_token', description: 'Token validation failed' }
+  }
+  if (claims.expiresAt * 1000 <= nowMs) {
+    return { code: 'invalid_token', description: 'Token expired during execution' }
+  }
+  for (const anchor of revocationAnchors(claims)) {
+    if (await revocations.isRevoked(anchor)) {
+      return { code: 'session_revoked', description: 'Session revoked' }
+    }
+  }
+  return null
+}
+
+function revocationAnchors(claims: Principal): string[] {
+  const anchors = [
+    claims.sid,
+    claims.rootSid,
+    claims.agentSessionId,
+    claims.delegationEdgeId,
+  ].filter((value): value is string => typeof value === 'string' && value !== '')
+  return [...new Set(anchors)]
 }
