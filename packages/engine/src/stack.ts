@@ -35,6 +35,32 @@ export interface StackComposeHandle {
   exitCode: Promise<number>
 }
 
+const CONTROL_MANAGED_ENV = 'CARACAL_ENGINE_CONTROL_ENABLED'
+
+function controlManagedEnv(env: Record<string, string | undefined> | undefined, includeControlProfile: boolean): Record<string, string | undefined> | undefined {
+  if (!includeControlProfile) return env
+  return { ...env, [CONTROL_MANAGED_ENV]: 'true' }
+}
+
+function controlProfileValue(value: string | undefined): boolean {
+  return value?.split(',').map((part) => part.trim()).includes('control') === true
+}
+
+function assertNoControlStackTarget(args: readonly string[]): void {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+    if (arg === 'control') {
+      throw new Error('Control runtime is managed only through caracal-cli control or the TUI Control menu.')
+    }
+    if (arg === '--profile' && controlProfileValue(args[index + 1])) {
+      throw new Error('Control runtime is managed only through caracal-cli control or the TUI Control menu.')
+    }
+    if (arg?.startsWith('--profile=') && controlProfileValue(arg.slice('--profile='.length))) {
+      throw new Error('Control runtime is managed only through caracal-cli control or the TUI Control menu.')
+    }
+  }
+}
+
 function composeArgv(paths: StackPaths, args: string[], includeControlProfile = isControlEnabled()): string[] {
   const profile = includeControlProfile ? ['--profile', 'control'] : []
   const envFlags = paths.envFiles.flatMap((f) => existsSync(f) ? ['--env-file', f] : [])
@@ -42,19 +68,25 @@ function composeArgv(paths: StackPaths, args: string[], includeControlProfile = 
 }
 
 export function stackUp(opts: StackComposeOpts): StackComposeHandle {
+  assertNoControlStackTarget(opts.args)
+  const includeControlProfile = isControlEnabled()
   const args = opts.paths.mode === 'dev'
     ? ['up', '-d', '--build', '--remove-orphans', ...opts.args]
     : ['up', '-d', '--remove-orphans', ...opts.args]
   const handle = runExec({
-    argv: composeArgv(opts.paths, args),
-    env: opts.env,
+    argv: composeArgv(opts.paths, args, includeControlProfile),
+    env: controlManagedEnv(opts.env, includeControlProfile),
     cwd: opts.paths.cwd,
     onLine: opts.onLine,
   })
   const exitCode = handle.exitCode.then(async (code) => {
     if (code !== 0) return code
     // Remove exited one-shot containers (e.g. dbMigrate) so they don't linger.
-    const rm = runExec({ argv: composeArgv(opts.paths, ['rm', '-f']), env: opts.env, cwd: opts.paths.cwd })
+    const rm = runExec({
+      argv: composeArgv(opts.paths, ['rm', '-f'], includeControlProfile),
+      env: controlManagedEnv(opts.env, includeControlProfile),
+      cwd: opts.paths.cwd,
+    })
     await rm.exitCode
     return code
   })
@@ -62,9 +94,11 @@ export function stackUp(opts: StackComposeOpts): StackComposeHandle {
 }
 
 export function stackDown(opts: StackComposeOpts): StackComposeHandle {
+  assertNoControlStackTarget(opts.args)
+  const includeControlProfile = isControlEnabled()
   const handle = runExec({
-    argv: composeArgv(opts.paths, ['down', ...opts.args]),
-    env: opts.env,
+    argv: composeArgv(opts.paths, ['down', ...opts.args], includeControlProfile),
+    env: controlManagedEnv(opts.env, includeControlProfile),
     cwd: opts.paths.cwd,
     onLine: opts.onLine,
   })
@@ -93,7 +127,7 @@ export const DEFAULT_SERVICE_PROBES: ServiceProbe[] = [
 export function defaultServiceProbes(home?: string): ServiceProbe[] {
   const probes = [...DEFAULT_SERVICE_PROBES]
   const control = readControlState(home)
-  if (control) {
+  if (control?.enabled) {
     probes.push({ name: control.service, url: control.healthUrl, port: control.port })
   }
   return probes
@@ -135,20 +169,14 @@ export interface ComposeRunOpts {
 }
 
 export function composeRun(opts: ComposeRunOpts): StackComposeHandle {
+  const includeControlProfile = opts.includeControlProfile ?? isControlEnabled()
   const handle = runExec({
-    argv: composeArgv(opts.paths, opts.args, opts.includeControlProfile ?? isControlEnabled()),
-    env: opts.env,
+    argv: composeArgv(opts.paths, opts.args, includeControlProfile),
+    env: controlManagedEnv(opts.env, includeControlProfile),
     cwd: opts.paths.cwd,
     onLine: opts.onLine,
   })
   return { dispose: handle.dispose, exitCode: handle.exitCode }
-}
-
-export interface ControlServiceStateOpts {
-  paths: StackPaths
-  enabled: boolean
-  env?: Record<string, string | undefined>
-  onLine?: (line: string, stream: 'stdout' | 'stderr') => void
 }
 
 export type ControlLifecycleAction = 'mount' | 'enable' | 'disable' | 'unmount'
@@ -178,8 +206,6 @@ export interface ControlLifecycleResult {
   optimization: string
   summary: string
 }
-
-export type ControlServiceStateResult = ControlLifecycleResult
 
 function controlActionArgs(mode: StackPaths['mode'], action: ControlLifecycleAction): string[] | undefined {
   if (action === 'mount') return ['up', '--no-start', ...(mode === 'dev' ? ['--build'] : []), 'control']
@@ -274,15 +300,6 @@ export async function applyControlLifecycleAction(opts: ControlLifecycleOpts): P
     opts.action === 'enable' ? 'running' : 'stopped',
     state,
   )
-}
-
-export async function applyControlServiceState(opts: ControlServiceStateOpts): Promise<ControlServiceStateResult> {
-  return applyControlLifecycleAction({
-    paths: opts.paths,
-    action: opts.enabled ? 'enable' : 'disable',
-    env: opts.env,
-    onLine: opts.onLine,
-  })
 }
 
 export interface ControlServiceStatusOpts {

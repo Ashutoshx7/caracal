@@ -78,7 +78,7 @@ function main(): void {
   if (reason) {
     process.stderr.write(
       `caracal-tui: ${reason}\n` +
-      'TUI accepts input only from a controlling terminal. Use caracal-cli, the Control API, or the SDK for automation.\n',
+      'TUI accepts input only from a controlling terminal. Use caracal-cli or the SDK for automation.\n',
     )
     process.exit(1)
   }

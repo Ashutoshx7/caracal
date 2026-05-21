@@ -13,7 +13,7 @@ async function main(): Promise<void> {
   const enabled = process.env.CARACAL_CONTROL_ENABLED
   const bootLog = createLogger('control', (process.env.LOG_LEVEL as 'info') ?? 'info')
   if (enabled !== 'true') {
-    bootLog.info('control surface disabled; exiting (set CARACAL_CONTROL_ENABLED=true to enable)', { enabled: enabled ?? '' })
+    bootLog.info('control surface disabled; enable through caracal-cli or the TUI Control menu', { enabled: enabled ?? '' })
     return
   }
 
