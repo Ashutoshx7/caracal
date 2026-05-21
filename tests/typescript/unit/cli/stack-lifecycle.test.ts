@@ -11,19 +11,44 @@ import type { StackPaths } from '../../../../packages/engine/src/stack.ts'
 
 const runExecMock = vi.hoisted(() => vi.fn())
 const controlEnabledMock = vi.hoisted(() => vi.fn(() => false))
+const readControlStateMock = vi.hoisted(() => vi.fn(() => undefined))
+const setControlEnabledMock = vi.hoisted(() => vi.fn())
+const setControlMountedMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../../../../packages/engine/src/run.js', () => ({
   runExec: runExecMock,
 }))
 
 vi.mock('../../../../packages/engine/src/controlState.js', () => ({
+  controlRuntimeSettings: () => ({
+    service: 'control',
+    profile: 'control',
+    port: Number(process.env.CONTROL_PORT ?? 8087),
+    endpoint: `http://localhost:${Number(process.env.CONTROL_PORT ?? 8087)}`,
+    healthUrl: `http://localhost:${Number(process.env.CONTROL_PORT ?? 8087)}/health`,
+    readyUrl: `http://localhost:${Number(process.env.CONTROL_PORT ?? 8087)}/ready`,
+    invokeUrl: `http://localhost:${Number(process.env.CONTROL_PORT ?? 8087)}/v1/control/invoke`,
+    bind: '127.0.0.1',
+  }),
+  controlStateFile: () => '/tmp/caracal/control.json',
   isControlEnabled: controlEnabledMock,
+  readControlState: readControlStateMock,
+  setControlEnabled: setControlEnabledMock,
+  setControlMounted: setControlMountedMock,
 }))
 
-import { composeRun, defaultServiceProbes, stackDown, stackUp } from '../../../../packages/engine/src/stack.ts'
+import {
+  applyControlLifecycleAction,
+  applyControlServiceState,
+  composeRun,
+  controlServiceStatus,
+  defaultServiceProbes,
+  stackDown,
+  stackUp,
+} from '../../../../packages/engine/src/stack.ts'
 
 let dir: string
-let calls: Array<{ argv: string[]; env?: Record<string, string | undefined>; cwd?: string }>
+let calls: Array<{ argv: string[]; env?: Record<string, string | undefined>; cwd?: string; onLine?: unknown }>
 
 function paths(mode: StackPaths['mode'], envFiles: string[]): StackPaths {
   return {
@@ -37,8 +62,10 @@ function paths(mode: StackPaths['mode'], envFiles: string[]): StackPaths {
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'caracal-stack-'))
   calls = []
-  runExecMock.mockImplementation((opts: { argv: string[]; env?: Record<string, string | undefined>; cwd?: string }) => {
-    calls.push({ argv: opts.argv, env: opts.env, cwd: opts.cwd })
+  runExecMock.mockImplementation((opts: { argv: string[]; env?: Record<string, string | undefined>; cwd?: string; onLine?: unknown }) => {
+    const call: { argv: string[]; env?: Record<string, string | undefined>; cwd?: string; onLine?: unknown } = { argv: opts.argv, env: opts.env, cwd: opts.cwd }
+    if (opts.onLine) call.onLine = opts.onLine
+    calls.push(call)
     return { dispose: vi.fn(), exitCode: Promise.resolve(0) }
   })
   controlEnabledMock.mockReturnValue(false)
@@ -48,6 +75,9 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
   runExecMock.mockReset()
   controlEnabledMock.mockReset()
+  readControlStateMock.mockReset()
+  setControlEnabledMock.mockReset()
+  setControlMountedMock.mockReset()
   delete process.env.CONTROL_PORT
 })
 
@@ -137,8 +167,10 @@ describe('stack lifecycle compose commands', () => {
   })
 
   it('does not remove one-shot containers when startup fails', async () => {
-    runExecMock.mockImplementationOnce((opts: { argv: string[]; env?: Record<string, string | undefined>; cwd?: string }) => {
-      calls.push({ argv: opts.argv, env: opts.env, cwd: opts.cwd })
+    runExecMock.mockImplementationOnce((opts: { argv: string[]; env?: Record<string, string | undefined>; cwd?: string; onLine?: unknown }) => {
+      const call: { argv: string[]; env?: Record<string, string | undefined>; cwd?: string; onLine?: unknown } = { argv: opts.argv, env: opts.env, cwd: opts.cwd }
+      if (opts.onLine) call.onLine = opts.onLine
+      calls.push(call)
       return { dispose: vi.fn(), exitCode: Promise.resolve(1) }
     })
 
@@ -252,13 +284,214 @@ describe('stack compose helpers', () => {
 
   it('defaultServiceProbes includes control only when runtime state is enabled', () => {
     process.env.CONTROL_PORT = '9100'
-    controlEnabledMock.mockReturnValueOnce(true)
+    readControlStateMock.mockReturnValueOnce({
+      mounted: true,
+      enabled: true,
+      managedBy: 'engine',
+      updatedAt: '2026-05-21T00:00:00.000Z',
+      service: 'control',
+      profile: 'control',
+      port: 9100,
+      endpoint: 'http://localhost:9100',
+      healthUrl: 'http://localhost:9100/health',
+      readyUrl: 'http://localhost:9100/ready',
+      invokeUrl: 'http://localhost:9100/v1/control/invoke',
+      bind: '127.0.0.1',
+    })
     const enabled = defaultServiceProbes('/tmp/home')
     expect(enabled.some((p) => p.name === 'control' && p.port === 9100)).toBe(true)
 
-    controlEnabledMock.mockReturnValueOnce(false)
+    readControlStateMock.mockReturnValueOnce(undefined)
     const disabled = defaultServiceProbes('/tmp/home')
     expect(disabled.some((p) => p.name === 'control')).toBe(false)
     delete process.env.CONTROL_PORT
+  })
+
+  it('reports structured control status for disabled and enabled states', async () => {
+    readControlStateMock.mockReturnValueOnce(undefined)
+    await expect(controlServiceStatus({ home: '/tmp/home' })).resolves.toMatchObject({
+      state: 'unmounted',
+      service: 'unmounted',
+      mounted: false,
+      enabled: false,
+      marker: '/tmp/caracal/control.json',
+      endpoint: 'http://localhost:8087',
+      invokeUrl: 'http://localhost:8087/v1/control/invoke',
+      profile: 'control',
+      lifecycle: 'unmounted',
+      optimization: 'control container is removed; no control background process is kept running',
+    })
+
+    readControlStateMock.mockReturnValueOnce({
+      mounted: true,
+      enabled: true,
+      managedBy: 'engine',
+      updatedAt: '2026-05-21T00:00:00.000Z',
+      service: 'control',
+      profile: 'control',
+      port: 8087,
+      endpoint: 'http://localhost:8087',
+      healthUrl: 'http://localhost:8087/health',
+      readyUrl: 'http://localhost:8087/ready',
+      invokeUrl: 'http://localhost:8087/v1/control/invoke',
+      bind: '127.0.0.1',
+    })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200 } as Response)
+    try {
+      await expect(controlServiceStatus({ home: '/tmp/home' })).resolves.toMatchObject({
+        state: 'enabled',
+        service: 'ok',
+        mounted: true,
+        enabled: true,
+        marker: '/tmp/caracal/control.json',
+        endpoint: 'http://localhost:8087',
+        invokeUrl: 'http://localhost:8087/v1/control/invoke',
+        profile: 'control',
+        detail: '200',
+        lifecycle: 'mounted and enabled',
+      })
+      expect(fetchSpy).toHaveBeenCalledWith('http://localhost:8087/health', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    } finally {
+      fetchSpy.mockRestore()
+    }
+  })
+
+  it('applies control service state immediately through compose', async () => {
+    const stable = paths('stable', [])
+    readControlStateMock
+      .mockReturnValueOnce(undefined)
+      .mockReturnValueOnce({
+        mounted: true,
+        enabled: true,
+        managedBy: 'engine',
+        updatedAt: '2026-05-21T00:00:00.000Z',
+        service: 'control',
+        profile: 'control',
+        port: 8087,
+        endpoint: 'http://localhost:8087',
+        healthUrl: 'http://localhost:8087/health',
+        readyUrl: 'http://localhost:8087/ready',
+        invokeUrl: 'http://localhost:8087/v1/control/invoke',
+        bind: '127.0.0.1',
+      })
+
+    await expect(applyControlServiceState({
+      paths: stable,
+      enabled: true,
+      env: { CARACAL_MODE: 'stable' },
+    })).resolves.toMatchObject({
+      action: 'enable',
+      state: 'enabled',
+      service: 'running',
+      mounted: true,
+      enabled: true,
+      marker: '/tmp/caracal/control.json',
+      endpoint: 'http://localhost:8087',
+      invokeUrl: 'http://localhost:8087/v1/control/invoke',
+      profile: 'control',
+      lifecycle: 'mounted and enabled',
+      optimization: 'uses the existing stack services; no dedicated persistent volume is created',
+    })
+
+    await expect(applyControlServiceState({
+      paths: stable,
+      enabled: false,
+      env: { CARACAL_MODE: 'stable' },
+    })).resolves.toMatchObject({
+      action: 'disable',
+      state: 'disabled',
+      service: 'stopped',
+      mounted: true,
+      enabled: false,
+      marker: '/tmp/caracal/control.json',
+      endpoint: 'http://localhost:8087',
+      invokeUrl: 'http://localhost:8087/v1/control/invoke',
+      profile: 'control',
+      lifecycle: 'mounted but disabled',
+      optimization: 'runtime is retained for fast enable; no Control endpoint is exposed',
+    })
+
+    expect(setControlEnabledMock).toHaveBeenNthCalledWith(1, true)
+    expect(setControlEnabledMock).toHaveBeenNthCalledWith(2, false)
+    expect(calls[0].argv).toEqual([
+      'docker',
+      'compose',
+      '-f',
+      join(dir, 'stable.yml'),
+      '--profile',
+      'control',
+      'up',
+      '-d',
+      'control',
+    ])
+    expect(typeof calls[0].onLine).toBe('function')
+    expect(calls[1].argv).toEqual([
+      'docker',
+      'compose',
+      '-f',
+      join(dir, 'stable.yml'),
+      '--profile',
+      'control',
+      'stop',
+      'control',
+    ])
+    expect(typeof calls[1].onLine).toBe('function')
+  })
+
+  it('mounts and unmounts control runtime as long-term lifecycle actions', async () => {
+    const stable = paths('stable', [])
+
+    await expect(applyControlLifecycleAction({
+      paths: stable,
+      action: 'mount',
+      env: { CARACAL_MODE: 'stable' },
+    })).resolves.toMatchObject({
+      action: 'mount',
+      state: 'disabled',
+      service: 'prepared',
+      mounted: true,
+      enabled: false,
+      lifecycle: 'mounted but disabled',
+    })
+
+    await expect(applyControlLifecycleAction({
+      paths: stable,
+      action: 'unmount',
+      env: { CARACAL_MODE: 'stable' },
+    })).resolves.toMatchObject({
+      action: 'unmount',
+      state: 'unmounted',
+      service: 'removed',
+      mounted: false,
+      enabled: false,
+      lifecycle: 'unmounted',
+    })
+
+    expect(setControlMountedMock).toHaveBeenNthCalledWith(1, true, false)
+    expect(setControlMountedMock).toHaveBeenNthCalledWith(2, false, false)
+    expect(calls[0].argv).toEqual([
+      'docker',
+      'compose',
+      '-f',
+      join(dir, 'stable.yml'),
+      '--profile',
+      'control',
+      'up',
+      '--no-start',
+      'control',
+    ])
+    expect(typeof calls[0].onLine).toBe('function')
+    expect(calls[1].argv).toEqual([
+      'docker',
+      'compose',
+      '-f',
+      join(dir, 'stable.yml'),
+      '--profile',
+      'control',
+      'rm',
+      '-sf',
+      'control',
+    ])
+    expect(typeof calls[1].onLine).toBe('function')
   })
 })
