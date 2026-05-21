@@ -138,7 +138,7 @@ The CLI and TUI consume the same `@caracalai/engine` package the Control service
 
 - CLI commands resolve descriptors from the engine catalog and call the engine's helpers directly.
 - TUI views call the same helpers from menu actions.
-- `caracal-cli control mount|enable|disable|unmount|status` and the TUI Control menu all use the same engine lifecycle helpers, so mounted state, enablement state, endpoint health, and cleanup behavior stay synchronized.
+- The authenticated interactive `caracal-cli control ...` lifecycle flow and the TUI Control menu use the same engine lifecycle helpers, so mounted state, enablement state, endpoint health, and cleanup behavior stay synchronized.
 
 The Control service does not call the CLI binary or shell out. It calls `engine.dispatch` exactly the way CLI/TUI do — with a different `Principal`.
 
@@ -150,6 +150,8 @@ The Control service does not call the CLI binary or shell out. It calls `engine.
 - `process.env.TERM` is set and not `dumb`.
 
 Piping stdin to the TUI, running it under `CI=true`, or spawning it via `child_process.fork` exits non-zero with an isolation error. Automation must use the Control API (or the SDK built on top of it). There is no `--script` or `--input-file` flag.
+
+**Control management access.** Lifecycle actions are accepted only from a controlling terminal with the local managed admin secret. CLI lifecycle changes require explicit typed confirmation, and TUI lifecycle changes require confirmation in the Control menu. Thin scripts, direct Docker profile use, and non-interactive process execution are not valid Control management paths.
 
 **TUI control section.** The control-management menu entry is always visible. Operators can mount the runtime, enable or disable the endpoint, inspect lifecycle status, unmount long-term runtime components, and manage Control credentials without leaving the TUI.
 
@@ -166,11 +168,11 @@ The base API, STS, Gateway, Audit, Coordinator, Redis, and Postgres services con
 
 | Interface | Action | Result |
 | --- | --- | --- |
-| CLI | `caracal-cli control mount` | Prepares the Control runtime without exposing the endpoint |
-| CLI | `caracal-cli control enable` | Starts the mounted endpoint for authenticated automation |
-| CLI | `caracal-cli control disable` | Stops the endpoint and retains the mounted runtime for fast re-enable |
-| CLI | `caracal-cli control unmount` | Removes the Control runtime and clears lifecycle state |
-| CLI | `caracal-cli control status` | Shows mounted state, enabled state, endpoint, health, lifecycle, and optimization details |
+| CLI | Interactive `control mount` | Prepares the Control runtime without exposing the endpoint |
+| CLI | Interactive `control enable` | Starts the mounted endpoint for authenticated automation |
+| CLI | Interactive `control disable` | Stops the endpoint and retains the mounted runtime for fast re-enable |
+| CLI | Interactive `control unmount` | Removes the Control runtime and clears lifecycle state |
+| CLI | Interactive `control status` | Shows mounted state, enabled state, endpoint, health, lifecycle, and optimization details |
 | TUI | Control → mount / enable / disable / unmount / status | Performs the same lifecycle actions through stable structured views |
 
 `caracal up` includes the Control runtime only when the endpoint is enabled. A mounted-but-disabled runtime stays prepared without exposing the endpoint. Disabled or unmounted users do not need to know or operate Docker profiles directly.
@@ -198,15 +200,15 @@ The service refuses to start if any required variable is missing for the active 
 
 ## Operations
 
-**Mount.** Use `caracal-cli control mount` or TUI → Control → mount. The engine prepares the optional runtime and records mounted state without exposing the endpoint.
+**Mount.** Use the authenticated interactive CLI lifecycle flow or TUI → Control → mount. The engine prepares the optional runtime and records mounted state without exposing the endpoint.
 
-**Enable.** Use `caracal-cli control enable` or TUI → Control → enable. The engine starts the mounted endpoint and records enabled state under the Caracal runtime home.
+**Enable.** Use the authenticated interactive CLI lifecycle flow or TUI → Control → enable. The engine starts the mounted endpoint and records enabled state under the Caracal runtime home.
 
-**Status.** Use `caracal-cli control status` or TUI → Control → status. The result includes endpoint URL, health, lifecycle, and cleanup state. Add `--json` in CLI automation for a structured status object.
+**Status.** Use the authenticated interactive CLI lifecycle flow or TUI → Control → status. The result includes endpoint URL, health, lifecycle, and cleanup state. Automation should query the Control API after an operator enables it.
 
-**Disable.** Use `caracal-cli control disable` or TUI → Control → disable. The engine stops the endpoint while retaining the mounted runtime for fast re-enable.
+**Disable.** Use the authenticated interactive CLI lifecycle flow or TUI → Control → disable. The engine stops the endpoint while retaining the mounted runtime for fast re-enable.
 
-**Unmount.** Use `caracal-cli control unmount` or TUI → Control → unmount. The engine removes the Control container and clears persisted lifecycle state so future stack starts do not include Control.
+**Unmount.** Use the authenticated interactive CLI lifecycle flow or TUI → Control → unmount. The engine removes the Control container and clears persisted lifecycle state so future stack starts do not include Control.
 
 **Health.** `GET /health` always returns `200`. Use for liveness probes.
 

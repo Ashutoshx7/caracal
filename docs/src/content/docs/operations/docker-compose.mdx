@@ -132,15 +132,7 @@ environment:
   CONTROL_HOST: "0.0.0.0"
 ```
 
-The control service is unmounted by default and managed through the engine. Use CLI or TUI controls instead of operating the Compose profile directly:
-
-```bash
-caracal-cli control mount
-caracal-cli control enable
-caracal-cli control status
-caracal-cli control disable
-caracal-cli control unmount
-```
+The control service is unmounted by default and managed through the engine. Use the authenticated interactive CLI Control flow or the TUI Control menu instead of operating the Compose profile, thin scripts, or Node entrypoints directly.
 
 The TUI exposes the same flow under **Control**. Use `mount` to prepare Control without exposing the endpoint, `enable` and `disable` for fast logical on-off control, and `unmount` to remove the optional runtime for long-term idle state. The engine persists lifecycle state and includes the optional profile only when the endpoint should run.
 
