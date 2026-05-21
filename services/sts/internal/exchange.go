@@ -6,6 +6,7 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -45,10 +46,14 @@ type delegationProof struct {
 }
 
 type delegationConstraints struct {
-	TTLSeconds int  `json:"ttl_seconds"`
-	MaxHops    int  `json:"max_hops"`
-	Budget     int  `json:"budget"`
-	Approved   bool `json:"policy_approved"`
+	Resources   []string `json:"resources"`
+	TTLSeconds  int      `json:"ttl_seconds"`
+	MaxDepth    int      `json:"max_depth"`
+	MaxHops     int      `json:"max_hops"`
+	Budget      int      `json:"budget"`
+	Approved    bool     `json:"policy_approved"`
+	ExpiresAt   string   `json:"expires_at"`
+	BroadReason string   `json:"broad_reason"`
 }
 
 func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
@@ -235,9 +240,9 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 			}
 			continue
 		}
-		if delegation != nil && delegation.edge.ResourceID != nil && *delegation.edge.ResourceID != resource.ID {
+		if delegation != nil && !delegationAllowsResource(delegation, resource) {
 			if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "resource_outside_delegation", &OPAResult{},
-				map[string]any{"resource": resource.Identifier}); auditErr != nil {
+				mergeAuditMeta(map[string]any{"resource": resource.Identifier}, delegationMeta)); auditErr != nil {
 				return nil, nil, http.StatusInternalServerError, auditErr
 			}
 			continue
@@ -896,6 +901,19 @@ func delegationEdgeInput(proof *delegationProof) *OPADelegationEdge {
 	}
 }
 
+func delegationAllowsResource(proof *delegationProof, resource *Resource) bool {
+	if proof == nil || proof.edge == nil {
+		return true
+	}
+	if proof.edge.ResourceID != nil && *proof.edge.ResourceID != resource.ID {
+		return false
+	}
+	if len(proof.constraints.Resources) == 0 {
+		return true
+	}
+	return containsString(proof.constraints.Resources, resource.Identifier)
+}
+
 // validateAgentSessionOwnership binds the asserted agent_session_id to the calling
 // application: the row must exist, be active in this zone, and be owned by app.ID.
 // This stops two apps in a zone from forging each other's agent identity by passing
@@ -1052,12 +1070,26 @@ func (s *Server) buildDelegationChain(ctx context.Context, path []string, edge *
 }
 
 func parseDelegationConstraints(raw json.RawMessage) (delegationConstraints, error) {
-	constraints := delegationConstraints{MaxHops: 1}
+	var constraints delegationConstraints
 	if len(raw) == 0 {
 		return constraints, nil
 	}
-	if err := json.Unmarshal(raw, &constraints); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&constraints); err != nil {
 		return constraints, err
+	}
+	if constraints.TTLSeconds < 0 || constraints.MaxDepth < 0 || constraints.MaxHops < 0 || constraints.Budget < 0 {
+		return constraints, fmt.Errorf("delegation constraints must be positive")
+	}
+	if constraints.MaxDepth > 0 {
+		if constraints.MaxHops > 0 && constraints.MaxHops != constraints.MaxDepth {
+			return constraints, fmt.Errorf("max_hops conflicts with max_depth")
+		}
+		constraints.MaxHops = constraints.MaxDepth
+	}
+	if constraints.MaxHops <= 0 {
+		constraints.MaxHops = 1
 	}
 	return constraints, nil
 }

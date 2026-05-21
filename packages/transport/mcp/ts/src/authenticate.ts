@@ -36,7 +36,7 @@ export async function authenticate(token: string, deps: AuthDeps): Promise<AuthR
 
   try {
     const { revocations, ...jwtConfig } = deps
-    const claims = await verify(token, jwtConfig)
+    const claims = await verify(token, { ...jwtConfig, requiredUse: jwtConfig.requiredUse ?? 'per_call' })
     if (!revocations || typeof revocations.isRevoked !== 'function') {
       return { ok: false, error: { code: 'invalid_token', description: 'Revocation store required' } }
     }

@@ -59,6 +59,7 @@ func TestAuthenticateAcceptsVerifiedTokenAndChecksRevocation(t *testing.T) {
 		"target_session_id":      "agent-1",
 		"delegation_path":        []string{"edge-root", "edge-1"},
 		"delegation_graph_epoch": 7,
+		"target":                 []string{"resource://api"},
 	})
 	defer closeServer()
 	store := revocation.NewInMemoryStore(time.Hour)
@@ -68,6 +69,7 @@ func TestAuthenticateAcceptsVerifiedTokenAndChecksRevocation(t *testing.T) {
 		Audience:             "resource://api",
 		ZoneID:               "zone-1",
 		RequiredScopes:       []string{"mcp:call"},
+		RequiredTargets:      []string{"resource://api"},
 		RequireAgent:         true,
 		RequireDelegation:    true,
 		RequireChainContains: []string{"app-parent"},
@@ -149,6 +151,8 @@ func TestAuthenticateMapsIdentityErrors(t *testing.T) {
 		code   transportmcp.ErrorCode
 	}{
 		{name: "scope", opts: transportmcp.Options{RequiredScopes: []string{"admin:call"}}, claims: jwt.MapClaims{"scope": "mcp:call"}, code: transportmcp.ErrInsufficientScope},
+		{name: "target", opts: transportmcp.Options{RequiredTargets: []string{"resource://tools/calendar"}}, claims: jwt.MapClaims{"scope": "mcp:call", "target": []string{"resource://tools/files"}}, code: transportmcp.ErrInvalidToken},
+		{name: "ambient", opts: transportmcp.Options{}, claims: jwt.MapClaims{"scope": "mcp:call", "use": "ambient"}, code: transportmcp.ErrInvalidToken},
 		{name: "zone", opts: transportmcp.Options{ZoneID: "zone-2"}, claims: jwt.MapClaims{"scope": "mcp:call"}, code: transportmcp.ErrInvalidZone},
 		{name: "agent", opts: transportmcp.Options{RequireAgent: true}, claims: jwt.MapClaims{"scope": "mcp:call"}, code: transportmcp.ErrAgentRequired},
 		{name: "delegation", opts: transportmcp.Options{RequireDelegation: true}, claims: jwt.MapClaims{"scope": "mcp:call"}, code: transportmcp.ErrDelegationRequired},
