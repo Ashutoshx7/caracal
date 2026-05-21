@@ -65,7 +65,7 @@ caracal audit tail --json | jq '.[] | select(.decision == "deny") | .request_id'
 
 ## `caracal explain <request_id>`
 
-Show the full policy evaluation diagnostics for a single request.
+Show the policy evaluation diagnostics and redacted authority chain for a single request.
 
 ```bash
 caracal explain req_def456
@@ -87,6 +87,15 @@ event       token_exchange  decision=deny  status=complete
 occurred_at 2026-05-11T20:00:02Z
 request_id  req_def456
 policy_set  pset_pqr678 version=psetv_jkl012 sha=sha256:abc123...
+
+authority:
+  application            app_def456
+  authority_session      sid_root123
+  agent_run              agent_run789
+  delegated_permission   edge_abc123
+  resource               resource://payments-api
+  scopes                 transfer:read
+  provider               provider_xyz grant=grant_123 auth=provider_oauth
 
 determining_policies:
 [
@@ -137,7 +146,7 @@ With `--json`, the command emits the raw array of `AuditDetail` objects:
 
 1. Notice a failed exchange in application logs or a failing test.
 2. Capture the `request_id` from the error response or from the application's trace headers.
-3. Run `caracal explain <request_id>` to see exactly which policy denied the request and why.
+3. Run `caracal explain <request_id>` to see the authority session, agent run, delegated permission, resource, provider mode, and policy result.
 4. Inspect `diagnostics_json` for the specific rule and message.
 5. Update the Rego policy or fix the grant and re-test.
 

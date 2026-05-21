@@ -55,7 +55,7 @@ Start with an SDK plus the Gateway. Install identity, revocation, transport, or 
 
 ## Shared concepts
 
-**Context propagation** — The SDK packages bind agent run and delegated-permission identity to the execution context (AsyncLocalStorage in TypeScript, context vars in Python, `context.Context` in Go). Gateway-bound outbound calls within that context automatically carry the correct `Authorization`, `traceparent`, and `baggage` headers.
+**Context propagation** — The SDK packages bind authority session, agent run, delegated-permission identity, trace ID, and hop to the execution context (AsyncLocalStorage in TypeScript, context vars in Python, `context.Context` in Go). Gateway-bound outbound calls within that context automatically carry the correct `Authorization`, `traceparent`, and `baggage` headers. Use the SDK capture helpers when crossing task, thread, goroutine, queue, or provider-adapter boundaries, and use the authority-summary helpers for redacted diagnostics.
 
 **Package layering** — The main SDKs own agent lifecycle and context propagation. TypeScript and Go use their OAuth packages for client-secret token exchange; Python implements its SDK token-source flow in `caracalai-sdk` and depends on `caracalai-identity`. Install companion packages directly when building a server that verifies mandates, a custom STS exchange client, or a control-plane tool.
 

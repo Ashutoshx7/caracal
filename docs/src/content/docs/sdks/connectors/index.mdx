@@ -52,10 +52,23 @@ Provider SDKs often hide their HTTP, gRPC, queue, or streaming transport. If a p
 - acquire Caracal access tokens through the SDK or Gateway path instead of holding provider-native credentials in agent code;
 - attach Caracal authorization and trace context to every provider operation it controls;
 - verify Caracal tokens and revocation when it acts as a direct resource rather than a Gateway-proxied resource;
-- emit action-result audit events with request ID, resource, provider operation, status, latency, result class, and revocation interruption state;
+- emit action-result audit events with request ID, resource, provider or grant ID when brokered, provider operation, auth mode, status, latency, result class, and revocation interruption state;
 - avoid forwarding Caracal identity tokens to third-party providers unless the resource is explicitly configured as a trusted sidecar.
 
 The safe default is to route provider SDK traffic through the Gateway. Direct adapters are for transports the Gateway cannot proxy or for trusted internal services that can enforce the same verification, revocation, and audit boundaries.
+
+## Transport enforcement contracts
+
+Different transports need different boundaries. Do not pretend one universal proxy model covers every provider.
+
+| Transport | Enforcement contract |
+| --- | --- |
+| HTTP / REST / MCP-over-HTTP | Route through Gateway by default. Gateway owns exchange, replay, revocation, provider brokering, streaming checks, and action audit. |
+| gRPC | Use a Gateway-compatible HTTP/2 route only when request metadata can carry Caracal headers safely; otherwise use an adapter that verifies metadata, checks revocation before and during streams, and emits action audit. |
+| Queues and background jobs | Put the Caracal envelope in message headers, not in the body. Consumers must re-bind the authority context, reject expired or revoked authority before execution, and write execution audit for the job result. |
+| Provider SDKs | Prefer a custom HTTP client/transport that still calls Gateway. If the SDK hides transport, wrap it with a certified adapter and never pass provider-native credentials to agent code. |
+| Local tools | Treat the tool runner as the resource. It must verify or receive a Gateway-approved mandate, enforce scopes locally, and emit a result event. |
+| External MCP servers | If you control the server, use Gateway or a direct verifier. If you do not, place a Caracal adapter in front of it and keep identity forwarding off unless explicitly trusted. |
 
 ## Production revocation
 

@@ -56,6 +56,8 @@ A resource describes something an agent may call: an MCP server, REST API, SaaS 
 
 When a resource has an upstream URL and Gateway app identity, Caracal creates or updates the provider route automatically. Users should not manage the internal routing table directly.
 
+Treat scopes as a typed vocabulary even though they are represented as strings on the wire. Use stable names such as `calendar:read`, `payments:submit`, or `inventory:export`; avoid free-form prose, provider-specific secrets, or request parameters inside scope names. Put dynamic limits in policy, delegated-permission restrictions, or resource configuration instead.
+
 ### Policy template
 
 A policy template is the starting point for authorization. It decides whether the agent app, requested scopes, resource, agent run state, and delegated permission are allowed. New users should start with `baseline-scopes`, then add resource, delegation, or step-up templates as the integration matures.
@@ -67,6 +69,10 @@ Policies fail closed. If there is no active policy set, access is denied.
 The Gateway is the default execution plane. It verifies Caracal access tokens, checks replay and revocation, resolves the provider route, brokers provider credentials inside the trusted boundary, forwards the upstream request, and emits action-result audit.
 
 Agents should call providers through the Gateway unless they are using a certified direct verifier or adapter.
+
+### Execution context
+
+Every SDK carries the same authority context: application, authority session, agent run, delegated permission, trace ID, and hop. TypeScript uses `AsyncLocalStorage`, Python uses `contextvars`, and Go uses explicit `context.Context`. At task, thread, goroutine, queue, or adapter boundaries, capture and re-bind that context rather than reconstructing it from logs or provider state.
 
 ## Token and credential boundaries
 
@@ -112,6 +118,7 @@ Authorization audit answers **why access was allowed or denied**. Action executi
 Together, audit should let an operator answer:
 
 - Which agent run made the request?
+- Which authority session and delegated permission were in the chain?
 - Which resource and scopes were requested?
 - Which policy allowed or denied it?
 - Which provider route and auth mode were used?

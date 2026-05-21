@@ -35,6 +35,18 @@ Use this matrix to set expectations before registering a provider or integration
 
 Do not document or operate an integration as Gateway-supported unless it has end-to-end registration, credential brokering, revocation, and action-result audit coverage.
 
+## Scope vocabulary
+
+Scopes are strings for OAuth and JWT compatibility, but operators should design them as a stable typed vocabulary:
+
+| Pattern | Use for |
+| --- | --- |
+| `<domain>:<action>` | Product permissions such as `calendar:read`, `payments:submit`, `inventory:export` |
+| `<domain>:<object>:<action>` | Narrower resource families such as `control:zone:write` |
+| Provider-native scopes | Only when the upstream provider already defines the vocabulary and policy maps it explicitly |
+
+Do not place user IDs, request IDs, secrets, or one-off parameters in scopes. Use policy input, delegated-permission restrictions, grants, or provider configuration for dynamic bounds.
+
 ## Prerequisites
 
 - `CARACAL_ADMIN_TOKEN` set.
@@ -108,6 +120,8 @@ Providers define credential metadata for upstream authentication. Registration s
 If no active provider grant exists for the configured resource/provider pair, STS denies the Gateway exchange instead of falling back to a different provider or exposing provider credentials to the caller. Malformed provider config is rejected; API-key providers must declare the exact upstream header before STS returns a brokered directive.
 
 By default, provider-native forwarding does **not** send the Caracal access token to the upstream. Add `"forward_caracal_identity": true` only for upstreams you control, such as an internal sidecar or controlled MCP server that intentionally verifies `X-Caracal-Identity`. Leave it unset for third-party SaaS providers.
+
+When the Gateway brokers a provider credential, action audit records the resource, upstream host, provider auth mode, and non-secret provider/grant identifiers. It does not log provider tokens, request bodies, or response bodies by default.
 
 ### API key provider
 

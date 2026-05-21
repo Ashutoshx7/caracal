@@ -93,6 +93,19 @@ The term "per-call" describes the authority boundary, not a guarantee that every
 
 This is why provider and tool integrations are safest when routed through the Gateway: Caracal owns credential brokering, replay detection, revocation checks, and action audit in one enforcement point.
 
+## Long-running execution
+
+Authority must stay valid for the whole execution, not only at issuance.
+
+| Situation | Required behavior |
+| --- | --- |
+| Gateway HTTP request | Token expiry is checked before forwarding. The upstream request may finish if authority stays valid; Gateway aborts streaming copies when revocation arrives. |
+| Retry | A retry is a new action attempt. It must present a fresh Gateway request or a connector token whose replay contract allows the retry. |
+| Long stream | The stream keeps the original request ID and trace. Gateway or adapter must re-check revocation during the stream and record whether revocation interrupted it. |
+| Background work | The worker must receive the Caracal envelope in message headers, re-bind the authority context, reject expired or revoked authority before execution, and emit action-result audit. |
+| Provider-side sub-action | Gateway or adapter must bound the operation it invokes. Provider-internal sub-actions are not individually authorized by Caracal unless the adapter instruments them as separate Caracal actions. |
+| Agent termination | Termination, stale service heartbeat, delegated-permission revocation, grant revocation, or root authority revocation invalidates further use through the shared revocation contract. |
+
 ## Mandate lifetime and the exchange chain
 
 ```
