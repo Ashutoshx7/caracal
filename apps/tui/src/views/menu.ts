@@ -21,7 +21,6 @@ import {
   runExec,
   type ControlLifecycleAction,
   type ControlLifecycleResult,
-  type ControlRuntimeState,
   type ControlServiceStatus,
   type StackMode,
   type StackPaths,
@@ -217,6 +216,7 @@ class ControlMenuView implements View {
   readonly title = 'control'
   private cursor = 0
   private readonly ctx: Ctx
+  private status: Pick<ControlServiceStatus, 'mounted' | 'enabled'> | undefined
 
   constructor(ctx: Ctx) {
     this.ctx = ctx
@@ -226,7 +226,7 @@ class ControlMenuView implements View {
     try {
       authorizeControlManagementAccess()
       const paths = resolveStackPaths({ mode: resolveControlStackMode() })
-      await controlServiceStatus({ paths, env: controlComposeEnv(paths), timeoutMs: 300 })
+      this.status = await controlServiceStatus({ paths, env: controlComposeEnv(paths), timeoutMs: 300 })
       app.invalidate()
     } catch (err) {
       app.setStatus(`control status: ${explainError(err)}`, 'error')
@@ -234,9 +234,9 @@ class ControlMenuView implements View {
   }
 
   private items(): { key: string; label: string; build: () => View }[] {
-    const state = this.controlState()
-    const mounted = state?.mounted === true
-    const enabled = state?.enabled === true
+    const state = this.lifecycleState()
+    const mounted = state.mounted
+    const enabled = state.enabled
     return [
       { key: 'm', label: mounted ? 'unmount runtime' : 'mount runtime', build: () => this.lifecycleConfirm(mounted ? 'unmount' : 'mount') },
       { key: 'e', label: !mounted ? 'enable endpoint (mount first)' : enabled ? 'disable endpoint' : 'enable endpoint', build: () => mounted ? this.lifecycleConfirm(enabled ? 'disable' : 'enable') : this.statusView() },
@@ -249,11 +249,13 @@ class ControlMenuView implements View {
     ]
   }
 
-  private controlState(): ControlRuntimeState | undefined {
+  private lifecycleState(): { mounted: boolean; enabled: boolean } {
+    if (this.status) return this.status
     try {
-      return readControlState()
+      const state = readControlState()
+      return { mounted: state?.mounted === true, enabled: state?.enabled === true }
     } catch {
-      return undefined
+      return { mounted: false, enabled: false }
     }
   }
 
@@ -300,7 +302,9 @@ class ControlMenuView implements View {
       run: async (onLine) => {
         authorizeControlManagementAccess()
         const paths = resolveStackPaths({ mode: resolveControlStackMode() })
-        return applyControlLifecycleAction({ paths, action, env: controlComposeEnv(paths), onLine })
+        const result = await applyControlLifecycleAction({ paths, action, env: controlComposeEnv(paths), onLine })
+        this.status = result
+        return result
       },
     })
   }
@@ -311,7 +315,9 @@ class ControlMenuView implements View {
       load: async () => {
         authorizeControlManagementAccess()
         const paths = resolveStackPaths({ mode: resolveControlStackMode() })
-        return controlServiceStatus({ paths, env: controlComposeEnv(paths) })
+        const status = await controlServiceStatus({ paths, env: controlComposeEnv(paths) })
+        this.status = status
+        return status
       },
     })
   }
