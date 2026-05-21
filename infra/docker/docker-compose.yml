@@ -501,7 +501,7 @@ services:
         target: caracalAdminToken
     environment:
       CARACAL_MODE: ${CARACAL_MODE:-dev}
-      CARACAL_CONTROL_ENABLED: "true"
+      CARACAL_CONTROL_ENABLED: "${CARACAL_ENGINE_CONTROL_ENABLED:-false}"
       STS_JWKS_URL: ${CARACAL_STS_ISSUER_URL:-http://sts:8080}/.well-known/jwks.json
       STS_ISSUER_URL: ${CARACAL_STS_ISSUER_URL:-http://sts:8080}
       CONTROL_AUDIENCE: ${CONTROL_AUDIENCE:-caracal-control}
@@ -532,5 +532,6 @@ volumes:
   gatewayReplay:
 
 # The control service is disabled by default and managed by the engine.
-# Use `caracal control mount|enable|disable|unmount|status`
+# Use `caracal-cli control mount|enable|disable|unmount|status`
 # or the TUI Control menu so lifecycle state, endpoint status, and cleanup remain consistent.
+# Direct compose profile use does not enable the endpoint.

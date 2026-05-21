@@ -372,7 +372,7 @@ services:
         target: caracalAdminToken
     environment:
       CARACAL_MODE: ${CARACAL_MODE:-stable}
-      CARACAL_CONTROL_ENABLED: "true"
+      CARACAL_CONTROL_ENABLED: "${CARACAL_ENGINE_CONTROL_ENABLED:-false}"
       STS_JWKS_URL: ${CARACAL_STS_ISSUER_URL:-http://localhost:8080}/.well-known/jwks.json
       STS_ISSUER_URL: ${CARACAL_STS_ISSUER_URL:-http://localhost:8080}
       CONTROL_AUDIENCE: ${CONTROL_AUDIENCE:-caracal-control}
