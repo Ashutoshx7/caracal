@@ -48,6 +48,8 @@ class VerifyTokenTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(claims["zone_id"], "zone1")
         self.assertEqual(claims["sub"], "user1")
+        self.assertEqual(claims["root_sid"], "root1")
+        self.assertEqual(claims["sub_type"], "user")
         self.assertEqual(self.cache.issuers, ["https://sts.example.com"])
 
 
