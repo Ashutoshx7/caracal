@@ -221,6 +221,17 @@ export async function policySetCommand(argv: string[], cfg?: CliConfig): Promise
         }
         return printJSON(await client.policySets.activate(zoneId, id, versionId, flagString(flags, 'shadow')))
       }
+      case 'simulate': {
+        const zoneId = requireZone(ctx, flags)
+        const id = positional[0]
+        const versionId = flagString(flags, 'version')
+        const inputValue = flagString(flags, 'input') ?? (flagString(flags, 'input-file') ? `@${flagString(flags, 'input-file')}` : undefined)
+        if (!id || !versionId) {
+          return usage('policy-set simulate <id> --version <version-id> [--input <json>|--input-file <path>]')
+        }
+        const input = inputValue ? JSON.parse(readContent(inputValue)) as Record<string, unknown> : undefined
+        return printJSON(await client.policySets.simulate(zoneId, id, versionId, input))
+      }
       case 'delete': {
         const zoneId = requireZone(ctx, flags)
         const id = positional[0]
@@ -272,7 +283,7 @@ function policyHelp(): never {
       '    --owner-type <t>           Owner type',
       '  version <id>               Add a new Rego version to an existing policy',
       '    --file <path>|--content <rego>  New Rego content (required)',
-      '    --schema-version <v>       Policy schema version (default: 2026-03-16)',
+      '    --schema-version <v>       Policy schema version (default: 2026-05-20)',
       '  delete <id>                Archive a policy (soft-delete)',
       '',
       'Flags:',
@@ -300,6 +311,10 @@ function policySetHelp(): never {
       '  activate <id>              Promote a version to active',
       '    --version <vid>            Policy-set version ID to activate (required)',
       '    --shadow <vid>             Optional shadow version for gradual rollout',
+      '  simulate <id>              Validate rollout contract and optional policy input without activation',
+      '    --version <vid>            Policy-set version ID to simulate (required)',
+      '    --input <json>             Inline OPA input fixture',
+      '    --input-file <path>        OPA input fixture file',
       '  delete <id>                Archive a policy-set (soft-delete)',
       '',
       'Flags:',

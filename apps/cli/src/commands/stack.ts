@@ -9,9 +9,11 @@ import {
   stackDown,
   stackStatus,
   stackUp,
+  type ProbeKind,
   type StackMode,
   type StackPaths,
 } from '@caracalai/engine'
+import { flagBool, parseArgs, printJSON, showHelp } from './shared.ts'
 import { CARACAL_MODE, CARACAL_REGISTRY, CARACAL_SHA, CARACAL_VERSION } from '../runtime/version.gen.ts'
 import { style, SYMBOL, printError, printInfo } from '../style.ts'
 
@@ -25,9 +27,9 @@ function resolveMode(): StackMode {
   return CARACAL_MODE
 }
 
-export function resolvePaths(): StackPaths {
+export function resolvePaths(quiet = false): StackPaths {
   try {
-    return resolveStackPaths({ mode: resolveMode(), onInfo: printInfo })
+    return resolveStackPaths({ mode: resolveMode(), onInfo: quiet ? undefined : printInfo })
   } catch (err) {
     printError(err instanceof Error ? err.message : String(err))
     process.exit(1)
@@ -73,23 +75,47 @@ export async function downCommand(argv: string[]): Promise<void> {
   process.exit(code)
 }
 
-export async function statusCommand(): Promise<void> {
-  const paths = resolvePaths()
-  printBanner(paths)
-  const probes = defaultServiceProbes()
+export async function statusCommand(argv: string[] = []): Promise<void> {
+  if (argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') return statusHelp()
+  const { flags } = parseArgs(argv)
+  const kind: ProbeKind = flagBool(flags, 'ready') ? 'ready' : 'health'
+  const json = flagBool(flags, 'json')
+  const paths = resolvePaths(json)
+  const probes = defaultServiceProbes(undefined, kind)
   const results = await stackStatus({ probes })
+  if (json) {
+    printJSON({ mode: kind, services: results })
+    process.exit(results.every((r) => r.ok) ? 0 : 1)
+  }
+  printBanner(paths)
   const width = probes.reduce((m, s) => Math.max(m, s.name.length), 0)
   let allOk = true
   process.stdout.write(
-    `${style.header('service'.padEnd(width))}  ${style.header('port ')}  ${style.header('status')}  ${style.header('detail')}\n`,
+    `${style.header('service'.padEnd(width))}  ${style.header('port ')}  ${style.header('mode  ')}  ${style.header('status')}  ${style.header('detail')}\n`,
   )
   for (const r of results) {
     if (!r.ok) allOk = false
     const mark = r.ok ? style.success(SYMBOL.ok) : style.error(SYMBOL.fail)
     const status = r.ok ? style.success('ok  ') : style.error('down')
     process.stdout.write(
-      `${r.name.padEnd(width)}  ${String(r.port).padStart(5)}  ${mark} ${status}  ${style.label(r.detail)}\n`,
+      `${r.name.padEnd(width)}  ${String(r.port).padStart(5)}  ${kind.padEnd(6)}  ${mark} ${status}  ${style.label(r.detail)}\n`,
     )
   }
   process.exit(allOk ? 0 : 1)
+}
+
+function statusHelp(): never {
+  return showHelp(
+    [
+      'Usage: caracal status [--ready] [--json]',
+      '',
+      'Checks local stack service health. Use --ready for dependency-aware readiness probes.',
+      '',
+      'Flags:',
+      '  --ready                 Probe /ready instead of /health',
+      '  --json                  Emit machine-readable output',
+      '  --help, -h              Show this help',
+      '',
+    ],
+  )
 }

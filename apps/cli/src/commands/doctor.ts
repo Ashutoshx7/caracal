@@ -4,6 +4,7 @@
 // `caracal doctor` reports local control-plane readiness for a protected resource.
 
 import type { CliConfig } from '../config.ts'
+import { DEFAULT_COORDINATOR_URL, DEFAULT_ZONE_URL, resolveServiceUrl } from '@caracalai/engine/cli'
 import {
   buildAdminClient,
   fail,
@@ -21,8 +22,60 @@ interface DoctorCheck {
   detail: string
 }
 
+interface ServiceTarget {
+  name: string
+  baseUrl: string
+  metricsPath?: string
+  summarizeMetrics?: (value: unknown) => string
+}
+
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+function serviceUrl(envKeys: string[], devDefault: string): string {
+  for (const key of envKeys) {
+    const value = process.env[key]
+    if (value) return value.replace(/\/$/, '')
+  }
+  return resolveServiceUrl(envKeys[0]!, devDefault).replace(/\/$/, '')
+}
+
+function nestedNumber(value: unknown, path: string[]): number | undefined {
+  let current = value
+  for (const part of path) {
+    if (!current || typeof current !== 'object' || !(part in current)) return undefined
+    current = (current as Record<string, unknown>)[part]
+  }
+  return typeof current === 'number' ? current : undefined
+}
+
+function summarizeSTS(value: unknown): string {
+  const compileErrors = nestedNumber(value, ['opa', 'compile_errors'])
+  const evalErrors = nestedNumber(value, ['opa', 'eval_errors'])
+  const maxPolicyAge = nestedNumber(value, ['opa', 'max_policy_age_seconds'])
+  return `opa compile_errors=${compileErrors ?? '-'} eval_errors=${evalErrors ?? '-'} max_policy_age_seconds=${maxPolicyAge ?? '-'}`
+}
+
+function summarizeGateway(value: unknown): string {
+  const bindings = nestedNumber(value, ['bindings_loaded'])
+  const revocations = nestedNumber(value, ['revocations_active'])
+  const denied = nestedNumber(value, ['requests_denied'])
+  return `bindings=${bindings ?? '-'} revocations=${revocations ?? '-'} denied=${denied ?? '-'}`
+}
+
+function summarizeAudit(value: unknown): string {
+  const lag = nestedNumber(value, ['consumer_lag'])
+  const dlq = nestedNumber(value, ['dlq_size'])
+  const tamper = nestedNumber(value, ['tamper_mismatch_total'])
+  return `consumer_lag=${lag ?? '-'} dlq_size=${dlq ?? '-'} tamper_mismatch_total=${tamper ?? '-'}`
+}
+
+function summarizeCoordinator(value: unknown): string {
+  const outboxDead = nestedNumber(value, ['outbox', 'dead'])
+  const outboxPending = nestedNumber(value, ['outbox', 'pending'])
+  const invocationsRunning = nestedNumber(value, ['invocations', 'running'])
+  return `outbox_pending=${outboxPending ?? '-'} outbox_dead=${outboxDead ?? '-'} invocations_running=${invocationsRunning ?? '-'}`
 }
 
 async function runCheck(checks: DoctorCheck[], name: string, fn: () => Promise<string>): Promise<void> {
@@ -33,10 +86,35 @@ async function runCheck(checks: DoctorCheck[], name: string, fn: () => Promise<s
   }
 }
 
+async function fetchOk(url: string): Promise<string> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return url
+}
+
+async function fetchJSON(url: string): Promise<unknown> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return await res.json()
+}
+
+async function runExtendedChecks(checks: DoctorCheck[], targets: ServiceTarget[]): Promise<void> {
+  for (const target of targets) {
+    await runCheck(checks, `${target.name} readiness`, async () => fetchOk(`${target.baseUrl}/ready`))
+    if (target.metricsPath) {
+      await runCheck(checks, `${target.name} metrics`, async () => {
+        const body = await fetchJSON(`${target.baseUrl}${target.metricsPath}`)
+        return target.summarizeMetrics ? target.summarizeMetrics(body) : 'queryable'
+      })
+    }
+  }
+}
+
 export async function doctorCommand(argv: string[], cfg?: CliConfig): Promise<void> {
   if (argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') return help()
   const { flags } = parseArgs(argv)
   const json = flagBool(flags, 'json')
+  const extended = flagBool(flags, 'extended')
   try {
     const ctx = buildAdminClient(cfg)
     const { client } = ctx
@@ -44,9 +122,7 @@ export async function doctorCommand(argv: string[], cfg?: CliConfig): Promise<vo
     const checks: DoctorCheck[] = []
 
     await runCheck(checks, 'api health', async () => {
-      const res = await fetch(`${ctx.apiUrl.replace(/\/$/, '')}/health`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      return ctx.apiUrl
+      return fetchOk(`${ctx.apiUrl.replace(/\/$/, '')}/health`)
     })
     await runCheck(checks, 'admin auth', async () => {
       const zones = await client.zones.list()
@@ -79,6 +155,37 @@ export async function doctorCommand(argv: string[], cfg?: CliConfig): Promise<vo
       })
     }
 
+    if (extended) {
+      const apiUrl = ctx.apiUrl.replace(/\/$/, '')
+      await runExtendedChecks(checks, [
+        { name: 'api', baseUrl: apiUrl },
+        {
+          name: 'sts',
+          baseUrl: serviceUrl(['CARACAL_STS_URL', 'CARACAL_ZONE_URL'], DEFAULT_ZONE_URL),
+          metricsPath: '/metrics.json',
+          summarizeMetrics: summarizeSTS,
+        },
+        {
+          name: 'gateway',
+          baseUrl: serviceUrl(['CARACAL_GATEWAY_URL'], 'http://localhost:8081'),
+          metricsPath: '/metrics.json',
+          summarizeMetrics: summarizeGateway,
+        },
+        {
+          name: 'audit',
+          baseUrl: serviceUrl(['CARACAL_AUDIT_URL'], 'http://localhost:9090'),
+          metricsPath: '/metrics.json',
+          summarizeMetrics: summarizeAudit,
+        },
+        {
+          name: 'coordinator',
+          baseUrl: serviceUrl(['CARACAL_COORDINATOR_URL'], DEFAULT_COORDINATOR_URL),
+          metricsPath: '/stats',
+          summarizeMetrics: summarizeCoordinator,
+        },
+      ])
+    }
+
     if (json) return printJSON(checks)
     return printTable(checks, ['check', 'status', 'detail'])
   } catch (err) {
@@ -89,12 +196,13 @@ export async function doctorCommand(argv: string[], cfg?: CliConfig): Promise<vo
 function help(): never {
   return showHelp(
     [
-      'Usage: caracal doctor [--zone <id>] [--json]',
+      'Usage: caracal doctor [--zone <id>] [--extended] [--json]',
       '',
-      'Checks local control-plane readiness: API health, admin auth, selected zone, resources, policy sets, grants, and audit queryability.',
+      'Checks control-plane readiness. --extended also probes service readiness and operator metrics.',
       '',
       'Flags:',
       '  --zone <id>             Zone selector (or CARACAL_ZONE_ID)',
+      '  --extended              Probe API, STS, Gateway, Audit, and Coordinator readiness and metrics',
       '  --json                  Emit machine-readable output',
       '  --help, -h              Show this help',
       '',
