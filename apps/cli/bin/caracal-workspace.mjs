@@ -37,6 +37,7 @@ const tsBuilds = [
   'packages/oauth/ts/dist/index.js',
   'packages/admin/ts/dist/index.js',
   'packages/engine/dist/index.js',
+  'packages/engine/dist/controlAccess.js',
 ]
 if (tsBuilds.some((path) => !existsSync(join(root, path)))) {
   process.stderr.write('caracal: building TypeScript workspace packages (first run)…\n')

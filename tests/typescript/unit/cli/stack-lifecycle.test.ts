@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { StackPaths } from '../../../../packages/engine/src/stack.ts'
 
 const runExecMock = vi.hoisted(() => vi.fn())
+const spawnSyncMock = vi.hoisted(() => vi.fn(() => ({ status: 0, stdout: 'control-container-id\n' })))
 const controlEnabledMock = vi.hoisted(() => vi.fn(() => false))
 const readControlStateMock = vi.hoisted(() => vi.fn(() => undefined))
 const setControlEnabledMock = vi.hoisted(() => vi.fn())
@@ -17,6 +18,11 @@ const setControlMountedMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../../../../packages/engine/src/run.js', () => ({
   runExec: runExecMock,
+}))
+
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
+  spawnSync: spawnSyncMock,
 }))
 
 vi.mock('../../../../packages/engine/src/controlState.js', () => ({
@@ -30,7 +36,9 @@ vi.mock('../../../../packages/engine/src/controlState.js', () => ({
     invokeUrl: `http://localhost:${Number(process.env.CONTROL_PORT ?? 8087)}/v1/control/invoke`,
     bind: '127.0.0.1',
   }),
+  controlGateFile: () => '/tmp/caracal/control/enabled',
   controlStateFile: () => '/tmp/caracal/control.json',
+  ensureControlGateDir: () => '/tmp/caracal/control',
   isControlEnabled: controlEnabledMock,
   readControlState: readControlStateMock,
   setControlEnabled: setControlEnabledMock,
@@ -77,6 +85,8 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
   runExecMock.mockReset()
+  spawnSyncMock.mockReset()
+  spawnSyncMock.mockReturnValue({ status: 0, stdout: 'control-container-id\n' })
   controlEnabledMock.mockReset()
   readControlStateMock.mockReset()
   setControlEnabledMock.mockReset()
@@ -223,7 +233,11 @@ describe('stack lifecycle compose commands', () => {
       'control',
       'down',
     ])
-    expect(calls[0].env).toEqual({ CARACAL_MODE: 'stable', CARACAL_ENGINE_CONTROL_ENABLED: 'true' })
+    expect(calls[0].env).toEqual({
+      CARACAL_MODE: 'stable',
+      CARACAL_ENGINE_CONTROL_ENABLED: 'true',
+      CARACAL_CONTROL_STATE_DIR: '/tmp/caracal/control',
+    })
   })
 
   it('rejects direct Control service targets from stack commands', () => {
@@ -289,7 +303,11 @@ describe('stack compose helpers', () => {
       'control',
       'ps',
     ])
-    expect(calls[0].env).toEqual({ CARACAL_MODE: 'stable', CARACAL_ENGINE_CONTROL_ENABLED: 'true' })
+    expect(calls[0].env).toEqual({
+      CARACAL_MODE: 'stable',
+      CARACAL_ENGINE_CONTROL_ENABLED: 'true',
+      CARACAL_CONTROL_STATE_DIR: '/tmp/caracal/control',
+    })
     expect(calls[1].argv).toEqual([
       'docker',
       'compose',
@@ -323,6 +341,7 @@ describe('stack compose helpers', () => {
     readControlStateMock.mockReturnValueOnce({
       mounted: true,
       enabled: false,
+      mountedAt: '2026-05-21T00:00:00.000Z',
       managedBy: 'engine',
       updatedAt: '2026-05-21T00:00:00.000Z',
       service: 'control',
@@ -392,6 +411,86 @@ describe('stack compose helpers', () => {
     }
   })
 
+  it('clears stale mounted state when the control container is absent', async () => {
+    const stable = paths('stable', [])
+    readControlStateMock.mockReturnValue({
+      mounted: true,
+      enabled: false,
+      mountedAt: '2026-05-21T00:00:00.000Z',
+      managedBy: 'engine',
+      updatedAt: '2026-05-21T00:00:00.000Z',
+      service: 'control',
+      profile: 'control',
+      port: 8087,
+      endpoint: 'http://localhost:8087',
+      healthUrl: 'http://localhost:8087/health',
+      readyUrl: 'http://localhost:8087/ready',
+      invokeUrl: 'http://localhost:8087/v1/control/invoke',
+      bind: '127.0.0.1',
+    })
+    spawnSyncMock.mockReturnValue({ status: 0, stdout: '' })
+
+    await expect(controlServiceStatus({
+      home: '/tmp/home',
+      paths: stable,
+      env: { CARACAL_MODE: 'stable' },
+    })).resolves.toMatchObject({
+      state: 'unmounted',
+      service: 'unmounted',
+      mounted: false,
+      enabled: false,
+      detail: 'not mounted',
+    })
+
+    expect(spawnSyncMock).toHaveBeenCalledWith(
+      'docker',
+      [
+        'compose',
+        '-f',
+        join(dir, 'stable.yml'),
+        '--profile',
+        'control',
+        'ps',
+        '--all',
+        '-q',
+        'control',
+      ],
+      expect.objectContaining({ cwd: dir }),
+    )
+    expect(setControlMountedMock).toHaveBeenCalledWith(false, false, { home: '/tmp/home' })
+  })
+
+  it('clears disabled mounted state that lacks explicit mount provenance', async () => {
+    const stable = paths('stable', [])
+    readControlStateMock.mockReturnValue({
+      mounted: true,
+      enabled: false,
+      managedBy: 'engine',
+      updatedAt: '2026-05-21T00:00:00.000Z',
+      service: 'control',
+      profile: 'control',
+      port: 8087,
+      endpoint: 'http://localhost:8087',
+      healthUrl: 'http://localhost:8087/health',
+      readyUrl: 'http://localhost:8087/ready',
+      invokeUrl: 'http://localhost:8087/v1/control/invoke',
+      bind: '127.0.0.1',
+    })
+
+    await expect(controlServiceStatus({
+      home: '/tmp/home',
+      paths: stable,
+      env: { CARACAL_MODE: 'stable' },
+    })).resolves.toMatchObject({
+      state: 'unmounted',
+      mounted: false,
+      enabled: false,
+    })
+
+    expect(spawnSyncMock).not.toHaveBeenCalled()
+    expect(setControlMountedMock).toHaveBeenCalledWith(false, false, { home: '/tmp/home' })
+  })
+
   it('applies control lifecycle actions only through managed compose environment', async () => {
     const stable = paths('stable', [])
     readControlStateMock
@@ -449,7 +548,7 @@ describe('stack compose helpers', () => {
     })).resolves.toMatchObject({
       action: 'disable',
       state: 'disabled',
-      service: 'stopped',
+      service: 'gated',
       mounted: true,
       enabled: false,
       marker: '/tmp/caracal/control.json',
@@ -457,35 +556,26 @@ describe('stack compose helpers', () => {
       invokeUrl: 'http://localhost:8087/v1/control/invoke',
       profile: 'control',
       lifecycle: 'mounted but disabled',
-      optimization: 'runtime is retained for fast enable; no Control endpoint is exposed',
+      optimization: 'runtime remains loaded; the Control endpoint is blocked by the local gate',
     })
 
     expect(setControlEnabledMock).toHaveBeenNthCalledWith(1, true)
     expect(setControlEnabledMock).toHaveBeenNthCalledWith(2, false)
-    expect(calls[0].env).toEqual({ CARACAL_MODE: 'stable', CARACAL_ENGINE_CONTROL_ENABLED: 'true' })
-    expect(calls[0].argv).toEqual([
-      'docker',
-      'compose',
-      '-f',
-      join(dir, 'stable.yml'),
-      '--profile',
-      'control',
-      'start',
-      'control',
-    ])
-    expect(typeof calls[0].onLine).toBe('function')
-    expect(calls[1].env).toEqual({ CARACAL_MODE: 'stable', CARACAL_ENGINE_CONTROL_ENABLED: 'true' })
-    expect(calls[1].argv).toEqual([
-      'docker',
-      'compose',
-      '-f',
-      join(dir, 'stable.yml'),
-      '--profile',
-      'control',
-      'stop',
-      'control',
-    ])
-    expect(typeof calls[1].onLine).toBe('function')
+    expect(calls).toEqual([])
+  })
+
+  it('does not mount runtime as a side effect of endpoint enable', async () => {
+    const stable = paths('stable', [])
+    readControlStateMock.mockReturnValue(undefined)
+
+    await expect(applyControlLifecycleAction({
+      paths: stable,
+      action: 'enable',
+      env: { CARACAL_MODE: 'stable' },
+    })).rejects.toThrow(/not mounted/)
+
+    expect(calls).toEqual([])
+    expect(setControlEnabledMock).not.toHaveBeenCalled()
   })
 
   it('mounts and unmounts control runtime as long-term lifecycle actions', async () => {
@@ -514,7 +604,7 @@ describe('stack compose helpers', () => {
     })).resolves.toMatchObject({
       action: 'mount',
       state: 'disabled',
-      service: 'prepared',
+      service: 'gated',
       mounted: true,
       enabled: false,
       lifecycle: 'mounted but disabled',
@@ -535,7 +625,11 @@ describe('stack compose helpers', () => {
 
     expect(setControlMountedMock).toHaveBeenNthCalledWith(1, true, false)
     expect(setControlMountedMock).toHaveBeenNthCalledWith(2, false, false)
-    expect(calls[0].env).toEqual({ CARACAL_MODE: 'stable', CARACAL_ENGINE_CONTROL_ENABLED: 'true' })
+    expect(calls[0].env).toEqual({
+      CARACAL_MODE: 'stable',
+      CARACAL_ENGINE_CONTROL_ENABLED: 'true',
+      CARACAL_CONTROL_STATE_DIR: '/tmp/caracal/control',
+    })
     expect(calls[0].argv).toEqual([
       'docker',
       'compose',
@@ -544,11 +638,15 @@ describe('stack compose helpers', () => {
       '--profile',
       'control',
       'up',
-      '--no-start',
+      '-d',
       'control',
     ])
     expect(typeof calls[0].onLine).toBe('function')
-    expect(calls[1].env).toEqual({ CARACAL_MODE: 'stable', CARACAL_ENGINE_CONTROL_ENABLED: 'true' })
+    expect(calls[1].env).toEqual({
+      CARACAL_MODE: 'stable',
+      CARACAL_ENGINE_CONTROL_ENABLED: 'true',
+      CARACAL_CONTROL_STATE_DIR: '/tmp/caracal/control',
+    })
     expect(calls[1].argv).toEqual([
       'docker',
       'compose',
@@ -587,7 +685,7 @@ describe('stack compose helpers', () => {
     })).resolves.toMatchObject({
       action: 'mount',
       state: 'disabled',
-      service: 'prepared',
+      service: 'gated',
       mounted: true,
       enabled: false,
     })
