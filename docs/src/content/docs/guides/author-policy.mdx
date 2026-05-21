@@ -112,7 +112,8 @@ Generate a local fixture instead of hand-writing the object:
 caracal policy sample-input \
   --resource resource://payments \
   --scopes payment:read,payment:submit \
-  --principal local-user > input.json
+  --principal local-user \
+  --zone zone_abc123 > input.json
 ```
 
 Validate a Rego module against the STS policy contract before creating a policy:

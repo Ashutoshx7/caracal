@@ -14,5 +14,6 @@ export * from './lifecycle.js';
 export * from './logging.js';
 export * from './audit.js';
 export * from './metrics.js';
+export * from './telemetry.js';
 export * from './scope.js';
 export * from './url.js';

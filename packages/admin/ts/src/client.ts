@@ -23,6 +23,7 @@ import type {
   PolicySetSimulation,
   PolicySetVersion,
   PolicyTemplate,
+  PolicyValidation,
   PolicyVersion,
   Provider,
   ProviderInput,
@@ -226,6 +227,11 @@ export class AdminClient {
       this.request<Policy & { versions: PolicyVersion[] }>(`/v1/zones/${zoneId}/policies/${id}`),
     create: (zoneId: string, input: PolicyInput) =>
       this.request<Policy & { version: PolicyVersion }>(`/v1/zones/${zoneId}/policies`, { method: 'POST', body: input }),
+    validate: (content: string, schemaVersion?: string) =>
+      this.request<PolicyValidation>('/v1/policies/validate', {
+        method: 'POST',
+        body: { content, schema_version: schemaVersion },
+      }),
     addVersion: (zoneId: string, id: string, content: string, schemaVersion?: string) =>
       this.request<PolicyVersion>(`/v1/zones/${zoneId}/policies/${id}/versions`, {
         method: 'POST',

@@ -139,6 +139,19 @@ export interface PolicyTemplate {
   content: string
 }
 
+export interface PolicyValidation {
+  valid: boolean
+  schema_version: string
+  input_schema_version: string
+  output_contract: {
+    package: string
+    rule: string
+    decision: string[]
+    evaluation_status: string[]
+  }
+  warnings: string[]
+}
+
 export interface PolicySet {
   id: string
   zone_id: string
