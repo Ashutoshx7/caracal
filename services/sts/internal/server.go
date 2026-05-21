@@ -117,6 +117,7 @@ func (s *Server) Run(ctx context.Context) error {
 	mux.HandleFunc("GET /ready", s.handleReady)
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
 	mux.HandleFunc("GET /metrics.json", s.handleMetricsJSON)
+	mux.HandleFunc("POST /internal/policy/simulate", s.handlePolicySimulation)
 
 	srv := &http.Server{
 		Addr:              ":" + s.cfg.Port,

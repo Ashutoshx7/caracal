@@ -80,6 +80,11 @@ type OPAMetrics struct {
 	CompileNanos  atomic.Uint64
 }
 
+type OPAPolicyModule struct {
+	ID      string
+	Content string
+}
+
 type OPAMetricsSnapshot struct {
 	EvalTotal           uint64  `json:"eval_total"`
 	EvalErrors          uint64  `json:"eval_errors"`
@@ -142,9 +147,34 @@ func (e *OPAEngine) Evaluate(ctx context.Context, input OPAInput) (*OPAResult, e
 		e.mu.RUnlock()
 	}
 
-	rs, err := state.query.Eval(ctx, rego.EvalInput(input))
+	return e.evaluatePrepared(ctx, *state.query, input, true)
+}
+
+func (e *OPAEngine) Simulate(ctx context.Context, input OPAInput, policies []OPAPolicyModule) (*OPAResult, error) {
+	if input.SchemaVersion == "" {
+		input.SchemaVersion = opaInputSchemaVersion
+	} else if input.SchemaVersion != opaInputSchemaVersion {
+		return nil, fmt.Errorf("unsupported opa input schema_version %s", input.SchemaVersion)
+	}
+	modules := make([]func(*rego.Rego), 0, len(policies)+2)
+	for _, policy := range policies {
+		modules = append(modules, rego.Module(policy.ID+".rego", policy.Content))
+	}
+	modules = append(modules, rego.Query("result = data.caracal.authz.result"))
+	modules = append(modules, rego.Capabilities(safeCapabilities()))
+	pq, err := rego.New(modules...).PrepareForEval(ctx)
 	if err != nil {
-		e.metrics.EvalErrors.Add(1)
+		return nil, fmt.Errorf("compile simulation policy bundle: %w", err)
+	}
+	return e.evaluatePrepared(ctx, pq, input, false)
+}
+
+func (e *OPAEngine) evaluatePrepared(ctx context.Context, query rego.PreparedEvalQuery, input OPAInput, countMetrics bool) (*OPAResult, error) {
+	rs, err := query.Eval(ctx, rego.EvalInput(input))
+	if err != nil {
+		if countMetrics {
+			e.metrics.EvalErrors.Add(1)
+		}
 		return nil, fmt.Errorf("opa eval: %w", err)
 	}
 
@@ -154,16 +184,22 @@ func (e *OPAEngine) Evaluate(ctx context.Context, input OPAInput) (*OPAResult, e
 
 	raw, err := json.Marshal(rs[0].Bindings["result"])
 	if err != nil {
-		e.metrics.EvalErrors.Add(1)
+		if countMetrics {
+			e.metrics.EvalErrors.Add(1)
+		}
 		return nil, fmt.Errorf("marshal opa result: %w", err)
 	}
 	var result OPAResult
 	if err := json.Unmarshal(raw, &result); err != nil {
-		e.metrics.EvalErrors.Add(1)
+		if countMetrics {
+			e.metrics.EvalErrors.Add(1)
+		}
 		return nil, fmt.Errorf("unmarshal opa result: %w", err)
 	}
 	if err := validateOPAResult(result); err != nil {
-		e.metrics.EvalErrors.Add(1)
+		if countMetrics {
+			e.metrics.EvalErrors.Add(1)
+		}
 		return nil, err
 	}
 	return &result, nil
