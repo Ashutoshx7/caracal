@@ -7,7 +7,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import rateLimit from '@fastify/rate-limit'
 import { Redis } from 'ioredis'
 import { AdminClient } from '@caracalai/admin'
-import type { Logger } from '@caracalai/core'
+import { instrumentFastifyApp, type Logger } from '@caracalai/core'
 import { Authenticator } from './auth.js'
 import { LogSink, RedisSink, type EventSink } from './audit.js'
 import type { Config } from './config.js'
@@ -57,6 +57,7 @@ export async function buildServer(cfg: Config, log: Logger): Promise<ServerDeps>
     bodyLimit: 64 * 1024,
     requestIdHeader: 'x-request-id',
   })
+  instrumentFastifyApp(app, 'caracal-control')
 
   app.get('/health', async (_req, reply) => reply.code(200).send())
   app.get('/ready', async (_req, reply) => {

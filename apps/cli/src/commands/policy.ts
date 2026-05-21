@@ -3,6 +3,7 @@
 //
 // `caracal policy …` and `caracal policy-set …` admin subcommands.
 
+import { randomBytes } from 'node:crypto'
 import type { CliConfig } from '../config.ts'
 import { printSuccess } from '../style.ts'
 import {
@@ -23,12 +24,57 @@ import {
 
 export async function policyCommand(argv: string[], cfg?: CliConfig): Promise<void> {
   const [verb, ...rest] = argv
-  const ctx = buildAdminClient(cfg)
-  const { client } = ctx
   const { positional, flags } = parseArgs(rest)
   const json = flagBool(flags, 'json')
 
   try {
+    if (verb === 'sample-input') {
+      const resource = flagString(flags, 'resource')
+      const scopes = flagList(flags, 'scopes')
+      const principal = flagString(flags, 'principal')
+      const zoneId = flagString(flags, 'zone') ?? cfg?.zone_id ?? process.env.CARACAL_ZONE_ID
+      if (!resource || !scopes || scopes.length === 0 || !principal || !zoneId) {
+        return usage('policy sample-input --resource <id> --scopes a,b --principal <subject> --zone <id>')
+      }
+      const sessionId = flagString(flags, 'session') ?? `sid_${randomBytes(16).toString('hex')}`
+      return printJSON({
+        schema_version: '2026-05-20',
+        principal: {
+          type: 'user',
+          id: principal,
+          zone_id: zoneId,
+          credential_type: 'jwt',
+          capabilities: [],
+        },
+        resource: {
+          type: 'http',
+          id: flagString(flags, 'resource-id') ?? resource,
+          identifier: resource,
+          scopes,
+        },
+        action: {
+          id: scopes[0],
+        },
+        session: {
+          id: sessionId,
+        },
+        delegation_edge: null,
+        context: {
+          actor_claims: {
+            sub: principal,
+            zone_id: zoneId,
+            scope: scopes.join(' '),
+          },
+          subject_claims: {},
+          trace_id: randomBytes(16).toString('hex'),
+          session_id: sessionId,
+          challenge_resolved: false,
+          requested_scopes: scopes,
+        },
+      })
+    }
+    const ctx = buildAdminClient(cfg)
+    const { client } = ctx
     switch (verb) {
       case 'list': {
         const zoneId = requireZone(ctx, flags)
@@ -57,6 +103,13 @@ export async function policyCommand(argv: string[], cfg?: CliConfig): Promise<vo
           description: flagString(flags, 'description'),
           owner_type: flagString(flags, 'owner-type'),
         }))
+      }
+      case 'validate': {
+        const file = flagString(flags, 'file')
+        const inline = flagString(flags, 'content')
+        if (!file && !inline) return usage('policy validate --file <path>|--content <rego> [--schema-version …]')
+        const content = readContent(file ? `@${file}` : inline)
+        return printJSON(await client.policies.validate(content, flagString(flags, 'schema-version')))
       }
       case 'template': {
         const templateVerb = positional[0]
@@ -202,6 +255,15 @@ function policyHelp(): never {
       '    --content <rego>           Inline Rego content (required if --file omitted)',
       '    --description <d>          Optional description',
       '    --owner-type <t>           Owner type',
+      '  validate                   Validate a Rego policy against the STS contract',
+      '    --file <path>|--content <rego>  Policy content (required)',
+      '    --schema-version <v>       Policy schema version (default: current)',
+      '  sample-input               Print a policy input fixture for local tests',
+      '    --resource <id>            Resource identifier (required)',
+      '    --scopes a,b               Requested scopes (required)',
+      '    --principal <id>           Principal/user ID (required)',
+      '    --zone <id>                Zone ID (required unless configured)',
+      '    --session <id>             Session ID (default: generated)',
       '  template list              List built-in policy templates',
       '  template get <id>          Print a template Rego body',
       '  template use <id>          Create a policy from a template',
