@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.caracal.run/schemas/caracal-w3c-baggage-2026-05-21.schema.json",
+  "title": "Caracal W3C Baggage Entries",
+  "description": "Object representation of the caracal.* entries carried in the W3C baggage header.",
+  "type": "object",
+  "properties": {
+    "caracal.agent_session": {
+      "type": "string"
+    },
+    "caracal.delegation_edge": {
+      "type": "string"
+    },
+    "caracal.parent_edge": {
+      "type": "string"
+    },
+    "caracal.session": {
+      "type": "string"
+    },
+    "caracal.hop": {
+      "type": "string",
+      "pattern": "^[0-9]+$"
+    }
+  },
+  "patternProperties": {
+    "^(?!caracal\\.).+$": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

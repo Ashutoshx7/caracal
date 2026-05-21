@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.caracal.run/schemas/caracal-revocation-event-2026-05-21.schema.json",
+  "title": "Caracal Session Revocation Event",
+  "description": "Flat-field payload published to caracal.sessions.revoke.",
+  "type": "object",
+  "required": ["zone_id", "session_id", "reason"],
+  "properties": {
+    "zone_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "grant_id": {
+      "type": "string"
+    },
+    "outbox_id": {
+      "type": "string"
+    },
+    "_sig": {
+      "type": "string",
+      "pattern": "^[0-9a-f]+$"
+    }
+  },
+  "additionalProperties": true
+}
