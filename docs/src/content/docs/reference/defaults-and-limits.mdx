@@ -1,0 +1,77 @@
+---
+title: Defaults and Limits
+description: Consolidated reference for every default TTL, size limit, timeout, and quota across Caracal services.
+pageType: reference
+---
+
+This page is the single source of truth for default values across Caracal. Every value here is either a documented default in the service configuration or a hard ceiling enforced by the implementation. Use it when sizing a deployment, tuning a policy, or troubleshooting unexpected expirations.
+
+## Mandates and sessions
+
+| Value | Default | Configurable via | Notes |
+| --- | --- | --- | --- |
+| Resource mandate TTL | 15 minutes | Policy template | Maximum lifetime of an STS-issued mandate for a resource call. |
+| Session mandate TTL | 60 minutes | Policy template | Maximum lifetime of a session-scoped mandate. |
+| Agent session TTL | 3600 seconds | Coordinator config | Coordinator-managed agent session lifetime. |
+| Delegation edge TTL | Bounded by parent | Delegation request | A delegated edge cannot outlive its parent edge or session. |
+| JTI replay window | Mandate TTL + 60s clock skew | `JTI_TTL_SECONDS` | How long the gateway remembers a JTI for replay detection. |
+
+## Policy evaluation
+
+| Value | Default | Configurable via | Notes |
+| --- | --- | --- | --- |
+| OPA bundle poll interval | 60 seconds | `OPA_POLL_SECONDS` | STS reload cadence for active policy sets. |
+| Policy compile timeout | 5 seconds | `OPA_COMPILE_TIMEOUT` | Maximum time to compile a policy bundle before rejection. |
+| Policy bundle size ceiling | 5 MB | `OPA_BUNDLE_MAX_BYTES` | Rejected at upload if exceeded. |
+| Determining-policy result cap | 32 | n/a | Audit event truncates to this many entries. |
+
+## Gateway
+
+| Value | Default | Configurable via | Notes |
+| --- | --- | --- | --- |
+| STS exchange timeout | 5 seconds | `STS_TIMEOUT` | Per-request timeout for mandate exchange. |
+| Upstream proxy timeout | 30 seconds | `UPSTREAM_TIMEOUT` | Per-request upstream call timeout. |
+| Revocation cache TTL | 30 seconds | `REVOCATION_CACHE_TTL` | Gateway revocation list refresh. |
+| Request body size cap | 10 MB | `MAX_REQUEST_BYTES` | 413 if exceeded. |
+
+## Audit pipeline
+
+| Value | Default | Configurable via | Notes |
+| --- | --- | --- | --- |
+| Redis stream retention | 24 hours | `AUDIT_STREAM_RETENTION` | After this, events must be in long-term store. |
+| Audit consumer batch | 100 events | `AUDIT_BATCH_SIZE` | Per pull from the Redis stream. |
+| DLQ size soft cap | 10000 events | `AUDIT_DLQ_MAX` | Alert when exceeded; no automatic eviction. |
+| Tamper sweep cadence | 1 hour | `AUDIT_SWEEP_INTERVAL` | Hourly rolling chain verification. |
+
+## Coordinator
+
+| Value | Default | Configurable via | Notes |
+| --- | --- | --- | --- |
+| Outbox flush interval | 5 seconds | `OUTBOX_INTERVAL` | Time between outbox publish attempts. |
+| Outbox dead-letter threshold | 10 attempts | `OUTBOX_DEAD_LETTER_MAX` | After this, an outbox row is marked dead. |
+| Agent invocation queue size | 1000 | `INVOCATION_QUEUE_MAX` | Per-zone in-flight invocation cap. |
+
+## Connection pools
+
+| Value | Default | Configurable via | Notes |
+| --- | --- | --- | --- |
+| Postgres pool (per service) | 20 connections | `DATABASE_POOL_MAX` | Per replica; size cluster pool accordingly. |
+| Redis pool (per service) | 10 connections | `REDIS_POOL_MAX` | Per replica. |
+| HTTP keep-alive idle | 90 seconds | n/a | All Go services. |
+
+## CLI
+
+| Value | Default | Configurable via | Notes |
+| --- | --- | --- | --- |
+| `caracal audit tail --limit` | 100 | `--limit` (max 1000) | Default page size. |
+| `caracal doctor` timeout | 10 seconds per probe | n/a | Health/readiness probes during checks. |
+| `caracal status` timeout | 5 seconds per service | n/a | Stack readiness probes. |
+
+## Hard ceilings (not configurable)
+
+- A single grant may reference up to 64 scopes.
+- A single delegation chain may not exceed 8 hops.
+- A single policy set may have up to 16 active versions retained.
+- Audit `metadata_json` and `diagnostics_json` are truncated at 16 KB each.
+
+These ceilings are enforced server-side and are visible in error responses as `limit_exceeded` with a `field` indicating which limit was hit.

@@ -1,0 +1,68 @@
+---
+title: CLI Exit Codes
+description: Exit codes returned by `caracal`, `caracal-cli`, and `caracal-tui` for orchestrator and CI integration.
+pageType: reference
+---
+
+Every Caracal CLI binary follows the same exit-code convention so it can be used reliably in shell scripts, CI gates, Helm hooks, and Kubernetes Jobs.
+
+## Convention
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success. Every check or operation completed without error. |
+| 1 | Generic failure. Operation could not complete; stderr contains the cause and, where applicable, a remediation hint. |
+| 2 | Usage error. A required flag or positional argument is missing or malformed. The usage line is printed to stderr. |
+| 3 | Configuration error. `caracal.toml` is missing, unreadable, or incomplete. The error message tells you which fields are missing. |
+| 4 | Authentication failure. `CARACAL_ADMIN_TOKEN` or `app_client_secret` was rejected by the control plane. |
+| 5 | Authorization failure. The current credentials lack the required scope or zone access. |
+| 6 | Not found. The referenced zone, app, resource, grant, or session id does not exist. |
+| 7 | Conflict. The object was modified concurrently or fails a uniqueness constraint. |
+| 8 | Server error. A 5xx response from a Caracal service; the operation may be retryable. |
+| 9 | Network or timeout. The CLI could not reach a required service before the deadline. |
+
+`caracal doctor` and `caracal status --ready` follow the same convention: exit 0 only when every check is `ok`; otherwise exit 1.
+
+## Mapping to API errors
+
+| HTTP status | Exit code | Typical cause |
+| --- | --- | --- |
+| 400 | 2 | Malformed request from the CLI; usually a usage bug. |
+| 401 | 4 | Bad or expired token. |
+| 403 | 5 | Token valid but lacks required scope. |
+| 404 | 6 | Object id is wrong or the object was deleted. |
+| 409 | 7 | Concurrent modification. |
+| 422 | 2 | Validation failure on the request body. |
+| 429 | 8 | Rate limited; back off and retry. |
+| 5xx | 8 | Server error. |
+
+## Examples
+
+```bash
+# Gate a Helm post-install hook on full readiness:
+caracal doctor --extended --ready --json > /tmp/doctor.json || exit 1
+
+# Detect a missing zone in CI:
+caracal zone get prod 2>/dev/null
+case $? in
+  0) echo "zone exists" ;;
+  6) echo "zone missing; bootstrapping…"; caracal zone create --name prod ;;
+  *) echo "unexpected failure"; exit 1 ;;
+esac
+
+# Retry only transient errors (server / network):
+for attempt in 1 2 3; do
+  caracal audit tail --since "$(date -u -d '5 min ago' +%FT%TZ)" && break
+  rc=$?
+  case $rc in
+    8|9) sleep $((attempt * 5)) ;;
+    *) exit $rc ;;
+  esac
+done
+```
+
+## Notes
+
+- Exit codes 4–9 are emitted only by commands that talk to a Caracal service. Local-only commands (`caracal completion`, `caracal manifest validate`) use 0/1/2.
+- Inside an interactive shell (`caracal-cli` REPL or `caracal-tui`), commands print errors but do not exit the process; the same status codes are reflected in the `$?` of the dispatched command.
+- The exit-code surface is part of the CLI's compatibility contract. See [Compatibility Matrix](./compatibility/) for the support window.
