@@ -8,6 +8,8 @@ import { dirname, join } from 'node:path'
 import { runtimePaths } from './runtime.js'
 
 const STATE_FILE = 'control.json'
+const CONTROL_DIR = 'control'
+const CONTROL_GATE_FILE = 'enabled'
 const DEFAULT_CONTROL_PORT = 8087
 const CONTROL_SERVICE = 'control'
 const CONTROL_PROFILE = 'control'
@@ -26,6 +28,7 @@ export interface ControlRuntimeSettings {
 export interface ControlRuntimeState extends ControlRuntimeSettings {
   mounted: true
   enabled: boolean
+  mountedAt?: string
   managedBy: 'engine'
   updatedAt: string
 }
@@ -45,6 +48,30 @@ function controlPort(port?: number): number {
 
 export function controlStateFile(home: string = runtimePaths().home): string {
   return join(home, STATE_FILE)
+}
+
+export function controlGateDir(home: string = runtimePaths().home): string {
+  return join(home, CONTROL_DIR)
+}
+
+export function controlGateFile(home: string = runtimePaths().home): string {
+  return join(controlGateDir(home), CONTROL_GATE_FILE)
+}
+
+export function ensureControlGateDir(home?: string): string {
+  const dir = controlGateDir(home)
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+function setControlGate(value: boolean, home?: string): void {
+  const file = controlGateFile(home)
+  if (value) {
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, 'enabled\n', { mode: 0o600 })
+    return
+  }
+  if (existsSync(file)) rmSync(file, { force: true })
 }
 
 export function controlRuntimeSettings(opts: ControlStateOptions = {}): ControlRuntimeSettings {
@@ -146,20 +173,35 @@ export function isControlMounted(home?: string): boolean {
 export function setControlMounted(value: boolean, enabled: boolean, opts: ControlStateOptions = {}): ControlRuntimeState | undefined {
   const file = controlStateFile(opts.home)
   if (value) {
+    const at = new Date().toISOString()
     const state: ControlRuntimeState = {
       mounted: true,
       enabled,
+      mountedAt: at,
       managedBy: 'engine',
-      updatedAt: new Date().toISOString(),
+      updatedAt: at,
       ...controlRuntimeSettings(opts),
     }
     writeControlState(file, state)
+    setControlGate(enabled, opts.home)
     return state
   }
+  setControlGate(false, opts.home)
   if (existsSync(file)) rmSync(file, { force: true })
   return undefined
 }
 
 export function setControlEnabled(value: boolean, opts: ControlStateOptions = {}): ControlRuntimeState | undefined {
-  return setControlMounted(true, value, opts)
+  const file = controlStateFile(opts.home)
+  const current = existsSync(file) ? loadControlState(file) : undefined
+  if (!current) return undefined
+  const state: ControlRuntimeState = {
+    ...current,
+    enabled: value,
+    mountedAt: current.mountedAt ?? current.updatedAt,
+    updatedAt: new Date().toISOString(),
+  }
+  writeControlState(file, state)
+  setControlGate(value, opts.home)
+  return state
 }
