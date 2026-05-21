@@ -301,4 +301,5 @@ Only `evaluation_status: "complete"` is treated as a valid response. Any other s
 | --- | --- | --- |
 | `GET` | `/health` | Liveness; always returns `200 {"ok": true}` |
 | `GET` | `/ready` | Readiness; `200` when database and Redis are reachable, `503` otherwise |
-| `GET` | `/metrics` | Prometheus-style JSON counters |
+| `GET` | `/metrics` | Prometheus text counters and gauges |
+| `GET` | `/metrics.json` | Compatibility JSON metrics snapshot |

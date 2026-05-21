@@ -365,4 +365,5 @@ Verify a Caracal mandate without requiring authentication. Useful for debugging 
 | --- | --- | --- |
 | `GET` | `/health` | Liveness; always `200 {"ok": true}` |
 | `GET` | `/ready` | Readiness; `200` when database and Redis are healthy |
-| `GET` | `/metrics` | JSON counters for agent lifecycle and delegation operations |
+| `GET` | `/metrics` | Prometheus text counters for agent lifecycle and delegation operations |
+| `GET` | `/stats` | JSON operational snapshot for scripts |

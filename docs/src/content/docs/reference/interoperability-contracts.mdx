@@ -1,0 +1,223 @@
+---
+title: Interoperability Contracts
+description: Stable standards profiles, schemas, and extension boundaries for OAuth token exchange, JWT claims, W3C context, policy, audit, revocation, and Gateway-compatible upstreams.
+pageType: reference
+---
+
+Caracal integrations should look like normal OAuth, JWT, W3C propagation, OpenTelemetry, OPA, and cloud-native gateway integrations wherever those standards already solve the problem. The contracts on this page define the narrow Caracal profile layered on top of those standards.
+
+Use these contracts when building resource verifiers, Gateway-compatible upstreams, policy packs, audit exporters, provider credential integrations, or agent framework connectors. A production integration must preserve the same invariants as the Gateway path: verify the JWT, enforce audience/target/scope, check revocation when sub-TTL revocation is required, preserve W3C context, emit action-result audit when it owns execution, and fail closed.
+
+## Contract index
+
+| Contract | Standard base | Schema |
+| --- | --- | --- |
+| Token exchange response | OAuth 2.0 / RFC 8693 | [`caracal-token-response-2026-05-21.schema.json`](/schemas/caracal-token-response-2026-05-21.schema.json) |
+| JWT claims | JWT / JWKS / OAuth resource indicators | [`caracal-jwt-claims-2026-05-21.schema.json`](/schemas/caracal-jwt-claims-2026-05-21.schema.json) |
+| Policy input | OPA / Rego JSON input | [`caracal-policy-input-2026-05-20.schema.json`](/schemas/caracal-policy-input-2026-05-20.schema.json) |
+| Policy result | OPA / Rego JSON result | [`caracal-policy-result-2026-05-20.schema.json`](/schemas/caracal-policy-result-2026-05-20.schema.json) |
+| Audit event | Append-only event payload | [`caracal-audit-event-2026-05-21.schema.json`](/schemas/caracal-audit-event-2026-05-21.schema.json) |
+| Revocation event | Redis stream flat fields | [`caracal-revocation-event-2026-05-21.schema.json`](/schemas/caracal-revocation-event-2026-05-21.schema.json) |
+| W3C baggage entries | W3C baggage | [`caracal-w3c-baggage-2026-05-21.schema.json`](/schemas/caracal-w3c-baggage-2026-05-21.schema.json) |
+| Gateway upstream manifest | HTTP / MCP-over-HTTP gateway profile | [`caracal-gateway-upstream-manifest-2026-05-21.schema.json`](/schemas/caracal-gateway-upstream-manifest-2026-05-21.schema.json) |
+| Provider credential plugin manifest | Gateway credential brokering | [`caracal-provider-credential-plugin-manifest-2026-05-21.schema.json`](/schemas/caracal-provider-credential-plugin-manifest-2026-05-21.schema.json) |
+| Audit exporter manifest | Audit event export/replay | [`caracal-audit-exporter-manifest-2026-05-21.schema.json`](/schemas/caracal-audit-exporter-manifest-2026-05-21.schema.json) |
+| Policy pack manifest | OPA/Rego policy bundles | [`caracal-policy-pack-manifest-2026-05-21.schema.json`](/schemas/caracal-policy-pack-manifest-2026-05-21.schema.json) |
+| Resource verifier manifest | JWT verifier middleware/sidecars | [`caracal-resource-verifier-manifest-2026-05-21.schema.json`](/schemas/caracal-resource-verifier-manifest-2026-05-21.schema.json) |
+| Agent connector manifest | Agent framework connectors | [`caracal-agent-connector-manifest-2026-05-21.schema.json`](/schemas/caracal-agent-connector-manifest-2026-05-21.schema.json) |
+
+The repository carries language-neutral conformance fixtures in `tests/shared/fixtures/interoperability/`. TypeScript, Go, and Python contract tests load the same fixtures so SDK and connector changes cannot silently drift from the public contracts.
+
+## OAuth 2.0 token exchange profile
+
+The STS token endpoint is a Caracal profile of RFC 8693 token exchange:
+
+```http
+POST /oauth/2/token
+Content-Type: application/x-www-form-urlencoded
+```
+
+Standard fields keep their OAuth meaning:
+
+| Field | Contract |
+| --- | --- |
+| `grant_type` | Omit or set to `urn:ietf:params:oauth:grant-type:token-exchange`. |
+| `subject_token` | Existing Caracal session mandate presented as the subject token. |
+| `subject_token_type` | `urn:ietf:params:oauth:token-type:access_token` when `subject_token` is present. |
+| `actor_token` | Optional distinct actor token for on-behalf-of attribution. |
+| `resource` | Repeatable resource identifier. |
+| `scope` | Space-delimited OAuth scope string. |
+| `client_assertion` | JWT client assertion alternative to a client secret. |
+| `client_assertion_type` | `urn:ietf:params:oauth:client-assertion-type:jwt-bearer` when a JWT client assertion is used. |
+
+Caracal extension fields are additive and scoped to authority-plane evaluation:
+
+| Field | Contract |
+| --- | --- |
+| `zone_id` | Zone/trust-boundary identifier. Required until a per-zone issuer metadata endpoint is available. |
+| `application_id` | Authenticated Caracal application. It is equivalent to the OAuth client identity in this profile. |
+| `session_id` | STS session anchor when binding a mandate to an existing session. |
+| `agent_session_id` | Coordinator agent-run identifier for runtime attribution and revocation. |
+| `delegation_edge_id` | Same-zone delegated authority edge used for narrowed authority. |
+| `challenge_id` / `challenge_response` | Step-up challenge retry fields. |
+| `ttl_seconds` | Requested lifetime, bounded by STS limits and delegation constraints. |
+
+Successful responses must validate against the token response schema. `access_token`, `token_type`, `expires_in`, and `issued_token_type` are the interoperable OAuth response fields.
+
+`upstreams` is a Caracal internal broker directive for service-authenticated Gateway exchanges. Normal STS clients must ignore it and must never expect provider-native credentials from the public token exchange path.
+
+## JWT and JWKS profile
+
+Caracal mandates are ES256 JWTs. Resource servers verify them with the zone JWKS:
+
+```http
+GET /.well-known/jwks.json?zone_id=<zone>
+```
+
+Verifiers must check:
+
+1. ES256 signature with the `kid` selected from the zone JWKS.
+2. `iss` equals the configured STS issuer.
+3. `exp` is in the future.
+4. Resource mandates use `use = "resource"`.
+5. `aud` and `target` include the resource identifier being protected.
+6. `scope` contains every operation scope required by the request.
+7. `zone_id` matches the verifier's configured zone.
+8. Revocation anchors are checked when sub-TTL revocation is required.
+
+The registered claims remain standard JWT claims. The Caracal authority claims are stable extension claims:
+
+| Claim | Meaning |
+| --- | --- |
+| `zone_id` | Zone/trust-boundary identifier. |
+| `client_id` | Authenticated Caracal application. |
+| `scope` | Space-delimited granted scopes. |
+| `sid` | STS session revocation anchor. |
+| `root_sid` | Root authority revocation anchor for delegated chains. |
+| `use` | `session` for STS subject tokens; `resource` for resource mandates. |
+| `sub_type` | `user` or `application`. |
+| `target` | Resource identifiers granted by the exchange. |
+| `agent_session_id` | Coordinator agent-run revocation and audit anchor. |
+| `delegation_edge_id` | Delegation edge used for the exchange. |
+| `delegation_path` / `delegation_chain` | Delegation attribution and path integrity evidence. |
+| `hop_count` | Delegation depth. |
+| `delegation_graph_epoch` | Graph version at issuance. |
+
+Unknown future claims must be ignored by verifiers unless the verifier explicitly opts in to enforcing them. Required claim semantics must not be weakened by SDK convenience wrappers.
+
+## W3C trace context and baggage
+
+Caracal uses W3C propagation instead of custom tracing headers:
+
+| Header | Contract |
+| --- | --- |
+| `traceparent` | Preserve valid inbound values. Generate one only when absent. Forward on outbound Gateway, SDK, and connector calls. |
+| `tracestate` | Preserve and forward when present; do not store authority decisions in it. |
+| `baggage` | Carry non-authoritative Caracal execution context under `caracal.*` keys. |
+
+The registered Caracal baggage keys are:
+
+| Key | Meaning |
+| --- | --- |
+| `caracal.agent_session` | Coordinator agent-run identifier. |
+| `caracal.delegation_edge` | Current delegated authority edge. |
+| `caracal.parent_edge` | Parent delegated authority edge. |
+| `caracal.session` | STS session identifier. |
+| `caracal.hop` | Delegation hop count. |
+
+Baggage is propagation metadata, not authorization. A Gateway, connector, or resource verifier must trust the JWT claims over caller-supplied baggage. When a boundary forwards `caracal.*` baggage to a trusted upstream, it should derive those entries from the verified mandate rather than preserving spoofable caller values.
+
+## Policy input and result
+
+The OPA entrypoint is:
+
+```text
+data.caracal.authz.result
+```
+
+Every policy input includes `schema_version`. The current schema is `2026-05-20`. Policies should explicitly check `input.schema_version` when they depend on fields introduced by a specific contract version.
+
+Policy results must include:
+
+| Field | Contract |
+| --- | --- |
+| `decision` | `allow` or `deny`. |
+| `evaluation_status` | `complete` is the only status that STS treats as usable. |
+| `determining_policies` | Array of policy attribution objects. |
+| `diagnostics` | Array of diagnostic objects, including step-up hints. |
+
+Policies must be deterministic. Network, host-clock, randomness, runtime-introspection, and unsafe network builtins are blocked by the policy validator and STS OPA capability set.
+
+## Audit event contract
+
+Audit events are append-only evidence records. The schema describes the event payload before stream signing and ledger chaining.
+
+Required properties:
+
+- identity and routing: `id`, `zone_id`, `event_type`, `request_id`
+- decision state: `decision`, `evaluation_status`
+- policy attribution: `determining_policies_json`
+- diagnostics and metadata: `diagnostics_json`, `metadata_json`
+- event time: `occurred_at`
+
+`policy_set_id`, `policy_set_version_id`, and `manifest_sha` are optional because some connector-owned action-result events may not originate from an activated STS policy set.
+
+Sensitive data must not be placed in `metadata_json`. Provider tokens, Authorization headers, cookies, request bodies, response bodies, and full query strings are outside the audit event contract.
+
+## Revocation event contract
+
+`caracal.sessions.revoke` is the sub-TTL revocation stream. Every mandate verifier that needs sub-TTL revocation should consume it or use a store populated from it.
+
+Required fields:
+
+| Field | Meaning |
+| --- | --- |
+| `zone_id` | Zone that owns the revoked session. |
+| `session_id` | Revoked session anchor. |
+| `reason` | Revocation reason, such as grant revocation or agent termination. |
+
+Optional fields include `grant_id`, `outbox_id`, and `_sig`. In published deployments, consumers must verify `_sig` using `STREAMS_HMAC_KEY` before acting on a message.
+
+## Gateway-compatible upstream manifest
+
+The Gateway-compatible upstream manifest is a compatibility declaration, not a new runtime protocol. It lets third parties state what the Gateway and operators can expect before a resource is registered.
+
+The manifest describes:
+
+- resource identifier
+- supported protocol family
+- accepted auth modes
+- required scopes
+- whether Caracal identity forwarding is forbidden, optional, or required for a trusted upstream
+- health check shape
+- audit requirements
+- conformance fixture location
+
+An upstream should not claim Gateway compatibility unless it can operate with the Gateway's bearer-token, provider-credential, W3C context, SSRF, revocation, and audit behavior.
+
+## Extension manifests
+
+Extension manifests are offline compatibility declarations. They do not grant runtime authority, do not load plugin code, and do not bypass Gateway or verifier enforcement. A manifest lets operators and conformance tests decide whether an integration can be trusted before it is wired into a deployment.
+
+| Manifest | Required invariant |
+| --- | --- |
+| Provider credential plugin | Credentials remain Gateway-only; agents never receive provider-native secrets or tokens. |
+| Audit exporter | Exported records preserve the audit event schema, redaction boundary, retry model, and replay cursor semantics. |
+| Policy pack | Rego modules target `data.caracal.authz.result`, declare their policy input schema version, and ship test fixtures. |
+| Resource verifier | Verifiers enforce issuer, audience, target, scope, token use, revocation anchors, W3C propagation, and action-result audit when they own execution. |
+| Agent connector | Connectors label their enforcement mode as `gateway_mediated`, `connector_verified`, or `attribution_only` and must not imply production enforcement for attribution-only flows. |
+
+Extension authors should publish manifests with conformance fixture references. Core runtime support for a plugin or connector should not be added until the manifest can be validated offline.
+
+## Extension boundary rules
+
+These rules keep Caracal interoperable:
+
+1. Prefer an existing standard before adding a Caracal field.
+2. Add Caracal fields only as versioned, documented extensions.
+3. Keep Gateway and connector enforcement behavior equivalent before labeling an adapter production-ready.
+4. Never expose provider-native credentials to agent-facing token exchange clients.
+5. Treat W3C baggage as metadata and JWT claims as authority.
+6. Keep policy input/output schemas stable and fixture-tested.
+7. Require conformance tests for verifiers, upstreams, policy packs, exporters, and credential providers.
+8. Defer first-class integrations that cannot preserve token verification, revocation, W3C context propagation, and audit.

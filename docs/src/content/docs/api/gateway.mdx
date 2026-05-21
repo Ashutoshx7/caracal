@@ -207,25 +207,25 @@ In-memory entries are pruned every 30 minutes. Revocation entries have a 24-hour
 
 ## Metrics — `GET /metrics`
 
-```json
-{
-  "requests_total": 10000,
-  "requests_allowed": 9850,
-  "requests_denied": 150,
-  "denials_missing_auth": 20,
-  "denials_bad_bearer": 5,
-  "denials_expiring": 8,
-  "denials_bad_routing": 12,
-  "denials_binding": 15,
-  "denials_path_traversal": 1,
-  "denials_signature": 3,
-  "denials_jti_replay": 2,
-  "denials_revoked": 4,
-  "sts_exchange_errors": 10,
-  "upstream_errors": 30,
-  "bindings_loaded": 42,
-  "revocations_active": 0
-}
+`GET /metrics` returns Prometheus text. `GET /metrics.json` returns the compatibility JSON snapshot.
+
+```text
+caracal_gateway_requests_total 10000
+caracal_gateway_requests_allowed_total 9850
+caracal_gateway_requests_denied_total 150
+caracal_gateway_denials_missing_auth_total 20
+caracal_gateway_denials_bad_bearer_total 5
+caracal_gateway_denials_expiring_total 8
+caracal_gateway_denials_bad_routing_total 12
+caracal_gateway_denials_binding_total 15
+caracal_gateway_denials_path_traversal_total 1
+caracal_gateway_denials_signature_total 3
+caracal_gateway_denials_jti_replay_total 2
+caracal_gateway_denials_revoked_total 4
+caracal_gateway_sts_exchange_errors_total 10
+caracal_gateway_upstream_errors_total 30
+caracal_gateway_bindings_loaded 42
+caracal_gateway_revocations_active 0
 ```
 
 ---
@@ -236,3 +236,5 @@ In-memory entries are pruned every 30 minutes. Revocation entries have a 24-hour
 | --- | --- | --- |
 | `GET` | `/health` | Liveness; always `200` |
 | `GET` | `/ready` | Readiness; `200` when Postgres, Redis, and STS are reachable; `503` otherwise |
+| `GET` | `/metrics` | Prometheus text counters and gauges |
+| `GET` | `/metrics.json` | Compatibility JSON metrics snapshot |
