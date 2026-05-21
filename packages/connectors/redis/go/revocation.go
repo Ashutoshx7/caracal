@@ -286,13 +286,26 @@ func (c *Consumer) processMessage(ctx context.Context, msg redis.XMessage) error
 	if !c.verify(msg.Values) {
 		return c.redis.XAck(ctx, c.stream, c.group, msg.ID).Err()
 	}
-	sid, _ := msg.Values["session_id"].(string)
-	if sid != "" {
-		if err := c.store.MarkRevoked(sid, 0); err != nil {
+	for _, anchor := range revocationAnchors(msg.Values) {
+		if err := c.store.MarkRevoked(anchor, 0); err != nil {
 			return err
 		}
 	}
 	return c.redis.XAck(ctx, c.stream, c.group, msg.ID).Err()
+}
+
+func revocationAnchors(values map[string]any) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, name := range []string{"session_id", "sid", "root_sid", "agent_session_id", "delegation_edge_id"} {
+		anchor, _ := values[name].(string)
+		if anchor == "" || seen[anchor] {
+			continue
+		}
+		seen[anchor] = true
+		out = append(out, anchor)
+	}
+	return out
 }
 
 func (c *Consumer) verify(values map[string]any) bool {

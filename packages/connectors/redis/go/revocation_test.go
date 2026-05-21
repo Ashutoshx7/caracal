@@ -40,11 +40,18 @@ func TestStoreFailsClosedByDefault(t *testing.T) {
 	}
 }
 
-func TestConsumerMarksSignedStreamMessages(t *testing.T) {
+func TestConsumerMarksSignedStreamMessageAuthorityAnchors(t *testing.T) {
 	rdb := newFakeRedis()
 	store := NewStore(rdb)
 	key := []byte("0123456789abcdef0123456789abcdef")
-	values := map[string]any{"zone_id": "zone1", "session_id": "sid-1", "reason": "grant_revoked"}
+	values := map[string]any{
+		"zone_id":            "zone1",
+		"session_id":         "sid-1",
+		"root_sid":           "root-1",
+		"agent_session_id":   "agent-1",
+		"delegation_edge_id": "edge-1",
+		"reason":             "grant_revoked",
+	}
 	values[sharedcrypto.StreamSigField] = sharedcrypto.SignStream(key, RevocationStream, values)
 	rdb.messages = []redis.XMessage{{ID: "1-0", Values: values}}
 
@@ -62,6 +69,11 @@ func TestConsumerMarksSignedStreamMessages(t *testing.T) {
 	}
 	if !store.IsRevoked("sid-1") {
 		t.Fatal("signed stream message should mark session revoked")
+	}
+	for _, anchor := range []string{"root-1", "agent-1", "edge-1"} {
+		if !store.IsRevoked(anchor) {
+			t.Fatalf("signed stream message should mark %s revoked", anchor)
+		}
 	}
 	if len(rdb.acked) != 1 || rdb.acked[0] != "1-0" {
 		t.Fatalf("message should be acked once, got %v", rdb.acked)

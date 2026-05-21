@@ -149,9 +149,8 @@ class RedisRevocationConsumer:
         if not self._verify(values):
             self._redis.xack(self._stream, self._group, message_id)
             return
-        sid = values.get("session_id", "")
-        if sid:
-            self._store.mark_revoked(sid)
+        for anchor in _revocation_anchors(values):
+            self._store.mark_revoked(anchor)
         self._redis.xack(self._stream, self._group, message_id)
 
     def _verify(self, values: Mapping[str, str]) -> bool:
@@ -170,6 +169,21 @@ def _normalize_values(values: StreamValues) -> dict[str, str]:
     out: dict[str, str] = {}
     for i in range(0, len(values), 2):
         out[_to_text(values[i])] = _to_text(values[i + 1]) if i + 1 < len(values) else ""
+    return out
+
+
+def _revocation_anchors(values: Mapping[str, str]) -> list[str]:
+    anchors = [
+        values.get("session_id", ""),
+        values.get("sid", ""),
+        values.get("root_sid", ""),
+        values.get("agent_session_id", ""),
+        values.get("delegation_edge_id", ""),
+    ]
+    out: list[str] = []
+    for anchor in anchors:
+        if anchor and anchor not in out:
+            out.append(anchor)
     return out
 
 

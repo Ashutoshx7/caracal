@@ -159,9 +159,8 @@ export class RedisRevocationConsumer {
       await this.ack(id)
       return
     }
-    const sid = values.session_id
-    if (typeof sid === 'string' && sid !== '') {
-      await this.store.markRevoked(sid)
+    for (const anchor of revocationAnchors(values)) {
+      await this.store.markRevoked(anchor)
     }
     await this.ack(id)
   }
@@ -180,6 +179,17 @@ export class RedisRevocationConsumer {
     if (!this.redis.xack) throw new Error('redis client does not support xack')
     await this.redis.xack(this.stream, this.group, id)
   }
+}
+
+function revocationAnchors(values: Record<string, StreamValue>): string[] {
+  const anchors = [
+    values.session_id,
+    values.sid,
+    values.root_sid,
+    values.agent_session_id,
+    values.delegation_edge_id,
+  ].filter((value): value is string => typeof value === 'string' && value !== '')
+  return [...new Set(anchors)]
 }
 
 function fieldsToValues(fields: string[]): Record<string, StreamValue> {
