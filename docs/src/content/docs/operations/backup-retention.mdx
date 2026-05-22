@@ -158,5 +158,5 @@ Caracal does not provide built-in backup orchestration beyond the S3 Parquet exp
 Restore and start services in this order:
 1. Postgres (restore backup, apply WAL)
 2. Redis (restore AOF/RDB, or start fresh and let outbox re-deliver)
-3. `init` container (re-provisions streams and consumer groups)
+3. Redis entrypoint stream provisioning and the `dbMigrate` job
 4. STS → API → Audit → Coordinator → Gateway

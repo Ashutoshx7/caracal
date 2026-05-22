@@ -8,11 +8,11 @@ All five core Caracal services store durable state in a single Postgres database
 
 ## Migrations
 
-Migrations are at `infra/postgres/migrations/` and numbered `0001` through `0021`. The API service runs all pending migrations on startup using `runMigrations()`. Migration execution is idempotent — re-running the API against an up-to-date schema is safe.
+Migrations are at `infra/postgres/migrations/` and numbered from `0001` upward. Compose runs them through the `dbMigrate` one-shot service, and the Helm chart runs them through a pre-install/pre-upgrade migration Job. Migration execution is idempotent — re-running the migration entrypoint against an up-to-date schema is safe.
 
-Migrations run in sequence. Do not skip or reorder them. To apply migrations in a context without running the full API, use the API container with a flag or invoke the migration runner directly from the codebase.
+Migrations run in sequence. Do not skip or reorder them. To apply migrations outside Compose or Helm, run the Postgres image entrypoint `/usr/local/bin/caracal-migrate` with `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, and `PGPASSWORD_FILE` or `PGPASSFILE`.
 
-Current migration range: `0001_init` → `0021_rls_zones_failclosed`.
+Current migration range: `0001_init` → `0025_admin_token_argon2`.
 
 ---
 

@@ -1,20 +1,20 @@
 ---
 title: Kubernetes with Helm
-description: Deploy Caracal with the reference Helm chart for enterprise evaluation, managed data stores, probes, autoscaling, and operator-owned secrets.
+description: Deploy Caracal with the reference Helm chart for production-adaptable clusters, managed data stores, probes, autoscaling, persistent replay, and operator-owned secrets.
 pageType: config
 ---
 
-The Helm chart in `infra/helm/caracal` is the reference Kubernetes evaluation path for the open-source stack. It keeps the local default simple (`caracal up`) while giving platform teams a GitOps-friendly shape for clusters, managed Postgres, managed Redis, external secret operators, Prometheus, and ingress.
+The Helm chart in `infra/helm/caracal` is the reference Kubernetes path for the open-source stack. It keeps the local default simple (`caracal up`) while giving platform teams a GitOps-friendly shape for clusters, managed Postgres, managed Redis, external secret operators, Prometheus, persistent replay buffers, and ingress.
 
-**Maturity label:** implemented reference deployment. The chart is intended for enterprise evaluation and platform adaptation. Production teams should still review resource sizing, NetworkPolicy, ingress, secret management, and backup settings against their own standards before standardizing on it.
+**Maturity label:** implemented production-adaptable reference deployment. The chart ships secure defaults for service accounts, probes, NetworkPolicy, HPA/PDB, and STS/Gateway replay persistence. Production teams still own datastore backup/restore, ingress identity, TLS/mTLS, secret-manager sync, object-store policy, and measured capacity baselines.
 
 ## What the chart deploys
 
 | Component | Kubernetes object | Default exposure |
 | --- | --- | --- |
-| STS | Deployment, Service, HPA, PDB | Internal Service |
+| STS | StatefulSet, Service, HPA, PDB, per-replica replay PVC | Internal Service |
 | API | Deployment, Service, HPA, PDB | Internal Service; optional operator ingress |
-| Gateway | Deployment, Service, HPA, PDB | Internal Service; optional protected ingress |
+| Gateway | StatefulSet, Service, HPA, PDB, per-replica replay PVC | Internal Service; optional protected ingress |
 | Audit | Deployment, Service, HPA, PDB | Internal Service |
 | Coordinator | Deployment, Service, HPA, PDB | Internal Service |
 | Control | Optional Deployment and Service | Disabled by default |
@@ -66,8 +66,8 @@ helm upgrade --install caracal ./infra/helm/caracal \
 Check rollout:
 
 ```bash
-kubectl -n caracal rollout status deploy/caracal-caracal-sts
-kubectl -n caracal rollout status deploy/caracal-caracal-gateway
+kubectl -n caracal rollout status statefulset/caracal-caracal-sts
+kubectl -n caracal rollout status statefulset/caracal-caracal-gateway
 kubectl -n caracal get pods,svc,hpa,pdb
 ```
 
@@ -83,13 +83,36 @@ If you use the release name `caracal`, objects are named `caracal-caracal-*` by 
 | `services.*.replicas` | Sets baseline availability per component |
 | `services.*.resources` | Controls scheduling and capacity planning |
 | `services.*.hpa` | Enables CPU-based autoscaling for evaluation |
+| `replayPersistence.*` | Keeps STS and Gateway audit replay buffers across pod restarts |
 | `networkPolicy.enabled` | Adds namespace-level ingress/egress guardrails |
+| `networkPolicy.extraEgress` | Allows explicit external endpoints such as object storage, identity providers, or provider APIs |
 | `serviceMonitor.enabled` | Publishes scrape targets for Prometheus Operator |
 | `alertRules.enabled` | Publishes baseline Prometheus alerts mapped to failure-mode recovery |
 | `ingress.gateway.*` | Exposes only the Gateway to protected clients |
 | `ingress.api.*` | Optional operator-only API ingress |
 
 Keep the Gateway as the default external entry point. Expose the API only to operators through your existing private ingress, VPN, identity-aware proxy, or bastion model.
+
+## Replay persistence
+
+STS and Gateway write failed audit emissions to `/var/lib/caracal/audit-replay` and replay them when Redis or Audit recovers. The chart deploys those components as StatefulSets when `replayPersistence.enabled=true` so each replica gets a stable volume claim named `replay`.
+
+```yaml
+replayPersistence:
+  enabled: true
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+```
+
+Disable replay persistence only for disposable environments. A pod backed by `emptyDir` can lose buffered audit evidence if it restarts during a Redis or Audit outage.
+
+## Network and service-account posture
+
+The default NetworkPolicy permits in-namespace traffic plus DNS, Postgres, Redis, and OTLP. Open HTTPS egress is disabled by default; add explicit `networkPolicy.extraEgress` entries for provider APIs, S3-compatible object stores, identity providers, or other external destinations required by your deployment.
+
+Service account tokens are not mounted into pods by default (`serviceAccount.automountToken=false`) because Caracal services do not need Kubernetes API access. Enable token mounting only when a platform integration explicitly requires it.
 
 ## Probes and metrics
 
@@ -115,7 +138,7 @@ This chart deliberately preserves the core Caracal security model:
 
 ## What is not bundled
 
-The chart does not install Postgres, Redis, cert-manager, external-dns, service mesh, External Secrets Operator, an OpenTelemetry Collector, or Grafana dashboards. Those are platform-owned dependencies in most enterprises. Use your existing implementations and wire Caracal through standard Services, Secrets, NetworkPolicies, and scrape targets.
+The chart does not install Postgres, Redis, cert-manager, external-dns, service mesh, External Secrets Operator, an OpenTelemetry Collector, Grafana dashboards, object storage, or backup controllers. Those are platform-owned dependencies in most enterprises. Use your existing implementations and wire Caracal through standard Services, Secrets, NetworkPolicies, and scrape targets.
 
 See [Cloud-Native Deployment Profiles](./cloud-native-profiles/) for shared Gateway, sidecar, verified adapter, and SPIFFE/mTLS guidance.
 

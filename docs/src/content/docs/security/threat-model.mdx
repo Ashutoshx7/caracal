@@ -29,7 +29,7 @@ Coordinator ◄── STS JWT (bearer) ── SDK / agent
   ▼
 Postgres
 
-Control-Plane API ◄── admin token (SHA-256 hashed) ── operator
+Control-Plane API ◄── admin token (Argon2id verified) ── operator
   │  zones, applications, policies, grants
   ▼
 Postgres + Redis outbox
@@ -74,7 +74,7 @@ The Coordinator accepts STS-issued JWTs. Its attack surface is:
 
 ### Control-Plane API (port 3000)
 
-The API accepts admin tokens stored as SHA-256 hashes. Its attack surface is:
+The API accepts admin tokens verified against Argon2id hashes. Its attack surface is:
 
 - All `/v1/*` routes — requires admin token
 - Postgres (all administrative tables)
@@ -187,9 +187,9 @@ The API accepts admin tokens stored as SHA-256 hashes. Its attack surface is:
 
 **Mitigation — client secrets (Argon2id):** Client secrets are hashed with Argon2id (time=3, memory=64 MiB, parallelism=2, output=32 bytes) before storage. The STS compares the hash using `subtle.ConstantTimeCompare`. Malformed hash formats are also run through Argon2id with a dummy salt to prevent format-validity timing leaks. A 64 MiB memory cost makes GPU-accelerated attacks expensive.
 
-**Mitigation — admin tokens (SHA-256 + timing-safe):** Admin tokens are stored as SHA-256 hashes in the `admin_tokens` table. Lookup uses a parameterized query with a unique index on the hash; comparison uses `timingSafeEqual` to prevent timing attacks.
+**Mitigation — admin tokens (lookup fingerprint + Argon2id):** Admin tokens use a SHA-256 lookup fingerprint with a unique active-token index, then require Argon2id verification before the request is accepted. The fingerprint comparison is timing-safe, and failed attempts are rate-limited per source IP and token prefix when Redis is available.
 
-**Residual risk:** Admin token storage uses SHA-256, which is fast to compute. Admin tokens should be generated with sufficient entropy (≥ 32 bytes random) and rotated if suspected compromised. Consider rate-limiting the admin token endpoint at the network layer.
+**Residual risk:** Admin tokens are bearer credentials. Generate them with sufficient entropy (≥ 32 bytes random), scope them to zones where possible, rotate them if suspected compromised, and keep ingress-level rate limits in front of the API.
 
 ---
 

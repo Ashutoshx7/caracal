@@ -10,16 +10,16 @@ For local users, the stack is intentionally operated through one small surface: 
 
 ## Services and startup order
 
-The stack defines the core application containers, infrastructure containers, and one-shot initialization containers. Health-based dependencies enforce this startup sequence:
+The stack defines the core application containers, infrastructure containers, and one-shot migration work. Health-based dependencies enforce this startup sequence:
 
 ```
-postgres ─────┐
-redis    ─────┤── init ── sts ── api ── gateway
-                                   └── coordinator
-              └── init ── audit
+postgres ── dbMigrate ── sts ── api ── gateway
+                         └── coordinator
+
+redis ── stream provisioning ── sts / api / gateway / audit / coordinator
 ```
 
-The `init` container must complete before STS, API, audit, or coordinator start. STS must be healthy before API and coordinator start. API must be healthy before the gateway starts.
+Redis provisions streams and consumer groups in its entrypoint before it becomes healthy. `dbMigrate` must complete before STS, API, Gateway, Audit, or Coordinator start. STS must be healthy before API and Coordinator start. API must be healthy before Gateway starts.
 
 ### `postgres`
 
@@ -31,7 +31,7 @@ healthcheck: pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
   interval: 5s  timeout: 3s  retries: 20
 ```
 
-The custom image adds no logic on top of the base Postgres image. Database migrations run from the API service on startup, not from this container.
+The custom image carries the migration scripts and the `caracal-migrate` entrypoint used by the one-shot `dbMigrate` service. The Postgres server container does not run migrations itself.
 
 ### `redis`
 
@@ -44,13 +44,19 @@ healthcheck: redis-cli -a ${REDIS_PASSWORD} --no-auth-warning PING | grep PONG
   interval: 5s  timeout: 3s  retries: 20
 ```
 
-Starts with `redis-server /etc/caracal/redis.conf`, which enables `appendonly yes`, `appendfsync everysec`, and `maxmemory-policy noeviction`.
+Starts with `redis-server /etc/caracal/redis.conf`, which enables `appendonly yes`, `appendfsync everysec`, and `maxmemory-policy noeviction`. The entrypoint writes a runtime config from `REDIS_PASSWORD_FILE`, starts Redis, creates the required Caracal streams and consumer groups with `XGROUP CREATE ... MKSTREAM`, and only then marks the container healthy.
 
-### `init`
+### `dbMigrate`
 
-A one-shot container (`restart: "no"`) that runs `infra/redis/provision-streams.sh` after both Postgres and Redis are healthy. It creates all Redis streams and consumer groups idempotently using `XGROUP CREATE ... MKSTREAM`. Safe to re-run at any time.
+```yaml
+image: caracal/postgres:dev
+restart: "no"
+depends_on:
+  postgres: { condition: service_healthy }
+entrypoint: ["/bin/sh", "/usr/local/bin/caracal-migrate"]
+```
 
-All other services depend (directly or transitively) on `init` completing with exit code 0.
+A one-shot container that applies `/migrations/*.up.sql` through `caracal-migrate`. It records applied versions in `schema_migrations`, serializes concurrent runners with a Postgres advisory lock, and is safe to re-run during upgrades. All application services depend on `dbMigrate` completing successfully.
 
 ### `sts`
 
@@ -58,13 +64,15 @@ All other services depend (directly or transitively) on `init` completing with e
 image: caracal/sts:dev
 ports: 127.0.0.1:8080:8080
 depends_on:
-  init: { condition: service_completed_successfully }
+  postgres: { condition: service_healthy }
+  redis: { condition: service_healthy }
+  dbMigrate: { condition: service_completed_successfully }
 healthcheck: wget -qO- http://127.0.0.1:8080/ready || exit 1
 ```
 
 Go binary. Does not run migrations. Healthy once Postgres and Redis are reachable and the audit replay buffer is ready.
 
-**Required:** `DATABASE_URL`, `REDIS_URL`, `ZONE_KEK`, `AUDIT_HMAC_KEY`, `ISSUER_URL`
+**Required:** `DATABASE_URL`, `REDIS_URL`, `ZONE_KEK`, `AUDIT_HMAC_KEY`, `STREAMS_HMAC_KEY`, `GATEWAY_STS_HMAC_KEY`, `ISSUER_URL`
 
 ### `api`
 
@@ -73,12 +81,13 @@ image: caracal/api:dev
 ports: 127.0.0.1:3000:3000
 depends_on:
   sts: { condition: service_healthy }
+  dbMigrate: { condition: service_completed_successfully }
 healthcheck: wget -qO- http://127.0.0.1:3000/ready || exit 1
 ```
 
-TypeScript/Node.js service. Runs Postgres migrations (`0001` through current) on every startup — idempotent. Seeds the bootstrap admin token if `CARACAL_ADMIN_TOKEN` is set and not yet present. Starts the transactional outbox dispatcher as a background worker.
+TypeScript/Node.js service. Seeds the bootstrap admin token if `CARACAL_ADMIN_TOKEN` is set and not yet present. Starts the transactional outbox dispatcher as a background worker. Schema migrations are owned by `dbMigrate`, not the API process.
 
-**Required:** `DATABASE_URL`, `REDIS_URL`, `STS_URL`, `ZONE_KEK`, `CARACAL_ADMIN_TOKEN`
+**Required:** `DATABASE_URL`, `REDIS_URL`, `STS_URL`, `ZONE_KEK`, `STREAMS_HMAC_KEY`, `GATEWAY_STS_HMAC_KEY`, `CARACAL_ADMIN_TOKEN`
 
 ### `gateway`
 
@@ -88,6 +97,7 @@ ports: 127.0.0.1:8081:8081
 depends_on:
   sts: { condition: service_healthy }
   api: { condition: service_healthy }
+  dbMigrate: { condition: service_completed_successfully }
 healthcheck: wget -qO- http://127.0.0.1:8081/ready || exit 1
 ```
 
@@ -101,7 +111,9 @@ Go binary. The only service exposed externally in production. Use TLS at the Gat
 image: caracal/audit:dev
 ports: 127.0.0.1:9090:9090
 depends_on:
-  init: { condition: service_completed_successfully }
+  postgres: { condition: service_healthy }
+  redis: { condition: service_healthy }
+  dbMigrate: { condition: service_completed_successfully }
 healthcheck: wget -qO- http://127.0.0.1:9090/ready || exit 1
 ```
 
@@ -116,6 +128,7 @@ image: caracal/coordinator:dev
 ports: 127.0.0.1:4000:4000
 depends_on:
   sts: { condition: service_healthy }
+  dbMigrate: { condition: service_completed_successfully }
 healthcheck: wget -qO- http://127.0.0.1:4000/ready || exit 1
 ```
 
@@ -172,7 +185,7 @@ pnpm secrets:init
 pnpm caracal status
 ```
 
-The five application services plus PostgreSQL and Redis should show `ok`. One-shot initialization containers show `Exited (0)`.
+The five application services plus PostgreSQL and Redis should show `ok`. The one-shot `dbMigrate` container should show `Exited (0)`.
 
 **3. Provision a zone and application:**
 
@@ -194,8 +207,9 @@ Save the printed client secret into `caracal.toml` alongside `zone_url`, `zone_i
 | `postgresData` | `/var/lib/postgresql` | All Postgres data files |
 | `redisData` | `/data` | Redis AOF log and RDB snapshot |
 | `stsReplay` | `/var/lib/caracal` | STS audit replay buffer |
+| `gatewayReplay` | `/var/lib/caracal` | Gateway action-audit replay buffer |
 
-All three are Docker-managed named volumes. They survive `docker compose down` but are deleted with `docker compose down -v`.
+All four are Docker-managed named volumes. They survive `docker compose down` but are deleted with `docker compose down -v`.
 
 In production, replace these with external volumes backed by persistent block storage (EBS, GCP PD, Azure Disk). Do not use ephemeral container storage for either.
 
@@ -221,9 +235,9 @@ All bindings use `127.0.0.1` only. In production, services communicate over a pr
 ## Production adaptation checklist
 
 - Replace named volumes with persistent external volumes.
-- Run multiple replicas of stateless services (STS, API, Gateway, Coordinator) behind a load balancer.
+- Run multiple replicas behind a load balancer and keep STS/Gateway replay storage persistent per replica.
 - Supply secrets from a vault or secrets manager; do not use `.env` files.
 - Set `CARACAL_MODE=stable`.
 - Provide `TLS_CERT_FILE` and `TLS_KEY_FILE` for the Gateway, or terminate TLS at a trusted ingress before traffic reaches it.
 - Set `STREAMS_HMAC_KEY`, `AUDIT_HMAC_KEY`, and `GATEWAY_STS_HMAC_KEY` on services that require them.
-- Scale the Audit service to a single replica with leader election active (the service uses advisory locks to elect an export leader and a retention leader).
+- Scale Audit only after Redis and Postgres capacity are healthy; export and retention work use advisory locks so one replica owns each singleton task.
