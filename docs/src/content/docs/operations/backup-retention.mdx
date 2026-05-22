@@ -160,3 +160,63 @@ Restore and start services in this order:
 2. Redis (restore AOF/RDB, or start fresh and let outbox re-deliver)
 3. Redis entrypoint stream provisioning and the `dbMigrate` job
 4. STS → API → Audit → Coordinator → Gateway
+
+---
+
+## Postgres backup runbook
+
+The previous section describes the posture; this section is the concrete operator path. Caracal does not ship a Postgres operator; pick one of the paths below and own it.
+
+### Path A: Managed operator (recommended)
+
+For self-hosted clusters running Caracal in Kubernetes, use a Postgres operator that handles base backups, WAL archiving, and PITR out of the box:
+
+- **CloudNativePG** — `cluster.backup` resource configures S3 archiving and `barmanObjectStore`. Point-in-time recovery via `Cluster.spec.bootstrap.recovery.recoveryTarget`.
+- **Zalando postgres-operator** — `postgresql.spec.backup` configures WAL-E/WAL-G to S3. Clone-and-restore flow via `postgresql.spec.clone.uid`.
+
+The Caracal Helm chart expects `services.<svc>.secrets.database.host` to point at the cluster's primary; operator failover updates DNS without service restarts.
+
+### Path B: Manual `pg_basebackup` + WAL archiving
+
+Use this only when an operator is not available. Required `postgresql.conf` settings:
+
+```ini
+wal_level            = replica
+archive_mode         = on
+archive_command      = 'aws s3 cp %p s3://my-caracal-wal/%f'
+archive_timeout      = 60
+max_wal_senders      = 4
+wal_keep_size        = 1GB
+```
+
+Daily base backup, run from an operator host with the `caracal` role's read permissions:
+
+```bash
+pg_basebackup \
+  --host="$PGHOST" --username=postgres --pgdata=/backup/$(date +%F) \
+  --format=tar --gzip --progress --wal-method=stream \
+  --checkpoint=fast --label="caracal-$(date +%F)"
+aws s3 sync /backup/$(date +%F) s3://my-caracal-base/$(date +%F)/
+```
+
+Retain at least 7 daily base backups plus all WAL segments between the oldest base and now. Verify base backup integrity with `pg_verifybackup` before deleting older copies.
+
+### Restore drill (run monthly)
+
+A backup that has never been restored is not a backup. Run this drill against a separate Postgres instance:
+
+1. **Provision** a Postgres instance at the same major version as production. Do not point any Caracal service at it.
+2. **Restore base** — `tar xzf base.tar.gz -C $PGDATA`. Write `recovery.signal` and a `postgresql.auto.conf` with `restore_command = 'aws s3 cp s3://my-caracal-wal/%f %p'` and a `recovery_target_time` 30 minutes before drill start.
+3. **Start Postgres** and wait for `select pg_is_in_recovery();` → `f`.
+4. **Verify chain integrity** — connect with the `caracalAudit` role and run the tamper check the Audit service runs at startup:
+   ```sql
+   SELECT zone_id, count(*) AS rows,
+          count(*) FILTER (WHERE chain_hmac IS NULL) AS missing_hmac
+   FROM   audit_events
+   WHERE  occurred_at > now() - interval '30 minutes'
+   GROUP  BY zone_id;
+   ```
+   Expect `missing_hmac = 0` for every zone. Then run the Audit service against this instance with `AUDIT_TAMPER_SWEEP_ON_START=true` and confirm exit code 0.
+5. **Record** RTO (time from step 1 to step 4 passing) and RPO (oldest data lost). File against your DR runbook. Tear the instance down.
+
+If any step fails, treat as a sev-2 incident: backups are not currently usable for recovery.

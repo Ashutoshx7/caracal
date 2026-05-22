@@ -73,4 +73,22 @@ spec:
           annotations:
             summary: Gateway cannot reliably exchange mandates with STS
             description: Protected requests may fail before upstream dispatch. Check Gateway readiness, STS readiness, route bindings, and service-to-service auth.
+        - alert: CaracalPostgresPoolSaturation
+          expr: max by (service) (caracal_db_pool_in_use_ratio) > {{ .Values.alertRules.dbPoolInUseRatio }}
+          for: 5m
+          labels:
+            severity: warning
+            component: database
+          annotations:
+            summary: Postgres connection pool is near saturation
+            description: A service is holding most of its Postgres pool. Inspect long-running queries, statement timeouts, and connection leaks before the pool exhausts and requests start failing.
+        - alert: CaracalReadinessFlapping
+          expr: changes(kube_pod_container_status_ready{pod=~"{{ include "caracal.fullname" . }}-.*"}[10m]) > {{ .Values.alertRules.readinessFlapsPer10m }}
+          for: 5m
+          labels:
+            severity: warning
+            component: platform
+          annotations:
+            summary: Caracal pod readiness is flapping
+            description: A pod is repeatedly toggling Ready/NotReady. Check dependency health (Postgres/Redis), CPU throttling, OOM, and readiness probe timeouts.
 {{- end }}

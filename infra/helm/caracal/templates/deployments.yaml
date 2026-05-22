@@ -47,6 +47,16 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      {{- $affinity := default $root.Values.scheduling.affinity $service.affinity }}
+      {{- if $affinity }}
+      affinity:
+        {{- tpl (toYaml $affinity) (dict "Values" $root.Values "name" $name "fullname" (include "caracal.fullname" $root)) | nindent 8 }}
+      {{- end }}
+      {{- $tsc := default $root.Values.scheduling.topologySpreadConstraints $service.topologySpreadConstraints }}
+      {{- if $tsc }}
+      topologySpreadConstraints:
+        {{- tpl (toYaml $tsc) (dict "Values" $root.Values "name" $name "fullname" (include "caracal.fullname" $root)) | nindent 8 }}
+      {{- end }}
       containers:
         - name: {{ $name }}
           image: {{ include "caracal.image" (dict "root" $root "image" $service.image) }}
@@ -113,6 +123,12 @@ spec:
             - name: replay
               mountPath: /var/lib/caracal
             {{- end }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /health

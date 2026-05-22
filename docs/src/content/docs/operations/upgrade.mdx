@@ -1,0 +1,110 @@
+---
+title: Upgrade Procedure
+description: Helm upgrade flow, migration ordering, rollback boundaries, and pre-flight gates for Caracal control-plane releases.
+pageType: config
+---
+
+This page describes the supported upgrade path for self-hosted Caracal. Follow it for every minor and patch release. Major version upgrades (e.g. `1.x` → `2.x`) may include additional steps that ship with that release's notes — read them first.
+
+## Versioning
+
+Caracal releases follow `vYYYY.MM.DD` tags. The Helm chart and container images share the same tag. Service images are built reproducibly from a single commit; mixing tags across services is not supported.
+
+Before an upgrade, verify:
+
+- Source tag is the one you intend to deploy: `helm show chart caracal/caracal --version <new>`.
+- All currently running services report the same `appVersion` via `caracal status --json`.
+- A current Postgres backup exists (see [Backup and Retention](../backup-retention/)).
+
+## Pre-flight
+
+Run the local preflight on a host that can see the cluster's Postgres and Redis:
+
+```bash
+CARACAL_MODE=stable \
+  DATABASE_URL=postgres://... \
+  REDIS_URL=redis://... \
+  ZONE_KEK_FILE=/secrets/zoneKek \
+  AUDIT_HMAC_KEY_FILE=/secrets/auditHmacKey \
+  STREAMS_HMAC_KEY_FILE=/secrets/streamsHmacKey \
+  GATEWAY_STS_HMAC_KEY_FILE=/secrets/gatewayStsHmacKey \
+  TLS_CERT_FILE=/secrets/tls.crt TLS_KEY_FILE=/secrets/tls.key \
+  caracal doctor --preflight
+```
+
+Every check must be `ok` or `warn`. A `fail` means the new release will refuse to start; fix the config before proceeding.
+
+## Migration ordering
+
+The Helm chart runs migrations through a `pre-upgrade` hook Job before any service Pod is updated. The Job uses a Postgres advisory lock so concurrent runners (e.g. blue-green or canary) serialize automatically.
+
+Schema migrations are forward-only. Caracal does not ship `down` migrations; rollback after a migration has applied is by data restore, not schema reverse.
+
+The Job is configured via:
+
+```yaml
+migrations:
+  enabled: true
+  backoffLimit: 3
+```
+
+If the migration Job fails:
+
+1. Helm aborts the upgrade. No service Pod has been rolled.
+2. Inspect the Job's Pod logs: `kubectl logs -l app.kubernetes.io/component=migrations -n caracal --tail=200`.
+3. Resolve the underlying issue (usually a Postgres role permission, a stale connection, or a lock held by another process), then re-run `helm upgrade`. The Job is idempotent; partially applied migrations are tracked in `schema_migrations`.
+
+## Upgrade flow
+
+```bash
+helm repo update
+helm upgrade caracal caracal/caracal \
+  --namespace caracal \
+  --version <new-tag> \
+  --reuse-values \
+  --atomic --timeout 10m
+```
+
+`--atomic` rolls back the chart state on failure so partially applied workloads do not linger. `--timeout 10m` gives the migration Job and rolling restart enough headroom; raise it for clusters with slow image pulls.
+
+Roll order:
+
+1. Migration Job (pre-upgrade).
+2. STS, API, Audit, Coordinator (rolling update; `PodDisruptionBudget` keeps at least 50% available).
+3. Gateway last so it never proxies to a control-plane older than STS.
+
+Watch the rollout:
+
+```bash
+kubectl -n caracal rollout status statefulset/caracal-sts
+kubectl -n caracal rollout status statefulset/caracal-gateway
+kubectl -n caracal rollout status deployment/caracal-api
+kubectl -n caracal rollout status deployment/caracal-coordinator
+kubectl -n caracal rollout status deployment/caracal-audit
+```
+
+## Post-upgrade verification
+
+After `helm upgrade` reports success:
+
+```bash
+caracal doctor --extended --json | jq '.checks[] | select(.status != "ok")'
+```
+
+Expect empty output. Then run a synthetic request through Gateway end-to-end (see [Failure Modes](../failure-modes/) for the canonical curl). If anything fails, treat as an incident and follow rollback.
+
+## Rollback boundaries
+
+| Situation | Rollback path |
+| --- | --- |
+| Helm upgrade fails before migration Job completes | `helm rollback caracal <prev-revision>` — no schema change happened. |
+| Migration Job completed, services failing to start | `helm rollback` reverts images. The new schema is **forward-compatible by design**: the prior `appVersion` reads the new schema cleanly. Investigate root cause before re-attempting. |
+| Migration Job completed, new schema is incompatible with prior services in your environment | Restore Postgres from the pre-upgrade backup (see [Backup and Retention](../backup-retention/)). This is the only path that reverses schema. RPO = time since last backup. |
+
+Caracal explicitly does not provide reverse migrations. Operators relying on quick schema reversal must hold a current pre-upgrade base backup; without one, the only recovery is replay from S3 audit export plus operator data re-entry.
+
+## Canary upgrades
+
+For clusters that need progressive rollout, deploy a second Helm release alongside the production one and route a fraction of traffic via your ingress to the canary's Gateway. Both releases share the same Postgres and Redis; the migration Job from whichever release upgrades first applies the schema, and both releases must be compatible with that schema for the duration of the canary.
+
+The supported window for mixed-version operation is **one minor release**. Anything wider is unsupported.

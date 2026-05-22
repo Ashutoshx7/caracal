@@ -67,12 +67,37 @@ serviceMonitor:
   interval: 30s
 
 alertRules:
-  enabled: false
+  enabled: true
   labels: {}
   stsMaxPolicyAgeSeconds: 300
   auditDlqSize: 0
   auditConsumerLag: 1000
   gatewayStsExchangeErrors: 0
+  dbPoolInUseRatio: 0.9
+  readinessFlapsPer10m: 4
+
+scheduling:
+  # Soft pod-anti-affinity on hostname spreads replicas of the same service
+  # across nodes; topology spread balances them across failure domains.
+  # Override per service via services.<name>.affinity / topologySpreadConstraints.
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: caracal
+                app.kubernetes.io/component: "{{ .name }}"
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: caracal
+          app.kubernetes.io/component: "{{ .name }}"
 
 services:
   sts:
