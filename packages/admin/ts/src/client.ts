@@ -13,6 +13,7 @@ import type {
   AuditEvent,
   AuditQuery,
   DCRInput,
+  DecisionTrace,
   DelegationEdge,
   DelegationImpact,
   Grant,
@@ -301,6 +302,8 @@ export class AdminClient {
       this.request<AuditEvent[]>(`/v1/zones/${zoneId}/audit`, { query: { ...query } }),
     byRequest: (zoneId: string, requestId: string) =>
       this.request<AuditDetail[]>(`/v1/zones/${zoneId}/audit/by-request/${requestId}`),
+    explain: (zoneId: string, requestId: string) =>
+      this.request<DecisionTrace>(`/v1/zones/${zoneId}/audit/by-request/${requestId}/explain`),
   }
 
   // Agents (coordinator)

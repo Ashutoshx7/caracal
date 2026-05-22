@@ -245,6 +245,23 @@ export interface AuditDetail extends AuditEvent {
   diagnostics_json: JsonValue[] | null
 }
 
+export interface DeniedDecisionEvent {
+  event_id: string
+  event_type: string
+  evaluation_status: string | null
+  determining_policies: JsonValue[]
+  diagnostics: JsonValue[]
+  metadata: JsonObject
+}
+
+export interface DecisionTrace {
+  request_id: string
+  zone_id: string
+  final_decision: string
+  denied: DeniedDecisionEvent[]
+  events: AuditDetail[]
+}
+
 export interface AuditQuery {
   since?: string
   until?: string

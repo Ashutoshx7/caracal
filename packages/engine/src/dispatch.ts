@@ -304,6 +304,10 @@ const auditHandler = bySubcommand({
 const explainHandler: Handler = async ({ principal, flags, ctx }) =>
   ctx.admin.audit.byRequest(requireZone(principal), mustStr(flags, 'request-id'))
 
+const debugHandler = bySubcommand({
+  request: ({ principal, flags, ctx }) => ctx.admin.audit.explain(requireZone(principal), mustStr(flags, 'request-id')),
+})
+
 const agentHandler = bySubcommand({
   list: ({ principal, ctx }) => ctx.admin.agents.list(requireZone(principal)),
   get: ({ principal, flags, ctx }) => ctx.admin.agents.get(requireZone(principal), mustStr(flags, 'id')),
@@ -333,6 +337,7 @@ function commandHandler(command: string): Handler | undefined {
     case 'session': return sessionHandler
     case 'audit': return auditHandler
     case 'explain': return explainHandler
+    case 'debug': return debugHandler
     case 'agent': return agentHandler
     case 'delegation': return delegationHandler
     default: return undefined

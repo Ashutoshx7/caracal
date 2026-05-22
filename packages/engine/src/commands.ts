@@ -330,6 +330,22 @@ export const CLI_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
     },
   },
 
+  {
+    name: 'debug',
+    group: 'observability',
+    summary: 'Trace one request through decisions and diagnostics',
+    subcommands: ['request'],
+    requiresZone: true,
+    flags: {
+      request: [
+        { name: '--request-id', summary: 'Request ID from an audit event' },
+        { name: '--json', summary: 'Emit machine-readable DecisionTrace JSON' },
+        { name: '--flow', summary: 'Render the authority path as Mermaid' },
+      ],
+    },
+    scopes: { request: 'read' },
+  },
+
   { name: 'agent', group: 'multiagent', summary: 'Manage agent sessions', subcommands: ['list', 'get', 'tree', 'children', 'suspend', 'resume', 'terminate'], requiresZone: true },
   { name: 'delegation', group: 'multiagent', summary: 'Manage delegation edges', subcommands: ['inbound', 'outbound', 'traverse', 'revoke'], requiresZone: true },
 
