@@ -116,6 +116,45 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
     expect(out).toContain('user_agent')
   })
 
+  it('explain renders a Mermaid authority flow', async () => {
+    stubFetch((url) => {
+      expect(url).toBe('http://api/v1/zones/z1/audit/by-request/req-7')
+      return [{
+        id: 'a9',
+        event_type: 'token.exchange',
+        decision: 'allow',
+        evaluation_status: 'complete',
+        occurred_at: '2026-01-01T00:00:00Z',
+        request_id: 'req-7',
+        policy_set_id: 'ps-1',
+        policy_set_version_id: 'psv-2',
+        manifest_sha: 'sha-3',
+        determining_policies_json: [{ policy_id: 'p1', effect: 'allow' }],
+        diagnostics_json: [],
+        metadata_json: {
+          application_id: 'app-1',
+          session_id: 'sid-1',
+          agent_session_id: 'agent-1',
+          delegation_edge_id: 'edge-1',
+          resource: 'resource://calendar',
+          requested_scopes: ['calendar:read'],
+          provider_id: 'provider-1',
+          grant_id: 'grant-1',
+          auth_mode: 'provider_oauth',
+        },
+      }]
+    })
+
+    await explainCommand(['req-7', '--flow'])
+
+    const out = stdout.mock.calls.map((c) => c[0]).join('')
+    expect(out).toContain('flowchart LR')
+    expect(out).toContain('Agent app<br/>app-1')
+    expect(out).toContain('Delegated permission<br/>edge-1')
+    expect(out).toContain('Gateway provider<br/>provider-1')
+    expect(out).toContain('Policy set<br/>ps-1')
+  })
+
   it('explain requires a request id', async () => {
     await expect(explainCommand([])).rejects.toThrow(/__exit:1/)
     expect(stderr).toHaveBeenCalled()
