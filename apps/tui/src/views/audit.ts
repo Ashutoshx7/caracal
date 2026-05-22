@@ -26,12 +26,14 @@ export class AuditTailView implements View {
   private lastSince: string | undefined
   private app: App | undefined
   private aborted = false
+  private readonly onFiltersChange?: ((filters: AuditQuery) => void) | undefined
 
   private readonly filters: AuditQuery
-  constructor(client: AdminClient, zoneId: string, filters: AuditQuery = {}) {
+  constructor(client: AdminClient, zoneId: string, filters: AuditQuery = {}, onFiltersChange?: (filters: AuditQuery) => void) {
     this.client = client
     this.zoneId = zoneId
     this.filters = filters
+    this.onFiltersChange = onFiltersChange
     this.decision = filters.decision ?? 'all'
   }
 
@@ -155,6 +157,7 @@ export class AuditTailView implements View {
     if (key === 'd') {
       const order: typeof this.decision[] = ['all', 'allow', 'deny', 'partial']
       this.decision = order[(order.indexOf(this.decision) + 1) % order.length]!
+      this.onFiltersChange?.({ ...this.filters, decision: this.decision === 'all' ? undefined : this.decision })
       await this.fetchInitial()
       return
     }

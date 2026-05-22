@@ -40,6 +40,7 @@ import { pad, truncate, ui } from '../ansi.ts'
 import { explainError, maskSecretField } from '../errors.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
+import type { TuiStateStore } from '../state.ts'
 import { DetailView } from './detail.ts'
 import { DoctorView } from './doctor.ts'
 import { ConfirmView, FormView, type Field } from './form.ts'
@@ -751,12 +752,15 @@ function renderControlStatus(
 export class MenuView implements View {
   readonly title = 'menu'
   private readonly client: AdminClient
+  private readonly state?: TuiStateStore | undefined
   private zoneId: string | undefined
   private cursor = 0
 
-  constructor(client: AdminClient, zoneId: string | undefined) {
+  constructor(client: AdminClient, zoneId: string | undefined, state?: TuiStateStore) {
     this.client = client
+    this.state = state
     this.zoneId = zoneId
+    this.cursor = state?.menuCursor() ?? 0
   }
 
   hints(): string[] {
@@ -774,6 +778,7 @@ export class MenuView implements View {
       if (status === 404) {
         const stale = this.zoneId
         this.zoneId = undefined
+        this.state?.clearSelectedZone()
         app.setStatus(`configured zone ${stale} no longer exists — press z to pick another or open Zones to create one`, 'error')
         app.invalidate()
       }
@@ -782,6 +787,7 @@ export class MenuView implements View {
 
   setZone(id: string, slug: string | undefined, app: App): void {
     this.zoneId = id
+    this.state?.setSelectedZone(id, slug)
     app.setStatus(`zone set to ${slug ?? id}`)
     app.invalidate()
   }
@@ -815,12 +821,12 @@ export class MenuView implements View {
 
   async onKey(key: Key, ctx: ViewContext): Promise<void> {
     const entries = menuEntries()
-    if (key === 'up' || key === 'k') { this.cursor = Math.max(0, this.cursor - 1); return }
-    if (key === 'down' || key === 'j') { this.cursor = Math.min(entries.length - 1, this.cursor + 1); return }
+    if (key === 'up' || key === 'k') { this.cursor = Math.max(0, this.cursor - 1); this.state?.setMenuCursor(this.cursor); return }
+    if (key === 'down' || key === 'j') { this.cursor = Math.min(entries.length - 1, this.cursor + 1); this.state?.setMenuCursor(this.cursor); return }
     if (key === 'z' || key === 'Z') return this.promptZone(ctx.app)
     const direct = entries.findIndex((e) => e.key === key)
-    if (direct >= 0) { this.cursor = direct; this.open(ctx.app); return }
-    if (key === 'enter') { this.open(ctx.app); return }
+    if (direct >= 0) { this.cursor = direct; this.state?.setMenuCursor(this.cursor); this.open(ctx.app); return }
+    if (key === 'enter') { this.state?.setMenuCursor(this.cursor); this.open(ctx.app); return }
   }
 
   private open(app: App): void {
@@ -834,6 +840,7 @@ export class MenuView implements View {
       client: this.client,
       zoneId: this.zoneId ?? '',
       onZoneSelect: (id, slug) => this.setZone(id, slug, app),
+      state: this.state,
     }
     app.push(e.open(ctx, app))
   }

@@ -28,6 +28,7 @@ import type {
 import type { JsonObject } from '@caracalai/core'
 import { readFileSync } from 'node:fs'
 import type { App, View } from '../screen.ts'
+import type { TuiStateStore } from '../state.ts'
 import { maskSecretField } from '../errors.ts'
 import { AuditTailView } from './audit.ts'
 import { DetailView } from './detail.ts'
@@ -39,6 +40,7 @@ export interface Ctx {
   client: AdminClient
   zoneId: string
   onZoneSelect?: (id: string, slug: string) => void
+  state?: TuiStateStore | undefined
 }
 
 function detail(title: string, load: () => Promise<unknown>): DetailView {
@@ -202,6 +204,9 @@ export function zonesView(ctx: Ctx): View {
       { header: 'id', value: (r) => r.id },
     ],
     load: () => ctx.client.zones.list(),
+    state: ctx.state,
+    stateKey: 'zones',
+    rowKey: (row) => row.id,
     onEnter: (app, row) => {
       ctx.onZoneSelect?.(row.id, row.slug)
       app.setStatus(`zone set to ${row.slug}`)
@@ -275,6 +280,10 @@ export function applicationsView(ctx: Ctx): View {
       { header: 'id', value: (r) => r.id },
     ],
     load: () => ctx.client.applications.list(ctx.zoneId),
+    state: ctx.state,
+    stateKey: 'applications',
+    zoneId: ctx.zoneId,
+    rowKey: (row) => row.id,
     onEnter: (app, row) => open(app, detail(`app / ${row.name}`, () => ctx.client.applications.get(ctx.zoneId, row.id))),
     actions: [
       {
@@ -368,6 +377,10 @@ export function resourcesView(ctx: Ctx): View {
       { header: 'scopes', value: (r) => (r.scopes ?? []).join(' ') || '-' },
     ],
     load: () => ctx.client.resources.list(ctx.zoneId),
+    state: ctx.state,
+    stateKey: 'resources',
+    zoneId: ctx.zoneId,
+    rowKey: (row) => row.id,
     onEnter: (app, row) => open(app, detail(`resource / ${row.identifier}`, () => ctx.client.resources.get(ctx.zoneId, row.id))),
     actions: [
       {
@@ -453,6 +466,10 @@ export function providersView(ctx: Ctx): View {
       { header: 'id', value: (r) => r.id },
     ],
     load: () => ctx.client.providers.list(ctx.zoneId),
+    state: ctx.state,
+    stateKey: 'providers',
+    zoneId: ctx.zoneId,
+    rowKey: (row) => row.id,
     onEnter: (app, row) => open(app, detail(`provider / ${row.identifier}`, () => ctx.client.providers.get(ctx.zoneId, row.id))),
     actions: [
       {
@@ -531,6 +548,10 @@ export function policiesView(ctx: Ctx): View {
       { header: 'id', value: (r) => r.id },
     ],
     load: () => ctx.client.policies.list(ctx.zoneId),
+    state: ctx.state,
+    stateKey: 'policies',
+    zoneId: ctx.zoneId,
+    rowKey: (row) => row.id,
     onEnter: (app, row) => open(app, detail(`policy / ${row.name}`, () => ctx.client.policies.get(ctx.zoneId, row.id))),
     actions: [
       {
@@ -614,6 +635,10 @@ export function policySetsView(ctx: Ctx): View {
       { header: 'description', value: (r) => r.description ?? '-' },
     ],
     load: () => ctx.client.policySets.list(ctx.zoneId),
+    state: ctx.state,
+    stateKey: 'policy-sets',
+    zoneId: ctx.zoneId,
+    rowKey: (row) => row.id,
     onEnter: (app, row) => open(app, detail(`policy-set / ${row.name}`, () => ctx.client.policySets.get(ctx.zoneId, row.id))),
     actions: [
       {
@@ -713,6 +738,10 @@ export function grantsView(ctx: Ctx): View {
       { header: 'scopes', value: (r) => (r.scopes ?? []).join(' ') || '-' },
     ],
     load: () => ctx.client.grants.list(ctx.zoneId),
+    state: ctx.state,
+    stateKey: 'grants',
+    zoneId: ctx.zoneId,
+    rowKey: (row) => row.id,
     onEnter: (app, row) => open(app, detail(`grant / ${row.id}`, () => ctx.client.grants.get(ctx.zoneId, row.id))),
     actions: [
       {
@@ -753,7 +782,7 @@ export function grantsView(ctx: Ctx): View {
 }
 
 export function sessionsView(ctx: Ctx): View {
-  const filters: SessionQuery = {}
+  const filters: SessionQuery = { ...ctx.state?.sessionFilters(ctx.zoneId) }
   const list: ListView<Session> = new ListView<Session>({
     title: 'sessions',
     columns: [
@@ -764,6 +793,10 @@ export function sessionsView(ctx: Ctx): View {
       { header: 'id', value: (r) => r.id },
     ],
     load: () => ctx.client.sessions.list(ctx.zoneId, filters),
+    state: ctx.state,
+    stateKey: 'sessions',
+    zoneId: ctx.zoneId,
+    rowKey: (row) => row.id,
     actions: [
       {
         key: 'f', label: 'filter', build: () => {
@@ -778,6 +811,7 @@ export function sessionsView(ctx: Ctx): View {
               filters.status = (v.status as SessionQuery['status']) || undefined
               filters.subject_id = v.subject_id || undefined
               filters.limit = int(v.limit)
+              ctx.state?.setSessionFilters(ctx.zoneId, filters)
               await popAndReload(app, list as unknown as ListView<unknown>)
             },
           })
@@ -872,6 +906,10 @@ function delegationActiveView(ctx: Ctx): ListView<DelegationEdge> {
       { header: 'id', value: (r) => r.id },
     ],
     load: async () => (await ctx.client.delegations.active(ctx.zoneId)).items,
+    state: ctx.state,
+    stateKey: 'delegations-active',
+    zoneId: ctx.zoneId,
+    rowKey: (row) => row.id,
     onEnter: (app, row) => open(app, detail(`delegation / ${row.id}`, async () => row)),
   })
 }
@@ -889,6 +927,10 @@ function delegationEdgesView(ctx: Ctx, kind: 'inbound' | 'outbound', sessionId: 
     load: () => kind === 'inbound'
       ? ctx.client.delegations.inbound(ctx.zoneId, sessionId)
       : ctx.client.delegations.outbound(ctx.zoneId, sessionId),
+    state: ctx.state,
+    stateKey: `delegations-${kind}-${sessionId}`,
+    zoneId: ctx.zoneId,
+    rowKey: (row) => row.id,
     onEnter: (app, row) => open(app, detail(`delegation / ${row.id}`, async () => row)),
     actions: [
       {
@@ -924,6 +966,10 @@ function delegationTraverseView(ctx: Ctx, id: string): ListView<TraverseNode> {
       { header: 'id', value: (r) => r.id },
     ],
     load: () => ctx.client.delegations.traverse(ctx.zoneId, id),
+    state: ctx.state,
+    stateKey: `delegation-traverse-${id}`,
+    zoneId: ctx.zoneId,
+    rowKey: (row) => row.id,
     onEnter: (app, row) => open(app, detail(`delegation-node / ${row.id}`, async () => row)),
   })
 }
@@ -940,6 +986,10 @@ export function agentsView(ctx: Ctx): View {
       { header: 'id', value: (r) => r.agent_session_id },
     ],
     load: () => ctx.client.agents.list(ctx.zoneId),
+    state: ctx.state,
+    stateKey: 'agents',
+    zoneId: ctx.zoneId,
+    rowKey: (row) => row.agent_session_id,
     onEnter: (app, row) => open(app, detail(`agent / ${row.agent_session_id}`, () => ctx.client.agents.get(ctx.zoneId, row.agent_session_id))),
     actions: [
       {
@@ -990,17 +1040,17 @@ export function agentsView(ctx: Ctx): View {
 }
 
 export function auditView(ctx: Ctx): View {
-  const filters: AuditQuery = {}
+  const filters: AuditQuery = { ...ctx.state?.auditFilters(ctx.zoneId) }
   return new FormView({
     title: 'audit filters',
     submitLabel: 'tail',
     fields: [
-      { key: 'decision', label: 'decision', kind: 'select', options: ['', 'allow', 'deny', 'partial'] },
-      { key: 'since', label: 'since', kind: 'text' },
-      { key: 'until', label: 'until', kind: 'text' },
-      { key: 'request_id', label: 'request ID', kind: 'text' },
-      { key: 'event_type', label: 'event type', kind: 'text' },
-      { key: 'limit', label: 'limit', kind: 'text', default: '100', validate: (v) => v ? (Number.isFinite(Number.parseInt(v, 10)) ? undefined : 'limit must be an integer') : undefined },
+      { key: 'decision', label: 'decision', kind: 'select', options: ['', 'allow', 'deny', 'partial'], default: filters.decision ?? '' },
+      { key: 'since', label: 'since', kind: 'text', default: filters.since ?? '' },
+      { key: 'until', label: 'until', kind: 'text', default: filters.until ?? '' },
+      { key: 'request_id', label: 'request ID', kind: 'text', default: filters.request_id ?? '' },
+      { key: 'event_type', label: 'event type', kind: 'text', default: filters.event_type ?? '' },
+      { key: 'limit', label: 'limit', kind: 'text', default: filters.limit === undefined ? '100' : String(filters.limit), validate: (v) => v ? (Number.isFinite(Number.parseInt(v, 10)) ? undefined : 'limit must be an integer') : undefined },
     ],
     onSubmit: async (v, app) => {
       filters.decision = (v.decision as AuditQuery['decision']) || undefined
@@ -1009,8 +1059,9 @@ export function auditView(ctx: Ctx): View {
       filters.request_id = v.request_id || undefined
       filters.event_type = v.event_type || undefined
       filters.limit = int(v.limit)
+      ctx.state?.setAuditFilters(ctx.zoneId, filters)
       app.pop()
-      app.push(new AuditTailView(ctx.client, ctx.zoneId, filters))
+      app.push(new AuditTailView(ctx.client, ctx.zoneId, filters, (next) => ctx.state?.setAuditFilters(ctx.zoneId, next)))
     },
   })
 }
