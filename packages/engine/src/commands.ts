@@ -75,11 +75,13 @@ export const SHELL_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
   {
     name: 'doctor',
     group: 'admin',
-    summary: 'Check local control-plane readiness',
+    summary: 'Run operator diagnostics for the local control plane',
     flags: {
       '': [
-        { name: '--extended', summary: 'Probe service readiness and operator metrics' },
-        { name: '--json', summary: 'Emit machine-readable result' },
+        { name: '--preflight', summary: 'Run local deployment preflight checks only' },
+        { name: '--ready', summary: 'Treat warnings as not ready for automation gates' },
+        { name: '--zone', summary: 'Inspect one zone instead of every visible zone' },
+        { name: '--json', summary: 'Emit structured machine-readable diagnostics' },
       ],
     },
   },
@@ -102,7 +104,19 @@ export const CLI_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
       ],
     },
   },
-  { name: 'doctor', group: 'admin', summary: 'Check local control-plane readiness' },
+  {
+    name: 'doctor',
+    group: 'admin',
+    summary: 'Run operator diagnostics for the local control plane',
+    flags: {
+      '': [
+        { name: '--preflight', summary: 'Run local deployment preflight checks only' },
+        { name: '--ready', summary: 'Treat warnings as not ready for automation gates' },
+        { name: '--zone', summary: 'Inspect one zone instead of every visible zone' },
+        { name: '--json', summary: 'Emit structured machine-readable diagnostics' },
+      ],
+    },
+  },
   {
     name: 'manifest',
     group: 'admin',

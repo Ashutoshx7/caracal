@@ -7,6 +7,7 @@ import { COMMAND_NAME_PATTERN, type CommandGroup } from '@caracalai/engine/comma
 import { parse } from 'smol-toml'
 import { readFileSync } from 'node:fs'
 import { resolveCliConfigPath } from '@caracalai/engine/cli'
+import { formatVersionOutput } from '@caracalai/engine'
 import { style, printError } from './style.ts'
 import type { CommandRegistry } from './registry.ts'
 import type { CliConfig } from './config.ts'
@@ -109,7 +110,6 @@ export async function dispatch(opts: DispatchOptions, rawArgs: readonly string[]
     process.exit(0)
   }
   if (command === '--version' || command === '-v' || command === 'version') {
-    const tag = opts.mode === 'dev' ? `dev (sha ${opts.sha})` : opts.mode
     if (rest.includes('--json')) {
       process.stdout.write(JSON.stringify({
         binary: opts.binary,
@@ -118,7 +118,7 @@ export async function dispatch(opts: DispatchOptions, rawArgs: readonly string[]
         sha: opts.sha,
       }) + '\n')
     } else {
-      process.stdout.write(`${opts.binary} ${opts.version} [${tag}]\n`)
+      process.stdout.write(formatVersionOutput(opts))
     }
     process.exit(0)
   }

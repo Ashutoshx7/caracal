@@ -21,7 +21,6 @@ import { completionCommand } from './commands/completion.ts'
 import { controlCommand } from './commands/control.ts'
 import { doctorCommand } from './commands/doctor.ts'
 import { manifestCommand } from './commands/manifest.ts'
-import { protectCommand } from './commands/protect.ts'
 import { checkMcpGovernance } from './mcp.ts'
 import { CARACAL_MODE, CARACAL_SHA, CARACAL_VERSION } from './runtime/version.gen.ts'
 import { CLI_COMMANDS } from '@caracalai/engine/commands'
@@ -52,7 +51,6 @@ const executors: Record<string, Executor> = {
   control: (argv, cfg) => controlCommand([...argv], cfg),
   doctor: (argv, cfg) => doctorCommand([...argv], cfg),
   manifest: (argv, cfg) => manifestCommand([...argv], cfg),
-  protect: (argv, cfg) => protectCommand([...argv], cfg),
   completion: (argv) => completionCommand([...argv]),
 }
 
