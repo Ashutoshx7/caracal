@@ -228,16 +228,16 @@ The service refuses to start if any required variable is missing for the active 
 # Set these from caracal.toml; local dev defaults STS to http://localhost:8080.
 STS=${STS:-http://localhost:8080}
 : "${ZONE_ID:?set ZONE_ID from caracal.toml zone_id}"
-: "${terminal interfaceENT_ID:?set terminal interfaceENT_ID from caracal.toml application_id}"
-: "${terminal interfaceENT_SECRET:?set terminal interfaceENT_SECRET from caracal.toml app_client_secret}"
+: "${CLIENT_ID:?set CLIENT_ID from caracal.toml application_id}"
+: "${CLIENT_SECRET:?set CLIENT_SECRET from caracal.toml app_client_secret}"
 
 # 1. Mint a token. The OAuth client must carry the `control:zone:read` scope,
 # and the resource value must match CONTROL_AUDIENCE.
 TOKEN=$(curl -fsS -X POST "${STS%/}/oauth/2/token" \
   -d "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
   -d "zone_id=$ZONE_ID" \
-  -d "application_id=$terminal interfaceENT_ID" \
-  -d "client_secret=$terminal interfaceENT_SECRET" \
+  -d "application_id=$CLIENT_ID" \
+  -d "client_secret=$CLIENT_SECRET" \
   -d "resource=caracal-control" \
   -d "scope=control:zone:read" \
   | jq -er .access_token)
