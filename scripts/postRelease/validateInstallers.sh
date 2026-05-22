@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Exercises CLI and TUI installers against the release tag and verifies the resulting binary versions.
+# Exercises CLI and Terminal installers against the release tag and verifies the resulting binary versions.
 
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,7 +20,7 @@ validateShellCli() {
     if [[ "$DRY_RUN" == "1" ]]; then
       logFinding "$AREA" "install-cli.sh" "$PLAT" "shell" "-" "$SEV_INFO" "$STATUS_PASS" "dry-run: would run bash install-cli.sh --version $CARACAL_RELEASE" "bash install-cli.sh --version $CARACAL_RELEASE"
     else
-      local cliBin="$dir/bin/caracal-cli" evidence="installer placed caracal and caracal-cli on PATH"
+      local cliBin="$dir/bin/caracal-terminal" evidence="installer placed caracal and caracal-terminal on PATH"
       if [[ ! -x "$cliBin" ]]; then
         cliBin="$dir/bin/caracal"
         evidence="installer placed caracal on PATH"
@@ -38,22 +38,22 @@ validateShellCli() {
 }
 
 validateShellTui() {
-  matchesOnly "install-tui.sh" || return 0
+  matchesOnly "install-terminal.sh" || return 0
   local dir; dir="$(mktemp -d)"
-  if CARACAL_INSTALL_DIR="$dir/bin" runOrEcho bash "$REPO_ROOT/install-tui.sh" --version "$CARACAL_RELEASE" >"$dir/out" 2>&1; then
+  if CARACAL_INSTALL_DIR="$dir/bin" runOrEcho bash "$REPO_ROOT/install-terminal.sh" --version "$CARACAL_RELEASE" >"$dir/out" 2>&1; then
     if [[ "$DRY_RUN" == "1" ]]; then
-      logFinding "$AREA" "install-tui.sh" "$PLAT" "shell" "-" "$SEV_INFO" "$STATUS_PASS" "dry-run: would run bash install-tui.sh --version $CARACAL_RELEASE" "bash install-tui.sh --version $CARACAL_RELEASE"
+      logFinding "$AREA" "install-terminal.sh" "$PLAT" "shell" "-" "$SEV_INFO" "$STATUS_PASS" "dry-run: would run bash install-terminal.sh --version $CARACAL_RELEASE" "bash install-terminal.sh --version $CARACAL_RELEASE"
     else
-      local evidence="installer placed caracal-tui on PATH"
-      [[ -x "$dir/bin/caracal" ]] && evidence="installer placed caracal and caracal-tui on PATH"
-      if "$dir/bin/caracal-tui" --version 2>/dev/null | grep -q "$TUI_VER"; then
-        logFinding "$AREA" "install-tui.sh" "$PLAT" "shell" "-" "$SEV_INFO" "$STATUS_PASS" "$evidence" "bash install-tui.sh --version $CARACAL_RELEASE"
+      local evidence="installer placed caracal-terminal on PATH"
+      [[ -x "$dir/bin/caracal" ]] && evidence="installer placed caracal and caracal-terminal on PATH"
+      if "$dir/bin/caracal-terminal" --version 2>/dev/null | grep -q "$Terminal_VER"; then
+        logFinding "$AREA" "install-terminal.sh" "$PLAT" "shell" "-" "$SEV_INFO" "$STATUS_PASS" "$evidence" "bash install-terminal.sh --version $CARACAL_RELEASE"
       else
-        logFinding "$AREA" "install-tui.sh" "$PLAT" "shell" "-" "$SEV_MAJOR" "$STATUS_FAIL" "installed binary --version did not match $TUI_VER" "bash install-tui.sh --version $CARACAL_RELEASE"
+        logFinding "$AREA" "install-terminal.sh" "$PLAT" "shell" "-" "$SEV_MAJOR" "$STATUS_FAIL" "installed binary --version did not match $Terminal_VER" "bash install-terminal.sh --version $CARACAL_RELEASE"
       fi
     fi
   else
-    logFinding "$AREA" "install-tui.sh" "$PLAT" "shell" "-" "$SEV_BLOCKER" "$STATUS_FAIL" "$(head -c 400 "$dir/out")" "bash install-tui.sh --version $CARACAL_RELEASE"
+    logFinding "$AREA" "install-terminal.sh" "$PLAT" "shell" "-" "$SEV_BLOCKER" "$STATUS_FAIL" "$(head -c 400 "$dir/out")" "bash install-terminal.sh --version $CARACAL_RELEASE"
   fi
   rm -rf "$dir"
 }
@@ -93,5 +93,5 @@ validatePwshInstaller() {
 
 validateShellCli
 validateShellTui
-validatePwshInstaller "install-cli.ps1" "caracal-cli" "$CLI_VER"
-validatePwshInstaller "install-tui.ps1" "caracal-tui" "$TUI_VER"
+validatePwshInstaller "install-cli.ps1" "caracal-terminal" "$CLI_VER"
+validatePwshInstaller "install-terminal.ps1" "caracal-terminal" "$Terminal_VER"

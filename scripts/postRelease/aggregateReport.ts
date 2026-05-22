@@ -52,7 +52,7 @@ const AREAS = [
   ["npmInstall", "npm Install Matrix"],
   ["shellBinaries", "Shell Binaries"],
   ["cliBinaries", "CLI Binaries"],
-  ["tuiBinaries", "TUI Binaries"],
+  ["terminalBinaries", "Terminal Binaries"],
   ["installers", "Installers"],
   ["containers", "Container Stack"],
   ["provenance", "Provenance & Signing"],
@@ -103,7 +103,7 @@ const compat = (() => {
     containerView[`${registry}/${imagePrefix}${svc}`] = `v${ver}`;
   }
   return [
-    sec("CLI / TUI binaries", manifest.binaries),
+    sec("CLI / Terminal binaries", manifest.binaries),
     sec(`Container images (${registry})`, containerView),
     sec("PyPI packages", manifest.pypi),
     sec("npm packages", manifest.npm),
@@ -170,7 +170,7 @@ ${topFixes || "_No failing findings._"}
 - [ ] Registry metadata reviewed
 - [ ] PyPI install matrix green
 - [ ] npm install matrix green
-- [ ] CLI / TUI binaries verified on all platforms
+- [ ] CLI / Terminal binaries verified on all platforms
 - [ ] Installers verified
 - [ ] Containers boot cleanly
 - [ ] Provenance verified

@@ -130,7 +130,7 @@ const manifest = {
   release,
   mode: "stable",
   publishedAt,
-  binaries: { cli: version, tui: version },
+  binaries: { cli: version, terminal: version },
   containers: Object.fromEntries(containers.map((name) => [name, version])),
   pypi,
   npm,

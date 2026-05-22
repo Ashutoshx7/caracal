@@ -10,12 +10,12 @@ title: v2026.05.14 Release Validation Report
 
 ## Compatibility matrix
 
-### CLI / TUI binaries
+### CLI / Terminal binaries
 
 | Artifact | Version |
 | --- | --- |
 | `cli` | 2026.05.14 |
-| `tui` | 2026.05.14 |
+| `terminal` | 2026.05.14 |
 
 ### Container images (ghcr.io/garudex-labs)
 
@@ -66,7 +66,7 @@ title: v2026.05.14 Release Validation Report
 | PyPI Install Matrix | 252 | 0 | 0 | 0 |
 | npm Install Matrix | 108 | 0 | 0 | 0 |
 | CLI Binaries | 25 | 0 | 0 | 0 |
-| TUI Binaries | 25 | 0 | 0 | 0 |
+| Terminal Binaries | 25 | 0 | 0 | 0 |
 | Installers | 3 | 1 | 0 | 0 |
 | Container Stack | 7 | 0 | 0 | 0 |
 | Provenance & Signing | 16 | 0 | 0 | 0 |
@@ -864,108 +864,108 @@ title: v2026.05.14 Release Validation Report
 
 ### CLI Binaries
 
-- **[info]** PASS — `caracal-cli-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): --version returns 2026.05.14
+- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): --version returns 2026.05.14
   - Repro: `./caracal --version`
-- **[info]** PASS — `caracal-cli-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): --version returns 2026.05.14
+- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): --version returns 2026.05.14
   - Repro: `./caracal.exe --version`
-- **[info]** PASS — `caracal-cli-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): --version returns 2026.05.14
+- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): --version returns 2026.05.14
   - Repro: `./caracal --version`
-- **[info]** PASS — `caracal-cli-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): --version returns 2026.05.14
+- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): --version returns 2026.05.14
   - Repro: `./caracal --version`
-- **[info]** PASS — `caracal-cli-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): --version returns 2026.05.14
+- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): --version returns 2026.05.14
   - Repro: `./caracal --version`
-- **[info]** PASS — `caracal-cli-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-cli-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
 
-### TUI Binaries
+### Terminal Binaries
 
-- **[info]** PASS — `caracal-tui-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): --version returns 2026.05.14
-  - Repro: `./caracal-tui --version`
-- **[info]** PASS — `caracal-tui-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): --version returns 2026.05.14
+  - Repro: `./caracal-terminal --version`
+- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): --version returns 2026.05.14
-  - Repro: `./caracal-tui.exe --version`
-- **[info]** PASS — `caracal-tui-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): --version returns 2026.05.14
+  - Repro: `./caracal-terminal.exe --version`
+- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): --version returns 2026.05.14
-  - Repro: `./caracal-tui --version`
-- **[info]** PASS — `caracal-tui-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): --version returns 2026.05.14
+  - Repro: `./caracal-terminal --version`
+- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): --version returns 2026.05.14
-  - Repro: `./caracal-tui --version`
-- **[info]** PASS — `caracal-tui-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): --version returns 2026.05.14
+  - Repro: `./caracal-terminal --version`
+- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): --version returns 2026.05.14
-  - Repro: `./caracal-tui --version`
-- **[info]** PASS — `caracal-tui-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.14.tar.gz` (linux-amd64/github/-): --version returns 2026.05.14
+  - Repro: `./caracal-terminal --version`
+- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.14.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.14.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.14.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
-- **[info]** PASS — `caracal-tui-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.14.zip` (windows-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256 check`
 
 ### Installers
@@ -998,26 +998,26 @@ title: v2026.05.14 Release Validation Report
 
 ### Provenance & Signing
 
-- **[info]** PASS — `caracal-cli-linux-amd64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-cli-linux-amd64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-tui-linux-amd64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-tui-linux-amd64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-cli-linux-arm64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-cli-linux-arm64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-tui-linux-arm64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-tui-linux-arm64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-cli-darwin-amd64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-cli-darwin-amd64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-tui-darwin-amd64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-tui-darwin-amd64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-cli-darwin-arm64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-cli-darwin-arm64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-tui-darwin-arm64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-tui-darwin-arm64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-cli-windows-amd64-v2026.05.14.zip` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-cli-windows-amd64-v2026.05.14.zip --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-tui-windows-amd64-v2026.05.14.zip` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-tui-windows-amd64-v2026.05.14.zip --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-terminal-linux-amd64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-terminal-linux-amd64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-terminal-linux-arm64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-terminal-linux-arm64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-terminal-darwin-amd64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-terminal-darwin-amd64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-terminal-darwin-arm64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.14.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-terminal-darwin-arm64-v2026.05.14.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.14.zip` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-terminal-windows-amd64-v2026.05.14.zip --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.14.zip` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-terminal-windows-amd64-v2026.05.14.zip --repo Garudex-Labs/caracal`
 - **[info]** PASS — `ghcr.io/garudex-labs/caracal-api:v2026.05.14` (ghcr/docker/-): image SLSA provenance found
   - Repro: `docker buildx imagetools inspect ghcr.io/garudex-labs/caracal-api:v2026.05.14`
 - **[info]** PASS — `ghcr.io/garudex-labs/caracal-coordinator:v2026.05.14` (ghcr/docker/-): image SLSA provenance found
@@ -1047,7 +1047,7 @@ title: v2026.05.14 Release Validation Report
 - [ ] Registry metadata reviewed
 - [ ] PyPI install matrix green
 - [ ] npm install matrix green
-- [ ] CLI / TUI binaries verified on all platforms
+- [ ] CLI / Terminal binaries verified on all platforms
 - [ ] Installers verified
 - [ ] Containers boot cleanly
 - [ ] Provenance verified

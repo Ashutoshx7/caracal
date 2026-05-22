@@ -69,7 +69,7 @@ if $run_smoke; then
   step "smoke: pnpm install"
   pnpm install --frozen-lockfile --prefer-offline
   if ! command -v bun >/dev/null 2>&1; then
-    say_error "bun is required for pnpm -r build (apps/cli, apps/tui)."
+    say_error "bun is required for pnpm -r build (apps/runtime, apps/terminal)."
     say_label "Install: curl -fsSL https://bun.sh/install | bash"
     exit 1
   fi
@@ -86,7 +86,7 @@ fi
 
 if $run_ts; then
   step "ts: sync embedded"
-  pnpm --dir apps/cli sync-embedded
+  pnpm --dir apps/runtime sync-embedded
 
   step "ts: build packages"
   pnpm run build:typescript
@@ -114,11 +114,11 @@ if $run_ts; then
     tests/typescript/fuzz/api \
     tests/typescript/integration/api
   ts_run apps/coordinator coordinator tests/typescript/unit/orchestration/coordinator
-  ts_run apps/cli cli tests/typescript/unit/cli
-  ts_run apps/tui tui tests/typescript/unit/tui
+  ts_run apps/runtime cli tests/typescript/unit/runtime
+  ts_run apps/terminal terminal tests/typescript/unit/terminal
   ts_run packages/core/ts core tests/typescript/unit/shared
   ts_run packages/admin/ts admin tests/typescript/unit/admin
-  ts_run packages/sdk/ts sdk tests/typescript/unit/sdk/client.test.ts
+  ts_run packages/sdk/ts sdk tests/typescript/unit/sdk/runtimeent.test.ts
   ts_run packages/transport/a2a/ts transport-a2a tests/typescript/unit/transport-a2a
   ts_run packages/oauth/ts oauth tests/typescript/unit/sdk/oauth
   ts_run packages/revocation/ts revocation tests/typescript/unit/revocation

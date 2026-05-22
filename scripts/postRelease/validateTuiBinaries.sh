@@ -2,18 +2,18 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Downloads TUI release archives, verifies SHA256, and runs --version on the host-platform binary.
+# Downloads Terminal release archives, verifies SHA256, and runs --version on the host-platform binary.
 
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./lib/common.sh
 source "$HERE/lib/common.sh"
 
-readonly AREA="tuiBinaries"
-readonly KIND="tui"
-readonly BIN="caracal-tui"
+readonly AREA="terminalBinaries"
+readonly KIND="terminal"
+readonly BIN="caracal-terminal"
 readonly BASE="https://github.com/$CARACAL_REPO/releases/download/$CARACAL_RELEASE"
-readonly EXPECT="$TUI_VER"
+readonly EXPECT="$Terminal_VER"
 readonly PLATS=(linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64)
 
 validatePlat() {
