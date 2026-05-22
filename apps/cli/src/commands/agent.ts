@@ -56,7 +56,6 @@ export async function agentCommand(argv: string[], cfg?: CliConfig): Promise<voi
         if (!id) return usage('agent get <id> [--zone …]')
         return printJSON(await client.agents.get(zoneId, id))
       }
-      case 'children':
       case 'tree': {
         const zoneId = requireZone(ctx, flags)
         const id = positional[0]
@@ -142,12 +141,6 @@ export async function delegationCommand(argv: string[], cfg?: CliConfig): Promis
         if (json) return printJSON(rows)
         return printTable(rows, ['depth', 'id', 'source_session_id', 'target_session_id'])
       }
-      case 'impact': {
-        const zoneId = requireZone(ctx, flags)
-        const id = positional[0]
-        if (!id) return usage('delegation impact <edge-id> [--zone …]')
-        return printJSON(await client.delegations.impact(zoneId, id))
-      }
       case 'revoke': {
         const zoneId = requireZone(ctx, flags)
         const id = positional[0]
@@ -176,7 +169,6 @@ function agentHelp(): never {
       '  list                    List agent sessions in a zone',
       '  get <id>                Fetch an agent session by ID as JSON',
       '  tree <id>               List direct child sessions of an agent',
-      '  children <id>           Alias for tree',
       '  suspend <id>            Pause an active agent session',
       '  resume <id>             Resume a suspended agent session',
       '  terminate <id>          Permanently end an agent session',
@@ -203,9 +195,8 @@ function delegationHelp(): never {
       '  inbound <session-id>    Show delegation edges arriving at a session',
       '  outbound <session-id>   Show delegation edges originating from a session',
       '  traverse <edge-id>      Walk the full delegation chain for an edge',
-      '  impact <edge-id>        Show revocation blast radius for an edge',
       '  revoke <edge-id>        Revoke a delegation edge and affected sessions',
-      '    --dry-run               Preview the revocation blast radius (same as `impact`)',
+      '    --dry-run               Preview the revocation blast radius',
       '',
       'Flags:',
       '  --zone <id>             Zone selector (or CARACAL_ZONE_ID)',

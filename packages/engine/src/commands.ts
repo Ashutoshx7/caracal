@@ -33,7 +33,7 @@ export interface CommandDescriptor {
 }
 
 const READ_VERBS = new Set([
-  'list', 'get', 'tree', 'children', 'tail', 'inbound', 'outbound', 'traverse', 'read', 'inspect', 'use', 'simulate',
+  'list', 'get', 'tree', 'tail', 'active', 'inbound', 'outbound', 'traverse', 'read', 'inspect', 'use', 'validate', 'simulate',
 ]);
 
 const DELETE_VERBS = new Set(['delete', 'terminate', 'revoke', 'purge']);
@@ -122,6 +122,7 @@ export const CLI_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
     group: 'admin',
     summary: 'Validate interoperability extension manifests',
     subcommands: ['validate'],
+    hidden: true,
     flags: {
       validate: [
         { name: '--file', summary: 'Manifest JSON file' },
@@ -163,15 +164,25 @@ export const CLI_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
         { name: '--credential-type', summary: 'Credential type' },
         { name: '--client-secret', summary: 'Client secret' },
         { name: '--method', summary: 'Auth method' },
+        { name: '--traits', summary: 'Comma-separated application traits' },
         { name: '--consent', summary: 'Require consent' },
         { name: '--expires-in', summary: 'Token expiry seconds' },
       ],
       patch: [
         { name: '--name', summary: 'Application name' },
+        { name: '--credential-type', summary: 'Credential type' },
+        { name: '--client-secret', summary: 'Client secret' },
+        { name: '--traits', summary: 'Comma-separated application traits' },
         { name: '--consent', summary: 'Require consent (=true|false)' },
         { name: '--expires-in', summary: 'Token expiry seconds' },
       ],
-      dcr: [{ name: '--client-secret', summary: 'Client secret to register' }],
+      dcr: [
+        { name: '--name', summary: 'Application name' },
+        { name: '--credential-type', summary: 'Credential type' },
+        { name: '--client-secret', summary: 'Client secret to register' },
+        { name: '--traits', summary: 'Comma-separated application traits' },
+        { name: '--expires-in', summary: 'Token expiry seconds' },
+      ],
     },
   },
 
@@ -213,7 +224,10 @@ export const CLI_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
         { name: '--config', summary: 'Inline config JSON or @file' },
       ],
       patch: [
+        { name: '--identifier', summary: 'Provider identifier' },
         { name: '--name', summary: 'Provider name' },
+        { name: '--kind', summary: 'Provider kind (oidc, …)' },
+        { name: '--owner-type', summary: 'Owner type' },
         { name: '--client-id', summary: 'Provider client ID' },
         { name: '--config', summary: 'Inline config JSON or @file' },
       ],
@@ -222,7 +236,7 @@ export const CLI_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
 
   {
     name: 'policy', group: 'admin', summary: 'Manage policies',
-    subcommands: ['list', 'get', 'create', 'validate', 'sample-input', 'template', 'version', 'delete'], requiresZone: true,
+    subcommands: ['list', 'get', 'create', 'validate', 'version', 'delete'], requiresZone: true,
     flags: {
       create: [
         { name: '--name', summary: 'Policy name' },
@@ -238,17 +252,11 @@ export const CLI_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
         { name: '--content', summary: 'Inline Rego content' },
         { name: '--schema-version', summary: 'Policy schema version' },
       ],
-      'sample-input': [
-        { name: '--resource', summary: 'Resource identifier' },
-        { name: '--scopes', summary: 'Comma-separated scopes' },
-        { name: '--principal', summary: 'Principal/user ID' },
-        { name: '--zone', summary: 'Zone ID' },
-        { name: '--session', summary: 'Session ID' },
-      ],
       version: [
         { name: '--version', summary: 'Version label' },
         { name: '--content', summary: 'Inline policy content' },
         { name: '--file', summary: 'Read content from file' },
+        { name: '--schema-version', summary: 'Policy schema version' },
       ],
     },
   },
@@ -261,6 +269,13 @@ export const CLI_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
         { name: '--name', summary: 'Policy set name' },
         { name: '--description', summary: 'Description' },
       ],
+      version: [
+        { name: '--policy-versions', summary: 'Comma-separated policy version IDs' },
+      ],
+      activate: [
+        { name: '--version', summary: 'Policy set version ID' },
+        { name: '--shadow', summary: 'Shadow policy set version ID' },
+      ],
       simulate: [
         { name: '--version', summary: 'Policy set version ID' },
         { name: '--input', summary: 'Inline OPA input fixture JSON' },
@@ -271,12 +286,13 @@ export const CLI_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
 
   {
     name: 'grant', group: 'admin', summary: 'Manage grants',
-    subcommands: ['list', 'get', 'create', 'revoke', 'delete'], requiresZone: true,
+    subcommands: ['list', 'get', 'create', 'revoke'], requiresZone: true,
     flags: {
       create: [
         { name: '--app', summary: 'Application ID' },
         { name: '--resource', summary: 'Resource ID' },
         { name: '--user', summary: 'Subject (user) ID' },
+        { name: '--scopes', summary: 'Comma-separated scopes' },
       ],
     },
   },
@@ -327,6 +343,7 @@ export const CLI_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
     summary: 'Trace one request through decisions and diagnostics',
     subcommands: ['request'],
     requiresZone: true,
+    hidden: true,
     flags: {
       request: [
         { name: '--request-id', summary: 'Request ID from an audit event' },
@@ -337,8 +354,8 @@ export const CLI_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
     scopes: { request: 'read' },
   },
 
-  { name: 'agent', group: 'multiagent', summary: 'Manage agent sessions', subcommands: ['list', 'get', 'tree', 'children', 'suspend', 'resume', 'terminate'], requiresZone: true },
-  { name: 'delegation', group: 'multiagent', summary: 'Manage delegation edges', subcommands: ['inbound', 'outbound', 'traverse', 'revoke'], requiresZone: true },
+  { name: 'agent', group: 'multiagent', summary: 'Manage agent sessions', subcommands: ['list', 'get', 'tree', 'suspend', 'resume', 'terminate'], requiresZone: true },
+  { name: 'delegation', group: 'multiagent', summary: 'Manage delegation edges', subcommands: ['active', 'inbound', 'outbound', 'traverse', 'revoke'], requiresZone: true },
 
   {
     name: 'control', group: 'admin', summary: 'Manage the optional engine-owned Control automation service',

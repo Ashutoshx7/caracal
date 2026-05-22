@@ -63,7 +63,7 @@ export function printUsage(opts: DispatchOptions, out: NodeJS.WriteStream = proc
   const lines: string[] = [
     `${style.title('Usage:')} ${opts.binary} <command> [options]`,
     '',
-    `Caracal ${opts.mode} command surface.`,
+    'Caracal command surface.',
     '',
   ]
   const groups = new Map<CommandGroup, typeof opts.registry.ordered>()
