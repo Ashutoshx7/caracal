@@ -38,12 +38,12 @@ integration settings; Caracal credentials come from `caracal.toml`.
 ### 3 — Start Caracal through Terminal + control API
 
 Caracal (API + Coordinator + Gateway + STS + Redis) must be running before
-Lynx starts. Install the released CLI/Terminal and bring up the stack the same way
+Lynx starts. Install the released runtime/terminal and bring up the stack the same way
 an end user would — **do not build from the caracal source tree**:
 
 ```bash
-# Install the CLI and Terminal once (no sudo, lands in ~/.local/bin)
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-cli.sh | sh
+# Install the runtime shell and terminal once (no sudo, lands in ~/.local/bin)
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.sh | sh
 curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.sh | sh
 
 # Bring up the OSS stack
@@ -57,7 +57,7 @@ caracal up
 caracal-terminal
 ```
 
-The Terminal talks to the same control plane as the CLI. The control key is a real
+The Terminal talks to the same control plane as the terminal interface. The control key is a real
 Caracal application credential with the `control:invoke` trait; Lynx stores
 its `client_id` as `application_id` and its one-time `client_secret` as
 `app_client_secret` in `caracal.toml`.

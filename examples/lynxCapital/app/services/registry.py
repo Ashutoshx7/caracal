@@ -161,7 +161,7 @@ class _RestEntry:
     poll_path: str | None
 
 
-_CLIENT_CACHE: dict[str, Any] = {}
+_terminal interfaceENT_CACHE: dict[str, Any] = {}
 _CACHE_LOCK = threading.Lock()
 
 
@@ -183,9 +183,9 @@ def _build_rest(provider: str) -> _RestEntry:
 
 def _entry(provider: str) -> _RestEntry:
     with _CACHE_LOCK:
-        e = _CLIENT_CACHE.get(provider)
+        e = _terminal interfaceENT_CACHE.get(provider)
         if not isinstance(e, _RestEntry):
-            e = _CLIENT_CACHE[provider] = _build_rest(provider)
+            e = _terminal interfaceENT_CACHE[provider] = _build_rest(provider)
         return e
 
 
@@ -199,7 +199,7 @@ def _rest_call(provider: str, action: str, payload: dict) -> dict:
 
 
 def _stripe_client():
-    c = _CLIENT_CACHE.get("stripe-treasury")
+    c = _terminal interfaceENT_CACHE.get("stripe-treasury")
     if c is not None:
         return c
     from lynx_sdk_stripe_treasury import StripeTreasuryClient
@@ -221,12 +221,12 @@ def _stripe_client():
         base_url=base_url,
         http_client=http_client,
     )
-    _CLIENT_CACHE["stripe-treasury"] = c
+    _terminal interfaceENT_CACHE["stripe-treasury"] = c
     return c
 
 
 def _tax_client():
-    c = _CLIENT_CACHE.get("tax-rules")
+    c = _terminal interfaceENT_CACHE.get("tax-rules")
     if c is not None:
         return c
     from lynx_sdk_tax import TaxClient
@@ -248,30 +248,30 @@ def _tax_client():
         base_url=base_url,
         http_client=http_client,
     )
-    _CLIENT_CACHE["tax-rules"] = c
+    _terminal interfaceENT_CACHE["tax-rules"] = c
     return c
 
 
 def _treasury_client():
-    c = _CLIENT_CACHE.get("treasury-ops")
+    c = _terminal interfaceENT_CACHE.get("treasury-ops")
     if c is not None:
         return c
     from app.services.transport.grpc_client import GrpcClient
     c = GrpcClient("treasury-ops", _required_env("LYNX_TREASURY_GRPC"),
                    auth_header="metadata-token", auth_env="LYNX_TREASURY_KEY")
-    _CLIENT_CACHE["treasury-ops"] = c
+    _terminal interfaceENT_CACHE["treasury-ops"] = c
     return c
 
 
 def _vendor_portal_client():
-    c = _CLIENT_CACHE.get("vendor-portal")
+    c = _terminal interfaceENT_CACHE.get("vendor-portal")
     if c is not None:
         return c
     from app.services.transport.mcp import McpClient
     host = _required_env("LYNX_MCP_HOST")
     port = int(_required_env("LYNX_MCP_PORT"))
     c = McpClient("vendor-portal", host, port, auth_env="LYNX_VENDOR_PORTAL_KEY")
-    _CLIENT_CACHE["vendor-portal"] = c
+    _terminal interfaceENT_CACHE["vendor-portal"] = c
     return c
 
 
@@ -371,10 +371,10 @@ def reset() -> None:
     from app.services.resilience import reset_breakers
 
     with _CACHE_LOCK:
-        for c in list(_CLIENT_CACHE.values()):
+        for c in list(_terminal interfaceENT_CACHE.values()):
             inner = getattr(c, "client", None)
             close = getattr(inner, "close", None) or getattr(c, "close", None)
             if callable(close):
                 close()
-        _CLIENT_CACHE.clear()
+        _terminal interfaceENT_CACHE.clear()
     reset_breakers()
