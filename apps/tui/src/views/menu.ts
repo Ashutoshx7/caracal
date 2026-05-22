@@ -38,6 +38,7 @@ import { explainError, maskSecretField } from '../errors.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
 import { DetailView } from './detail.ts'
+import { DoctorView } from './doctor.ts'
 import { ConfirmView, FormView, type Field } from './form.ts'
 import { pickFromList } from './picker.ts'
 import {
@@ -163,38 +164,7 @@ function auditExplainEntry(ctx: Ctx): View {
 }
 
 function doctorEntry(ctx: Ctx): View {
-  return new FormView({
-    title: 'doctor',
-    fields: [
-      { key: 'zone_id', label: 'zone', kind: 'text', default: ctx.zoneId, hint: 'blank checks all visible zones', pick: zoneFieldPicker(ctx.client) },
-    ],
-    onSubmit: async (v, app) => {
-      const zoneId = v.zone_id || undefined
-      app.pop()
-      app.push(new DetailView({
-        title: 'doctor',
-        load: async () => {
-          const cfg = loadCliConfig()
-          const zones = zoneId ? [await ctx.client.zones.get(zoneId)] : await ctx.client.zones.list()
-          return {
-            zone_url: cfg?.zone_url,
-            api_url: process.env.CARACAL_API_URL ?? 'http://127.0.0.1:8080',
-            zone_scope: zoneId ? 'selected' : 'all',
-            zones: zones.map((zone) => ({
-              id: zone.id,
-              slug: zone.slug,
-              name: zone.name,
-              login_flow: zone.login_flow,
-              dcr_enabled: zone.dcr_enabled,
-              pkce_required: zone.pkce_required,
-            })),
-            status: 'ready',
-          }
-        },
-        mask: maskSecretField,
-      }))
-    },
-  })
+  return new DoctorView({ cfg: loadCliConfig(), zoneId: ctx.zoneId, zonePicker: zoneFieldPicker(ctx.client) })
 }
 
 function zoneFieldPicker(client: AdminClient): Field['pick'] {
