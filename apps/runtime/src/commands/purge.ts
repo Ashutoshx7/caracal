@@ -8,7 +8,7 @@ import { homedir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { join } from 'node:path'
-import { resolveCliConfigPath } from '@caracalai/engine/cli'
+import { resolveRuntimeConfigPath } from '@caracalai/engine/runtime-config'
 import {
   caracalBinaries as caracalBinariesCore,
   composeRun,
@@ -76,7 +76,7 @@ function purgeHelp(): never {
       '  secrets     Remove dev .env and generated secret files (infra/docker/.env, infra/secrets/files/) — dev only',
       '  cache       Remove build artifacts: apps/*/dist, coverage/, node_modules/.cache (dev only)',
       '  images      Remove cached Caracal docker images (caracal/*, ghcr.io/garudex-labs/caracal-*)',
-      '  binary      Uninstall caracal CLI binaries from $CARACAL_INSTALL_DIR (default ~/.local/bin)',
+      '  binary      Uninstall Caracal runtime and terminal binaries from $CARACAL_INSTALL_DIR (default ~/.local/bin)',
       '  all         Purge every applicable target (destructive — wipes volumes, runtime, config, images, binary)',
       '',
       'Options:',
@@ -92,7 +92,7 @@ function purgeHelp(): never {
 function buildContext(dryRun: boolean): PurgeContext {
   const paths = resolvePaths()
   const runtime = runtimePaths()
-  const configPath = resolveCliConfigPath()
+  const configPath = resolveRuntimeConfigPath()
   const repoRoot = paths.mode === 'dev' ? paths.cwd : undefined
   const stacks: ComposeStack[] = [
     { label: paths.mode, composeFile: paths.composeFile, envFiles: paths.envFiles, cwd: paths.cwd },
@@ -293,7 +293,7 @@ const TARGETS: Target[] = [
   },
   {
     id: 'binary',
-    label: 'Uninstall caracal CLI binaries (DESTRUCTIVE)',
+    label: 'Uninstall Caracal binaries (DESTRUCTIVE)',
     describe: () => {
       const found = caracalBinariesPaths()
       if (found.length === 0) return '(no caracal binaries on $PATH)'

@@ -1,40 +1,9 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// CLI flag parsing, table/JSON printers, and exit-code handling for admin subcommands.
+// Runtime flag parsing, table/JSON printers, and help output.
 
-import { AdminApiError } from '@caracalai/admin'
-import { scrubTokens } from '@caracalai/engine/crash'
-import {
-  buildAdminClient as buildAdminClientCore,
-  readContent as readContentCore,
-  type AdminContext,
-} from '@caracalai/engine'
-import type { CliConfig } from '../config.ts'
 import { style, printError } from '../style.ts'
-import { isReplExit } from '../repl.ts'
-
-export type { AdminContext } from '@caracalai/engine'
-
-export function buildAdminClient(cfg?: CliConfig): AdminContext {
-  try {
-    return buildAdminClientCore(cfg)
-  } catch (err) {
-    if (isReplExit(err)) throw err
-    printError(err instanceof Error ? err.message : String(err))
-    process.exit(1)
-  }
-}
-
-export function readContent(value: string | undefined): string {
-  try {
-    return readContentCore(value)
-  } catch (err) {
-    if (isReplExit(err)) throw err
-    printError(err instanceof Error ? err.message : String(err))
-    process.exit(1)
-  }
-}
 
 export interface ParsedArgs {
   positional: string[]
@@ -87,15 +56,6 @@ export function flagList(flags: Record<string, string | boolean>, key: string): 
   return v ? v.split(',').map((s) => s.trim()).filter(Boolean) : undefined
 }
 
-export function requireZone(ctx: AdminContext, flags: Record<string, string | boolean>): string {
-  const zoneId = flagString(flags, 'zone') ?? ctx.zoneId
-  if (!zoneId) {
-    printError('--zone <id> required (or set CARACAL_ZONE_ID, or add zone_id to caracal.toml)')
-    process.exit(1)
-  }
-  return zoneId
-}
-
 export function usage(line: string): never {
   process.stderr.write(`${style.label('Usage:')} caracal ${line}\n`)
   process.exit(1)
@@ -113,63 +73,6 @@ export function unknownVerb(group: string, verb: string | undefined, help: () =>
   }
   printError(`unknown ${group} verb '${verb}'`)
   help()
-  process.exit(1)
-}
-
-function remediationHint(status: number): string | undefined {
-  if (status === 401) {
-    return 'Check CARACAL_ADMIN_TOKEN, or the app_client_secret in caracal.toml. Multi-agent commands require CARACAL_COORDINATOR_TOKEN.'
-  }
-  if (status === 403) {
-    return 'Current credentials lack the required scope or zone access. Verify the zone selector and the token issuer.'
-  }
-  if (status === 404) {
-    return 'Target not found. Run caracal zone list / caracal app list / caracal resource list to confirm the id.'
-  }
-  if (status === 409) {
-    return 'Conflict — the object changed concurrently. Re-fetch with caracal <noun> get <id> and retry.'
-  }
-  if (status === 422) {
-    return 'Validation failed. Inspect the body below and correct the offending fields.'
-  }
-  if (status === 429) {
-    return 'Rate limited. Back off and retry; check operator metrics with caracal doctor --extended.'
-  }
-  if (status >= 500) {
-    return 'Server error. Probe service readiness with caracal doctor --extended; then check service logs.'
-  }
-  return undefined
-}
-
-function extractRequestId(body: unknown): string | undefined {
-  if (!body || typeof body !== 'object') return undefined
-  const b = body as Record<string, unknown>
-  for (const key of ['requestId', 'request_id']) {
-    const v = b[key]
-    if (typeof v === 'string' && v.length > 0) return v
-  }
-  return undefined
-}
-
-export function fail(err: unknown): never {
-  if (isReplExit(err)) throw err
-  if (err instanceof AdminApiError) {
-    printError(`${err.code} (HTTP ${err.status})`)
-    const hint = remediationHint(err.status)
-    if (hint) process.stderr.write(`  → ${hint}\n`)
-    const requestId = extractRequestId(err.body)
-    if (requestId) {
-      process.stderr.write(`  → request_id: ${requestId}\n`)
-      process.stderr.write(`  → caracal explain ${requestId}\n`)
-    }
-    if (err.body && typeof err.body === 'object') {
-      process.stderr.write(scrubTokens(JSON.stringify(err.body, null, 2)) + '\n')
-    } else if (err.body) {
-      process.stderr.write(scrubTokens(String(err.body)) + '\n')
-    }
-  } else {
-    printError(err instanceof Error ? err.message : String(err))
-  }
   process.exit(1)
 }
 

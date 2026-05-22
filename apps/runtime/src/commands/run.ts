@@ -4,10 +4,10 @@
 // `caracal run <cmd...>`: injects ambient 60-min tokens into child process env.
 
 import { buildRunEnv, runExec } from '@caracalai/engine'
-import type { CliConfig } from '../config.ts'
+import type { RuntimeConfig } from '../config.ts'
 import { printError } from '../style.ts'
 
-export async function runCommand(argv: string[], cfg: CliConfig): Promise<void> {
+export async function runCommand(argv: string[], cfg: RuntimeConfig): Promise<void> {
   const commandArgs = argv[0] === '--' ? argv.slice(1) : argv
   if (commandArgs.length === 0) {
     printError('Usage: caracal run <cmd...>')

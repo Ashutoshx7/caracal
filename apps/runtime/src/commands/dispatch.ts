@@ -10,28 +10,23 @@ import { delimiter, dirname, join } from 'node:path'
 import { printError, printInfo } from '../style.ts'
 
 const EXT = process.platform === 'win32' ? '.exe' : ''
-const CLI_INSTALL_URL = 'https://github.com/Garudex-Labs/caracal/releases/latest/download/install-cli.sh'
-const TUI_INSTALL_URL = 'https://github.com/Garudex-Labs/caracal/releases/latest/download/install-tui.sh'
+const TERMINAL_INSTALL_URL = 'https://github.com/Garudex-Labs/caracal/releases/latest/download/install-terminal.sh'
 const INSTALL_HINTS = {
-  cli: `Install the CLI:  curl -fsSL ${CLI_INSTALL_URL} | sh`,
-  tui: `Install the TUI:  curl -fsSL ${TUI_INSTALL_URL} | sh`,
+  terminal: `Install the terminal interface:  curl -fsSL ${TERMINAL_INSTALL_URL} | sh`,
 } as const
 
 const WORKSPACE_SHIMS: Record<string, string> = {
-  'caracal-cli': 'apps/cli/bin/caracal-cli.mjs',
-  'caracal-tui': 'apps/tui/bin/caracal-tui.mjs',
+  'caracal-terminal': 'apps/terminal/bin/caracal-terminal.mjs',
 }
 
 const KNOWN_SIBLINGS = Object.freeze(Object.keys(WORKSPACE_SHIMS))
 
 const INVOKED_AS: Record<string, string> = {
-  'caracal-cli': 'caracal cli',
-  'caracal-tui': 'caracal tui',
+  'caracal-terminal': 'caracal terminal',
 }
 
 const SHELL_COMMANDS_BY_SIBLING: Record<string, string> = {
-  'caracal-cli': 'cli',
-  'caracal-tui': 'tui',
+  'caracal-terminal': 'terminal',
 }
 
 function assertKnownSibling(binName: string): void {
@@ -119,10 +114,6 @@ export function execSibling(binName: string, argv: string[], hints: MissingHints
   process.exit(result.status ?? 0)
 }
 
-export function cliDispatch(argv: string[]): never {
-  execSibling('caracal-cli', argv, { installLine: INSTALL_HINTS.cli })
-}
-
-export function tuiDispatch(argv: string[]): never {
-  execSibling('caracal-tui', argv, { installLine: INSTALL_HINTS.tui })
+export function terminalDispatch(argv: string[]): never {
+  execSibling('caracal-terminal', argv, { installLine: INSTALL_HINTS.terminal })
 }
