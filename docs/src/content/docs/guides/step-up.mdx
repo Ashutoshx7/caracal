@@ -191,7 +191,7 @@ The challenge type is determined by the policy's `step_up_required` diagnostic v
 
 ```bash
 # Watch step-up events in real time
-caracal audit tail --json | jq 'select(.diagnostics[]?.step_up_required != null)'
+the terminal management interface tail --json | jq 'select(.diagnostics[]?.step_up_required != null)'
 ```
 
 ## What to read next

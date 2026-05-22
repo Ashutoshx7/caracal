@@ -10,7 +10,7 @@ Use this guide when you need a local script or agent process to receive a Gatewa
 
 ## Prerequisites
 
-- `caracal` terminal interface installed and the stack running.
+- `caracal` terminal management interface installed and the stack running.
 - A `caracal.toml` file in the current project, `CARACAL_CONFIG`, or the XDG config path.
 - The application in `caracal.toml` has an active grant for each resource in `[[credentials]]`.
 
@@ -67,10 +67,10 @@ The injected token is an ES256-signed Caracal mandate scoped to the resource dec
 
 ## One-shot credential without running a subprocess
 
-`caracal credential read` prints a short-lived token for a resource to stdout. Use it in scripts that manage token injection themselves:
+`the terminal management interface read` prints a short-lived token for a resource to stdout. Use it in scripts that manage token injection themselves:
 
 ```bash
-TOKEN=$(caracal credential read resource://payments)
+TOKEN=$(the terminal management interface read resource://payments)
 curl -H "Authorization: Bearer $TOKEN" \
      -H "X-Caracal-Resource: resource://payments" \
      http://localhost:8081/status
@@ -125,7 +125,7 @@ on_failure = "warn"
    ```bash
    test -f caracal.toml && printf "found ./caracal.toml\n"
    ```
-2. If the file lives elsewhere, point the terminal interface at it:
+2. If the file lives elsewhere, point the terminal management interface at it:
    ```bash
    export CARACAL_CONFIG=/path/to/caracal.toml
    ```
@@ -142,7 +142,7 @@ The `env` field uses a blocked environment variable name. `caracal run` rejects 
 
 The STS rejected the requested token lifetime.
 
-`caracal run` requests 3600 seconds for application-credential startup. If your policy or service configuration sets a lower cap, reduce that cap intentionally or use `caracal credential read` for a 15-minute one-shot token.
+`caracal run` requests 3600 seconds for application-credential startup. If your policy or service configuration sets a lower cap, reduce that cap intentionally or use `the terminal management interface read` for a 15-minute one-shot token.
 
 ## Exit codes
 

@@ -1,6 +1,6 @@
 ---
 title: Define Resources and Providers
-description: Register upstream resources with scopes and optional credential providers in a Caracal zone using the terminal interface.
+description: Register upstream resources with scopes and optional credential providers in a Caracal zone using the terminal management interface.
 pageType: workflow
 ---
 
@@ -55,7 +55,7 @@ Do not place user IDs, request IDs, secrets, or one-off parameters in scopes. Us
 ## Register a resource
 
 ```bash
-caracal resource create \
+the terminal management interface create \
   --identifier "resource://inventory" \
   --scopes "inventory:read,inventory:write,inventory:admin" \
   --name "Inventory Service"
@@ -66,7 +66,7 @@ The `--identifier` value is the tool/provider resource name agents request acces
 To include an upstream URL for Gateway routing:
 
 ```bash
-caracal resource create \
+the terminal management interface create \
   --identifier "resource://inventory" \
   --scopes "inventory:read,inventory:write" \
   --name "Inventory Service" \
@@ -92,17 +92,17 @@ The Gateway uses the upstream URL to forward requests after verifying the Caraca
 
 ```bash
 # List all resources in the zone
-caracal resource list
+the terminal management interface list
 
 # Get a specific resource
-caracal resource get res-abc123
+the terminal management interface get res-abc123
 ```
 
 ## Update a resource
 
 ```bash
 # Add a scope and update the upstream URL
-caracal resource patch res-abc123 \
+the terminal management interface patch res-abc123 \
   --scopes "inventory:read,inventory:write,inventory:export" \
   --upstream-url "http://inventory-v2:8080"
 ```
@@ -126,7 +126,7 @@ When the Gateway brokers a provider credential, action audit records the resourc
 ### API key provider
 
 ```bash
-caracal provider create \
+the terminal management interface create \
   --identifier "provider://inventory-apikey" \
   --name "Inventory API Key" \
   --kind apikey \
@@ -150,7 +150,7 @@ The `api_key` field matches the credential encryption regex (`/(secret|password|
 ### OAuth2 provider
 
 ```bash
-caracal provider create \
+the terminal management interface create \
   --identifier "provider://payments-oauth" \
   --name "Payments OAuth2" \
   --kind oauth2 \
@@ -173,7 +173,7 @@ caracal provider create \
 ### OIDC provider
 
 ```bash
-caracal provider create \
+the terminal management interface create \
   --identifier "provider://sso-oidc" \
   --kind oidc \
   --config @oidc-config.json
@@ -195,7 +195,7 @@ caracal provider create \
 The workload provider kind records metadata for mTLS or workload identity federation (e.g., AWS IAM roles for service accounts). The current OSS STS/Gateway path does not mint workload assertions from this registration; use it for inventory and future connector integration, not for automatic Gateway credential substitution.
 
 ```bash
-caracal provider create \
+the terminal management interface create \
   --identifier "provider://aws-workload" \
   --kind workload \
   --config @workload-config.json
@@ -206,7 +206,7 @@ caracal provider create \
 After creating the provider, attach it to the resource:
 
 ```bash
-caracal resource patch res-abc123 \
+the terminal management interface patch res-abc123 \
   --provider prov-def456
 ```
 
@@ -216,7 +216,7 @@ Or set it at resource creation time with `--provider prov-def456`.
 
 ```bash
 # 1. Create the OAuth2 provider
-caracal provider create \
+the terminal management interface create \
   --identifier "provider://payments-oauth" \
   --name "Payments OAuth2" \
   --kind oauth2 \
@@ -224,7 +224,7 @@ caracal provider create \
 # → ID: prov-abc123
 
 # 2. Create the resource
-caracal resource create \
+the terminal management interface create \
   --identifier "resource://payments" \
   --scopes "payment:read,payment:submit,payment:void" \
   --name "Payments API" \
@@ -234,14 +234,14 @@ caracal resource create \
 # → ID: res-def456
 
 # 3. Verify
-caracal resource get res-def456
+the terminal management interface get res-def456
 ```
 
 ## Delete a resource or provider
 
 ```bash
-caracal resource delete res-def456
-caracal provider delete prov-abc123
+the terminal management interface delete res-def456
+the terminal management interface delete prov-abc123
 ```
 
 Deleting a resource that has active grants or is referenced by running agent sessions does not revoke those sessions immediately. Policy evaluation will deny further exchanges once the resource is gone.
