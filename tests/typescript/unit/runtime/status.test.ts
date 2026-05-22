@@ -1,13 +1,13 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// CLI status command unit tests for service health reporting.
+// Runtime status command unit tests for service health reporting.
 
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { statusCommand } from '../../../../apps/cli/src/commands/stack.js'
+import { statusCommand } from '../../../../apps/runtime/src/commands/stack.js'
 
 describe('statusCommand', () => {
   let stdout = ''

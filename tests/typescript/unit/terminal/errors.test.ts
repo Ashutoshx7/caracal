@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { AdminApiError } from '../../../../packages/admin/ts/src/errors.js'
-import { explainError } from '../../../../apps/tui/src/errors.ts'
+import { explainError } from '../../../../apps/terminal/src/errors.ts'
 
 describe('explainError', () => {
   it('formats AdminApiError 401', () => {

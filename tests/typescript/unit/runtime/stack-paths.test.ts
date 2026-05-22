@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { resolvePaths } from '../../../../apps/cli/src/commands/stack.ts'
+import { resolvePaths } from '../../../../apps/runtime/src/commands/stack.ts'
 
 function repoFixture(): string {
   const repoRoot = mkdtempSync(join(tmpdir(), 'caracal-repo-'))

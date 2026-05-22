@@ -5,10 +5,10 @@
 
 import { afterEach, describe, it, expect, vi } from 'vitest'
 
-import { MenuView } from '../../../../apps/tui/src/views/menu.ts'
-import { FormView } from '../../../../apps/tui/src/views/form.ts'
-import { DetailView } from '../../../../apps/tui/src/views/detail.ts'
-import type { App } from '../../../../apps/tui/src/screen.ts'
+import { MenuView } from '../../../../apps/terminal/src/views/menu.ts'
+import { FormView } from '../../../../apps/terminal/src/views/form.ts'
+import { DetailView } from '../../../../apps/terminal/src/views/detail.ts'
+import type { App } from '../../../../apps/terminal/src/screen.ts'
 import type { AdminClient } from '@caracalai/admin'
 
 afterEach(() => {

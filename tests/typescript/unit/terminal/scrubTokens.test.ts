@@ -4,7 +4,7 @@
 // scrubTokens regex coverage tests.
 
 import { describe, it, expect } from 'vitest'
-import { maskSecretField, scrubTokens } from '../../../../apps/tui/src/errors.ts'
+import { maskSecretField, scrubTokens } from '../../../../apps/terminal/src/errors.ts'
 
 describe('scrubTokens', () => {
   it('strips JWT-shaped tokens', () => {

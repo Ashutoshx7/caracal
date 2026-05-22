@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// CLI shared helpers: argv parser, flag coercions, zone resolution.
+// Runtime shared helpers: argv parser and flag coercions.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { AdminApiError } from '@caracalai/admin'
@@ -13,7 +13,7 @@ import {
   flagInt,
   flagList,
   requireZone,
-} from '../../../../apps/cli/src/commands/shared.ts'
+} from '../../../../apps/runtime/src/commands/shared.ts'
 
 describe('parseArgs', () => {
   it('separates positional args and flags', () => {

@@ -4,8 +4,8 @@
 // FormView focus, validation, secret reveal, and dispose-abort tests.
 
 import { describe, it, expect, vi } from 'vitest'
-import { FormView } from '../../../../apps/tui/src/views/form.ts'
-import type { App } from '../../../../apps/tui/src/screen.ts'
+import { FormView } from '../../../../apps/terminal/src/views/form.ts'
+import type { App } from '../../../../apps/terminal/src/screen.ts'
 
 function fakeApp(): App {
   const status: { text: string; kind: string }[] = []

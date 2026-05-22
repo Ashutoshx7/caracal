@@ -5,9 +5,9 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { runDoctorDiagnostics } from '@caracalai/engine'
-import { MenuView } from '../../../../apps/tui/src/views/menu.ts'
-import { DoctorView } from '../../../../apps/tui/src/views/doctor.ts'
-import type { App } from '../../../../apps/tui/src/screen.ts'
+import { MenuView } from '../../../../apps/terminal/src/views/menu.ts'
+import { DoctorView } from '../../../../apps/terminal/src/views/doctor.ts'
+import type { App } from '../../../../apps/terminal/src/screen.ts'
 import type { AdminClient } from '@caracalai/admin'
 
 vi.mock('@caracalai/engine', async () => {
@@ -50,7 +50,7 @@ function fakeApp(): App {
   return app
 }
 
-describe('doctor TUI integration', () => {
+describe('doctor Terminal integration', () => {
   it('opens a live diagnostics screen from the main menu', async () => {
     const client = { zones: { list: vi.fn(async () => []) } } as unknown as AdminClient
     const menu = new MenuView(client, 'z1')

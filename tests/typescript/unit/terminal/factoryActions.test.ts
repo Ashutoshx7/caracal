@@ -15,11 +15,11 @@ import {
   resourcesView,
   sessionsView,
   zonesView,
-} from '../../../../apps/tui/src/views/factory.ts'
-import { DetailView } from '../../../../apps/tui/src/views/detail.ts'
-import { ConfirmView, FormView } from '../../../../apps/tui/src/views/form.ts'
-import { ListView } from '../../../../apps/tui/src/views/list.ts'
-import type { App } from '../../../../apps/tui/src/screen.ts'
+} from '../../../../apps/terminal/src/views/factory.ts'
+import { DetailView } from '../../../../apps/terminal/src/views/detail.ts'
+import { ConfirmView, FormView } from '../../../../apps/terminal/src/views/form.ts'
+import { ListView } from '../../../../apps/terminal/src/views/list.ts'
+import type { App } from '../../../../apps/terminal/src/screen.ts'
 
 function fakeApp(): App {
   const pushed: unknown[] = []
@@ -185,7 +185,7 @@ describe('applications actions', () => {
     expect(keys).toEqual(['name', 'credential_type', 'consent'])
   })
 
-  it('D opens DCR FormView with CLI-equivalent fields and calls applications.dcr', async () => {
+  it('D opens DCR FormView with terminal fields and calls applications.dcr', async () => {
     const { client, ctx } = newCtx()
     const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>
     setRows(list, [{ id: 'a1', name: 'app', registration_method: 'managed', credential_type: 'token', traits: [] }])
@@ -222,7 +222,7 @@ describe('resources actions', () => {
     expect(keys).toContain('scopes')
   })
 
-  it('n includes gateway and provider fields matching resource CLI flags', async () => {
+  it('n includes gateway and provider fields for resource creation', async () => {
     const { ctx } = newCtx()
     const list = resourcesView(ctx as unknown as Parameters<typeof resourcesView>[0]) as ListView<unknown>
     const pushed = await pressKey(list, 'n', fakeApp()) as FormView
@@ -245,7 +245,7 @@ describe('providers actions', () => {
     expect(fields.find((f) => f.key === 'config_json')?.kind).toBe('multiline')
   })
 
-  it('n includes client_id matching provider CLI flags', async () => {
+  it('n includes client_id for provider creation', async () => {
     const { ctx } = newCtx()
     const list = providersView(ctx as unknown as Parameters<typeof providersView>[0]) as ListView<unknown>
     const pushed = await pressKey(list, 'n', fakeApp()) as FormView
@@ -361,7 +361,7 @@ describe('agents actions', () => {
 })
 
 describe('sessions actions', () => {
-  it('f opens filters matching CLI session flags', async () => {
+  it('f opens session filters', async () => {
     const { client, ctx } = newCtx()
     const list = sessionsView(ctx as unknown as Parameters<typeof sessionsView>[0]) as ListView<unknown>
     const app = fakeApp()
