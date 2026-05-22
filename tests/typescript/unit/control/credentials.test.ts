@@ -45,7 +45,12 @@ describe('control credentials', () => {
   it('creates the control resource before creating a control key', async () => {
     const c = client()
 
-    const result = await controlKeyCreate(c, 'z1', { name: 'robot' })
+    const result = await controlKeyCreate(c, 'z1', {
+      name: 'robot',
+      scopes: ['control:zone:read'],
+      maxTtlSeconds: 300,
+      expiresAt: '2999-01-01T00:00:00.000Z',
+    })
 
     expect(c.resources.create).toHaveBeenCalledWith('z1', expect.objectContaining({
       identifier: 'caracal-control',
@@ -54,10 +59,37 @@ describe('control credentials', () => {
     expect(c.applications.create).toHaveBeenCalledWith('z1', expect.objectContaining({
       name: 'robot',
       client_secret: expect.stringMatching(/^cs_[A-Za-z0-9_-]+$/),
-      traits: ['control:invoke'],
+      traits: expect.arrayContaining([
+        'control:invoke',
+        'control:scope:control:zone:read',
+        'control:max-ttl:300',
+        'control:expires:2999-01-01T00:00:00.000Z',
+      ]),
     }))
     expect(result.resource.identifier).toBe('caracal-control')
     expect(result.clientSecret).toMatch(/^cs_[A-Za-z0-9_-]+$/)
+    expect(result.allowedScopes).toEqual(['control:zone:read'])
+    expect(result.maxTtlSeconds).toBe(300)
+    expect(result.expiresAt).toBe('2999-01-01T00:00:00.000Z')
+  })
+
+  it('requires explicit control key permissions', async () => {
+    await expect(controlKeyCreate(client(), 'z1', { name: 'robot' })).rejects.toThrow('control key permissions are required')
+  })
+
+  it('derives permissions from resource and action selectors', async () => {
+    const c = client()
+
+    const result = await controlKeyCreate(c, 'z1', {
+      name: 'reader',
+      resources: ['zone'],
+      actions: ['read'],
+    })
+
+    expect(result.allowedScopes).toEqual(['control:zone:read'])
+    expect(c.applications.create).toHaveBeenCalledWith('z1', expect.objectContaining({
+      traits: expect.arrayContaining(['control:scope:control:zone:read']),
+    }))
   })
 
   it('patches an existing control resource with missing scopes', async () => {

@@ -34,6 +34,9 @@ const (
 	ttlSessionMandate      = 60 * time.Minute
 	gatewayExchangeSkew    = 60 * time.Second
 	controlInvokeTrait     = "control:invoke"
+	controlScopeTrait      = "control:scope:"
+	controlMaxTTLTrait     = "control:max-ttl:"
+	controlExpiresTrait    = "control:expires:"
 	defaultControlAudience = "caracal-control"
 )
 
@@ -730,8 +733,50 @@ func hasApplicationTrait(app *Application, trait string) bool {
 	return false
 }
 
+func controlAllowedScopes(app *Application) map[string]struct{} {
+	allowed := map[string]struct{}{}
+	for _, trait := range app.Traits {
+		scope, ok := strings.CutPrefix(trait, controlScopeTrait)
+		if ok && strings.HasPrefix(scope, "control:") {
+			allowed[scope] = struct{}{}
+		}
+	}
+	return allowed
+}
+
+func controlMaxTTL(app *Application) int {
+	for _, trait := range app.Traits {
+		value, ok := strings.CutPrefix(trait, controlMaxTTLTrait)
+		if !ok {
+			continue
+		}
+		seconds, err := strconv.Atoi(value)
+		if err == nil && seconds > 0 {
+			return seconds
+		}
+	}
+	return 0
+}
+
+func controlExpired(app *Application, now time.Time) bool {
+	for _, trait := range app.Traits {
+		value, ok := strings.CutPrefix(trait, controlExpiresTrait)
+		if !ok {
+			continue
+		}
+		expiresAt, err := time.Parse(time.RFC3339, value)
+		if err == nil && !now.Before(expiresAt) {
+			return true
+		}
+	}
+	return false
+}
+
 func isControlKeyExchange(app *Application, req TokenExchangeRequest, resource *Resource, scopes []string) bool {
 	if resource.Identifier != controlAudience() || !hasApplicationTrait(app, controlInvokeTrait) {
+		return false
+	}
+	if controlExpired(app, time.Now().UTC()) {
 		return false
 	}
 	if req.SubjectToken != "" || req.ActorToken != "" || req.SessionID != "" || req.AgentSessionID != "" || req.DelegationEdgeID != "" {
@@ -740,10 +785,25 @@ func isControlKeyExchange(app *Application, req TokenExchangeRequest, resource *
 	if len(scopes) == 0 {
 		return false
 	}
+	allowed := controlAllowedScopes(app)
+	if len(allowed) == 0 {
+		return false
+	}
 	for _, scope := range scopes {
 		if !strings.HasPrefix(scope, "control:") {
 			return false
 		}
+		if _, ok := allowed[scope]; !ok {
+			return false
+		}
+	}
+	maxTTL := controlMaxTTL(app)
+	requestedTTL := req.TTLSeconds
+	if requestedTTL == 0 {
+		requestedTTL = int(ttlResourceMandate.Seconds())
+	}
+	if maxTTL > 0 && requestedTTL > maxTTL {
+		return false
 	}
 	return true
 }

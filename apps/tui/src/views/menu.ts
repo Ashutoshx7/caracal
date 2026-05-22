@@ -14,6 +14,7 @@ import {
   controlKeyList,
   controlKeyRevoke,
   controlKeyRotate,
+  controlPermissions,
   controlServiceStatus,
   credentialInspect,
   credentialRead,
@@ -42,7 +43,7 @@ import type { App, View, ViewContext } from '../screen.ts'
 import { DetailView } from './detail.ts'
 import { DoctorView } from './doctor.ts'
 import { ConfirmView, FormView, type Field } from './form.ts'
-import { pickFromList } from './picker.ts'
+import { appendCsv, pickFromList } from './picker.ts'
 import {
   agentsView,
   applicationsView,
@@ -141,6 +142,10 @@ function parseEnv(list: string): Record<string, string> {
   return out
 }
 
+function splitList(list: string): string[] {
+  return list.split(',').map((item) => item.trim()).filter((item) => item.length > 0)
+}
+
 const BASE_ENTRIES: Entry[] = [
   { key: '1', label: 'zone',       group: 'admin', description: 'Manage zones', needsZone: false, open: zonesView },
   { key: '2', label: 'app',        group: 'admin', description: 'Manage applications', needsZone: true, open: applicationsView },
@@ -208,6 +213,35 @@ function controlKeyPicker(client: AdminClient, zoneId: string): Field['pick'] {
     (row) => row.client_id,
     (row) => row.name,
   )
+}
+
+function controlPermissionPicker(): Field['pick'] {
+  return pickFromList(
+    'pick control permission',
+    async () => controlPermissions(),
+    [
+      { header: 'resource', width: 16, value: (row) => row.command },
+      { header: 'action', width: 8, value: (row) => row.action },
+      { header: 'operation', width: 18, value: (row) => row.subcommand || '-' },
+      { header: 'scope', value: (row) => row.scope },
+    ],
+    (row) => row.scope,
+    appendCsv,
+  )
+}
+
+function parseSeconds(value: string | undefined): number | undefined {
+  if (!value) return undefined
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) throw new Error('seconds must be an integer')
+  return parsed
+}
+
+function expiresInDays(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const days = Number.parseInt(value, 10)
+  if (!Number.isFinite(days) || days < 1) throw new Error('expiry must be at least one day')
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
 }
 
 function credentialEntry(ctx: Ctx): View {
@@ -456,10 +490,16 @@ class ControlMenuView implements View {
       title: 'control key create',
       fields: [
         { key: 'name', label: 'name', kind: 'text', required: true },
+        { key: 'scopes', label: 'permissions', kind: 'list', required: true, pick: controlPermissionPicker(), hint: 'right arrow adds one command/action permission' },
+        { key: 'max_ttl_seconds', label: 'max token TTL', kind: 'select', options: ['300', '600', '900'], default: '300' },
+        { key: 'expires_in_days', label: 'expires in days', kind: 'select', options: ['1', '7', '30', '90'], default: '30' },
       ],
       onSubmit: async (v, app) => {
         const result = await controlKeyCreate(client, zoneId, {
           name: v.name!,
+          scopes: splitList(v.scopes ?? ''),
+          maxTtlSeconds: parseSeconds(v.max_ttl_seconds),
+          expiresAt: expiresInDays(v.expires_in_days),
         })
         app.pop()
         app.push(new DetailView({
@@ -469,7 +509,10 @@ class ControlMenuView implements View {
             client_id: result.application.id,
             client_secret: result.clientSecret,
             resource: result.resource.identifier,
-            scopes: result.resource.scopes,
+            allowed_scopes: result.allowedScopes,
+            max_ttl_seconds: result.maxTtlSeconds,
+            expires_at: result.expiresAt,
+            restrictions: ['zone-bound', 'application-only', 'no-subject-token', 'no-delegation'],
             traits: result.application.traits,
             note: 'store client_secret now - it cannot be retrieved later',
           }),

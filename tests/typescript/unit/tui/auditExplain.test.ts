@@ -126,6 +126,57 @@ describe('audit explain entry', () => {
     expect(get).toHaveBeenCalledWith('z1', 'app-1')
   })
 
+  it('creates control keys with explicit permissions and restrictions', async () => {
+    const createResource = vi.fn(async (_zoneId: string, input: Record<string, unknown>) => ({
+      id: 'res-1',
+      zone_id: 'z1',
+      identifier: input.identifier,
+      scopes: input.scopes,
+    }))
+    const createApp = vi.fn(async (_zoneId: string, input: Record<string, unknown>) => ({
+      id: 'app-1',
+      zone_id: 'z1',
+      created_at: 'now',
+      ...input,
+    }))
+    const client = {
+      audit: { byRequest: vi.fn() },
+      resources: { list: vi.fn(async () => []), create: createResource },
+      applications: { create: createApp },
+    } as unknown as AdminClient
+    const menu = new MenuView(client, 'z1')
+    const app = fakeApp()
+
+    await menu.onKey('t', { app, size: { rows: 25, cols: 80 }, status: '' })
+    const pushed = (app as unknown as { _pushed: unknown[] })._pushed
+    const control = pushed[pushed.length - 1] as { onKey: MenuView['onKey'] }
+    await control.onKey('c', { app, size: { rows: 25, cols: 80 }, status: '' })
+    const form = pushed[pushed.length - 1] as FormView
+    const fields = (form as unknown as { fields: { key: string; pick?: unknown }[] }).fields
+    expect(fields.map((field) => field.key)).toEqual(['name', 'scopes', 'max_ttl_seconds', 'expires_in_days'])
+    expect(typeof fields[1]?.pick).toBe('function')
+
+    ;(form as unknown as { values: Record<string, string> }).values = {
+      name: 'robot',
+      scopes: 'control:zone:read',
+      max_ttl_seconds: '300',
+      expires_in_days: '1',
+    }
+    ;(form as unknown as { focus: number }).focus = 4
+    await form.onKey('enter', { app, size: { rows: 25, cols: 80 }, status: '' })
+
+    expect(createApp).toHaveBeenCalledWith('z1', expect.objectContaining({
+      name: 'robot',
+      traits: expect.arrayContaining([
+        'control:invoke',
+        'control:scope:control:zone:read',
+        'control:max-ttl:300',
+      ]),
+    }))
+    const detail = pushed[pushed.length - 1] as DetailView
+    expect(detail).toBeInstanceOf(DetailView)
+  })
+
   it('opens credential read with a resource picker', async () => {
     const client = {
       audit: { byRequest: vi.fn() },
