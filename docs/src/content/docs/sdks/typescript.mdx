@@ -1,10 +1,10 @@
 ---
 title: TypeScript SDK
-description: Complete API reference for @caracalai/sdk — the Caracal client for Node and edge runtimes.
+description: Complete API reference for @caracalai/sdk — the Caracal client for Node services.
 pageType: reference
 ---
 
-`@caracalai/sdk` is the primary integration point for TypeScript and JavaScript services. It manages agent session lifecycle via `AsyncLocalStorage`, propagates identity across async boundaries without explicit threading, and provides a `fetch`-compatible transport that injects W3C envelope headers on every outbound call.
+`@caracalai/sdk` is the primary integration point for TypeScript and JavaScript services on Node. It manages agent session lifecycle via `AsyncLocalStorage`, propagates identity across async boundaries without explicit threading, and provides a `fetch`-compatible transport that injects W3C envelope headers on every outbound call.
 
 ## Install
 
@@ -108,14 +108,38 @@ delegate<T>(opts: DelegateOptions, fn: () => Promise<T>): Promise<T>
 interface DelegateOptions {
   to: string;                   // Target agent session ID
   toApplicationId: string;      // Application owning the target session
+  resourceId?: string;          // Optional resource restriction
   scopes: string[];
   ttlSeconds?: number;
   constraints?: {               // All fields optional
     resources?: string[];       // Restrict edge to these resource identifiers
-    actions?: string[];
     maxDepth?: number;          // Max further delegation hops
+    maxHops?: number;
+    ttlSeconds?: number;
+    budget?: number;
+    policyApproved?: boolean;
     expiresAt?: string;         // ISO 8601 hard expiry
+    broadReason?: string;
   };
+}
+```
+
+### `delegateToSpawn(opts, fn)`
+
+Atomically spawns a child agent session and records a parent-to-child delegation edge before `fn` runs. Use this at fan-out boundaries where the parent may stop interacting before the child can issue its first call.
+
+```typescript
+delegateToSpawn<T>(opts: DelegateToSpawnOptions, fn: () => Promise<T>): Promise<T>
+
+interface DelegateToSpawnOptions {
+  resourceId?: string;
+  scopes: string[];
+  constraints?: DelegationConstraints;
+  delegationTtlSeconds?: number;
+  kind?: AgentKind;
+  ttlSeconds?: number;
+  metadata?: Record<string, unknown>;
+  traceId?: string;
 }
 ```
 
@@ -274,5 +298,6 @@ interface CoordinatorClient {
 
 - `spawn()` throws if the Coordinator is unreachable or rejects the session creation (e.g., limits exceeded).
 - `delegate()` throws if no current session exists, or if the Coordinator rejects the edge (e.g., cycle detected).
+- `delegateToSpawn()` throws if no active parent session exists, if child spawn fails, or if delegation creation fails.
 - `transport()` passes fetch errors through unchanged.
 - `fromEnv()` throws synchronously if any required env var is missing.

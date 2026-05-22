@@ -105,7 +105,6 @@ func (c *Caracal) Spawn(ctx context.Context, fn func(context.Context) error, opt
 type SpawnOptions struct {
     Kind       AgentKind
     TTLSeconds int
-    SessionSID string             // explicit SID; generated if empty
     ParentID   string             // parent agent session ID for nested spawns
     Metadata   map[string]any
     TraceID    string
@@ -129,9 +128,31 @@ type DelegateOptions struct {
 
 type DelegationConstraints struct {
     Resources []string
-    Actions   []string
     MaxDepth  int
+    MaxHops   int
+    TTLSeconds int
+    Budget    int
+    PolicyApproved bool
     ExpiresAt string    // ISO 8601
+    BroadReason string
+}
+```
+
+### `DelegateToSpawn(ctx, opts, fn)`
+
+Atomically spawns a child agent session and records a parent-to-child delegation edge before invoking `fn` with the child context. Use this before launching detached child work where the parent might stop interacting before the child can issue its first call.
+
+```go
+func (c *Caracal) DelegateToSpawn(ctx context.Context, opts DelegateToSpawnOptions, fn func(context.Context) error) error
+
+type DelegateToSpawnOptions struct {
+    Scopes               []string
+    Constraints          *DelegationConstraints
+    DelegationTTLSeconds int
+    Kind                 AgentKind
+    TTLSeconds           int
+    Metadata             map[string]any
+    TraceID              string
 }
 ```
 
@@ -262,17 +283,17 @@ For advanced use cases, the Coordinator REST operations are also exported:
 
 ```go
 type SpawnRequest struct {
-    ZoneID        string
-    ApplicationID string
-    SessionSID    string
-    ParentID      string
-    Kind          AgentKind
-    TTLSeconds    int
-    Metadata      map[string]any
+    ZoneID           string
+    ApplicationID    string
+    SubjectSessionID string
+    ParentID         string
+    Kind             AgentKind
+    TTLSeconds       int
+    Metadata         map[string]any
+    IdempotencyKey   string
 }
 
 type SpawnResponse struct {
-    ID             string `json:"id"`
     AgentSessionID string `json:"agent_session_id"`
 }
 
@@ -284,6 +305,7 @@ type DelegationRequest struct {
     SourceSessionID       string
     TargetSessionID       string
     ReceiverApplicationID string
+    ResourceID            string
     Scopes                []string
     Constraints           *DelegationConstraints
     TTLSeconds            int
@@ -299,5 +321,6 @@ func TerminateAgent(ctx context.Context, client *CoordinatorClient, bearer, zone
 - `Spawn` returns the Coordinator's error if session creation is rejected (limit exceeded, unreachable).
 - `TerminateAgent` returns Coordinator or transport errors when session teardown fails (parallel to the Python SDK).
 - `Delegate` returns an error if no session is bound in `ctx`, the Coordinator is unreachable, or the edge would create a cycle.
+- `DelegateToSpawn` returns an error if no parent session is bound, if child spawn fails, or if delegation creation fails.
 - `Transport` passes `http.Client` errors through unchanged; header injection does not fail.
 - `FromEnv` returns an error if any required env var is missing.

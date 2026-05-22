@@ -93,7 +93,7 @@ class InteractionRequiredError extends Error {
 }
 ```
 
-Catch it to initiate the step-up flow:
+Catch it to initiate the external step-up flow:
 
 ```typescript
 try {
@@ -102,11 +102,11 @@ try {
   if (err instanceof InteractionRequiredError) {
     // err.challengeId identifies the challenge to satisfy
     await waitForChallengeSatisfaction(err.challengeId);
-    // Retry after satisfaction
-    const result = await client.exchange(subjectToken, resource, { clientSecret });
   }
 }
 ```
+
+The current OAuth clients expose only the challenge ID. They do not expose `challenge_secret` and do not accept `challenge_response`, so they cannot complete the atomic step-up consumption retry by themselves. For a complete step-up flow, make the initial challenge-producing request and the retry directly against `POST {stsUrl}/oauth/2/token`.
 
 ## Token cache
 

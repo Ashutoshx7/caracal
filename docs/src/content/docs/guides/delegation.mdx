@@ -147,9 +147,13 @@ err = client.Spawn(ctx, func(ctx context.Context) error {
 | Constraint | Effect |
 | ---------- | ------ |
 | `resources` | Restricts the edge to specific resource identifiers |
-| `actions` | Restricts the allowed action strings |
 | `max_depth` | Caps how many more hops authority can flow through from the target |
+| `max_hops` | Caps delegation graph traversal hops |
+| `ttl_seconds` | Caps the delegated authority lifetime |
+| `budget` | Carries a numeric budget constraint for policy evaluation |
+| `policy_approved` | Marks policy-reviewed delegation intent |
 | `expires_at` | Hard expiry for the edge independent of the session TTL |
+| `broad_reason` | Records the reason for a broad delegation |
 
 The STS validates all constraints on each exchange. A constraint violation fails the exchange before OPA is evaluated.
 

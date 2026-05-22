@@ -83,6 +83,15 @@ def from_client_secret(
 
 `resources` may be resource IDs or `ResourceBinding` objects. When bindings are supplied, their `resource_id` values are used as STS audiences and the bindings are also used for Gateway routing.
 
+### `Caracal.from_config(path?)`
+
+Builds a client from `caracal.toml`. If `path` is omitted, the SDK reads `CARACAL_CONFIG` or falls back to `${XDG_CONFIG_HOME:-~/.config}/caracal/caracal.toml`. The config must provide `zone_id`, `application_id`, `app_client_secret`, an STS URL (`sts_url`, `zone_url`, or `CARACAL_STS_URL`), a Coordinator URL (`coordinator_url` or `CARACAL_COORDINATOR_URL`), and at least one resource binding.
+
+```python
+@classmethod
+def from_config(cls, path: str | os.PathLike[str] | None = None) -> Caracal: ...
+```
+
 ## Data types
 
 ```python
@@ -144,8 +153,8 @@ async def spawn(
     *,
     kind: AgentKind | None = None,
     ttl_seconds: int | None = None,
-    subject_session_id: str | None = None,
     parent_id: str | None = None,
+    parent_ctx: CaracalContext | None = None,
     metadata: dict[str, Any] | None = None,
     trace_id: str | None = None,
 ) -> AsyncGenerator[CaracalContext, None]: ...
@@ -172,6 +181,7 @@ async def delegate(
     to: str,
     to_application_id: str,
     scopes: list[str],
+    resource_id: str | None = None,
     constraints: DelegationConstraints | None = None,
     ttl_seconds: int | None = None,
 ) -> AsyncGenerator[CaracalContext, None]: ...
@@ -181,9 +191,13 @@ async def delegate(
 @dataclass
 class DelegationConstraints:
     resources: list[str] | None = None
-    actions: list[str] | None = None
     max_depth: int | None = None
+    max_hops: int | None = None
+    ttl_seconds: int | None = None
+    budget: int | None = None
+    policy_approved: bool | None = None
     expires_at: str | None = None      # ISO 8601
+    broad_reason: str | None = None
 
     def to_wire(self) -> dict[str, Any]: ...
 ```
@@ -200,6 +214,26 @@ async with caracal.spawn() as source:
         ttl_seconds=300,
     ) as delegated:
         print(delegated.delegation_edge_id)
+```
+
+### `delegate_to_spawn()`
+
+Async context manager. Atomically spawns a child session and records the parent-to-child delegation edge before yielding the child context. Pass `parent_ctx` when the parent context belongs to another task.
+
+```python
+async def delegate_to_spawn(
+    self,
+    *,
+    scopes: list[str],
+    resource_id: str | None = None,
+    parent_ctx: CaracalContext | None = None,
+    constraints: DelegationConstraints | None = None,
+    delegation_ttl_seconds: int | None = None,
+    kind: AgentKind | None = None,
+    ttl_seconds: int | None = None,
+    metadata: dict[str, Any] | None = None,
+    trace_id: str | None = None,
+) -> AsyncGenerator[CaracalContext, None]: ...
 ```
 
 ### `current()`
@@ -260,6 +294,15 @@ Usage:
 ```python
 async with caracal.bind_from_headers(request.headers):
     ctx = caracal.current()   # populated from inbound headers
+```
+
+### `bind(ctx)`
+
+Async context manager. Rebinds an existing `CaracalContext` into the current task, which is required when handing a context to an `asyncio.create_task()` worker that does not inherit the parent task's context variable.
+
+```python
+async with caracal.bind(parent_ctx):
+    await run_child_work()
 ```
 
 ### `middleware()`
