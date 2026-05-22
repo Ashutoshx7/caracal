@@ -68,7 +68,10 @@ describe('dispatch', () => {
     const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
     await expect(dispatch(makeOpts(vi.fn() as Executor), ['--version'])).rejects.toThrow('exit:0')
     const out = stdout.mock.calls.map((c) => String(c[0])).join('')
-    expect(out).toContain('caracal 0.0.0')
+    expect(out).toContain('Caracal')
+    expect(out).toContain('binary   caracal')
+    expect(out).toContain('version  0.0.0')
+    expect(out).toContain('mode     dev')
   })
 
   it('treats empty argv as help', async () => {

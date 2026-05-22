@@ -347,7 +347,7 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
     expect(stdout.mock.calls.map((c) => c[0]).join('')).toContain('policy-1')
   })
 
-  it('doctor reports control-plane readiness checks', async () => {
+  it('doctor reports selected-zone full system diagnostics', async () => {
     stubFetch((url) => {
       if (url === 'http://api/health') return { ok: true }
       if (url === 'http://api/v1/zones') return [{ id: 'z1', name: 'Local', slug: 'local' }]
@@ -356,38 +356,80 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
       if (url === 'http://api/v1/zones/z1/policy-sets') return [{ id: 'pset-1', active_version_id: 'psver-1' }]
       if (url === 'http://api/v1/zones/z1/grants') return [{ id: 'grant-1' }]
       if (url === 'http://api/v1/zones/z1/audit?limit=1') return []
+      if (url.endsWith('/ready')) return { ready: true }
+      if (url === 'http://sts/metrics.json') return { opa: { compile_errors: 0, eval_errors: 0, max_policy_age_seconds: 1 } }
+      if (url === 'http://localhost:8081/metrics.json') return { bindings_loaded: 3, revocations_active: 1, requests_denied: 2 }
+      if (url === 'http://localhost:9090/metrics.json') return { consumer_lag: 0, dlq_size: 0, tamper_mismatch_total: 0 }
+      if (url === 'http://coordinator/stats') return { outbox: { pending: 0, dead: 0 }, invocations: { running: 0 } }
       throw new Error(`unexpected request ${url}`)
     })
 
-    await doctorCommand(['--zone', 'z1'])
+    await expect(doctorCommand(['--zone', 'z1', '--json'])).rejects.toThrow('__exit:1')
 
-    const out = stdout.mock.calls.map((c) => c[0]).join('')
-    expect(out).toContain('api health')
-    expect(out).toContain('admin auth')
-    expect(out).toContain('audit query')
+    const body = JSON.parse(stdout.mock.calls.map((c) => c[0]).join(''))
+    expect(body).toMatchObject({
+      command: 'doctor',
+      mode: 'system',
+      context: { apiUrl: 'http://api', zoneScope: 'selected', zoneIds: ['z1'] },
+    })
+    expect(body.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ section: 'health', check: 'api health', status: 'ok' }),
+      expect.objectContaining({ section: 'zones', check: 'z1 audit query', status: 'ok' }),
+      expect.objectContaining({ section: 'readiness', check: 'sts metrics', status: 'ok' }),
+      expect.objectContaining({ section: 'preflight', check: 'ZONE_KEK', status: 'fail' }),
+    ]))
   })
 
-  it('doctor exits successfully when only warnings are present', async () => {
+  it('doctor inspects every visible zone by default', async () => {
+    delete process.env.CARACAL_ZONE_ID
+    const fetchMock = stubFetch((url) => {
+      if (url === 'http://api/health') return { ok: true }
+      if (url === 'http://api/v1/zones') return [
+        { id: 'z1', name: 'Local', slug: 'local' },
+        { id: 'z2', name: 'Second', slug: 'second' },
+      ]
+      if (url === 'http://api/v1/zones/z1') return { id: 'z1', name: 'Local', slug: 'local' }
+      if (url === 'http://api/v1/zones/z2') return { id: 'z2', name: 'Second', slug: 'second' }
+      if (url === 'http://api/v1/zones/z1/resources' || url === 'http://api/v1/zones/z2/resources') return []
+      if (url === 'http://api/v1/zones/z1/policy-sets' || url === 'http://api/v1/zones/z2/policy-sets') return []
+      if (url === 'http://api/v1/zones/z1/grants' || url === 'http://api/v1/zones/z2/grants') return []
+      if (url === 'http://api/v1/zones/z1/audit?limit=1' || url === 'http://api/v1/zones/z2/audit?limit=1') return []
+      if (url.endsWith('/ready')) return { ready: true }
+      if (url === 'http://sts/metrics.json') return { opa: { compile_errors: 0, eval_errors: 0, max_policy_age_seconds: 1 } }
+      if (url === 'http://localhost:8081/metrics.json') return { bindings_loaded: 0, revocations_active: 0, requests_denied: 0 }
+      if (url === 'http://localhost:9090/metrics.json') return { consumer_lag: 0, dlq_size: 0, tamper_mismatch_total: 0 }
+      if (url === 'http://coordinator/stats') return { outbox: { pending: 0, dead: 0 }, invocations: { running: 0 } }
+      throw new Error(`unexpected request ${url}`)
+    })
+
+    await expect(doctorCommand(['--json'])).rejects.toThrow('__exit:1')
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual(expect.arrayContaining([
+      'http://api/v1/zones/z1',
+      'http://api/v1/zones/z2',
+      'http://api/v1/zones/z1/audit?limit=1',
+      'http://api/v1/zones/z2/audit?limit=1',
+    ]))
+    const body = JSON.parse(stdout.mock.calls.map((c) => c[0]).join(''))
+    expect(body.context).toMatchObject({ zoneScope: 'all', zoneIds: ['z1', 'z2'] })
+    expect(body.checks).not.toContainEqual(expect.objectContaining({ check: 'zone selection' }))
+  })
+
+  it('doctor --ready emits strict full-system readiness state', async () => {
     delete process.env.CARACAL_ZONE_ID
     stubFetch((url) => {
       if (url === 'http://api/health') return { ok: true }
       if (url === 'http://api/v1/zones') return [{ id: 'z1', name: 'Local', slug: 'local' }]
-      throw new Error(`unexpected request ${url}`)
-    })
-
-    await doctorCommand([])
-
-    const out = stdout.mock.calls.map((c) => c[0]).join('')
-    expect(out).toContain('zone')
-    expect(out).toContain('warn')
-    expect(exit).not.toHaveBeenCalled()
-  })
-
-  it('doctor --ready treats warnings as not ready', async () => {
-    delete process.env.CARACAL_ZONE_ID
-    stubFetch((url) => {
-      if (url === 'http://api/health') return { ok: true }
-      if (url === 'http://api/v1/zones') return [{ id: 'z1', name: 'Local', slug: 'local' }]
+      if (url === 'http://api/v1/zones/z1') return { id: 'z1', name: 'Local', slug: 'local' }
+      if (url === 'http://api/v1/zones/z1/resources') return []
+      if (url === 'http://api/v1/zones/z1/policy-sets') return []
+      if (url === 'http://api/v1/zones/z1/grants') return []
+      if (url === 'http://api/v1/zones/z1/audit?limit=1') return []
+      if (url.endsWith('/ready')) return { ready: true }
+      if (url === 'http://sts/metrics.json') return { opa: { compile_errors: 0, eval_errors: 0, max_policy_age_seconds: 1 } }
+      if (url === 'http://localhost:8081/metrics.json') return { bindings_loaded: 0, revocations_active: 0, requests_denied: 0 }
+      if (url === 'http://localhost:9090/metrics.json') return { consumer_lag: 0, dlq_size: 0, tamper_mismatch_total: 0 }
+      if (url === 'http://coordinator/stats') return { outbox: { pending: 0, dead: 0 }, invocations: { running: 0 } }
       throw new Error(`unexpected request ${url}`)
     })
 
@@ -395,11 +437,14 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
 
     const body = JSON.parse(stdout.mock.calls.map((c) => c[0]).join(''))
     expect(body.ready).toBe(false)
-    expect(body.checks).toContainEqual({
-      check: 'zone',
-      status: 'warn',
-      detail: 'no zone selected; pass --zone or set CARACAL_ZONE_ID',
+    expect(body).toMatchObject({
+      command: 'doctor',
+      mode: 'system',
+      ready: false,
+      strict: true,
+      summary: { fail: expect.any(Number) },
     })
+    expect(body.summary.fail).toBeGreaterThan(0)
   })
 
   it('doctor exits nonzero when a check fails', async () => {
@@ -463,11 +508,11 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
 
     await expect(doctorCommand(['--zone', 'lfdt'])).rejects.toThrow('__exit:1')
 
-    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual(expect.arrayContaining([
       'http://api/health',
       'http://api/v1/zones',
       'http://api/v1/zones/lfdt',
-    ])
+    ]))
     const out = stdout.mock.calls.map((c) => c[0]).join('')
     expect(out).toContain('zone')
     expect(out).toContain('fail')
@@ -478,7 +523,7 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
     expect(out).not.toContain('audit query')
   })
 
-  it('doctor extended reports service readiness and metrics', async () => {
+  it('doctor emits complete structured diagnostics by default', async () => {
     process.env.CARACAL_STS_URL = 'http://sts'
     process.env.CARACAL_GATEWAY_URL = 'http://gateway'
     process.env.CARACAL_AUDIT_URL = 'http://audit'
@@ -498,9 +543,46 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
       throw new Error(`unexpected request ${url}`)
     })
 
-    await doctorCommand(['--zone', 'z1', '--extended'])
+    await expect(doctorCommand(['--json'])).rejects.toThrow('__exit:1')
+
+    const body = JSON.parse(stdout.mock.calls.map((c) => c[0]).join(''))
+    expect(body).toMatchObject({
+      command: 'doctor',
+      mode: 'system',
+      context: { apiUrl: 'http://api', zoneScope: 'selected', zoneIds: ['z1'] },
+    })
+    expect(body.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ section: 'health', check: 'api health', status: 'ok' }),
+      expect.objectContaining({ section: 'zones', check: 'z1 audit query', status: 'ok' }),
+      expect.objectContaining({ section: 'readiness', check: 'sts metrics', status: 'ok' }),
+      expect.objectContaining({ section: 'preflight', check: 'ZONE_KEK', status: 'fail' }),
+    ]))
+  })
+
+  it('doctor reports service readiness and metrics in default system mode', async () => {
+    process.env.CARACAL_STS_URL = 'http://sts'
+    process.env.CARACAL_GATEWAY_URL = 'http://gateway'
+    process.env.CARACAL_AUDIT_URL = 'http://audit'
+    stubFetch((url) => {
+      if (url === 'http://api/health') return { ok: true }
+      if (url === 'http://api/v1/zones') return [{ id: 'z1', name: 'Local', slug: 'local' }]
+      if (url === 'http://api/v1/zones/z1') return { id: 'z1', name: 'Local', slug: 'local' }
+      if (url === 'http://api/v1/zones/z1/resources') return [{ id: 'res-1' }]
+      if (url === 'http://api/v1/zones/z1/policy-sets') return [{ id: 'pset-1', active_version_id: 'psver-1' }]
+      if (url === 'http://api/v1/zones/z1/grants') return [{ id: 'grant-1' }]
+      if (url === 'http://api/v1/zones/z1/audit?limit=1') return []
+      if (url.endsWith('/ready')) return { ready: true }
+      if (url === 'http://sts/metrics.json') return { opa: { compile_errors: 0, eval_errors: 0, max_policy_age_seconds: 1 } }
+      if (url === 'http://gateway/metrics.json') return { bindings_loaded: 3, revocations_active: 1, requests_denied: 2 }
+      if (url === 'http://audit/metrics.json') return { consumer_lag: 0, dlq_size: 0, tamper_mismatch_total: 0 }
+      if (url === 'http://coordinator/stats') return { outbox: { pending: 0, dead: 0 }, invocations: { running: 0 } }
+      throw new Error(`unexpected request ${url}`)
+    })
+
+    await expect(doctorCommand(['--zone', 'z1'])).rejects.toThrow('__exit:1')
 
     const out = stdout.mock.calls.map((c) => c[0]).join('')
+    expect(out).toContain('Service readiness')
     expect(out).toContain('sts readiness')
     expect(out).toContain('opa compile_errors=0')
     expect(out).toContain('gateway metrics')
