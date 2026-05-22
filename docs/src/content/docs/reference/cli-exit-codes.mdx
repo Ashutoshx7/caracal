@@ -30,13 +30,13 @@ Admin, runtime, and observability commands do not map HTTP statuses to separate 
 | `409` | `1` | Re-fetch the object and retry the operation. |
 | `422` | `1` | Inspect the validation body and correct the submitted fields. |
 | `429` | `1` | Back off and retry; inspect service health if throttling persists. |
-| `5xx` | `1` | Probe readiness with `caracal doctor --extended` and check service logs. |
+| `5xx` | `1` | Probe readiness with `caracal doctor` and check service logs. |
 
 ## Examples
 
 ```bash
 # Gate a Helm post-install hook on full readiness:
-caracal doctor --extended --ready --json > /tmp/doctor.json || exit 1
+caracal doctor --ready --json > /tmp/doctor.json || exit 1
 
 # Detect a missing zone in CI:
 if ! caracal zone get prod > /tmp/zone.json 2> /tmp/zone.err; then
@@ -61,4 +61,3 @@ fi
 
 - Usage errors and missing `caracal.toml` both exit `1`; the usage or configuration message on stderr identifies the cause.
 - `caracal credential inspect` is local-only and exits `1` for invalid input.
-- `caracal manifest validate` exits `1` when the manifest is invalid and `0` when it is valid.

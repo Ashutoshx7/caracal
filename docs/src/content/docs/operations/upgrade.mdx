@@ -88,7 +88,7 @@ kubectl -n caracal rollout status deployment/caracal-audit
 After `helm upgrade` reports success:
 
 ```bash
-caracal doctor --extended --json | jq '.checks[] | select(.status != "ok")'
+caracal doctor --json | jq '.checks[] | select(.status != "ok")'
 ```
 
 Expect empty output. Then run a synthetic request through Gateway end-to-end (see [Failure Modes](../failure-modes/) for the canonical curl). If anything fails, treat as an incident and follow rollback.
