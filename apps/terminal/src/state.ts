@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Persistent non-secret TUI state for restoring operator context across launches.
+// Persistent non-secret Terminal state for restoring operator context across launches.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -36,7 +36,7 @@ interface PersistedState {
 const STATE_VERSION = 1
 const MAX_TEXT = 256
 
-export class TuiStateStore {
+export class TerminalStateStore {
   private readonly path: string
   private state: PersistedState
 
@@ -45,13 +45,13 @@ export class TuiStateStore {
     this.state = normalizeState(state)
   }
 
-  static load(path = defaultStatePath()): TuiStateStore {
+  static load(path = defaultStatePath()): TerminalStateStore {
     try {
-      if (!existsSync(path)) return new TuiStateStore(path)
+      if (!existsSync(path)) return new TerminalStateStore(path)
       const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown
-      return new TuiStateStore(path, normalizeState(parsed))
+      return new TerminalStateStore(path, normalizeState(parsed))
     } catch {
-      return new TuiStateStore(path)
+      return new TerminalStateStore(path)
     }
   }
 
@@ -125,7 +125,7 @@ export class TuiStateStore {
 }
 
 function defaultStatePath(): string {
-  return join(installedHome(), 'tui-state.json')
+  return join(installedHome(), 'terminal-state.json')
 }
 
 function normalizeState(value: unknown): PersistedState {

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Interactive doctor diagnostics view for TUI operator health checks.
+// Interactive doctor diagnostics view for Terminal operator health checks.
 
 import {
   DOCTOR_SECTION_LABELS,
@@ -10,7 +10,7 @@ import {
   type DoctorCheck,
   type DoctorReport,
 } from '@caracalai/engine'
-import type { CliConfig } from '@caracalai/engine/cli'
+import type { RuntimeConfig } from '@caracalai/engine/runtime-config'
 import { pad, sanitizeAnsi, truncate, ui } from '../ansi.ts'
 import { explainError } from '../errors.ts'
 import type { Key } from '../keys.ts'
@@ -18,7 +18,7 @@ import type { App, View, ViewContext } from '../screen.ts'
 import { FormView, type Field } from './form.ts'
 
 interface DoctorViewOptions {
-  cfg?: CliConfig
+  cfg?: RuntimeConfig
   zoneId?: string
   zonePicker?: Field['pick']
 }
@@ -27,7 +27,7 @@ type DoctorMode = 'system' | 'preflight'
 
 export class DoctorView implements View {
   readonly title = 'doctor'
-  private readonly cfg?: CliConfig
+  private readonly cfg?: RuntimeConfig
   private readonly zonePicker?: Field['pick']
   private app: App | undefined
   private zoneId: string | undefined

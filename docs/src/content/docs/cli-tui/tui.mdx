@@ -1,17 +1,17 @@
 ---
-title: TUI Walkthrough
-description: Navigate the caracal-tui — launch, screen layout, key bindings, views, and live audit streaming.
+title: Terminal Walkthrough
+description: Navigate the caracal-terminal — launch, screen layout, key bindings, views, and live audit streaming.
 pageType: reference
 ---
 
-`caracal-tui` is a terminal UI for inspecting all Caracal entities without leaving the shell. It fetches from the same control-plane API as the CLI and renders into a full-screen terminal buffer with keyboard navigation.
+`caracal-terminal` is a terminal UI for inspecting all Caracal entities without leaving the shell. It fetches from the same control-plane API as the CLI and renders into a full-screen terminal buffer with keyboard navigation.
 
 ---
 
 ## Launch
 
 ```bash
-caracal-tui
+caracal-terminal
 ```
 
 **Requirements:**
@@ -21,7 +21,7 @@ caracal-tui
 - `CARACAL_API_URL` set in production (localhost default in development).
 - For agent and delegation views: `CARACAL_COORDINATOR_URL` and `CARACAL_COORDINATOR_TOKEN`.
 
-On startup, the TUI enters full-screen alt buffer mode and hides the cursor. Press `q` or `ctrl-c` at any time to exit and restore the terminal.
+On startup, the Terminal enters full-screen alt buffer mode and hides the cursor. Press `q` or `ctrl-c` at any time to exit and restore the terminal.
 
 ---
 
@@ -29,7 +29,7 @@ On startup, the TUI enters full-screen alt buffer mode and hides the cursor. Pre
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ Caracal TUI                                   http://localhost:3000│  banner
+│ Caracal Terminal                                   http://localhost:3000│  banner
 │ > menu › zones › zone_abc123                                      │  breadcrumb
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
@@ -70,8 +70,8 @@ For views that require a zone, press `z` to open the zone picker before navigati
 
 | Key | Action |
 | --- | --- |
-| `q` | Quit the TUI |
-| `ctrl-c` | Quit the TUI |
+| `q` | Quit the Terminal |
+| `ctrl-c` | Quit the Terminal |
 | `h`, `esc`, `←` | Go back to the parent view |
 | `↑`, `j` | Move cursor up one row |
 | `↓`, `k` | Move cursor down one row |
@@ -173,13 +173,13 @@ The current filter is shown in the status line (e.g., `filter:deny`). When pause
 
 **Audit detail:**
 
-Press `enter` on an audit event to open its full detail view, showing the complete `AuditDetail` record including `determining_policies_json` and `diagnostics_json`. This is the TUI equivalent of `caracal explain <request_id>`.
+Press `enter` on an audit event to open its full detail view, showing the complete `AuditDetail` record including `determining_policies_json` and `diagnostics_json`. This is the Terminal equivalent of `caracal explain <request_id>`.
 
 ---
 
 ## Error display
 
-API errors are shown in the status line in red. The TUI does not exit on API errors — press `r` to retry, or press `h` to go back and try a different view.
+API errors are shown in the status line in red. The Terminal does not exit on API errors — press `r` to retry, or press `h` to go back and try a different view.
 
 | Error | Likely cause |
 | --- | --- |

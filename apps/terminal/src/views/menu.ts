@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Top-level menu listing every resource the TUI can navigate.
+// Top-level menu listing every resource the Terminal can navigate.
 
 import type { AdminClient, Zone } from '@caracalai/admin'
 import {
@@ -29,15 +29,15 @@ import { readFileSync } from 'node:fs'
 import { parse } from 'smol-toml'
 import {
   DEFAULT_ZONE_URL,
-  resolveCliConfigPath,
+  resolveRuntimeConfigPath,
   resolveServiceUrl,
-  type CliConfig,
-} from '@caracalai/engine/cli'
+  type RuntimeConfig,
+} from '@caracalai/engine/runtime-config'
 import { pad, truncate, ui } from '../ansi.ts'
 import { explainError, maskSecretField } from '../errors.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
-import type { TuiStateStore } from '../state.ts'
+import type { TerminalStateStore } from '../state.ts'
 import { DetailView } from './detail.ts'
 import { DoctorView } from './doctor.ts'
 import { ConfirmView, FormView, type Field } from './form.ts'
@@ -58,7 +58,7 @@ import {
   zonesView,
   type Ctx,
 } from './factory.ts'
-import { CARACAL_TUI_MODE, CARACAL_TUI_SHA, CARACAL_TUI_VERSION } from '../version.gen.ts'
+import { CARACAL_TERMINAL_MODE, CARACAL_TERMINAL_SHA, CARACAL_TERMINAL_VERSION } from '../version.gen.ts'
 
 interface Entry {
   key: string
@@ -69,13 +69,13 @@ interface Entry {
   open: (ctx: Ctx, app: App) => View
 }
 
-function loadCliConfig(): CliConfig | undefined {
-  const path = resolveCliConfigPath()
+function loadRuntimeConfig(): RuntimeConfig | undefined {
+  const path = resolveRuntimeConfigPath()
   if (!path) return undefined
-  return parse(readFileSync(path, 'utf8')) as unknown as CliConfig
+  return parse(readFileSync(path, 'utf8')) as unknown as RuntimeConfig
 }
 
-function credentialConfig(ctx: Ctx, cfg: CliConfig | undefined, values: Record<string, string>): CliConfig {
+function credentialConfig(ctx: Ctx, cfg: RuntimeConfig | undefined, values: Record<string, string>): RuntimeConfig {
   if (cfg) return cfg
   const applicationId = values.application_id
   if (!applicationId) throw new Error('application is required when caracal.toml is not configured')
@@ -91,17 +91,17 @@ function resolveControlStackMode(): StackMode {
   const override = process.env.CARACAL_MODE
   if (override === 'dev' || override === 'rc' || override === 'stable') return override
   if (override) throw new Error(`CARACAL_MODE must be 'dev', 'rc', or 'stable' (got '${override}')`)
-  return CARACAL_TUI_MODE
+  return CARACAL_TERMINAL_MODE
 }
 
 function controlComposeEnv(paths: StackPaths): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { CARACAL_MODE: paths.mode }
   if (paths.mode !== 'dev') {
-    env.CARACAL_VERSION = CARACAL_TUI_VERSION
+    env.CARACAL_VERSION = CARACAL_TERMINAL_VERSION
     env.CARACAL_REGISTRY = process.env.CARACAL_REGISTRY
   } else {
-    env.CARACAL_DEV_SHA = CARACAL_TUI_SHA
-    env.CARACAL_DEV_VERSION = CARACAL_TUI_VERSION
+    env.CARACAL_DEV_SHA = CARACAL_TERMINAL_SHA
+    env.CARACAL_DEV_VERSION = CARACAL_TERMINAL_VERSION
   }
   return env
 }
@@ -147,7 +147,7 @@ function auditExplainEntry(ctx: Ctx): View {
 }
 
 function doctorEntry(ctx: Ctx): View {
-  return new DoctorView({ cfg: loadCliConfig(), zoneId: ctx.zoneId, zonePicker: zoneFieldPicker(ctx.client) })
+  return new DoctorView({ cfg: loadRuntimeConfig(), zoneId: ctx.zoneId, zonePicker: zoneFieldPicker(ctx.client) })
 }
 
 function zoneFieldPicker(client: AdminClient): Field['pick'] {
@@ -247,7 +247,7 @@ class CredentialMenuView implements View {
   }
 
   private readForm(): View {
-    const cfg = loadCliConfig()
+    const cfg = loadRuntimeConfig()
     const fields: Field[] = [
       { key: 'resource', label: 'resource', kind: 'text', required: true, pick: resourceIdentifierPicker(this.ctx) },
     ]
@@ -685,11 +685,11 @@ function renderControlStatus(
 export class MenuView implements View {
   readonly title = 'menu'
   private readonly client: AdminClient
-  private readonly state?: TuiStateStore | undefined
+  private readonly state?: TerminalStateStore | undefined
   private zoneId: string | undefined
   private cursor = 0
 
-  constructor(client: AdminClient, zoneId: string | undefined, state?: TuiStateStore) {
+  constructor(client: AdminClient, zoneId: string | undefined, state?: TerminalStateStore) {
     this.client = client
     this.state = state
     this.zoneId = zoneId

@@ -16,7 +16,7 @@ This page covers what you need installed and how to bring up a local Caracal sta
 | pnpm | 11.1.1 | TypeScript dependency management |
 | Go | 1.26+ | Go services and packages |
 | Python | 3.14+ | Python SDK packages |
-| Bun | 1.x | CLI/TUI binary compilation |
+| Bun | 1.x | CLI/Terminal binary compilation |
 | Docker Desktop | latest stable | Local service stack |
 
 Install each from its official source. The repository does not manage toolchain versions through scripts — use your system package manager or version manager.
@@ -97,7 +97,7 @@ caracal app create --zone <zone-id> --name dev-app
 
 `caracal app create` prints the client secret on creation — save it into `caracal.toml` along with the zone ID and STS URL. The CLI discovers `CARACAL_ADMIN_TOKEN` from `infra/secrets/files/caracalAdminToken` (dev, via `CARACAL_REPO_ROOT`) or `$CARACAL_HOME/secrets/caracalAdminToken` (installed); pass `--admin-token` or export `CARACAL_ADMIN_TOKEN` to override.
 
-See [Configuration File](../cli-tui/config-file/) for the full `caracal.toml` schema.
+See [Configuration File](../runtime-terminal/config-file/) for the full `caracal.toml` schema.
 
 Verify the stack is healthy:
 
@@ -145,12 +145,12 @@ cd services/gateway && go build ./...
 cd services/audit && go build ./...
 ```
 
-**CLI/TUI binaries:**
+**CLI/Terminal binaries:**
 
 ```sh
-pnpm --filter @caracalai/cli build
-pnpm --filter @caracalai/tui build
-# Binaries land in apps/cli/dist/caracal-cli-<os>-<arch> and apps/tui/dist/caracal-tui-<os>-<arch>
+pnpm --filter @caracalai/runtime build
+pnpm --filter @caracalai/terminal build
+# Binaries land in apps/runtime/dist/caracal-terminal-<os>-<arch> and apps/terminal/dist/caracal-terminal-<os>-<arch>
 ```
 
 ---

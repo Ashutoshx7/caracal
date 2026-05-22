@@ -28,7 +28,7 @@ import type {
 import type { JsonObject } from '@caracalai/core'
 import { readFileSync } from 'node:fs'
 import type { App, View } from '../screen.ts'
-import type { TuiStateStore } from '../state.ts'
+import type { TerminalStateStore } from '../state.ts'
 import { maskSecretField } from '../errors.ts'
 import { AuditTailView } from './audit.ts'
 import { DetailView } from './detail.ts'
@@ -40,7 +40,7 @@ export interface Ctx {
   client: AdminClient
   zoneId: string
   onZoneSelect?: (id: string, slug: string) => void
-  state?: TuiStateStore | undefined
+  state?: TerminalStateStore | undefined
 }
 
 function detail(title: string, load: () => Promise<unknown>): DetailView {

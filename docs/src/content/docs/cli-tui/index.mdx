@@ -1,13 +1,13 @@
 ---
-title: CLI and TUI
-description: Complete reference for the caracal CLI and caracal-tui terminal interface — stack management, admin operations, runtime token injection, and observability.
+title: CLI and Terminal
+description: Complete reference for the caracal CLI and caracal-terminal terminal interface — stack management, admin operations, runtime token injection, and observability.
 pageType: landing
 ---
 
 Caracal ships two terminal tools:
 
 - **`caracal`** — command-line interface for stack management, token injection, and administrative operations against the control-plane API.
-- **`caracal-tui`** — interactive terminal UI for browsing zones, applications, resources, policies, sessions, agents, and audit events.
+- **`caracal-terminal`** — interactive terminal UI for browsing zones, applications, resources, policies, sessions, agents, and audit events.
 
 Both tools are compiled with Bun for Linux (x64, arm64), macOS (x64, arm64), and Windows (x64). The runtime is self-contained — no separate Node.js installation is required.
 
@@ -54,7 +54,7 @@ These flags are accepted by all commands:
 | [Observability](./observability/) | `audit tail`, `explain`, `credential inspect` | Tail the audit stream, inspect policy decisions, render authority flow, and decode token claims |
 | [Agents and Delegation](./agents/) | `agent`, `delegation` | Inspect and control agent sessions and delegation edges |
 | [Configuration File](./config-file/) | `caracal.toml` | Config layout, lookup order, credential injection |
-| [TUI Walkthrough](./tui/) | `caracal-tui` | Interactive terminal browser for all admin entities |
+| [Terminal Walkthrough](./terminal/) | `caracal-terminal` | Interactive terminal browser for all admin entities |
 
 ---
 

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// ANSI escape sequences and a minimal screen abstraction for the TUI.
+// ANSI escape sequences and a minimal screen abstraction for the Terminal.
 
 const ESC = '\u001b['
 
