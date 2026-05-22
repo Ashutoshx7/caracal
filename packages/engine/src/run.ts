@@ -7,7 +7,7 @@ import { spawn, type ChildProcess, type StdioOptions } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { scrubTokens } from './crash.js'
 import { InteractionRequiredError, OAuthClient } from '@caracalai/oauth'
-import type { CliConfig, Credential } from './cliconfig.js'
+import type { RuntimeConfig, Credential } from './runtimeConfig.js'
 
 const SIGNAL_EXIT_MAP: Record<string, number> = {
   SIGINT: 2,
@@ -66,7 +66,7 @@ export interface RunExecOpts {
   env?: Record<string, string | undefined>
   onLine?: (line: string, stream: 'stdout' | 'stderr') => void
   cwd?: string
-  // Default true (CLI ergonomics). Hosts that own the keymap — TUI, REPL, embedded
+  // Default true for runtime ergonomics. Hosts that own the keymap — Terminal, embedded
   // libraries — must pass false so engine signals don't tear the parent down.
   forwardSignals?: boolean
 }
@@ -81,7 +81,7 @@ export interface BuildRunEnvOptions {
   readonly onLine?: RunLineSink
 }
 
-export function checkMcpGovernance(args: readonly string[] | string, cfg: CliConfig, onLine?: RunLineSink): void {
+export function checkMcpGovernance(args: readonly string[] | string, cfg: RuntimeConfig, onLine?: RunLineSink): void {
   const haystack = (Array.isArray(args) ? args : [args]).join(' ')
   const isUnauthorized = ['mcp-server', 'fastmcp', '@modelcontextprotocol'].some((indicator) => haystack.includes(indicator))
   if (!isUnauthorized) return
@@ -112,7 +112,7 @@ async function waitForChallenge(zoneUrl: string, challengeId: string): Promise<b
   return false
 }
 
-async function exchangeWithStepUp(client: OAuthClient, cfg: CliConfig, resource: string, onLine?: RunLineSink): Promise<string> {
+async function exchangeWithStepUp(client: OAuthClient, cfg: RuntimeConfig, resource: string, onLine?: RunLineSink): Promise<string> {
   try {
     const token = await client.exchange('', resource, {
       clientSecret: cfg.app_client_secret,
@@ -145,7 +145,7 @@ function validateCredentialEnv(cred: Credential, used: Set<string>): void {
   used.add(cred.env)
 }
 
-export async function buildRunEnv(cfg: CliConfig, opts: BuildRunEnvOptions = {}): Promise<Record<string, string>> {
+export async function buildRunEnv(cfg: RuntimeConfig, opts: BuildRunEnvOptions = {}): Promise<Record<string, string>> {
   const client = new OAuthClient(cfg.zone_url, cfg.zone_id, cfg.application_id)
   const env: Record<string, string> = {}
   const usedEnv = new Set<string>()

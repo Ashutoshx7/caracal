@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Shared CLI/TUI helpers: caracal.toml discovery and service URL resolution.
+// Shared runtime helpers: caracal.toml discovery and service URL resolution.
 
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -25,7 +25,7 @@ export interface McpGovernance {
   mode: 'block' | 'log';
 }
 
-export interface CliConfig {
+export interface RuntimeConfig {
   zone_url: string;
   zone_id: string;
   application_id: string;
@@ -36,7 +36,7 @@ export interface CliConfig {
   mcp_governance?: McpGovernance;
 }
 
-export function defaultCliConfigPath(env: NodeJS.ProcessEnv = process.env): string {
+export function defaultRuntimeConfigPath(env: NodeJS.ProcessEnv = process.env): string {
   const xdg = env.XDG_CONFIG_HOME && env.XDG_CONFIG_HOME.length > 0
     ? env.XDG_CONFIG_HOME
     : join(homedir(), '.config');
@@ -46,13 +46,13 @@ export function defaultCliConfigPath(env: NodeJS.ProcessEnv = process.env): stri
 // Resolves the path to caracal.toml using the documented precedence:
 //   $CARACAL_CONFIG → ./caracal.toml (cwd / $PWD / $INIT_CWD) → $XDG_CONFIG_HOME/caracal/caracal.toml
 // Returns undefined when no candidate exists on disk.
-export function resolveCliConfigPath(env: NodeJS.ProcessEnv = process.env): string | undefined {
+export function resolveRuntimeConfigPath(env: NodeJS.ProcessEnv = process.env): string | undefined {
   const candidates: string[] = [];
   if (env.CARACAL_CONFIG) candidates.push(env.CARACAL_CONFIG);
   for (const dir of [process.cwd(), env.PWD, env.INIT_CWD]) {
     if (dir) candidates.push(join(dir, 'caracal.toml'));
   }
-  candidates.push(defaultCliConfigPath(env));
+  candidates.push(defaultRuntimeConfigPath(env));
   for (const path of candidates) {
     if (existsSync(path)) return path;
   }
@@ -73,7 +73,7 @@ export class ServiceUrlMissingError extends CaracalError {
 }
 
 // Returns the env-var override or the dev default. Throws ServiceUrlMissingError
-// in non-development so a misconfigured production CLI never silently hits localhost.
+// in non-development so misconfigured production management never silently hits localhost.
 export function resolveServiceUrl(envKey: string, devDefault: string): string {
   const v = process.env[envKey];
   if (v) return v;

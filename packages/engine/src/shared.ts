@@ -11,8 +11,8 @@ import {
   DEFAULT_API_URL,
   DEFAULT_COORDINATOR_URL,
   resolveServiceUrl,
-} from './cliconfig.js'
-import type { CliConfig } from './cliconfig.js'
+} from './runtimeConfig.js'
+import type { RuntimeConfig } from './runtimeConfig.js'
 
 export interface AdminContext {
   client: AdminClient
@@ -20,7 +20,7 @@ export interface AdminContext {
   apiUrl: string
 }
 
-export function buildAdminClient(cfg?: CliConfig): AdminContext {
+export function buildAdminClient(cfg?: RuntimeConfig): AdminContext {
   const adminToken = discoverAdminToken()
   if (!adminToken) {
     throw new Error(

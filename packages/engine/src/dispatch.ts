@@ -1,11 +1,11 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Shared command dispatcher: validates a (command, subcommand, flags) request against the canonical catalog and forwards it to the AdminClient surface used by CLI, TUI, and the Control API.
+// Shared command dispatcher: validates management requests and forwards them to AdminClient for Control automation.
 
 import type { AdminClient } from '@caracalai/admin'
 import {
-  CLI_COMMANDS,
+  MANAGEMENT_COMMANDS,
   findCommand,
   scopeName,
   type CommandDescriptor,
@@ -20,7 +20,7 @@ export interface DispatchRequest {
   readonly flags?: FlagMap
 }
 
-/** A caller of dispatch. `local` principals (CLI/TUI) bypass scope checks; `remote` principals (Control) must carry per-resource scopes. */
+/** A caller of dispatch. Local principals bypass scope checks; remote principals must carry per-resource scopes. */
 export interface Principal {
   readonly kind: 'local' | 'remote'
   readonly subject: string
@@ -373,7 +373,7 @@ function commandHandler(command: string): Handler | undefined {
 
 /**
  * Validate and execute a dispatch request against the canonical catalog. Throws DispatchError on rejection.
- * Local principals (CLI/TUI) skip scope checks. Remote principals (Control) must carry the per-resource scope
+ * Local principals skip scope checks. Remote principals (Control) must carry the per-resource scope
  * derived from `scopeName(descriptor, subcommand)`.
  */
 export async function dispatch(
@@ -381,10 +381,10 @@ export async function dispatch(
   principal: Principal,
   ctx: DispatchContext,
 ): Promise<unknown> {
-  const desc = findCommand(CLI_COMMANDS, req.command)
+  const desc = findCommand(MANAGEMENT_COMMANDS, req.command)
   if (!desc) denied(`unknown command "${req.command}"`)
   if (desc.hidden && principal.kind === 'remote') denied(`command "${req.command}" not exposed`)
-  if (desc.localOnly && principal.kind === 'remote') denied(`command "${req.command}" is available only through CLI and TUI management surfaces`)
+  if (desc.localOnly && principal.kind === 'remote') denied(`command "${req.command}" is available only through the terminal management interface`)
   if (desc.subcommands && desc.subcommands.length > 0) {
     if (!desc.subcommands.includes(req.subcommand)) {
       denied(`subcommand "${req.subcommand}" not allowed for "${req.command}"`)
@@ -407,7 +407,7 @@ export async function dispatch(
 /** Lists the (command, subcommand, scope) triples the Control API exposes — used by tests and documentation. */
 export function describeRemoteSurface(): readonly { command: string; subcommand: string; scope: string }[] {
   const out: { command: string; subcommand: string; scope: string }[] = []
-  for (const desc of CLI_COMMANDS) {
+  for (const desc of MANAGEMENT_COMMANDS) {
     if (desc.hidden) continue
     if (desc.localOnly) continue
     if (!commandHandler(desc.name)) continue

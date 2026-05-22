@@ -2,7 +2,7 @@
 // Caracal, a product of Garudex Labs
 //
 // Side-effect module that removes CARACAL_* values auto-loaded from the
-// current working directory's dotenv files so the CLI never sees them.
+// current working directory's dotenv files so runtime commands never see them.
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
