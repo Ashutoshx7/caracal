@@ -4,7 +4,7 @@
 // End-to-end CLI command tests using a stubbed fetch and admin token env.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { auditCommand, explainCommand } from '../../../../apps/cli/src/commands/audit.ts'
@@ -37,8 +37,10 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
   let stdout: ReturnType<typeof vi.spyOn>
   let stderr: ReturnType<typeof vi.spyOn>
   let exit: ReturnType<typeof vi.spyOn>
+  let tempDirs: string[]
 
   beforeEach(() => {
+    tempDirs = []
     process.env = { ...ORIG_ENV, CARACAL_ADMIN_TOKEN: 'secret', CARACAL_API_URL: 'http://api', CARACAL_COORDINATOR_URL: 'http://coordinator', CARACAL_STS_URL: 'http://sts', CARACAL_ZONE_ID: 'z1' }
     delete process.env.CARACAL_COORDINATOR_TOKEN
     stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
@@ -50,6 +52,7 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     process.env = { ...ORIG_ENV }
+    for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true })
   })
 
   it('audit tail calls /v1/zones/:id/audit with filters and prints a table', async () => {
@@ -400,7 +403,10 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
       throw new Error(`unexpected request ${init.method ?? 'GET'} ${url}`)
     })
 
-    await protectCommand(['http', '--zone', 'z1', '--identifier', 'resource://local-tool', '--upstream-url', 'http://host.docker.internal:8090', '--scopes', 'tool:read', '--user', 'local-user'])
+    const dir = mkdtempSync(join(tmpdir(), 'caracal-protect-'))
+    tempDirs.push(dir)
+    const configPath = join(dir, 'caracal.toml')
+    await protectCommand(['http', '--zone', 'z1', '--identifier', 'resource://local-tool', '--upstream-url', 'http://host.docker.internal:8090', '--scopes', 'tool:read', '--user', 'local-user', '--write-config', configPath])
 
     expect(calls).toEqual([
       'GET http://api/v1/zones/z1',

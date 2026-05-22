@@ -13,7 +13,13 @@ function digest(token: string): Buffer {
   return createHash('sha256').update(token).digest()
 }
 
-function makeDb(opts: { token?: string; scope?: 'global' | 'zone'; zoneId?: string | null } = {}) {
+const ARGON_HASHES: Record<string, string> = {
+  secret: '$argon2id$v=19$m=4096,t=1,p=1$MTIzNDU2Nzg5MGFiY2RlZg$W6k8qCR7eTkTJ6g5/G2Jb7MibAPjTACFTH1xk7NZA64',
+  s: '$argon2id$v=19$m=4096,t=1,p=1$YWJjZGVmMTIzNDU2Nzg5MA$93o7HKq1OcFl+uiR0uD+EpMXGZb1VsESPGkov+IS3YI',
+  tok: '$argon2id$v=19$m=4096,t=1,p=1$ZmVkY2JhMDk4NzY1NDMyMQ$ioWX1ZIslL5a3NcjDsfGDAhw5wlYJMVMOhfHohTn3Ew',
+}
+
+function makeDb(opts: { token?: string; tokenHash?: string | null; scope?: 'global' | 'zone'; zoneId?: string | null } = {}) {
   const tokenDigest = opts.token ? digest(opts.token) : null
   const query = vi.fn().mockImplementation((sql: string, params?: unknown[]) => {
     if (sql.includes('FROM admin_tokens') && Array.isArray(params)) {
@@ -26,6 +32,7 @@ function makeDb(opts: { token?: string; scope?: 'global' | 'zone'; zoneId?: stri
             scope: opts.scope ?? 'global',
             zone_id: opts.zoneId ?? null,
             token_sha256: tokenDigest,
+            token_hash: opts.tokenHash ?? (opts.token ? ARGON_HASHES[opts.token] : null),
             revoked_at: null,
           }],
         })
@@ -65,6 +72,11 @@ describe('lookupAdminToken', () => {
     const db = makeDb({ token: 'secret', scope: 'zone', zoneId: 'z1' })
     const actor = await lookupAdminToken(db, 'secret')
     expect(actor).toMatchObject({ scope: 'zone', zoneId: 'z1' })
+  })
+
+  it('returns null when the verifier hash does not match', async () => {
+    const db = makeDb({ token: 'secret', tokenHash: ARGON_HASHES.s })
+    expect(await lookupAdminToken(db, 'secret')).toBeNull()
   })
 })
 
@@ -216,17 +228,29 @@ describe('seedBootstrapAdminToken', () => {
   it('skips insert when token already present', async () => {
     const db = {
       query: vi.fn()
-        .mockResolvedValueOnce({ rows: [{ id: 'existing' }] }),
+        .mockResolvedValueOnce({ rows: [{ id: 'existing', token_hash: ARGON_HASHES.tok }] }),
     } as unknown as DB
     await seedBootstrapAdminToken(db, { envToken: 'tok', log: () => {} })
     expect(db.query).toHaveBeenCalledTimes(1)
+  })
+  it('fills missing verifier hash for the bootstrap token', async () => {
+    const queries: string[] = []
+    const db = {
+      query: vi.fn().mockImplementation((sql: string) => {
+        queries.push(sql)
+        if (sql.includes('SELECT id')) return Promise.resolve({ rows: [{ id: 'existing', token_hash: null }] })
+        return Promise.resolve({ rows: [], rowCount: 1 })
+      }),
+    } as unknown as DB
+    await seedBootstrapAdminToken(db, { envToken: 'tok', log: () => {} })
+    expect(queries.some((s) => s.startsWith('UPDATE admin_tokens SET token_hash'))).toBe(true)
   })
   it('inserts when missing', async () => {
     const inserts: string[] = []
     const db = {
       query: vi.fn().mockImplementation((sql: string) => {
         inserts.push(sql)
-        if (sql.includes('SELECT id FROM admin_tokens')) return Promise.resolve({ rows: [] })
+        if (sql.includes('SELECT id')) return Promise.resolve({ rows: [] })
         return Promise.resolve({ rows: [], rowCount: 1 })
       }),
     } as unknown as DB

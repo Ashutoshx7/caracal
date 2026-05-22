@@ -265,6 +265,8 @@ export async function protectCommand(argv: string[], cfg?: CliConfig): Promise<v
     printInfo(`grant: ${result.grant.id}`)
     if (result.config_path) {
       printSuccess(`wrote ${result.config_path} (mode 0600); app_client_secret is in the file and shown once`)
+      printStep('Store this caracal.toml content securely; app_client_secret is shown once.')
+      process.stdout.write(result.config)
     } else {
       printStep('Store this caracal.toml content; app_client_secret is shown once.')
       process.stdout.write(result.config)
