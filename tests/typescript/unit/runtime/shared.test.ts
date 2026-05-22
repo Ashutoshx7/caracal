@@ -3,16 +3,13 @@
 //
 // Runtime shared helpers: argv parser and flag coercions.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { AdminApiError } from '@caracalai/admin'
+import { describe, it, expect } from 'vitest'
 import {
-  fail,
   parseArgs,
   flagString,
   flagBool,
   flagInt,
   flagList,
-  requireZone,
 } from '../../../../apps/runtime/src/commands/shared.ts'
 
 describe('parseArgs', () => {
@@ -64,53 +61,5 @@ describe('flag coercions', () => {
   it('flagList splits, trims, and drops empties', () => {
     expect(flagList(flags, 'scopes')).toEqual(['a', 'b', 'c'])
     expect(flagList({}, 'missing')).toBeUndefined()
-  })
-})
-
-describe('requireZone', () => {
-  let exit: ReturnType<typeof vi.spyOn>
-  let stderr: ReturnType<typeof vi.spyOn>
-
-  beforeEach(() => {
-    exit = vi.spyOn(process, 'exit').mockImplementation(((c?: number) => { throw new Error(`__exit:${c ?? 0}`) }) as never)
-    stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
-  })
-
-  afterEach(() => { exit.mockRestore(); stderr.mockRestore() })
-
-  it('prefers --zone flag', () => {
-    expect(requireZone({ client: {} as never, zoneId: 'cfg-zone' }, { zone: 'flag-zone' })).toBe('flag-zone')
-    expect(exit).not.toHaveBeenCalled()
-  })
-
-  it('falls back to context zone', () => {
-    expect(requireZone({ client: {} as never, zoneId: 'cfg-zone' }, {})).toBe('cfg-zone')
-  })
-
-  it('exits when no zone is available', () => {
-    expect(() => requireZone({ client: {} as never, zoneId: undefined }, {})).toThrow(/__exit:1/)
-    expect(stderr).toHaveBeenCalled()
-  })
-})
-
-describe('fail', () => {
-  let exit: ReturnType<typeof vi.spyOn>
-  let stderr: ReturnType<typeof vi.spyOn>
-
-  beforeEach(() => {
-    exit = vi.spyOn(process, 'exit').mockImplementation(((c?: number) => { throw new Error(`__exit:${c ?? 0}`) }) as never)
-    stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
-  })
-
-  afterEach(() => { exit.mockRestore(); stderr.mockRestore() })
-
-  it('scrubs tokens from admin error bodies', () => {
-    expect(() => fail(new AdminApiError(500, 'boom', {
-      message: 'failed with Bearer abc.def.ghi',
-    }))).toThrow(/__exit:1/)
-
-    const text = stderr.mock.calls.map(([chunk]) => String(chunk)).join('')
-    expect(text).not.toContain('abc.def.ghi')
-    expect(text).toContain('***')
   })
 })

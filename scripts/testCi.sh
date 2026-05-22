@@ -118,7 +118,7 @@ if $run_ts; then
   ts_run apps/terminal terminal tests/typescript/unit/terminal
   ts_run packages/core/ts core tests/typescript/unit/shared
   ts_run packages/admin/ts admin tests/typescript/unit/admin
-  ts_run packages/sdk/ts sdk tests/typescript/unit/sdk/runtimeent.test.ts
+  ts_run packages/sdk/ts sdk tests/typescript/unit/sdk/client.test.ts
   ts_run packages/transport/a2a/ts transport-a2a tests/typescript/unit/transport-a2a
   ts_run packages/oauth/ts oauth tests/typescript/unit/sdk/oauth
   ts_run packages/revocation/ts revocation tests/typescript/unit/revocation
