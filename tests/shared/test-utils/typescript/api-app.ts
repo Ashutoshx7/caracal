@@ -7,6 +7,8 @@ import { createHash } from 'node:crypto'
 import { vi } from 'vitest'
 import type { Config } from '../../../../apps/api/src/config.js'
 
+const ADMIN_SECRET_HASH = '$argon2id$v=19$m=4096,t=1,p=1$YWRtaW4tc2VjcmV0MTIz$Poo9aTgElvmOsg/aqPG7rkpNPZfXev86BjijHMCY74k'
+
 export interface ApiDepsOptions {
   adminToken?: string
   adminScope?: 'global' | 'zone'
@@ -37,6 +39,7 @@ export function apiAppDeps(opts: ApiDepsOptions = {}): ApiDeps {
               scope: adminScope,
               zone_id: adminZoneId,
               token_sha256: adminDigest,
+              token_hash: adminToken === 'admin-secret' ? ADMIN_SECRET_HASH : null,
               revoked_at: null,
             }],
             rowCount: 1,

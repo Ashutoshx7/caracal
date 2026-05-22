@@ -10,6 +10,7 @@ import { sha256 } from '@caracalai/core'
 import { v7 as uuidv7 } from 'uuid'
 import type { DB } from './db.js'
 import type { RedisClient } from './redis.js'
+import { hashAdminToken, verifyAdminTokenHash } from './hash-secret.js'
 
 type AdminScope = 'global' | 'zone'
 
@@ -26,6 +27,7 @@ interface AdminTokenRow {
   scope: AdminScope
   zone_id: string | null
   token_sha256: Buffer
+  token_hash: string | null
   revoked_at: Date | null
 }
 
@@ -63,7 +65,7 @@ function zoneFromUrl(url: string): string | null {
 export async function lookupAdminToken(db: DB, plaintext: string): Promise<Actor | null> {
   const digest = sha256(plaintext)
   const { rows } = await db.query<AdminTokenRow>(
-    `SELECT id, name, scope, zone_id, token_sha256, revoked_at
+    `SELECT id, name, scope, zone_id, token_sha256, token_hash, revoked_at
      FROM admin_tokens
      WHERE token_sha256 = $1 AND revoked_at IS NULL
      LIMIT 1`,
@@ -72,6 +74,7 @@ export async function lookupAdminToken(db: DB, plaintext: string): Promise<Actor
   const row = rows[0]
   if (!row) return null
   if (!bytesEqual(row.token_sha256, digest)) return null
+  if (!row.token_hash || !(await verifyAdminTokenHash(plaintext, row.token_hash))) return null
   return { id: row.id, name: row.name, scope: row.scope, zoneId: row.zone_id }
 }
 
@@ -119,16 +122,26 @@ interface SeedOptions {
 export async function seedBootstrapAdminToken(db: DB, opts: SeedOptions): Promise<void> {
   if (!opts.envToken) return
   const digest = sha256(opts.envToken)
-  const { rows } = await db.query<{ id: string }>(
-    `SELECT id FROM admin_tokens WHERE token_sha256 = $1 LIMIT 1`,
+  const { rows } = await db.query<{ id: string; token_hash: string | null }>(
+    `SELECT id, token_hash FROM admin_tokens WHERE token_sha256 = $1 LIMIT 1`,
     [digest],
   )
-  if (rows[0]) return
+  const row = rows[0]
+  if (row?.token_hash) return
+  const tokenHash = await hashAdminToken(opts.envToken)
+  if (row) {
+    await db.query(
+      `UPDATE admin_tokens SET token_hash = $1 WHERE id = $2 AND token_hash IS NULL`,
+      [tokenHash, row.id],
+    )
+    opts.log(`seeded bootstrap admin token verifier id=${row.id}`)
+    return
+  }
   const id = uuidv7()
   await db.query(
-    `INSERT INTO admin_tokens (id, name, token_sha256, scope, zone_id, created_by)
-     VALUES ($1, 'bootstrap', $2, 'global', NULL, 'env-bootstrap')`,
-    [id, digest],
+    `INSERT INTO admin_tokens (id, name, token_sha256, token_hash, scope, zone_id, created_by)
+     VALUES ($1, 'bootstrap', $2, $3, 'global', NULL, 'env-bootstrap')`,
+    [id, digest, tokenHash],
   )
   opts.log(`seeded bootstrap admin token id=${id}`)
 }

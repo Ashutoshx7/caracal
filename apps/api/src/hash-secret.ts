@@ -1,9 +1,9 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Argon2id client-secret hashing compatible with the STS verifier.
+// Argon2id secret hashing for control-plane credentials.
 
-import { hashRaw, Algorithm } from '@node-rs/argon2'
+import { hash, hashRaw, verify, Algorithm } from '@node-rs/argon2'
 import { randomBytes } from 'node:crypto'
 
 const PARAMS = { algorithm: Algorithm.Argon2id, memoryCost: 65536, timeCost: 3, parallelism: 2, outputLen: 32 }
@@ -16,4 +16,12 @@ export async function hashClientSecret(secret: string): Promise<string> {
   const saltB64 = (salt as Buffer).toString('base64').replace(/=/g, '')
   const hashB64 = hash.toString('base64').replace(/=/g, '')
   return `argon2id$${saltB64}$${hashB64}`
+}
+
+export async function hashAdminToken(token: string): Promise<string> {
+  return hash(token, PARAMS)
+}
+
+export async function verifyAdminTokenHash(token: string, tokenHash: string): Promise<boolean> {
+  return verify(tokenHash, token, PARAMS)
 }
