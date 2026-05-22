@@ -16,6 +16,7 @@ global:
 serviceAccount:
   create: true
   name: ""
+  automountToken: false
 
 secrets:
   create: false
@@ -48,12 +49,18 @@ migrations:
 networkPolicy:
   enabled: true
   # When extraEgress is empty, the policy allows: DNS (53), Postgres ({{ .secrets.database.port }}),
-  # Redis ({{ .secrets.redis.port }}), OTLP (4317/4318), HTTPS (443) to any destination. Platform teams
-  # should set extraEgress to a stricter allowlist (named peers, CIDRs) and remove allowOpenHttps in
-  # locked-down clusters.
-  allowOpenHttps: true
+  # Redis ({{ .secrets.redis.port }}), and OTLP (4317/4318). Platform teams should set extraEgress
+  # to named peers or CIDRs for provider APIs, object stores, identity providers, and other upstreams.
+  allowOpenHttps: false
   allowOpenDns: true
   extraEgress: []
+
+replayPersistence:
+  enabled: true
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
 
 serviceMonitor:
   enabled: false
