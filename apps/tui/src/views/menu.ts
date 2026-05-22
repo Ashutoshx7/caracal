@@ -7,8 +7,6 @@ import type { AdminClient, Zone } from '@caracalai/admin'
 import {
   applyControlLifecycleAction,
   authorizeControlManagementAccess,
-  buildRunEnv,
-  checkMcpGovernance,
   controlKeyCreate,
   controlKeyGet,
   controlKeyList,
@@ -20,7 +18,6 @@ import {
   credentialRead,
   readControlState,
   resolveStackPaths,
-  runExec,
   type ControlLifecycleAction,
   type ControlLifecycleResult,
   type ControlKeyRecord,
@@ -61,7 +58,6 @@ import {
   zonesView,
   type Ctx,
 } from './factory.ts'
-import { StreamView } from './stream.ts'
 import { CARACAL_TUI_MODE, CARACAL_TUI_SHA, CARACAL_TUI_VERSION } from '../version.gen.ts'
 
 interface Entry {
@@ -110,39 +106,6 @@ function controlComposeEnv(paths: StackPaths): Record<string, string | undefined
   return env
 }
 
-function tokenizeArgv(input: string): string[] {
-  const tokens: string[] = []
-  let cur = ''
-  let quote: '"' | "'" | undefined
-  for (const ch of input) {
-    if (ch === '\u0000') throw new Error('argv contains NUL byte')
-    if (quote) {
-      if (ch === quote) { quote = undefined; continue }
-      cur += ch
-      continue
-    }
-    if (ch === '"' || ch === "'") { quote = ch; continue }
-    if (ch === ' ' || ch === '\t') {
-      if (cur.length > 0) { tokens.push(cur); cur = '' }
-      continue
-    }
-    cur += ch
-  }
-  if (quote) throw new Error('unterminated quote in argv')
-  if (cur.length > 0) tokens.push(cur)
-  return tokens
-}
-
-function parseEnv(list: string): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const pair of list.split(',').map((s) => s.trim()).filter((s) => s.length > 0)) {
-    const eq = pair.indexOf('=')
-    if (eq < 0) throw new Error(`env entry "${pair}" missing '='`)
-    out[pair.slice(0, eq)] = pair.slice(eq + 1)
-  }
-  return out
-}
-
 function splitList(list: string): string[] {
   return list.split(',').map((item) => item.trim()).filter((item) => item.length > 0)
 }
@@ -163,7 +126,6 @@ const BASE_ENTRIES: Entry[] = [
   { key: '0', label: 'agent',      group: 'multiagent', description: 'Manage agent sessions', needsZone: true, open: agentsView },
   { key: 'g', label: 'delegation', group: 'multiagent', description: 'Manage delegation edges', needsZone: true, open: delegationsView },
   { key: 'c', label: 'credential', group: 'runtime', description: 'Read or inspect a resource credential', needsZone: false, open: credentialEntry },
-  { key: 'u', label: 'run',        group: 'runtime', description: 'Run a command with RESOURCE_TOKEN', needsZone: false, open: runEntry },
 ]
 
 function menuEntries(): Entry[] {
@@ -331,35 +293,6 @@ class CredentialMenuView implements View {
       },
     })
   }
-}
-
-function runEntry(): View {
-  return new FormView({
-    title: 'run',
-    fields: [
-      { key: 'argv', label: 'argv', kind: 'text', required: true, hint: 'space-separated argv (quotes group tokens); spawn() — not a shell — so no globbing or pipes' },
-      { key: 'env', label: 'env (KEY=VAL csv)', kind: 'list' },
-    ],
-    onSubmit: async (v, app) => {
-      const argv = tokenizeArgv(v.argv ?? '')
-      if (argv.length === 0) throw new Error('argv is empty')
-      const extraEnv = v.env ? parseEnv(v.env) : undefined
-      const cfg = loadCliConfig()
-      if (!cfg) throw new Error('caracal.toml not found')
-      app.pop()
-      app.push(new StreamView({
-        title: `run ${argv[0]}`,
-        spawn: async (onLine) => {
-          checkMcpGovernance(argv, cfg, (line) => onLine(line))
-          const env = await buildRunEnv(cfg, { onLine: (line) => onLine(line) })
-          const handle = runExec({
-            argv, env: { ...env, ...extraEnv }, onLine: (line) => onLine(line), forwardSignals: false,
-          })
-          return { dispose: handle.dispose, exitCode: handle.exitCode }
-        },
-      }))
-    },
-  })
 }
 
 function controlEntry(ctx: Ctx): View {
@@ -900,6 +833,3 @@ class ZonePickerView implements View {
     if (key === 'left' || key === 'esc') ctx.app.pop()
   }
 }
-
-// Resolved at module load — referenced via ENTRIES so tokenizer is testable.
-export const __testInternals = { tokenizeArgv, parseEnv }

@@ -1,11 +1,10 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// `caracal-cli`: administrative, runtime, and observability commands for the Caracal control plane, dispatched through a strict whitelist registry.
+// `caracal-cli`: administrative and observability commands for the Caracal control plane, dispatched through a strict whitelist registry.
 
 import '@caracalai/engine/scrubCwdEnv'
 import { installCrashHandlers } from './crash.ts'
-import { runCommand } from './commands/run.ts'
 import { credentialCommand } from './commands/credential.ts'
 import { zoneCommand } from './commands/zone.ts'
 import { appCommand } from './commands/app.ts'
@@ -21,7 +20,6 @@ import { completionCommand } from './commands/completion.ts'
 import { controlCommand } from './commands/control.ts'
 import { doctorCommand } from './commands/doctor.ts'
 import { manifestCommand } from './commands/manifest.ts'
-import { checkMcpGovernance } from './mcp.ts'
 import { CARACAL_MODE, CARACAL_SHA, CARACAL_VERSION } from './runtime/version.gen.ts'
 import { CLI_COMMANDS } from '@caracalai/engine/commands'
 import { buildRegistry, type Executor } from './registry.ts'
@@ -29,11 +27,6 @@ import { dispatch, loadCliConfig, type DispatchOptions } from './dispatcher.ts'
 import { startRepl } from './repl.ts'
 
 const executors: Record<string, Executor> = {
-  run: (argv, cfg) => {
-    const cmdArgs = argv[0] === '--' ? argv.slice(1) : argv
-    if (cmdArgs.length > 0) checkMcpGovernance(cmdArgs, cfg!)
-    return runCommand([...argv], cfg!)
-  },
   credential: (argv, cfg) => credentialCommand([...argv], cfg),
   zone: (argv, cfg) => zoneCommand([...argv], cfg),
   app: (argv, cfg) => appCommand([...argv], cfg),

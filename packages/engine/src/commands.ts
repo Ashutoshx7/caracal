@@ -73,12 +73,12 @@ export const SHELL_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
     summary: 'Clean stack artifacts and local state',
     subcommands: ['stack', 'volumes', 'logs', 'config', 'runtime', 'secrets', 'cache', 'all'],
   },
+  { name: 'run', group: 'runtime', summary: 'Run a command with RESOURCE_TOKEN', requiresConfig: true },
   { name: 'cli', group: 'shell', summary: 'Open the Caracal command shell' },
   { name: 'tui', group: 'shell', summary: 'Launch the Caracal TUI' },
 ]);
 
 export const CLI_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
-  { name: 'run', group: 'runtime', summary: 'Run a command with RESOURCE_TOKEN', requiresConfig: true },
   {
     name: 'credential',
     group: 'runtime',

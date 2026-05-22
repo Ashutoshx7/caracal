@@ -7,9 +7,11 @@
 
 import '@caracalai/engine/scrubCwdEnv'
 import { installCrashHandlers } from './crash.ts'
+import { runCommand } from './commands/run.ts'
 import { upCommand, downCommand, statusCommand } from './commands/stack.ts'
 import { purgeCommand } from './commands/purge.ts'
 import { availableInterfaceCommands, cliDispatch, tuiDispatch } from './commands/dispatch.ts'
+import { checkMcpGovernance } from './mcp.ts'
 import { CARACAL_MODE, CARACAL_SHA, CARACAL_VERSION } from './runtime/version.gen.ts'
 import { SHELL_COMMANDS } from '@caracalai/engine/commands'
 import { buildRegistry, type Executor } from './registry.ts'
@@ -22,11 +24,16 @@ const executors: Record<string, Executor> = {
   down: (argv) => downCommand([...argv]),
   status: (argv) => statusCommand([...argv]),
   purge: (argv) => purgeCommand([...argv]),
+  run: (argv, cfg) => {
+    const cmdArgs = argv[0] === '--' ? argv.slice(1) : argv
+    if (cmdArgs.length > 0) checkMcpGovernance(cmdArgs, cfg!)
+    return runCommand([...argv], cfg!)
+  },
   cli: (argv) => { cliDispatch([...argv]) },
   tui: (argv) => { tuiDispatch([...argv]) },
 }
 
-const availableCommands = new Set(['up', 'down', 'status', 'purge', ...availableInterfaceCommands()])
+const availableCommands = new Set(['up', 'down', 'status', 'purge', 'run', ...availableInterfaceCommands()])
 const shellCommands = SHELL_COMMANDS.filter((command) => availableCommands.has(command.name))
 const shellExecutors = Object.fromEntries(Object.entries(executors).filter(([name]) => availableCommands.has(name)))
 const registry = buildRegistry(shellCommands, shellExecutors)
@@ -38,6 +45,7 @@ await dispatch(
     mode: CARACAL_MODE,
     sha: CARACAL_SHA,
     registry,
+    loadConfig: true,
   },
   process.argv.slice(2),
 )
