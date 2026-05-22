@@ -35,36 +35,36 @@ cp .env.example .env
 Open `.env` and set `OPENAI_API_KEY=sk-...`. Provider credentials are normal
 integration settings; Caracal credentials come from `caracal.toml`.
 
-### 3 — Start Caracal through TUI + control API
+### 3 — Start Caracal through Terminal + control API
 
 Caracal (API + Coordinator + Gateway + STS + Redis) must be running before
-Lynx starts. Install the released CLI/TUI and bring up the stack the same way
+Lynx starts. Install the released CLI/Terminal and bring up the stack the same way
 an end user would — **do not build from the caracal source tree**:
 
 ```bash
-# Install the CLI and TUI once (no sudo, lands in ~/.local/bin)
+# Install the CLI and Terminal once (no sudo, lands in ~/.local/bin)
 curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-cli.sh | sh
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-tui.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.sh | sh
 
 # Bring up the OSS stack
 caracal up
 
-# Open the TUI. Use it to inspect/create:
+# Open the Terminal. Use it to inspect/create:
 #   1. control endpoint: enable from the Control menu
 #   2. zone: Lynx Capital
 #   3. control key: lynx-control (copy client_secret once)
 #   4. resources: lynx/<provider> for every provider in config/company.yaml
-caracal-tui
+caracal-terminal
 ```
 
-The TUI talks to the same control plane as the CLI. The control key is a real
+The Terminal talks to the same control plane as the CLI. The control key is a real
 Caracal application credential with the `control:invoke` trait; Lynx stores
 its `client_id` as `application_id` and its one-time `client_secret` as
 `app_client_secret` in `caracal.toml`.
 
-### 4 — Write `caracal.toml` from TUI values
+### 4 — Write `caracal.toml` from Terminal values
 
-After creating the Lynx zone, control key, and resources in the TUI, write
+After creating the Lynx zone, control key, and resources in the Terminal, write
 `~/.config/caracal/caracal.toml`. The Python SDK reads this file directly, so
 Caracal credentials stay out of `.env`.
 
@@ -73,7 +73,7 @@ zone_url = "http://127.0.0.1:8080"
 sts_url = "http://127.0.0.1:8080"
 coordinator_url = "http://127.0.0.1:4000"
 gateway_url = "http://127.0.0.1:8081"
-zone_id = "<zone id from TUI>"
+zone_id = "<zone id from Terminal>"
 application_id = "<control key client_id>"
 app_client_secret = "<control key client_secret>"
 
@@ -139,15 +139,15 @@ Open **http://localhost:8000**.
 
 ## Demo flow
 
-1. Open `caracal-tui` and verify the Lynx zone,
+1. Open `caracal-terminal` and verify the Lynx zone,
    control key, resources, live agent sessions, tickets, and delegation tree.
-2. Open `http://localhost:8000/setup`, follow the TUI and `caracal.toml`
+2. Open `http://localhost:8000/setup`, follow the Terminal and `caracal.toml`
    checklist, then validate.
 3. Open `/demo` and submit a prompt. The browser uses the Lynx control API:
    `POST /api/run/start`, `GET /api/run/{runId}/events`,
    `GET /api/run/{runId}/status`, `POST /api/run/{runId}/cancel`, and
    `GET /api/run/{runId}/lineage`.
-4. Keep the TUI open while the run executes to inspect Caracal sessions and
+4. Keep the Terminal open while the run executes to inspect Caracal sessions and
    delegated child agents in the real control plane.
 
 ## Routes

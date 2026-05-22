@@ -2,7 +2,7 @@
   "name": "@caracalai/engine",
   "version": "0.1.2",
   "private": true,
-  "description": "Shared execution engine for the Caracal CLI and TUI: process control, stack lifecycle, runtime install, and OAuth step-up.",
+  "description": "Shared execution engine for Caracal runtime lifecycle, terminal management, and OAuth step-up.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/Garudex-Labs/caracal",
   "repository": {
@@ -18,9 +18,9 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
-    "./cli": {
-      "import": "./dist/cliconfig.js",
-      "types": "./dist/cliconfig.d.ts"
+    "./runtime-config": {
+      "import": "./dist/runtimeConfig.js",
+      "types": "./dist/runtimeConfig.d.ts"
     },
     "./commands": {
       "import": "./dist/commands.js",

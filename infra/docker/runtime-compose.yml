@@ -72,7 +72,7 @@ services:
       - DAC_READ_SEARCH
       - FOWNER
       - SETGID
-      - SETUID
+      - SETerminalD
     networks:
       - caracalData
     secrets:

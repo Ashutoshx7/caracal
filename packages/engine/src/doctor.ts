@@ -1,11 +1,11 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Shared doctor diagnostics for CLI and TUI operator health checks.
+// Shared doctor diagnostics for terminal operator health checks.
 
 import type { Zone } from '@caracalai/admin'
 import { discoverCoordinatorToken } from '@caracalai/core'
-import { DEFAULT_API_URL, DEFAULT_COORDINATOR_URL, DEFAULT_ZONE_URL, resolveServiceUrl, type CliConfig } from './cliconfig.js'
+import { DEFAULT_API_URL, DEFAULT_COORDINATOR_URL, DEFAULT_ZONE_URL, resolveServiceUrl, type RuntimeConfig } from './runtimeConfig.js'
 import { scrubTokens } from './crash.js'
 import { buildAdminClient as buildAdminClientCore, type AdminContext } from './shared.js'
 import { runPreflightChecks, type PreflightCheck } from './preflight.js'
@@ -48,7 +48,7 @@ export interface DoctorReport {
 }
 
 export interface DoctorOptions {
-  cfg?: CliConfig
+  cfg?: RuntimeConfig
   zoneId?: string
   strict?: boolean
   preflightOnly?: boolean
@@ -326,7 +326,7 @@ function report(mode: DoctorMode, strict: boolean, context: DoctorContext, check
   }
 }
 
-function buildAdminContext(checks: DoctorCheck[], cfg?: CliConfig): AdminContext | undefined {
+function buildAdminContext(checks: DoctorCheck[], cfg?: RuntimeConfig): AdminContext | undefined {
   try {
     return buildAdminClientCore(cfg)
   } catch (err) {

@@ -4,10 +4,10 @@
 // Shared credential commands for reading scoped tokens and inspecting JWT claims.
 
 import { OAuthClient } from '@caracalai/oauth'
-import type { CliConfig } from './cliconfig.js'
+import type { RuntimeConfig } from './runtimeConfig.js'
 
 export interface CredentialReadOpts {
-  cfg: CliConfig
+  cfg: RuntimeConfig
   resource: string
   ttlSeconds?: number
 }

@@ -50,7 +50,7 @@ def _config_path() -> Path:
 def _config_status() -> tuple[bool, str]:
     path = _config_path()
     if not path.exists():
-        return False, f"{path} not found. Create it from the values shown in caracal-tui."
+        return False, f"{path} not found. Create it from the values shown in caracal-terminal."
     try:
         cfg = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
