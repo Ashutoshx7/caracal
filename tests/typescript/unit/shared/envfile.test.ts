@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { discoverAdminToken, installedHome, readEnvFile } from '../../../../packages/core/ts/src/envfile.js'
+import { discoverAdminToken, discoverCoordinatorToken, installedHome, readEnvFile } from '../../../../packages/core/ts/src/envfile.js'
 
 describe('installedHome', () => {
   const saved = { ...process.env }
@@ -149,5 +149,48 @@ describe('discoverAdminToken', () => {
     writeFileSync(envFile, 'CARACAL_ADMIN_TOKEN=fallback-env-file\n')
     process.env.CARACAL_ENV_FILE = envFile
     expect(discoverAdminToken()).toBe('fallback-env-file')
+  })
+})
+
+describe('discoverCoordinatorToken', () => {
+  const saved = { ...process.env }
+  let dir: string
+  let cwd: string
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'caracal-coordinator-token-'))
+    cwd = mkdtempSync(join(tmpdir(), 'caracal-coordinator-cwd-'))
+    process.chdir(cwd)
+    process.env = { ...saved }
+    delete process.env.CARACAL_COORDINATOR_TOKEN
+    delete process.env.CARACAL_COORDINATOR_TOKEN_FILE
+    delete process.env.CARACAL_ENV_FILE
+    delete process.env.CARACAL_REPO_ROOT
+  })
+
+  afterEach(() => {
+    process.env = { ...saved }
+    rmSync(dir, { recursive: true, force: true })
+    rmSync(cwd, { recursive: true, force: true })
+  })
+
+  it('discovers file-backed coordinator operator tokens', () => {
+    process.env.CARACAL_HOME = dir
+    mkdirSync(join(dir, 'secrets'), { recursive: true })
+    writeFileSync(join(dir, 'secrets', 'caracalCoordinatorToken'), 'installed-token\n')
+    expect(discoverCoordinatorToken()).toBe('installed-token')
+  })
+
+  it('honours explicit coordinator token sources first', () => {
+    process.env.CARACAL_HOME = dir
+    mkdirSync(join(dir, 'secrets'), { recursive: true })
+    writeFileSync(join(dir, 'secrets', 'caracalCoordinatorToken'), 'installed-token\n')
+    const file = join(cwd, 'token')
+    writeFileSync(file, 'file-token\n')
+    process.env.CARACAL_COORDINATOR_TOKEN_FILE = file
+    expect(discoverCoordinatorToken('explicit-token')).toBe('explicit-token')
+    expect(discoverCoordinatorToken()).toBe('file-token')
+    process.env.CARACAL_COORDINATOR_TOKEN = 'env-token'
+    expect(discoverCoordinatorToken()).toBe('env-token')
   })
 })

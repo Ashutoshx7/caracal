@@ -4,7 +4,7 @@
 // End-to-end CLI command tests using a stubbed fetch and admin token env.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { auditCommand, explainCommand } from '../../../../apps/cli/src/commands/audit.ts'
@@ -13,6 +13,7 @@ import { zoneCommand } from '../../../../apps/cli/src/commands/zone.ts'
 import { agentCommand, delegationCommand } from '../../../../apps/cli/src/commands/agent.ts'
 import { policyCommand, policySetCommand } from '../../../../apps/cli/src/commands/policy.ts'
 import { doctorCommand } from '../../../../apps/cli/src/commands/doctor.ts'
+import { runPreflightChecks } from '../../../../apps/cli/src/commands/preflight.ts'
 import { manifestCommand } from '../../../../apps/cli/src/commands/manifest.ts'
 
 const ORIG_ENV = { ...process.env }
@@ -40,8 +41,12 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
 
   beforeEach(() => {
     tempDirs = []
-    process.env = { ...ORIG_ENV, CARACAL_ADMIN_TOKEN: 'secret', CARACAL_API_URL: 'http://api', CARACAL_COORDINATOR_URL: 'http://coordinator', CARACAL_STS_URL: 'http://sts', CARACAL_ZONE_ID: 'z1' }
+    const home = mkdtempSync(join(tmpdir(), 'caracal-test-home-'))
+    tempDirs.push(home)
+    process.env = { ...ORIG_ENV, CARACAL_HOME: home, CARACAL_ADMIN_TOKEN: 'secret', CARACAL_API_URL: 'http://api', CARACAL_COORDINATOR_URL: 'http://coordinator', CARACAL_STS_URL: 'http://sts', CARACAL_ZONE_ID: 'z1' }
     delete process.env.CARACAL_COORDINATOR_TOKEN
+    delete process.env.CARACAL_REPO_ROOT
+    delete process.env.CARACAL_SECRETS_DIR
     stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     exit = vi.spyOn(process, 'exit').mockImplementation(((c?: number) => { throw new Error(`__exit:${c ?? 0}`) }) as never)
@@ -563,7 +568,10 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
     process.env.CARACAL_STS_URL = 'http://sts'
     process.env.CARACAL_GATEWAY_URL = 'http://gateway'
     process.env.CARACAL_AUDIT_URL = 'http://audit'
-    stubFetch((url) => {
+    const secrets = join(process.env.CARACAL_HOME!, 'secrets')
+    mkdirSync(secrets, { recursive: true })
+    writeFileSync(join(secrets, 'caracalCoordinatorToken'), 'managed-coordinator-token')
+    const fetchMock = stubFetch((url) => {
       if (url === 'http://api/health') return { ok: true }
       if (url === 'http://api/v1/zones') return [{ id: 'z1', name: 'Local', slug: 'local' }]
       if (url === 'http://api/v1/zones/z1') return { id: 'z1', name: 'Local', slug: 'local' }
@@ -588,6 +596,44 @@ describe('CLI commands (e2e against stubbed fetch)', () => {
     expect(out).toContain('gateway metrics')
     expect(out).toContain('audit metrics')
     expect(out).toContain('coordinator metrics')
+    const statsCall = fetchMock.mock.calls.find((call) => call[0] === 'http://coordinator/stats')
+    expect(statsCall?.[1].headers).toEqual({ Authorization: 'Bearer managed-coordinator-token' })
+  })
+
+  it('preflight auto-discovers managed secret files without env exports', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'caracal-secrets-'))
+    tempDirs.push(dir)
+    process.env.CARACAL_SECRETS_DIR = dir
+    for (const name of [
+      'ZONE_KEK',
+      'AUDIT_HMAC_KEY',
+      'STREAMS_HMAC_KEY',
+      'GATEWAY_STS_HMAC_KEY',
+      'CARACAL_COORDINATOR_TOKEN',
+      'DATABASE_URL',
+      'REDIS_URL',
+    ]) {
+      delete process.env[name]
+      delete process.env[`${name}_FILE`]
+    }
+    writeFileSync(join(dir, 'zoneKek'), 'a'.repeat(64))
+    writeFileSync(join(dir, 'auditHmacKey'), 'b'.repeat(64))
+    writeFileSync(join(dir, 'streamsHmacKey'), 'c'.repeat(64))
+    writeFileSync(join(dir, 'gatewayStsHmacKey'), 'd'.repeat(64))
+    writeFileSync(join(dir, 'databaseUrl'), 'postgres://caracal:secret@postgres:1/caracal')
+    writeFileSync(join(dir, 'redisUrl'), 'redis://:secret@redis:1')
+
+    const checks = await runPreflightChecks()
+
+    expect(checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ check: 'ZONE_KEK', status: 'ok', detail: '32 bytes (auto-discovered)' }),
+      expect.objectContaining({ check: 'AUDIT_HMAC_KEY', status: 'ok', detail: '32 bytes (auto-discovered)' }),
+      expect.objectContaining({ check: 'STREAMS_HMAC_KEY', status: 'ok', detail: '32 bytes (auto-discovered)' }),
+      expect.objectContaining({ check: 'GATEWAY_STS_HMAC_KEY', status: 'ok', detail: '32 bytes (auto-discovered)' }),
+      expect.objectContaining({ check: 'TLS files', status: 'ok', detail: 'not required in dev mode' }),
+    ]))
+    expect(checks.find((check) => check.check === 'Postgres')?.detail).not.toBe('DATABASE_URL not set')
+    expect(checks.find((check) => check.check === 'Redis')?.detail).not.toBe('REDIS_URL not set')
   })
 
   it('policy-set simulate posts version and input fixture', async () => {
