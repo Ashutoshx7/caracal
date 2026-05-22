@@ -4,26 +4,22 @@ description: Install the Console, run the OSS stack with Docker, or pull SDK pac
 pageType: workflow
 ---
 
-This page covers installing the `caracal` Console, the `caracal-console` Console UI, and the SDK packages for TypeScript, Python, and Go.
+This page covers installing the `caracal` runtime shell, the `caracal-console` Console UI, and the SDK packages for TypeScript, Python, and Go.
 
 ## Install the runtime shell or Console
 
-The Runtime and Console are distributed as separate self-contained binaries for Linux, macOS, and Windows. No runtime is required. Run both installers to install both tools, or run only the Console installer when you want `caracal-console` without `caracal-console`.
+The runtime shell and Console are distributed as self-contained binaries for Linux, macOS, and Windows. The Console installer installs `caracal-console` and installs the thin `caracal` shell when the matching shell archive is available.
 
 ### Linux and macOS
 
 ```sh
-# Console
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
-
-# Console
 curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
 ```
 
 Each script:
 
 1. Detects your OS and CPU architecture.
-2. Downloads the matching `caracal` shell plus either `caracal-console` or `caracal-console` from the latest GitHub release.
+2. Downloads the matching `caracal-console` binary and the `caracal` shell when the shell archive is available.
 3. Verifies each binary against the published `SHA256SUMS` file.
 4. Installs binaries to `~/.local/bin` by default.
 
@@ -52,17 +48,12 @@ Verify the binaries you installed:
 
 ```sh
 caracal --version
-caracal-console --version   # Console installer
-caracal-console --version   # Console installer
+caracal-console --version
 ```
 
 ### Windows
 
 ```powershell
-# Console
-irm https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.ps1 | iex
-
-# Console
 irm https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.ps1 | iex
 ```
 
@@ -77,7 +68,7 @@ git clone https://github.com/Garudex-Labs/caracal.git
 cd caracal
 pnpm install
 pnpm --filter @caracalai/runtime build
-# Output: apps/runtime/dist/caracal-console-<os>-<arch>
+# Output: apps/runtime/dist/caracal-<os>-<arch>
 ```
 
 Building requires [Bun](https://bun.sh/) and pnpm 11.1.1.
