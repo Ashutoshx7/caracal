@@ -288,7 +288,7 @@ class CredentialMenuView implements View {
       title: 'credential inspect',
       fields: [
         { key: 'token', label: 'token', kind: 'secret' },
-        { key: 'file', label: 'file (ctrl-o)', kind: 'file' },
+        { key: 'file', label: 'file', kind: 'file' },
       ],
       onSubmit: async (v, app) => {
         const sources = [v.token, v.file].filter((value) => value && value.length > 0)

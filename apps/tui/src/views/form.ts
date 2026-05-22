@@ -75,8 +75,11 @@ export class FormView implements View {
 
   hints(): string[] {
     if (this.multilineMode) return ['esc:done', 'enter:newline']
-    const base = ['tab/j/k:next', 'enter:advance/submit', 'esc:cancel', 'ctrl-o:file', 'ctrl-r:reveal']
-    if (this.fields[this.focus]?.pick) base.push('ctrl-p:pick')
+    const base = ['tab/j/k:next', 'enter:advance/submit', 'esc:cancel']
+    const field = this.fields[this.focus]
+    if (field?.pick) base.push('→:pick')
+    else if (field?.kind === 'file') base.push('→:file')
+    else if (field?.kind === 'secret') base.push('→:reveal')
     return base
   }
 
@@ -101,7 +104,7 @@ export class FormView implements View {
       const styled = truncate(text, ctx.size.cols)
       lines.push(styled)
       if (focused) {
-        const hints = [f.hint, f.pick ? 'ctrl-p opens a picker' : undefined].filter((hint): hint is string => Boolean(hint))
+        const hints = [f.hint, f.pick ? 'right arrow opens a picker' : undefined].filter((hint): hint is string => Boolean(hint))
         if (hints.length > 0) lines.push('   ' + ui.muted('hint: ' + hints.join(' · ')))
       }
     }
@@ -148,27 +151,21 @@ export class FormView implements View {
       ctx.app.pop()
       return
     }
-    if (key === '\u0012') { // ctrl-r reveals current secret
-      if (f && f.kind === 'secret') {
-        if (this.revealed.has(f.key)) this.revealed.delete(f.key)
-        else this.revealed.add(f.key)
-      }
+    if (key === 'right' && f?.pick) {
+      await f.pick(ctx.app, (value) => {
+        this.values[f.key] = value
+      }, this.values[f.key] ?? '')
       return
     }
-    if (key === '\u000f') { // ctrl-o opens file picker
-      if (f && f.kind === 'file') {
-        ctx.app.push(new FilePickerView(process.cwd(), (path) => {
-          this.values[f.key] = path
-        }))
-      }
+    if (key === 'right' && f?.kind === 'secret') {
+      if (this.revealed.has(f.key)) this.revealed.delete(f.key)
+      else this.revealed.add(f.key)
       return
     }
-    if (key === '\u0010') {
-      if (f?.pick) {
-        await f.pick(ctx.app, (value) => {
-          this.values[f.key] = value
-        }, this.values[f.key] ?? '')
-      }
+    if (key === 'right' && f?.kind === 'file') {
+      ctx.app.push(new FilePickerView(process.cwd(), (path) => {
+        this.values[f.key] = path
+      }))
       return
     }
     if (key === 'tab' || key === 'down' || key === 'j' && this.notTyping(f)) {

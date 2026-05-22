@@ -35,7 +35,7 @@ export class DetailView implements View {
 
   hints(): string[] {
     const base = ['↑/↓:scroll', 'r:reload', 'esc:back']
-    if (this.mask) base.push(this.revealed ? 'ctrl-r:mask' : 'ctrl-r:reveal')
+    if (this.mask) base.push(this.revealed ? 'v:mask' : 'v:reveal')
     return base
   }
 
@@ -89,7 +89,7 @@ export class DetailView implements View {
     if (key === 'home' || key === 'g') { this.offset = 0; return }
     if (key === 'end' || key === 'G') { this.offset = max; return }
     if (key === 'r') return this.reload()
-    if (key === '\u0012' && this.mask) {
+    if (key === 'v' && this.mask) {
       this.revealed = !this.revealed
       this.rebuild()
       ctx.app.invalidate()

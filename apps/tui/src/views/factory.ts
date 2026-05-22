@@ -539,7 +539,7 @@ export function policiesView(ctx: Ctx): View {
           fields: [
             { key: 'name', label: 'name', kind: 'text', required: true },
             { key: 'description', label: 'description', kind: 'text' },
-            { key: 'file', label: 'file (ctrl-o)', kind: 'file' },
+            { key: 'file', label: 'file', kind: 'file' },
             { key: 'content', label: 'content', kind: 'multiline' },
           ],
           onSubmit: async (v, app) => {
@@ -558,7 +558,7 @@ export function policiesView(ctx: Ctx): View {
         key: 'c', label: 'validate', build: () => new FormView({
           title: 'validate policy',
           fields: [
-            { key: 'file', label: 'file (ctrl-o)', kind: 'file' },
+            { key: 'file', label: 'file', kind: 'file' },
             { key: 'content', label: 'content', kind: 'multiline' },
           ],
           onSubmit: async (v, app) => {
@@ -576,7 +576,7 @@ export function policiesView(ctx: Ctx): View {
           return new FormView({
             title: `version ${row.name}`,
             fields: [
-              { key: 'file', label: 'file (ctrl-o)', kind: 'file' },
+              { key: 'file', label: 'file', kind: 'file' },
               { key: 'content', label: 'content', kind: 'multiline' },
             ],
             onSubmit: async (v, app) => {
@@ -635,7 +635,7 @@ export function policySetsView(ctx: Ctx): View {
           return new FormView({
             title: `version ${row.name}`,
             fields: [
-              { key: 'policy_versions', label: 'policy versions', kind: 'list', required: true, pick: policyVersionPicker(ctx), hint: 'ctrl-p adds versions' },
+              { key: 'policy_versions', label: 'policy versions', kind: 'list', required: true, pick: policyVersionPicker(ctx), hint: 'right arrow adds versions' },
             ],
             onSubmit: async (v, app) => {
               const manifest = splitList(v.policy_versions ?? '').map((policy_version_id) => ({ policy_version_id }))
