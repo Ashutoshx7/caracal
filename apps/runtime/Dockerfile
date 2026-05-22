@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# CLI container image; build context must be the caracal/ workspace root.
+# Runtime container image; build context must be the caracal/ workspace root.
 
 # syntax=docker/dockerfile:1.7
 ARG PNPM_VERSION=11.1.1

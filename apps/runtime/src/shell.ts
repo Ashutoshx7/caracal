@@ -10,7 +10,7 @@ import { installCrashHandlers } from './crash.ts'
 import { runCommand } from './commands/run.ts'
 import { upCommand, downCommand, statusCommand } from './commands/stack.ts'
 import { purgeCommand } from './commands/purge.ts'
-import { availableInterfaceCommands, cliDispatch, tuiDispatch } from './commands/dispatch.ts'
+import { availableInterfaceCommands, terminalDispatch } from './commands/dispatch.ts'
 import { checkMcpGovernance } from './mcp.ts'
 import { CARACAL_MODE, CARACAL_SHA, CARACAL_VERSION } from './runtime/version.gen.ts'
 import { SHELL_COMMANDS } from '@caracalai/engine/commands'
@@ -29,8 +29,7 @@ const executors: Record<string, Executor> = {
     if (cmdArgs.length > 0) checkMcpGovernance(cmdArgs, cfg!)
     return runCommand([...argv], cfg!)
   },
-  cli: (argv) => { cliDispatch([...argv]) },
-  tui: (argv) => { tuiDispatch([...argv]) },
+  terminal: (argv) => { terminalDispatch([...argv]) },
 }
 
 const availableCommands = new Set(['up', 'down', 'status', 'purge', 'run', ...availableInterfaceCommands()])

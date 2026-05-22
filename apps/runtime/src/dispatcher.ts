@@ -1,16 +1,16 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Shared dispatcher kernel: builds usage text and routes argv through a CommandRegistry with whitelist enforcement, used by both the shell and the CLI binaries.
+// Shared dispatcher kernel: builds usage text and routes argv through the runtime shell registry.
 
 import { COMMAND_NAME_PATTERN, type CommandGroup } from '@caracalai/engine/commands'
 import { parse } from 'smol-toml'
 import { readFileSync } from 'node:fs'
-import { resolveCliConfigPath } from '@caracalai/engine/cli'
+import { resolveRuntimeConfigPath } from '@caracalai/engine/runtime-config'
 import { formatVersionOutput } from '@caracalai/engine'
 import { style, printError } from './style.ts'
 import type { CommandRegistry } from './registry.ts'
-import type { CliConfig } from './config.ts'
+import type { RuntimeConfig } from './config.ts'
 
 const GROUP_TITLES: Record<CommandGroup, string> = {
   shell: 'Shell',
@@ -40,21 +40,21 @@ class LoadConfigError extends Error {
   }
 }
 
-function loadConfig(required: boolean): CliConfig | undefined {
-  const path = resolveCliConfigPath()
+function loadConfig(required: boolean): RuntimeConfig | undefined {
+  const path = resolveRuntimeConfigPath()
   if (!path) {
     if (!required) return undefined
-    throw new LoadConfigError('caracal.toml not found; run `caracal cli config init` to create a zone, create a confidential runner app, and write the config, or pass CARACAL_CONFIG to an existing file.')
+    throw new LoadConfigError('caracal.toml not found; run `caracal terminal config init` to create a zone, create a confidential runner app, and write the config, or pass CARACAL_CONFIG to an existing file.')
   }
   try {
-    return parse(readFileSync(path, 'utf8')) as unknown as CliConfig
+    return parse(readFileSync(path, 'utf8')) as unknown as RuntimeConfig
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
     throw new LoadConfigError(`failed to parse ${path}: ${reason}`)
   }
 }
 
-export function loadCliConfig(required: boolean): CliConfig | undefined {
+export function loadRuntimeConfig(required: boolean): RuntimeConfig | undefined {
   return loadConfig(required)
 }
 
@@ -63,7 +63,7 @@ export function printUsage(opts: DispatchOptions, out: NodeJS.WriteStream = proc
   const lines: string[] = [
     `${style.title('Usage:')} ${opts.binary} <command> [options]`,
     '',
-    'Caracal command surface.',
+    'Caracal runtime command surface.',
     '',
   ]
   const groups = new Map<CommandGroup, typeof opts.registry.ordered>()
@@ -129,7 +129,7 @@ export async function dispatch(opts: DispatchOptions, rawArgs: readonly string[]
   }
 
   const binding = opts.registry.byName.get(command)!
-  let cfg: CliConfig | undefined
+  let cfg: RuntimeConfig | undefined
   if (opts.loadConfig) {
     try {
       cfg = loadConfig(binding.descriptor.requiresConfig ?? false)
