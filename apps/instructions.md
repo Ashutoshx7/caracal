@@ -6,8 +6,8 @@
 ## Architecture Design
 - `api/` is the Fastify control-plane API.
 - `coordinator/` is the Fastify agent lifecycle and delegation coordinator.
-- `cli/` is the command-line interface.
-- `tui/` is the terminal UI.
+- `runtime/` is the top-level runtime shell.
+- `terminal/` is the terminal management interface.
 - Shared execution and API logic belongs in `packages/engine` and `packages/admin`, not in app siblings.
 
 ## Required
@@ -23,4 +23,3 @@
 
 ## Validation
 - Validate with the touched app's `build`, `typecheck`, or `test` script.
-

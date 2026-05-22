@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
-  "changelog": "@changesets/cli/changelog",
+  "changelog": "@changesets/runtime/changelog",
   "commit": false,
   "fixed": [],
   "linked": [],
@@ -8,8 +8,8 @@
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "ignore": [
-    "@caracalai/cli",
-    "@caracalai/tui",
+    "@caracalai/runtime",
+    "@caracalai/terminal",
     "@caracalai/api",
     "@caracalai/coordinator",
     "@caracalai/docs"

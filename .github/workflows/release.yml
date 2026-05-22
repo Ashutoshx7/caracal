@@ -104,7 +104,7 @@ jobs:
           NODE
 
   cli:
-    name: Build CLI and TUI binaries
+    name: Build CLI and Terminal binaries
     needs: check-maintainer
     if: github.repository == 'Garudex-Labs/caracal'
     runs-on: ubuntu-latest
@@ -163,30 +163,30 @@ jobs:
           CARACAL_RELEASE_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
-          node apps/cli/scripts/stampRelease.mjs
-          jq --arg v "${CARACAL_RELEASE_VERSION}" '.version = $v' apps/cli/package.json > apps/cli/package.json.tmp
-          mv apps/cli/package.json.tmp apps/cli/package.json
+          node apps/runtime/scripts/stampRelease.mjs
+          jq --arg v "${CARACAL_RELEASE_VERSION}" '.version = $v' apps/runtime/package.json > apps/runtime/package.json.tmp
+          mv apps/runtime/package.json.tmp apps/runtime/package.json
           echo "Stamped version ${CARACAL_RELEASE_VERSION} into CLI"
 
       - name: Build CLI binaries
         env:
           CARACAL_RELEASE_VERSION: ${{ steps.ver.outputs.version }}
-        run: pnpm --dir apps/cli build
+        run: pnpm --dir apps/runtime build
 
-      - name: Stamp TUI version
+      - name: Stamp Terminal version
         env:
           CARACAL_RELEASE_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
-          node apps/tui/scripts/stampRelease.mjs
-          jq --arg v "${CARACAL_RELEASE_VERSION}" '.version = $v' apps/tui/package.json > apps/tui/package.json.tmp
-          mv apps/tui/package.json.tmp apps/tui/package.json
-          echo "Stamped version ${CARACAL_RELEASE_VERSION} into TUI"
+          node apps/terminal/scripts/stampRelease.mjs
+          jq --arg v "${CARACAL_RELEASE_VERSION}" '.version = $v' apps/terminal/package.json > apps/terminal/package.json.tmp
+          mv apps/terminal/package.json.tmp apps/terminal/package.json
+          echo "Stamped version ${CARACAL_RELEASE_VERSION} into Terminal"
 
-      - name: Build TUI binaries
+      - name: Build Terminal binaries
         env:
           CARACAL_RELEASE_VERSION: ${{ steps.ver.outputs.version }}
-        run: pnpm --dir apps/tui build
+        run: pnpm --dir apps/terminal build
 
       - name: Package release archives
         env:
@@ -195,7 +195,7 @@ jobs:
           set -euo pipefail
           mkdir -p release-dist
           tag="v${VERSION}"
-          targets='shell:linux:amd64:x64 shell:linux:arm64:arm64 shell:darwin:amd64:x64 shell:darwin:arm64:arm64 shell:windows:amd64:x64 cli:linux:amd64:x64 cli:linux:arm64:arm64 cli:darwin:amd64:x64 cli:darwin:arm64:arm64 cli:windows:amd64:x64 tui:linux:amd64:x64 tui:linux:arm64:arm64 tui:darwin:amd64:x64 tui:darwin:arm64:arm64 tui:windows:amd64:x64'
+          targets='shell:linux:amd64:x64 shell:linux:arm64:arm64 shell:darwin:amd64:x64 shell:darwin:arm64:arm64 shell:windows:amd64:x64 cli:linux:amd64:x64 cli:linux:arm64:arm64 cli:darwin:amd64:x64 cli:darwin:arm64:arm64 cli:windows:amd64:x64 terminal:linux:amd64:x64 terminal:linux:arm64:arm64 terminal:darwin:amd64:x64 terminal:darwin:arm64:arm64 terminal:windows:amd64:x64'
           for entry in $targets; do
             IFS=: read -r kind os arch bunArch <<EOF
           ${entry}
@@ -203,9 +203,9 @@ jobs:
             ext=''
             [ "$os" = windows ] && ext='.exe'
             case "$kind" in
-              shell) srcDir=apps/cli/dist; srcBase=caracal; binName=caracal ;;
-              cli) srcDir=apps/cli/dist; srcBase=caracal-cli; binName=caracal-cli ;;
-              tui) srcDir=apps/tui/dist; srcBase=caracal-tui; binName=caracal-tui ;;
+              shell) srcDir=apps/runtime/dist; srcBase=caracal; binName=caracal ;;
+              cli) srcDir=apps/runtime/dist; srcBase=caracal-terminal; binName=caracal-terminal ;;
+              terminal) srcDir=apps/terminal/dist; srcBase=caracal-terminal; binName=caracal-terminal ;;
             esac
             src="${srcDir}/${srcBase}-${os}-${bunArch}${ext}"
             [ -f "$src" ] || { echo "::error::missing source binary: ${src}"; exit 1; }
@@ -236,23 +236,23 @@ jobs:
           "${work}/caracal" --help
           echo "Shell smoke test passed"
 
-          tar -xzf "release-dist/caracal-cli-linux-amd64-${tag}.tar.gz" -C "$work"
-          "${work}/caracal-cli" --help
+          tar -xzf "release-dist/caracal-terminal-linux-amd64-${tag}.tar.gz" -C "$work"
+          "${work}/caracal-terminal" --help
           echo "CLI smoke test passed"
 
-          tar -xzf "release-dist/caracal-tui-linux-amd64-${tag}.tar.gz" -C "$work"
-          tui_exit=0
-          "${work}/caracal-tui" 2>/tmp/tui-stderr || tui_exit=$?
-          tui_msg="$(cat /tmp/tui-stderr)"
-          [ "${tui_exit}" = "1" ] || { echo "::error::TUI exited with code ${tui_exit} (expected 1)"; exit 1; }
-          echo "${tui_msg}" | grep -q "not a TTY" || { echo "::error::TUI missing expected no-TTY message; got: ${tui_msg}"; exit 1; }
-          echo "TUI smoke test passed"
+          tar -xzf "release-dist/caracal-terminal-linux-amd64-${tag}.tar.gz" -C "$work"
+          terminal_exit=0
+          "${work}/caracal-terminal" 2>/tmp/terminal-stderr || terminal_exit=$?
+          terminal_msg="$(cat /tmp/terminal-stderr)"
+          [ "${terminal_exit}" = "1" ] || { echo "::error::Terminal exited with code ${terminal_exit} (expected 1)"; exit 1; }
+          echo "${terminal_msg}" | grep -q "not a TTY" || { echo "::error::Terminal missing expected no-TTY message; got: ${terminal_msg}"; exit 1; }
+          echo "Terminal smoke test passed"
 
       - name: Generate checksums
         working-directory: release-dist
         run: |
           set -euo pipefail
-          sha256sum caracal-shell-*.tar.gz caracal-shell-*.zip caracal-cli-*.tar.gz caracal-cli-*.zip caracal-tui-*.tar.gz caracal-tui-*.zip > SHA256SUMS
+          sha256sum caracal-shell-*.tar.gz caracal-shell-*.zip caracal-terminal-*.tar.gz caracal-terminal-*.zip caracal-terminal-*.tar.gz caracal-terminal-*.zip > SHA256SUMS
           echo "Generated SHA256SUMS:"
           cat SHA256SUMS
 
@@ -270,7 +270,7 @@ jobs:
       - name: Job summary
         run: |
           {
-            echo "## CLI / TUI release build"
+            echo "## CLI / Terminal release build"
             echo ""
             echo "| | |"
             echo "|--|--|"
@@ -289,8 +289,8 @@ jobs:
         with:
           subject-path: |
             release-dist/caracal-shell-*
-            release-dist/caracal-cli-*
-            release-dist/caracal-tui-*
+            release-dist/caracal-terminal-*
+            release-dist/caracal-terminal-*
 
   images:
     name: Build and push container images
@@ -414,7 +414,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/caracal-cli
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/caracal-terminal
           tags: |
             type=raw,value=${{ github.ref_name }},enable=${{ github.event_name == 'push' }}
             type=raw,value=latest,enable=${{ github.event_name == 'push' }}
@@ -423,7 +423,7 @@ jobs:
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
-          file: apps/cli/Dockerfile
+          file: apps/runtime/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
@@ -457,11 +457,11 @@ jobs:
         run: |
           set -euo pipefail
           test -f install-cli.sh
-          test -f install-tui.sh
+          test -f install-terminal.sh
           test -f install-cli.ps1
-          test -f install-tui.ps1
+          test -f install-terminal.ps1
           test -x install-cli.sh || chmod +x install-cli.sh
-          test -x install-tui.sh || chmod +x install-tui.sh
+          test -x install-terminal.sh || chmod +x install-terminal.sh
 
       - name: Verify release assets
         run: |
@@ -475,16 +475,16 @@ jobs:
             "dist/caracal-shell-darwin-amd64-${tag}.tar.gz" \
             "dist/caracal-shell-darwin-arm64-${tag}.tar.gz" \
             "dist/caracal-shell-windows-amd64-${tag}.zip" \
-            "dist/caracal-cli-linux-amd64-${tag}.tar.gz" \
-            "dist/caracal-cli-linux-arm64-${tag}.tar.gz" \
-            "dist/caracal-cli-darwin-amd64-${tag}.tar.gz" \
-            "dist/caracal-cli-darwin-arm64-${tag}.tar.gz" \
-            "dist/caracal-cli-windows-amd64-${tag}.zip" \
-            "dist/caracal-tui-linux-amd64-${tag}.tar.gz" \
-            "dist/caracal-tui-linux-arm64-${tag}.tar.gz" \
-            "dist/caracal-tui-darwin-amd64-${tag}.tar.gz" \
-            "dist/caracal-tui-darwin-arm64-${tag}.tar.gz" \
-            "dist/caracal-tui-windows-amd64-${tag}.zip" \
+            "dist/caracal-terminal-linux-amd64-${tag}.tar.gz" \
+            "dist/caracal-terminal-linux-arm64-${tag}.tar.gz" \
+            "dist/caracal-terminal-darwin-amd64-${tag}.tar.gz" \
+            "dist/caracal-terminal-darwin-arm64-${tag}.tar.gz" \
+            "dist/caracal-terminal-windows-amd64-${tag}.zip" \
+            "dist/caracal-terminal-linux-amd64-${tag}.tar.gz" \
+            "dist/caracal-terminal-linux-arm64-${tag}.tar.gz" \
+            "dist/caracal-terminal-darwin-amd64-${tag}.tar.gz" \
+            "dist/caracal-terminal-darwin-arm64-${tag}.tar.gz" \
+            "dist/caracal-terminal-windows-amd64-${tag}.zip" \
             "dist/SHA256SUMS"
           do
             [ -f "${asset}" ] || { echo "::error::Missing release asset: ${asset}"; exit 1; }
@@ -503,13 +503,13 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             dist/caracal-shell-*
-            dist/caracal-cli-*
-            dist/caracal-tui-*
+            dist/caracal-terminal-*
+            dist/caracal-terminal-*
             dist/SHA256SUMS
             install-cli.sh
-            install-tui.sh
+            install-terminal.sh
             install-cli.ps1
-            install-tui.ps1
+            install-terminal.ps1
 
       - name: Trigger post-release validation
         continue-on-error: true
