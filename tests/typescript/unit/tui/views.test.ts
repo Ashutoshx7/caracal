@@ -7,6 +7,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { ListView } from '../../../../apps/tui/src/views/list.ts'
 import { DetailView } from '../../../../apps/tui/src/views/detail.ts'
 import type { App } from '../../../../apps/tui/src/screen.ts'
+import type { TuiStateStore } from '../../../../apps/tui/src/state.ts'
 
 function fakeApp(): App {
   const pushed: unknown[] = []
@@ -94,6 +95,29 @@ describe('ListView', () => {
     await view.onKey('j', { app, size: { rows: 10, cols: 40 }, status: '' })
     await view.onKey('enter', { app, size: { rows: 10, cols: 40 }, status: '' })
     expect(seen).toEqual(['c'])
+  })
+
+  it('restores and persists the selected row when list state is configured', async () => {
+    const app = fakeApp()
+    const state = {
+      listSelection: vi.fn(() => 'b'),
+      setListSelection: vi.fn(),
+    } as unknown as TuiStateStore
+    const view = new ListView<{ id: string }>({
+      title: 'x',
+      columns: [{ header: 'id', value: (r) => r.id }],
+      load: async () => [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+      state,
+      stateKey: 'things',
+      zoneId: 'zone-1',
+      rowKey: (row) => row.id,
+    })
+
+    await view.init(app)
+    expect((view as unknown as { cursor: number }).cursor).toBe(1)
+
+    await view.onKey('j', { app, size: { rows: 10, cols: 40 }, status: '' })
+    expect(state.setListSelection).toHaveBeenCalledWith('things', 'c', 'zone-1')
   })
 
   it('shows error banner when load throws', async () => {

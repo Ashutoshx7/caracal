@@ -3,11 +3,27 @@
 //
 // Menu zone hotkey tests cover picker launch and selected zone application.
 
-import { describe, it, expect, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 
 import { MenuView } from '../../../../apps/tui/src/views/menu.ts'
+import { TuiStateStore } from '../../../../apps/tui/src/state.ts'
 import type { App } from '../../../../apps/tui/src/screen.ts'
 import type { AdminClient, Zone } from '@caracalai/admin'
+
+const dirs: string[] = []
+
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
+
+function stateStore(): TuiStateStore {
+  const dir = mkdtempSync(join(tmpdir(), 'caracal-menu-zone-'))
+  dirs.push(dir)
+  return new TuiStateStore(join(dir, 'tui-state.json'))
+}
 
 function fakeApp(): App {
   const pushed: unknown[] = []
@@ -57,6 +73,25 @@ describe('menu zone hotkey', () => {
     expect(menu.currentZoneId()).toBe('z2')
     expect(app.setStatus).toHaveBeenCalledWith('zone set to beta')
     expect(app.pop).toHaveBeenCalledOnce()
+  })
+
+  it('persists the explicitly selected zone', async () => {
+    const client = clientWithZones([
+      { id: 'z1', slug: 'alpha', name: 'Alpha' },
+      { id: 'z2', slug: 'beta', name: 'Beta' },
+    ] as Zone[])
+    const state = stateStore()
+    const menu = new MenuView(client, undefined, state)
+    const app = fakeApp()
+
+    await menu.onKey('z', { app, size: { rows: 25, cols: 80 }, status: '' })
+    const pushed = (app as unknown as { _pushed: unknown[] })._pushed
+    const picker = pushed[pushed.length - 1] as { title: string; onKey: MenuView['onKey'] }
+    await picker.onKey('down', { app, size: { rows: 25, cols: 80 }, status: '' })
+    await picker.onKey('enter', { app, size: { rows: 25, cols: 80 }, status: '' })
+
+    expect(state.selectedZoneId()).toBe('z2')
+    expect(state.selectedZoneSlug()).toBe('beta')
   })
 
   it('opens the zone picker with uppercase Z', async () => {

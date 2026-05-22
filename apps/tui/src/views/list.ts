@@ -7,6 +7,7 @@ import { ansi, pad, truncate, ui } from '../ansi.ts'
 import { explainError } from '../errors.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
+import type { TuiStateStore } from '../state.ts'
 
 export interface Column<T> {
   header: string
@@ -26,6 +27,10 @@ export interface ListOptions<T> {
   load: () => Promise<T[]>
   onEnter?: (app: App, row: T) => void | Promise<void>
   actions?: ListAction<T>[]
+  state?: TuiStateStore | undefined
+  stateKey?: string
+  zoneId?: string
+  rowKey?: (row: T) => string
 }
 
 export class ListView<T> implements View {
@@ -34,6 +39,10 @@ export class ListView<T> implements View {
   private readonly loader: () => Promise<T[]>
   private readonly enter?: (app: App, row: T) => void | Promise<void>
   private readonly actions: ListAction<T>[]
+  private readonly state?: TuiStateStore
+  private readonly stateKey?: string
+  private readonly zoneId?: string
+  private readonly rowKey?: (row: T) => string
   private rows: T[] = []
   private cursor = 0
   private offset = 0
@@ -48,6 +57,10 @@ export class ListView<T> implements View {
     this.loader = opts.load
     this.enter = opts.onEnter
     this.actions = opts.actions ?? []
+    this.state = opts.state
+    this.stateKey = opts.stateKey
+    this.zoneId = opts.zoneId
+    this.rowKey = opts.rowKey
   }
 
   selected(): T | undefined { return this.rows[this.cursor] }
@@ -71,7 +84,9 @@ export class ListView<T> implements View {
       const rows = await this.loader()
       if (this.aborted) return
       this.rows = rows
-      this.cursor = Math.min(this.cursor, Math.max(0, rows.length - 1))
+      const selectedId = this.stateKey ? this.state?.listSelection(this.stateKey, this.zoneId) : undefined
+      const selectedIndex = selectedId && this.rowKey ? rows.findIndex((row) => this.rowKey!(row) === selectedId) : -1
+      this.cursor = selectedIndex >= 0 ? selectedIndex : Math.min(this.cursor, Math.max(0, rows.length - 1))
     } catch (err) {
       if (this.aborted) return
       this.error = explainError(err)
@@ -122,21 +137,29 @@ export class ListView<T> implements View {
     const last = Math.max(0, this.rows.length - 1)
     const action = this.actions.find((a) => a.key === key)
     if (action) {
+      this.persistSelection()
       const view = await action.build(this.selected(), ctx.app)
       ctx.app.push(view)
       return
     }
-    if (key === 'up' || key === 'k') { this.cursor = Math.max(0, this.cursor - 1); return }
-    if (key === 'down' || key === 'j') { this.cursor = Math.min(last, this.cursor + 1); return }
-    if (key === 'pgup') { this.cursor = Math.max(0, this.cursor - 10); return }
-    if (key === 'pgdn') { this.cursor = Math.min(last, this.cursor + 10); return }
-    if (key === 'home' || key === 'g') { this.cursor = 0; return }
-    if (key === 'end' || key === 'G') { this.cursor = last; return }
+    if (key === 'up' || key === 'k') { this.cursor = Math.max(0, this.cursor - 1); this.persistSelection(); return }
+    if (key === 'down' || key === 'j') { this.cursor = Math.min(last, this.cursor + 1); this.persistSelection(); return }
+    if (key === 'pgup') { this.cursor = Math.max(0, this.cursor - 10); this.persistSelection(); return }
+    if (key === 'pgdn') { this.cursor = Math.min(last, this.cursor + 10); this.persistSelection(); return }
+    if (key === 'home' || key === 'g') { this.cursor = 0; this.persistSelection(); return }
+    if (key === 'end' || key === 'G') { this.cursor = last; this.persistSelection(); return }
     if (key === 'r') return this.reload()
     if (key === 'left' || key === 'esc') { ctx.app.pop(); return }
     if (key === 'enter') {
       const row = this.selected()
+      this.persistSelection()
       if (row && this.enter) await this.enter(ctx.app, row)
     }
+  }
+
+  private persistSelection(): void {
+    if (!this.state || !this.stateKey || !this.rowKey) return
+    const row = this.selected()
+    this.state.setListSelection(this.stateKey, row ? this.rowKey(row) : undefined, this.zoneId)
   }
 }

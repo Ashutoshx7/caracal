@@ -17,6 +17,7 @@ import {
 import { installCrashHandlers } from '@caracalai/engine/crash'
 import { App } from './screen.ts'
 import { CARACAL_TUI_MODE, CARACAL_TUI_SHA, CARACAL_TUI_VERSION } from './version.gen.ts'
+import { TuiStateStore } from './state.ts'
 import { MenuView } from './views/menu.ts'
 
 function loadConfig(): CliConfig | undefined {
@@ -95,7 +96,9 @@ function main(): void {
     process.stderr.write(`caracal-tui: ${err instanceof Error ? err.message : String(err)}\n`)
     process.exit(1)
   }
-  const menu = new MenuView(adminCtx.client, adminCtx.zoneId)
+  const state = TuiStateStore.load()
+  const initialZoneId = process.env.CARACAL_ZONE_ID ? adminCtx.zoneId : state.selectedZoneId() ?? adminCtx.zoneId
+  const menu = new MenuView(adminCtx.client, initialZoneId, state)
   const app = new App('Caracal TUI', () => {
     const zid = menu.currentZoneId()
     return `${adminCtx.apiUrl}${zid ? `  zone:${zid}` : ''}`
