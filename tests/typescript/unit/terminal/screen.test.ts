@@ -4,9 +4,9 @@
 // ANSI helpers and key parser unit tests.
 
 import { describe, it, expect, vi } from 'vitest'
-import { visibleLength, pad, sanitizeAnsi, truncate } from '../../../../apps/tui/src/ansi.ts'
-import { parseKey } from '../../../../apps/tui/src/keys.ts'
-import { App, type View } from '../../../../apps/tui/src/screen.ts'
+import { visibleLength, pad, sanitizeAnsi, truncate } from '../../../../apps/terminal/src/ansi.ts'
+import { parseKey } from '../../../../apps/terminal/src/keys.ts'
+import { App, type View } from '../../../../apps/terminal/src/screen.ts'
 
 describe('ansi visibleLength', () => {
   it('counts only printable characters, ignoring SGR escapes', () => {

@@ -74,7 +74,7 @@ git push origin v2026.05.12
 This triggers `release.yml` in GitHub Actions. The stable pipeline:
 
 1. Verifies the pushing actor is listed in `.github/MAINTAINERS`.
-2. Builds CLI/TUI binaries and container images in parallel.
+2. Builds CLI/Terminal binaries and container images in parallel.
 3. Pushes images to GHCR with SLSA provenance and SBOM.
 4. Creates a GitHub Release with generated release notes, binaries, checksums, and provenance attestations.
 
@@ -82,36 +82,36 @@ Only maintainers push stable tags. Do not push CalVer tags from feature branches
 
 ---
 
-## Shell, CLI, and TUI binaries
+## Shell, CLI, and Terminal binaries
 
-The shell (`caracal`), CLI command binary (`caracal-cli`), and TUI (`caracal-tui`) are compiled to self-contained binaries using `bun --compile`. Fifteen archives are produced per release (five targets × three binaries), each containing one executable:
+The shell (`caracal`), CLI command binary (`caracal-terminal`), and Terminal (`caracal-terminal`) are compiled to self-contained binaries using `bun --compile`. Fifteen archives are produced per release (five targets × three binaries), each containing one executable:
 
-| Target | Shell archive | CLI archive | TUI archive |
+| Target | Shell archive | CLI archive | Terminal archive |
 | --- | --- | --- | --- |
-| `linux-amd64` | `caracal-shell-linux-amd64-vYYYY.MM.DD.tar.gz` | `caracal-cli-linux-amd64-vYYYY.MM.DD.tar.gz` | `caracal-tui-linux-amd64-vYYYY.MM.DD.tar.gz` |
-| `linux-arm64` | `caracal-shell-linux-arm64-vYYYY.MM.DD.tar.gz` | `caracal-cli-linux-arm64-vYYYY.MM.DD.tar.gz` | `caracal-tui-linux-arm64-vYYYY.MM.DD.tar.gz` |
-| `darwin-amd64` | `caracal-shell-darwin-amd64-vYYYY.MM.DD.tar.gz` | `caracal-cli-darwin-amd64-vYYYY.MM.DD.tar.gz` | `caracal-tui-darwin-amd64-vYYYY.MM.DD.tar.gz` |
-| `darwin-arm64` | `caracal-shell-darwin-arm64-vYYYY.MM.DD.tar.gz` | `caracal-cli-darwin-arm64-vYYYY.MM.DD.tar.gz` | `caracal-tui-darwin-arm64-vYYYY.MM.DD.tar.gz` |
-| `windows-amd64` | `caracal-shell-windows-amd64-vYYYY.MM.DD.zip` | `caracal-cli-windows-amd64-vYYYY.MM.DD.zip` | `caracal-tui-windows-amd64-vYYYY.MM.DD.zip` |
+| `linux-amd64` | `caracal-shell-linux-amd64-vYYYY.MM.DD.tar.gz` | `caracal-terminal-linux-amd64-vYYYY.MM.DD.tar.gz` | `caracal-terminal-linux-amd64-vYYYY.MM.DD.tar.gz` |
+| `linux-arm64` | `caracal-shell-linux-arm64-vYYYY.MM.DD.tar.gz` | `caracal-terminal-linux-arm64-vYYYY.MM.DD.tar.gz` | `caracal-terminal-linux-arm64-vYYYY.MM.DD.tar.gz` |
+| `darwin-amd64` | `caracal-shell-darwin-amd64-vYYYY.MM.DD.tar.gz` | `caracal-terminal-darwin-amd64-vYYYY.MM.DD.tar.gz` | `caracal-terminal-darwin-amd64-vYYYY.MM.DD.tar.gz` |
+| `darwin-arm64` | `caracal-shell-darwin-arm64-vYYYY.MM.DD.tar.gz` | `caracal-terminal-darwin-arm64-vYYYY.MM.DD.tar.gz` | `caracal-terminal-darwin-arm64-vYYYY.MM.DD.tar.gz` |
+| `windows-amd64` | `caracal-shell-windows-amd64-vYYYY.MM.DD.zip` | `caracal-terminal-windows-amd64-vYYYY.MM.DD.zip` | `caracal-terminal-windows-amd64-vYYYY.MM.DD.zip` |
 
 Archives are attached to the GitHub Release with a `SHA256SUMS` file and SLSA provenance attestations. rc tags create GitHub Releases for rc; stable tags create GitHub Releases for stable.
 
 ### Install
 
-The CLI and TUI have separate install targets:
+The CLI and Terminal have separate install targets:
 
 ```sh
 # Linux/macOS — CLI
 curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-cli.sh | sh
 
-# Linux/macOS — TUI
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-tui.sh | sh
+# Linux/macOS — Terminal
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.sh | sh
 
 # Windows — CLI
 iwr -useb https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-cli.ps1 | iex
 
-# Windows — TUI
-iwr -useb https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-tui.ps1 | iex
+# Windows — Terminal
+iwr -useb https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.ps1 | iex
 ```
 
 The installers detect OS and architecture, resolve the latest release tag from the GitHub API (or accept `--version`/`-Version`), download the matching shell and selected tool archives, verify them against `SHA256SUMS`, extract them, and place the binaries on `PATH`.
@@ -122,7 +122,7 @@ Re-run the same install command. The installer overwrites the binary in place wi
 
 ### Uninstall
 
-Linux/macOS: remove the installed binaries from `~/.local/bin` (`caracal`, plus `caracal-cli` or `caracal-tui`).
+Linux/macOS: remove the installed binaries from `~/.local/bin` (`caracal`, plus `caracal-terminal` or `caracal-terminal`).
 
 Windows: delete `%LOCALAPPDATA%\Programs\caracal` and remove the user PATH entry.
 
@@ -167,7 +167,7 @@ npm and PyPI packages are published from a maintainer workstation using the scri
 The release pipeline generates SLSA Level 3 provenance attestations for binaries and container images. Verify an artifact:
 
 ```sh
-gh attestation verify caracal-cli-linux-amd64-v2026.05.12.tar.gz --repo garudex-labs/caracal
+gh attestation verify caracal-terminal-linux-amd64-v2026.05.12.tar.gz --repo garudex-labs/caracal
 ```
 
 ---

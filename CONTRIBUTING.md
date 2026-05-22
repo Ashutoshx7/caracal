@@ -55,21 +55,21 @@ pnpm unlink --global caracal  # Remove global symlink
 #### CLI
 
 ```bash
-pnpm caracal cli
-pnpm --dir apps/cli typecheck
+pnpm caracal terminal
+pnpm --dir apps/runtime typecheck
 ```
 
-#### TUI
+#### Terminal
 
 ```bash
-pnpm caracal tui
+pnpm caracal terminal
 ```
 
-CLI and TUI are management interfaces over the same engine. Keep administrative workflows available in both surfaces unless a feature is intentionally shell-only.
+CLI and Terminal are management interfaces over the same engine. Keep administrative workflows available in both surfaces unless a feature is intentionally shell-only.
 
 #### Standalone execution
 
-`pnpm caracal run -- <command>` is separate from CLI/TUI management. It reads `caracal.toml`, exchanges the configured application credentials with STS, injects only the configured scoped resource-token environment variables into the child process, and executes without a shell. Keep this path for workload execution and automation that needs `RESOURCE_TOKEN`; do not expose it through `caracal-cli` or the TUI.
+`pnpm caracal run -- <command>` is separate from CLI/Terminal management. It reads `caracal.toml`, exchanges the configured application credentials with STS, injects only the configured scoped resource-token environment variables into the child process, and executes without a shell. Keep this path for workload execution and automation that needs `RESOURCE_TOKEN`; do not expose it through `caracal-terminal` or the Terminal.
 
 ```bash
 pnpm caracal run -- node examples/agent.js
@@ -77,13 +77,13 @@ pnpm caracal run -- node examples/agent.js
 
 #### Control API (optional)
 
-The control service is an OAuth-protected HTTP API hosted by the engine for any external client (script, AI agent, workflow, or another instance of CLI/TUI) that needs to drive Caracal programmatically. It is unmounted by default.
+The control service is an OAuth-protected HTTP API hosted by the engine for any external client (script, AI agent, workflow, or another instance of CLI/Terminal) that needs to drive Caracal programmatically. It is unmounted by default.
 
-The control service reads its admin token from `infra/secrets/files/caracalAdminToken`, which is generated on the first `pnpm caracal up` or `pnpm secrets:init`. Lifecycle management must run through the authenticated, interactive `caracal-cli control ...` flow or the TUI Control menu. Do not call the underlying Node entrypoints, thin scripts, or Docker profiles directly; lifecycle commands require a controlling terminal, the local managed admin secret, and explicit human confirmation before changing runtime state.
+The control service reads its admin token from `infra/secrets/files/caracalAdminToken`, which is generated on the first `pnpm caracal up` or `pnpm secrets:init`. Lifecycle management must run through the authenticated, interactive `caracal-terminal control ...` flow or the Terminal Control menu. Do not call the underlying Node entrypoints, thin scripts, or Docker profiles directly; lifecycle commands require a controlling terminal, the local managed admin secret, and explicit human confirmation before changing runtime state.
 
 If you created `infra/docker/local.env` for operator overrides, pass it after `dev.env` so local entries win.
 
-Clients authenticate by exchanging the Control key credentials for a token whose resource matches the control audience (`caracal-control` by default). Create the key from TUI → Control → create key or `pnpm caracal cli control key create --name <n>`; Caracal generates `client_secret` and shows it once in the create result. Store it, then drive the enabled Control API from the workflow or client that will use it in production.
+Clients authenticate by exchanging the Control key credentials for a token whose resource matches the control audience (`caracal-control` by default). Create the key from Terminal → Control → create key or `pnpm caracal terminal control key create --name <n>`; Caracal generates `client_secret` and shows it once in the create result. Store it, then drive the enabled Control API from the workflow or client that will use it in production.
 
 ## Tests
 
@@ -106,8 +106,8 @@ scripts/testCi.sh --smoke | --go | --py | --ts
 3. Run a quick local sanity check:
   - `pnpm caracal up`
   - `pnpm caracal status`
-  - `pnpm caracal cli`
-  - `pnpm caracal tui`
+  - `pnpm caracal terminal`
+  - `pnpm caracal terminal`
 4. Ensure tests pass:
   - `pnpm test`
   - `scripts/testCi.sh --smoke` (post-commit parity)
@@ -123,14 +123,14 @@ Release artifacts share one CalVer: `vYYYY.MM.DD` (suffix `.N` for same-day re-c
 Use dev builds only for development:
 
 ```bash
-pnpm --dir apps/cli build:release                          # stamp dev + build local images + bun compile (all targets)
-pnpm --dir apps/tui build:release                          # stamp dev + bun compile (all targets)
-BIN="$(pwd)/apps/cli/dist/caracal-cli-<os>-<arch>"         # absolute path; survives cd
-TUI="$(pwd)/apps/tui/dist/caracal-tui-<os>-<arch>"         # TUI binary; same OS/arch matrix
+pnpm --dir apps/runtime build:release                          # stamp dev + build local images + bun compile (all targets)
+pnpm --dir apps/terminal build:release                          # stamp dev + bun compile (all targets)
+BIN="$(pwd)/apps/runtime/dist/caracal-terminal-<os>-<arch>"         # absolute path; survives cd
+Terminal="$(pwd)/apps/terminal/dist/caracal-terminal-<os>-<arch>"         # Terminal binary; same OS/arch matrix
 pnpm caracal down                                          # Stop dev before testing
 "$BIN" --version                                           # → caracal 2026.05.14-dev.sha<sha> [dev (sha <sha>)]
-"$TUI" --version                                           # → caracal-tui 2026.05.14-dev.sha<sha> [dev (sha <sha>)]
-(cd /tmp && "$BIN" up && "$BIN" status && "$TUI" && "$BIN" down)
+"$Terminal" --version                                           # → caracal-terminal 2026.05.14-dev.sha<sha> [dev (sha <sha>)]
+(cd /tmp && "$BIN" up && "$BIN" status && "$Terminal" && "$BIN" down)
 ```
 
 The local `build:release` stamps the binary with `CARACAL_VERSION=<base>-dev.sha<sha>` and `CARACAL_REGISTRY=localhost/`, then runs `docker compose build` to produce matching `localhost/caracal-{svc}:<base>-dev.sha<sha>` images. This path is not for downstream third-party consumption.

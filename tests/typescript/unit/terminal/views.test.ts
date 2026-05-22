@@ -4,10 +4,10 @@
 // ListView and DetailView behavior tests against a fake App.
 
 import { describe, it, expect, vi } from 'vitest'
-import { ListView } from '../../../../apps/tui/src/views/list.ts'
-import { DetailView } from '../../../../apps/tui/src/views/detail.ts'
-import type { App } from '../../../../apps/tui/src/screen.ts'
-import type { TuiStateStore } from '../../../../apps/tui/src/state.ts'
+import { ListView } from '../../../../apps/terminal/src/views/list.ts'
+import { DetailView } from '../../../../apps/terminal/src/views/detail.ts'
+import type { App } from '../../../../apps/terminal/src/screen.ts'
+import type { TerminalStateStore } from '../../../../apps/terminal/src/state.ts'
 
 function fakeApp(): App {
   const pushed: unknown[] = []
@@ -30,7 +30,7 @@ function fakeApp(): App {
 
 describe('AuditTailView', () => {
   it('keeps cursor at 0 when receiving navigation with no events', async () => {
-    const { AuditTailView } = await import('../../../../apps/tui/src/views/audit.ts')
+    const { AuditTailView } = await import('../../../../apps/terminal/src/views/audit.ts')
     const fakeClient = { audit: { tail: vi.fn(), byRequest: vi.fn() } } as unknown as Parameters<typeof AuditTailView>[0]
     const view = new AuditTailView(fakeClient as never, 'zone-1')
     const ctx = { app: fakeApp(), size: { rows: 10, cols: 80 }, status: '' }
@@ -44,7 +44,7 @@ describe('AuditTailView', () => {
   })
 
   it('sanitizes API-sourced fields so injected escapes cannot reach the terminal', async () => {
-    const { AuditTailView } = await import('../../../../apps/tui/src/views/audit.ts')
+    const { AuditTailView } = await import('../../../../apps/terminal/src/views/audit.ts')
     const fakeClient = { audit: { tail: vi.fn(), byRequest: vi.fn() } } as unknown as Parameters<typeof AuditTailView>[0]
     const view = new AuditTailView(fakeClient as never, 'zone-1')
     ;(view as unknown as { events: unknown[] }).events = [{
@@ -102,7 +102,7 @@ describe('ListView', () => {
     const state = {
       listSelection: vi.fn(() => 'b'),
       setListSelection: vi.fn(),
-    } as unknown as TuiStateStore
+    } as unknown as TerminalStateStore
     const view = new ListView<{ id: string }>({
       title: 'x',
       columns: [{ header: 'id', value: (r) => r.id }],

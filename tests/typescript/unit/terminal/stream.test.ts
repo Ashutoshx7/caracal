@@ -4,8 +4,8 @@
 // StreamView line buffering, ANSI scrubbing, and dispose-handle tests.
 
 import { describe, it, expect, vi } from 'vitest'
-import { StreamView } from '../../../../apps/tui/src/views/stream.ts'
-import type { App } from '../../../../apps/tui/src/screen.ts'
+import { StreamView } from '../../../../apps/terminal/src/views/stream.ts'
+import type { App } from '../../../../apps/terminal/src/screen.ts'
 
 function fakeApp(): App {
   return {

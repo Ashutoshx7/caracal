@@ -100,5 +100,5 @@ caracal.toml
 
 # Generated runtime bundles
 packages/engine/src/embedded.ts
-apps/cli/src/runtime/version.gen.ts
-apps/tui/src/version.gen.ts
+apps/runtime/src/runtime/version.gen.ts
+apps/terminal/src/version.gen.ts
