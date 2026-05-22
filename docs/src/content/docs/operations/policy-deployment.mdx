@@ -30,7 +30,7 @@ Skipping any stage is a known way to ship denial-rate spikes or unintended grant
 ### 1. Create the version
 
 ```bash
-caracal policy version create \
+the terminal management interface Policies view
   --policy-id "pol-abc123" \
   --file ./policy.rego \
   --message "tighten finance.read scope"
@@ -43,7 +43,7 @@ The command prints the new `version_id`. Save it in the change record.
 Simulate against a representative fixture set. The fixture set should include at least one allow and one deny that matter to the current zone.
 
 ```bash
-caracal policy-set simulate \
+Open the terminal management interface and follow the matching view.
   --policy-set-id "pset-finance" \
   --version-id "<version_id>" \
   --fixtures ./fixtures/
@@ -60,7 +60,7 @@ If any blocking condition fires, stop. Do not activate.
 ### 3. Activate
 
 ```bash
-caracal policy-set activate \
+Open the terminal management interface and follow the matching view.
   --policy-set-id "pset-finance" \
   --version-id "<version_id>"
 ```
@@ -72,9 +72,9 @@ STS reloads bundles within one poll cycle. The `caracal.policy.invalidate` strea
 Run all four in the bake window:
 
 ```bash
-caracal policy-set list --zone "$CARACAL_ZONE_ID"
+Open the terminal management interface and follow the matching view.
 caracal status --ready
-caracal audit tail --decision deny --limit 50
+the terminal management interface Audit view
 ```
 
 Then watch the Prometheus alerts from [Alerting Recipes](./alerts/) for at least ten minutes:
@@ -88,7 +88,7 @@ Then watch the Prometheus alerts from [Alerting Recipes](./alerts/) for at least
 Roll back the moment the bake window shows any of the failure conditions above. There is no penalty for rolling back a clean activation.
 
 ```bash
-caracal policy-set activate \
+Open the terminal management interface and follow the matching view.
   --policy-set-id "pset-finance" \
   --version-id "<previous_version_id>"
 ```
@@ -111,13 +111,13 @@ The runbook is fully auditable when the change record includes:
 - The `version_id` activated.
 - The `previous_active_version_id` from `policy-set list` before activation.
 - Output of the simulate run.
-- The `request_id` of a known-allow and a known-deny taken from `caracal audit tail` after activation.
+- The `request_id` of a known-allow and a known-deny taken from the terminal management interface Audit view after activation.
 
 These five fields are enough to reconstruct a deployment and reason about its effect during a future incident.
 
 ## Related
 
-- [Activate a Policy Set](../guides/activate-policy-set/) — the underlying terminal interface mechanics.
+- [Activate a Policy Set](../guides/activate-policy-set/) — the underlying terminal management interface mechanics.
 - [Author a Rego Policy](../guides/author-policy/) — how the input is structured.
 - [Alerting Recipes](./alerts/) — the alerts to watch during the bake window.
 - [Failure Modes and Recovery](./failure-modes/) — the broader operator matrix.

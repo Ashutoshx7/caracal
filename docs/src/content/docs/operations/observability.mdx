@@ -9,11 +9,11 @@ Every Caracal service exposes three HTTP endpoints for operational visibility: `
 Use the endpoints in this order during triage:
 
 1. `caracal status --ready` to identify the failing service and readiness reason.
-2. `the terminal management interface --json` to collect service readiness and operator metric summaries.
+2. the terminal management interface Doctor view to collect service readiness and operator metric summaries.
 3. Service `/metrics` or `/metrics.json` for the component-specific counter or backlog.
-4. `the terminal management interface tail --request-id <id>` and `the terminal management interface <request_id>` when a user-facing request was denied or partially evaluated.
-5. `the terminal management interface <request_id> --flow` when the authority path spans delegation, Gateway routing, or provider brokering.
-6. `the terminal management interface inspect <jwt>` when the token claims need to be compared with the audit event.
+4. the terminal management interface Audit view and the terminal management interface audit detail view when a user-facing request was denied or partially evaluated.
+5. the terminal management interface audit detail view when the authority path spans delegation, Gateway routing, or provider brokering.
+Open the terminal management interface and follow the matching view.
 
 ## Endpoint summary
 

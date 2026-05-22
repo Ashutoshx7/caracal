@@ -164,7 +164,7 @@ Rotating `GATEWAY_STS_HMAC_KEY`:
 1. Generate a new 32-byte hex secret: `openssl rand -hex 32`.
 2. Update the mounted Secret or secret-manager version for API, Gateway, and STS.
 3. Roll STS first, then Gateway and API replicas.
-4. Run `caracal status --ready` and `the terminal management interface simulate --input-file <fixture>` against a known policy set.
+Open the terminal management interface and follow the matching view.
 5. Remove the old secret version after all replicas report ready.
 
 During a mixed-key rollout, Gateway token exchange and API policy simulation calls signed with the old key fail closed at STS.

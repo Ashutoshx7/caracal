@@ -12,7 +12,7 @@ Caracal has three configuration surfaces:
 | `caracal.toml` | Runtime and Terminal | Local client identity, STS token-exchange target, subprocess token injection, and governance mode |
 | SDK constructors and environment variables | SDK packages | Application integration, context propagation, and client-secret token refresh |
 
-Use [Environment Variables](../operations/env-vars/) as the source of truth for service startup requirements and defaults. This page keeps the client-facing configuration schemas together so terminal interface, Terminal, SDK, and agent integrations can use one reference without duplicating service tables.
+Use [Environment Variables](../operations/env-vars/) as the source of truth for service startup requirements and defaults. This page keeps the client-facing configuration schemas together so terminal management interface, Terminal, SDK, and agent integrations can use one reference without duplicating service tables.
 
 ---
 
@@ -34,14 +34,14 @@ Read the canonical service table in [Environment Variables](../operations/env-va
 
 | Service | Local binding | Purpose |
 | --- | --- | --- |
-| API | `127.0.0.1:3000` | Control-plane REST and terminal interface target |
+| API | `127.0.0.1:3000` | Control-plane REST and terminal management interface target |
 | STS | `127.0.0.1:8080` | Token exchange and JWKS endpoint |
 | Gateway | `127.0.0.1:8081` | Reverse proxy for protected resources |
 | Coordinator | `127.0.0.1:4000` | Agent lifecycle, invocations, and delegation graph |
 | Audit | `127.0.0.1:9090` | Audit ingestion status, query, and export status |
-| Control | `127.0.0.1:8087` | Optional automation endpoint enabled only through `caracal-terminal control` or the Terminal Control menu |
+| Control | `127.0.0.1:8087` | Optional automation endpoint enabled only through `caracal-terminal` or the Terminal Control menu |
 | PostgreSQL | `127.0.0.1:5432` | Database access from local tools |
-| Redis | `127.0.0.1:6379` | Redis terminal interface debugging |
+| Redis | `127.0.0.1:6379` | Redis terminal management interface debugging |
 
 The reference compose stack binds every port to `127.0.0.1`. Production deployments should keep API, STS, Coordinator, Audit, Postgres, and Redis on private networks. Expose the Gateway, or a TLS-terminating load balancer in front of it, only when it is the intended public ingress.
 
@@ -81,7 +81,7 @@ mode = "block"
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `zone_url` | string | Yes | STS base URL used by `caracal run` and `caracal credential read` for `/oauth/2/token` exchange |
+Open the terminal management interface and follow the matching view.
 | `zone_id` | string | Yes | Zone this client operates in |
 | `application_id` | string | Yes | Registered application identity |
 | `app_client_secret` | string | Yes | Application secret used for STS token exchange |
@@ -196,7 +196,7 @@ client := &sdk.Caracal{
 
 ---
 
-## terminal interface environment variables
+## terminal management interface environment variables
 
 | Variable | Description |
 | --- | --- |

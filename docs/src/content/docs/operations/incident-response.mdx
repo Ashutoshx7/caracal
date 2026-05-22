@@ -24,19 +24,19 @@ This page covers the operational playbooks for the most likely Caracal incidents
 **Step 1 — Identify the session:**
 
 ```bash
-the terminal management interface list --zone <zone-id> --subject <user-id> --status active
+Open the terminal management interface and follow the matching view.
 ```
 
 Or query the audit log:
 
 ```bash
-the terminal management interface tail --zone <zone-id> --limit 100 | grep "<subject>"
+the terminal management interface Audit view
 ```
 
 **Step 2 — Revoke the session:**
 
 ```bash
-the terminal management interface revoke --zone <zone-id> --session-id <sid>
+Open the terminal management interface and follow the matching view.
 ```
 
 This writes to `sessions` (status → `revoked`), publishes a revocation event to `caracal.sessions.revoke` via the transactional outbox, and the event propagates to:
@@ -97,7 +97,7 @@ Mandates signed with keys that may have been exposed should be considered untrus
 
 ```bash
 # Enumerate active sessions per zone and revoke each
-the terminal management interface list --zone <zone-id> --status active | xargs -n1 the terminal management interface revoke --zone <zone-id> --session-id
+Open the terminal management interface and follow the matching view.
 ```
 
 **Step 6 — Audit the incident:**
@@ -105,7 +105,7 @@ the terminal management interface list --zone <zone-id> --status active | xargs 
 Query the audit log for all token exchanges and session creations during the suspected compromise window:
 
 ```bash
-the terminal management interface tail --zone <zone-id> --since <ISO-8601-start> --until <ISO-8601-end> --event-type token_issued
+the terminal management interface Audit view
 ```
 
 ---
