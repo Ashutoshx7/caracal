@@ -1,40 +1,36 @@
 ---
 title: CLI Exit Codes
-description: Exit codes returned by `caracal`, `caracal-cli`, and `caracal-tui` for orchestrator and CI integration.
+description: Exit statuses returned by `caracal`, `caracal-cli`, and `caracal-tui` for scripts and orchestrator probes.
 pageType: reference
 ---
 
-Every Caracal CLI binary follows the same exit-code convention so it can be used reliably in shell scripts, CI gates, Helm hooks, and Kubernetes Jobs.
+Caracal CLI commands use a small exit-status surface: success is `0`, command or API failures are `1`, and wrapper commands may return the status of the process they launched. Use stderr and, where available, `--json` output to distinguish authentication, authorization, validation, not-found, conflict, rate-limit, and server errors.
 
 ## Convention
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Success. Every check or operation completed without error. |
-| 1 | Generic failure. Operation could not complete; stderr contains the cause and, where applicable, a remediation hint. |
-| 2 | Usage error. A required flag or positional argument is missing or malformed. The usage line is printed to stderr. |
-| 3 | Configuration error. `caracal.toml` is missing, unreadable, or incomplete. The error message tells you which fields are missing. |
-| 4 | Authentication failure. `CARACAL_ADMIN_TOKEN` or `app_client_secret` was rejected by the control plane. |
-| 5 | Authorization failure. The current credentials lack the required scope or zone access. |
-| 6 | Not found. The referenced zone, app, resource, grant, or session id does not exist. |
-| 7 | Conflict. The object was modified concurrently or fails a uniqueness constraint. |
-| 8 | Server error. A 5xx response from a Caracal service; the operation may be retryable. |
-| 9 | Network or timeout. The CLI could not reach a required service before the deadline. |
+| `0` | Success. The operation completed, a help/version request was printed, or every health probe passed. |
+| `1` | Command failure. This includes usage errors, missing configuration, failed authentication, failed authorization, not-found objects, validation errors, conflicts, rate limits, service errors, and failed health probes. |
+| `127` | `caracal cli` or `caracal tui` could not find the sibling binary, or `caracal run` could not spawn the requested subprocess. |
+| `<child code>` | `caracal run`, `caracal up`, `caracal down`, and sibling dispatch return the child process or Docker Compose status after the subprocess starts. |
+| `128 + N` | A dispatched sibling process ended because of signal `N`. |
 
-`caracal doctor` and `caracal status --ready` follow the same convention: exit 0 only when every check is `ok`; otherwise exit 1.
+`caracal doctor`, `caracal doctor --ready`, `caracal status`, and `caracal status --ready` exit `0` only when every probe passes. Any failed, down, or unreachable dependency exits `1`.
 
-## Mapping to API errors
+## API error handling
 
-| HTTP status | Exit code | Typical cause |
+Admin, runtime, and observability commands do not map HTTP statuses to separate exit codes. They exit `1` and print the API error code, HTTP status, remediation hint, and request ID when available.
+
+| HTTP status | Exit status | CLI output |
 | --- | --- | --- |
-| 400 | 2 | Malformed request from the CLI; usually a usage bug. |
-| 401 | 4 | Bad or expired token. |
-| 403 | 5 | Token valid but lacks required scope. |
-| 404 | 6 | Object id is wrong or the object was deleted. |
-| 409 | 7 | Concurrent modification. |
-| 422 | 2 | Validation failure on the request body. |
-| 429 | 8 | Rate limited; back off and retry. |
-| 5xx | 8 | Server error. |
+| `401` | `1` | Check `CARACAL_ADMIN_TOKEN`, `app_client_secret`, or `CARACAL_COORDINATOR_TOKEN`. |
+| `403` | `1` | Current credentials lack the required scope or zone access. |
+| `404` | `1` | Confirm the referenced object ID with the matching `list` command. |
+| `409` | `1` | Re-fetch the object and retry the operation. |
+| `422` | `1` | Inspect the validation body and correct the submitted fields. |
+| `429` | `1` | Back off and retry; inspect service health if throttling persists. |
+| `5xx` | `1` | Probe readiness with `caracal doctor --extended` and check service logs. |
 
 ## Examples
 
@@ -43,26 +39,26 @@ Every Caracal CLI binary follows the same exit-code convention so it can be used
 caracal doctor --extended --ready --json > /tmp/doctor.json || exit 1
 
 # Detect a missing zone in CI:
-caracal zone get prod 2>/dev/null
-case $? in
-  0) echo "zone exists" ;;
-  6) echo "zone missing; bootstrapping…"; caracal zone create --name prod ;;
-  *) echo "unexpected failure"; exit 1 ;;
-esac
+if ! caracal zone get prod > /tmp/zone.json 2> /tmp/zone.err; then
+  if grep -q 'HTTP 404' /tmp/zone.err; then
+    caracal zone create --name prod
+  else
+    cat /tmp/zone.err >&2
+    exit 1
+  fi
+fi
 
-# Retry only transient errors (server / network):
-for attempt in 1 2 3; do
-  caracal audit tail --since "$(date -u -d '5 min ago' +%FT%TZ)" && break
-  rc=$?
-  case $rc in
-    8|9) sleep $((attempt * 5)) ;;
-    *) exit $rc ;;
-  esac
-done
+# Preserve a subprocess failure from caracal run:
+caracal run -- ./agent-smoke-test.sh
+rc=$?
+if [ "$rc" -ne 0 ]; then
+  echo "agent smoke test failed with status $rc" >&2
+  exit "$rc"
+fi
 ```
 
 ## Notes
 
-- Exit codes 4–9 are emitted only by commands that talk to a Caracal service. Local-only commands (`caracal completion`, `caracal manifest validate`) use 0/1/2.
-- Inside an interactive shell (`caracal-cli` REPL or `caracal-tui`), commands print errors but do not exit the process; the same status codes are reflected in the `$?` of the dispatched command.
-- The exit-code surface is part of the CLI's compatibility contract. See [Compatibility Matrix](./compatibility/) for the support window.
+- Usage errors and missing `caracal.toml` both exit `1`; the usage or configuration message on stderr identifies the cause.
+- `caracal credential inspect` is local-only and exits `1` for invalid input.
+- `caracal manifest validate` exits `1` when the manifest is invalid and `0` when it is valid.

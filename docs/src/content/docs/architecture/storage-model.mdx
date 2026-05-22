@@ -209,7 +209,7 @@ The Gateway is read-only. It fetches resource bindings to resolve upstream URLs 
 | `session_id` | TEXT | Agent session that triggered the challenge |
 | `principal_id` | TEXT | Application or user ID of the requester |
 | `challenge_type` | TEXT | `"mfa"`, `"human_approval"`, or `"software_attestation"` |
-| `challenge_secret_hash` | BYTEA | SHA-256 of the raw secret returned to the client |
+| `challenge_secret_hash` | BYTEA | SHA-256 of the base64url challenge secret returned to the client |
 | `resource_set_hash` | BYTEA | SHA-256 of the canonical resource list (binds challenge to request) |
 | `metadata_json` | JSONB | Additional context |
 | `expires_at` | TIMESTAMPTZ | Challenge expiry (5 minutes from creation) |

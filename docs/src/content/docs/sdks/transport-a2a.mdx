@@ -123,7 +123,7 @@ Backoff formula per attempt: `min(retryBaseMs × 2^attempt, 5000) / 2 + random(b
 
 - `Error('A2A call failed: {status}')` — target agent returned a non-2xx status after all retries.
 - `Error('A2A response invalid: ...')` — target response is not an object, omits `result`, or echoes a different `requestId`.
-- `InteractionRequiredError` — STS token exchange requires step-up; contains `challengeId`. Callers must satisfy the challenge and retry.
+- `InteractionRequiredError` — STS token exchange requires step-up; contains `challengeId`. The transport package does not carry `challenge_secret` or submit `challenge_response`; use the direct STS token endpoint for flows that must complete challenge consumption.
 - `AbortError` — request timed out.
 - Network fetch errors propagate unchanged.
 
@@ -153,7 +153,7 @@ async function callPaymentAgent(
     process.env.CARACAL_APPLICATION_ID!,
     {
       stsUrl: process.env.CARACAL_STS_URL!,
-      clientSecret: process.env.CARACAL_CLIENT_SECRET!,
+      clientSecret: process.env.CARACAL_APP_CLIENT_SECRET!,
     },
   );
 
@@ -161,7 +161,7 @@ async function callPaymentAgent(
 }
 ```
 
-**With step-up handling:**
+**Detecting step-up:**
 
 ```typescript
 import { a2aCall } from '@caracalai/transport-a2a';
@@ -173,7 +173,7 @@ async function callWithStepUp(subjectToken: string) {
   } catch (err) {
     if (err instanceof InteractionRequiredError) {
       await satisfyChallenge(err.challengeId);
-      return await a2aCall(req, subjectToken, zoneId, appId, opts);
+      throw new Error('Retry the exchange through the STS token endpoint with challenge_id and challenge_response.');
     }
     throw err;
   }

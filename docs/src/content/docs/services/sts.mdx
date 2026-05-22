@@ -70,16 +70,17 @@ The STS implements RFC 8693 (OAuth 2.0 Token Exchange). The client presents a se
 }
 ```
 
-**Step-up required (409):**
+**Step-up required (401):**
 
 ```json
 {
-  "error": "step_up_required",
-  "challenge": {
-    "id": "chall_abc123",
-    "type": "totp",
-    "request_id": "req_def456"
-  }
+  "error": "interaction_required",
+  "error_description": "Step-up challenge required",
+  "challenge_id": "chall_abc123",
+  "challenge_type": "mfa",
+  "challenge_secret": "<single-use proof>",
+  "challenge_expires_at": "2026-01-01T00:05:00Z",
+  "requestId": "req_def456"
 }
 ```
 
@@ -120,15 +121,16 @@ The STS runs an embedded OPA engine, not an external OPA sidecar. Policy state i
 
 **Compilation:** When a token exchange arrives for a zone, the STS looks up the zone's active policy set from PostgreSQL. It compiles the Rego bundle with forbidden built-ins removed: `http.send`, `net.*`, `rand.*`, `time.now_ns`, and `opa.runtime` are not available to zone policies. This prevents policies from making outbound network calls or escaping the evaluation sandbox.
 
-**Evaluation:** The compiled bundle evaluates the `data.caracal.authz` package with:
-- `input.subject_id` — the subject requesting the token
-- `input.application_id` — the requesting application
-- `input.resources` — array of requested resource identifiers
-- `input.scopes` — requested scopes
-- `input.claims` — claims from the session mandate
-- `input.agent_session_id`, `input.delegation_edge_id` — if present
+**Evaluation:** The compiled bundle evaluates the `data.caracal.authz` package. The input is a structured object with six top-level keys:
 
-**Decision:** Policies must emit a `result` object with `decision`, `evaluation_status`, `determining_policies`, and `diagnostics` fields. If the result's `decision` is `deny`, the exchange is rejected with 401.
+- `input.principal` — `{type, id, zone_id, credential_type, agent_session_id}`
+- `input.resource` — `{type, id, identifier, scopes}` (one call per resource)
+- `input.action` — `{id}` (always `"TokenExchange"`)
+- `input.session` — `{id}` (omitted when no session context)
+- `input.delegation_edge` — `{id, source_session_id, target_session_id, issuer_application_id, receiver_application_id, resource_id, scopes, edge_version, path, graph_epoch, constraints_json}` (omitted when no delegation)
+- `input.context` — `{actor_claims, subject_claims, trace_id, session_id, agent_session_id, delegation_edge_id, challenge_resolved, requested_scopes}`
+
+**Decision:** Policies must emit a `result` object with `decision`, `evaluation_status`, `determining_policies`, and `diagnostics` fields. If the result's `decision` is `deny`, the exchange is rejected with 403.
 
 **Cache invalidation:** On policy set activation, the API publishes to `caracal.policy.invalidate`. The STS consumes this stream and recompiles the affected zone's bundle. Between publication and consumption (typically under 5 seconds), in-flight exchanges use the previous compiled policy.
 
@@ -208,10 +210,11 @@ Returns the status of a step-up challenge. Called by `caracal run` to poll for s
 | --- | --- |
 | `caracal.sessions.revoke` | Revoke in-memory session state on session termination |
 | `caracal.policy.invalidate` | Trigger OPA recompilation for the affected zone |
+| `caracal.keys.invalidate` | Flush the zone key cache on signing key rotation |
 
 **Keys:**
 
-- `sts:jti:{zone_id}:{jti_hash}` — JTI deduplication set. TTL matches token lifetime. Prevents replay attacks.
+- `audit:jti:{jti}` — JTI deduplication set. TTL matches token lifetime. Prevents replay attacks.
 
 ---
 
@@ -231,11 +234,12 @@ The audit buffer accepts events asynchronously. In production, `AUDIT_HMAC_KEY` 
 4. Warn if `STREAMS_HMAC_KEY` is unset (required in production for stream signing).
 5. Initialize KeyCache (in-process, 15-minute TTL).
 6. Initialize OPAEngine (per-zone compiled bundle cache).
-7. Start OPA seed goroutine — preloads all zone policies from PostgreSQL at startup.
-8. Start OPA polling goroutine — polls for policy changes every `OPA_POLL_SECONDS`.
-9. Start audit consumer goroutine — consumes `caracal.audit.events` and persists to PostgreSQL.
-10. Replay any pending events from `AUDIT_REPLAY_DIR`.
-11. Listen on `0.0.0.0:8080`.
+7. Replay any pending events from `AUDIT_REPLAY_DIR` (re-publishes disk-buffered events to Redis).
+8. Start audit buffer flush goroutine — drains the in-process AuditBuffer to `caracal.audit.events`.
+9. Start Redis stream consumers: `caracal.sessions.revoke` (session revocation), `caracal.policy.invalidate` (OPA recompile), `caracal.keys.invalidate` (key cache invalidation).
+10. Start OPA polling goroutine — polls for policy changes every `OPA_POLL_SECONDS`.
+11. Start OPA seed goroutine — preloads all zone policies from PostgreSQL at startup.
+12. Listen on `0.0.0.0:8080`.
 
 ---
 
