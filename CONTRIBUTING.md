@@ -52,17 +52,17 @@ pnpm unlink --global caracal  # Remove global symlink
 
 </details>
 
-#### terminal management interface
+#### Console
 
 ```bash
 pnpm caracal terminal
 ```
 
-The runtime shell keeps lifecycle and workload execution commands. Human-facing product management belongs in the terminal management interface.
+The runtime shell keeps lifecycle and workload execution commands. Human-facing product management belongs in the Console.
 
 #### Standalone execution
 
-`pnpm caracal run -- <command>` is separate from runtime and terminal management. It reads `caracal.toml`, exchanges the configured application credentials with STS, injects only the configured scoped resource-token environment variables into the child process, and executes without a shell. Keep this path for workload execution and automation that needs `RESOURCE_TOKEN`; do not expose it through the terminal management interface.
+`pnpm caracal run -- <command>` is separate from runtime and terminal management. It reads `caracal.toml`, exchanges the configured application credentials with STS, injects only the configured scoped resource-token environment variables into the child process, and executes without a shell. Keep this path for workload execution and automation that needs `RESOURCE_TOKEN`; do not expose it through the Console.
 
 ```bash
 pnpm caracal run -- node examples/agent.js
@@ -70,13 +70,13 @@ pnpm caracal run -- node examples/agent.js
 
 #### Control API (optional)
 
-The control service is an OAuth-protected HTTP API hosted by the engine for any external client (script, AI agent, workflow, or another instance of runtime/terminal) that needs to drive Caracal programmatically. It is unmounted by default.
+The control service is an OAuth-protected HTTP API hosted by the engine for any external client (script, AI agent, workflow, or another instance of runtime/console) that needs to drive Caracal programmatically. It is unmounted by default.
 
-The control service reads its admin token from `infra/secrets/files/caracalAdminToken`, which is generated on the first `pnpm caracal up` or `pnpm secrets:init`. Control lifecycle management must run through the authenticated Control menu in the terminal management interface. Do not call the underlying Node entrypoints, thin scripts, or Docker profiles directly; lifecycle commands require a controlling terminal, the local managed admin secret, and explicit human confirmation before changing runtime state.
+The control service reads its admin token from `infra/secrets/files/caracalAdminToken`, which is generated on the first `pnpm caracal up` or `pnpm secrets:init`. Control lifecycle management must run through the authenticated Control menu in the Console. Do not call the underlying Node entrypoints, thin scripts, or Docker profiles directly; lifecycle commands require a controlling terminal, the local managed admin secret, and explicit human confirmation before changing runtime state.
 
 If you created `infra/docker/local.env` for operator overrides, pass it after `dev.env` so local entries win.
 
-Clients authenticate by exchanging the Control key credentials for a token whose resource matches the control audience (`caracal-control` by default). Create the key from the terminal management interface Control menu; Caracal generates `client_secret` and shows it once in the create result. Store it, then drive the enabled Control API from the workflow or client that will use it in production.
+Clients authenticate by exchanging the Control key credentials for a token whose resource matches the control audience (`caracal-control` by default). Create the key from the Console Control menu; Caracal generates `client_secret` and shows it once in the create result. Store it, then drive the enabled Control API from the workflow or client that will use it in production.
 
 ## Tests
 
@@ -117,12 +117,12 @@ Use dev builds only for development:
 
 ```bash
 pnpm --dir apps/runtime build:release                          # stamp dev + build local images + bun compile (all targets)
-pnpm --dir apps/terminal build:release                          # stamp dev + bun compile (all targets)
-BIN="$(pwd)/apps/runtime/dist/caracal-terminal-<os>-<arch>"         # absolute path; survives cd
-TERMINAL="$(pwd)/apps/terminal/dist/caracal-terminal-<os>-<arch>"         # terminal management binary; same OS/arch matrix
+pnpm --dir apps/console build:release                          # stamp dev + bun compile (all targets)
+BIN="$(pwd)/apps/runtime/dist/caracal-console-<os>-<arch>"         # absolute path; survives cd
+TERMINAL="$(pwd)/apps/console/dist/caracal-console-<os>-<arch>"         # terminal management binary; same OS/arch matrix
 pnpm caracal down                                          # Stop dev before testing
 "$BIN" --version                                           # → caracal 2026.05.14-dev.sha<sha> [dev (sha <sha>)]
-"$TERMINAL" --version                                           # → caracal-terminal 2026.05.14-dev.sha<sha> [dev (sha <sha>)]
+"$TERMINAL" --version                                           # → caracal-console 2026.05.14-dev.sha<sha> [dev (sha <sha>)]
 (cd /tmp && "$BIN" up && "$BIN" status && "$TERMINAL" && "$BIN" down)
 ```
 

@@ -14,7 +14,7 @@
 - Must preserve token scrubbing on any user-visible string path.
 
 ## Forbidden
-- Must not import from `apps/runtime` or `apps/terminal`.
+- Must not import from `apps/runtime` or `apps/console`.
 - Must not write to stdout, stderr, or terminal APIs.
 - Must not call `process.exit`.
 

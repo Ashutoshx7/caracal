@@ -4,8 +4,8 @@
 // ConfirmView y/n guard and dispose tests.
 
 import { describe, it, expect, vi } from 'vitest'
-import { ConfirmView } from '../../../../apps/terminal/src/views/form.ts'
-import type { App } from '../../../../apps/terminal/src/screen.ts'
+import { ConfirmView } from '../../../../apps/console/src/views/form.ts'
+import type { App } from '../../../../apps/console/src/screen.ts'
 
 function fakeApp(): App {
   const app = {

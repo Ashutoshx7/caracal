@@ -53,13 +53,13 @@ function assertNoControlStackTarget(args: readonly string[]): void {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
     if (arg === 'control') {
-      throw new Error('Control runtime is managed only through the terminal management interface Control menu.')
+      throw new Error('Control runtime is managed only through the Console Control menu.')
     }
     if (arg === '--profile' && controlProfileValue(args[index + 1])) {
-      throw new Error('Control runtime is managed only through the terminal management interface Control menu.')
+      throw new Error('Control runtime is managed only through the Console Control menu.')
     }
     if (arg?.startsWith('--profile=') && controlProfileValue(arg.slice('--profile='.length))) {
-      throw new Error('Control runtime is managed only through the terminal management interface Control menu.')
+      throw new Error('Control runtime is managed only through the Console Control menu.')
     }
   }
 }
@@ -542,7 +542,7 @@ export function caracalBinaries(installDir: string, extraDirs: readonly string[]
   const dirs = new Set<string>([installDir, ...extraDirs])
   const found: string[] = []
   for (const dir of dirs) {
-    for (const name of ['caracal', 'caracal-terminal', 'caracal-terminal']) {
+    for (const name of ['caracal', 'caracal-console', 'caracal-console']) {
       const p = `${dir}/${name}`
       if (existsSync(p)) found.push(p)
     }

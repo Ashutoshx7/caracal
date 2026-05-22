@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Canonical command catalog shared by Caracal runtime, terminal management, and Control automation surfaces.
+// Canonical command catalog shared by Caracal runtime, console management, and Control automation surfaces.
 
 export type CommandGroup =
   | 'shell'
@@ -74,7 +74,7 @@ export const SHELL_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
     subcommands: ['stack', 'volumes', 'logs', 'config', 'runtime', 'secrets', 'cache', 'all'],
   },
   { name: 'run', group: 'runtime', summary: 'Run a command with RESOURCE_TOKEN', requiresConfig: true },
-  { name: 'terminal', group: 'shell', summary: 'Launch the Caracal terminal management interface' },
+  { name: 'console', group: 'shell', summary: 'Launch the Caracal Console' },
 ]);
 
 export const MANAGEMENT_COMMANDS: readonly CommandDescriptor[] = Object.freeze([

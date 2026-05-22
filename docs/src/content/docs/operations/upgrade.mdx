@@ -29,7 +29,7 @@ CARACAL_MODE=stable \
   STREAMS_HMAC_KEY_FILE=/secrets/streamsHmacKey \
   GATEWAY_STS_HMAC_KEY_FILE=/secrets/gatewayStsHmacKey \
   TLS_CERT_FILE=/secrets/tls.crt TLS_KEY_FILE=/secrets/tls.key \
-  the terminal management interface upgrade checklist
+  the Console upgrade checklist
 ```
 
 Every check must be `ok` or `warn`. A `fail` means the new release will refuse to start; fix the config before proceeding.
@@ -88,7 +88,7 @@ kubectl -n caracal rollout status deployment/caracal-audit
 After `helm upgrade` reports success:
 
 ```bash
-Use the terminal management interface Doctor view to inspect failing checks.
+Use the Console Doctor view to inspect failing checks.
 ```
 
 Expect empty output. Then run a synthetic request through Gateway end-to-end (see [Failure Modes](../failure-modes/) for the canonical curl). If anything fails, treat as an incident and follow rollback.

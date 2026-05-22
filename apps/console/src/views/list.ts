@@ -7,7 +7,7 @@ import { ansi, pad, truncate, ui } from '../ansi.ts'
 import { explainError } from '../errors.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
-import type { TerminalStateStore } from '../state.ts'
+import type { ConsoleStateStore } from '../state.ts'
 
 export interface Column<T> {
   header: string
@@ -27,7 +27,7 @@ export interface ListOptions<T> {
   load: () => Promise<T[]>
   onEnter?: (app: App, row: T) => void | Promise<void>
   actions?: ListAction<T>[]
-  state?: TerminalStateStore | undefined
+  state?: ConsoleStateStore | undefined
   stateKey?: string
   zoneId?: string
   rowKey?: (row: T) => string
@@ -39,7 +39,7 @@ export class ListView<T> implements View {
   private readonly loader: () => Promise<T[]>
   private readonly enter?: (app: App, row: T) => void | Promise<void>
   private readonly actions: ListAction<T>[]
-  private readonly state?: TerminalStateStore
+  private readonly state?: ConsoleStateStore
   private readonly stateKey?: string
   private readonly zoneId?: string
   private readonly rowKey?: (row: T) => string

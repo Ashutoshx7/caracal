@@ -173,20 +173,20 @@ jobs:
           CARACAL_RELEASE_VERSION: ${{ steps.ver.outputs.version }}
         run: pnpm --dir apps/runtime build
 
-      - name: Stamp Terminal version
+      - name: Stamp Console version
         env:
           CARACAL_RELEASE_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
-          node apps/terminal/scripts/stampRelease.mjs
-          jq --arg v "${CARACAL_RELEASE_VERSION}" '.version = $v' apps/terminal/package.json > apps/terminal/package.json.tmp
-          mv apps/terminal/package.json.tmp apps/terminal/package.json
+          node apps/console/scripts/stampRelease.mjs
+          jq --arg v "${CARACAL_RELEASE_VERSION}" '.version = $v' apps/console/package.json > apps/console/package.json.tmp
+          mv apps/console/package.json.tmp apps/console/package.json
           echo "Stamped version ${CARACAL_RELEASE_VERSION} into Terminal"
 
-      - name: Build Terminal binaries
+      - name: Build Console binaries
         env:
           CARACAL_RELEASE_VERSION: ${{ steps.ver.outputs.version }}
-        run: pnpm --dir apps/terminal build
+        run: pnpm --dir apps/console build
 
       - name: Package release archives
         env:
@@ -204,7 +204,7 @@ jobs:
             [ "$os" = windows ] && ext='.exe'
             case "$kind" in
               shell) srcDir=apps/runtime/dist; srcBase=caracal; binName=caracal ;;
-              terminal) srcDir=apps/terminal/dist; srcBase=caracal-terminal; binName=caracal-terminal ;;
+              terminal) srcDir=apps/console/dist; srcBase=caracal-console; binName=caracal-console ;;
             esac
             src="${srcDir}/${srcBase}-${os}-${bunArch}${ext}"
             [ -f "$src" ] || { echo "::error::missing source binary: ${src}"; exit 1; }
@@ -235,11 +235,11 @@ jobs:
           "${work}/caracal" --help
           echo "Shell smoke test passed"
 
-          tar -xzf "release-dist/caracal-terminal-linux-amd64-${tag}.tar.gz" -C "$work"
-          "${work}/caracal-terminal" --help
+          tar -xzf "release-dist/caracal-console-linux-amd64-${tag}.tar.gz" -C "$work"
+          "${work}/caracal-console" --help
           terminal_exit=0
-          "${work}/caracal-terminal" 2>/tmp/terminal-stderr || terminal_exit=$?
-          terminal_msg="$(cat /tmp/terminal-stderr)"
+          "${work}/caracal-console" 2>/tmp/console-stderr || terminal_exit=$?
+          terminal_msg="$(cat /tmp/console-stderr)"
           [ "${terminal_exit}" = "1" ] || { echo "::error::Terminal exited with code ${terminal_exit} (expected 1)"; exit 1; }
           echo "${terminal_msg}" | grep -q "not a TTY" || { echo "::error::Terminal missing expected no-TTY message; got: ${terminal_msg}"; exit 1; }
           echo "Terminal smoke test passed"
@@ -248,7 +248,7 @@ jobs:
         working-directory: release-dist
         run: |
           set -euo pipefail
-          sha256sum caracal-shell-*.tar.gz caracal-shell-*.zip caracal-terminal-*.tar.gz caracal-terminal-*.zip > SHA256SUMS
+          sha256sum caracal-shell-*.tar.gz caracal-shell-*.zip caracal-console-*.tar.gz caracal-console-*.zip > SHA256SUMS
           echo "Generated SHA256SUMS:"
           cat SHA256SUMS
 
@@ -285,8 +285,8 @@ jobs:
         with:
           subject-path: |
             release-dist/caracal-shell-*
-            release-dist/caracal-terminal-*
-            release-dist/caracal-terminal-*
+            release-dist/caracal-console-*
+            release-dist/caracal-console-*
 
   images:
     name: Build and push container images
@@ -410,7 +410,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/caracal-terminal
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/caracal-console
           tags: |
             type=raw,value=${{ github.ref_name }},enable=${{ github.event_name == 'push' }}
             type=raw,value=latest,enable=${{ github.event_name == 'push' }}
@@ -452,9 +452,9 @@ jobs:
       - name: Verify installer scripts
         run: |
           set -euo pipefail
-          test -f install-terminal.sh
-          test -f install-terminal.ps1
-          test -x install-terminal.sh || chmod +x install-terminal.sh
+          test -f install-console.sh
+          test -f install-console.ps1
+          test -x install-console.sh || chmod +x install-console.sh
 
       - name: Verify release assets
         run: |
@@ -468,11 +468,11 @@ jobs:
             "dist/caracal-shell-darwin-amd64-${tag}.tar.gz" \
             "dist/caracal-shell-darwin-arm64-${tag}.tar.gz" \
             "dist/caracal-shell-windows-amd64-${tag}.zip" \
-            "dist/caracal-terminal-linux-amd64-${tag}.tar.gz" \
-            "dist/caracal-terminal-linux-arm64-${tag}.tar.gz" \
-            "dist/caracal-terminal-darwin-amd64-${tag}.tar.gz" \
-            "dist/caracal-terminal-darwin-arm64-${tag}.tar.gz" \
-            "dist/caracal-terminal-windows-amd64-${tag}.zip" \
+            "dist/caracal-console-linux-amd64-${tag}.tar.gz" \
+            "dist/caracal-console-linux-arm64-${tag}.tar.gz" \
+            "dist/caracal-console-darwin-amd64-${tag}.tar.gz" \
+            "dist/caracal-console-darwin-arm64-${tag}.tar.gz" \
+            "dist/caracal-console-windows-amd64-${tag}.zip" \
             "dist/SHA256SUMS"
           do
             [ -f "${asset}" ] || { echo "::error::Missing release asset: ${asset}"; exit 1; }
@@ -491,10 +491,10 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             dist/caracal-shell-*
-            dist/caracal-terminal-*
+            dist/caracal-console-*
             dist/SHA256SUMS
-            install-terminal.sh
-            install-terminal.ps1
+            install-console.sh
+            install-console.ps1
 
       - name: Trigger post-release validation
         continue-on-error: true

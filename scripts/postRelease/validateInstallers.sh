@@ -14,22 +14,22 @@ readonly REPO_ROOT="$(cd "$HERE/../.." && pwd)"
 readonly PLAT="$(hostPlatform)"
 
 validateShellTerminal() {
-  matchesOnly "install-terminal.sh" || return 0
+  matchesOnly "install-console.sh" || return 0
   local dir; dir="$(mktemp -d)"
-  if CARACAL_INSTALL_DIR="$dir/bin" runOrEcho bash "$REPO_ROOT/install-terminal.sh" --version "$CARACAL_RELEASE" >"$dir/out" 2>&1; then
+  if CARACAL_INSTALL_DIR="$dir/bin" runOrEcho bash "$REPO_ROOT/install-console.sh" --version "$CARACAL_RELEASE" >"$dir/out" 2>&1; then
     if [[ "$DRY_RUN" == "1" ]]; then
-      logFinding "$AREA" "install-terminal.sh" "$PLAT" "shell" "-" "$SEV_INFO" "$STATUS_PASS" "dry-run: would run bash install-terminal.sh --version $CARACAL_RELEASE" "bash install-terminal.sh --version $CARACAL_RELEASE"
+      logFinding "$AREA" "install-console.sh" "$PLAT" "shell" "-" "$SEV_INFO" "$STATUS_PASS" "dry-run: would run bash install-console.sh --version $CARACAL_RELEASE" "bash install-console.sh --version $CARACAL_RELEASE"
     else
-      local evidence="installer placed caracal-terminal on PATH"
-      [[ -x "$dir/bin/caracal" ]] && evidence="installer placed caracal and caracal-terminal on PATH"
-      if "$dir/bin/caracal-terminal" --version 2>/dev/null | grep -q "$TERMINAL_VER"; then
-        logFinding "$AREA" "install-terminal.sh" "$PLAT" "shell" "-" "$SEV_INFO" "$STATUS_PASS" "$evidence" "bash install-terminal.sh --version $CARACAL_RELEASE"
+      local evidence="installer placed caracal-console on PATH"
+      [[ -x "$dir/bin/caracal" ]] && evidence="installer placed caracal and caracal-console on PATH"
+      if "$dir/bin/caracal-console" --version 2>/dev/null | grep -q "$CONSOLE_VER"; then
+        logFinding "$AREA" "install-console.sh" "$PLAT" "shell" "-" "$SEV_INFO" "$STATUS_PASS" "$evidence" "bash install-console.sh --version $CARACAL_RELEASE"
       else
-        logFinding "$AREA" "install-terminal.sh" "$PLAT" "shell" "-" "$SEV_MAJOR" "$STATUS_FAIL" "installed binary --version did not match $TERMINAL_VER" "bash install-terminal.sh --version $CARACAL_RELEASE"
+        logFinding "$AREA" "install-console.sh" "$PLAT" "shell" "-" "$SEV_MAJOR" "$STATUS_FAIL" "installed binary --version did not match $CONSOLE_VER" "bash install-console.sh --version $CARACAL_RELEASE"
       fi
     fi
   else
-    logFinding "$AREA" "install-terminal.sh" "$PLAT" "shell" "-" "$SEV_BLOCKER" "$STATUS_FAIL" "$(head -c 400 "$dir/out")" "bash install-terminal.sh --version $CARACAL_RELEASE"
+    logFinding "$AREA" "install-console.sh" "$PLAT" "shell" "-" "$SEV_BLOCKER" "$STATUS_FAIL" "$(head -c 400 "$dir/out")" "bash install-console.sh --version $CARACAL_RELEASE"
   fi
   rm -rf "$dir"
 }
@@ -64,4 +64,4 @@ validatePwshInstaller() {
 }
 
 validateShellTerminal
-validatePwshInstaller "install-terminal.ps1" "caracal-terminal" "$TERMINAL_VER"
+validatePwshInstaller "install-console.ps1" "caracal-console" "$CONSOLE_VER"

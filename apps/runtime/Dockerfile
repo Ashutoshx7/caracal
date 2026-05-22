@@ -28,18 +28,18 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile --ignore-scripts --filter @caracalai/runtime...
 RUN pnpm run build:typescript
 RUN case "${TARGETARCH}" in \
-      amd64) bunTarget=bun-linux-x64; outName=caracal-terminal-linux-x64 ;; \
-      arm64) bunTarget=bun-linux-arm64; outName=caracal-terminal-linux-arm64 ;; \
+      amd64) bunTarget=bun-linux-x64; outName=caracal-console-linux-x64 ;; \
+      arm64) bunTarget=bun-linux-arm64; outName=caracal-console-linux-arm64 ;; \
       *) echo "unsupported arch ${TARGETARCH}"; exit 1 ;; \
     esac && \
     cd apps/runtime && \
     node scripts/stampRelease.mjs && \
-    bun build --compile --target=${bunTarget} src/runtime.ts --outfile dist/caracal-terminal && \
-    chmod +x dist/caracal-terminal
+    bun build --compile --target=${bunTarget} src/runtime.ts --outfile dist/caracal-console && \
+    chmod +x dist/caracal-console
 
 FROM debian:12-slim@sha256:1209d8fd77def86ceb6663deef7956481cc6c14a25e1e64daec12c0ceffcc19d
 RUN useradd --system --uid 65532 --user-group --create-home --home-dir /home/caracal caracal
-COPY --from=builder /workspace/apps/runtime/dist/caracal-terminal /usr/local/bin/caracal
+COPY --from=builder /workspace/apps/runtime/dist/caracal-console /usr/local/bin/caracal
 USER caracal
 WORKDIR /home/caracal
 ENTRYPOINT ["/usr/local/bin/caracal"]

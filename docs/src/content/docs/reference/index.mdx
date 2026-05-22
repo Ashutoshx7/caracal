@@ -14,7 +14,7 @@ The Reference section documents every contract, configuration key, error code, a
 | [Error Reference](./errors/) | Every error code returned by services and SDKs — HTTP status, cause, and resolution |
 | [Configuration Reference](./configuration/) | All environment variables for each service, `caracal.toml` schema, and SDK config types |
 | [Defaults and Limits](./defaults-and-limits/) | Operational TTLs, size limits, timeouts, and quotas |
-| [Runtime Exit Codes](./runtime-exit-codes/) | Exit statuses used by `caracal`, `caracal-terminal`, and `caracal-terminal` |
+| [Runtime Exit Codes](./runtime-exit-codes/) | Exit statuses used by `caracal`, `caracal-console`, and `caracal-console` |
 | [Compatibility Matrix](./compatibility/) | Supported language versions, service pairings, and database versions |
 | [Interoperability Contracts](./interoperability-contracts/) | Stable standards profiles and schemas for third-party verifiers, upstreams, policies, audit exporters, and connectors |
 
@@ -28,7 +28,7 @@ The Reference section documents every contract, configuration key, error code, a
 
 **Need a default or limit?** Go to [Defaults and Limits](./defaults-and-limits/).
 
-**Scripting against the terminal management interface?** Go to [Runtime Exit Codes](./runtime-exit-codes/).
+**Scripting against the Console?** Go to [Runtime Exit Codes](./runtime-exit-codes/).
 
 **Checking version support?** Go to [Compatibility Matrix](./compatibility/).
 
@@ -46,4 +46,4 @@ Caracal has five services, each with its own configuration scope:
 | Coordinator | 4000 | Agent session lifecycle and delegation orchestration |
 | Audit | 9090 | Event ingestion, chain verification, and export |
 
-All services require Postgres and Redis. Configuration is entirely through environment variables — there are no config files for services. Client-side configuration uses `caracal.toml` for terminal management interface operations and typed config structs for SDK use.
+All services require Postgres and Redis. Configuration is entirely through environment variables — there are no config files for services. Client-side configuration uses `caracal.toml` for Console operations and typed config structs for SDK use.

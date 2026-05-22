@@ -9,7 +9,7 @@
   "updateInternalDependencies": "patch",
   "ignore": [
     "@caracalai/runtime",
-    "@caracalai/terminal",
+    "@caracalai/console",
     "@caracalai/api",
     "@caracalai/coordinator",
     "@caracalai/docs"

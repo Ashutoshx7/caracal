@@ -31,7 +31,7 @@
 
 The default product path is intentionally small: register an **agent app**, run an **agent run**, request a short-lived **mandate**, call a **resource** through the **Gateway**, and inspect the resulting **audit** trail. The STS evaluates policy and issues Caracal access tokens, the Gateway enforces token validity and provider routing, the Coordinator tracks runtime and delegation state, and Audit records why access was allowed or denied and what happened upstream.
 
-Platform teams can evaluate Caracal locally with `caracal up` and check dependency-aware runtime readiness with `caracal status --ready`. Product management stays in optional interfaces: use `caracal terminal` or `caracal-terminal` for diagnostics, policy dry-runs, token inspection, audit search, and request explanation. Workload execution is separate: use top-level `caracal run -- <command>` when you want to launch a process with scoped resource tokens from `caracal.toml`.
+Platform teams can evaluate Caracal locally with `caracal up` and check dependency-aware runtime readiness with `caracal status --ready`. Product management stays in optional interfaces: use `caracal terminal` or `caracal-console` for diagnostics, policy dry-runs, token inspection, audit search, and request explanation. Workload execution is separate: use top-level `caracal run -- <command>` when you want to launch a process with scoped resource tokens from `caracal.toml`.
 
 -----
 
@@ -74,7 +74,7 @@ More coming soon
 
 ### Install
 
-The installer provides the thin `caracal` runtime shell and the `caracal-terminal` management interface.
+The installer provides the thin `caracal` runtime shell and the `caracal-console` management interface.
 
 > Pin a version: `--version vYYYY.MM.DD` on Unix or `-Version vYYYY.MM.DD` in PowerShell.  
 > Change install directory: `--install-dir /path` on Unix or `-InstallDir C:\path` in PowerShell.
@@ -83,8 +83,8 @@ The installer provides the thin `caracal` runtime shell and the `caracal-termina
 <summary><strong>Linux</strong> (amd64 / arm64)</summary>
 
 ```bash
-# terminal management interface
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.sh | sh
+# Console
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
 ```
 
 Installs to `~/.local/bin`. Override with `--install-dir /usr/local/bin` (may need `sudo`).
@@ -95,8 +95,8 @@ Installs to `~/.local/bin`. Override with `--install-dir /usr/local/bin` (may ne
 <summary><strong>macOS</strong> (Intel / Apple Silicon)</summary>
 
 ```bash
-# terminal management interface
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.sh | sh
+# Console
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
 ```
 
 If Gatekeeper blocks the binary: `xattr -d com.apple.quarantine ~/.local/bin/caracal`.
@@ -107,8 +107,8 @@ If Gatekeeper blocks the binary: `xattr -d com.apple.quarantine ~/.local/bin/car
 <summary><strong>Windows</strong> (amd64) PowerShell</summary>
 
 ```powershell
-# terminal management interface
-iwr -useb https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.ps1 | iex
+# Console
+iwr -useb https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.ps1 | iex
 ```
 
 Installs to `%LOCALAPPDATA%\Programs\caracal`. Requires Docker Desktop with WSL2.
@@ -127,14 +127,14 @@ Archive names (replace `vYYYY.MM.DD` with the release tag):
 - `caracal-shell-darwin-amd64-vYYYY.MM.DD.tar.gz`
 - `caracal-shell-darwin-arm64-vYYYY.MM.DD.tar.gz`
 - `caracal-shell-windows-amd64-vYYYY.MM.DD.zip`
-- `caracal-terminal-linux-amd64-vYYYY.MM.DD.tar.gz`
-- `caracal-terminal-linux-arm64-vYYYY.MM.DD.tar.gz`
-- `caracal-terminal-darwin-amd64-vYYYY.MM.DD.tar.gz`
-- `caracal-terminal-darwin-arm64-vYYYY.MM.DD.tar.gz`
-- `caracal-terminal-windows-amd64-vYYYY.MM.DD.zip`
-- `caracal-terminal-...` (same five targets)
+- `caracal-console-linux-amd64-vYYYY.MM.DD.tar.gz`
+- `caracal-console-linux-arm64-vYYYY.MM.DD.tar.gz`
+- `caracal-console-darwin-amd64-vYYYY.MM.DD.tar.gz`
+- `caracal-console-darwin-arm64-vYYYY.MM.DD.tar.gz`
+- `caracal-console-windows-amd64-vYYYY.MM.DD.zip`
+- `caracal-console-...` (same five targets)
 
-Each archive contains a single executable (`caracal`, `caracal-terminal`, or `caracal-terminal`, with `.exe` on Windows).
+Each archive contains a single executable (`caracal`, `caracal-console`, or `caracal-console`, with `.exe` on Windows).
 
 </details>
 
@@ -149,17 +149,17 @@ caracal down                          # stop; add -v to remove volumes
 caracal purge                         # interactive cleanup (containers, volumes, config, runtime, caches)
 ```
 
-> The installer pins the runtime shell and terminal management interface to one release. `caracal up` pulls matching container images from `ghcr.io/garudex-labs/caracal-*:<tag>`. Override per invocation with `CARACAL_VERSION=vYYYY.MM.DD caracal up` to run an older or newer release stack from the same installation.
+> The installer pins the runtime shell and Console to one release. `caracal up` pulls matching container images from `ghcr.io/garudex-labs/caracal-*:<tag>`. Override per invocation with `CARACAL_VERSION=vYYYY.MM.DD caracal up` to run an older or newer release stack from the same installation.
 
 ### Run workloads with scoped tokens
 
-`caracal run` is a top-level execution command, not a runtime/terminal management command. It reads `caracal.toml`, exchanges the configured application credentials with STS for the resources listed in `credentials` and `optional_credentials`, injects only those token environment variables into the child process, and runs the command without a shell.
+`caracal run` is a top-level execution command, not a runtime/console management command. It reads `caracal.toml`, exchanges the configured application credentials with STS for the resources listed in `credentials` and `optional_credentials`, injects only those token environment variables into the child process, and runs the command without a shell.
 
 ```bash
 caracal run -- node worker.js
 ```
 
-Use `caracal terminal` or `caracal-terminal` for management and inspection. Use `caracal run` only for launching a local workload that needs scoped, short-lived Caracal resource tokens.
+Use `caracal terminal` or `caracal-console` for management and inspection. Use `caracal run` only for launching a local workload that needs scoped, short-lived Caracal resource tokens.
 
 ### Enterprise evaluation
 
@@ -175,9 +175,9 @@ helm upgrade --install caracal ./infra/helm/caracal \
 The chart is a reference deployment for enterprise evaluation, production adaptation, and GitOps ownership, not a replacement for `caracal up`. See [Kubernetes with Helm](docs/src/content/docs/operations/kubernetes-helm.mdx) for the required runtime Secret and operational boundaries.
 
 <details>
-<summary><strong>terminal management interface</strong></summary>
+<summary><strong>Console</strong></summary>
 
-Management workflows require `CARACAL_ADMIN_TOKEN`. Use the zone picker or set `zone_id` in `caracal.toml` to target a zone. `caracal run` is not part of `caracal-terminal`; run workloads through the top-level `caracal run -- <command>` path.
+Management workflows require `CARACAL_ADMIN_TOKEN`. Use the zone picker or set `zone_id` in `caracal.toml` to target a zone. `caracal run` is not part of `caracal-console`; run workloads through the top-level `caracal run -- <command>` path.
 
 | Variable | Default | Notes |
 |---|---|---|
@@ -194,10 +194,10 @@ Management workflows require `CARACAL_ADMIN_TOKEN`. Use the zone picker or set `
 
 ```bash
 export CARACAL_ADMIN_TOKEN=<your-admin-token>   # printed by the installer; or read from $CARACAL_HOME/secrets/caracalAdminToken
-caracal-terminal
+caracal-console
 ```
 
-Uses the same management environment variables as the runtime engine. `CARACAL_COORDINATOR_TOKEN` is only needed for the agents view. The terminal management interface does not run workloads; launch token-injected processes with `caracal run -- <command>`.
+Uses the same management environment variables as the runtime engine. `CARACAL_COORDINATOR_TOKEN` is only needed for the agents view. The Console does not run workloads; launch token-injected processes with `caracal run -- <command>`.
 
 | Key | Action |
 |---|---|
@@ -226,7 +226,7 @@ Uses the same management environment variables as the runtime engine. `CARACAL_C
 - Git 2.x
 - Go 1.26+ (only when changing Go services or shared Go packages)
 - Python 3.14+ (only when changing Python packages)
-- Bun (only when building distributable runtime/terminal binaries)
+- Bun (only when building distributable runtime/console binaries)
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for clone, setup, testing, and pull request workflow.
 

@@ -4,8 +4,8 @@
 // DetailView mask hook hides tokens by default and reveals with v.
 
 import { describe, it, expect, vi } from 'vitest'
-import { DetailView } from '../../../../apps/terminal/src/views/detail.ts'
-import type { App } from '../../../../apps/terminal/src/screen.ts'
+import { DetailView } from '../../../../apps/console/src/views/detail.ts'
+import type { App } from '../../../../apps/console/src/screen.ts'
 
 function fakeApp(): App {
   return {

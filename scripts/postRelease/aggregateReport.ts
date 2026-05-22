@@ -51,7 +51,7 @@ const AREAS = [
   ["pypiInstall", "PyPI Install Matrix"],
   ["npmInstall", "npm Install Matrix"],
   ["shellBinaries", "Shell Binaries"],
-  ["terminalBinaries", "Terminal Binaries"],
+  ["consoleBinaries", "Console Binaries"],
   ["installers", "Installers"],
   ["containers", "Container Stack"],
   ["provenance", "Provenance & Signing"],

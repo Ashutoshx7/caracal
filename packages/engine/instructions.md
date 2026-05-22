@@ -4,7 +4,7 @@
 - Covers the `@caracalai/engine` TypeScript package under `packages/engine/`.
 
 ## Architecture Design
-- Engine owns non-HTTP execution used by the top-level shell and terminal management interface: stack lifecycle, runtime asset provisioning, process execution for `caracal run`, credential reads, control invocation, OAuth step-up, token scrubbing, and crash-safe helpers.
+- Engine owns non-HTTP execution used by the top-level shell and Console: stack lifecycle, runtime asset provisioning, process execution for `caracal run`, credential reads, control invocation, OAuth step-up, token scrubbing, and crash-safe helpers.
 - `@caracalai/admin` owns admin HTTP calls.
 - `src/embedded.ts` is generated from runtime assets by `scripts/build-embedded.mjs`.
 

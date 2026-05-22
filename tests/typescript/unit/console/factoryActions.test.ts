@@ -15,11 +15,11 @@ import {
   resourcesView,
   sessionsView,
   zonesView,
-} from '../../../../apps/terminal/src/views/factory.ts'
-import { DetailView } from '../../../../apps/terminal/src/views/detail.ts'
-import { ConfirmView, FormView } from '../../../../apps/terminal/src/views/form.ts'
-import { ListView } from '../../../../apps/terminal/src/views/list.ts'
-import type { App } from '../../../../apps/terminal/src/screen.ts'
+} from '../../../../apps/console/src/views/factory.ts'
+import { DetailView } from '../../../../apps/console/src/views/detail.ts'
+import { ConfirmView, FormView } from '../../../../apps/console/src/views/form.ts'
+import { ListView } from '../../../../apps/console/src/views/list.ts'
+import type { App } from '../../../../apps/console/src/screen.ts'
 
 function fakeApp(): App {
   const pushed: unknown[] = []

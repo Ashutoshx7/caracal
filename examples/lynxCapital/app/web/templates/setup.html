@@ -38,17 +38,17 @@ Lynx Capital setup checklist for Caracal and provider configuration.
 
   <div class="panel">
     <h2>1 · Connect Caracal through Terminal + control API</h2>
-    <p>Install the released runtime/terminal, start Caracal, then use <code>caracal-terminal</code> to create or confirm the Lynx zone, control key, and protected resources.</p>
-<pre class="cmd">curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.sh | sh
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.sh | sh
+    <p>Install the released runtime/console, start Caracal, then use <code>caracal-console</code> to create or confirm the Lynx zone, control key, and protected resources.</p>
+<pre class="cmd">curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
 caracal up
-caracal-terminal</pre>
-    <p>In the Terminal, open <strong>Control</strong> and confirm <strong>enable endpoint</strong> before creating the Lynx control key.</p>
+caracal-console</pre>
+    <p>In the Console, open <strong>Control</strong> and confirm <strong>enable endpoint</strong> before creating the Lynx control key.</p>
   </div>
 
   <div class="panel">
     <h2>2 · Create the Lynx Caracal objects</h2>
-    <p>In the Terminal, create a <code>Lynx Capital</code> zone, create a <code>lynx-control</code> control key, copy its client secret once, and add one <code>lynx/&lt;provider&gt;</code> resource for each provider in <code>config/company.yaml</code>. REST resources should point upstream to the provider alias such as <code>http://mercury-bank.mock:8800</code>.</p>
+    <p>In the Console, create a <code>Lynx Capital</code> zone, create a <code>lynx-control</code> control key, copy its client secret once, and add one <code>lynx/&lt;provider&gt;</code> resource for each provider in <code>config/company.yaml</code>. REST resources should point upstream to the provider alias such as <code>http://mercury-bank.mock:8800</code>.</p>
 <pre class="cmd"><span class="c"># Required resource identifiers</span>
 lynx/mercury-bank
 lynx/wise-payouts
@@ -69,7 +69,7 @@ lynx/vendor-portal</pre>
 
   <div class="panel">
     <h2>3 · Write caracal.toml</h2>
-    <p>Create <code>~/.config/caracal/caracal.toml</code> from the Terminal values. The SDK reads this file directly, so keep the control key secret here and do not put Caracal credentials in <code>.env</code>.</p>
+    <p>Create <code>~/.config/caracal/caracal.toml</code> from the Console values. The SDK reads this file directly, so keep the control key secret here and do not put Caracal credentials in <code>.env</code>.</p>
 <pre class="cmd">zone_url = "http://127.0.0.1:8080"
 sts_url = "http://127.0.0.1:8080"
 coordinator_url = "http://127.0.0.1:4000"

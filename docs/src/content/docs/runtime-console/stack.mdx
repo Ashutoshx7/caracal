@@ -4,7 +4,7 @@ description: Use caracal up, down, status, and purge to manage the local runtime
 pageType: reference
 ---
 
-Runtime lifecycle commands manage local infrastructure and do not perform product management. They delegate to Docker Compose, resolve release assets from the Caracal home, and preserve the terminal management interface as the single human management surface.
+Runtime lifecycle commands manage local infrastructure and do not perform product management. They delegate to Docker Compose, resolve release assets from the Caracal home, and preserve the Console as the single human management surface.
 
 ---
 
@@ -55,4 +55,4 @@ Remove the local stack, runtime data, generated logs, cached release assets, and
 caracal purge
 ```
 
-Use `purge` only when you intentionally want a clean local environment. Recreate zones, applications, policies, grants, and Control keys through the terminal management interface after the next `caracal up`.
+Use `purge` only when you intentionally want a clean local environment. Recreate zones, applications, policies, grants, and Control keys through the Console after the next `caracal up`.

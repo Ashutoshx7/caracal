@@ -99,7 +99,7 @@ describe('dispatch', () => {
     const executors = Object.fromEntries(MANAGEMENT_COMMANDS.map((c) => [c.name, vi.fn() as Executor]))
     const registry = buildRegistry(MANAGEMENT_COMMANDS, executors)
     await expect(
-      dispatch({ binary: 'caracal-terminal', version: '0.0.0', mode: 'dev', registry }, ['--help']),
+      dispatch({ binary: 'caracal-console', version: '0.0.0', mode: 'dev', registry }, ['--help']),
     ).rejects.toThrow('exit:0')
     const out = stdout.mock.calls.map((c) => String(c[0])).join('')
     expect(out).toContain('zone')

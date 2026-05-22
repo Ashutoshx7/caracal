@@ -9,11 +9,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./lib/common.sh
 source "$HERE/lib/common.sh"
 
-readonly AREA="terminalBinaries"
+readonly AREA="consoleBinaries"
 readonly KIND="terminal"
-readonly BIN="caracal-terminal"
+readonly BIN="caracal-console"
 readonly BASE="https://github.com/$CARACAL_REPO/releases/download/$CARACAL_RELEASE"
-readonly EXPECT="$TERMINAL_VER"
+readonly EXPECT="$CONSOLE_VER"
 readonly PLATS=(linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64)
 
 validatePlat() {

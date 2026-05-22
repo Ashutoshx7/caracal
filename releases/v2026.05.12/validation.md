@@ -65,7 +65,7 @@ title: v2026.05.12 Release Validation Report
 | PyPI Install Matrix | 7 | 0 | 0 | 0 |
 | npm Install Matrix | 12 | 0 | 0 | 0 |
 | Runtime Binaries | 5 | 0 | 0 | 0 |
-| Terminal Binaries | 5 | 0 | 0 | 0 |
+| Console Binaries | 5 | 0 | 0 | 0 |
 | Installers | 2 | 0 | 0 | 0 |
 | Container Stack | 6 | 0 | 0 | 0 |
 | Provenance & Signing | 15 | 0 | 0 | 0 |
@@ -167,28 +167,28 @@ title: v2026.05.12 Release Validation Report
 
 ### Runtime Binaries
 
-- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.12.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-console-linux-amd64-v2026.05.12.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256sum -c`
-- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.12.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-console-linux-arm64-v2026.05.12.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256sum -c`
-- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.12.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-console-darwin-amd64-v2026.05.12.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256sum -c`
-- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.12.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-console-darwin-arm64-v2026.05.12.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256sum -c`
-- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.12.zip` (windows-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-console-windows-amd64-v2026.05.12.zip` (windows-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256sum -c`
 
-### Terminal Binaries
+### Console Binaries
 
-- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.12.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-console-linux-amd64-v2026.05.12.tar.gz` (linux-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256sum -c`
-- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.12.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-console-linux-arm64-v2026.05.12.tar.gz` (linux-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256sum -c`
-- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.12.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-console-darwin-amd64-v2026.05.12.tar.gz` (darwin-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256sum -c`
-- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.12.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-console-darwin-arm64-v2026.05.12.tar.gz` (darwin-arm64/github/-): checksum ok; not host-executable
   - Repro: `sha256sum -c`
-- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.12.zip` (windows-amd64/github/-): checksum ok; not host-executable
+- **[info]** PASS — `caracal-console-windows-amd64-v2026.05.12.zip` (windows-amd64/github/-): checksum ok; not host-executable
   - Repro: `sha256sum -c`
 
 ### Installers
@@ -215,26 +215,26 @@ title: v2026.05.12 Release Validation Report
 
 ### Provenance & Signing
 
-- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-terminal-linux-amd64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-terminal-linux-amd64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-terminal-linux-amd64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-terminal-linux-arm64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-terminal-linux-arm64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-terminal-linux-arm64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-terminal-darwin-amd64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-terminal-darwin-amd64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-terminal-darwin-amd64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-terminal-darwin-arm64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-terminal-darwin-arm64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-terminal-darwin-arm64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.12.zip` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-terminal-windows-amd64-v2026.05.12.zip --repo Garudex-Labs/caracal`
-- **[info]** PASS — `caracal-terminal-windows-amd64-v2026.05.12.zip` (github/gh/-): attestation verified
-  - Repro: `gh attestation verify caracal-terminal-windows-amd64-v2026.05.12.zip --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-console-linux-amd64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-console-linux-amd64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-console-linux-amd64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-console-linux-amd64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-console-linux-arm64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-console-linux-arm64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-console-linux-arm64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-console-linux-arm64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-console-darwin-amd64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-console-darwin-amd64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-console-darwin-amd64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-console-darwin-amd64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-console-darwin-arm64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-console-darwin-arm64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-console-darwin-arm64-v2026.05.12.tar.gz` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-console-darwin-arm64-v2026.05.12.tar.gz --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-console-windows-amd64-v2026.05.12.zip` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-console-windows-amd64-v2026.05.12.zip --repo Garudex-Labs/caracal`
+- **[info]** PASS — `caracal-console-windows-amd64-v2026.05.12.zip` (github/gh/-): attestation verified
+  - Repro: `gh attestation verify caracal-console-windows-amd64-v2026.05.12.zip --repo Garudex-Labs/caracal`
 - **[info]** PASS — `ghcr.io/garudex-labs/caracal-audit:v2026.05.12` (ghcr/cosign/-): dry-run: would cosign verify ghcr.io/garudex-labs/caracal-audit:v2026.05.12
   - Repro: `cosign verify ghcr.io/garudex-labs/caracal-audit:v2026.05.12`
 - **[info]** PASS — `ghcr.io/garudex-labs/caracal-coordinator:v2026.05.12` (ghcr/cosign/-): dry-run: would cosign verify ghcr.io/garudex-labs/caracal-coordinator:v2026.05.12

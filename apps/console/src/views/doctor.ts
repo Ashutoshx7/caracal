@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Interactive doctor diagnostics view for Terminal operator health checks.
+// Interactive doctor diagnostics view for Console operator health checks.
 
 import {
   DOCTOR_SECTION_LABELS,

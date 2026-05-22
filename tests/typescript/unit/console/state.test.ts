@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { TerminalStateStore } from '../../../../apps/terminal/src/state.ts'
+import { ConsoleStateStore } from '../../../../apps/console/src/state.ts'
 
 const dirs: string[] = []
 
@@ -17,15 +17,15 @@ afterEach(() => {
 })
 
 function statePath(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'caracal-terminal-state-'))
+  const dir = mkdtempSync(join(tmpdir(), 'caracal-console-state-'))
   dirs.push(dir)
-  return join(dir, 'terminal-state.json')
+  return join(dir, 'console-state.json')
 }
 
-describe('TerminalStateStore', () => {
+describe('ConsoleStateStore', () => {
   it('persists non-secret operator context with restricted file permissions', () => {
     const path = statePath()
-    const state = new TerminalStateStore(path)
+    const state = new ConsoleStateStore(path)
 
     state.setSelectedZone('zone-1', 'prod')
     state.setMenuCursor(4)
@@ -33,7 +33,7 @@ describe('TerminalStateStore', () => {
     state.setAuditFilters('zone-1', { decision: 'deny', request_id: 'req-1', limit: 25 })
     state.setSessionFilters('zone-1', { status: 'active', subject_id: 'user-1', limit: 50 })
 
-    const loaded = TerminalStateStore.load(path)
+    const loaded = ConsoleStateStore.load(path)
     expect(loaded.selectedZoneId()).toBe('zone-1')
     expect(loaded.selectedZoneSlug()).toBe('prod')
     expect(loaded.menuCursor()).toBe(4)
@@ -51,10 +51,10 @@ describe('TerminalStateStore', () => {
     const path = statePath()
     writeFileSync(path, '{not-json', { mode: 0o600 })
 
-    const state = TerminalStateStore.load(path)
+    const state = ConsoleStateStore.load(path)
     expect(state.selectedZoneId()).toBeUndefined()
 
     state.setSelectedZone('zone-2', undefined)
-    expect(TerminalStateStore.load(path).selectedZoneId()).toBe('zone-2')
+    expect(ConsoleStateStore.load(path).selectedZoneId()).toBe('zone-2')
   })
 })

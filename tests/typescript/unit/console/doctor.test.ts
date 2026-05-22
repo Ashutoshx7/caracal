@@ -5,9 +5,9 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { runDoctorDiagnostics } from '@caracalai/engine'
-import { MenuView } from '../../../../apps/terminal/src/views/menu.ts'
-import { DoctorView } from '../../../../apps/terminal/src/views/doctor.ts'
-import type { App } from '../../../../apps/terminal/src/screen.ts'
+import { MenuView } from '../../../../apps/console/src/views/menu.ts'
+import { DoctorView } from '../../../../apps/console/src/views/doctor.ts'
+import type { App } from '../../../../apps/console/src/screen.ts'
 import type { AdminClient } from '@caracalai/admin'
 
 vi.mock('@caracalai/engine', async () => {

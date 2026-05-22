@@ -8,9 +8,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, it, expect, vi } from 'vitest'
 
-import { MenuView } from '../../../../apps/terminal/src/views/menu.ts'
-import { TerminalStateStore } from '../../../../apps/terminal/src/state.ts'
-import type { App } from '../../../../apps/terminal/src/screen.ts'
+import { MenuView } from '../../../../apps/console/src/views/menu.ts'
+import { ConsoleStateStore } from '../../../../apps/console/src/state.ts'
+import type { App } from '../../../../apps/console/src/screen.ts'
 import type { AdminClient, Zone } from '@caracalai/admin'
 
 const dirs: string[] = []
@@ -19,10 +19,10 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-function stateStore(): TerminalStateStore {
+function stateStore(): ConsoleStateStore {
   const dir = mkdtempSync(join(tmpdir(), 'caracal-menu-zone-'))
   dirs.push(dir)
-  return new TerminalStateStore(join(dir, 'terminal-state.json'))
+  return new ConsoleStateStore(join(dir, 'console-state.json'))
 }
 
 function fakeApp(): App {

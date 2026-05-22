@@ -84,16 +84,16 @@ pip install -e .
 
 ### Start Caracal through Terminal + control API
 
-Install the released Runtime and Terminal, then start the Caracal stack:
+Install the released Runtime and Console, then start the Caracal stack:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.sh | sh
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
 caracal up
-caracal-terminal
+caracal-console
 ```
 
-In the Terminal, open **Control**, confirm **enable endpoint**, then create or inspect:
+In the Console, open **Control**, confirm **enable endpoint**, then create or inspect:
 
 | Caracal object | Lynx value | Purpose |
 | --- | --- | --- |
@@ -101,8 +101,8 @@ In the Terminal, open **Control**, confirm **enable endpoint**, then create or i
 | Control key | `lynx-control` | Real application credential used by Lynx as `application_id` + `app_client_secret` |
 | Resources | `lynx/<provider>` | One protected resource per provider in `config/company.yaml` |
 
-After creating the Lynx zone, control key, and resources in the Terminal, write
-`~/.config/caracal/caracal.toml` from the Terminal values. The generated config
+After creating the Lynx zone, control key, and resources in the Console, write
+`~/.config/caracal/caracal.toml` from the Console values. The generated config
 includes SDK resource bindings:
 
 ```toml
@@ -185,7 +185,7 @@ Open `http://localhost:8000`. The landing page shows the scenario summary.
 Navigate to `/setup` first: validate the OpenAI key, Caracal service URLs,
 `caracal.toml` resource bindings, gateway/coordinator health, and webhook
 secrets. Then open `/demo` to interact with the agent swarm while
-`caracal-terminal` remains open for live session inspection.
+`caracal-console` remains open for live session inspection.
 
 ---
 
@@ -510,7 +510,7 @@ The browser demo uses the FastAPI control routes under `/api/run`:
 | `/api/run/{run_id}/graph` | `GET` | Returns graph nodes and edges for the topology view |
 
 Setup routes live under `/api/setup`: `GET /api/setup/validate` checks
-configuration after the user creates the Terminal objects and writes
+configuration after the user creates the Console objects and writes
 `caracal.toml`.
 
 ---

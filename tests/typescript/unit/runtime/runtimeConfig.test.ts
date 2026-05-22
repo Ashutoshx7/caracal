@@ -19,7 +19,7 @@ let root: string
 let cwdBefore: string
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), 'caracal-terminalcfg-'))
+  root = mkdtempSync(join(tmpdir(), 'caracal-consolecfg-'))
   cwdBefore = process.cwd()
 })
 

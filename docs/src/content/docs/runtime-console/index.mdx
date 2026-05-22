@@ -1,15 +1,15 @@
 ---
-title: Runtime and Terminal Management
-description: Complete reference for the Caracal runtime shell and terminal management interface.
+title: Runtime and Console
+description: Complete reference for the Caracal runtime shell and Console.
 pageType: landing
 ---
 
 Caracal ships two terminal-facing tools:
 
 - **`caracal`** — thin runtime shell for stack lifecycle, readiness checks, purging local state, token-injected process execution, and launching the management surface.
-- **`caracal-terminal`** — the terminal management interface for human operational workflows across zones, applications, resources, providers, policies, grants, sessions, agents, audit events, diagnostics, and Control API lifecycle.
+- **`caracal-console`** — the Console for human operational workflows across zones, applications, resources, providers, policies, grants, sessions, agents, audit events, diagnostics, and Control API lifecycle.
 
-The runtime shell intentionally does not include product-management commands. Use `caracal terminal` or `caracal-terminal` for interactive management, and use the Control API for automation that must manage Caracal remotely.
+The runtime shell intentionally does not include product-management commands. Use `caracal terminal` or `caracal-console` for interactive management, and use the Control API for automation that must manage Caracal remotely.
 
 Both tools are compiled with Bun for Linux (x64, arm64), macOS (x64, arm64), and Windows (x64). The runtime is self-contained; no separate Node.js installation is required.
 
@@ -17,7 +17,7 @@ Both tools are compiled with Bun for Linux (x64, arm64), macOS (x64, arm64), and
 
 ## Authentication and endpoints
 
-The terminal management interface communicates with the control-plane API and discovers operator credentials from the same places as the engine:
+The Console communicates with the control-plane API and discovers operator credentials from the same places as the engine:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -38,10 +38,10 @@ The terminal management interface communicates with the control-plane API and di
 | --- | --- | --- |
 | Stack lifecycle | `caracal up`, `caracal down`, `caracal status`, `caracal purge` | Start, stop, probe, and reset the local stack. |
 | Workload execution | `caracal run -- <command>` | Inject scoped resource tokens into subprocesses. |
-| Human management | `caracal terminal` or `caracal-terminal` | Manage Caracal entities interactively. |
+| Human management | `caracal terminal` or `caracal-console` | Manage Caracal entities interactively. |
 | Remote automation | Control API | Drive approved management actions through authenticated HTTP. |
 
-`caracal run` is a runtime execution command, not a management workflow. The terminal management interface does not run workloads; use the top-level runtime shell for token-injected processes.
+`caracal run` is a runtime execution command, not a management workflow. The Console does not run workloads; use the top-level runtime shell for token-injected processes.
 
 ---
 
@@ -49,4 +49,4 @@ The terminal management interface communicates with the control-plane API and di
 
 Runtime shell commands write errors to stderr and exit `0` on success or `1` for validation, readiness, or API failures. `caracal run` returns the subprocess exit code after credentials are acquired.
 
-The terminal management interface requires a controlling TTY. In non-interactive environments it exits `1` and directs automation to the Control API or SDK.
+The Console requires a controlling TTY. In non-interactive environments it exits `1` and directs automation to the Control API or SDK.

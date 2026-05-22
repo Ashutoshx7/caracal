@@ -1,17 +1,17 @@
 ---
-title: Terminal Management Interface
-description: Navigate caracal-terminal — launch, screen layout, key bindings, views, and live audit streaming.
+title: Console
+description: Navigate caracal-console — launch, screen layout, key bindings, views, and live audit streaming.
 pageType: reference
 ---
 
-`caracal-terminal` is the terminal management interface for inspecting and managing Caracal entities without leaving the shell. It fetches from the control-plane API and renders into a full-screen terminal buffer with keyboard navigation.
+`caracal-console` is the Console for inspecting and managing Caracal entities without leaving the shell. It fetches from the control-plane API and renders into a full-screen terminal buffer with keyboard navigation.
 
 ---
 
 ## Launch
 
 ```bash
-caracal-terminal
+caracal-console
 ```
 
 **Requirements:**
@@ -21,7 +21,7 @@ caracal-terminal
 - `CARACAL_API_URL` set in production (localhost default in development).
 - For agent and delegation views: `CARACAL_COORDINATOR_URL` and `CARACAL_COORDINATOR_TOKEN`.
 
-On startup, the terminal management interface enters full-screen alt buffer mode and hides the cursor. Press `q` or `ctrl-c` at any time to exit and restore the terminal.
+On startup, the Console enters full-screen alt buffer mode and hides the cursor. Press `q` or `ctrl-c` at any time to exit and restore the terminal.
 
 ---
 
@@ -29,7 +29,7 @@ On startup, the terminal management interface enters full-screen alt buffer mode
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ Caracal Terminal                                   http://localhost:3000│  banner
+│ Caracal Console                                   http://localhost:3000│  banner
 │ > menu › zones › zone_abc123                                      │  breadcrumb
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │

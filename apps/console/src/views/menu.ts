@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Top-level menu listing every resource the Terminal can navigate.
+// Top-level menu listing every resource the Console can navigate.
 
 import type { AdminClient, Zone } from '@caracalai/admin'
 import {
@@ -37,7 +37,7 @@ import { pad, truncate, ui } from '../ansi.ts'
 import { explainError, maskSecretField } from '../errors.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
-import type { TerminalStateStore } from '../state.ts'
+import type { ConsoleStateStore } from '../state.ts'
 import { DetailView } from './detail.ts'
 import { DoctorView } from './doctor.ts'
 import { ConfirmView, FormView, type Field } from './form.ts'
@@ -58,7 +58,7 @@ import {
   zonesView,
   type Ctx,
 } from './factory.ts'
-import { CARACAL_TERMINAL_MODE, CARACAL_TERMINAL_SHA, CARACAL_TERMINAL_VERSION } from '../version.gen.ts'
+import { CARACAL_CONSOLE_MODE, CARACAL_CONSOLE_SHA, CARACAL_CONSOLE_VERSION } from '../version.gen.ts'
 
 interface Entry {
   key: string
@@ -91,17 +91,17 @@ function resolveControlStackMode(): StackMode {
   const override = process.env.CARACAL_MODE
   if (override === 'dev' || override === 'rc' || override === 'stable') return override
   if (override) throw new Error(`CARACAL_MODE must be 'dev', 'rc', or 'stable' (got '${override}')`)
-  return CARACAL_TERMINAL_MODE
+  return CARACAL_CONSOLE_MODE
 }
 
 function controlComposeEnv(paths: StackPaths): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { CARACAL_MODE: paths.mode }
   if (paths.mode !== 'dev') {
-    env.CARACAL_VERSION = CARACAL_TERMINAL_VERSION
+    env.CARACAL_VERSION = CARACAL_CONSOLE_VERSION
     env.CARACAL_REGISTRY = process.env.CARACAL_REGISTRY
   } else {
-    env.CARACAL_DEV_SHA = CARACAL_TERMINAL_SHA
-    env.CARACAL_DEV_VERSION = CARACAL_TERMINAL_VERSION
+    env.CARACAL_DEV_SHA = CARACAL_CONSOLE_SHA
+    env.CARACAL_DEV_VERSION = CARACAL_CONSOLE_VERSION
   }
   return env
 }
@@ -685,11 +685,11 @@ function renderControlStatus(
 export class MenuView implements View {
   readonly title = 'menu'
   private readonly client: AdminClient
-  private readonly state?: TerminalStateStore | undefined
+  private readonly state?: ConsoleStateStore | undefined
   private zoneId: string | undefined
   private cursor = 0
 
-  constructor(client: AdminClient, zoneId: string | undefined, state?: TerminalStateStore) {
+  constructor(client: AdminClient, zoneId: string | undefined, state?: ConsoleStateStore) {
     this.client = client
     this.state = state
     this.zoneId = zoneId

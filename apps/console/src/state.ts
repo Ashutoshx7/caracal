@@ -36,7 +36,7 @@ interface PersistedState {
 const STATE_VERSION = 1
 const MAX_TEXT = 256
 
-export class TerminalStateStore {
+export class ConsoleStateStore {
   private readonly path: string
   private state: PersistedState
 
@@ -45,13 +45,13 @@ export class TerminalStateStore {
     this.state = normalizeState(state)
   }
 
-  static load(path = defaultStatePath()): TerminalStateStore {
+  static load(path = defaultStatePath()): ConsoleStateStore {
     try {
-      if (!existsSync(path)) return new TerminalStateStore(path)
+      if (!existsSync(path)) return new ConsoleStateStore(path)
       const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown
-      return new TerminalStateStore(path, normalizeState(parsed))
+      return new ConsoleStateStore(path, normalizeState(parsed))
     } catch {
-      return new TerminalStateStore(path)
+      return new ConsoleStateStore(path)
     }
   }
 
@@ -125,7 +125,7 @@ export class TerminalStateStore {
 }
 
 function defaultStatePath(): string {
-  return join(installedHome(), 'terminal-state.json')
+  return join(installedHome(), 'console-state.json')
 }
 
 function normalizeState(value: unknown): PersistedState {

@@ -10,23 +10,23 @@ import { delimiter, dirname, join } from 'node:path'
 import { printError, printInfo } from '../style.ts'
 
 const EXT = process.platform === 'win32' ? '.exe' : ''
-const TERMINAL_INSTALL_URL = 'https://github.com/Garudex-Labs/caracal/releases/latest/download/install-terminal.sh'
+const CONSOLE_INSTALL_URL = 'https://github.com/Garudex-Labs/caracal/releases/latest/download/install-console.sh'
 const INSTALL_HINTS = {
-  terminal: `Install the terminal management interface:  curl -fsSL ${TERMINAL_INSTALL_URL} | sh`,
+  console: `Install the Console:  curl -fsSL ${CONSOLE_INSTALL_URL} | sh`,
 } as const
 
 const WORKSPACE_SHIMS: Record<string, string> = {
-  'caracal-terminal': 'apps/terminal/bin/caracal-terminal.mjs',
+  'caracal-console': 'apps/console/bin/caracal-console.mjs',
 }
 
 const KNOWN_SIBLINGS = Object.freeze(Object.keys(WORKSPACE_SHIMS))
 
 const INVOKED_AS: Record<string, string> = {
-  'caracal-terminal': 'caracal terminal',
+  'caracal-console': 'caracal console',
 }
 
 const SHELL_COMMANDS_BY_SIBLING: Record<string, string> = {
-  'caracal-terminal': 'terminal',
+  'caracal-console': 'console',
 }
 
 function assertKnownSibling(binName: string): void {
@@ -114,6 +114,6 @@ export function execSibling(binName: string, argv: string[], hints: MissingHints
   process.exit(result.status ?? 0)
 }
 
-export function terminalDispatch(argv: string[]): never {
-  execSibling('caracal-terminal', argv, { installLine: INSTALL_HINTS.terminal })
+export function consoleDispatch(argv: string[]): never {
+  execSibling('caracal-console', argv, { installLine: INSTALL_HINTS.console })
 }

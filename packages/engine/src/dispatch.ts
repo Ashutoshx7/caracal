@@ -384,7 +384,7 @@ export async function dispatch(
   const desc = findCommand(MANAGEMENT_COMMANDS, req.command)
   if (!desc) denied(`unknown command "${req.command}"`)
   if (desc.hidden && principal.kind === 'remote') denied(`command "${req.command}" not exposed`)
-  if (desc.localOnly && principal.kind === 'remote') denied(`command "${req.command}" is available only through the terminal management interface`)
+  if (desc.localOnly && principal.kind === 'remote') denied(`command "${req.command}" is available only through the Console`)
   if (desc.subcommands && desc.subcommands.length > 0) {
     if (!desc.subcommands.includes(req.subcommand)) {
       denied(`subcommand "${req.subcommand}" not allowed for "${req.command}"`)

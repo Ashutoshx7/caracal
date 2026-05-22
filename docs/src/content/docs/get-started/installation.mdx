@@ -1,29 +1,29 @@
 ---
 title: Installation
-description: Install the terminal management interface, run the OSS stack with Docker, or pull SDK packages.
+description: Install the Console, run the OSS stack with Docker, or pull SDK packages.
 pageType: workflow
 ---
 
-This page covers installing the `caracal` terminal management interface, the `caracal-terminal` terminal UI, and the SDK packages for TypeScript, Python, and Go.
+This page covers installing the `caracal` Console, the `caracal-console` terminal UI, and the SDK packages for TypeScript, Python, and Go.
 
 ## Install the runtime shell or terminal
 
-The Runtime and Terminal are distributed as separate self-contained binaries for Linux, macOS, and Windows. No runtime is required. Run both installers to install both tools, or run only the Terminal installer when you want `caracal-terminal` without `caracal-terminal`.
+The Runtime and Console are distributed as separate self-contained binaries for Linux, macOS, and Windows. No runtime is required. Run both installers to install both tools, or run only the Console installer when you want `caracal-console` without `caracal-console`.
 
 ### Linux and macOS
 
 ```sh
-# terminal management interface
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.sh | sh
+# Console
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
 
 # Terminal
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
 ```
 
 Each script:
 
 1. Detects your OS and CPU architecture.
-2. Downloads the matching `caracal` shell plus either `caracal-terminal` or `caracal-terminal` from the latest GitHub release.
+2. Downloads the matching `caracal` shell plus either `caracal-console` or `caracal-console` from the latest GitHub release.
 3. Verifies each binary against the published `SHA256SUMS` file.
 4. Installs binaries to `~/.local/bin` by default.
 
@@ -52,18 +52,18 @@ Verify the binaries you installed:
 
 ```sh
 caracal --version
-caracal-terminal --version   # terminal management interface installer
-caracal-terminal --version   # Terminal installer
+caracal-console --version   # Console installer
+caracal-console --version   # Console installer
 ```
 
 ### Windows
 
 ```powershell
-# terminal management interface
-irm https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.ps1 | iex
+# Console
+irm https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.ps1 | iex
 
 # Terminal
-irm https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-terminal.ps1 | iex
+irm https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.ps1 | iex
 ```
 
 Binaries are placed in `%LOCALAPPDATA%\Programs\caracal` by default. Set `$env:CARACAL_INSTALL_DIR` to override. Only `x64` is available on Windows.
@@ -77,7 +77,7 @@ git clone https://github.com/Garudex-Labs/caracal.git
 cd caracal
 pnpm install
 pnpm --filter @caracalai/runtime build
-# Output: apps/runtime/dist/caracal-terminal-<os>-<arch>
+# Output: apps/runtime/dist/caracal-console-<os>-<arch>
 ```
 
 Building requires [Bun](https://bun.sh/) and pnpm 11.1.1.
@@ -155,4 +155,4 @@ The stack uses PostgreSQL 18 and Redis 7. Both are included as pre-built images 
 
 ## Next step
 
-Once the terminal management interface is installed, go to [Quickstart](./quickstart/) to bring up the full stack.
+Once the Console is installed, go to [Quickstart](./quickstart/) to bring up the full stack.

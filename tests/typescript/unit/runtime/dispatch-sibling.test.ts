@@ -26,7 +26,7 @@ describe('execSibling', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
     const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
     try {
-      expect(() => execSibling('caracal-terminal', [], { installLine: 'install hint' })).toThrow('exit:127')
+      expect(() => execSibling('caracal-console', [], { installLine: 'install hint' })).toThrow('exit:127')
       expect(exit).toHaveBeenCalledWith(127)
       const errOut = [...stderr.mock.calls, ...stdout.mock.calls].map((c) => String(c[0])).join('')
       expect(errOut).toContain('install hint')
@@ -49,7 +49,7 @@ describe('execSibling', () => {
 
     expect(availableInterfaceCommands()).toEqual([])
 
-    writeFileSync(join(terminal, 'caracal-terminal.mjs'), '')
+    writeFileSync(join(terminal, 'caracal-console.mjs'), '')
     expect(availableInterfaceCommands()).toEqual(['terminal'])
   })
 })

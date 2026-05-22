@@ -2,7 +2,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Standalone Terminal installer that downloads, verifies, and extracts Caracal release archives.
+# Standalone Console installer that downloads, verifies, and extracts Caracal release archives.
 
 set -eu
 
@@ -20,9 +20,9 @@ usage() {
 caracal-install: download the Caracal terminal binaries from GitHub Releases.
 
 Usage:
-  install-terminal.sh [--version vYYYY.MM.DD[.N]] [--install-dir PATH]
+  install-console.sh [--version vYYYY.MM.DD[.N]] [--install-dir PATH]
 
-Installs the thin 'caracal' shell and the 'caracal-terminal' terminal management binary.
+Installs the thin 'caracal' shell and the 'caracal-console' terminal management binary.
 
 Environment overrides:
   CARACAL_VERSION       same as --version
@@ -78,7 +78,7 @@ case "${os}" in
     msys*|mingw*|cygwin*|windowsnt)
         os=windows
         ext=zip
-        [ "${arch}" = arm64 ] && err "Windows arm64 binaries are not published; use install-terminal.ps1 on Windows"
+        [ "${arch}" = arm64 ] && err "Windows arm64 binaries are not published; use install-console.ps1 on Windows"
         require unzip
         ;;
     *) err "unsupported OS: ${os}" ;;
@@ -143,7 +143,7 @@ if hasArchive shell; then
     installedShell=1
     installArchive shell caracal
 fi
-installArchive terminal caracal-terminal
+installArchive terminal caracal-console
 
 case ":${PATH}:" in
     *":${INSTALL_DIR}:"*) ;;
@@ -170,13 +170,13 @@ checkShadow() {
 }
 
 [ "${installedShell}" = "1" ] && checkShadow caracal
-checkShadow caracal-terminal
+checkShadow caracal-console
 
 printf 'caracal-install: done. Next steps:\n'
 printf '  installed release %s (mode: stable)\n' "${tag}"
 printf '  hash -r            # refresh your shell command cache\n'
-[ "${installedShell}" = "1" ] && printf '  caracal terminal        # launch the terminal management interface through the shell\n'
-printf '  caracal-terminal        # launch the terminal management interface directly\n'
+[ "${installedShell}" = "1" ] && printf '  caracal terminal        # launch the Console through the shell\n'
+printf '  caracal-console        # launch the Console directly\n'
 printf 'caracal-install: to uninstall, remove'
 [ "${installedShell}" = "1" ] && printf ' %s/caracal' "${INSTALL_DIR}"
-printf ' %s/caracal-terminal\n' "${INSTALL_DIR}"
+printf ' %s/caracal-console\n' "${INSTALL_DIR}"

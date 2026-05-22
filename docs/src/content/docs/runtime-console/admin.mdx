@@ -1,10 +1,10 @@
 ---
 title: Management Workflows
-description: Manage zones, applications, resources, providers, policies, grants, and sessions through the terminal management interface.
+description: Manage zones, applications, resources, providers, policies, grants, and sessions through the Console.
 pageType: reference
 ---
 
-The terminal management interface is the only supported human-facing surface for Caracal product management. Launch it with:
+The Console is the only supported human-facing surface for Caracal product management. Launch it with:
 
 ```bash
 caracal terminal
@@ -13,7 +13,7 @@ caracal terminal
 or:
 
 ```bash
-caracal-terminal
+caracal-console
 ```
 
 ---
@@ -44,10 +44,10 @@ Activation is a management mutation and should be performed only after reviewing
 
 ## Grants and sessions
 
-Use **Grants** to create and revoke resource access for applications and subjects. Use **Sessions** to inspect active and expired authority. Session records are read-only from the terminal management interface; revoke access by revoking the underlying grant or Control key.
+Use **Grants** to create and revoke resource access for applications and subjects. Use **Sessions** to inspect active and expired authority. Session records are read-only from the Console; revoke access by revoking the underlying grant or Control key.
 
 ---
 
 ## Control API handoff
 
-When management must be automated, enable and configure the Control API from the terminal management interface. Control API requests are authenticated, audited, and dispatched through the same engine management path as interactive operations.
+When management must be automated, enable and configure the Control API from the Console. Control API requests are authenticated, audited, and dispatched through the same engine management path as interactive operations.
