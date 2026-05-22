@@ -184,7 +184,7 @@ The general term for a JWT issued by the STS that grants a principal authority. 
 
 ## MCP governance
 
-A mode setting that controls how the Caracal CLI handles tool calls made through MCP (Model Context Protocol) servers. Two modes:
+A mode setting that controls how the Caracal terminal interface handles tool calls made through MCP (Model Context Protocol) servers. Two modes:
 
 | Mode | Behavior |
 | --- | --- |
@@ -250,7 +250,7 @@ A stateful authority context controlled by a registered principal. Execution ses
 - **Application sessions**: Created when an application authenticates with a client credential. `sub_type: "application"`.
 - **Agent sessions**: Created by the Coordinator for AI agents. `sub_type: "agent"`. Carries `agent_session_id`.
 
-Session state is stored in the `sessions` table. Active sessions can be revoked through the `caracal session revoke` CLI command or the API.
+Session state is stored in the `sessions` table. Active sessions can be revoked through the `caracal session revoke` terminal interface command or the API.
 
 ---
 
@@ -280,4 +280,4 @@ The top-level organizational boundary in Caracal. Each zone has its own signing 
 
 ## Zone signing key
 
-The ECDSA P-256 private key used to sign all mandates for a zone. Stored encrypted in the `secrets` table with the zone KEK and cached in-memory by STS for 15 minutes. STS JWKS publication supports the active key and the previous key during a rotation grace window; self-service signing-key rotation is not packaged as an OSS CLI/API operation yet.
+The ECDSA P-256 private key used to sign all mandates for a zone. Stored encrypted in the `secrets` table with the zone KEK and cached in-memory by STS for 15 minutes. STS JWKS publication supports the active key and the previous key during a rotation grace window; self-service signing-key rotation is not packaged as an OSS terminal interface/API operation yet.

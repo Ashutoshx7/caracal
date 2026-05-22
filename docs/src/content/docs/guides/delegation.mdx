@@ -1,6 +1,6 @@
 ---
 title: Implement Multi-Agent Delegation
-description: Open child agent sessions, attach typed constraints, traverse the delegation graph, and trigger cascade revocation using the SDK and CLI.
+description: Open child agent sessions, attach typed constraints, traverse the delegation graph, and trigger cascade revocation using the SDK and terminal interface.
 pageType: workflow
 ---
 
@@ -157,7 +157,7 @@ err = client.Spawn(ctx, func(ctx context.Context) error {
 
 The STS validates all constraints on each exchange. A constraint violation fails the exchange before OPA is evaluated.
 
-## Read the delegation graph from the CLI
+## Read the delegation graph from the terminal interface
 
 Inspect active sessions and their delegation edges:
 

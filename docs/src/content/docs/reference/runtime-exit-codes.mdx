@@ -1,10 +1,10 @@
 ---
-title: CLI Exit Codes
+title: terminal interface Exit Codes
 description: Exit statuses returned by `caracal`, `caracal-terminal`, and `caracal-terminal` for scripts and orchestrator probes.
 pageType: reference
 ---
 
-Caracal CLI commands use a small exit-status surface: success is `0`, command or API failures are `1`, and wrapper commands may return the status of the process they launched. Use stderr and, where available, `--json` output to distinguish authentication, authorization, validation, not-found, conflict, rate-limit, and server errors.
+Caracal terminal interface commands use a small exit-status surface: success is `0`, command or API failures are `1`, and wrapper commands may return the status of the process they launched. Use stderr and, where available, `--json` output to distinguish authentication, authorization, validation, not-found, conflict, rate-limit, and server errors.
 
 ## Convention
 
@@ -22,7 +22,7 @@ Caracal CLI commands use a small exit-status surface: success is `0`, command or
 
 Admin, runtime, and observability commands do not map HTTP statuses to separate exit codes. They exit `1` and print the API error code, HTTP status, remediation hint, and request ID when available.
 
-| HTTP status | Exit status | CLI output |
+| HTTP status | Exit status | terminal interface output |
 | --- | --- | --- |
 | `401` | `1` | Check `CARACAL_ADMIN_TOKEN`, `app_client_secret`, or `CARACAL_COORDINATOR_TOKEN`. |
 | `403` | `1` | Current credentials lack the required scope or zone access. |

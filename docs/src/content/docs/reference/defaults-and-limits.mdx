@@ -4,7 +4,7 @@ description: Source-aligned reference for operational defaults, token lifetimes,
 pageType: reference
 ---
 
-Use this page when sizing a deployment, writing automation, or troubleshooting unexpected expirations. Values listed here are backed by current service configuration, CLI behavior, or hard-coded protocol limits.
+Use this page when sizing a deployment, writing automation, or troubleshooting unexpected expirations. Values listed here are backed by current service configuration, terminal interface behavior, or hard-coded protocol limits.
 
 ## Token exchange and authority
 
@@ -12,8 +12,8 @@ Use this page when sizing a deployment, writing automation, or troubleshooting u
 | --- | --- | --- | --- |
 | Resource mandate TTL | 15 minutes | `ttl_seconds`, capped at 15 minutes | STS default and maximum for resource-bound exchanges. |
 | Session mandate TTL cap | 60 minutes | `ttl_seconds`, capped at 60 minutes | Applies only when STS is allowed to issue a session mandate. |
-| `caracal run` token request | 3600 seconds | Not configurable by CLI flag | The CLI requests the session-mandate cap before injecting configured credentials. |
-| `caracal credential read` token request | 900 seconds | Not configurable by CLI flag | Prints a 15-minute token to stdout. |
+| `caracal run` token request | 3600 seconds | Not configurable by terminal interface flag | The terminal interface requests the session-mandate cap before injecting configured credentials. |
+| `caracal credential read` token request | 900 seconds | Not configurable by terminal interface flag | Prints a 15-minute token to stdout. |
 | Subject-token validation leeway | 60 seconds | Not configurable | STS accepts issuer, audience, issued-at, and expiry clock skew within this leeway. |
 | Zone signing key cache | 15 minutes | Not configurable | STS keeps decrypted zone signing keys in memory for this interval. |
 | Issued-JTI registry TTL | Token TTL | Not configurable | STS stores minted JTIs in Redis until the corresponding token expires. |
@@ -104,12 +104,12 @@ Use this page when sizing a deployment, writing automation, or troubleshooting u
 | Maximum delegated provider grant TTL | 3600 seconds | `MAX_GRANT_TTL_SECONDS` | Caps provider-token refresh responses persisted by STS. |
 | Provider refresh circuit TTL | 30 seconds | Not configurable | Temporary circuit-open window for provider refresh failures. |
 
-## CLI
+## terminal interface
 
 | Value | Default | Configurable via | Notes |
 | --- | --- | --- | --- |
 | `caracal audit tail --limit` | 100 | `--limit` (max 1000) | Default page size. |
-| `caracal status` probe timeout | 1500 ms per service | Not configurable by CLI flag | Applies to health and readiness probes. |
+| `caracal status` probe timeout | 1500 ms per service | Not configurable by terminal interface flag | Applies to health and readiness probes. |
 | `caracal run` step-up poll interval | 2 seconds | Not configurable | Polls pending step-up challenges. |
 | `caracal run` step-up timeout | 300 seconds | Not configurable | Exits `1` when the challenge is not satisfied in time. |
 

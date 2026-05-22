@@ -1,6 +1,6 @@
 ---
 title: Tail and Query the Audit Stream
-description: Stream live audit events from the CLI, filter by decision or event type, and inspect full diagnostics for a specific request ID.
+description: Stream live audit events from the terminal interface, filter by decision or event type, and inspect full diagnostics for a specific request ID.
 pageType: workflow
 ---
 
@@ -170,7 +170,7 @@ caracal audit tail --event-type jti_collision --json
 
 The audit log is HMAC-chained. Each event includes a `chain_hmac` that links it to the previous event. Tamper detection runs at Audit service startup and hourly thereafter. Any detected break is recorded in `audit_ingest_alerts`.
 
-The CLI does not expose chain validation directly. To verify the chain, query `audit_ingest_alerts` via the Audit service's API or the database directly.
+The terminal interface does not expose chain validation directly. To verify the chain, query `audit_ingest_alerts` via the Audit service's API or the database directly.
 
 ## What to read next
 
