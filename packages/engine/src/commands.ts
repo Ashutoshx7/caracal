@@ -26,6 +26,7 @@ export interface CommandDescriptor {
   readonly requiresConfig?: boolean;
   readonly requiresZone?: boolean;
   readonly hidden?: boolean;
+  readonly localOnly?: boolean;
   /** Flags keyed by subcommand name; use '' for commands with no subcommands. */
   readonly flags?: { readonly [k: string]: readonly FlagDescriptor[] | undefined };
   /** Required scope verb per subcommand. Used by the Control API to gate per-resource access. */
@@ -360,7 +361,8 @@ export const CLI_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
 
   {
     name: 'control', group: 'admin', summary: 'Manage the optional engine-owned Control automation service',
-    subcommands: ['mount', 'enable', 'disable', 'unmount', 'status', 'key', 'rotate', 'revoke'], hidden: true,
+    subcommands: ['mount', 'enable', 'disable', 'unmount', 'status', 'key', 'rotate', 'revoke'],
+    localOnly: true,
     flags: {
       key: [
         { name: '--name', summary: 'Credential display name' },

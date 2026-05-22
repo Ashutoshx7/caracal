@@ -384,6 +384,7 @@ export async function dispatch(
   const desc = findCommand(CLI_COMMANDS, req.command)
   if (!desc) denied(`unknown command "${req.command}"`)
   if (desc.hidden && principal.kind === 'remote') denied(`command "${req.command}" not exposed`)
+  if (desc.localOnly && principal.kind === 'remote') denied(`command "${req.command}" is available only through CLI and TUI management surfaces`)
   if (desc.subcommands && desc.subcommands.length > 0) {
     if (!desc.subcommands.includes(req.subcommand)) {
       denied(`subcommand "${req.subcommand}" not allowed for "${req.command}"`)
@@ -408,6 +409,7 @@ export function describeRemoteSurface(): readonly { command: string; subcommand:
   const out: { command: string; subcommand: string; scope: string }[] = []
   for (const desc of CLI_COMMANDS) {
     if (desc.hidden) continue
+    if (desc.localOnly) continue
     if (!commandHandler(desc.name)) continue
     const subs = desc.subcommands && desc.subcommands.length > 0 ? desc.subcommands : ['']
     for (const sub of subs) {

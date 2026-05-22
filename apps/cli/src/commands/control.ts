@@ -28,10 +28,6 @@ import {
 } from './shared.ts'
 
 export async function controlCommand(argv: string[], cfg?: CliConfig): Promise<void> {
-  if (process.env.CARACAL_INVOKED_AS === 'caracal cli') {
-    printError('Control management is available only from caracal-cli or the TUI Control menu.')
-    process.exit(1)
-  }
   const [verb, sub, ...rest] = argv
   if (verb === 'mount' || verb === 'enable' || verb === 'disable' || verb === 'unmount' || verb === 'status') {
     return controlToggleCommand(argv, cfg)
