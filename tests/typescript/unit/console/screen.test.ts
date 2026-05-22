@@ -105,6 +105,32 @@ describe('App key dispatch', () => {
     }
   }
 
+  it('omits breadcrumb text for the root view', () => {
+    const app = new App('', '')
+    const { view } = makeView(false)
+    view.title = 'menu'
+    ;(app as unknown as { stack: View[] }).stack = [view]
+
+    const line = (app as unknown as { titleLine(sz: { rows: number; cols: number }): string }).titleLine({ rows: 10, cols: 20 })
+
+    expect(line).toBe(' '.repeat(20))
+  })
+
+  it('shows breadcrumbs after opening a child view', () => {
+    const app = new App('', '')
+    const parent = makeView(false).view
+    const child = makeView(false).view
+    parent.title = 'menu'
+    child.title = 'zones'
+    ;(app as unknown as { stack: View[] }).stack = [parent, child]
+
+    const line = (app as unknown as { titleLine(sz: { rows: number; cols: number }): string }).titleLine({ rows: 10, cols: 40 })
+
+    expect(line).toContain('menu')
+    expect(line).toContain('zones')
+    expect(visibleLength(line.trimEnd())).toBe(' menu / zones'.length)
+  })
+
   it('routes q to exit when current view is not text-entry', async () => {
     const app = new App('', '')
     const exit = vi.spyOn(app, 'exit').mockImplementation(async () => {})

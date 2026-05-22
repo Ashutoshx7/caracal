@@ -153,6 +153,7 @@ export class App {
   }
 
   private titleLine(sz: Size): string {
+    if (this.stack.length <= 1) return pad('', sz.cols)
     const crumbs = this.stack.map((v, i) => i === this.stack.length - 1 ? ui.accent(v.title) : ui.muted(v.title)).join(ui.muted(' / '))
     return pad(truncate(' ' + crumbs, sz.cols), sz.cols)
   }
