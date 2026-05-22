@@ -27,31 +27,33 @@ All three SDKs read the same base configuration from environment variables:
 | `CARACAL_COORDINATOR_URL` | Stack | URL of the Coordinator service |
 | `CARACAL_ZONE_ID` | `caracal.toml` | Zone the application belongs to |
 | `CARACAL_APPLICATION_ID` | `caracal.toml` | Application ID in that zone |
-| `CARACAL_SUBJECT_TOKEN` | Obtained at runtime | Session mandate for this agent run when using static-token startup |
+| `CARACAL_SUBJECT_TOKEN` | Runtime bootstrap | Static subject token for startup |
 
-The session mandate is not a static secret. It is short-lived Caracal authority obtained by exchanging the application's client credentials with the STS. The SDK's `fromEnv()` factory handles this transparently when used with `caracal run`. For long-running services, TypeScript, Python, and Go can also read `CARACAL_APP_CLIENT_SECRET` plus `CARACAL_STS_URL` and refresh application authority on demand.
+The subject token is short-lived Caracal authority. It is not a static secret. Long-running services should prefer client-secret mode so the SDK can exchange and refresh authority on demand.
 
-Two additional optional variables:
+Client-secret mode requires these variables:
 
 | Variable | Description |
 | -------- | ----------- |
-| `CARACAL_GATEWAY_URL` | URL of the Gateway (needed when routing tool calls through it) |
-| `CARACAL_RESOURCES` | Comma-separated `resourceId=https://upstream/prefix` pairs |
 | `CARACAL_APP_CLIENT_SECRET` | Application client secret for SDK-managed token refresh |
 | `CARACAL_STS_URL` | STS base URL required with `CARACAL_APP_CLIENT_SECRET` |
 | `CARACAL_APP_RESOURCES` | Comma-separated resource IDs for token exchange when `CARACAL_RESOURCES` is not set |
+| `CARACAL_RESOURCES` | Comma-separated `resourceId=https://upstream/prefix` pairs |
+| `CARACAL_GATEWAY_URL` | URL of the Gateway when SDK transport should route matching upstream calls through it |
 
-## Using `caracal run` for local development
+## Using `caracal run` with SDK examples
 
-The easiest way to get valid env vars into a process is `caracal run`. It reads `caracal.toml`, exchanges credentials with the STS, and injects the resulting tokens as environment variables before launching your process:
+`caracal run` reads `caracal.toml`, exchanges credentials with the STS, and injects tokens under the environment variable names declared in `[[credentials]]`. It does not automatically set `CARACAL_COORDINATOR_URL`, `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`, or `CARACAL_SUBJECT_TOKEN`.
+
+Use `caracal run` for scripts that read a declared token such as `RESOURCE_TOKEN`:
 
 ```sh
-caracal run -- node my-agent.js
-caracal run -- python agent.py
-caracal run -- ./my-go-agent
+caracal run -- sh -c 'curl -H "Authorization: Bearer $RESOURCE_TOKEN" \
+  -H "X-Caracal-Resource: resource://local-tool" \
+  http://localhost:8081/get'
 ```
 
-Inside the launched process, `CARACAL_SUBJECT_TOKEN` is set to the session mandate and the resource mandates declared in `caracal.toml` are set under their configured env var names (e.g. `RESOURCE_TOKEN`).
+For SDK processes, set the SDK environment variables explicitly or run in client-secret mode. See the language-specific SDK pages for complete environment setup.
 
 ## TypeScript
 
@@ -85,7 +87,7 @@ await caracal.spawn(async () => {
 }, { kind: AgentKind.Ephemeral });
 ```
 
-`Caracal.fromEnv()` requires the base Coordinator, zone, and application variables plus either `CARACAL_SUBJECT_TOKEN` or `CARACAL_APP_CLIENT_SECRET` with `CARACAL_STS_URL`. Wrap local process startup in `caracal run` to inject a short-lived session mandate automatically.
+`Caracal.fromEnv()` requires the base Coordinator, zone, and application variables plus either `CARACAL_SUBJECT_TOKEN` or `CARACAL_APP_CLIENT_SECRET` with `CARACAL_STS_URL`. Use client-secret mode for long-running local services that should refresh authority automatically.
 
 ### Express middleware
 

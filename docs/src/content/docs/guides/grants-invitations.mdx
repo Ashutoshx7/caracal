@@ -93,13 +93,10 @@ caracal invitation revoke inv-mno345
 
 ## Checking grant effects
 
-After issuing a grant, verify that an exchange would succeed by running `caracal run`:
+After issuing a grant, verify that an exchange succeeds with the application credentials in `caracal.toml`:
 
 ```bash
-CARACAL_APPLICATION_ID=app-abc123 \
-CARACAL_SUBJECT_TOKEN=<app-token> \
-caracal run --resource resource://payments -- \
-  echo "grant works"
+caracal credential read resource://payments | caracal credential inspect -
 ```
 
 If the exchange fails, check whether:

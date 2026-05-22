@@ -119,7 +119,7 @@ Agent credentials → STS → session mandate (60 min)
                               └─ present to Gateway → upstream
 ```
 
-The session mandate is the exchange credential. It is minted at session start and stored in the agent's execution environment (injected by `caracal run` as `CARACAL_SUBJECT_TOKEN` for RFC 8693 compatibility). The SDK exchanges this session mandate for resource mandates as needed for outbound calls. Resource mandate STS sessions are linked to their parent session, and mandates carry `root_sid` for deterministic descendant revocation. Delegated resource mandates are capped by the shortest effective authority bound: STS TTL limit, delegation edge expiry, and any typed `ttl_seconds` constraint on the edge.
+The session mandate is the exchange credential. It is minted at session start and stored in the agent's execution environment as `CARACAL_SUBJECT_TOKEN` when using static-token SDK startup. The SDK exchanges this session mandate for resource mandates as needed for outbound calls. `caracal run` uses `caracal.toml` instead: it injects resource-scoped tokens under the environment variable names declared in `[[credentials]]`. Resource mandate STS sessions are linked to their parent session, and mandates carry `root_sid` for deterministic descendant revocation. Delegated resource mandates are capped by the shortest effective authority bound: STS TTL limit, delegation edge expiry, and any typed `ttl_seconds` constraint on the edge.
 
 ## Token response shape
 

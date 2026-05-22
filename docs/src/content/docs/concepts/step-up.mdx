@@ -38,10 +38,10 @@ The challenge type is purely a signal. The STS does not perform the MFA check or
    WWW-Authenticate: Bearer error="interaction_required"
    {
      "error": "interaction_required",
-     "error_description": "Step-up authorization required for this resource",
+     "error_description": "Step-up challenge required",
      "challenge_id": "...",
      "challenge_type": "mfa",
-     "challenge_secret": "<base64url-32-bytes>",
+     "challenge_secret": "<base64url 32-byte secret>",
      "challenge_expires_at": "...",
      "requestId": "..."
    }
@@ -118,7 +118,7 @@ The external system — MFA service, approval workflow, or attestation verifier 
 POST /v1/zones/{zoneId}/step-up-challenges/{id}/satisfy
 ```
 
-This sets `satisfied_at` on the challenge row. The endpoint returns `404` if the challenge does not exist, has already been satisfied, or has expired. Satisfaction is idempotent from the row's perspective but will 404 on a second call.
+The request body must include `approver_subject_id`, and the approver must not be the same subject that triggered the challenge. This sets `satisfied_at` and `approver_subject_id` on the challenge row. The endpoint returns `400` for an invalid body and `409` if the challenge cannot be satisfied because it is expired, already satisfied, not found in the zone, or self-approved by the triggering subject.
 
 The challenge is **not consumed** at this point. Consumption happens atomically during the exchange retry.
 

@@ -106,8 +106,8 @@ The stack starts with an empty database. Use the golden-path command to create o
 ```sh
 caracal protect http \
   --identifier "resource://local-tool" \
-  --upstream-url "http://host.docker.internal:8090" \
-  --scopes "tool:read,tool:write" \
+  --upstream-url "https://httpbin.org" \
+  --scopes "demo:read" \
   --user local-user \
   --write-config caracal.toml
 ```
@@ -159,7 +159,16 @@ caracal credential read resource://local-tool | caracal credential inspect -
 
 You should see `verification=not_verified` because this command decodes locally instead of validating the signature. The claims should include `zone_id`, `scopes`, `resource`, and an expiry 15 minutes from now.
 
-To test the full product path, run a local HTTP service on port `8090`, then call it through the Gateway from an SDK integration or a process launched by `caracal run`. The Gateway verifies the Caracal token, resolves the provider route, forwards the upstream call, and records action-result audit.
+To test the full product path, call the resource through the Gateway:
+
+```sh
+caracal run -- sh -c 'curl -i -sS \
+  -H "Authorization: Bearer $RESOURCE_TOKEN" \
+  -H "X-Caracal-Resource: resource://local-tool" \
+  "http://localhost:8081/get"'
+```
+
+You should receive a `200` response from `https://httpbin.org/get`. The Gateway verifies the Caracal token, resolves the provider route, forwards the upstream call, and records action-result audit.
 
 ## Stopping the stack
 

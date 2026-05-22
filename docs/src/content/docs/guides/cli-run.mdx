@@ -1,16 +1,18 @@
 ---
 title: Run an Agent with caracal run
-description: Use the caracal run CLI command to inject a short-lived resource mandate into a subprocess without writing any SDK code.
+description: Use caracal run to inject scoped Caracal access tokens into a subprocess.
 pageType: workflow
 ---
 
-`caracal run` exchanges the current application's session mandate for a resource mandate, injects it into the subprocess environment as `RESOURCE_TOKEN`, and runs the specified command. The subprocess receives a valid 15-minute resource mandate without needing to implement the token exchange itself. If the exchange triggers a step-up challenge, `caracal run` polls until the challenge is satisfied or times out.
+`caracal run` reads `caracal.toml`, exchanges the configured application credentials for scoped Caracal access tokens, injects those tokens into a subprocess environment, and exits with the subprocess's exit code.
+
+Use this guide when you need a local script or agent process to receive a Gateway bearer without implementing token exchange.
 
 ## Prerequisites
 
 - `caracal` CLI installed and the stack running.
-- An application registered in the zone with a `client_secret`.
-- The application has a grant for the target resource.
+- A `caracal.toml` file in the current project, `CARACAL_CONFIG`, or the XDG config path.
+- The application in `caracal.toml` has an active grant for each resource in `[[credentials]]`.
 
 ## Basic usage
 
@@ -18,26 +20,21 @@ pageType: workflow
 caracal run -- my-script.sh
 ```
 
-The double dash (`--`) separates `caracal run` options from the subprocess command. The subprocess receives `RESOURCE_TOKEN` in its environment.
+The double dash (`--`) separates `caracal run` options from the subprocess command. The subprocess receives tokens under the environment variable names declared in `caracal.toml`.
 
-### Required environment variables
+### Required `caracal.toml` fields
 
-| Variable | Description |
-| -------- | ----------- |
-| `CARACAL_ZONE_ID` | Zone to authenticate against |
-| `CARACAL_APPLICATION_ID` | The application performing the exchange |
-| `CARACAL_CLIENT_SECRET` | Application credential |
-| `CARACAL_RESOURCE` | Resource identifier to request a mandate for (e.g., `resource://payments`) |
+`caracal run` does not read `CARACAL_RESOURCE` or `CARACAL_CLIENT_SECRET`. It reads resource declarations from `caracal.toml`:
 
-Set them in your shell or `.env`:
+```toml
+zone_url = "http://localhost:8080"
+zone_id = "zone_abc123"
+application_id = "app_def456"
+app_client_secret = "cs_generated_once"
 
-```bash
-export CARACAL_ZONE_ID=my-zone
-export CARACAL_APPLICATION_ID=app-abc123
-export CARACAL_CLIENT_SECRET=secret-xyz
-export CARACAL_RESOURCE=resource://inventory
-
-caracal run -- python process_inventory.py
+[[credentials]]
+env = "RESOURCE_TOKEN"
+resource = "resource://inventory"
 ```
 
 ### `RESOURCE_TOKEN` in the subprocess
@@ -47,80 +44,120 @@ Inside the subprocess, read `RESOURCE_TOKEN` and use it as a bearer token:
 ```bash
 #!/bin/bash
 curl -H "Authorization: Bearer $RESOURCE_TOKEN" \
-     http://inventory:8080/items
+     -H "X-Caracal-Resource: resource://inventory" \
+     http://localhost:8081/items
 ```
 
 ```python
-import os, httpx
+import os
 
-token = os.environ['RESOURCE_TOKEN']
-response = httpx.get('http://inventory:8080/items',
-                     headers={'Authorization': f'Bearer {token}'})
+import httpx
+
+token = os.environ["RESOURCE_TOKEN"]
+response = httpx.get(
+    "http://localhost:8081/items",
+    headers={
+        "Authorization": f"Bearer {token}",
+        "X-Caracal-Resource": "resource://inventory",
+    },
+)
 ```
 
-The injected token is a resource mandate — an ES256-signed JWT with a 60-minute TTL scoped to the specified resource. It is not the session mandate.
-
-## Request specific scopes
-
-By default, `caracal run` requests all scopes the application's grant covers. To request a subset:
-
-```bash
-CARACAL_SCOPES="inventory:read" caracal run -- python read_only_script.py
-```
+The injected token is an ES256-signed Caracal mandate scoped to the resource declared in the matching `[[credentials]]` entry.
 
 ## One-shot credential without running a subprocess
 
-`caracal credential read` prints a short-lived (15-minute) token for a resource to stdout. Use it in scripts that manage token injection themselves:
+`caracal credential read` prints a short-lived token for a resource to stdout. Use it in scripts that manage token injection themselves:
 
 ```bash
 TOKEN=$(caracal credential read resource://payments)
-curl -H "Authorization: Bearer $TOKEN" http://payments:8080/status
+curl -H "Authorization: Bearer $TOKEN" \
+     -H "X-Caracal-Resource: resource://payments" \
+     http://localhost:8081/status
 ```
 
 ## Step-up challenge handling
 
 If the active policy requires a step-up challenge for the target resource, `caracal run` receives an `interaction_required` response from the STS. It then:
 
-1. Prints the challenge ID and type to stderr.
-2. Polls the STS every 2 seconds, waiting up to 300 seconds for an external system to satisfy the challenge.
-3. If satisfied, retries the token exchange with the `challenge_secret` and injects the resulting token.
-4. If the timeout expires, exits with a non-zero status.
+1. Writes a JSON notice to stderr:
+   ```json
+   {"resource":"resource://payments","challenge_id":"chall_abc123","reason":"step_up_required"}
+   ```
+2. Polls `GET {zone_url}/step-up/{challengeId}` every 2 seconds for up to 300 seconds.
+3. Retries token exchange after the challenge is satisfied.
+4. Exits with code `1` if the challenge is not satisfied before timeout.
 
-```
-$ caracal run -- python submit_transfer.py
-Step-up challenge required (mfa).
-Challenge ID: chall-abc123
-Waiting for challenge to be satisfied (max 300s)...
-[poll] 2s elapsed
-[poll] 4s elapsed
-Challenge satisfied. Token exchange complete.
-```
-
-The challenge must be satisfied by an external process — for example, the user completing an MFA flow in your portal. See [Step-Up Re-Authentication](./step-up/) for the satisfaction API.
+The challenge must be satisfied by an external process, such as an MFA flow in your portal. The current runtime OAuth client does not expose the one-time `challenge_secret`, so complete step-up consumption flows should use the direct STS retry described in [Step-Up Re-Authentication](./step-up/).
 
 ## Multiple resources
 
-`caracal run` supports a single resource per invocation. For workflows that need tokens for multiple resources, run separate `caracal credential read` calls and inject them manually:
+Declare one `[[credentials]]` entry per required resource:
 
-```bash
-TOKEN_A=$(caracal credential read resource://payments)
-TOKEN_B=$(caracal credential read resource://reporting)
+```toml
+[[credentials]]
+env = "PAYMENTS_TOKEN"
+resource = "resource://payments"
 
-PAYMENT_TOKEN=$TOKEN_A REPORT_TOKEN=$TOKEN_B \
-  python generate_report.py
+[[credentials]]
+env = "REPORTING_TOKEN"
+resource = "resource://reporting"
 ```
+
+`caracal run` exchanges all required credentials before spawning the subprocess. If one required exchange fails, the subprocess does not start unless `continue_on_failure = true`.
+
+Use `[[optional_credentials]]` for resources that should not block startup:
+
+```toml
+[[optional_credentials]]
+env = "ANALYTICS_TOKEN"
+resource = "resource://analytics"
+on_failure = "warn"
+```
+
+## Troubleshooting
+
+### `caracal.toml not found`
+
+`caracal run` could not find a config file.
+
+1. Confirm the config path:
+   ```bash
+   test -f caracal.toml && printf "found ./caracal.toml\n"
+   ```
+2. If the file lives elsewhere, point the CLI at it:
+   ```bash
+   export CARACAL_CONFIG=/path/to/caracal.toml
+   ```
+
+### `blocked_credential_env:NODE_OPTIONS`
+
+The `env` field uses a blocked environment variable name. `caracal run` rejects names that can change runtime loader behavior, including `NODE_OPTIONS`, `BUN_OPTIONS`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `DYLD_INSERT_LIBRARIES`, and `DYLD_LIBRARY_PATH`.
+
+1. Open `caracal.toml`.
+2. Change the credential `env` value to an application-specific name, such as `PAYMENTS_TOKEN`.
+3. Re-run `caracal run`.
+
+### `ttl_seconds exceeds token TTL cap`
+
+The STS rejected the requested token lifetime.
+
+`caracal run` requests 3600 seconds for application-credential startup. If your policy or service configuration sets a lower cap, reduce that cap intentionally or use `caracal credential read` for a 15-minute one-shot token.
 
 ## Exit codes
 
 | Code | Meaning |
 | ---- | ------- |
 | `0` | Subprocess exited with code 0 |
-| Non-zero | Subprocess exit code, or token exchange failed before subprocess started |
+| `1` | Token exchange failed, step-up timed out, or MCP governance blocked startup |
+| Child exit code | The subprocess started and exited with that code |
+| `127` | The subprocess could not be spawned |
+| `128 + N` | The subprocess exited because of signal `N` |
 
-Token exchange failures (grant missing, policy deny, step-up timeout) print the error to stderr and exit with a non-zero code before the subprocess starts.
+Token exchange failures print the error to stderr and exit before the subprocess starts.
 
 ## What to read next
 
-- [Integrate the TypeScript SDK](./sdk-typescript/) — for services that need to manage tokens programmatically
-- [Step-Up Re-Authentication](./step-up/) — satisfy step-up challenges from application code
-- [Issue Grants and Invitations](./grants-invitations/) — ensure the application has the right grant before running
+- [Integrate the TypeScript SDK](./sdk-typescript/) — manage tokens programmatically.
+- [Step-Up Re-Authentication](./step-up/) — satisfy step-up challenges from application code.
+- [Issue Grants and Invitations](./grants-invitations/) — grant the application access before running.

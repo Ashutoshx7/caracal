@@ -1,16 +1,16 @@
 ---
 title: Runtime Commands
-description: caracal run, credential read, and credential inspect — inject resource mandates, print mandates, and decode token claims for manual use.
+description: caracal run, credential read, and credential inspect — inject scoped tokens, print one-shot tokens, and decode token claims.
 pageType: reference
 ---
 
-Runtime commands bind Caracal mandates to processes. `caracal run` and `caracal credential read` require `caracal.toml` and perform OAuth 2.0 token exchange directly with the STS. `caracal credential inspect` is offline and does not require `caracal.toml` or `CARACAL_ADMIN_TOKEN`.
+Runtime commands bind Caracal access tokens to processes. `caracal run` and `caracal credential read` require `caracal.toml` and perform OAuth 2.0 token exchange directly with the STS at `/oauth/2/token`. `caracal credential inspect` is offline and does not require `caracal.toml` or `CARACAL_ADMIN_TOKEN`.
 
 ---
 
 ## `caracal run`
 
-Inject resource mandates into a subprocess's environment and run it.
+Inject scoped tokens into a subprocess's environment and run it.
 
 ```bash
 caracal run -- <command> [args...]
@@ -22,7 +22,7 @@ The `--` separator is optional but recommended when `<command>` accepts flags th
 
 1. Loads `caracal.toml`. Exits with an error if the file is not found.
 2. Checks MCP governance rules (see below).
-3. For each entry in `credentials[]`, exchanges the application's client credentials for a resource mandate at the STS with a 15-minute TTL.
+3. For each entry in `credentials[]`, exchanges the application's client credentials for a scoped Caracal access token at the STS with a 60-minute TTL.
 4. For each entry in `optional_credentials[]`, attempts the same exchange but logs a warning on failure rather than exiting.
 5. Spawns the subprocess with the tokens injected as named environment variables.
 6. Forwards stdin, stdout, and stderr to the subprocess unchanged.
@@ -30,11 +30,11 @@ The `--` separator is optional but recommended when `<command>` accepts flags th
 
 ### Token exchange
 
-Each credential exchange posts to `{zone_url}/oauth2/token` using the `zone_id`, `application_id`, and `app_client_secret` from `caracal.toml`. The resulting token is a short-lived ES256-signed mandate. It is injected into the subprocess's environment under the variable name specified by the credential's `env` field.
+Each credential exchange posts to `{zone_url}/oauth/2/token` using the `zone_id`, `application_id`, and `app_client_secret` from `caracal.toml`. The resulting token is an ES256-signed mandate scoped to the requested resource. It is injected into the subprocess's environment under the variable name specified by the credential's `env` field.
 
 ### Step-up challenges
 
-If the STS returns `interaction_required`, `caracal run` handles it automatically:
+If the STS returns `interaction_required`, `caracal run` surfaces the challenge and waits for satisfaction:
 
 1. Writes a JSON notice to stderr:
    ```json
@@ -44,13 +44,15 @@ If the STS returns `interaction_required`, `caracal run` handles it automaticall
 3. Once the challenge is satisfied (e.g., the user completes an MFA prompt), retries the token exchange.
 4. If the 5-minute window expires without satisfaction, exits with code `1`.
 
+The current runtime OAuth client does not expose the one-time `challenge_secret`, so complete step-up consumption flows should use the direct STS retry described in [Step-Up Re-Authentication](../guides/step-up/).
+
 ### Exit codes
 
 | Code | Meaning |
 | --- | --- |
 | `0` | Subprocess exited successfully |
 | `1` | Credential acquisition failed, or MCP governance blocked the command |
-| `2` | Subprocess exited with a non-zero exit code |
+| `<child code>` | Subprocess exited with that non-zero code |
 | `127` | Failed to spawn the subprocess |
 | `128 + N` | Subprocess killed by signal N |
 
@@ -123,7 +125,7 @@ Print a short-lived token for a resource to stdout.
 caracal credential read <resource>
 ```
 
-Exchanges the application credentials from `caracal.toml` for a 15-minute mandate scoped to `<resource>`. Outputs the token as a plain string to stdout.
+Exchanges the application credentials from `caracal.toml` for a 15-minute token scoped to `<resource>`. Outputs the token as a plain string to stdout.
 
 | Argument | Description |
 | --- | --- |
