@@ -17,6 +17,7 @@ import {
 import { flagBool, parseArgs, printJSON, showHelp } from './shared.ts'
 import { CARACAL_MODE, CARACAL_REGISTRY, CARACAL_SHA, CARACAL_VERSION } from '../runtime/version.gen.ts'
 import { style, SYMBOL, printError, printInfo } from '../style.ts'
+import { ensureRuntimeConfig } from './onboarding.ts'
 
 function resolveMode(): StackMode {
   const override = process.env.CARACAL_MODE
@@ -38,11 +39,17 @@ export function resolvePaths(quiet = false): StackPaths {
 }
 
 export function dockerComposeAvailable(): boolean {
-  const check = spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' })
-  return check.status === 0
+  return spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' }).status === 0
+    && spawnSync('docker', ['info'], { stdio: 'ignore' }).status === 0
 }
 
 export function composeUnavailableReason(): string {
+  if (spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' }).status !== 0) {
+    return 'docker compose is not available; install Docker with the Compose plugin or add docker to PATH'
+  }
+  if (spawnSync('docker', ['info'], { stdio: 'ignore' }).status !== 0) {
+    return 'docker daemon is not reachable; start Docker and ensure your user can access /var/run/docker.sock'
+  }
   return 'docker compose is not available; install Docker with the Compose plugin or add docker to PATH'
 }
 
@@ -81,6 +88,14 @@ export async function upCommand(argv: string[]): Promise<void> {
   printBanner(paths)
   const handle = stackUp({ paths, args: argv, env: composeEnv(paths) })
   const code = await handle.exitCode
+  if (code === 0 && argv.length === 0) {
+    try {
+      await ensureRuntimeConfig()
+    } catch (err) {
+      printError(err instanceof Error ? err.message : String(err))
+      process.exit(1)
+    }
+  }
   process.exit(code)
 }
 

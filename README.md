@@ -141,8 +141,7 @@ Each archive contains a single executable (`caracal`, `caracal-console`, or `car
 ### Start the stack
 
 ```bash
-caracal up                            # start all services via Docker
-caracal console config init               # provision a zone/app and write ~/.config/caracal/caracal.toml
+caracal up                            # start all services and write ~/.config/caracal/caracal.toml when missing
 caracal status                        # probe all services
 caracal status --ready                # dependency-aware readiness probe
 caracal down                          # stop; add -v to remove volumes

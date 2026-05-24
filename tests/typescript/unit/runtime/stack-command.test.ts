@@ -3,10 +3,15 @@
 //
 // Unit tests for runtime stack command Docker Compose preflight handling.
 
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const engineMocks = vi.hoisted(() => ({
+  buildAdminClient: vi.fn(),
   defaultServiceProbes: vi.fn(() => []),
+  generateClientSecret: vi.fn(() => 'cs_test-secret'),
   resolveStackPaths: vi.fn(),
   stackDown: vi.fn(),
   stackStatus: vi.fn(),
@@ -29,10 +34,14 @@ import { downCommand, upCommand } from '../../../../apps/runtime/src/commands/st
 
 describe('stack commands', () => {
   let stderr = ''
+  let xdg: string
 
   beforeEach(() => {
     vi.clearAllMocks()
     stderr = ''
+    xdg = mkdtempSync(join(tmpdir(), 'caracal-stack-command-'))
+    vi.stubEnv('XDG_CONFIG_HOME', xdg)
+    vi.stubEnv('CARACAL_CONFIG', undefined)
     engineMocks.resolveStackPaths.mockReturnValue({
       mode: 'dev',
       composeFile: '/tmp/caracal/docker-compose.yml',
@@ -41,6 +50,22 @@ describe('stack commands', () => {
     })
     engineMocks.stackDown.mockReturnValue({ dispose: vi.fn(), exitCode: Promise.resolve(0) })
     engineMocks.stackUp.mockReturnValue({ dispose: vi.fn(), exitCode: Promise.resolve(0) })
+    engineMocks.buildAdminClient.mockReturnValue({
+      apiUrl: 'http://localhost:3000',
+      zoneId: undefined,
+      client: {
+        zones: {
+          list: vi.fn().mockResolvedValue([{ id: 'zone-1', name: 'Zone', slug: 'zone' }]),
+          get: vi.fn(),
+          create: vi.fn(),
+        },
+        applications: {
+          list: vi.fn().mockResolvedValue([]),
+          create: vi.fn().mockResolvedValue({ id: 'app-1', name: 'Caracal local runner' }),
+          patch: vi.fn(),
+        },
+      },
+    })
     spawnSyncMock.mockReturnValue({ status: 0 })
     vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
       stderr += chunk.toString()
@@ -54,6 +79,8 @@ describe('stack commands', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllEnvs()
+    rmSync(xdg, { recursive: true, force: true })
   })
 
   it('fails up before spawning when Docker Compose is unavailable', async () => {
@@ -74,9 +101,33 @@ describe('stack commands', () => {
     expect(engineMocks.stackDown).not.toHaveBeenCalled()
   })
 
+  it('fails up before spawning when the Docker daemon is unavailable', async () => {
+    spawnSyncMock.mockImplementation((_cmd: string, args: string[]) => {
+      if (args[0] === 'compose') return { status: 0 }
+      if (args[0] === 'info') return { status: 1 }
+      return { status: 0 }
+    })
+
+    await expect(upCommand([])).rejects.toThrow('exit:1')
+
+    expect(stderr).toContain('docker daemon is not reachable; start Docker and ensure your user can access /var/run/docker.sock')
+    expect(engineMocks.stackUp).not.toHaveBeenCalled()
+  })
+
   it('runs up when Docker Compose is available', async () => {
     await expect(upCommand(['api'])).rejects.toThrow('exit:0')
 
     expect(engineMocks.stackUp).toHaveBeenCalledWith(expect.objectContaining({ args: ['api'] }))
+    expect(engineMocks.buildAdminClient).not.toHaveBeenCalled()
+  })
+
+  it('writes runtime config after a full stack start when config is missing', async () => {
+    await expect(upCommand([])).rejects.toThrow('exit:0')
+
+    const cfg = readFileSync(join(xdg, 'caracal', 'caracal.toml'), 'utf8')
+    expect(cfg).toContain('zone_id = "zone-1"')
+    expect(cfg).toContain('application_id = "app-1"')
+    expect(cfg).toContain('app_client_secret = "cs_test-secret"')
+    expect(engineMocks.buildAdminClient).toHaveBeenCalledOnce()
   })
 })
