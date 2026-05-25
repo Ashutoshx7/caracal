@@ -38,6 +38,29 @@ const pyPaths = [
 ]
 
 const containers = ['api', 'coordinator', 'control', 'audit', 'gateway', 'sts', 'postgres', 'redis']
+const archiveTargets = [
+  'caracal-shell-linux-amd64',
+  'caracal-shell-linux-arm64',
+  'caracal-shell-darwin-amd64',
+  'caracal-shell-darwin-arm64',
+  'caracal-shell-windows-amd64',
+  'caracal-console-linux-amd64',
+  'caracal-console-linux-arm64',
+  'caracal-console-darwin-amd64',
+  'caracal-console-darwin-arm64',
+  'caracal-console-windows-amd64',
+]
+const imageBuilds = [
+  ['api', '.', 'apps/api/Dockerfile'],
+  ['sts', '.', 'infra/docker/Dockerfile.go-service'],
+  ['gateway', '.', 'infra/docker/Dockerfile.go-service'],
+  ['audit', '.', 'infra/docker/Dockerfile.go-service'],
+  ['coordinator', '.', 'apps/coordinator/Dockerfile'],
+  ['control', '.', 'apps/control/Dockerfile'],
+  ['postgres', 'infra/postgres', 'infra/postgres/Dockerfile'],
+  ['redis', 'infra/redis', 'infra/redis/Dockerfile'],
+  ['runtime', '.', 'apps/runtime/Dockerfile'],
+]
 
 function die(message) {
   process.stderr.write(`rc: ${message}\n`)
@@ -269,10 +292,49 @@ function printVersion(options) {
 function dryRun(options) {
   const manifest = makeManifest(options.values)
   const path = manifestPath(manifest)
-  say(`rc dry-run: ${manifest.release}`)
-  say(`would write ${path}`)
-  say(`would stamp Helm chart ${manifest.helm.chartVersion}`)
-  say(`would stamp binaries, images, and Helm app tag ${manifest.version}`)
+  say(`rc release workflow dry-run: ${manifest.release}`)
+  say(`workflow: .github/workflows/release.yml`)
+  say(`trigger: simulated tag push ${manifest.release}`)
+  say(`mode: ${manifest.mode}`)
+  say(`publishing: disabled`)
+  say()
+  say(`release metadata`)
+  say(`  would write ${path}`)
+  say(`  would stamp Helm chart ${manifest.helm.chartVersion}`)
+  say(`  would stamp Helm appVersion/image tag ${manifest.version}`)
+  say(`  would stamp runtime and Console binaries ${manifest.version}`)
+  say()
+  say(`jobs`)
+  say(`  check-maintainer`)
+  say(`    would verify release actor against .github/MAINTAINERS`)
+  say(`    would validate tag format for ${manifest.release}`)
+  say(`    would validate ${path} with CARACAL_VALIDATE_HELM_FILES=1`)
+  say(`  binaries`)
+  say(`    would install pnpm 11.1.1, Node 24, and Bun 1.3.14`)
+  say(`    would run pnpm install --frozen-lockfile --prefer-offline`)
+  say(`    would run pnpm run build:typescript`)
+  say(`    would build runtime and Console binaries for linux/darwin/windows amd64/arm64 targets`)
+  say(`    would package release archives:`)
+  for (const name of archiveTargets) say(`      ${name}-${manifest.release}.${name.includes('windows') ? 'zip' : 'tar.gz'}`)
+  say(`    would generate SHA256SUMS, verify checksums, smoke-test linux-amd64 archives, and upload release-archives`)
+  say(`    would request build provenance attestations for pushed-tag artifacts`)
+  say(`  images`)
+  for (const [name, context, dockerfile] of imageBuilds.filter(([name]) => name !== 'runtime')) {
+    say(`    would build linux/amd64,linux/arm64 ${manifest.images[name]} from ${dockerfile} (context ${context})`)
+  }
+  say(`    would push immutable rc image tags only on the real tag workflow`)
+  say(`  runtimeImage`)
+  say(`    would build linux/amd64,linux/arm64 ${manifest.images.runtime} from apps/runtime/Dockerfile`)
+  say(`    would push the immutable rc runtime image tag only on the real tag workflow`)
+  say(`  publish`)
+  say(`    would use environment rc-release`)
+  say(`    would create GitHub Release ${manifest.release} with prerelease=true`)
+  say(`    would attach release archives, manifest.json, SHA256SUMS, and installers`)
+  say(`  validateRelease`)
+  say(`    would run .github/workflows/postReleaseValidation.yml with release=${manifest.release}`)
+  say(`  promoteImages`)
+  say(`    skipped for rc; would not move latest or series tags`)
+  say()
   say(JSON.stringify({ manifest: path, ...manifest }, null, 2))
 }
 
@@ -303,7 +365,7 @@ function main() {
       say(`Usage: scripts/rc.sh <command> [options]
 
 Commands:
-  dry-run                Preview an rc manifest and stamped versions without writing files.
+  dry-run                Simulate the rc release workflow without writing files.
   version                 Generate an rc manifest under releases/<tag>/manifest.json.
   prepare [--allow-dirty] Generate the manifest and stamp package metadata to rc versions.
   clean --manifest PATH   Remove an rc manifest directory.
