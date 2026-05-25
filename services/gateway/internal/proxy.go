@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -550,6 +551,8 @@ func jwtExp(token string) (time.Time, bool) {
 	return time.Unix(claims.Exp, 0), true
 }
 
+var zoneIDPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+
 func jwtZoneID(token string) string {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
@@ -563,6 +566,9 @@ func jwtZoneID(token string) string {
 		ZoneID string `json:"zone_id"`
 	}
 	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+	if !zoneIDPattern.MatchString(claims.ZoneID) {
 		return ""
 	}
 	return claims.ZoneID

@@ -26,6 +26,7 @@ type Config struct {
 	StreamsHMACKey     string
 	GatewayHMACKey     []byte
 	OPAPollSeconds     int
+	MetricsBearer      string
 }
 
 func loadConfig() (Config, error) {
@@ -57,6 +58,7 @@ func loadConfig() (Config, error) {
 		StreamsHMACKey:     config.Getenv("STREAMS_HMAC_KEY", ""),
 		GatewayHMACKey:     gatewayKey,
 		OPAPollSeconds:     opaPollSeconds,
+		MetricsBearer:      os.Getenv("METRICS_BEARER"),
 	}, nil
 }
 
