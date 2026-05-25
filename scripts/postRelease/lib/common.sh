@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-: "${CARACAL_RELEASE:?CARACAL_RELEASE must be set (e.g. v2026.05.13)}"
+: "${CARACAL_RELEASE:?CARACAL_RELEASE must be set (e.g. v2026.05.26-rc.1)}"
 : "${FINDINGS_DIR:?FINDINGS_DIR must be set}"
 
 if command -v python3 >/dev/null 2>&1; then

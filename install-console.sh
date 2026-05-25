@@ -22,7 +22,7 @@ usage() {
 caracal-install: download the Caracal Console binaries from GitHub Releases.
 
 Usage:
-  install-console.sh [--version vYYYY.MM.DD[.N]] [--install-dir PATH] [--verify-provenance] [--require-provenance]
+  install-console.sh [--version vYYYY.MM.DD[.N][-rc.N]] [--install-dir PATH] [--verify-provenance] [--require-provenance]
 
 Installs the thin 'caracal' shell and the 'caracal-console' Console binary.
 
