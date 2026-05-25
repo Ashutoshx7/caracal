@@ -3,7 +3,7 @@
 //
 // Generic scrollable list view with column rendering and selection.
 
-import { ansi, pad, truncate, ui } from '../ansi.ts'
+import { ansi, copyToClipboard, pad, truncate, ui } from '../ansi.ts'
 import { explainError } from '../errors.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
@@ -31,6 +31,8 @@ export interface ListOptions<T> {
   stateKey?: string
   zoneId?: string
   rowKey?: (row: T) => string
+  rowId?: (row: T) => string
+  rowName?: (row: T) => string
 }
 
 export class ListView<T> implements View {
@@ -43,11 +45,14 @@ export class ListView<T> implements View {
   private readonly stateKey?: string
   private readonly zoneId?: string
   private readonly rowKey?: (row: T) => string
+  private readonly rowId?: (row: T) => string
+  private readonly rowName?: (row: T) => string
   private rows: T[] = []
   private cursor = 0
   private offset = 0
   private loading = true
   private error: string | undefined
+  private showIds = false
   private aborted = false
   private app: App | undefined
 
@@ -61,6 +66,8 @@ export class ListView<T> implements View {
     this.stateKey = opts.stateKey
     this.zoneId = opts.zoneId
     this.rowKey = opts.rowKey
+    this.rowId = opts.rowId
+    this.rowName = opts.rowName
   }
 
   selected(): T | undefined { return this.rows[this.cursor] }
@@ -68,6 +75,8 @@ export class ListView<T> implements View {
   hints(): string[] {
     const base = ['↑/↓:move', 'enter:open', 'r:reload', 'esc:back']
     for (const a of this.actions) base.push(`${a.key}:${a.label}`)
+    if (this.rowId) base.push('V:reveal-id', 'I:copy-id')
+    if (this.rowName) base.push('N:copy-name')
     return base
   }
 
@@ -103,14 +112,15 @@ export class ListView<T> implements View {
     if (this.loading) { lines.push(ui.muted(' loading...')); return lines }
     if (this.error) { lines.push(ui.error(' error: ' + this.error)); return lines }
     if (this.rows.length === 0) { lines.push(ui.muted(' No records found.')); return lines }
-    const widths = this.computeWidths(ctx.size.cols)
+    const columns = this.renderColumns()
+    const widths = this.computeWidths(ctx.size.cols, columns)
     lines.push(this.headerRow(widths))
     const visible = Math.max(1, ctx.size.rows - 1)
     if (this.cursor < this.offset) this.offset = this.cursor
     if (this.cursor >= this.offset + visible) this.offset = this.cursor - visible + 1
     for (let i = this.offset; i < Math.min(this.rows.length, this.offset + visible); i++) {
       const row = this.rows[i]!
-      const text = this.columns
+      const text = columns
         .map((c, idx) => pad(truncate(c.value(row), widths[idx]!), widths[idx]!))
         .join('  ')
       const line = ' ' + text + ' '
@@ -119,17 +129,22 @@ export class ListView<T> implements View {
     return lines
   }
 
-  private computeWidths(cols: number): number[] {
-    const total = this.columns.reduce((sum, c) => sum + (c.width ?? 16) + 2, 0) - 2
-    if (total <= cols - 4) return this.columns.map((c) => c.width ?? 16)
-    const last = this.columns.length - 1
-    const fixed = this.columns.slice(0, -1).reduce((s, c) => s + (c.width ?? 16) + 2, 0)
+  private renderColumns(): Column<T>[] {
+    if (!this.showIds || !this.rowId) return this.columns
+    return [...this.columns, { header: 'id', value: (row) => this.rowId!(row) }]
+  }
+
+  private computeWidths(cols: number, columns: Column<T>[]): number[] {
+    const total = columns.reduce((sum, c) => sum + (c.width ?? 16) + 2, 0) - 2
+    if (total <= cols - 4) return columns.map((c) => c.width ?? 16)
+    const last = columns.length - 1
+    const fixed = columns.slice(0, -1).reduce((s, c) => s + (c.width ?? 16) + 2, 0)
     const remaining = Math.max(8, cols - 4 - fixed)
-    return this.columns.map((c, i) => (i === last ? remaining : (c.width ?? 16)))
+    return columns.map((c, i) => (i === last ? remaining : (c.width ?? 16)))
   }
 
   private headerRow(widths: number[]): string {
-    const text = this.columns.map((c, i) => pad(c.header, widths[i]!)).join('  ')
+    const text = this.renderColumns().map((c, i) => pad(c.header, widths[i]!)).join('  ')
     return ui.muted(' ' + ansi.bold + text + ansi.reset)
   }
 
@@ -149,6 +164,9 @@ export class ListView<T> implements View {
     if (key === 'home' || key === 'g') { this.cursor = 0; this.persistSelection(); return }
     if (key === 'end' || key === 'G') { this.cursor = last; this.persistSelection(); return }
     if (key === 'r') return this.reload()
+    if (key === 'V' && this.rowId) { this.showIds = !this.showIds; return }
+    if (key === 'I' && this.rowId) { this.copyId(ctx.app); return }
+    if (key === 'N' && this.rowName) { this.copyName(ctx.app); return }
     if (key === 'left' || key === 'esc') { ctx.app.pop(); return }
     if (key === 'enter') {
       const row = this.selected()
@@ -161,5 +179,21 @@ export class ListView<T> implements View {
     if (!this.state || !this.stateKey || !this.rowKey) return
     const row = this.selected()
     this.state.setListSelection(this.stateKey, row ? this.rowKey(row) : undefined, this.zoneId)
+  }
+
+  private copyId(app: App): void {
+    const row = this.selected()
+    if (!row || !this.rowId) return
+    const id = this.rowId(row)
+    copyToClipboard(id)
+    app.setStatus(`copied id for ${this.rowName?.(row) ?? id}`)
+  }
+
+  private copyName(app: App): void {
+    const row = this.selected()
+    if (!row || !this.rowName) return
+    const name = this.rowName(row)
+    copyToClipboard(name)
+    app.setStatus(`copied name ${name}`)
   }
 }

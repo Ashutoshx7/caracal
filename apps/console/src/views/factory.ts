@@ -14,6 +14,7 @@ import type {
   Policy,
   PolicyVersion,
   PolicySet,
+  PolicySetVersion,
   Provider,
   ProviderInput,
   ProviderKind,
@@ -71,6 +72,13 @@ function bool(v: string | undefined): boolean | undefined {
 const CREDENTIAL_TYPES: CredentialType[] = ['public', 'token', 'password', 'public-key', 'url']
 const PROVIDER_KINDS: ProviderKind[] = ['oauth2', 'oidc', 'apikey', 'workload']
 
+type PolicyVersionRow = PolicyVersion & { policy_name: string }
+type PolicySetVersionRow = PolicySetVersion & { policy_set_name: string }
+type PolicySetRow = PolicySet & { active_version_label: string }
+type GrantRow = Grant & { application_name: string; resource_name: string }
+type AgentRow = AgentSession & { application_name: string }
+type DelegationRow = DelegationEdge & { resource_name?: string | undefined }
+
 function readFileOrInline(filePath: string, inline: string): string {
   if (filePath && filePath.length > 0) return readFileSync(filePath, 'utf8')
   return inline
@@ -99,6 +107,124 @@ async function popAndReload(app: App, list: ListView<unknown>): Promise<void> {
   await list.reload()
 }
 
+function shortValue(value: string): string {
+  if (value.length <= 12) return value
+  return `${value.slice(0, 6)}...${value.slice(-4)}`
+}
+
+function named(row: { id: string; name?: string | null; identifier?: string | null; slug?: string | null }): string {
+  return row.name || row.identifier || row.slug || row.id
+}
+
+function labelMap<T>(rows: T[], value: (row: T) => string, label: (row: T) => string): Map<string, string> {
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    const text = label(row)
+    counts.set(text, (counts.get(text) ?? 0) + 1)
+  }
+  return new Map(rows.map((row) => {
+    const id = value(row)
+    const text = label(row)
+    return [id, (counts.get(text) ?? 0) > 1 ? `${text} (${shortValue(id)})` : text]
+  }))
+}
+
+function resolveFromList<T>(load: () => Promise<T[]>, value: (row: T) => string, label: (row: T) => string): Field['resolve'] {
+  let cached: Map<string, string> | undefined
+  return async (id: string) => {
+    cached = cached ?? labelMap(await load(), value, label)
+    return cached.get(id)
+  }
+}
+
+function applicationResolver(ctx: Ctx): Field['resolve'] {
+  return resolveFromList(() => ctx.client.applications.list(ctx.zoneId), (row) => row.id, (row) => row.name)
+}
+
+function resourceResolver(ctx: Ctx): Field['resolve'] {
+  return resolveFromList(async () => userResources(await ctx.client.resources.list(ctx.zoneId)), (row) => row.id, named)
+}
+
+function resourceIdentifierResolver(ctx: Ctx): Field['resolve'] {
+  return resolveFromList(async () => userResources(await ctx.client.resources.list(ctx.zoneId)), (row) => row.identifier, named)
+}
+
+function providerResolver(ctx: Ctx): Field['resolve'] {
+  return resolveFromList(() => ctx.client.providers.list(ctx.zoneId), (row) => row.id, named)
+}
+
+function sessionResolver(ctx: Ctx): Field['resolve'] {
+  return resolveFromList(() => ctx.client.sessions.list(ctx.zoneId, { status: 'active', limit: 100 }), (row) => row.id, (row) => row.subject_id)
+}
+
+async function loadPolicyVersions(ctx: Ctx): Promise<PolicyVersionRow[]> {
+  const policies = await ctx.client.policies.list(ctx.zoneId)
+  const details = await Promise.all(policies.map((policy) => ctx.client.policies.get(ctx.zoneId, policy.id)))
+  return details.flatMap((policy) => (policy.versions ?? []).map((version) => ({ ...version, policy_name: policy.name })))
+}
+
+function policyVersionLabel(row: PolicyVersionRow): string {
+  return `${row.policy_name} v${row.version}`
+}
+
+function policyVersionResolver(ctx: Ctx): Field['resolve'] {
+  return resolveFromList(() => loadPolicyVersions(ctx), (row) => row.id, policyVersionLabel)
+}
+
+async function loadPolicySetVersions(ctx: Ctx, policySet: PolicySet): Promise<PolicySetVersionRow[]> {
+  const detail = await ctx.client.policySets.get(ctx.zoneId, policySet.id) as PolicySet & { versions?: PolicySetVersion[] }
+  return (detail.versions ?? []).map((version) => ({ ...version, policy_set_name: policySet.name }))
+}
+
+function policySetVersionLabel(row: PolicySetVersionRow): string {
+  return `${row.policy_set_name} v${row.version}`
+}
+
+function policySetVersionResolver(ctx: Ctx, policySet: PolicySet): Field['resolve'] {
+  return resolveFromList(() => loadPolicySetVersions(ctx, policySet), (row) => row.id, policySetVersionLabel)
+}
+
+async function loadPolicySets(ctx: Ctx): Promise<PolicySetRow[]> {
+  const rows = await ctx.client.policySets.list(ctx.zoneId)
+  const details = await Promise.all(rows.map((row) => ctx.client.policySets.get(ctx.zoneId, row.id) as Promise<PolicySet & { versions?: PolicySetVersion[] }>))
+  return rows.map((row, index) => {
+    const versions = details[index]?.versions ?? []
+    const active = versions.find((version) => version.id === row.active_version_id)
+    return { ...row, active_version_label: active ? `v${active.version}` : row.active_version_id ? 'active' : '(none)' }
+  })
+}
+
+async function loadGrants(ctx: Ctx): Promise<GrantRow[]> {
+  const resourcesPromise = ctx.client.resources.list(ctx.zoneId).then(userResources)
+  const [grants, applications, resources] = await Promise.all([
+    ctx.client.grants.list(ctx.zoneId),
+    ctx.client.applications.list(ctx.zoneId),
+    resourcesPromise,
+  ])
+  const applicationNames = labelMap(applications, (row) => row.id, (row) => row.name)
+  const resourceNames = labelMap(resources, (row) => row.id, named)
+  return grants.map((grant) => ({
+    ...grant,
+    application_name: applicationNames.get(grant.application_id) ?? grant.application_id,
+    resource_name: resourceNames.get(grant.resource_id) ?? grant.resource_id,
+  }))
+}
+
+async function loadAgents(ctx: Ctx): Promise<AgentRow[]> {
+  const [agents, applications] = await Promise.all([
+    ctx.client.agents.list(ctx.zoneId),
+    ctx.client.applications.list(ctx.zoneId),
+  ])
+  const applicationNames = labelMap(applications, (row) => row.id, (row) => row.name)
+  return agents.map((agent) => ({ ...agent, application_name: applicationNames.get(agent.application_id) ?? agent.application_id }))
+}
+
+async function labelDelegations(ctx: Ctx, rows: DelegationEdge[]): Promise<DelegationRow[]> {
+  const resources = userResources(await ctx.client.resources.list(ctx.zoneId))
+  const resourceNames = labelMap(resources, (row) => row.id, named)
+  return rows.map((row) => ({ ...row, resource_name: row.resource_id ? resourceNames.get(row.resource_id) ?? row.resource_id : undefined }))
+}
+
 export function applicationPicker(ctx: Ctx): Field['pick'] {
   return pickFromList<Application>(
     'pick application',
@@ -106,7 +232,7 @@ export function applicationPicker(ctx: Ctx): Field['pick'] {
     [
       { header: 'name', width: 24, value: (row) => row.name },
       { header: 'credential', width: 12, value: (row) => row.credential_type },
-      { header: 'id', value: (row) => row.id },
+      { header: 'traits', value: (row) => (row.traits ?? []).join(',') || '-' },
     ],
     (row) => row.id,
     (row) => row.name,
@@ -118,12 +244,12 @@ function resourcePicker(ctx: Ctx): Field['pick'] {
     'pick resource',
     async () => userResources(await ctx.client.resources.list(ctx.zoneId)),
     [
+      { header: 'name', width: 24, value: named },
       { header: 'identifier', width: 30, value: (row) => row.identifier },
       { header: 'scopes', width: 28, value: (row) => (row.scopes ?? []).join(',') || '-' },
-      { header: 'id', value: (row) => row.id },
     ],
     (row) => row.id,
-    (row) => row.identifier,
+    named,
   )
 }
 
@@ -132,12 +258,12 @@ export function resourceIdentifierPicker(ctx: Ctx): Field['pick'] {
     'pick resource',
     async () => userResources(await ctx.client.resources.list(ctx.zoneId)),
     [
+      { header: 'name', width: 24, value: named },
       { header: 'identifier', width: 30, value: (row) => row.identifier },
-      { header: 'name', width: 20, value: (row) => row.name ?? '-' },
       { header: 'scopes', value: (row) => (row.scopes ?? []).join(',') || '-' },
     ],
     (row) => row.identifier,
-    (row) => row.identifier,
+    named,
   )
 }
 
@@ -146,12 +272,12 @@ function providerPicker(ctx: Ctx): Field['pick'] {
     'pick provider',
     () => ctx.client.providers.list(ctx.zoneId),
     [
+      { header: 'name', width: 24, value: named },
       { header: 'identifier', width: 24, value: (row) => row.identifier },
       { header: 'kind', width: 10, value: (row) => row.kind ?? '-' },
-      { header: 'id', value: (row) => row.id },
     ],
     (row) => row.id,
-    (row) => row.identifier,
+    named,
   )
 }
 
@@ -162,7 +288,7 @@ function sessionPicker(ctx: Ctx): Field['pick'] {
     [
       { header: 'subject', width: 30, value: (row) => row.subject_id },
       { header: 'type', width: 10, value: (row) => row.session_type },
-      { header: 'id', value: (row) => row.id },
+      { header: 'status', value: (row) => row.status },
     ],
     (row) => row.id,
     (row) => row.subject_id,
@@ -170,35 +296,45 @@ function sessionPicker(ctx: Ctx): Field['pick'] {
 }
 
 function delegationPicker(ctx: Ctx): Field['pick'] {
-  return pickFromList<DelegationEdge>(
+  return pickFromList<DelegationRow>(
     'pick delegation',
-    async () => (await ctx.client.delegations.active(ctx.zoneId)).items,
+    async () => labelDelegations(ctx, (await ctx.client.delegations.active(ctx.zoneId)).items),
     [
       { header: 'source', width: 28, value: (row) => row.source_session_id },
       { header: 'target', width: 28, value: (row) => row.target_session_id },
-      { header: 'id', value: (row) => row.id },
+      { header: 'resource', value: (row) => row.resource_name ?? row.resource_id ?? '-' },
     ],
     (row) => row.id,
-    (row) => row.id,
+    (row) => `${row.source_session_id} → ${row.target_session_id}`,
   )
 }
 
 function policyVersionPicker(ctx: Ctx): Field['pick'] {
-  return pickFromList<PolicyVersion & { policy_name: string }>(
+  return pickFromList<PolicyVersionRow>(
     'pick policy version',
-    async () => {
-      const policies = await ctx.client.policies.list(ctx.zoneId)
-      const details = await Promise.all(policies.map((policy) => ctx.client.policies.get(ctx.zoneId, policy.id)))
-      return details.flatMap((policy) => (policy.versions ?? []).map((version) => ({ ...version, policy_name: policy.name })))
-    },
+    () => loadPolicyVersions(ctx),
     [
       { header: 'policy', width: 24, value: (row) => row.policy_name },
       { header: 'version', width: 8, value: (row) => String(row.version) },
-      { header: 'id', value: (row) => row.id },
+      { header: 'schema', value: (row) => row.schema_version },
     ],
     (row) => row.id,
-    (row) => `${row.policy_name} v${row.version}`,
+    policyVersionLabel,
     appendCsv,
+  )
+}
+
+function policySetVersionPicker(ctx: Ctx, policySet: PolicySet): Field['pick'] {
+  return pickFromList<PolicySetVersionRow>(
+    'pick policy-set version',
+    () => loadPolicySetVersions(ctx, policySet),
+    [
+      { header: 'policy-set', width: 24, value: (row) => row.policy_set_name },
+      { header: 'version', width: 8, value: (row) => String(row.version) },
+      { header: 'schema', value: (row) => row.schema_version },
+    ],
+    (row) => row.id,
+    policySetVersionLabel,
   )
 }
 
@@ -206,21 +342,22 @@ export function zonesView(ctx: Ctx): View {
   const list: ListView<Zone> = new ListView<Zone>({
     title: 'zones',
     columns: [
-      { header: 'slug', width: 18, value: (r) => r.slug },
       { header: 'name', width: 24, value: (r) => r.name },
+      { header: 'slug', width: 18, value: (r) => r.slug },
       { header: 'login_flow', width: 12, value: (r) => r.login_flow },
       { header: 'dcr', width: 5, value: (r) => (r.dcr_enabled ? 'yes' : 'no') },
       { header: 'pkce', width: 5, value: (r) => (r.pkce_required ? 'req' : 'opt') },
-      { header: 'id', value: (r) => r.id },
     ],
     load: () => ctx.client.zones.list(),
     state: ctx.state,
     stateKey: 'zones',
     rowKey: (row) => row.id,
+    rowId: (row) => row.id,
+    rowName: named,
     onEnter: (app, row) => {
       ctx.onZoneSelect?.(row.id, row.slug)
-      app.setStatus(`zone set to ${row.slug}`)
-      open(app, detail(`zone / ${row.slug}`, () => ctx.client.zones.get(row.id)))
+      app.setStatus(`zone set to ${row.name}`)
+      open(app, detail(`zone / ${row.name}`, () => ctx.client.zones.get(row.id)))
     },
     actions: [
       {
@@ -287,13 +424,14 @@ export function applicationsView(ctx: Ctx): View {
       { header: 'method', width: 8, value: (r) => r.registration_method },
       { header: 'cred', width: 12, value: (r) => r.credential_type },
       { header: 'traits', width: 24, value: (r) => (r.traits ?? []).join(',') || '-' },
-      { header: 'id', value: (r) => r.id },
     ],
     load: () => ctx.client.applications.list(ctx.zoneId),
     state: ctx.state,
     stateKey: 'applications',
     zoneId: ctx.zoneId,
     rowKey: (row) => row.id,
+    rowId: (row) => row.id,
+    rowName: (row) => row.name,
     onEnter: (app, row) => open(app, detail(`app / ${row.name}`, () => ctx.client.applications.get(ctx.zoneId, row.id))),
     actions: [
       {
@@ -381,8 +519,8 @@ export function resourcesView(ctx: Ctx): View {
   const list: ListView<Resource> = new ListView<Resource>({
     title: 'resources',
     columns: [
-      { header: 'identifier', width: 32, value: (r) => r.identifier },
-      { header: 'name', width: 18, value: (r) => r.name ?? '-' },
+      { header: 'name', width: 24, value: named },
+      { header: 'identifier', width: 30, value: (r) => r.identifier },
       { header: 'upstream', width: 32, value: (r) => r.upstream_url ?? '-' },
       { header: 'scopes', value: (r) => (r.scopes ?? []).join(' ') || '-' },
     ],
@@ -391,7 +529,9 @@ export function resourcesView(ctx: Ctx): View {
     stateKey: 'resources',
     zoneId: ctx.zoneId,
     rowKey: (row) => row.id,
-    onEnter: (app, row) => open(app, detail(`resource / ${row.identifier}`, () => ctx.client.resources.get(ctx.zoneId, row.id))),
+    rowId: (row) => row.id,
+    rowName: named,
+    onEnter: (app, row) => open(app, detail(`resource / ${named(row)}`, () => ctx.client.resources.get(ctx.zoneId, row.id))),
     actions: [
       {
         key: 'n', label: 'new', build: () => new FormView({
@@ -401,9 +541,9 @@ export function resourcesView(ctx: Ctx): View {
             { key: 'scopes', label: 'scopes', kind: 'list', required: true, hint: 'comma-separated, e.g. read,write' },
             { key: 'name', label: 'name', kind: 'text' },
             { key: 'upstream_url', label: 'upstream URL', kind: 'text' },
-            { key: 'gateway_application_id', label: 'gateway app', kind: 'text', pick: applicationPicker(ctx) },
+            { key: 'gateway_application_id', label: 'gateway app', kind: 'text', pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
             { key: 'prefix', label: 'prefix match', kind: 'bool', default: 'false' },
-            { key: 'credential_provider_id', label: 'provider', kind: 'text', pick: providerPicker(ctx) },
+            { key: 'credential_provider_id', label: 'provider', kind: 'text', pick: providerPicker(ctx), resolve: providerResolver(ctx) },
           ],
           onSubmit: async (v, app) => {
             await ctx.client.resources.create(ctx.zoneId, {
@@ -428,8 +568,8 @@ export function resourcesView(ctx: Ctx): View {
               { key: 'name', label: 'name', kind: 'text', default: row.name ?? '' },
               { key: 'identifier', label: 'identifier', kind: 'text', default: row.identifier },
               { key: 'upstream_url', label: 'upstream URL', kind: 'text', default: row.upstream_url ?? '' },
-              { key: 'gateway_application_id', label: 'gateway app', kind: 'text', default: row.gateway_application_id ?? '', pick: applicationPicker(ctx) },
-              { key: 'credential_provider_id', label: 'provider', kind: 'text', default: row.credential_provider_id ?? '', pick: providerPicker(ctx) },
+               { key: 'gateway_application_id', label: 'gateway app', kind: 'text', default: row.gateway_application_id ?? '', pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
+               { key: 'credential_provider_id', label: 'provider', kind: 'text', default: row.credential_provider_id ?? '', pick: providerPicker(ctx), resolve: providerResolver(ctx) },
               { key: 'prefix', label: 'prefix match', kind: 'bool', default: String(row.prefix) },
               { key: 'scopes', label: 'scopes', kind: 'list', default: (row.scopes ?? []).join(','), hint: 'comma-separated' },
             ],
@@ -469,18 +609,19 @@ export function providersView(ctx: Ctx): View {
   const list: ListView<Provider> = new ListView<Provider>({
     title: 'providers',
     columns: [
+      { header: 'name', width: 24, value: named },
       { header: 'identifier', width: 24, value: (r) => r.identifier },
-      { header: 'name', width: 24, value: (r) => r.name },
       { header: 'kind', width: 10, value: (r) => r.kind ?? '-' },
       { header: 'owner', width: 10, value: (r) => r.owner_type },
-      { header: 'id', value: (r) => r.id },
     ],
     load: () => ctx.client.providers.list(ctx.zoneId),
     state: ctx.state,
     stateKey: 'providers',
     zoneId: ctx.zoneId,
     rowKey: (row) => row.id,
-    onEnter: (app, row) => open(app, detail(`provider / ${row.identifier}`, () => ctx.client.providers.get(ctx.zoneId, row.id))),
+    rowId: (row) => row.id,
+    rowName: named,
+    onEnter: (app, row) => open(app, detail(`provider / ${named(row)}`, () => ctx.client.providers.get(ctx.zoneId, row.id))),
     actions: [
       {
         key: 'n', label: 'new', build: () => new FormView({
@@ -555,13 +696,14 @@ export function policiesView(ctx: Ctx): View {
       { header: 'name', width: 28, value: (r) => r.name },
       { header: 'owner', width: 10, value: (r) => r.owner_type },
       { header: 'description', width: 32, value: (r) => r.description ?? '-' },
-      { header: 'id', value: (r) => r.id },
     ],
     load: () => ctx.client.policies.list(ctx.zoneId),
     state: ctx.state,
     stateKey: 'policies',
     zoneId: ctx.zoneId,
     rowKey: (row) => row.id,
+    rowId: (row) => row.id,
+    rowName: (row) => row.name,
     onEnter: (app, row) => open(app, detail(`policy / ${row.name}`, () => ctx.client.policies.get(ctx.zoneId, row.id))),
     actions: [
       {
@@ -637,18 +779,20 @@ export function policiesView(ctx: Ctx): View {
 }
 
 export function policySetsView(ctx: Ctx): View {
-  const list: ListView<PolicySet> = new ListView<PolicySet>({
+  const list: ListView<PolicySetRow> = new ListView<PolicySetRow>({
     title: 'policy-sets',
     columns: [
       { header: 'name', width: 24, value: (r) => r.name },
-      { header: 'active_version', width: 36, value: (r) => r.active_version_id ?? '(none)' },
+      { header: 'active version', width: 16, value: (r) => r.active_version_label },
       { header: 'description', value: (r) => r.description ?? '-' },
     ],
-    load: () => ctx.client.policySets.list(ctx.zoneId),
+    load: () => loadPolicySets(ctx),
     state: ctx.state,
     stateKey: 'policy-sets',
     zoneId: ctx.zoneId,
     rowKey: (row) => row.id,
+    rowId: (row) => row.id,
+    rowName: (row) => row.name,
     onEnter: (app, row) => open(app, detail(`policy-set / ${row.name}`, () => ctx.client.policySets.get(ctx.zoneId, row.id))),
     actions: [
       {
@@ -670,7 +814,7 @@ export function policySetsView(ctx: Ctx): View {
           return new FormView({
             title: `version ${row.name}`,
             fields: [
-              { key: 'policy_versions', label: 'policy versions', kind: 'list', required: true, pick: policyVersionPicker(ctx), hint: 'right arrow adds versions' },
+              { key: 'policy_versions', label: 'policy versions', kind: 'list', required: true, pick: policyVersionPicker(ctx), resolve: policyVersionResolver(ctx), hint: 'right arrow adds versions' },
             ],
             onSubmit: async (v, app) => {
               const manifest = splitList(v.policy_versions ?? '').map((policy_version_id) => ({ policy_version_id }))
@@ -686,8 +830,8 @@ export function policySetsView(ctx: Ctx): View {
           return new FormView({
             title: `activate ${row.name}`,
             fields: [
-              { key: 'version_id', label: 'version', kind: 'text', required: true },
-              { key: 'shadow_version_id', label: 'shadow version', kind: 'text' },
+              { key: 'version_id', label: 'version', kind: 'text', required: true, pick: policySetVersionPicker(ctx, row), resolve: policySetVersionResolver(ctx, row) },
+              { key: 'shadow_version_id', label: 'shadow version', kind: 'text', pick: policySetVersionPicker(ctx, row), resolve: policySetVersionResolver(ctx, row) },
             ],
             onSubmit: async (v, app) => {
               await ctx.client.policySets.activate(ctx.zoneId, row.id, v.version_id!, v.shadow_version_id || undefined)
@@ -702,7 +846,7 @@ export function policySetsView(ctx: Ctx): View {
           return new FormView({
             title: `simulate ${row.name}`,
             fields: [
-              { key: 'version_id', label: 'version', kind: 'text', required: true, default: row.active_version_id ?? '' },
+              { key: 'version_id', label: 'version', kind: 'text', required: true, default: row.active_version_id ?? '', pick: policySetVersionPicker(ctx, row), resolve: policySetVersionResolver(ctx, row) },
               { key: 'input_file', label: 'input file', kind: 'file' },
               { key: 'input', label: 'inline input', kind: 'multiline', hint: 'JSON object; leave blank for rollout-only simulation' },
             ],
@@ -738,29 +882,31 @@ export function policySetsView(ctx: Ctx): View {
 }
 
 export function grantsView(ctx: Ctx): View {
-  const list: ListView<Grant> = new ListView<Grant>({
+  const list: ListView<GrantRow> = new ListView<GrantRow>({
     title: 'grants',
     columns: [
-      { header: 'app', width: 36, value: (r) => r.application_id },
+      { header: 'app', width: 28, value: (r) => r.application_name },
       { header: 'user', width: 36, value: (r) => r.user_id },
-      { header: 'resource', width: 36, value: (r) => r.resource_id },
+      { header: 'resource', width: 28, value: (r) => r.resource_name },
       { header: 'status', width: 10, value: (r) => r.status },
       { header: 'scopes', value: (r) => (r.scopes ?? []).join(' ') || '-' },
     ],
-    load: () => ctx.client.grants.list(ctx.zoneId),
+    load: () => loadGrants(ctx),
     state: ctx.state,
     stateKey: 'grants',
     zoneId: ctx.zoneId,
     rowKey: (row) => row.id,
+    rowId: (row) => row.id,
+    rowName: (row) => `${row.application_name} → ${row.resource_name}`,
     onEnter: (app, row) => open(app, detail(`grant / ${row.id}`, () => ctx.client.grants.get(ctx.zoneId, row.id))),
     actions: [
       {
         key: 'n', label: 'new', build: () => new FormView({
           title: 'create grant',
           fields: [
-            { key: 'application_id', label: 'application', kind: 'text', required: true, pick: applicationPicker(ctx) },
+            { key: 'application_id', label: 'application', kind: 'text', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
             { key: 'user_id', label: 'subject', kind: 'text', required: true },
-            { key: 'resource_id', label: 'resource', kind: 'text', required: true, pick: resourcePicker(ctx) },
+            { key: 'resource_id', label: 'resource', kind: 'text', required: true, pick: resourcePicker(ctx), resolve: resourceResolver(ctx) },
             { key: 'scopes', label: 'scopes', kind: 'list', required: true, hint: 'comma-separated subset of resource scopes' },
           ],
           onSubmit: async (v, app) => {
@@ -800,13 +946,14 @@ export function sessionsView(ctx: Ctx): View {
       { header: 'type', width: 10, value: (r) => r.session_type },
       { header: 'status', width: 10, value: (r) => r.status },
       { header: 'expires_at', width: 24, value: (r) => r.expires_at },
-      { header: 'id', value: (r) => r.id },
     ],
     load: () => ctx.client.sessions.list(ctx.zoneId, filters),
     state: ctx.state,
     stateKey: 'sessions',
     zoneId: ctx.zoneId,
     rowKey: (row) => row.id,
+    rowId: (row) => row.id,
+    rowName: (row) => row.subject_id,
     actions: [
       {
         key: 'f', label: 'filter', build: () => {
@@ -873,7 +1020,7 @@ class DelegationMenuView implements View {
   private edgeForm(kind: 'inbound' | 'outbound'): View {
     return new FormView({
       title: `delegation ${kind}`,
-      fields: [{ key: 'session_id', label: 'session', kind: 'text', required: true, pick: sessionPicker(this.ctx) }],
+      fields: [{ key: 'session_id', label: 'session', kind: 'text', required: true, pick: sessionPicker(this.ctx), resolve: sessionResolver(this.ctx) }],
       onSubmit: async (v, app) => {
         app.pop()
         app.push(delegationEdgesView(this.ctx, kind, v.session_id!))
@@ -905,42 +1052,44 @@ class DelegationMenuView implements View {
   }
 }
 
-function delegationActiveView(ctx: Ctx): ListView<DelegationEdge> {
-  return new ListView<DelegationEdge>({
+function delegationActiveView(ctx: Ctx): ListView<DelegationRow> {
+  return new ListView<DelegationRow>({
     title: 'delegations / active',
     columns: [
       { header: 'source', width: 36, value: (r) => r.source_session_id },
       { header: 'target', width: 36, value: (r) => r.target_session_id },
-      { header: 'resource', width: 24, value: (r) => r.resource_id ?? '-' },
+      { header: 'resource', width: 24, value: (r) => r.resource_name ?? '-' },
       { header: 'status', width: 10, value: (r) => r.status },
-      { header: 'id', value: (r) => r.id },
     ],
-    load: async () => (await ctx.client.delegations.active(ctx.zoneId)).items,
+    load: async () => labelDelegations(ctx, (await ctx.client.delegations.active(ctx.zoneId)).items),
     state: ctx.state,
     stateKey: 'delegations-active',
     zoneId: ctx.zoneId,
     rowKey: (row) => row.id,
+    rowId: (row) => row.id,
+    rowName: (row) => `${row.source_session_id} → ${row.target_session_id}`,
     onEnter: (app, row) => open(app, detail(`delegation / ${row.id}`, async () => row)),
   })
 }
 
-function delegationEdgesView(ctx: Ctx, kind: 'inbound' | 'outbound', sessionId: string): ListView<DelegationEdge> {
-  const list: ListView<DelegationEdge> = new ListView<DelegationEdge>({
+function delegationEdgesView(ctx: Ctx, kind: 'inbound' | 'outbound', sessionId: string): ListView<DelegationRow> {
+  const list: ListView<DelegationRow> = new ListView<DelegationRow>({
     title: `delegations / ${kind}`,
     columns: [
       { header: 'source', width: 36, value: (r) => r.source_session_id },
       { header: 'target', width: 36, value: (r) => r.target_session_id },
-      { header: 'resource', width: 24, value: (r) => r.resource_id ?? '-' },
+      { header: 'resource', width: 24, value: (r) => r.resource_name ?? '-' },
       { header: 'status', width: 10, value: (r) => r.status },
-      { header: 'id', value: (r) => r.id },
     ],
-    load: () => kind === 'inbound'
-      ? ctx.client.delegations.inbound(ctx.zoneId, sessionId)
-      : ctx.client.delegations.outbound(ctx.zoneId, sessionId),
+    load: async () => labelDelegations(ctx, kind === 'inbound'
+      ? await ctx.client.delegations.inbound(ctx.zoneId, sessionId)
+      : await ctx.client.delegations.outbound(ctx.zoneId, sessionId)),
     state: ctx.state,
     stateKey: `delegations-${kind}-${sessionId}`,
     zoneId: ctx.zoneId,
     rowKey: (row) => row.id,
+    rowId: (row) => row.id,
+    rowName: (row) => `${row.source_session_id} → ${row.target_session_id}`,
     onEnter: (app, row) => open(app, detail(`delegation / ${row.id}`, async () => row)),
     actions: [
       {
@@ -973,33 +1122,35 @@ function delegationTraverseView(ctx: Ctx, id: string): ListView<TraverseNode> {
       { header: 'depth', width: 6, value: (r) => String(r.depth) },
       { header: 'source', width: 36, value: (r) => r.source_session_id },
       { header: 'target', width: 36, value: (r) => r.target_session_id },
-      { header: 'id', value: (r) => r.id },
     ],
     load: () => ctx.client.delegations.traverse(ctx.zoneId, id),
     state: ctx.state,
     stateKey: `delegation-traverse-${id}`,
     zoneId: ctx.zoneId,
     rowKey: (row) => row.id,
+    rowId: (row) => row.id,
+    rowName: (row) => `${row.source_session_id} → ${row.target_session_id}`,
     onEnter: (app, row) => open(app, detail(`delegation-node / ${row.id}`, async () => row)),
   })
 }
 
 export function agentsView(ctx: Ctx): View {
-  const list: ListView<AgentSession> = new ListView<AgentSession>({
+  const list: ListView<AgentRow> = new ListView<AgentRow>({
     title: 'agents',
     columns: [
-      { header: 'application', width: 36, value: (r) => r.application_id },
+      { header: 'application', width: 28, value: (r) => r.application_name },
       { header: 'parent', width: 36, value: (r) => r.parent_id ?? '-' },
       { header: 'status', width: 10, value: (r) => r.status },
       { header: 'depth', width: 6, value: (r) => String(r.depth) },
       { header: 'spawned_at', width: 24, value: (r) => r.spawned_at },
-      { header: 'id', value: (r) => r.agent_session_id },
     ],
-    load: () => ctx.client.agents.list(ctx.zoneId),
+    load: () => loadAgents(ctx),
     state: ctx.state,
     stateKey: 'agents',
     zoneId: ctx.zoneId,
     rowKey: (row) => row.agent_session_id,
+    rowId: (row) => row.agent_session_id,
+    rowName: (row) => row.application_name,
     onEnter: (app, row) => open(app, detail(`agent / ${row.agent_session_id}`, () => ctx.client.agents.get(ctx.zoneId, row.agent_session_id))),
     actions: [
       {

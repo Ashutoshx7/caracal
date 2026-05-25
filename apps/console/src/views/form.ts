@@ -5,7 +5,7 @@
 
 import { readdirSync, statSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
-import { ansi, pad, sanitizeAnsi, truncate, ui } from '../ansi.ts'
+import { ansi, copyToClipboard, pad, sanitizeAnsi, truncate, ui } from '../ansi.ts'
 import { scrubTokens } from '../errors.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
@@ -21,7 +21,8 @@ export interface Field {
   options?: string[]
   validate?: (v: string) => string | undefined
   hint?: string
-  pick?: (app: App, setValue: (value: string) => void, currentValue: string) => void | Promise<void>
+  pick?: (app: App, setValue: (value: string, label?: string) => void | Promise<void>, currentValue: string) => void | Promise<void>
+  resolve?: (value: string) => string | undefined | Promise<string | undefined>
 }
 
 export interface FormOpts {
@@ -59,8 +60,10 @@ export class FormView implements View {
   private readonly submit: FormOpts['onSubmit']
   private readonly cancel?: FormOpts['onCancel']
   private values: Record<string, string>
+  private displayLabels: Record<string, string> = {}
   private focus = 0
   private revealed = new Set<string>()
+  private revealedIds = new Set<string>()
   private multilineMode = false
   private submitting = false
 
@@ -87,6 +90,10 @@ export class FormView implements View {
 
   values_(): Record<string, string> { return this.values }
 
+  async init(app: App): Promise<void> {
+    await this.resolveLabels(app)
+  }
+
   render(ctx: ViewContext): string[] {
     const lines: string[] = ['']
     lines.push(' ' + ui.title(this.title))
@@ -104,7 +111,11 @@ export class FormView implements View {
       const styled = truncate(text, ctx.size.cols)
       lines.push(styled)
       if (focused) {
-        const hints = [f.hint, f.pick ? 'right arrow opens a picker' : undefined].filter((hint): hint is string => Boolean(hint))
+        const hints = [
+          f.hint,
+          f.pick ? 'right arrow opens a searchable picker' : undefined,
+          f.pick && (this.values[f.key] ?? '').trim() ? 'V reveals ID · N copies name · I copies ID' : undefined,
+        ].filter((hint): hint is string => Boolean(hint))
         if (hints.length > 0) lines.push('   ' + ui.muted('hint: ' + hints.join(' · ')))
       }
     }
@@ -120,6 +131,12 @@ export class FormView implements View {
     const raw = this.values[f.key] ?? ''
     if (f.kind === 'bool') return raw === 'true' ? '[x]' : '[ ]'
     if (f.kind === 'select') return ui.input(`[ ${sanitizeAnsi(raw || '<choose>')} ]`)
+    if (f.pick && raw.length > 0) {
+      const label = this.displayLabels[f.key]
+      if (!label) return ui.input(`[ ${sanitizeAnsi(raw)} ]`)
+      if (this.revealedIds.has(f.key)) return ui.input(`[ ${sanitizeAnsi(label)} ]`) + ui.muted(` id:${sanitizeAnsi(raw)}`)
+      return ui.input(`[ ${sanitizeAnsi(label)} ]`) + ui.muted(' id:hidden')
+    }
     if (f.kind === 'secret') {
       const shown = this.revealed.has(f.key) ? sanitizeAnsi(raw) : raw.length === 0 ? '' : '••••'
       return ui.input(`[ ${shown || `<${f.label}>`} ]`)
@@ -138,11 +155,13 @@ export class FormView implements View {
       if (key === 'enter') { this.values[f.key] = (this.values[f.key] ?? '') + '\n'; return }
       if (key === 'backspace') {
         this.values[f.key] = (this.values[f.key] ?? '').slice(0, -1)
+        delete this.displayLabels[f.key]
         return
       }
       const text = textInput(key, true)
       if (text !== undefined) {
         this.values[f.key] = (this.values[f.key] ?? '') + text
+        delete this.displayLabels[f.key]
       }
       return
     }
@@ -151,9 +170,28 @@ export class FormView implements View {
       ctx.app.pop()
       return
     }
+    if (f?.pick && key === 'V' && (this.values[f.key] ?? '').trim()) {
+      if (this.revealedIds.has(f.key)) this.revealedIds.delete(f.key)
+      else this.revealedIds.add(f.key)
+      return
+    }
+    if (f?.pick && key === 'N' && (this.values[f.key] ?? '').trim()) {
+      const name = this.displayLabels[f.key] ?? this.values[f.key] ?? ''
+      copyToClipboard(name)
+      ctx.app.setStatus(`copied name ${name}`)
+      return
+    }
+    if (f?.pick && key === 'I' && (this.values[f.key] ?? '').trim()) {
+      copyToClipboard(this.values[f.key] ?? '')
+      ctx.app.setStatus(`copied id for ${this.displayLabels[f.key] ?? f.label}`)
+      return
+    }
     if (key === 'right' && f?.pick) {
-      await f.pick(ctx.app, (value) => {
+      await f.pick(ctx.app, async (value, label) => {
         this.values[f.key] = value
+        if (label) this.displayLabels[f.key] = label
+        else await this.resolveLabel(f, ctx.app)
+        this.revealedIds.delete(f.key)
       }, this.values[f.key] ?? '')
       return
     }
@@ -203,18 +241,44 @@ export class FormView implements View {
       if (text !== undefined) {
         this.multilineMode = true
         this.values[f.key] = (this.values[f.key] ?? '') + text
+        delete this.displayLabels[f.key]
       } else if (key === 'backspace') {
         this.values[f.key] = (this.values[f.key] ?? '').slice(0, -1)
+        delete this.displayLabels[f.key]
       }
       return
     }
     if (key === 'backspace') {
       this.values[f.key] = (this.values[f.key] ?? '').slice(0, -1)
+      delete this.displayLabels[f.key]
       return
     }
     const text = textInput(key, false)
     if (text !== undefined) {
       this.values[f.key] = (this.values[f.key] ?? '') + text
+      delete this.displayLabels[f.key]
+    }
+  }
+
+  private async resolveLabels(app: App): Promise<void> {
+    await Promise.all(this.fields.map((field) => this.resolveLabel(field, app)))
+  }
+
+  private async resolveLabel(field: Field, app: App): Promise<void> {
+    if (!field.resolve) return
+    const value = (this.values[field.key] ?? '').trim()
+    if (!value) {
+      delete this.displayLabels[field.key]
+      return
+    }
+    try {
+      const values = field.kind === 'list' ? splitCsv(value) : [value]
+      const labels = await Promise.all(values.map((item) => field.resolve!(item)))
+      this.displayLabels[field.key] = labels.map((label, index) => label ?? values[index]!).join(', ')
+      app.invalidate()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      app.setStatus(scrubTokens(`label lookup for ${field.label}: ${msg}`), 'error')
     }
   }
 
@@ -262,6 +326,10 @@ function textInput(key: Key, multiline: boolean): string | undefined {
     ? text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '')
     : text.replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
   return text.length > 0 ? text : undefined
+}
+
+function splitCsv(value: string): string[] {
+  return value.split(',').map((item) => item.trim()).filter((item) => item.length > 0)
 }
 
 export interface ConfirmOpts {
