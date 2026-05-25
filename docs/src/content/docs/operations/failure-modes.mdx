@@ -1,17 +1,98 @@
 ---
 title: Failure Modes and Recovery
-description: Operator-focused detection, blast radius, safe recovery, and verification steps for core Caracal production failure modes.
+description: Detection, impact, recovery, and verification steps for core Caracal production failure modes.
 pageType: reference
 ---
 
-This page no longer documents standalone management command examples. Human-facing management now runs through the Console.
+## Postgres unavailable
 
-Open the interface with:
+**Detection:** API, STS, Audit, Coordinator, and migration readiness fail; `CaracalPostgresPoolSaturation` may fire before total outage.
+
+**Impact:** management operations, policy lookups, audit writes, and migrations can fail. Gateway requests may fail if STS cannot exchange authority.
+
+**Recovery:** restore the managed Postgres service or primary endpoint first. Do not restart every Caracal pod unless connection pools fail to recover. Re-run the migration Job only if the outage happened during upgrade.
+
+**Verification:** `infra/postgres/scripts/verify.sh` passes, service readiness is green, and a synthetic Gateway request produces an audit event.
+
+## Redis unavailable
+
+**Detection:** policy invalidation stalls, audit consumer lag rises, Coordinator dispatch slows, and STS bundle age can increase.
+
+**Impact:** policy changes may not propagate quickly and audit replay can lag. Existing active decisions remain bounded by STS readiness behavior.
+
+**Recovery:** restore Redis, confirm no eviction or stream truncation, and watch Audit plus STS catch up. Scale consumers only after Redis is stable.
+
+**Verification:** STS policy age drops, audit lag clears, and Redis stream consumer groups are active.
+
+## STS unavailable
+
+**Detection:** STS readiness fails and `CaracalGatewaySTSExchangeErrors` fires.
+
+**Impact:** Gateway cannot mint/exchange mandates for protected requests. Existing upstream calls that require fresh authority fail closed.
+
+**Recovery:** check STS logs for policy compile, database, Redis, and key-file errors. Restart only unhealthy replicas after dependency recovery.
+
+**Verification:** STS `/ready` returns success and Gateway synthetic requests succeed.
+
+## Gateway upstream failure
+
+**Detection:** Gateway readiness may remain green while upstream-specific 5xx responses rise.
+
+**Impact:** protected resources behind the failing upstream are unavailable; other resources can continue.
+
+**Recovery:** verify resource binding, upstream DNS, TLS, and route policy. If a rollout changed Gateway config, roll back the Helm revision.
+
+**Verification:** the resource-specific synthetic request succeeds and emits an audit event with the expected resource ID.
+
+## Audit DLQ growth
+
+**Detection:** `CaracalAuditDLQGrowth` or `CaracalAuditDLQNonEmpty`.
+
+**Impact:** evidence is delayed and may become incomplete if replay storage is lost.
+
+**Recovery:** freeze rollouts, recover Audit dependencies, preserve Redis streams and pod replay volumes, then let replay drain.
+
+**Verification:** DLQ size reaches zero and recent Gateway events appear in `audit_events`.
+
+## Coordinator unavailable
+
+**Detection:** Coordinator readiness fails, outbox lag rises, or agent lifecycle updates stop.
+
+**Impact:** agent coordination and asynchronous management operations lag. Gateway and STS can continue serving existing protected requests.
+
+**Recovery:** inspect database connectivity, Redis connectivity, outbox worker errors, and resource pressure. Restart only unhealthy Coordinator pods.
+
+**Verification:** outbox lag drains and new agent session lifecycle events are processed.
+
+## OPA policy compile failure
+
+**Detection:** `CaracalSTSOPACompileErrors`.
+
+**Impact:** affected policy loads fail closed; prior active bundle remains the safe path when available.
+
+**Recovery:** pause policy rollout, fix Rego/schema input, and validate with Console simulation before activating again.
+
+**Verification:** compile-error counter stops increasing and the changed policy simulates successfully.
+
+## High database pool saturation
+
+**Detection:** `CaracalPostgresPoolSaturation`.
+
+**Impact:** latency rises and services can begin failing readiness when pools exhaust.
+
+**Recovery:** inspect long-running queries, DB CPU/I/O, and connection leaks. Reduce traffic or scale database capacity before increasing service replicas.
+
+**Verification:** pool ratio stays below threshold and p95 latency returns to baseline.
+
+## Synthetic request
+
+Use a known protected test resource and include a unique request ID:
 
 ```bash
-caracal console
+curl -fsS \
+  -H "Authorization: Bearer $CARACAL_TEST_TOKEN" \
+  -H "X-Request-ID: recovery-$(date +%s)" \
+  https://gateway.example.com/health-protected
 ```
 
-Use the matching view for the workflow covered by this page. For automation, enable the Control API from the Console Control menu and call the authenticated HTTP surface.
-
-Runtime lifecycle commands (`caracal up`, `caracal down`, `caracal status`, `caracal purge`) and workload execution (`caracal run -- <command>`) remain documented in [Runtime and Console](/runtime-console/).
+Then verify the request ID exists in Audit through the Console Audit view or the operator-only API.

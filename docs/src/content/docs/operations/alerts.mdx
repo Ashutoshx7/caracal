@@ -1,17 +1,111 @@
 ---
 title: Alerting Recipes
-description: "PromQL recipes for the production alerts that matter most: policy compile errors, audit DLQ, audit tamper evidence, audit lag, gateway denial spikes, gateway STS exchange errors."
+description: PromQL, impact, triage, and runbook actions for Caracal production alerts.
 pageType: reference
 ---
 
-This page no longer documents standalone management command examples. Human-facing management now runs through the Console.
+The Helm chart can install these alerts through `alertRules.enabled=true`. Every alert is actionable: acknowledge it, identify the affected component, collect evidence, apply the recovery action, and verify the alert clears before closing the incident.
 
-Open the interface with:
+## Alert matrix
 
-```bash
-caracal console
-```
+| Alert | Severity | Component | Primary impact |
+| --- | --- | --- | --- |
+| [CaracalSTSOPACompileErrors](#caracalstsopacompileerrors) | warning | STS | New or changed policies fail to compile; affected loads fail closed. |
+| [CaracalSTSPolicyBundleStale](#caracalstspolicybundlestale) | warning | STS | Policy invalidation is delayed; decisions may use an older active bundle. |
+| [CaracalAuditDLQNonEmpty](#caracalauditdlqnonempty) | warning | Audit | Failed audit events need replay before evidence is complete. |
+| [CaracalAuditDLQGrowth](#caracalauditdlqgrowth) | critical | Audit | Audit failure backlog is increasing and release/rollout activity should stop. |
+| [CaracalAuditConsumerLagHigh](#caracalauditconsumerlaghigh) | warning | Audit | Audit ingestion is behind Redis stream production. |
+| [CaracalAuditTamperDetected](#caracalaudittamperdetected) | critical | Audit | Audit chain integrity failed; treat as a security incident. |
+| [CaracalGatewaySTSExchangeErrors](#caracalgatewaystsexchangeerrors) | warning | Gateway | Protected requests can fail before upstream dispatch. |
+| [CaracalPostgresPoolSaturation](#caracalpostgrespoolsaturation) | warning | Database | Services are close to exhausting DB connections. |
+| [CaracalReadinessFlapping](#caracalreadinessflapping) | warning | Platform | Pods repeatedly transition Ready/NotReady. |
 
-Use the matching view for the workflow covered by this page. For automation, enable the Control API from the Console Control menu and call the authenticated HTTP surface.
+## CaracalSTSOPACompileErrors
 
-Runtime lifecycle commands (`caracal up`, `caracal down`, `caracal status`, `caracal purge`) and workload execution (`caracal run -- <command>`) remain documented in [Runtime and Console](/runtime-console/).
+**PromQL:** `increase(caracal_sts_opa_compile_errors_total[5m]) > 0`
+
+**Likely causes:** invalid Rego, incompatible policy bundle schema, missing referenced policy version, or corrupt activation metadata.
+
+**Immediate action:** pause policy rollout, open the Console policy activation history, and inspect STS logs for the compile error. Keep the current active bundle in place until the replacement compiles.
+
+**Verification:** the PromQL expression returns `0`, STS readiness is green, and a policy simulation for the changed policy returns a complete allow/deny decision.
+
+## CaracalSTSPolicyBundleStale
+
+**PromQL:** `caracal_sts_opa_max_policy_age_seconds > <threshold>`
+
+**Likely causes:** Redis invalidation stream outage, STS polling delay, database latency, or a stuck STS replica.
+
+**Immediate action:** check Redis health, confirm STS can read Postgres, and restart only the stale STS replica if one replica is isolated. Do not activate additional policies while the bundle age is increasing.
+
+**Verification:** policy age drops below the threshold and all STS replicas report the same active policy set version.
+
+## CaracalAuditDLQNonEmpty
+
+**PromQL:** `caracal_audit_dlq_size > <threshold>`
+
+**Likely causes:** Audit write failure, invalid producer HMAC, Redis stream replay failure, or Postgres latency.
+
+**Immediate action:** inspect Audit logs, Redis stream health, and producer HMAC configuration. Keep services running if replay is draining; pause deployments if the queue is growing.
+
+**Verification:** DLQ size returns to `0`, replay logs report success, and recent Gateway requests have matching audit records.
+
+## CaracalAuditDLQGrowth
+
+**PromQL:** `increase(caracal_audit_dlq_size[10m]) > <threshold>`
+
+**Likely causes:** sustained Audit outage, Redis pressure, Postgres outage, incompatible audit schema, or rotated HMAC keys not deployed consistently.
+
+**Immediate action:** declare an incident, freeze rollouts, preserve Audit and Redis logs, restore the failed dependency, and replay the DLQ. If HMAC mismatch is suspected, follow [Incident Response](./incident-response/#audit-tamper-or-hmac-failure).
+
+**Verification:** DLQ growth stops, queue drains, tamper alerts stay clear, and synthetic Gateway requests produce complete audit events.
+
+## CaracalAuditConsumerLagHigh
+
+**PromQL:** `caracal_audit_consumer_lag > <threshold>`
+
+**Likely causes:** Audit under-provisioning, slow Postgres commits, Redis memory pressure, or oversized audit payloads.
+
+**Immediate action:** scale Audit replicas if DB capacity allows, inspect Postgres write latency, and check Redis memory/eviction. Avoid scaling producers until consumers catch up.
+
+**Verification:** lag trends down for two scrape intervals and Postgres pool saturation remains below threshold.
+
+## CaracalAuditTamperDetected
+
+**PromQL:** `increase(caracal_audit_tamper_mismatch_total[5m]) + increase(caracal_audit_tamper_chain_breaks_total[5m]) + increase(caracal_audit_tamper_hmac_failures_total[5m]) > 0`
+
+**Likely causes:** unauthorized DB mutation, corrupted replay, wrong HMAC key, out-of-order chain repair attempt, or software defect in audit signing.
+
+**Immediate action:** declare a security incident, restrict write access to Postgres, snapshot the database and Audit logs, stop audit repair attempts, and preserve Redis stream data.
+
+**Verification:** forensic review identifies the affected chain range, new events validate cleanly, and recovery is approved by the incident commander.
+
+## CaracalGatewaySTSExchangeErrors
+
+**PromQL:** `increase(caracal_gateway_sts_exchange_errors_total[5m]) > <threshold>`
+
+**Likely causes:** STS unavailable, service-to-service secret mismatch, route binding error, policy-denied exchange, or network policy blocking Gateway to STS.
+
+**Immediate action:** check Gateway and STS readiness, compare `GATEWAY_STS_HMAC_KEY_FILE` rollout state, inspect NetworkPolicy, and confirm the resource binding still points to the intended STS issuer.
+
+**Verification:** a synthetic Gateway request succeeds and emits an audit event.
+
+## CaracalPostgresPoolSaturation
+
+**PromQL:** `max by (service) (caracal_db_pool_in_use_ratio) > <threshold>`
+
+**Likely causes:** long-running queries, missing indexes, connection leak, database failover, or undersized `max_connections`.
+
+**Immediate action:** inspect active Postgres queries, identify the service label, reduce traffic if request latency is rising, and scale only after confirming the database has headroom.
+
+**Verification:** pool usage falls below threshold, request latency recovers, and no service is repeatedly reconnecting.
+
+## CaracalReadinessFlapping
+
+**PromQL:** `changes(kube_pod_container_status_ready{pod=~"caracal-.*"}[10m]) > <threshold>`
+
+**Likely causes:** dependency instability, CPU throttling, OOM kills, slow probes, replay backlog, or config drift between replicas.
+
+**Immediate action:** inspect pod events, resource usage, readiness endpoint output, and dependency alerts. Roll back the last deployment if flapping started immediately after a rollout.
+
+**Verification:** readiness transitions stop, all pods stay Ready for two rollout windows, and synthetic requests succeed.

@@ -1,17 +1,62 @@
 ---
 title: Observability and Health
-description: "Health, readiness, and metrics endpoints across all five services: response formats, check details, and monitoring guidance."
+description: Health, readiness, metrics, logs, and traces for operating Caracal services.
 pageType: config
 ---
 
-This page no longer documents standalone management command examples. Human-facing management now runs through the Console.
+Caracal exposes separate liveness, readiness, metrics, and logs for every service. Treat readiness as the release and rollout gate; liveness only tells Kubernetes whether the process should be restarted.
 
-Open the interface with:
+## Endpoints
+
+| Service | Liveness | Readiness | Metrics | Diagnostic metrics |
+| --- | --- | --- | --- | --- |
+| API | `/health` | `/ready` | `/metrics` | `/metrics.json` |
+| STS | `/health` | `/ready` | `/metrics` | `/metrics.json` |
+| Gateway | `/health` | `/ready` | `/metrics` | `/metrics.json` |
+| Audit | `/health` | `/ready` | `/metrics` | `/metrics.json` |
+| Coordinator | `/health` | `/ready` | `/metrics` | `/metrics.json` |
+| Control | `/health` | `/ready` | `/metrics` | `/metrics.json` |
+
+`/metrics` is the Prometheus surface. Restrict it to your monitoring namespace through NetworkPolicy or service mesh policy. `/metrics.json` is for Console Doctor and operator diagnostics; do not expose it publicly.
+
+## Readiness semantics
+
+Readiness fails when a service cannot safely serve its role:
+
+| Service | Readiness dependencies |
+| --- | --- |
+| API | Postgres connectivity, required secret files, and management schema availability |
+| STS | Postgres, Redis invalidation stream, active policy bundle, required signing/HMAC keys |
+| Gateway | STS exchange path, resource binding cache, replay buffer availability, required HMAC keys |
+| Audit | Redis stream consumption, Postgres write path, audit HMAC key, replay/DLQ health |
+| Coordinator | Postgres, Redis, outbox worker health, coordinator token |
+| Control | local state directory, runtime socket/API reachability, auth state |
+
+## Metrics to watch
+
+| Area | Signals |
+| --- | --- |
+| Policy | `caracal_sts_opa_compile_errors_total`, `caracal_sts_opa_max_policy_age_seconds` |
+| Audit | `caracal_audit_dlq_size`, `caracal_audit_consumer_lag`, tamper mismatch counters |
+| Gateway | `caracal_gateway_sts_exchange_errors_total`, request latency and denial counters |
+| Database | `caracal_db_pool_in_use_ratio`, query latency, migration Job status |
+| Platform | Kubernetes readiness changes, restarts, CPU throttling, OOM kills |
+
+## Logs and trace correlation
+
+All services should include request ID, zone ID where available, service name, release version, and deployment mode in structured logs. Gateway, STS, and Audit should carry the same request ID across mandate exchange, policy decision, upstream dispatch, and audit write.
+
+Use `OTEL_EXPORTER_OTLP_ENDPOINT` through `global.otelExporterOtlpEndpoint` to send traces to a platform-owned collector. Keep collector egress explicit in `networkPolicy.extraEgress`.
+
+## Smoke tests
+
+Check rollout and probes:
 
 ```bash
-caracal console
+kubectl -n caracal get pods
+kubectl -n caracal rollout status statefulset/caracal-caracal-sts
+kubectl -n caracal rollout status statefulset/caracal-caracal-gateway
+kubectl -n caracal rollout status deployment/caracal-caracal-api
 ```
 
-Use the matching view for the workflow covered by this page. For automation, enable the Control API from the Console Control menu and call the authenticated HTTP surface.
-
-Runtime lifecycle commands (`caracal up`, `caracal down`, `caracal status`, `caracal purge`) and workload execution (`caracal run -- <command>`) remain documented in [Runtime and Console](/runtime-console/).
+Run an end-to-end synthetic request through Gateway, then confirm the same request ID appears in Audit. A rollout is not healthy until both the client response and audit evidence are present.
