@@ -138,7 +138,10 @@ func (s *Server) verifyGatewayExchange(r *http.Request, requestID string) (bool,
 	if gatewayRequestID != requestID {
 		return false, fmt.Errorf("gateway request id mismatch")
 	}
-	if err := corests.VerifyGatewayExchange(s.cfg.GatewayHMACKey, time.Now().UTC(), gatewayExchangeSkew, timestamp, gatewayRequestID, signature, []byte(r.PostForm.Encode())); err != nil {
+	if err := corests.VerifyGatewayExchange(s.cfg.GatewayHMACKey, time.Now().UTC(), gatewayExchangeSkew, timestamp, gatewayRequestID, signature, r.Method, r.URL.EscapedPath(), []byte(r.PostForm.Encode())); err != nil {
+		return false, err
+	}
+	if err := s.consumeGatewayNonce(r.Context(), gatewayRequestID); err != nil {
 		return false, err
 	}
 	return true, nil

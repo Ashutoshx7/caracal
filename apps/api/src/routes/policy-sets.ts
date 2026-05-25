@@ -448,7 +448,7 @@ async function executePolicySimulation(
         'content-type': 'application/json',
         [GATEWAY_TIMESTAMP_HEADER]: String(timestamp),
         [GATEWAY_REQUEST_HEADER]: requestId,
-        [GATEWAY_SIGNATURE_HEADER]: signGatewayExchange(fastify.cfg.gatewayStsHmacKey, timestamp, requestId, body),
+        [GATEWAY_SIGNATURE_HEADER]: signGatewayExchange(fastify.cfg.gatewayStsHmacKey, timestamp, requestId, 'POST', '/internal/policy/simulate', body),
       },
       body,
     })

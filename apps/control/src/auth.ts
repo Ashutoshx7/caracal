@@ -24,19 +24,32 @@ export interface AuthOptions {
   issuer: string
   audience: string
   refreshFloorMs?: number
+  maxZones?: number
+  negativeTtlMs?: number
   fetchImpl?: typeof fetch
 }
 
 const DEFAULT_REFRESH_FLOOR_MS = 30_000
+const DEFAULT_MAX_ZONES = 1024
+const DEFAULT_NEGATIVE_TTL_MS = 30_000
+
+interface NegativeEntry {
+  expiresAt: number
+}
 
 export class Authenticator {
   private readonly opts: AuthOptions
   private readonly zones = new Map<string, ZoneEntry>()
+  private readonly negative = new Map<string, NegativeEntry>()
   private readonly refreshFloorMs: number
+  private readonly maxZones: number
+  private readonly negativeTtlMs: number
 
   constructor(opts: AuthOptions) {
     this.opts = opts
     this.refreshFloorMs = opts.refreshFloorMs ?? DEFAULT_REFRESH_FLOOR_MS
+    this.maxZones = opts.maxZones ?? DEFAULT_MAX_ZONES
+    this.negativeTtlMs = opts.negativeTtlMs ?? DEFAULT_NEGATIVE_TTL_MS
   }
 
   async verify(authHeader: string | undefined): Promise<Claims> {
@@ -88,10 +101,34 @@ export class Authenticator {
   }
 
   private async keySet(zoneId: string, force: boolean): Promise<JWTVerifyGetKey> {
+    const now = Date.now()
     const cached = this.zones.get(zoneId)
-    if (cached && !force) return cached.keySet
-    const set = await fetchJwks(this.opts, zoneId)
-    this.zones.set(zoneId, { keySet: set, loadedAt: Date.now() })
+    if (cached && !force) {
+      this.zones.delete(zoneId)
+      this.zones.set(zoneId, cached)
+      return cached.keySet
+    }
+    if (!force) {
+      const neg = this.negative.get(zoneId)
+      if (neg && neg.expiresAt > now) throw new AuthError('unknown zone')
+      if (neg) this.negative.delete(zoneId)
+    }
+    let set: JWTVerifyGetKey
+    try {
+      set = await fetchJwks(this.opts, zoneId)
+    } catch (err) {
+      if (this.negative.size >= this.maxZones) {
+        const oldest = this.negative.keys().next().value
+        if (oldest !== undefined) this.negative.delete(oldest)
+      }
+      this.negative.set(zoneId, { expiresAt: now + this.negativeTtlMs })
+      throw err
+    }
+    if (this.zones.size >= this.maxZones && !this.zones.has(zoneId)) {
+      const oldest = this.zones.keys().next().value
+      if (oldest !== undefined) this.zones.delete(oldest)
+    }
+    this.zones.set(zoneId, { keySet: set, loadedAt: now })
     return set
   }
 }
