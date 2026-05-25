@@ -31,8 +31,8 @@ func newPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse postgres config: %w", err)
 	}
-	cfg.MaxConns = int32(config.IntEnv("DB_MAX_CONNS", dbDefaultMaxConns))
-	cfg.MinConns = int32(config.IntEnv("DB_MIN_CONNS", dbDefaultMinConns))
+	cfg.MaxConns = config.Int32Env("DB_MAX_CONNS", dbDefaultMaxConns)
+	cfg.MinConns = config.Int32Env("DB_MIN_CONNS", dbDefaultMinConns)
 	cfg.MaxConnLifetime = config.DurationEnv("DB_MAX_CONN_LIFETIME", dbDefaultMaxConnLifetime)
 	cfg.MaxConnIdleTime = config.DurationEnv("DB_MAX_CONN_IDLE", dbDefaultMaxConnIdle)
 	cfg.HealthCheckPeriod = config.DurationEnv("DB_HEALTH_CHECK_PERIOD", dbDefaultHealthCheck)

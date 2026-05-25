@@ -142,6 +142,19 @@ func IntEnv(key string, fallback int) int {
 	return n
 }
 
+// Int32Env returns a positive int32 env var or fallback when unset. Panics on invalid input.
+func Int32Env(key string, fallback int32) int32 {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.ParseInt(v, 10, 32)
+	if err != nil || n <= 0 {
+		panic(fmt.Sprintf("invalid integer for %s: %q", key, v))
+	}
+	return int32(n)
+}
+
 // DurationEnv returns a positive duration env var or fallback when unset. Panics on invalid input
 // so misconfiguration is caught at startup rather than silently downgrading to the default.
 func DurationEnv(key string, fallback time.Duration) time.Duration {

@@ -48,6 +48,19 @@ func TestIntEnvUsesFallbackForMissingAndPanicsForInvalidValues(t *testing.T) {
 	}
 }
 
+func TestInt32EnvUsesFallbackAndRejectsOutOfRangeValues(t *testing.T) {
+	t.Setenv("CARACAL_TEST_INT32_VALUE", "12")
+	t.Setenv("CARACAL_TEST_INT32_OVERFLOW", "2147483648")
+
+	if got := Int32Env("CARACAL_TEST_INT32_MISSING", 7); got != 7 {
+		t.Fatalf("want fallback for missing env, got %d", got)
+	}
+	if got := Int32Env("CARACAL_TEST_INT32_VALUE", 7); got != 12 {
+		t.Fatalf("want parsed env, got %d", got)
+	}
+	assertPanics(t, func() { Int32Env("CARACAL_TEST_INT32_OVERFLOW", 7) })
+}
+
 func assertPanics(t *testing.T, f func()) {
 	t.Helper()
 	defer func() {
