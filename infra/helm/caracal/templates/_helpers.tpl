@@ -66,4 +66,6 @@ secret:
       path: gatewayStsHmacKey
     - key: caracalAdminToken
       path: caracalAdminToken
+    - key: caracalCoordinatorToken
+      path: caracalCoordinatorToken
 {{- end -}}

@@ -115,6 +115,12 @@ spec:
             - name: CARACAL_API_URL
               value: http://{{ include "caracal.fullname" $root }}-api:{{ $root.Values.services.api.port }}
             {{- end }}
+            {{- if eq $name "coordinator" }}
+            - name: CARACAL_COORDINATOR_TOKEN_FILE
+              value: /run/secrets/caracalCoordinatorToken
+            - name: AGENT_COORDINATOR_SCOPE
+              value: {{ default "agent:lifecycle" $service.requiredScope | quote }}
+            {{- end }}
           volumeMounts:
             - name: runtime-secrets
               mountPath: /run/secrets

@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
 )
 
@@ -20,6 +21,7 @@ type Leader struct {
 	db      *PGWriter
 	key     int64
 	log     zerolog.Logger
+	conn    *pgxpool.Conn
 	held    atomic.Bool
 	stopped atomic.Bool
 }
@@ -37,8 +39,9 @@ func (l *Leader) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			if l.held.Load() {
-				_ = l.db.ReleaseAdvisoryLock(context.Background(), l.key)
+			if l.held.Load() && l.conn != nil {
+				_ = l.db.ReleaseAdvisoryLock(context.Background(), l.conn, l.key)
+				l.conn = nil
 			}
 			l.held.Store(false)
 			l.stopped.Store(true)
@@ -52,12 +55,13 @@ func (l *Leader) Run(ctx context.Context) {
 }
 
 func (l *Leader) tryAcquire(ctx context.Context) {
-	ok, err := l.db.TryAdvisoryLock(ctx, l.key)
+	conn, ok, err := l.db.AcquireAdvisoryLock(ctx, l.key)
 	if err != nil {
 		l.log.Error().Err(err).Int64("key", l.key).Msg("leader: lock attempt failed")
 		return
 	}
 	if ok {
+		l.conn = conn
 		l.held.Store(true)
 		l.log.Info().Int64("key", l.key).Msg("leader acquired")
 	}

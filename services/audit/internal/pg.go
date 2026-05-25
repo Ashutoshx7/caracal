@@ -265,8 +265,7 @@ func (w *PGWriter) Search(ctx context.Context, p SearchParams) ([]EventRow, erro
 	return results, rows.Err()
 }
 
-
-// or zero time if absent.
+// LoadWatermark returns the named export watermark or zero time if absent.
 func (w *PGWriter) LoadWatermark(ctx context.Context, name string) (time.Time, error) {
 	var t time.Time
 	err := w.db.QueryRow(ctx,
@@ -297,16 +296,31 @@ func (w *PGWriter) RecordIngestAlert(ctx context.Context, eventID, zoneID, kind,
 	return err
 }
 
-// TryAdvisoryLock attempts a non-blocking session-level lock; returns true on success.
-func (w *PGWriter) TryAdvisoryLock(ctx context.Context, key int64) (bool, error) {
+// AcquireAdvisoryLock holds a session-level advisory lock on a dedicated pool
+// connection. The caller must release the returned connection through
+// ReleaseAdvisoryLock.
+func (w *PGWriter) AcquireAdvisoryLock(ctx context.Context, key int64) (*pgxpool.Conn, bool, error) {
+	conn, err := w.db.Acquire(ctx)
+	if err != nil {
+		return nil, false, err
+	}
 	var ok bool
-	err := w.db.QueryRow(ctx, `SELECT pg_try_advisory_lock($1)`, key).Scan(&ok)
-	return ok, err
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock($1)`, key).Scan(&ok); err != nil {
+		conn.Release()
+		return nil, false, err
+	}
+	if !ok {
+		conn.Release()
+		return nil, false, nil
+	}
+	return conn, true, nil
 }
 
-// ReleaseAdvisoryLock releases a session-level lock acquired with TryAdvisoryLock.
-func (w *PGWriter) ReleaseAdvisoryLock(ctx context.Context, key int64) error {
-	_, err := w.db.Exec(ctx, `SELECT pg_advisory_unlock($1)`, key)
+// ReleaseAdvisoryLock releases a session-level lock on the same connection that
+// acquired it, then returns that connection to the pool.
+func (w *PGWriter) ReleaseAdvisoryLock(ctx context.Context, conn *pgxpool.Conn, key int64) error {
+	defer conn.Release()
+	_, err := conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, key)
 	return err
 }
 

@@ -193,4 +193,4 @@ for (const [area] of AREAS) {
 }
 
 console.log(`wrote ${outPath} (${findings.length} findings, score ${score}%)`);
-process.exit(totalBlockers > 0 ? 1 : 0);
+process.exit(totalFail > 0 ? 1 : 0);
