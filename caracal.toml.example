@@ -1,0 +1,22 @@
+# Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+# Caracal, a product of Garudex Labs
+#
+# Example runtime configuration for Caracal credential injection.
+
+zone_url = "http://localhost:8080"
+zone_id = "zone_from_console"
+application_id = "app_from_console"
+app_client_secret = "secret_from_console"
+continue_on_failure = false
+
+[[credentials]]
+env = "RESOURCE_TOKEN"
+resource = "resource://local-http"
+
+[[optional_credentials]]
+env = "OPTIONAL_RESOURCE_TOKEN"
+resource = "resource://optional-http"
+on_failure = "warn"
+
+[mcp_governance]
+mode = "block"
