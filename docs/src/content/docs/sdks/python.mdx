@@ -85,7 +85,7 @@ def from_client_secret(
 
 ### `Caracal.from_config(path?)`
 
-Builds a client from `caracal.toml`. If `path` is omitted, the SDK reads `CARACAL_CONFIG` or falls back to `${XDG_CONFIG_HOME:-~/.config}/caracal/caracal.toml`. The config must provide `zone_id`, `application_id`, `app_client_secret`, an STS URL (`sts_url`, `zone_url`, or `CARACAL_STS_URL`), a Coordinator URL (`coordinator_url` or `CARACAL_COORDINATOR_URL`), and at least one resource binding.
+Builds a client from `caracal.toml`. If `path` is omitted, the SDK reads `CARACAL_CONFIG` or falls back to `${XDG_CONFIG_HOME:-~/.config}/caracal/caracal.toml`. The config must provide `zone_id`, `application_id`, either `app_client_secret_file` or `app_client_secret`, an STS URL (`sts_url`, `zone_url`, or `CARACAL_STS_URL`), a Coordinator URL (`coordinator_url` or `CARACAL_COORDINATOR_URL`), and at least one resource binding.
 
 ```python
 @classmethod

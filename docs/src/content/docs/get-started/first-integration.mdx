@@ -43,7 +43,7 @@ Client-secret mode requires these variables:
 
 ## Using `caracal run` with SDK examples
 
-`caracal run` reads `caracal.toml`, exchanges credentials with the STS, and injects tokens under the environment variable names declared in `[[credentials]]`. It does not automatically set `CARACAL_COORDINATOR_URL`, `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`, or `CARACAL_SUBJECT_TOKEN`.
+`caracal run` reads validated runtime config from platform environment variables or a local `caracal.toml` profile, exchanges credentials with the STS, and injects tokens under the configured environment variable names. It does not automatically set `CARACAL_COORDINATOR_URL`, `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`, or `CARACAL_SUBJECT_TOKEN`.
 
 Use `caracal run` for scripts that read a declared token such as `RESOURCE_TOKEN`:
 

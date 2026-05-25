@@ -20,7 +20,7 @@ The `--` separator is optional but recommended when the subprocess accepts flags
 
 ### What it does
 
-1. Loads `caracal.toml`.
+1. Loads validated runtime config from environment variables or `caracal.toml`.
 2. Checks MCP governance rules.
 3. Exchanges each required `credentials[]` entry for a scoped Caracal access token.
 4. Attempts each `optional_credentials[]` entry and follows its configured failure behavior.
@@ -28,9 +28,9 @@ The `--` separator is optional but recommended when the subprocess accepts flags
 6. Forwards stdin, stdout, and stderr unchanged.
 7. Exits with the subprocess exit code.
 
-Each credential exchange posts to `{zone_url}/oauth/2/token` using `zone_id`, `application_id`, and `app_client_secret` from `caracal.toml`. Tokens are injected under the `env` names declared in the credential blocks.
+Each credential exchange posts to `{zone_url}/oauth/2/token` using `zone_id`, `application_id`, and the confidential application secret from the validated runtime config. Tokens are injected under the declared `env` names.
 
-The runtime resolves `caracal.toml` from `CARACAL_CONFIG` first, then `~/.config/caracal/caracal.toml`. It does not load project-local files from the current working directory because `app_client_secret` is a secret. On POSIX systems, the default user config file must be owner-only, for example `chmod 600 ~/.config/caracal/caracal.toml`; explicit `CARACAL_CONFIG` paths may point at read-only secret mounts, but must not be group- or world-writable.
+The runtime first resolves `caracal.toml` from `CARACAL_CONFIG`, then `~/.config/caracal/caracal.toml`. When no TOML file is present, it can run from `CARACAL_STS_URL`, `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`, `CARACAL_APP_CLIENT_SECRET_FILE`, and `CARACAL_RUN_CREDENTIALS_FILE`. It does not load project-local files from the current working directory because local config may contain credential material.
 
 ### Minimal configuration
 
@@ -38,7 +38,7 @@ The runtime resolves `caracal.toml` from `CARACAL_CONFIG` first, then `~/.config
 zone_url = "http://localhost:8080"
 zone_id = "zone_abc123"
 application_id = "app_def456"
-app_client_secret = "secret_xyz"
+app_client_secret_file = "/run/secrets/caracal-app-client-secret"
 
 [[credentials]]
 env = "RESOURCE_TOKEN"
