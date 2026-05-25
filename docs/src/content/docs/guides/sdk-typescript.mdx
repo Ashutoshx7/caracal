@@ -86,7 +86,7 @@ await caracal.spawn(async () => { /* ... */ }, {
 
 ## Access session context
 
-Inside any `spawn()` callback — including in functions called at arbitrary depth — `caracal.current()` returns the live context:
+Inside any `spawn()` callback (including in functions called at arbitrary depth) `caracal.current()` returns the live context:
 
 ```typescript
 function processInvoice(id: string) {
@@ -199,6 +199,6 @@ runBatch(['inv-001', 'inv-002', 'inv-003']);
 
 ## What to read next
 
-- [Protect an Express App](./protect-express/) — gate your own routes with mandate verification
-- [Implement Multi-Agent Delegation](./delegation/) — deeper delegation graph patterns
-- [Protect an MCP Server](./protect-mcp/) — add mandate auth to an MCP tool server
+- [Protect an Express App](./protect-express/): gate your own routes with mandate verification
+- [Implement Multi-Agent Delegation](./delegation/): deeper delegation graph patterns
+- [Protect an MCP Server](./protect-mcp/): add mandate auth to an MCP tool server

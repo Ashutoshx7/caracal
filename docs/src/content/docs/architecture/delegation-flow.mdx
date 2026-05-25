@@ -63,12 +63,12 @@ The lower-level `/zones/{zoneId}/delegations` route remains the control-plane pr
 **Creating an edge (`POST /v1/exchange`):**
 
 The Coordinator receives:
-- `source_session_id`, `target_session_id` — the two ends of the edge
-- `issuer_application_id`, `receiver_application_id` — who owns each end
-- `scopes` — what B may request
-- `resource_id` — optional; restricts B's authority to this single resource
-- `constraints_json` — typed constraints (ttl_seconds, max_hops, budget, policy_approved)
-- `expires_at` — when the edge itself expires
+- `source_session_id`, `target_session_id`: the two ends of the edge
+- `issuer_application_id`, `receiver_application_id`: who owns each end
+- `scopes`: what B may request
+- `resource_id`: optional; restricts B's authority to this single resource
+- `constraints_json`: typed constraints (ttl_seconds, max_hops, budget, policy_approved)
+- `expires_at`: when the edge itself expires
 
 **Edge creation sequence:**
 
@@ -76,7 +76,7 @@ The Coordinator receives:
 1. Validate both sessions exist and are active
 2. Acquire pg_advisory_xact_lock('delegation:{zone_id}')
 3. Validate resource scope (if resource_id present)
-4. Run cycle detection CTE — reject if path back to source exists
+4. Run cycle detection CTE: reject if path back to source exists
 5. INSERT delegation_edges row
 6. Increment delegation_graph_epochs.epoch for the zone
 7. Enqueue 'edge_create' event to caracal_outbox
@@ -139,7 +139,7 @@ For each affected `target_session_id`, the Coordinator calls `terminateSubtree()
 
 **Effect of revocation:**
 - The **STS** marks the session ID and descendant STS sessions as revoked in DB state. Subsequent exchange requests for that authority root fail before OPA is evaluated.
-- The **Gateway** checks the mandate's `sid`, `root_sid`, `agent_session_id`, and `delegation_edge_id` on every request and at every 4 KB chunk boundary during streaming. If authority is revoked mid-stream, the Gateway closes the upstream connection and sets an `X-Caracal-Revoked` response trailer. Revocation entries are retained for 24 hours — long enough to outlast any resource mandate's 15-minute TTL.
+- The **Gateway** checks the mandate's `sid`, `root_sid`, `agent_session_id`, and `delegation_edge_id` on every request and at every 4 KB chunk boundary during streaming. If authority is revoked mid-stream, the Gateway closes the upstream connection and sets an `X-Caracal-Revoked` response trailer. Revocation entries are retained for 24 hours: long enough to outlast any resource mandate's 15-minute TTL.
 
 ---
 
@@ -174,7 +174,7 @@ The SDK uses two mechanisms to propagate authority: `AsyncLocalStorage` (TypeScr
 
 ### In-process context
 
-Each `spawn()` call binds a `CaracalContext` to an `AsyncLocalStorage` slot. All code running inside the callback — including awaited calls at any depth — sees the same context. When the callback completes, the binding is released and the session is terminated.
+Each `spawn()` call binds a `CaracalContext` to an `AsyncLocalStorage` slot. All code running inside the callback (including awaited calls at any depth) sees the same context. When the callback completes, the binding is released and the session is terminated.
 
 ```typescript
 interface CaracalContext {
@@ -185,7 +185,7 @@ interface CaracalContext {
   delegationEdgeId?: string;  // Current delegation edge
   parentEdgeId?: string;      // Previous edge (for chain reconstruction)
   traceId?: string;
-  hop: number;                // Call depth (0–32)
+  hop: number;                // Call depth (0 to 32)
 }
 ```
 
@@ -207,7 +207,7 @@ When the transport wrapper sends an outbound HTTP request, it reads the current 
 1. POST /zones/{zoneId}/agents → agent_session_id
 2. Build CaracalContext with new agent_session_id
 3. Bind context to AsyncLocalStorage
-4. Run fn() — all outbound calls carry the context in headers
+4. Run fn(): all outbound calls carry the context in headers
 5. DELETE /zones/{zoneId}/agents/{agent_session_id} (best-effort)
 ```
 
@@ -221,7 +221,7 @@ When the transport wrapper sends an outbound HTTP request, it reads the current 
      delegationEdgeId  = delegation_edge_id
      hop               = ctx.hop + 1
 4. Bind child context
-5. Run fn() — outbound calls carry the new delegation edge
+5. Run fn(): outbound calls carry the new delegation edge
 ```
 
 The delegation edge remains active after `delegate()` completes. It expires at its `expires_at` or when the enclosing session is terminated.
@@ -238,4 +238,4 @@ The delegation edge remains active after `delegate()` completes. It expires at i
 
 The `/v1/verify` route provides synchronous bearer mandate validation. It accepts a bearer token, validates the ES256 signature against the zone JWKS, checks session revocation status, and optionally validates required scopes, agent presence, delegation presence, and hop count. It returns `{ valid: true, claims }` or `{ valid: false, error, message }`. Rate-limited to 60 requests per minute per IP.
 
-This route is used by services that cannot cache the zone JWKS locally — for example, short-lived workers or serverless functions.
+This route is used by services that cannot cache the zone JWKS locally: for example, short-lived workers or serverless functions.

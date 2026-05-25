@@ -17,7 +17,7 @@ git checkout -b fix-gateway-jti-replay
 git checkout -b add-python-revocation-consumer
 ```
 
-There is no required prefix (no `feature/`, `fix/`, `chore/`). Keep branch names clear and direct. Branch directly from the latest `main` — do not stack branches on other feature branches.
+There is no required prefix (no `feature/`, `fix/`, `chore/`). Keep branch names clear and direct. Branch directly from the latest `main`: do not stack branches on other feature branches.
 
 `main` is always in a deployable state. The smoke CI suite runs on every push to `main`. Breaking `main` is treated as a priority incident.
 
@@ -33,7 +33,7 @@ git commit -s -m "fix gateway JTI replay on cold start"
 
 The `-s` flag appends `Signed-off-by: Your Name <you@example.com>` to the commit message. This certifies that you have the right to submit the contribution under the project's license.
 
-Commit messages follow standard imperative form — short subject line, optional body for the *why*:
+Commit messages follow standard imperative form: short subject line, optional body for the *why*:
 
 ```
 fix gateway JTI replay on cold start
@@ -59,7 +59,7 @@ Follow the prompts: select the affected packages, choose the change type (`patch
 
 Pull requests that touch published packages without a changeset file will fail CI.
 
-Go modules and Python packages are not managed by Changesets — they follow the CalVer release flow described in [Release and Versioning](./release).
+Go modules and Python packages are not managed by Changesets: they follow the CalVer release flow described in [Release and Versioning](./release).
 
 ---
 
@@ -73,9 +73,9 @@ git push -u origin fix-gateway-jti-replay
 
 PR description should include:
 
-- **What changed** — a brief summary of what the PR does.
-- **Why** — the motivation or issue being fixed.
-- **How to test** — steps a reviewer can follow to verify the change.
+- **What changed**: a brief summary of what the PR does.
+- **Why**: the motivation or issue being fixed.
+- **How to test**: steps a reviewer can follow to verify the change.
 
 Link to an open issue if one exists. If the change is large or architectural, open an issue or RFC first (see [Governance](./governance)) before investing in implementation.
 
@@ -132,7 +132,7 @@ cd docs && pnpm build
 
 All PRs require at least one maintainer approval before merging. Maintainers are listed in `governance/CODEOWNERS`. Reviews are expected to cover correctness, test coverage, adherence to code style, and alignment with existing architecture.
 
-When a review requests changes, address each comment and re-request review. Avoid force-pushing while a review is in progress — add fixup commits and squash at the end.
+When a review requests changes, address each comment and re-request review. Avoid force-pushing while a review is in progress: add fixup commits and squash at the end.
 
 Maintainers merge PRs. Contributors do not merge their own PRs.
 

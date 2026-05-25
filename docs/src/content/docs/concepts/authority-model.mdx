@@ -9,11 +9,11 @@ Caracal's central design decision is that authorization is enforced at credentia
 
 ## The enforcement point
 
-The **Security Token Service (STS)** is where enforcement happens. Every agent that wants to act — call a tool, access an API, read a resource — must first exchange its application credentials with the STS for a mandate. The STS issues that mandate only if an OPA policy evaluation returns `decision = "allow"`.
+The **Security Token Service (STS)** is where enforcement happens. Every agent that wants to act (call a tool, access an API, read a resource) must first exchange its application credentials with the STS for a mandate. The STS issues that mandate only if an OPA policy evaluation returns `decision = "allow"`.
 
 This is pre-execution enforcement: the policy runs before the agent acts, not in logs after the fact.
 
-The alternative — middleware enforcement — issues a broad token at login and checks it at each resource. That model requires every resource to implement access control correctly, allows a broad token to be misused between resources, and makes revocation hard to propagate uniformly. Caracal enforces once, at the only choke point where all authority flows.
+The alternative (middleware enforcement) issues a broad token at login and checks it at each resource. That model requires every resource to implement access control correctly, allows a broad token to be misused between resources, and makes revocation hard to propagate uniformly. Caracal enforces once, at the only choke point where all authority flows.
 
 ## The exchange decision
 
@@ -78,7 +78,7 @@ A policy must return:
 
 The STS accepts the result only when both conditions hold:
 
-1. `evaluation_status` is exactly `"complete"`. Any other value — `"partial"`, an error, an unrecognized string — results in a hard deny. A partial evaluation is indistinguishable from a misconfigured policy; the STS never issues a mandate from an incomplete decision.
+1. `evaluation_status` is exactly `"complete"`. Any other value (`"partial"`, an error, an unrecognized string) results in a hard deny. A partial evaluation is indistinguishable from a misconfigured policy; the STS never issues a mandate from an incomplete decision.
 2. `decision` is exactly `"allow"`. Any other string is a deny.
 
 ## The deny-all default
@@ -109,7 +109,7 @@ Pre-execution enforcement at the STS is the primary gate. Two additional layers 
 
 **The Gateway** validates every inbound request:
 - Verifies the ES256 signature against the zone's JWKS endpoint
-- Checks the JTI against the replay cache — each resource mandate is accepted exactly once
+- Checks the JTI against the replay cache: each resource mandate is accepted exactly once
 - Confirms the requested resource appears in the mandate's `target` claim
 - Checks the session ID against the revocation cache; if the session was revoked mid-stream, the response is truncated at the next 4 KB chunk boundary and a `X-Caracal-Revoked` trailer is set
 
@@ -121,10 +121,10 @@ These layers are defense in depth. The STS policy decision is the authoritative 
 
 ## What the authority model does not do
 
-Caracal controls whether an agent is permitted to make a call — not what the agent says inside that call. Semantic content filtering, prompt injection detection, and output validation are outside its scope.
+Caracal controls whether an agent is permitted to make a call: not what the agent says inside that call. Semantic content filtering, prompt injection detection, and output validation are outside its scope.
 
 ## Next steps
 
-- [Mandate](./mandate/) — the credential produced when a policy allows the exchange
-- [Policy](./policy/) — how to write Rego that returns the required decision shape
-- [Zone](./zone/) — the tenancy boundary that scopes keys, policies, and resources
+- [Mandate](./mandate/): the credential produced when a policy allows the exchange
+- [Policy](./policy/): how to write Rego that returns the required decision shape
+- [Zone](./zone/): the tenancy boundary that scopes keys, policies, and resources

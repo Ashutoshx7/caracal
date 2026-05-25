@@ -8,7 +8,7 @@ All five core Caracal services store durable state in a single Postgres database
 
 ## Migrations
 
-Migrations are at `infra/postgres/migrations/` and numbered from `0001` upward. Compose runs them through the `dbMigrate` one-shot service, and the Helm chart runs them through a pre-install/pre-upgrade migration Job. Migration execution is idempotent — re-running the migration entrypoint against an up-to-date schema is safe.
+Migrations are at `infra/postgres/migrations/` and numbered from `0001` upward. Compose runs them through the `dbMigrate` one-shot service, and the Helm chart runs them through a pre-install/pre-upgrade migration Job. Migration execution is idempotent: re-running the migration entrypoint against an up-to-date schema is safe.
 
 Migrations run in sequence. Do not skip or reorder them. To apply migrations outside Compose or Helm, run the Postgres image entrypoint `/usr/local/bin/caracal-migrate` with `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, and `PGPASSWORD_FILE` or `PGPASSFILE`.
 
@@ -44,7 +44,7 @@ One row per directed delegation authority edge. Includes `edge_version` for opti
 
 ### `policy_versions`
 
-**Immutable.** The `policy_versions_immutable` trigger prevents UPDATE and DELETE on this table. Policy content can never be changed after creation — only new versions can be added.
+**Immutable.** The `policy_versions_immutable` trigger prevents UPDATE and DELETE on this table. Policy content can never be changed after creation: only new versions can be added.
 
 ### `audit_events`
 
@@ -76,7 +76,7 @@ Stores encrypted credential material (tokens, passwords). Ciphertext encrypted w
 
 The API and Coordinator manage `pg.Pool` instances. The Go services open pgx-backed connections or pools appropriate to their service. Default TypeScript pool size is 20 connections per service replica. Adjust `DB_POOL_MAX` based on `max_connections` in your Postgres instance.
 
-Rule of thumb: `(replicas × pool_max) + overhead < max_connections`. With 3 replicas of API (pool 20), 2 of Coordinator (pool 20), and STS + Gateway + Audit connecting without pools, target at least `100–120` Postgres connections.
+Rule of thumb: `(replicas × pool_max) + overhead < max_connections`. With 3 replicas of API (pool 20), 2 of Coordinator (pool 20), and STS + Gateway + Audit connecting without pools, target at least `100 to 120` Postgres connections.
 
 Statement timeouts prevent runaway queries:
 
@@ -94,7 +94,7 @@ Statement timeouts prevent runaway queries:
 Two distributed coordination mechanisms use Postgres advisory locks:
 
 **Audit chain head locks (transactional):**
-`pg_advisory_xact_lock()` serializes writes to the per-zone audit chain. These locks are released automatically when the transaction commits or rolls back. High audit event volume on a single zone can cause contention here — spread load across zones to reduce it.
+`pg_advisory_xact_lock()` serializes writes to the per-zone audit chain. These locks are released automatically when the transaction commits or rolls back. High audit event volume on a single zone can cause contention here: spread load across zones to reduce it.
 
 **Audit leader election (session-level):**
 

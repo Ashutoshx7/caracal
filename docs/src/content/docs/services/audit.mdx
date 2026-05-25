@@ -16,15 +16,15 @@ The Audit service is a dedicated stream consumer. It reads audit events produced
 
 The Audit service owns:
 
-- **Event ingestion** — consumes `caracal.audit.events` from Redis using a consumer group with at-least-once delivery.
-- **Signature verification** — verifies each event's HMAC signature (`_sig` field) against `STREAMS_HMAC_KEY`.
-- **Chain HMAC verification** — validates that each event's chain HMAC correctly chains from the previous event for its zone, detecting tampered or inserted events.
-- **Event persistence** — writes verified events to the `audit_events` PostgreSQL table.
-- **Tamper detection** — sets `tamper_detected = true` on any event whose chain HMAC does not verify.
-- **S3 export** — serializes events to Parquet and uploads to S3 (if configured).
-- **Retention** — deletes events older than `AUDIT_RETENTION_DAYS` (default 365 days).
-- **DLQ management** — moves events that fail after `AUDIT_MAX_DELIVERIES` attempts to `audit_events_dlq`.
-- **PEL drain** — on startup, reclaims any pending consumer group entries from a previous crash.
+- **Event ingestion**: consumes `caracal.audit.events` from Redis using a consumer group with at-least-once delivery.
+- **Signature verification**: verifies each event's HMAC signature (`_sig` field) against `STREAMS_HMAC_KEY`.
+- **Chain HMAC verification**: validates that each event's chain HMAC correctly chains from the previous event for its zone, detecting tampered or inserted events.
+- **Event persistence**: writes verified events to the `audit_events` PostgreSQL table.
+- **Tamper detection**: sets `tamper_detected = true` on any event whose chain HMAC does not verify.
+- **S3 export**: serializes events to Parquet and uploads to S3 (if configured).
+- **Retention**: deletes events older than `AUDIT_RETENTION_DAYS` (default 365 days).
+- **DLQ management**: moves events that fail after `AUDIT_MAX_DELIVERIES` attempts to `audit_events_dlq`.
+- **PEL drain**: on startup, reclaims any pending consumer group entries from a previous crash.
 
 The Audit service does **not** serve audit queries (queries run against the database directly or via the API), produce events, enforce policy, or manage configuration.
 
@@ -55,7 +55,7 @@ Each audit event produced by the STS includes:
 - A stream signature (`_sig`): HMAC-SHA256 of the stream name and message fields, signed with `STREAMS_HMAC_KEY`.
 - A chain HMAC computed as: `HMAC-SHA256(AUDIT_HMAC_KEY, previous_event_hash || current_event_payload)`.
 
-The chain links events sequentially within a zone. An attacker who modifies or deletes an event breaks the chain, and all subsequent events in the chain fail verification. Tampered events are marked but not discarded — the tamper flag is visible in audit queries.
+The chain links events sequentially within a zone. An attacker who modifies or deletes an event breaks the chain, and all subsequent events in the chain fail verification. Tampered events are marked but not discarded: the tamper flag is visible in audit queries.
 
 If `AUDIT_HMAC_KEY` is not set, chain verification is skipped (development mode).
 
@@ -63,7 +63,7 @@ If `AUDIT_HMAC_KEY` is not set, chain verification is skipped (development mode)
 
 ## PEL drain and XAUTOCLAIM
 
-**On startup:** The service reads its PEL — entries claimed by a previous instance that crashed before acknowledging — and reprocesses them. This prevents event loss across restarts.
+**On startup:** The service reads its PEL (entries claimed by a previous instance that crashed before acknowledging) and reprocesses them. This prevents event loss across restarts.
 
 **Periodic XAUTOCLAIM:** Every `AUDIT_CLAIM_IDLE_SECS` (default 30 s), the service runs `XAUTOCLAIM` to reclaim entries that have been in the PEL for longer than the idle threshold. This handles orphaned entries from crashed consumers in a multi-replica deployment.
 
@@ -117,7 +117,7 @@ One Audit replica holds the export leader lease (a Redis distributed lock). Only
 
 Exported events have `exported_at` set to the export timestamp. The retention rotator uses this to determine which events have been archived before deletion.
 
-**Compatible storage:** any S3-compatible endpoint — AWS S3, MinIO, Google Cloud Storage (S3-compatible mode).
+**Compatible storage:** any S3-compatible endpoint: AWS S3, MinIO, Google Cloud Storage (S3-compatible mode).
 
 ---
 
@@ -154,20 +154,20 @@ One Audit replica holds the retention leader lease. Retention deletes happen in 
 6. Initialize S3 exporter (if `AUDIT_EXPORT_S3_ENDPOINT` is set).
 7. Initialize retention rotator.
 8. Acquire leader leases (export, retention).
-9. Replay any events from `AUDIT_REPLAY_DIR` (if configured — entries written by STS when Redis is temporarily unavailable).
+9. Replay any events from `AUDIT_REPLAY_DIR` (if configured: entries written by STS when Redis is temporarily unavailable).
 10. Listen on `0.0.0.0:9090`.
 
 ---
 
 ## Scaling
 
-Scale horizontally by adding replicas. Each replica joins the `audit-ingestor` consumer group and receives a partition of the stream. Redis consumer group semantics guarantee at-least-once delivery — the same event will not be delivered to two replicas simultaneously.
+Scale horizontally by adding replicas. Each replica joins the `audit-ingestor` consumer group and receives a partition of the stream. Redis consumer group semantics guarantee at-least-once delivery: the same event will not be delivered to two replicas simultaneously.
 
-- **Ingestion and chain verification** — all replicas participate.
-- **S3 export** — only the leader exports. Other replicas skip export until they acquire the lease (on leader failure, the next replica to retry acquires the lock).
-- **Retention** — only the leader runs retention deletes.
+- **Ingestion and chain verification**: all replicas participate.
+- **S3 export**: only the leader exports. Other replicas skip export until they acquire the lease (on leader failure, the next replica to retry acquires the lock).
+- **Retention**: only the leader runs retention deletes.
 
-Increase the number of replicas to reduce consumer lag. Each additional replica adds throughput proportional to the stream's partition distribution. Monitor PEL size — a growing PEL indicates that consumers are crashing before acknowledging, which may indicate a database or network issue.
+Increase the number of replicas to reduce consumer lag. Each additional replica adds throughput proportional to the stream's partition distribution. Monitor PEL size: a growing PEL indicates that consumers are crashing before acknowledging, which may indicate a database or network issue.
 
 ---
 
@@ -198,8 +198,8 @@ The `/ready` endpoint returns JSON. On failure it includes a stable `reason` suc
 | Variable | Default | Description |
 | --- | --- | --- |
 | `PORT` | `9090` | HTTP listen port |
-| `DATABASE_URL` | — | PostgreSQL connection string |
-| `REDIS_URL` | — | Redis connection string |
+| `DATABASE_URL` | None | PostgreSQL connection string |
+| `REDIS_URL` | None | Redis connection string |
 | `AUDIT_HMAC_KEY` | `""` | Hex key for event chain HMAC; required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable` |
 | `AUDIT_EXPORT_S3_ENDPOINT` | `""` | S3-compatible endpoint (empty = export disabled) |
 | `AUDIT_EXPORT_S3_BUCKET` | `""` | S3 bucket name |

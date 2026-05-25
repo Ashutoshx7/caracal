@@ -223,7 +223,7 @@ nav.sidebar {
   margin-top: 0;
 }
 
-/* Mobile "On this page" dropdown — give it room below the sticky header */
+/* Mobile "On this page" dropdown: give it room below the sticky header */
 mobile-starlight-toc {
   display: block;
 }
@@ -1608,7 +1608,7 @@ footer .meta a {
   color: var(--sl-color-text-accent);
 }
 
-/* Pagination links — compact text style */
+/* Pagination links: compact text style */
 .pagination-links a .link-title {
   font-family: "Space Grotesk", var(--sl-font);
   font-size: 0.95rem;

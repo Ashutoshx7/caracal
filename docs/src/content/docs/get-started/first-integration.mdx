@@ -16,7 +16,7 @@ The SDK wraps token exchange and agent lifecycle behind three primitives:
 - **`headers()`** returns the HTTP headers that propagate the agent's identity to downstream services (Authorization, traceparent, baggage).
 - **`transport()`** wraps `fetch` (TS/Python) or `*http.Client` (Go) to inject those headers on Gateway-bound outbound requests.
 
-When `spawn()` exits — normally or on error — the agent run is terminated in the Coordinator and active authority for that run is revoked.
+When `spawn()` exits (normally or on error) the agent run is terminated in the Coordinator and active authority for that run is revoked.
 
 ## Configuration
 
@@ -63,7 +63,7 @@ Install the SDK:
 npm install @caracalai/sdk
 ```
 
-Minimal example — spawn an agent run and call a resource through the Gateway:
+Minimal example: spawn an agent run and call a resource through the Gateway:
 
 ```typescript
 import { Caracal, AgentKind } from "@caracalai/sdk";

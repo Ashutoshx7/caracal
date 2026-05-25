@@ -4,7 +4,7 @@ description: Install the Go SDK, configure environment variables, use Spawn and 
 pageType: workflow
 ---
 
-The Go SDK propagates identity through standard `context.Context` — there is no goroutine-local storage. `sdk.FromEnv()` constructs the client from environment variables. `Spawn` runs a function inside an agent session bound to the provided context. `Current` retrieves the agent context. `Transport` wraps `http.DefaultClient` with automatic envelope injection.
+The Go SDK propagates identity through standard `context.Context`: there is no goroutine-local storage. `sdk.FromEnv()` constructs the client from environment variables. `Spawn` runs a function inside an agent session bound to the provided context. `Current` retrieves the agent context. `Transport` wraps `http.DefaultClient` with automatic envelope injection.
 
 ## Prerequisites
 
@@ -247,5 +247,5 @@ func main() {
 
 ## What to read next
 
-- [Protect a Go net/http Service](./protect-nethttp/) — gate your handlers with mandate verification
-- [Implement Multi-Agent Delegation](./delegation/) — deeper delegation graph patterns
+- [Protect a Go net/http Service](./protect-nethttp/): gate your handlers with mandate verification
+- [Implement Multi-Agent Delegation](./delegation/): deeper delegation graph patterns

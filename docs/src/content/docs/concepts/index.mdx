@@ -37,7 +37,7 @@ Keep the model small. Caracal's long-term reusable layer is:
 | Policy decision | Determines whether a mandate may be issued for one resource. |
 | Audit event | Preserves the evidence needed to explain and reconstruct authority. |
 
-Everything else — Gateway routes, provider configs, SDK context helpers, connectors, and adapters — supports these primitives. If an abstraction cannot preserve them clearly, it should stay out of the core model.
+Everything else (Gateway routes, provider configs, SDK context helpers, connectors, and adapters) supports these primitives. If an abstraction cannot preserve them clearly, it should stay out of the core model.
 
 ## Reading order
 
@@ -62,8 +62,8 @@ The concepts below build on each other. Read the [One-Minute Model](./model-over
 
 The docs use these terms with strict meaning throughout:
 
-- **Mandate** — the JWT issued by the STS. Other systems call this an "access token." Caracal calls it a mandate because it is explicitly authorized by policy before issuance.
-- **Principal** — the actor named in policy. In current product flows, this is the registered application behind an agent app.
-- **Zone** — the tenancy boundary. Never synonymous with "environment" or "region."
-- **Policy** — a Rego document registered in Caracal. Not to be confused with IAM policies from other systems.
-- **Session** — the runtime state behind an agent run. Deep reference pages distinguish STS session IDs from Coordinator agent session IDs only when that distinction matters.
+- **Mandate**: the JWT issued by the STS. Other systems call this an "access token." Caracal calls it a mandate because it is explicitly authorized by policy before issuance.
+- **Principal**: the actor named in policy. In current product flows, this is the registered application behind an agent app.
+- **Zone**: the tenancy boundary. Never synonymous with "environment" or "region."
+- **Policy**: a Rego document registered in Caracal. Not to be confused with IAM policies from other systems.
+- **Session**: the runtime state behind an agent run. Deep reference pages distinguish STS session IDs from Coordinator agent session IDs only when that distinction matters.

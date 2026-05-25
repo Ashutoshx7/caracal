@@ -1,6 +1,6 @@
 ---
 title: Admin Package
-description: Complete API reference for @caracalai/admin — the TypeScript control-plane client for zones, applications, policies, grants, sessions, agents, and delegations.
+description: Complete API reference for @caracalai/admin: the TypeScript control-plane client for zones, applications, policies, grants, sessions, agents, and delegations.
 pageType: reference
 ---
 
@@ -60,7 +60,7 @@ class AdminApiError extends Error {
 
 ---
 
-## Zone methods — `client.zones`
+## Zone methods: `client.zones`
 
 ```typescript
 client.zones.list(): Promise<Zone[]>
@@ -93,7 +93,7 @@ interface ZoneInput {
 
 ---
 
-## Application methods — `client.applications`
+## Application methods: `client.applications`
 
 ```typescript
 client.applications.list(zoneId: string): Promise<Application[]>
@@ -132,7 +132,7 @@ interface DCRInput {
 
 ---
 
-## Resource methods — `client.resources`
+## Resource methods: `client.resources`
 
 ```typescript
 client.resources.list(zoneId: string): Promise<Resource[]>
@@ -164,7 +164,7 @@ interface ResourceInput {
 
 ---
 
-## Provider methods — `client.providers`
+## Provider methods: `client.providers`
 
 ```typescript
 client.providers.list(zoneId: string): Promise<Provider[]>
@@ -185,7 +185,7 @@ interface ProviderInput {
 
 ---
 
-## Policy methods — `client.policies`
+## Policy methods: `client.policies`
 
 Policies are immutable after creation. New Rego source is added as a new version. The schema version defaults to `'2026-05-20'`.
 
@@ -226,7 +226,7 @@ interface PolicyVersion {
 
 ---
 
-## Policy set methods — `client.policySets`
+## Policy set methods: `client.policySets`
 
 ```typescript
 client.policySets.list(zoneId: string): Promise<PolicySet[]>
@@ -256,7 +256,7 @@ client.policySets.delete(zoneId: string, id: string): Promise<void>
 
 ---
 
-## Grant methods — `client.grants`
+## Grant methods: `client.grants`
 
 ```typescript
 client.grants.list(zoneId: string): Promise<Grant[]>
@@ -274,7 +274,7 @@ interface GrantInput {
 
 ---
 
-## Session methods — `client.sessions` (read-only)
+## Session methods: `client.sessions` (read-only)
 
 ```typescript
 client.sessions.list(zoneId: string, query?: SessionQuery): Promise<Session[]>
@@ -288,7 +288,7 @@ interface SessionQuery {
 
 ---
 
-## Audit methods — `client.audit`
+## Audit methods: `client.audit`
 
 ```typescript
 client.audit.list(zoneId: string, query?: AuditQuery): Promise<AuditEvent[]>
@@ -314,7 +314,7 @@ interface AuditDetail extends AuditEvent {
 
 ---
 
-## Agent methods — `client.agents`
+## Agent methods: `client.agents`
 
 Agent methods use `coordinatorUrl` and `coordinatorToken`. They fail if those fields were not set in the constructor.
 
@@ -329,7 +329,7 @@ client.agents.terminate(zoneId: string, id: string): Promise<void>
 
 ---
 
-## Delegation methods — `client.delegations`
+## Delegation methods: `client.delegations`
 
 ```typescript
 client.delegations.inbound(zoneId: string, sessionId: string): Promise<DelegationEdge[]>

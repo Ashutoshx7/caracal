@@ -404,7 +404,7 @@ export async function dispatch(
   })
 }
 
-/** Lists the (command, subcommand, scope) triples the Control API exposes — used by tests and documentation. */
+/** Lists the (command, subcommand, scope) triples the Control API exposes: used by tests and documentation. */
 export function describeRemoteSurface(): readonly { command: string; subcommand: string; scope: string }[] {
   const out: { command: string; subcommand: string; scope: string }[] = []
   for (const desc of MANAGEMENT_COMMANDS) {

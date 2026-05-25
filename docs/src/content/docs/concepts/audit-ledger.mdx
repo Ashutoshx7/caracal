@@ -5,7 +5,7 @@ pageType: concept
 keywords: [audit, ledger, HMAC, chain, append-only, tamper detection, Redis stream, audit events]
 ---
 
-The audit ledger is Caracal's tamper-evident record of every authorization decision. Every token exchange and OPA evaluation — whether allowed or denied — produces an audit event that flows from the STS through a Redis stream into an append-only PostgreSQL table. Events are HMAC-chained so that any modification or deletion is detectable.
+The audit ledger is Caracal's tamper-evident record of every authorization decision. Every token exchange and OPA evaluation (whether allowed or denied) produces an audit event that flows from the STS through a Redis stream into an append-only PostgreSQL table. Events are HMAC-chained so that any modification or deletion is detectable.
 
 ## What triggers an audit event
 
@@ -60,7 +60,7 @@ Redis stream: caracal.audit.events
 
 **Dead letter queue**: Events that the Audit service cannot process after retries are routed to `caracal.audit.events.dlq`, consumed by the `audit-dlq-observer` consumer group. The DLQ is monitored separately.
 
-**XACK semantics**: The Audit service sends `XACK` only after a Console outcome — successful insert into PostgreSQL, or a detected benign duplicate. Transient errors cause the event to remain pending in the stream for retry.
+**XACK semantics**: The Audit service sends `XACK` only after a Console outcome: successful insert into PostgreSQL, or a detected benign duplicate. Transient errors cause the event to remain pending in the stream for retry.
 
 ## HMAC chain integrity
 
@@ -89,7 +89,7 @@ An attacker who modifies an event's content cannot forge a valid `content_sha256
 - At startup: a full retention sweep validates the chain from beginning to end
 - Every hour: an incremental check validates recent events
 
-Detection results are logged. No automatic remediation is performed — the ledger is append-only and the chain is evidence, not a correctable state.
+Detection results are logged. No automatic remediation is performed: the ledger is append-only and the chain is evidence, not a correctable state.
 
 ## Append-only guarantee
 
@@ -103,7 +103,7 @@ The Runtime and Console provide two views:
 
 **Live tail** (the Console Audit view): streams events from the Redis stream in near real-time. Filter by decision (`allow` / `deny`), pause and resume the stream.
 
-**Request trace** (the Console audit detail view): retrieves all audit events for a specific `request_id`, showing the full OPA evaluation — which resources were requested, which were allowed, which were denied, and which policy versions determined each decision.
+**Request trace** (the Console audit detail view): retrieves all audit events for a specific `request_id`, showing the full OPA evaluation: which resources were requested, which were allowed, which were denied, and which policy versions determined each decision.
 
 The admin SDK exposes the same queries via `adminClient.audit.list(zoneId, query)` and `adminClient.audit.byRequest(zoneId, requestId)`.
 
@@ -113,6 +113,6 @@ The `AUDIT_HMAC_KEY` environment variable is a 32-byte hex-encoded key required 
 
 ## Next steps
 
-- [Authority Model](./authority-model/) — what decisions produce audit events
-- [Sessions and Revocation](./sessions-revocation/) — how revocation events appear in the audit stream
-- [Step-Up Challenge](./step-up/) — how step-up events are recorded
+- [Authority Model](./authority-model/): what decisions produce audit events
+- [Sessions and Revocation](./sessions-revocation/): how revocation events appear in the audit stream
+- [Step-Up Challenge](./step-up/): how step-up events are recorded

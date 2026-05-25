@@ -2,7 +2,7 @@
   "principal": {
     "title": "Principal",
     "path": "/concepts/principal/",
-    "description": "The identity — human, agent, or service — requesting authority.",
+    "description": "The identity (human, agent, or service) requesting authority.",
     "aliases": ["caller identity", "agent identity", "requester"],
     "relations": {
       "produces": ["mandate"],

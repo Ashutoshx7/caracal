@@ -37,13 +37,13 @@ export function buildRegistry(
   }
   if (missing.length > 0) {
     throw new Error(
-      `command registry is missing executors for: ${missing.join(', ')} — every descriptor must be wired so dispatch and autocomplete never drift.`,
+      `command registry is missing executors for: ${missing.join(', ')}: every descriptor must be wired so dispatch and autocomplete never drift.`,
     )
   }
   const extras = Object.keys(executors).filter((n) => !byName.has(n))
   if (extras.length > 0) {
     throw new Error(
-      `command registry has executors with no descriptor: ${extras.join(', ')} — add them to @caracalai/core/commands or remove the executor.`,
+      `command registry has executors with no descriptor: ${extras.join(', ')}: add them to @caracalai/core/commands or remove the executor.`,
     )
   }
   return { byName, ordered }

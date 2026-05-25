@@ -59,23 +59,23 @@ function rawExplain(err: unknown): string {
       ? String((err.body as { message: unknown }).message)
       : ''
     if (err.status === 401 && err.target === 'coordinator') {
-      return 'unauthorized — check CARACAL_COORDINATOR_TOKEN matches the Coordinator; unset stale env vars to use generated local secrets'
+      return 'unauthorized: check CARACAL_COORDINATOR_TOKEN matches the Coordinator; unset stale env vars to use generated local secrets'
     }
-    if (err.status === 401) return `unauthorized — check CARACAL_ADMIN_TOKEN matches the API`
-    if (err.status === 403) return `forbidden (${err.code}) — token lacks required scope`
-    if (err.status === 404) return `not found — resource may have been deleted`
-    return `${err.status} ${err.code}${detail ? ' — ' + detail : ''}`
+    if (err.status === 401) return `unauthorized: check CARACAL_ADMIN_TOKEN matches the API`
+    if (err.status === 403) return `forbidden (${err.code}): token lacks required scope`
+    if (err.status === 404) return `not found: resource may have been deleted`
+    return `${err.status} ${err.code}${detail ? ': ' + detail : ''}`
   }
   if (err instanceof Error) {
     const msg = err.message
     if (/coordinator_url_not_configured/.test(msg)) {
-      return 'coordinator URL not set — export CARACAL_COORDINATOR_URL'
+      return 'coordinator URL not set: export CARACAL_COORDINATOR_URL'
     }
     if (/coordinator_token_not_configured/.test(msg)) {
-      return 'coordinator token not found — run `caracal up` or set CARACAL_COORDINATOR_TOKEN'
+      return 'coordinator token not found: run `caracal up` or set CARACAL_COORDINATOR_TOKEN'
     }
     if (/fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EAI_AGAIN/i.test(msg)) {
-      return `${msg} — are local services running? try \`caracal up\` and \`caracal status\``
+      return `${msg}: are local services running? try \`caracal up\` and \`caracal status\``
     }
     return msg
   }

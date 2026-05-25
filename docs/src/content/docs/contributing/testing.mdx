@@ -194,9 +194,9 @@ packages/sdk/python/tests/
 
 **Unit tests:** co-locate them with the source file in a `__tests__/` directory (TS) or `_test.go` suffix (Go) or `tests/` subdirectory (Python).
 
-**Integration tests:** place them under `tests/integration/` when they cross package boundaries. Add the `integration` build tag in Go. Set up a real database/Redis — do not mock the persistence layer.
+**Integration tests:** place them under `tests/integration/` when they cross package boundaries. Add the `integration` build tag in Go. Set up a real database/Redis: do not mock the persistence layer.
 
-**Test data:** put fixtures under `tests/fixtures/`. Do not embed test credentials or secrets in fixtures — use well-known placeholder values that are clearly test-only.
+**Test data:** put fixtures under `tests/fixtures/`. Do not embed test credentials or secrets in fixtures: use well-known placeholder values that are clearly test-only.
 
 **What to test:** test the behavior visible at the public interface of a function, type, or endpoint. Do not test implementation details that can change without changing behavior.
 

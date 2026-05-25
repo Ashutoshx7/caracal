@@ -41,7 +41,7 @@ dev = [
 ]
 
 # Local-only provider SDK fixtures. They are not published; install
-# them as editables alongside the project — see the install line in README.
+# them as editables alongside the project: see the install line in README.
 
 # Global resolution floors for transitive deps (Dependabot / GHSA minima).
 [tool.uv]

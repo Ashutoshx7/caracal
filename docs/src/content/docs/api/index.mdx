@@ -1,6 +1,6 @@
 ---
 title: API Reference
-description: HTTP surfaces exposed by the Caracal services — base URLs, authentication methods, and a map of every API.
+description: HTTP surfaces exposed by the Caracal services: base URLs, authentication methods, and a map of every API.
 pageType: landing
 ---
 
@@ -17,7 +17,7 @@ Caracal exposes four HTTP services, each with a distinct purpose and authenticat
 
 ## Base URL conventions
 
-All services expose `/health` and `/ready` endpoints without authentication. The Control-Plane API and Coordinator prefix their resource routes with `/v1` or `/zones/{zoneId}`. The STS uses `/oauth/2/token` for token exchange and `/.well-known/jwks.json` for JWKS. The Gateway has no resource routes — every path is proxied to the upstream.
+All services expose `/health` and `/ready` endpoints without authentication. The Control-Plane API and Coordinator prefix their resource routes with `/v1` or `/zones/{zoneId}`. The STS uses `/oauth/2/token` for token exchange and `/.well-known/jwks.json` for JWKS. The Gateway has no resource routes: every path is proxied to the upstream.
 
 ## Error format
 

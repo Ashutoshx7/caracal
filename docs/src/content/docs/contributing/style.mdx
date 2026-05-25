@@ -36,14 +36,14 @@ Every source file must begin with the copyright header, adapted to the file's co
 # One-sentence description of what this file is.
 ```
 
-**MDX (docs pages — frontmatter only, no comment header):**
+**MDX (docs pages: frontmatter only, no comment header):**
 
 MDX files use frontmatter as their header. Do not add a comment block before `---`. The `title` and `description` frontmatter fields serve as the file descriptor.
 
 Rules for the header:
-- Two spaces after `All Rights Reserved.` — exact spacing is required.
+- Two spaces after `All Rights Reserved.`: exact spacing is required.
 - Blank line between the copyright block and the description.
-- Description is a single sentence, present tense, describing what the file *is* — not what it does, not why it exists.
+- Description is a single sentence, present tense, describing what the file *is*: not what it does, not why it exists.
 - No metadata, version notes, or author lines inside the header block.
 
 ---
@@ -69,7 +69,7 @@ Match the naming pattern in the surrounding code. If an existing file uses a con
 
 ## Comments
 
-Write comments only when the *why* is non-obvious — a hidden constraint, a subtle invariant, a workaround for a known bug, behavior that would surprise a reader.
+Write comments only when the *why* is non-obvious: a hidden constraint, a subtle invariant, a workaround for a known bug, behavior that would surprise a reader.
 
 Do not write comments that:
 - Restate what the code already expresses through clear identifiers.
@@ -77,7 +77,7 @@ Do not write comments that:
 - Describe what was changed, removed, or added.
 - Say "previously", "now", "added for", "used by".
 
-One short line is the maximum for inline comments. Do not write multi-paragraph docstrings or multi-line comment blocks for internal code. Public API documentation (Go `godoc`, TypeScript JSDoc) is the exception — keep it concise and accurate.
+One short line is the maximum for inline comments. Do not write multi-paragraph docstrings or multi-line comment blocks for internal code. Public API documentation (Go `godoc`, TypeScript JSDoc) is the exception: keep it concise and accurate.
 
 ---
 
@@ -94,7 +94,7 @@ Required structure:
 
 When you add a new directory with meaningful structure, create its `instructions.md`. When you change the naming patterns or conventions for a directory, update the `instructions.md` immediately. Delete or rewrite instructions that no longer match the actual code.
 
-Only `root/README.md` and files under `docs/` may be `.md` files outside of `instructions.md`. Do not create `README.md` inside `packages/`, `services/`, or any subdirectory — use `instructions.md` instead.
+Only `root/README.md` and files under `docs/` may be `.md` files outside of `instructions.md`. Do not create `README.md` inside `packages/`, `services/`, or any subdirectory: use `instructions.md` instead.
 
 ---
 
@@ -103,7 +103,7 @@ Only `root/README.md` and files under `docs/` may be `.md` files outside of `ins
 The repository enforces a strict no-legacy policy:
 
 - Each feature has exactly one execution path. There are no fallback paths, compatibility shims, or version-conditional branches.
-- Remove deprecated functions, classes, or modules when the replacement lands — do not keep them "just in case".
+- Remove deprecated functions, classes, or modules when the replacement lands: do not keep them "just in case".
 - Remove feature flags that gate old vs. new behavior once the new behavior is the only behavior.
 - Remove dead code, commented-out blocks, and unused abstractions.
 - Do not layer a new implementation on top of an existing one. Rewrite the affected area cleanly.

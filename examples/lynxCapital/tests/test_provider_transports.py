@@ -3,7 +3,7 @@ Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 Caracal, a product of Garudex Labs
 
 End-to-end provider transport tests: REST, async-job, SDK, SSE, gRPC, MCP,
-and webhook delivery — each driven over a real local socket.
+and webhook delivery: each driven over a real local socket.
 """
 from __future__ import annotations
 

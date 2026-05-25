@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Default Helm values for a flexible Caracal Kubernetes deployment.
+# Default Helm values for a Caracal Kubernetes deployment.
 
 global:
   registry: ghcr.io/garudex-labs

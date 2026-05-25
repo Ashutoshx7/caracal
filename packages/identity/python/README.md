@@ -2,7 +2,7 @@
 
 JWT verification, JWKS cache, scope evaluation, and claim shapes for Caracal-issued agent tokens.
 
-Part of [Caracal](https://github.com/Garudex-Labs/caracal) — a security-first authority and delegation system for AI agents.
+Part of [Caracal](https://github.com/Garudex-Labs/caracal): a security-first authority and delegation system for AI agents.
 
 ## Install
 

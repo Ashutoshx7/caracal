@@ -12,7 +12,7 @@ with a live agent topology view and SSE log stream.
 
 ## Quick start
 
-### 1 — Install dependencies
+### 1: Install dependencies
 
 ```bash
 cd caracal/examples/lynxCapital
@@ -26,7 +26,7 @@ pip install \
 
 The `caracalai-sdk>=0.1.1` pin lives in `pyproject.toml`.
 
-### 2 — Configure environment
+### 2: Configure environment
 
 ```bash
 cp .env.example .env
@@ -35,11 +35,11 @@ cp .env.example .env
 Open `.env` and set `OPENAI_API_KEY=sk-...`. Provider credentials are normal
 integration settings; Caracal credentials come from `caracal.toml`.
 
-### 3 — Start Caracal through Console + control API
+### 3: Start Caracal through Console + control API
 
 Caracal (API + Coordinator + Gateway + STS + Redis) must be running before
 Lynx starts. Install the released runtime/console and bring up the stack the same way
-an end user would — **do not build from the caracal source tree**:
+an end user would: **do not build from the caracal source tree**:
 
 ```bash
 # Install the runtime shell and Console once (no sudo, lands in ~/.local/bin)
@@ -62,7 +62,7 @@ Caracal application credential with the `control:invoke` trait; Lynx stores
 its `client_id` as `application_id` and its one-time `client_secret` as
 `app_client_secret` in `caracal.toml`.
 
-### 4 — Write `caracal.toml` from Console values
+### 4: Write `caracal.toml` from Console values
 
 After creating the Lynx zone, control key, and resources in the Console, write
 `~/.config/caracal/caracal.toml`. The Python SDK reads this file directly, so
@@ -105,7 +105,7 @@ different hosts/ports, edit the `CARACAL_*` block in `.env` and the URLs in
 > remove the stale workspace shim first so the released binary wins:
 > `rm "$(pnpm bin -g)/caracal" 2>/dev/null || true`.
 
-### 5 — Start the local provider network
+### 5: Start the local provider network
 
 The local provider network lives under `_mock/` and supplies the demo's
 third-party provider fixtures across REST, SSE, gRPC, and MCP. The Lynx app
@@ -123,7 +123,7 @@ To re-check status later:
 docker compose -f _mock/docker-compose.yml ps -a
 ```
 
-### 6 — Run Lynx Capital
+### 6: Run Lynx Capital
 
 Pick one path:
 
@@ -131,7 +131,7 @@ Pick one path:
 # Local Python (development)
 python -m uvicorn app.main:app --reload --port 8000
 
-# Container (production-like — joins the provider and caracalData networks)
+# Container (production-like: joins the provider and caracalData networks)
 docker compose up -d --build
 ```
 
@@ -154,7 +154,7 @@ Open **http://localhost:8000**.
 
 | Path | Description |
 |---|---|
-| `/` | Landing — scenario summary |
+| `/` | Landing: scenario summary |
 | `/setup` | Validates `OPENAI_API_KEY` and Caracal connectivity |
 | `/demo` | Chat interface + live agent topology graph |
 | `/logs` | Color-coded runtime activity stream |

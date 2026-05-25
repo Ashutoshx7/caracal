@@ -113,7 +113,7 @@ const sections = AREAS.map(([id, label]) => {
   const rows = findings.filter((r) => r.area === id);
   if (rows.length === 0) return `### ${label}\n\n_No findings recorded._\n`;
   const lines = rows.map(
-    (r) => `- **[${r.severity}]** ${r.status.toUpperCase()} — \`${r.artifact}\` (${r.platform}/${r.pm}/${r.runtime}): ${r.evidence}\n  - Repro: \`${r.repro}\``,
+    (r) => `- **[${r.severity}]** ${r.status.toUpperCase()}: \`${r.artifact}\` (${r.platform}/${r.pm}/${r.runtime}): ${r.evidence}\n  - Repro: \`${r.repro}\``,
   );
   return `### ${label}\n\n${lines.join("\n")}\n`;
 }).join("\n");
@@ -125,7 +125,7 @@ const topFixes = failed
     return order[a.severity] - order[b.severity];
   })
   .slice(0, 10)
-  .map((r, i) => `${i + 1}. **[${r.severity}]** \`${r.artifact}\` — ${r.evidence}`)
+  .map((r, i) => `${i + 1}. **[${r.severity}]** \`${r.artifact}\`: ${r.evidence}`)
   .join("\n");
 
 const md = `---
@@ -150,10 +150,10 @@ ${tableRows}
 
 ## Severity rubric
 
-- **blocker** — artifact is unusable for consumers (download fails, install errors, signature invalid)
-- **major** — published but a contract is broken (wrong version, missing export, broken healthcheck)
-- **minor** — cosmetic or documentation issue
-- **info** — informational only
+- **blocker**: artifact is unusable for consumers (download fails, install errors, signature invalid)
+- **major**: published but a contract is broken (wrong version, missing export, broken healthcheck)
+- **minor**: cosmetic or documentation issue
+- **info**: informational only
 
 ## Findings
 

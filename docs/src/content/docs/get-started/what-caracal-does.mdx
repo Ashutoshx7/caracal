@@ -46,7 +46,7 @@ The public STS issues short-lived Caracal access tokens. It does not return prov
 4. Signs a token only when policy returns `decision = "allow"` and `evaluation_status = "complete"`.
 5. Emits an authorization audit event for every resource decision.
 
-If no policy set is active in the zone, the STS installs a deny-all fallback — no agent can exchange credentials until a policy is activated. There is no default-allow state.
+If no policy set is active in the zone, the STS installs a deny-all fallback: no agent can exchange credentials until a policy is activated. There is no default-allow state.
 
 ## The Gateway
 

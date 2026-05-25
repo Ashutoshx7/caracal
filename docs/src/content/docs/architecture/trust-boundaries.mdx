@@ -24,7 +24,7 @@ A trust boundary in Caracal is the edge where one component must verify claims m
 │  STS                                                │
 │  • Holds ZONE_KEK → decrypts zone private keys      │
 │  • Sole issuer of signed mandates                   │
-│  • Evaluates OPA — no policy bypass path            │
+│  • Evaluates OPA: no policy bypass path            │
 │  • Holds AUDIT_HMAC_KEY → signs audit events        │
 │  • Authenticated by client_secret or assertion      │
 └───────────────────────┬─────────────────────────────┘
@@ -55,7 +55,7 @@ A trust boundary in Caracal is the edge where one component must verify claims m
 
 The API holds `ZONE_KEK` and is protected by `CARACAL_ADMIN_TOKEN`. Its trust scope covers all configuration: creating zones, registering applications, activating policies, issuing grants, managing credential providers. An attacker with API access can modify policy to allow arbitrary requests, issue grants to any application, and provision new zones.
 
-The API stores zone signing keys encrypted — it does not hold decrypted private keys and cannot issue mandates directly. Policy changes take effect on the next OPA bundle reload in the STS; they do not invalidate already-issued tokens.
+The API stores zone signing keys encrypted: it does not hold decrypted private keys and cannot issue mandates directly. Policy changes take effect on the next OPA bundle reload in the STS; they do not invalidate already-issued tokens.
 
 **Least privilege enforced by:**
 - `CARACAL_ADMIN_TOKEN` required for all write operations
@@ -66,9 +66,9 @@ The API stores zone signing keys encrypted — it does not hold decrypted privat
 The STS is the highest-privilege runtime component. It holds `ZONE_KEK` (to decrypt zone signing keys) and `AUDIT_HMAC_KEY`. It is the only component that can issue new mandates.
 
 **Blast radius containment:**
-- The STS trusts only ES256-signed session mandates with `use = "session"` — unsigned input cannot produce a mandate
+- The STS trusts only ES256-signed session mandates with `use = "session"`: unsigned input cannot produce a mandate
 - `client_secret` or a valid `client_assertion` is required; unauthenticated calls are rejected before any database lookup
-- OPA evaluation cannot be bypassed — the exchange handler is a sequential pipeline with no code path that issues a mandate without calling `OPAEngine.Evaluate`
+- OPA evaluation cannot be bypassed: the exchange handler is a sequential pipeline with no code path that issues a mandate without calling `OPAEngine.Evaluate`
 - The JTI SETNX check means a stolen mandate cannot be replayed; each JTI is single-use per its TTL
 
 ### Gateway
@@ -90,12 +90,12 @@ The Coordinator manages agent sessions and the delegation graph. It holds no sig
 
 **Trust limited by:**
 - Delegation edge creation requires the issuer to own the source session (enforced via Postgres query)
-- The STS validates delegation edge integrity independently on every exchange — forged graph state causes exchange failure, not mandate issuance
+- The STS validates delegation edge integrity independently on every exchange: forged graph state causes exchange failure, not mandate issuance
 - Outbox events are HMAC-signed by `STREAMS_HMAC_KEY`; consumers reject unsigned messages in production
 
 ### Audit service
 
-The Audit service has INSERT and SELECT on audit tables only. An attacker with Audit service code execution can suppress new event insertion or write malformed events. They cannot retroactively alter or delete the existing audit chain — enforced at the Postgres role level (no UPDATE, no DELETE).
+The Audit service has INSERT and SELECT on audit tables only. An attacker with Audit service code execution can suppress new event insertion or write malformed events. They cannot retroactively alter or delete the existing audit chain: enforced at the Postgres role level (no UPDATE, no DELETE).
 
 ---
 
@@ -138,7 +138,7 @@ An upstream service that receives a request via the Gateway sees only the mandat
 5. **Expiry:** `exp` must be in the future
 6. **Scope:** `scope` claim must contain the required scopes for the operation
 
-Claims the upstream can trust without additional verification — `delegation_chain`, `hop_count`, `delegation_graph_epoch`, `agent_session_id` — are embedded by the STS after the full validation pipeline and cannot be forged in a valid ES256-signed token without the zone private key.
+Claims the upstream can trust without additional verification (`delegation_chain`, `hop_count`, `delegation_graph_epoch`, `agent_session_id`) are embedded by the STS after the full validation pipeline and cannot be forged in a valid ES256-signed token without the zone private key.
 
 **Real-time revocation:** A valid mandate with a revoked `sid` will pass signature and expiry checks. The Gateway enforces revocation before forwarding, so upstreams behind the Gateway are protected. Upstreams accessed directly (not via Gateway) must check the `sid` claim against a local revocation store fed by the `caracal.sessions.revoke` stream if they need sub-TTL revocation enforcement.
 
@@ -163,4 +163,4 @@ Revocation propagates from the Coordinator through the Redis stream to the STS a
 - The **Gateway** checks the `sid` claim against its revocation store on every request. Because the Gateway consumes the revocation stream, it typically blocks the revoked session within seconds.
 - An **upstream** that does not subscribe to the revocation stream will accept the mandate until it expires.
 
-The 15-minute resource TTL is the intentional upper bound on revocation lag. Session mandates (60-minute TTL) cannot be presented directly to upstreams — they must be exchanged for a resource mandate at the STS, where the session status is checked before issuance.
+The 15-minute resource TTL is the intentional upper bound on revocation lag. Session mandates (60-minute TTL) cannot be presented directly to upstreams: they must be exchanged for a resource mandate at the STS, where the session status is checked before issuance.

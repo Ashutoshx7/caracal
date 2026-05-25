@@ -245,7 +245,7 @@ The Gateway performs a second JTI check using `seen:jti:{jti}` with the same SET
 
 ## Audit emission
 
-Every OPA evaluation — allow or deny — produces an audit event. The STS does not write to Redis synchronously. It enqueues events into an in-process `AuditBuffer`:
+Every OPA evaluation (allow or deny) produces an audit event. The STS does not write to Redis synchronously. It enqueues events into an in-process `AuditBuffer`:
 
 - **Channel capacity:** 10,000 events
 - **Flush thresholds:** 1,000 events accumulated, or 50 ms elapsed (whichever comes first)

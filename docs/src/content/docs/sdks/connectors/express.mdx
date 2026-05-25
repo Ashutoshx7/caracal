@@ -1,6 +1,6 @@
 ---
 title: Express Connector
-description: caracalAuth() middleware reference — MiddlewareOptions, CaracalRequest, claims attachment, and error response behavior.
+description: caracalAuth() middleware reference: MiddlewareOptions, CaracalRequest, claims attachment, and error response behavior.
 pageType: reference
 ---
 
@@ -45,7 +45,7 @@ interface AuthDeps {
 }
 ```
 
-`bindContext: true` (the default) binds the verified identity into the SDK's `AsyncLocalStorage` context, making `caracal.current()` available inside the handler. Set `bindContext: false` to skip this — useful when you only need `req.caracalClaims` without SDK context propagation.
+`bindContext: true` (the default) binds the verified identity into the SDK's `AsyncLocalStorage` context, making `caracal.current()` available inside the handler. Set `bindContext: false` to skip this: useful when you only need `req.caracalClaims` without SDK context propagation.
 
 ---
 
@@ -83,7 +83,7 @@ interface CaracalContext {
 }
 ```
 
-`Claims` is the same type exported by `@caracalai/identity` — see [Identity Package](../../identity/).
+`Claims` is the same type exported by `@caracalai/identity`: see [Identity Package](../../identity/).
 
 ---
 

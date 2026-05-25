@@ -4,7 +4,7 @@ description: Helm upgrade flow, migration ordering, rollback boundaries, and pre
 pageType: config
 ---
 
-This page describes the supported upgrade path for self-hosted Caracal. Follow it for every minor and patch release. Major version upgrades (e.g. `1.x` → `2.x`) may include additional steps that ship with that release's notes — read them first.
+This page describes the supported upgrade path for self-hosted Caracal. Follow it for every minor and patch release. Major version upgrades (e.g. `1.x` → `2.x`) may include additional steps that ship with that release's notes: read them first.
 
 ## Versioning
 
@@ -97,7 +97,7 @@ Expect empty output. Then run a synthetic request through Gateway end-to-end (se
 
 | Situation | Rollback path |
 | --- | --- |
-| Helm upgrade fails before migration Job completes | `helm rollback caracal <prev-revision>` — no schema change happened. |
+| Helm upgrade fails before migration Job completes | `helm rollback caracal <prev-revision>`: no schema change happened. |
 | Migration Job completed, services failing to start | `helm rollback` reverts images. The new schema is **forward-compatible by design**: the prior `appVersion` reads the new schema cleanly. Investigate root cause before re-attempting. |
 | Migration Job completed, new schema is incompatible with prior services in your environment | Restore Postgres from the pre-upgrade backup (see [Backup and Retention](../backup-retention/)). This is the only path that reverses schema. RPO = time since last backup. |
 

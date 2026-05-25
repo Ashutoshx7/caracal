@@ -1,10 +1,10 @@
 ---
 title: Postgres Token State
-description: PostgresBackend class reference — constructor, migrate(), upsert(), get(), delete(), and mcp_token_state table schema.
+description: PostgresBackend class reference: constructor, migrate(), upsert(), get(), delete(), and mcp_token_state table schema.
 pageType: reference
 ---
 
-`@caracalai/tokenstate-postgres` provides `PostgresBackend`, a class that persists MCP token state to a Postgres table. It is a storage backend for MCP session token records — not a `RevocationStore` and not a `TokenCache`. Use it when you need durable, queryable token state across restarts or replicas.
+`@caracalai/tokenstate-postgres` provides `PostgresBackend`, a class that persists MCP token state to a Postgres table. It is a storage backend for MCP session token records: not a `RevocationStore` and not a `TokenCache`. Use it when you need durable, queryable token state across restarts or replicas.
 
 ## Install
 
@@ -25,7 +25,7 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const backend = new PostgresBackend(pool);
 ```
 
-The constructor accepts a `pg.Pool` instance. `PostgresBackend` does not manage the pool lifecycle — create and close the pool in your application startup/shutdown code.
+The constructor accepts a `pg.Pool` instance. `PostgresBackend` does not manage the pool lifecycle: create and close the pool in your application startup/shutdown code.
 
 ---
 
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS mcp_token_state (
 );
 ```
 
-The primary key is `(zone_id, sub)` — one active token state row per subject per zone.
+The primary key is `(zone_id, sub)`: one active token state row per subject per zone.
 
 ---
 
@@ -56,7 +56,7 @@ The primary key is `(zone_id, sub)` — one active token state row per subject p
 async migrate(): Promise<void>
 ```
 
-Executes the DDL to create `mcp_token_state`. Safe to call on every startup — the `IF NOT EXISTS` clause makes it idempotent. Throws if the database connection fails.
+Executes the DDL to create `mcp_token_state`. Safe to call on every startup: the `IF NOT EXISTS` clause makes it idempotent. Throws if the database connection fails.
 
 ### `upsert(zoneId, sub, scope, expiresAt)`
 
@@ -133,6 +133,6 @@ await backend.delete(claims.zoneId, claims.sub);
 
 ## Notes
 
-`PostgresBackend` does not implement `RevocationStore`. It stores token state (scope, expiry) for your application's session management — it does not participate in the mandate verification pipeline directly. Mandate verification remains the responsibility of `@caracalai/transport-mcp` or `@caracalai/mcp-express`.
+`PostgresBackend` does not implement `RevocationStore`. It stores token state (scope, expiry) for your application's session management: it does not participate in the mandate verification pipeline directly. Mandate verification remains the responsibility of `@caracalai/transport-mcp` or `@caracalai/mcp-express`.
 
 For revocation store functionality, use `@caracalai/revocation` (in-memory) or `@caracalai/revocation-redis` (production). See the [Redis connector reference](./redis/).

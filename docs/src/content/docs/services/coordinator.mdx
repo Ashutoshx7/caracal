@@ -16,14 +16,14 @@ The Coordinator manages the agent plane of Caracal. It is the authority for agen
 
 The Coordinator owns:
 
-- **Agent lifecycle** — spawn, suspend, resume, and cascade-terminate agent sessions with enforced depth and count limits.
-- **Service registration** — agents announce their endpoint URL, protocol versions, and health status.
-- **Invocation persistence** — durable, idempotent RPC records with status tracking (`pending` → `running` → `succeeded`|`failed`|`timed_out`).
-- **Deadline enforcement** — cancels invocations that exceed their `timeout_ms`.
-- **TTL enforcement** — terminates agent sessions whose `ttl_seconds` has elapsed.
-- **Service lease enforcement** — suspends `service` agent sessions that miss their heartbeat deadline and publishes revocation events.
-- **Delegation graph** — creates and revokes directed authority edges between agent sessions.
-- **Retention** — deletes old delegation edges and outbox rows beyond the configured retention window.
+- **Agent lifecycle**: spawn, suspend, resume, and cascade-terminate agent sessions with enforced depth and count limits.
+- **Service registration**: agents announce their endpoint URL, protocol versions, and health status.
+- **Invocation persistence**: durable, idempotent RPC records with status tracking (`pending` → `running` → `succeeded`|`failed`|`timed_out`).
+- **Deadline enforcement**: cancels invocations that exceed their `timeout_ms`.
+- **TTL enforcement**: terminates agent sessions whose `ttl_seconds` has elapsed.
+- **Service lease enforcement**: suspends `service` agent sessions that miss their heartbeat deadline and publishes revocation events.
+- **Delegation graph**: creates and revokes directed authority edges between agent sessions.
+- **Retention**: deletes old delegation edges and outbox rows beyond the configured retention window.
 
 The Coordinator does **not** execute agent code, evaluate policies, issue tokens, manage zone configuration, or ingest audit events.
 
@@ -60,7 +60,7 @@ All routes are zone-scoped: `/zones/:zoneId/...`
 | `PATCH` | `/zones/:zoneId/agents/:id/resume` | Resume a suspended agent |
 | `DELETE` | `/zones/:zoneId/agents/:id` | Cascade-terminate an agent |
 
-**Spawn constraints** — enforced under a distributed lock on `coordinator:agent_spawn:{zoneId}`:
+**Spawn constraints**: enforced under a distributed lock on `coordinator:agent_spawn:{zoneId}`:
 
 | Constraint | Limit |
 | --- | --- |
@@ -71,11 +71,11 @@ All routes are zone-scoped: `/zones/:zoneId/...`
 | Max capabilities per agent | 32 |
 | Max capability length | 64 characters |
 
-Spawn is idempotent — pass an `Idempotency-Key` header to guarantee at-most-one creation across concurrent callers.
+Spawn is idempotent: pass an `Idempotency-Key` header to guarantee at-most-one creation across concurrent callers.
 
-**Cascade termination** — `DELETE` terminates the target agent and all its descendants recursively. A termination event is published to the outbox for each terminated session.
+**Cascade termination**: `DELETE` terminates the target agent and all its descendants recursively. A termination event is published to the outbox for each terminated session.
 
-**Service session lease** — `kind=service` creates a heartbeat deadline. `POST /zones/:zoneId/agents/:id/heartbeat` renews the lease; if the deadline is missed, the service lease sweeper suspends the session subtree and emits revocation events.
+**Service session lease**: `kind=service` creates a heartbeat deadline. `POST /zones/:zoneId/agents/:id/heartbeat` renews the lease; if the deadline is missed, the service lease sweeper suspends the session subtree and emits revocation events.
 
 ### Agent services
 
@@ -116,13 +116,13 @@ Delegation edges carry typed `constraints_json` (resource labels, scope-count bu
 
 The Coordinator owns four tables:
 
-**`agent_sessions`** — `id`, `zone_id`, `application_id`, `subject_session_id` (authority root session), `parent_id` (self-referential FK), `agent_kind` (`service`|`instance`|`ephemeral`), `capabilities` (array), `status` (`active`|`suspended`|`terminated`), `depth`, `ttl_seconds`, `last_heartbeat_at`, `heartbeat_deadline_at`, `spawned_at`, `terminated_at`, timestamps. Indexed on `(zone_id, application_id)`, `(zone_id, status)`, and active service heartbeat deadlines.
+**`agent_sessions`**: `id`, `zone_id`, `application_id`, `subject_session_id` (authority root session), `parent_id` (self-referential FK), `agent_kind` (`service`|`instance`|`ephemeral`), `capabilities` (array), `status` (`active`|`suspended`|`terminated`), `depth`, `ttl_seconds`, `last_heartbeat_at`, `heartbeat_deadline_at`, `spawned_at`, `terminated_at`, timestamps. Indexed on `(zone_id, application_id)`, `(zone_id, status)`, and active service heartbeat deadlines.
 
-**`agent_services`** — `id`, `zone_id`, `application_id`, `endpoint_url`, `protocol_versions` (array), `framework_name`, `framework_version`, `capabilities` (array), `health`, `metadata_json` (JSONB), `last_heartbeat_at`, timestamps. Unique constraint on `(zone_id, application_id, endpoint_url)`.
+**`agent_services`**: `id`, `zone_id`, `application_id`, `endpoint_url`, `protocol_versions` (array), `framework_name`, `framework_version`, `capabilities` (array), `health`, `metadata_json` (JSONB), `last_heartbeat_at`, timestamps. Unique constraint on `(zone_id, application_id, endpoint_url)`.
 
-**`agent_invocations`** — `id`, `zone_id`, `service_id`, `source_session_id`, `target_session_id`, `idempotency_key`, `method`, `params_json` (JSONB), `status`, `attempts`, `max_attempts`, `timeout_ms`, `retry_policy_json` (JSONB), `error_json` (JSONB), `deadline_at`, `started_at`, `completed_at`, timestamps. Unique on `(zone_id, service_id, idempotency_key)`. Indexed on status, session IDs, and `(deadline_at WHERE status='running')`.
+**`agent_invocations`**: `id`, `zone_id`, `service_id`, `source_session_id`, `target_session_id`, `idempotency_key`, `method`, `params_json` (JSONB), `status`, `attempts`, `max_attempts`, `timeout_ms`, `retry_policy_json` (JSONB), `error_json` (JSONB), `deadline_at`, `started_at`, `completed_at`, timestamps. Unique on `(zone_id, service_id, idempotency_key)`. Indexed on status, session IDs, and `(deadline_at WHERE status='running')`.
 
-**`delegation_edges`** — `id`, `zone_id`, `source_agent_id` (FK → agent_sessions), `target_agent_id` (FK → agent_sessions), `constraints_json` (JSONB), timestamps.
+**`delegation_edges`**: `id`, `zone_id`, `source_agent_id` (FK → agent_sessions), `target_agent_id` (FK → agent_sessions), `constraints_json` (JSONB), timestamps.
 
 ---
 
@@ -130,15 +130,15 @@ The Coordinator owns four tables:
 
 The Coordinator runs five background workers alongside the HTTP server:
 
-**OutboxPublisher** — polls the `caracal_outbox` table every `OUTBOX_INTERVAL_MS` (default 1000 ms), publishes ready rows to Redis streams, retries with exponential backoff up to `OUTBOX_MAX_ATTEMPTS`.
+**OutboxPublisher**: polls the `caracal_outbox` table every `OUTBOX_INTERVAL_MS` (default 1000 ms), publishes ready rows to Redis streams, retries with exponential backoff up to `OUTBOX_MAX_ATTEMPTS`.
 
-**TTL Sweeper** — runs every `TTL_SWEEP_INTERVAL_MS` (default 60 s). Queries `agent_sessions` for active sessions whose `spawned_at + ttl_seconds` has elapsed and terminates them.
+**TTL Sweeper**: runs every `TTL_SWEEP_INTERVAL_MS` (default 60 s). Queries `agent_sessions` for active sessions whose `spawned_at + ttl_seconds` has elapsed and terminates them.
 
-**Service Lease Sweeper** — runs every `SERVICE_LEASE_SWEEP_INTERVAL_MS` (default 30 s). Suspends active `service` sessions whose `heartbeat_deadline_at` has elapsed and emits revocation events for the session subtree.
+**Service Lease Sweeper**: runs every `SERVICE_LEASE_SWEEP_INTERVAL_MS` (default 30 s). Suspends active `service` sessions whose `heartbeat_deadline_at` has elapsed and emits revocation events for the session subtree.
 
-**Deadline Enforcer** — runs every `DEADLINE_SWEEP_INTERVAL_MS` (default 5 s). Queries `agent_invocations` for `running` invocations past `deadline_at` and marks them `timed_out`.
+**Deadline Enforcer**: runs every `DEADLINE_SWEEP_INTERVAL_MS` (default 5 s). Queries `agent_invocations` for `running` invocations past `deadline_at` and marks them `timed_out`.
 
-**Retention Cleaner** — runs every `RETENTION_CLEANUP_INTERVAL_MS` (default 900 s). Deletes delegation edges older than `DELEGATION_RETENTION_DAYS` (default 90) and outbox rows older than `OUTBOX_RETENTION_DAYS` (default 7).
+**Retention Cleaner**: runs every `RETENTION_CLEANUP_INTERVAL_MS` (default 900 s). Deletes delegation edges older than `DELEGATION_RETENTION_DAYS` (default 90) and outbox rows older than `OUTBOX_RETENTION_DAYS` (default 7).
 
 ---
 
@@ -153,7 +153,7 @@ The Coordinator runs five background workers alongside the HTTP server:
 
 **Distributed lock:**
 
-- Key: `coordinator:agent_spawn:{zoneId}` — held briefly during spawn constraint checks to prevent race conditions when multiple callers spawn concurrently against the same zone limits.
+- Key: `coordinator:agent_spawn:{zoneId}`: held briefly during spawn constraint checks to prevent race conditions when multiple callers spawn concurrently against the same zone limits.
 
 ---
 
@@ -178,7 +178,7 @@ The Coordinator does not run database migrations. Schema changes are applied bef
 
 The Coordinator is stateless. All durable state is in PostgreSQL. Scale horizontally for invocation throughput.
 
-The spawn distributed lock (`coordinator:agent_spawn:{zoneId}`) is held for milliseconds per request. Under very high spawn rates for the same zone, lock contention is the primary bottleneck — mitigate by distributing spawns across zones or increasing per-zone limits.
+The spawn distributed lock (`coordinator:agent_spawn:{zoneId}`) is held for milliseconds per request. Under very high spawn rates for the same zone, lock contention is the primary bottleneck: mitigate by distributing spawns across zones or increasing per-zone limits.
 
 Invocation idempotency is enforced at the database level via a unique constraint on `(zone_id, service_id, idempotency_key)`. Concurrent duplicate enqueues produce a unique constraint violation; the Coordinator catches this and returns the existing record.
 
@@ -189,11 +189,11 @@ Invocation idempotency is enforced at the database level via a unique constraint
 | Variable | Default | Description |
 | --- | --- | --- |
 | `PORT` | `4000` | HTTP listen port |
-| `DATABASE_URL` | — | PostgreSQL connection string |
-| `REDIS_URL` | — | Redis connection string |
-| `STS_URL` | — | STS URL for agent token exchanges |
-| `ISSUER_URL` | — | JWT issuer URL for JWKS verification (also used as the required `aud`) |
-| `AGENT_COORDINATOR_SCOPE` | — | Required scope in bearer JWTs |
+| `DATABASE_URL` | None | PostgreSQL connection string |
+| `REDIS_URL` | None | Redis connection string |
+| `STS_URL` | None | STS URL for agent token exchanges |
+| `ISSUER_URL` | None | JWT issuer URL for JWKS verification (also used as the required `aud`) |
+| `AGENT_COORDINATOR_SCOPE` | None | Required scope in bearer JWTs |
 | `DB_POOL_MAX` | `20` | PostgreSQL pool size |
 | `OUTBOX_INTERVAL_MS` | `1000` | Outbox poll interval |
 | `OUTBOX_BATCH_SIZE` | `50` | Events per outbox dispatch batch |

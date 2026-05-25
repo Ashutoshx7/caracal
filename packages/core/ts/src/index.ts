@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// @caracalai/core — configuration, errors, and logging for TypeScript services.
+// @caracalai/core: configuration, errors, and logging for TypeScript services.
 
 export * from './async.js';
 export * from './config.js';

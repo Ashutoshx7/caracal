@@ -1,6 +1,6 @@
 ---
 title: Go SDK
-description: Complete API reference for github.com/garudex-labs/caracal/packages/sdk/go — agent sessions, delegation, context propagation, and outbound transport for Go services.
+description: Complete API reference for github.com/garudex-labs/caracal/packages/sdk/go: agent sessions, delegation, context propagation, and outbound transport for Go services.
 pageType: reference
 ---
 
@@ -200,7 +200,7 @@ Pass `nil` to wrap `http.DefaultClient`, or pass a custom `*http.Client`:
 func (c *Caracal) Transport(base *http.Client, opts ...RootOptions) *http.Client
 ```
 
-The returned client injects headers by reading the context on each `Do` call — the request must have a context bound via `http.NewRequestWithContext`. Pass `sdk.RootOptions{AllowRoot: true}` only when the call intentionally uses the application session mandate.
+The returned client injects headers by reading the context on each `Do` call: the request must have a context bound via `http.NewRequestWithContext`. Pass `sdk.RootOptions{AllowRoot: true}` only when the call intentionally uses the application session mandate.
 
 ### `BindFromRequest(ctx, r)`
 

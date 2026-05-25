@@ -42,7 +42,7 @@ function printHelp(): void {
     [
       `Usage: ${bin} [--help] [--version]`,
       '',
-      'Caracal Console UI — interactive admin console for the Caracal control plane.',
+      'Caracal Console UI: interactive admin console for the Caracal control plane.',
       '',
       'Options:',
       '  --help, -h            Show this help',

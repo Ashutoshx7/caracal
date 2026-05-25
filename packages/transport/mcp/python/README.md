@@ -2,7 +2,7 @@
 
 Transport-neutral MCP authentication for Caracal-issued JWTs.
 
-Part of [Caracal](https://github.com/Garudex-Labs/caracal) — a security-first authority and delegation system for AI agents.
+Part of [Caracal](https://github.com/Garudex-Labs/caracal): a security-first authority and delegation system for AI agents.
 
 ## Install
 

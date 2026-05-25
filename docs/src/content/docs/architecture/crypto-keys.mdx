@@ -89,7 +89,7 @@ Payload:   { "iss": "...", "sub": "...", "aud": [...], "exp": ..., "jti": "...",
 Signature: ECDSA-P256-SHA256(header.payload, private_key)
 ```
 
-Verifiers fetch the zone JWKS, locate the key matching the `kid` header, and verify the signature. No other algorithm is accepted. The `subject_token` input to the exchange endpoint must itself be a valid ES256 JWT with `use = "session"` — resource mandates cannot be used as input to a new exchange (RFC 8693 subject-confusion mitigation).
+Verifiers fetch the zone JWKS, locate the key matching the `kid` header, and verify the signature. No other algorithm is accepted. The `subject_token` input to the exchange endpoint must itself be a valid ES256 JWT with `use = "session"`: resource mandates cannot be used as input to a new exchange (RFC 8693 subject-confusion mitigation).
 
 ---
 
@@ -156,9 +156,9 @@ Each event stores `content_sha256`, `prev_content_sha256` (the previous event's 
 | ------ | --------- |
 | Modify any field | `content_sha256` changes, `chain_hmac` becomes invalid (requires `AUDIT_HMAC_KEY` to forge) |
 | Delete an event | Next event's `prev_content_sha256` no longer matches |
-| Insert a fake event | Requires producing a valid `chain_hmac` — requires `AUDIT_HMAC_KEY` |
+| Insert a fake event | Requires producing a valid `chain_hmac`: requires `AUDIT_HMAC_KEY` |
 
-**Tamper detection runs:** Full chain validation at startup; incremental rolling validation every hour. Findings are written to `audit_ingest_alerts`. No automatic remediation — the chain is evidence, not a correctable state.
+**Tamper detection runs:** Full chain validation at startup; incremental rolling validation every hour. Findings are written to `audit_ingest_alerts`. No automatic remediation: the chain is evidence, not a correctable state.
 
 ---
 

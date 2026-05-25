@@ -70,15 +70,15 @@ function purgeHelp(): never {
       '',
       'Targets:',
       '  stack       Stop and remove containers + network (compose down)',
-      '  volumes     Remove data volumes — DESTROYS Postgres and Redis state',
+      '  volumes     Remove data volumes: DESTROYS Postgres and Redis state',
       '  logs        Truncate container log files via `compose down` + recreate',
       '  config      Remove caracal.toml (zone client secret and config)',
       '  runtime     Remove runtime assets at $CARACAL_HOME (.env, compose.yml)',
-      '  secrets     Remove dev .env and generated secret files (infra/docker/.env, infra/secrets/files/) — dev only',
+      '  secrets     Remove dev .env and generated secret files (infra/docker/.env, infra/secrets/files/): dev only',
       '  cache       Remove build artifacts: apps/*/dist, coverage/, node_modules/.cache (dev only)',
       '  images      Remove cached Caracal docker images (caracal/*, ghcr.io/garudex-labs/caracal-*)',
       '  binary      Uninstall Caracal runtime and Console binaries from $CARACAL_INSTALL_DIR (default ~/.local/bin)',
-      '  all         Purge every applicable target (destructive — wipes volumes, runtime, config, images, binary)',
+      '  all         Purge every applicable target (destructive: wipes volumes, runtime, config, images, binary)',
       '',
       'Options:',
       '  --yes, -y                Skip confirmation prompt',
@@ -162,7 +162,7 @@ async function runComposeAll(args: string[], ctx: PurgeContext): Promise<void> {
 
 function removePath(path: string, ctx: PurgeContext, label: string): void {
   if (!existsSync(path)) {
-    process.stdout.write(`  ${style.label(`(skip) ${label}:`)} ${path} ${style.label('— not present')}\n`)
+    process.stdout.write(`  ${style.label(`(skip) ${label}:`)} ${path} ${style.label('- not present')}\n`)
     return
   }
   if (ctx.dryRun) {
@@ -202,8 +202,8 @@ const TARGETS: Target[] = [
     label: 'Remove data volumes (DESTRUCTIVE)',
     describe: (ctx) =>
       ctx.stacks.length > 1
-        ? `compose down -v --remove-orphans across ${ctx.stacks.length} projects — wipes all Caracal data`
-        : 'compose down -v --remove-orphans — wipes Postgres and Redis volumes',
+        ? `compose down -v --remove-orphans across ${ctx.stacks.length} projects: wipes all Caracal data`
+        : 'compose down -v --remove-orphans: wipes Postgres and Redis volumes',
     available: (ctx) => ctx.composeAvailable,
     run: async (ctx) => {
       await runComposeAll(['down', '-v', '--remove-orphans'], ctx)
@@ -230,7 +230,7 @@ const TARGETS: Target[] = [
   {
     id: 'runtime',
     label: 'Remove runtime assets (DESTRUCTIVE)',
-    describe: (ctx) => `${ctx.runtimeHome} — bundled compose.yml, .env, provision script`,
+    describe: (ctx) => `${ctx.runtimeHome}: bundled compose.yml, .env, provision script`,
     available: (ctx) => existsSync(ctx.runtimeHome),
     run: async (ctx) => {
       removePath(ctx.runtimeHome, ctx, 'runtime')
@@ -346,7 +346,7 @@ async function selectInteractively(ctx: PurgeContext): Promise<Target[]> {
   usable.forEach((t, i) => {
     const destructive = isDestructive(t)
     const labelStr = destructive ? style.warn(t.label) : t.label
-    process.stdout.write(`  ${style.title(`${i + 1}.`)} ${labelStr} ${style.label(`— ${t.describe(ctx)}`)}\n`)
+    process.stdout.write(`  ${style.title(`${i + 1}.`)} ${labelStr} ${style.label(`- ${t.describe(ctx)}`)}\n`)
   })
   const answer = (await prompt(style.prompt('> '))).toLowerCase()
   if (answer === '' || answer === 'q') return []
@@ -429,11 +429,11 @@ export async function purgeCommand(argv: string[]): Promise<void> {
     }
   }
 
-  printHeader(`Caracal purge — ${ctx.mode} mode${dryRun ? ' (dry-run)' : ''}`)
+  printHeader(`Caracal purge: ${ctx.mode} mode${dryRun ? ' (dry-run)' : ''}`)
   process.stdout.write(style.label('Will purge:\n'))
   for (const t of targets) {
     const labelStr = isDestructive(t) ? style.warn(t.label) : t.label
-    process.stdout.write(`  ${style.label(SYMBOL.bullet)} ${labelStr} ${style.label(`— ${t.describe(ctx)}`)}\n`)
+    process.stdout.write(`  ${style.label(SYMBOL.bullet)} ${labelStr} ${style.label(`- ${t.describe(ctx)}`)}\n`)
   }
   const destructive = targets.some(isDestructive)
   if (destructive && !dryRun) {

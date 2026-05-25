@@ -48,7 +48,7 @@ Packages, connectors, adapters, and provider integrations are secondary. They ar
 
 **One policy evaluation per resource.** OPA is called once per requested resource, not once per exchange. A request for three resources produces three independent evaluations and three independent audit events. This makes per-resource denial granular and its audit trail unambiguous.
 
-**Append-only tamper-evident audit.** Every OPA evaluation — allow or deny — is recorded in an HMAC-chained append-only Postgres table via a Redis stream. Neither the STS nor the Audit service can UPDATE or DELETE audit rows; the Postgres role for the Audit service has INSERT and SELECT permissions only.
+**Append-only tamper-evident audit.** Every OPA evaluation (allow or deny) is recorded in an HMAC-chained append-only Postgres table via a Redis stream. Neither the STS nor the Audit service can UPDATE or DELETE audit rows; the Postgres role for the Audit service has INSERT and SELECT permissions only.
 
 **Action-result audit.** Gateway-proxied calls emit execution audit with request ID, resource, upstream host, auth mode, status, latency, result class, response byte count, and revocation interruption state. Connector-verified services and adapters must emit equivalent result audit if they are used as production execution boundaries.
 

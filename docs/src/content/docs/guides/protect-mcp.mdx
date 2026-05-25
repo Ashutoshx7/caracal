@@ -8,7 +8,7 @@ The MCP transport packages provide `authenticate()` and `extractBearer()` as the
 
 ## Prerequisites
 
-- An MCP server that receives HTTP requests (not stdio transport — stdio has no auth header).
+- An MCP server that receives HTTP requests (not stdio transport: stdio has no auth header).
 - A Caracal zone with the STS JWKS endpoint reachable from the server process.
 - A revocation store (in-memory for development; Redis-backed for production).
 
@@ -182,10 +182,10 @@ consumer.ensure_group()
 # Run consumer.poll_once() in a background thread/task
 ```
 
-`fail_closed=True` means any Redis error during `is_revoked()` is treated as revoked — the mandate is rejected rather than let through. Set `fail_closed=False` only if availability is more important than security in your threat model.
+`fail_closed=True` means any Redis error during `is_revoked()` is treated as revoked: the mandate is rejected rather than let through. Set `fail_closed=False` only if availability is more important than security in your threat model.
 
 ## What to read next
 
-- [Protect a FastMCP App](./protect-fastmcp/) — CaracalAuth middleware for FastMCP servers
-- [Protect an Express App](./protect-express/) — Express middleware approach
-- [Trust Boundaries](../architecture/trust-boundaries/) — what mandate verification actually guarantees
+- [Protect a FastMCP App](./protect-fastmcp/): CaracalAuth middleware for FastMCP servers
+- [Protect an Express App](./protect-express/): Express middleware approach
+- [Trust Boundaries](../architecture/trust-boundaries/): what mandate verification actually guarantees

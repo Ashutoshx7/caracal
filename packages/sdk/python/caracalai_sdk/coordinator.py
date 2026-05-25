@@ -141,7 +141,7 @@ async def spawn_agent(client: CoordinatorClient, bearer: str, req: SpawnRequest)
 
 def _derive_idempotency_key(req: SpawnRequest) -> str | None:
     """Stable key for SDK-issued spawn retries. Skipped when the caller has
-    given no stable inputs (no subject_session_id and no parent_id) — in that case a
+    given no stable inputs (no subject_session_id and no parent_id): in that case a
     retry would still need a fresh session anyway."""
     import hashlib
 

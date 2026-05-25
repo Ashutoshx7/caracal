@@ -1,6 +1,6 @@
 ---
 title: TypeScript SDK
-description: Complete API reference for @caracalai/sdk — the Caracal client for Node services.
+description: Complete API reference for @caracalai/sdk: the Caracal client for Node services.
 pageType: reference
 ---
 
@@ -218,7 +218,7 @@ onAgentStart(cb: (ctx: CaracalContext) => void | Promise<void>): void
 onAgentEnd(cb: (ctx: CaracalContext) => void | Promise<void>): void
 ```
 
-Both hooks fire synchronously within the `spawn()` call — `onAgentStart` before `fn` runs, `onAgentEnd` after `fn` completes (including on throw).
+Both hooks fire synchronously within the `spawn()` call: `onAgentStart` before `fn` runs, `onAgentEnd` after `fn` completes (including on throw).
 
 ## Advanced API
 

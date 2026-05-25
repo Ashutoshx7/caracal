@@ -121,7 +121,7 @@ export class AuditTailView implements View {
   render(ctx: ViewContext): string[] {
     const lines: string[] = []
     if (this.events.length === 0) {
-      lines.push(ui.muted(' no events yet — waiting for activity'))
+      lines.push(ui.muted(' no events yet: waiting for activity'))
       return lines
     }
     const widths = [22, 28, 8, 12, 24]

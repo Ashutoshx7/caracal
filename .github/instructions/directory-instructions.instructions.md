@@ -13,7 +13,7 @@ applyTo: "**/instructions.md"
 - Keep exactly one `instructions.md` per directory.
 - Define scope in the first bullet.
 - List required rules first, forbidden rules next.
-- Use `must`, `must not`, `only` — no optional or vague wording.
+- Use `must`, `must not`, `only`: no optional or vague wording.
 - Use bullet points only.
 - Keep content short and actionable.
 

@@ -45,7 +45,7 @@ type revocationRedis interface {
 // revocationStore answers revocation lookups for the gateway. It is populated
 // by a background consumer reading the same caracal.sessions.revoke stream STS
 // uses, so revocations propagate to the gateway in near real time. Entries are
-// pruned after revocationTTL — by then any resource mandate bound to that authority
+// pruned after revocationTTL: by then any resource mandate bound to that authority
 // has long since expired (max ttlResourceMandate = 15m).
 type revocationStore struct {
 	mu       sync.RWMutex

@@ -1,6 +1,6 @@
 ---
 title: Console
-description: Navigate caracal-console — launch, screen layout, key bindings, views, and live audit streaming.
+description: Navigate caracal-console: launch, screen layout, key bindings, views, and live audit streaming.
 pageType: reference
 ---
 
@@ -66,7 +66,7 @@ For views that require a zone, press `z` to open the zone picker before navigati
 
 ---
 
-## Navigation — keys that work everywhere
+## Navigation: keys that work everywhere
 
 | Key | Action |
 | --- | --- |
@@ -101,13 +101,13 @@ Each entity type opens its own list view with fixed-width columns and an expandi
 
 **Loading states:**
 
-- `loading…` — initial fetch in progress.
-- `(no rows)` — fetch succeeded with an empty result set.
-- Error message in red — fetch failed. Common errors:
-  - `401 Unauthorized` — check `CARACAL_ADMIN_TOKEN`.
-  - `403 Forbidden` — token lacks required scope.
-  - `404 Not Found` — resource may have been deleted since the previous load.
-  - Connection error — check `caracal status` to confirm the stack is running.
+- `loading…`: initial fetch in progress.
+- `(no rows)`: fetch succeeded with an empty result set.
+- Error message in red: fetch failed. Common errors:
+  - `401 Unauthorized`: check `CARACAL_ADMIN_TOKEN`.
+  - `403 Forbidden`: token lacks required scope.
+  - `404 Not Found`: resource may have been deleted since the previous load.
+  - Connection error: check `caracal status` to confirm the stack is running.
 
 **Columns per view:**
 
@@ -183,9 +183,9 @@ API errors are shown in the status line in red. The interface does not exit on A
 
 | Error | Likely cause |
 | --- | --- |
-| `unauthorized — check CARACAL_ADMIN_TOKEN` | Token missing, wrong, or expired |
-| `forbidden — token lacks required scope` | Token does not have admin scope |
-| `not found — resource may have been deleted` | Entity was removed between load and detail fetch |
+| `unauthorized: check CARACAL_ADMIN_TOKEN` | Token missing, wrong, or expired |
+| `forbidden: token lacks required scope` | Token does not have admin scope |
+| `not found: resource may have been deleted` | Entity was removed between load and detail fetch |
 | `is the stack running? try 'caracal up'` | API not reachable |
 | `coordinator URL not set` | `CARACAL_COORDINATOR_URL` is missing |
 | `coordinator token not found` | Run `caracal up` or set `CARACAL_COORDINATOR_TOKEN` / `CARACAL_COORDINATOR_TOKEN_FILE` for a non-default Coordinator |

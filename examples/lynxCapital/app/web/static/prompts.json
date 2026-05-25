@@ -7,7 +7,7 @@
       "icon": "💳"
     },
     {
-      "text": "Run payouts for Brazil — Wise Payouts rail.",
+      "text": "Run payouts for Brazil: Wise Payouts rail.",
       "reason": "FC → BR orchestrator delegation is recorded by the Caracal coordinator; submit_payout runs against wise with the envelope auto-injected by the SDK.",
       "tags": ["BR", "wise-payouts", "submit_payout", "caracal-delegated"],
       "icon": "💳"
@@ -19,7 +19,7 @@
       "icon": "💳"
     },
     {
-      "text": "Process pending invoices for Germany — match against the ERP and pay.",
+      "text": "Process pending invoices for Germany: match against the ERP and pay.",
       "reason": "DE orchestrator extracts invoices, matches in NetSuite, settles via Wise. All three providers reached through the Caracal gateway under one delegated identity.",
       "tags": ["DE", "netsuite", "wise-payouts", "caracal-gateway"],
       "icon": "💳"
@@ -27,13 +27,13 @@
   ],
   "multi": [
     {
-      "text": "Dispatch payouts for US and SG — process all pending vendors now.",
+      "text": "Dispatch payouts for US and SG: process all pending vendors now.",
       "reason": "FC spawns two regional orchestrators in parallel; Caracal issues two independent delegations with disjoint region scopes.",
       "tags": ["US", "SG", "2 agents", "parallel dispatch", "caracal-delegated"],
       "icon": "🌐"
     },
     {
-      "text": "Run payouts for India and Brazil — full pipeline including compliance checks.",
+      "text": "Run payouts for India and Brazil: full pipeline including compliance checks.",
       "reason": "Two orchestrators run OCR, compliance, payment in sequence. compliance-nexus is called via gRPC with Caracal metadata; payment via the REST gateway.",
       "tags": ["IN", "BR", "compliance-nexus", "payments", "caracal-grpc"],
       "icon": "🌐"
@@ -47,7 +47,7 @@
   ],
   "full": [
     {
-      "text": "Process all pending invoices for the US region end-to-end — reconcile, screen vendors, then pay.",
+      "text": "Process all pending invoices for the US region end-to-end: reconcile, screen vendors, then pay.",
       "reason": "OCR → ERP match → compliance → submit_payment, each through the gateway under the same US delegation. Every provider call shows the inherited mandate.",
       "tags": ["US", "ocr-vision", "compliance-nexus", "mercury-bank", "caracal-gateway"],
       "icon": "🛠"
@@ -60,12 +60,12 @@
     },
     {
       "text": "For Germany: extract invoice data, validate vendor compliance, look up withholding rates, then submit payouts.",
-      "reason": "DE orchestrator runs OCR, compliance, tax-rules, then submit_payout via Wise — REST + gRPC + MCP all under one Caracal delegation chain.",
+      "reason": "DE orchestrator runs OCR, compliance, tax-rules, then submit_payout via Wise: REST + gRPC + MCP all under one Caracal delegation chain.",
       "tags": ["DE", "ocr-vision", "tax-rules", "wise-payouts", "caracal-mcp"],
       "icon": "🛠"
     },
     {
-      "text": "Process invoices for all five regions — reconcile against the ERP, then submit payments.",
+      "text": "Process invoices for all five regions: reconcile against the ERP, then submit payments.",
       "reason": "All five orchestrators run NetSuite match then settle on the appropriate rail. Caracal gateway enforces resource policy per region binding.",
       "tags": ["all regions", "netsuite", "payment rails", "caracal-gateway"],
       "icon": "🛠"

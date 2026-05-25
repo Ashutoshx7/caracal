@@ -62,7 +62,7 @@ else
   IFS=',' read -r -a CATS <<< "$CATEGORY"
 fi
 
-say_header "post-release validation — $RELEASE"
+say_header "post-release validation: $RELEASE"
 for c in "${CATS[@]}"; do
   script="$SUB/validate$(tr '[:lower:]' '[:upper:]' <<< "${c:0:1}")${c:1}.sh"
   if [[ ! -x "$script" ]]; then

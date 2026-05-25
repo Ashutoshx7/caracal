@@ -93,8 +93,8 @@ async def enter(
     """Open a child Caracal context bound to the current async task.
 
     At the top of a run (no parent context active), spawns a new agent under
-    the application's bootstrap subject. When a parent context is active —
-    the regional orchestrator, a workflow orchestrator, etc. — issues a
+    the application's bootstrap subject. When a parent context is active -
+    the regional orchestrator, a workflow orchestrator, etc.: issues a
     delegated spawn so the child carries a scoped subject token instead of
     inheriting the parent's authority verbatim."""
     if _caracal is None:

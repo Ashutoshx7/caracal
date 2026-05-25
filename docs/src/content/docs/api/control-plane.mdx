@@ -1,10 +1,10 @@
 ---
 title: Control-Plane REST
-description: Complete endpoint reference for the Caracal control-plane API — zones, applications, resources, providers, policies, grants, sessions, audit, and more.
+description: Complete endpoint reference for the Caracal control-plane API: zones, applications, resources, providers, policies, grants, sessions, audit, and more.
 pageType: api
 ---
 
-The control-plane API manages all Caracal configuration — zones, applications, resources, providers, policies, grants, invitations, sessions, and audit events. It runs on port `3000` and is built on Fastify with Zod request validation. All resource routes are prefixed `/v1` except zone-scoped routes which begin with `/v1/zones/{zoneId}/`.
+The control-plane API manages all Caracal configuration: zones, applications, resources, providers, policies, grants, invitations, sessions, and audit events. It runs on port `3000` and is built on Fastify with Zod request validation. All resource routes are prefixed `/v1` except zone-scoped routes which begin with `/v1/zones/{zoneId}/`.
 
 ## Authentication
 
@@ -16,8 +16,8 @@ Authorization: Bearer <admin-token>
 
 Tokens are stored with a SHA-256 lookup fingerprint and an Argon2id verifier hash in the `admin_tokens` table. Each token carries a scope:
 
-- **`global`** — access to all zones and zone-independent endpoints.
-- **`zone`** — access restricted to routes matching the token's zone ID.
+- **`global`**: access to all zones and zone-independent endpoints.
+- **`zone`**: access restricted to routes matching the token's zone ID.
 
 **Errors:**
 
@@ -46,7 +46,7 @@ Zones, applications, resources, providers, policies, and policy sets are never p
 
 ---
 
-## Zones — `/v1/zones`
+## Zones: `/v1/zones`
 
 ### `GET /v1/zones`
 
@@ -78,15 +78,15 @@ Create a zone. Requires global scope.
 
 | Field | Type | Required | Default | Constraint |
 | --- | --- | --- | --- | --- |
-| `name` | string | Yes | — | 1+ characters |
+| `name` | string | Yes | None | 1+ characters |
 | `org_id` | string | No | `"default"` | 1+ characters |
 | `slug` | string | No | auto-derived | `^[a-z0-9-]+$`, globally unique |
-| `dcr_enabled` | boolean | No | `false` | — |
-| `pkce_required` | boolean | No | `true` | — |
-| `login_flow` | string | No | `"default"` | — |
+| `dcr_enabled` | boolean | No | `false` | None |
+| `pkce_required` | boolean | No | `true` | None |
+| `login_flow` | string | No | `"default"` | None |
 
 **Response 201:** Zone object.  
-**Error 400:** `invalid_zone` — slug already taken.
+**Error 400:** `invalid_zone`: slug already taken.
 
 ### `GET /v1/zones/{id}`
 
@@ -97,7 +97,7 @@ Create a zone. Requires global scope.
 
 Partial update. All fields optional (same as POST). At least one field required.
 
-**Error 400:** `no_fields` — body contains no updatable fields.  
+**Error 400:** `no_fields`: body contains no updatable fields.  
 **Error 404:** `zone_not_found`
 
 ### `DELETE /v1/zones/{id}`
@@ -109,7 +109,7 @@ Archives the zone (sets `archived_at`).
 
 ---
 
-## Applications — `/v1/zones/{zoneId}/applications`
+## Applications: `/v1/zones/{zoneId}/applications`
 
 ### `GET /v1/zones/{zoneId}/applications`
 
@@ -136,10 +136,10 @@ Archives the zone (sets `archived_at`).
 
 | Field | Type | Required | Default |
 | --- | --- | --- | --- |
-| `name` | string | Yes | — |
-| `registration_method` | `"managed" \| "dcr"` | Yes | — |
+| `name` | string | Yes | None |
+| `registration_method` | `"managed" \| "dcr"` | Yes | None |
 | `credential_type` | `"token" \| "password" \| "public-key" \| "url" \| "public"` | No | `"public"` |
-| `client_secret` | string | No | — | Hashed before storage; never returned |
+| `client_secret` | string | No | None | Hashed before storage; never returned |
 | `traits` | string[] | No | `[]` |
 | `consent` | boolean | No | `false` | Stored as `"implicit"` (false) or `"required"` (true) |
 
@@ -187,7 +187,7 @@ All fields optional. Cannot downgrade `credential_type` to `"public"` if an acti
 
 ---
 
-## Resources — `/v1/zones/{zoneId}/resources`
+## Resources: `/v1/zones/{zoneId}/resources`
 
 ### `GET /v1/zones/{zoneId}/resources`
 
@@ -222,7 +222,7 @@ All fields optional. Cannot downgrade `credential_type` to `"public"` if an acti
 | `name` | string | No | Defaults to `identifier` |
 | `upstream_url` | string | No | Must be `http://` or `https://` |
 | `gateway_application_id` | string | Conditional | Required when `upstream_url` is set; must reference an active application in the zone |
-| `prefix` | boolean | No | `false` — if true, `identifier` is a prefix match |
+| `prefix` | boolean | No | `false`: if true, `identifier` is a prefix match |
 | `credential_provider_id` | UUID | No | Provider must exist in zone |
 
 The API maintains the Gateway binding automatically. Creating a resource with `upstream_url` inserts a `gateway_resource_bindings` row for `gateway_application_id`; changing the resource identifier moves the binding; clearing `upstream_url` or deleting the resource removes the binding.
@@ -244,9 +244,9 @@ Response 204 on delete.
 
 ---
 
-## Providers — `/v1/zones/{zoneId}/providers`
+## Providers: `/v1/zones/{zoneId}/providers`
 
-Providers define upstream credential metadata used by STS/Gateway brokered forwarding. OAuth2/OIDC provider grants are forwarded as bearer-style credentials and may be refreshed from `token_endpoint`; API-key grants are forwarded using the required `header_name` or `auth_header`; workload providers are metadata-only in the current OSS runtime. Set `forward_caracal_identity: true` in provider config only for trusted internal upstreams that should receive `X-Caracal-Identity`; external providers do not receive Caracal identity by default. The `config_json` and `secret_config` fields in the request body are merged — fields matching `/secret|password|token|api[_-]?key|private[_-]?key|credential|passphrase/i` are extracted and encrypted under the zone's DEK before storage. Decrypted secrets are never returned in responses; only `secret_config_keys` indicates which secrets are stored.
+Providers define upstream credential metadata used by STS/Gateway brokered forwarding. OAuth2/OIDC provider grants are forwarded as bearer-style credentials and may be refreshed from `token_endpoint`; API-key grants are forwarded using the required `header_name` or `auth_header`; workload providers are metadata-only in the current OSS runtime. Set `forward_caracal_identity: true` in provider config only for trusted internal upstreams that should receive `X-Caracal-Identity`; external providers do not receive Caracal identity by default. The `config_json` and `secret_config` fields in the request body are merged: fields matching `/secret|password|token|api[_-]?key|private[_-]?key|credential|passphrase/i` are extracted and encrypted under the zone's DEK before storage. Decrypted secrets are never returned in responses; only `secret_config_keys` indicates which secrets are stored.
 
 ### `GET /v1/zones/{zoneId}/providers`
 
@@ -280,7 +280,7 @@ Providers define upstream credential metadata used by STS/Gateway brokered forwa
 | `name` | string | No |
 | `owner_type` | string | No | Default `"customer"` |
 | `config_json` | object | No | Public configuration fields |
-| `secret_config` | object | No | Secret fields — encrypted before storage |
+| `secret_config` | object | No | Secret fields: encrypted before storage |
 
 ### `GET /v1/zones/{zoneId}/providers/{id}`
 ### `PATCH /v1/zones/{zoneId}/providers/{id}`
@@ -288,9 +288,9 @@ Providers define upstream credential metadata used by STS/Gateway brokered forwa
 
 ---
 
-## Policies — `/v1/zones/{zoneId}/policies`
+## Policies: `/v1/zones/{zoneId}/policies`
 
-Policies are Rego modules. Policy versions are immutable — once created, a version's content cannot change. Add a new version to revise the policy's logic.
+Policies are Rego modules. Policy versions are immutable: once created, a version's content cannot change. Add a new version to revise the policy's logic.
 
 Policy source must use `package caracal.authz` and define `result`. The validator rejects host, network, clock, random, and OPA-runtime built-ins because authorization evaluation runs inside STS.
 
@@ -327,9 +327,9 @@ Creates the policy and its first version simultaneously.
 
 | Field | Type | Required | Default |
 | --- | --- | --- | --- |
-| `name` | string | Yes | — |
+| `name` | string | Yes | None |
 | `content` | string | Yes | Rego source; validated before storage |
-| `description` | string | No | — |
+| `description` | string | No | None |
 | `owner_type` | string | No | `"customer"` |
 | `schema_version` | string | No | `"2026-05-20"` |
 
@@ -380,7 +380,7 @@ Archives the policy. **Response 204.**
 
 ---
 
-## Policy Sets — `/v1/zones/{zoneId}/policy-sets`
+## Policy Sets: `/v1/zones/{zoneId}/policy-sets`
 
 A policy set bundles one or more policy versions into a versioned manifest that can be atomically activated. Only one version is active at a time per zone. `shadow_version_id` is persisted as rollout metadata; the current OSS runtime does not execute shadow policy decisions.
 
@@ -409,7 +409,7 @@ Create a version from a manifest of policy version IDs.
 }
 ```
 
-**Constraints:** 1–256 entries; no duplicates; all versions must belong to the same zone; all policies must declare `package caracal.authz` and emit `data.caracal.authz.result`.
+**Constraints:** 1 to 256 entries; no duplicates; all versions must belong to the same zone; all policies must declare `package caracal.authz` and emit `data.caracal.authz.result`.
 
 **Response 201:**
 
@@ -424,7 +424,7 @@ Create a version from a manifest of policy version IDs.
 }
 ```
 
-**Error 422:** `invalid_policy_contract` — a policy in the manifest does not meet the contract requirements.
+**Error 422:** `invalid_policy_contract`: a policy in the manifest does not meet the contract requirements.
 
 ### `POST /v1/zones/{zoneId}/policy-sets/{id}/activate`
 
@@ -484,7 +484,7 @@ The simulation checks policy-set contract, schema compatibility, manifest integr
 
 ---
 
-## Grants — `/v1/zones/{zoneId}/grants`
+## Grants: `/v1/zones/{zoneId}/grants`
 
 Grants bind an application to a resource with a set of scopes. They authorize the application to exchange a session token for a mandate scoped to that resource. Revoking a grant also revokes all active sessions for the granted user.
 
@@ -494,12 +494,12 @@ Grants bind an application to a resource with a set of scopes. They authorize th
 
 | Field | Type | Required | Constraint |
 | --- | --- | --- | --- |
-| `application_id` | UUID | Yes | — |
+| `application_id` | UUID | Yes | None |
 | `user_id` | string | Yes | 1+ characters |
-| `resource_id` | UUID | Yes | — |
-| `scopes` | string[] | Yes | 1–64 scopes; each scope: `^[a-z0-9:_./-]+$`, ≤ 200 chars; must be a subset of the resource's scopes |
+| `resource_id` | UUID | Yes | None |
+| `scopes` | string[] | Yes | 1 to 64 scopes; each scope: `^[a-z0-9:_./-]+$`, ≤ 200 chars; must be a subset of the resource's scopes |
 
-**Error 403:** `grant_scopes_exceed_resource` — requested scopes are not a subset of the resource's declared scopes.
+**Error 403:** `grant_scopes_exceed_resource`: requested scopes are not a subset of the resource's declared scopes.
 
 **Response 201:** Grant object with `"status": "active"`.
 
@@ -511,7 +511,7 @@ Revokes the grant (sets `status: "revoked"`) and enqueues session revocation eve
 
 ---
 
-## Sessions — `/v1/zones/{zoneId}/sessions` (read-only)
+## Sessions: `/v1/zones/{zoneId}/sessions` (read-only)
 
 ### `GET /v1/zones/{zoneId}/sessions`
 
@@ -521,7 +521,7 @@ Revokes the grant (sets `status: "revoked"`) and enqueues session revocation eve
 | --- | --- | --- |
 | `status` | string | `"active" \| "revoked" \| "expired"` |
 | `subject_id` | string | Filter by subject |
-| `limit` | integer | 1–1000; default 100 |
+| `limit` | integer | 1 to 1000; default 100 |
 | `cursor` | string | Base64url pagination cursor |
 
 **Response 200:**
@@ -549,7 +549,7 @@ Ordered by `created_at DESC, id DESC`.
 
 ---
 
-## Audit — `/v1/zones/{zoneId}/audit`
+## Audit: `/v1/zones/{zoneId}/audit`
 
 ### `GET /v1/zones/{zoneId}/audit`
 
@@ -562,7 +562,7 @@ Ordered by `created_at DESC, id DESC`.
 | `request_id` | string | Filter by request ID |
 | `decision` | string | `"allow" \| "deny" \| "partial"` |
 | `event_type` | string | Filter by event type |
-| `limit` | integer | 1–1000; default 100 |
+| `limit` | integer | 1 to 1000; default 100 |
 | `cursor` | string | Pagination cursor |
 
 **Response 200:** `{ "rows": [...], "next_cursor": "..." }`
@@ -605,7 +605,7 @@ Returns all audit events for a single request ID with full diagnostic detail.
 
 ---
 
-## Step-up challenges — `/v1/zones/{zoneId}/step-up-challenges`
+## Step-up challenges: `/v1/zones/{zoneId}/step-up-challenges`
 
 ### `GET /v1/zones/{zoneId}/step-up-challenges`
 
@@ -651,7 +651,7 @@ The approver must not be the same subject that triggered the challenge.
 
 ---
 
-## Policy templates — `/v1/policy-templates`
+## Policy templates: `/v1/policy-templates`
 
 ### `GET /v1/policy-templates`
 

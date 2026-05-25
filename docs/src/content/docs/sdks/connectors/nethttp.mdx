@@ -1,6 +1,6 @@
 ---
 title: Go net/http Connector
-description: Middleware() function reference — Options struct, ClaimsFromContext(), error response format, and context key behavior.
+description: Middleware() function reference: Options struct, ClaimsFromContext(), error response format, and context key behavior.
 pageType: reference
 ---
 
@@ -183,6 +183,6 @@ r.With(adminMiddleware).Post("/tool/admin", adminHandler)
 
 ## Relationship to the identity package
 
-The middleware calls `identity.Verify()` from `github.com/garudex-labs/caracal/packages/identity/go` internally, using all fields from `Options` as the `identity.Config`. `ClaimsFromContext` returns the `identity.Claims` struct populated by that call. For non-HTTP contexts — for example, verifying a token in a background job or a gRPC handler — call `identity.Verify()` directly rather than threading an HTTP request through the middleware.
+The middleware calls `identity.Verify()` from `github.com/garudex-labs/caracal/packages/identity/go` internally, using all fields from `Options` as the `identity.Config`. `ClaimsFromContext` returns the `identity.Claims` struct populated by that call. For non-HTTP contexts (for example, verifying a token in a background job or a gRPC handler) call `identity.Verify()` directly rather than threading an HTTP request through the middleware.
 
 See the [Identity Package reference](../../identity/#go) for the full `Claims` type and error values.

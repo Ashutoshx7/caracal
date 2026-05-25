@@ -32,7 +32,7 @@ The `challenge_secret` is returned only in this response. Store it only long eno
 
 ## Satisfy a challenge
 
-The external system — MFA provider, approval portal, or attestation service — calls the control-plane satisfaction endpoint with the approving subject:
+The external system (MFA provider, approval portal, or attestation service) calls the control-plane satisfaction endpoint with the approving subject:
 
 ```bash
 curl -X POST \
@@ -185,7 +185,7 @@ The challenge type is determined by the policy's `step_up_required` diagnostic v
 | Event type | Meaning |
 | ---------- | ------- |
 | `token_exchange` with `diagnostics: [{step_up_required: "mfa"}]` | Policy triggered step-up, challenge created |
-| `challenge_invalid` | Exchange retry failed — wrong secret, expired, or already consumed |
+| `challenge_invalid` | Exchange retry failed: wrong secret, expired, or already consumed |
 | `challenge_cooldown` | Principal is in rate-limit cooldown |
 | `token_exchange` with `challenge_resolved: true` | Successful retry after challenge satisfaction |
 
@@ -196,5 +196,5 @@ the Console Audit view
 
 ## What to read next
 
-- [Author a Rego Policy](./author-policy/) — write the policy that triggers step-up
-- [Concepts: Step-Up Challenge](../concepts/step-up/) — the full lifecycle including atomic consumption
+- [Author a Rego Policy](./author-policy/): write the policy that triggers step-up
+- [Concepts: Step-Up Challenge](../concepts/step-up/): the full lifecycle including atomic consumption

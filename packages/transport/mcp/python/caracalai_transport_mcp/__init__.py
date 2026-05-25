@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# caracalai_transport_mcp — framework-neutral MCP auth surface.
+# caracalai_transport_mcp: framework-neutral MCP auth surface.
 
 from .authenticate import authenticate, check_active_authority, extract_bearer
 from .types import AuthError, AuthResult, ErrorCode, Principal

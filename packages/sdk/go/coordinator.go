@@ -148,7 +148,7 @@ func SpawnAgent(ctx context.Context, client *CoordinatorClient, bearer string, r
 }
 
 // deriveIdempotencyKey produces a stable key for SDK-issued spawn retries.
-// Returns empty when no stable inputs are present — in that case the caller's
+// Returns empty when no stable inputs are present: in that case the caller's
 // retry would still require a fresh session.
 func deriveIdempotencyKey(req SpawnRequest) string {
 	if req.SubjectSessionID == "" && req.ParentID == "" {

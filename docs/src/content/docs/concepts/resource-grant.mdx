@@ -5,7 +5,7 @@ pageType: concept
 keywords: [resource, grant, scopes, upstream, credential provider, identifier, binding]
 ---
 
-A **resource** is anything an agent wants to access — an API endpoint, an MCP tool, a data service, or any addressable target. A **grant** is the binding that permits a specific application to access a resource on behalf of a specific user. Together, resources and grants define the access surface that policies evaluate.
+A **resource** is anything an agent wants to access: an API endpoint, an MCP tool, a data service, or any addressable target. A **grant** is the binding that permits a specific application to access a resource on behalf of a specific user. Together, resources and grants define the access surface that policies evaluate.
 
 ## Resources
 
@@ -41,7 +41,7 @@ A grant binds an application and an optional user identity to a resource and a s
 | `scopes` | string[] | Subset of the resource's scopes being granted |
 | `status` | string | Grant lifecycle status |
 
-The `scopes` on a grant must be a subset of the resource's `scopes`. The grant does not itself authorize access — it establishes that the principal has been given permission. The STS policy still evaluates whether to actually issue a mandate. A grant is necessary but not sufficient.
+The `scopes` on a grant must be a subset of the resource's `scopes`. The grant does not itself authorize access: it establishes that the principal has been given permission. The STS policy still evaluates whether to actually issue a mandate. A grant is necessary but not sufficient.
 
 The `user_id` is an opaque string. Caracal does not maintain a user directory or authenticate users. The `user_id` is stored for audit purposes and is available to policies via `actor_claims`.
 
@@ -119,6 +119,6 @@ The `input.resource.id` (UUID) is also available, but using `identifier` is more
 
 ## Next steps
 
-- [Principal and Application](./principal/) — the application that receives access through grants
-- [Policy](./policy/) — how policies use resource attributes in decisions
-- [Delegation Graph](./delegation/) — how a delegated agent can be restricted to a single resource
+- [Principal and Application](./principal/): the application that receives access through grants
+- [Policy](./policy/): how policies use resource attributes in decisions
+- [Delegation Graph](./delegation/): how a delegated agent can be restricted to a single resource

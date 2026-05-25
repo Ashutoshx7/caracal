@@ -25,7 +25,7 @@ const defaultPGPollInterval = 60 * time.Second
 const opaInputSchemaVersion = "2026-05-20"
 
 // forbiddenBuiltins names Rego built-ins that policies must not use because they
-// reach the network, the host clock, or the OPA runtime — any of which would
+// reach the network, the host clock, or the OPA runtime: any of which would
 // give tenant policy authors a side channel out of the STS process.
 var forbiddenBuiltins = map[string]struct{}{
 	"http.send":           {},

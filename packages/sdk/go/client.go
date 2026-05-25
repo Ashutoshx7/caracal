@@ -186,7 +186,7 @@ func validateSubjectToken(token string) error {
 		return nil
 	}
 	if claims.Exp <= time.Now().Unix() {
-		return fmt.Errorf("caracal: CARACAL_SUBJECT_TOKEN is expired — refresh the bootstrap token before starting")
+		return fmt.Errorf("caracal: CARACAL_SUBJECT_TOKEN is expired: refresh the bootstrap token before starting")
 	}
 	return nil
 }

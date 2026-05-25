@@ -95,7 +95,7 @@ async def validate_setup():
         "label": "OPENAI_API_KEY set",
         "ok": bool(api_key),
         "detail": "Found in environment." if api_key
-                  else "Missing — add it to .env or your shell.",
+                  else "Missing: add it to .env or your shell.",
     })
 
     missing = [k for k in _CARACAL_ENV if not os.environ.get(k)]

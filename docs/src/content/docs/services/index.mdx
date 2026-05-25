@@ -29,14 +29,14 @@ Optional runtime components:
 
 ## Shared infrastructure
 
-All services connect to the same PostgreSQL database and Redis instance. Schema ownership is strict — services only write to their own tables and read from others' when needed:
+All services connect to the same PostgreSQL database and Redis instance. Schema ownership is strict: services only write to their own tables and read from others' when needed:
 
-**PostgreSQL** — primary durable store for all control and data-plane state. Schema migrations run before application startup through the Compose `dbMigrate` service or the Helm migration Job.
+**PostgreSQL**: primary durable store for all control and data-plane state. Schema migrations run before application startup through the Compose `dbMigrate` service or the Helm migration Job.
 
-**Redis** — used for three distinct purposes:
-- **Streams** — asynchronous event bus between services (transactional outbox pattern).
-- **Distributed locks** — advisory locks for spawn constraints (Coordinator) and leader election (Audit).
-- **Short-lived keys** — JTI deduplication (STS, Gateway), step-up challenge state (STS).
+**Redis**: used for three distinct purposes:
+- **Streams**: asynchronous event bus between services (transactional outbox pattern).
+- **Distributed locks**: advisory locks for spawn constraints (Coordinator) and leader election (Audit).
+- **Short-lived keys**: JTI deduplication (STS, Gateway), step-up challenge state (STS).
 
 ---
 
@@ -82,7 +82,7 @@ All services connect to the same PostgreSQL database and Redis instance. Schema 
 | `caracal.sessions.revoke` | API (via outbox) | Gateway, STS | Session revocation propagation |
 | `caracal.policy.invalidate` | API (via outbox) | STS, Gateway | Policy cache invalidation |
 
-The API and Coordinator publish to Redis through a transactional outbox — events are written to a PostgreSQL `event_outbox` table inside the mutation transaction, then forwarded to Redis by a background dispatcher. This guarantees event delivery even if Redis is temporarily unavailable at write time.
+The API and Coordinator publish to Redis through a transactional outbox: events are written to a PostgreSQL `event_outbox` table inside the mutation transaction, then forwarded to Redis by a background dispatcher. This guarantees event delivery even if Redis is temporarily unavailable at write time.
 
 ---
 
@@ -115,8 +115,8 @@ The API and Coordinator publish to Redis through a transactional outbox — even
 
 Every service exposes:
 
-- `GET /health` — always 200, no dependency checks. Use for liveness probes.
-- `GET /ready` — checks PostgreSQL and Redis connectivity. Returns 503 if any dependency is unhealthy. Use for readiness probes.
+- `GET /health`: always 200, no dependency checks. Use for liveness probes.
+- `GET /ready`: checks PostgreSQL and Redis connectivity. Returns 503 if any dependency is unhealthy. Use for readiness probes.
 
 ---
 
@@ -124,6 +124,6 @@ Every service exposes:
 
 All five services are stateless with respect to request handling. Scale any service horizontally by adding replicas. Caveats:
 
-- **STS**: each instance maintains a per-instance cache of decrypted zone signing keys (15 min TTL) and compiled OPA bundles. These are rebuilt from PostgreSQL and Redis on cache miss — no shared memory required, but cold-start evaluation is slower.
+- **STS**: each instance maintains a per-instance cache of decrypted zone signing keys (15 min TTL) and compiled OPA bundles. These are rebuilt from PostgreSQL and Redis on cache miss: no shared memory required, but cold-start evaluation is slower.
 - **Gateway**: each instance caches JWKS (5 min TTL) and binding tables (30 s refresh). Revocation state is synchronized via the `caracal.sessions.revoke` Redis stream.
 - **Audit**: uses a Redis consumer group (`audit-ingestor`). Add replicas to increase throughput; the consumer group partitions delivery automatically. Leader election via Redis lock determines which replica runs the S3 exporter and retention rotator.

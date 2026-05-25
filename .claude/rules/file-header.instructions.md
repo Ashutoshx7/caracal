@@ -15,7 +15,7 @@ applyTo: "**"
 
   {One short, clear one-line description of the file}
   ```
-- The description must be a single sentence — concise and direct.
+- The description must be a single sentence: concise and direct.
 - Describe what the file *is*.
 - Preserve exact spacing: two spaces after `All Rights Reserved.`
 - Include the blank line between the copyright block and the description.

@@ -4,7 +4,7 @@ description: Default-off automation surface that wraps the shared engine dispatc
 pageType: reference
 ---
 
-The Control service is the only network-reachable entry point for management automation. It is a small TypeScript service (`apps/control`) that wraps the same `@caracalai/engine` dispatch the Runtime and Console run in-process. Every surface — human (runtime/console) and machine (Control / SDK) — funnels through one function, so behaviour, validation, audit records, and scope enforcement cannot drift between them.
+The Control service is the only network-reachable entry point for management automation. It is a small TypeScript service (`apps/control`) that wraps the same `@caracalai/engine` dispatch the Runtime and Console run in-process. Every surface (human (runtime/console) and machine (Control / SDK)) funnels through one function, so behaviour, validation, audit records, and scope enforcement cannot drift between them.
 
 The service is **unmounted by default** and managed through the Console. Operators can mount it for long-term availability, enable the endpoint only when automation is needed, disable it for fast logical off, and unmount it when the service will not be used for a while. The engine persists structured lifecycle state and exposes the localhost management endpoint only while Control is enabled.
 
@@ -13,7 +13,7 @@ The service is **unmounted by default** and managed through the Console. Operato
 ## Architecture at a glance
 
 ```
-                packages/engine  (TypeScript — single source of truth)
+                packages/engine  (TypeScript: single source of truth)
                 ├── command catalog            ◄── one definition
                 ├── dispatch(req, principal, ctx)  ◄── one entry point
                 ├── handlers → AdminClient (HTTP → apps/api)
@@ -52,8 +52,8 @@ interface Principal {
 }
 ```
 
-- **Local** — Runtime and Console. `assertScope` returns immediately; hidden commands are reachable. There is no network boundary, so authorisation is the OS's responsibility (file permissions on credentials, the operator's shell).
-- **Remote** — Control. Built from the JWT claims (`sub`, `zone_id`, `client_id`, `scope`). The dispatcher enforces (a) the command is not hidden and (b) the principal's scope list contains `scopeName(descriptor, subcommand)`. No blanket scope exists — every call needs the exact per-resource scope.
+- **Local**: Runtime and Console. `assertScope` returns immediately; hidden commands are reachable. There is no network boundary, so authorisation is the OS's responsibility (file permissions on credentials, the operator's shell).
+- **Remote** (Control. Built from the JWT claims (`sub`, `zone_id`, `client_id`, `scope`). The dispatcher enforces (a) the command is not hidden and (b) the principal's scope list contains `scopeName(descriptor, subcommand)`. No blanket scope exists) every call needs the exact per-resource scope.
 
 ---
 
@@ -71,7 +71,7 @@ interface Principal {
 
 | Step | Component | Failure response |
 | --- | --- | --- |
-| 1. Assign `x-request-id` (16 random bytes) | `handler.ts` | — |
+| 1. Assign `x-request-id` (16 random bytes) | `handler.ts` | None |
 | 2. Verify bearer token: ES256 + issuer + audience + `exp`/`iat` + required claims | `auth.ts` | `401 unauthorized` |
 | 3. Fetch JWKS for `zone_id` (refresh-on-miss, 30 s floor) | `auth.ts` | `401 unauthorized` |
 | 4. Mark JTI in replay cache (fail-closed on Redis error) | `replay.ts` | `401 token replay` |
@@ -79,9 +79,9 @@ interface Principal {
 | 6. Parse JSON body (≤ 64 KB) and build remote `Principal` | `handler.ts` | `400 invalid request` |
 | 7. `engine.dispatch(req, principal, ctx)` | `packages/engine` | `403 / 400 / 501` |
 | 8. Emit audit row to `caracal.audit.events` (allow or deny) | `audit.ts` | logged only |
-| 9. Return `{ ok: true, result }` | `handler.ts` | — |
+| 9. Return `{ ok: true, result }` | `handler.ts` | None |
 
-Audit is emitted on **every** Console state (auth failure, replay, rate limit, dispatch denied, dispatch invalid, dispatch unsupported, allow). The audit row carries `request_id`, `decision`, `subject`, `jti`, `command`, `subcommand`, and `reason`, and — when `AUDIT_HMAC_KEY` is set — an HMAC-SHA256 signature over the canonical JSON payload.
+Audit is emitted on **every** Console state (auth failure, replay, rate limit, dispatch denied, dispatch invalid, dispatch unsupported, allow). The audit row carries `request_id`, `decision`, `subject`, `jti`, `command`, `subcommand`, and `reason`, and (when `AUDIT_HMAC_KEY` is set) an HMAC-SHA256 signature over the canonical JSON payload.
 
 Errors map as:
 
@@ -130,7 +130,7 @@ The Console shows the client secret only when the key is created or rotated. To 
 
 The `caracal-control` audience is maintained by the Control management path and is hidden from generic resource management. It exists so STS can validate Control scopes; operators should not edit or delete it as an ordinary resource.
 
-**Replay defence.** Every accepted `jti` is recorded in Redis (`caracal:control:jti:<jti>`) using `SET NX PX`. TTL is `min(CONTROL_REPLAY_TTL_SEC * 1000, exp_ms - now_ms)`. Memory replay is permitted only in `dev` mode; `rc`/`stable` refuse to start without `CONTROL_REDIS_URL`. Redis errors fail closed — a replay-check failure rejects the request.
+**Replay defence.** Every accepted `jti` is recorded in Redis (`caracal:control:jti:<jti>`) using `SET NX PX`. TTL is `min(CONTROL_REPLAY_TTL_SEC * 1000, exp_ms - now_ms)`. Memory replay is permitted only in `dev` mode; `rc`/`stable` refuse to start without `CONTROL_REDIS_URL`. Redis errors fail closed: a replay-check failure rejects the request.
 
 **Rate limiting.** Per-subject token bucket: `CONTROL_RATE_CAPACITY` tokens refilled over `CONTROL_RATE_WINDOW_SEC`. Buckets evict at 10× the window. Capped at 10 000 distinct subjects to bound memory. Empty subjects are rejected.
 
@@ -150,7 +150,7 @@ The Runtime and Console consume the same `@caracalai/engine` package the Control
 - Console views call the same helpers from menu actions.
 - The authenticated interactive `caracal-console ...` lifecycle flow and the Console Control menu use the same engine lifecycle helpers, so mounted state, enablement state, endpoint health, and cleanup behavior stay synchronized.
 
-The Control service does not call the Console binary or shell out. It calls `engine.dispatch` exactly the way runtime/console do — with a different `Principal`.
+The Control service does not call the Console binary or shell out. It calls `engine.dispatch` exactly the way runtime/console do: with a different `Principal`.
 
 **Console isolation.** The Console is a human-only surface. `apps/console/src/index.ts` refuses to start unless:
 
@@ -224,7 +224,7 @@ The service refuses to start if any required variable is missing for the active 
 
 **Readiness.** `GET /ready` pings the replay backing store. Returns `200` when reachable, `503` when not. Use for readiness probes.
 
-**Shutdown.** SIGTERM/SIGINT trigger a graceful Fastify close and Redis quit. Unhandled rejections and uncaught exceptions exit the process — restart policies belong to the orchestrator.
+**Shutdown.** SIGTERM/SIGINT trigger a graceful Fastify close and Redis quit. Unhandled rejections and uncaught exceptions exit the process: restart policies belong to the orchestrator.
 
 **Logging.** Pino-style line-delimited JSON via `@caracalai/core` logger. Token bodies, HMAC keys, and admin tokens are never logged.
 

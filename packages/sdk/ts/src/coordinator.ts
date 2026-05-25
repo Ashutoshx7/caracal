@@ -116,7 +116,7 @@ export async function spawnAgent(
 
 /**
  * Stable key for SDK-issued spawn retries. Returns undefined when no stable
- * inputs are present — in that case the caller's retry would still require a
+ * inputs are present: in that case the caller's retry would still require a
  * fresh session.
  */
 function deriveIdempotencyKey(req: SpawnRequest): string | undefined {

@@ -60,7 +60,7 @@ function spawnClient(stages: SpawnStage): { query: ReturnType<typeof vi.fn>; rel
   return { query, release: vi.fn() }
 }
 
-describe('POST /v1/zones/:zoneId/agents — spawn', () => {
+describe('POST /v1/zones/:zoneId/agents: spawn', () => {
   it('rejects applications outside the zone', async () => {
     const { app, db } = buildApp()
     db.connect.mockResolvedValueOnce(spawnClient({ refs: { application_exists: false, session_exists: true } }))
@@ -236,7 +236,7 @@ describe('GET /v1/zones/:zoneId/agents/:id', () => {
   })
 })
 
-describe('DELETE /v1/zones/:zoneId/agents/:id — cascade terminate', () => {
+describe('DELETE /v1/zones/:zoneId/agents/:id: cascade terminate', () => {
   it('cascades termination and enqueues revoke + lifecycle events for each descendant', async () => {
     const { app, db } = buildApp()
     const client = {

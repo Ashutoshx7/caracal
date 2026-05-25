@@ -202,8 +202,7 @@ result := {"decision": "allow", "evaluation_status": "complete", "determining_po
 }
 
 // partialVersionDB returns a binding and version whose manifest lists two
-// policy_version_ids, but GetPolicyVersionsByIDs only returns one row —
-// simulating a partial DB result.
+// policy_version_ids, but GetPolicyVersionsByIDs only returns one row: // simulating a partial DB result.
 type partialVersionDB struct {
 	stubDB
 }

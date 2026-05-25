@@ -43,7 +43,7 @@ class CaracalConfig:
     """Bound configuration for a Caracal client.
 
     `subject_token` may be supplied either as a static string or implicitly via
-    `token_source` — a callable returning a fresh STS access token on demand.
+    `token_source`: a callable returning a fresh STS access token on demand.
     Exactly one must be provided.
     """
 
@@ -203,9 +203,9 @@ def _resolve_bindings(
 ) -> list[ResourceBinding]:
     """Single source of truth for resource binding resolution.
 
-    Unions bindings from three sources — TOML credentials block, JSON file
+    Unions bindings from three sources: TOML credentials block, JSON file
     pointed to by ``CARACAL_RESOURCES_FILE``, and the flat
-    ``CARACAL_RESOURCES`` env var — validates each, and returns a
+    ``CARACAL_RESOURCES`` env var: validates each, and returns a
     deduplicated list. Later sources override earlier ones on conflict.
     """
     seen: dict[str, ResourceBinding] = {}
@@ -273,7 +273,7 @@ def _validate_subject_token(token: str) -> None:
         return
     if exp <= time.time():
         raise RuntimeError(
-            "CARACAL_SUBJECT_TOKEN is expired or has an invalid `exp` claim — "
+            "CARACAL_SUBJECT_TOKEN is expired or has an invalid `exp` claim: "
             "refresh the bootstrap token before starting the application"
         )
 
@@ -290,8 +290,8 @@ class Caracal:
 
         Two authentication shapes are supported:
 
-        * **Static subject token** — set `CARACAL_SUBJECT_TOKEN` directly.
-        * **Application client secret** — set `CARACAL_APP_CLIENT_SECRET` and
+        * **Static subject token**: set `CARACAL_SUBJECT_TOKEN` directly.
+        * **Application client secret**: set `CARACAL_APP_CLIENT_SECRET` and
           `CARACAL_STS_URL`; the SDK exchanges the secret for a fresh access
           token on demand and refreshes it before expiry.
 
@@ -582,7 +582,7 @@ class Caracal:
         """Rebind an existing CaracalContext into the current async task.
 
         Use when handing a child context off to a background task (e.g.
-        `asyncio.create_task`) — the contextvar from the parent task is not
+        `asyncio.create_task`): the contextvar from the parent task is not
         visible there, so the receiving coroutine must reattach explicitly.
         """
         token = _ctx_var.set(ctx)
@@ -659,7 +659,7 @@ class Caracal:
         await self.config.coordinator.close()
 
     def middleware(self, *, allow_root: bool = False) -> Callable[[ASGIApp], CaracalASGIMiddleware]:
-        """ASGI middleware factory. Install at module load — `app.add_middleware()`
+        """ASGI middleware factory. Install at module load: `app.add_middleware()`
         only registers middleware before Starlette/FastAPI startup, so this cannot
         be called from inside a `lifespan` context manager.
 

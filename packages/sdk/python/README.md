@@ -2,7 +2,7 @@
 
 Caracal agent identity and delegation SDK: context propagation, spawn, delegate, and transport hooks.
 
-Part of [Caracal](https://github.com/Garudex-Labs/caracal) — a security-first authority and delegation system for AI agents.
+Part of [Caracal](https://github.com/Garudex-Labs/caracal): a security-first authority and delegation system for AI agents.
 
 ## Install
 

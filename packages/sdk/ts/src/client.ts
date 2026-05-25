@@ -501,7 +501,7 @@ function validateSubjectToken(token: string): void {
   if (typeof payload.exp !== "number") return;
   if (payload.exp <= Math.floor(Date.now() / 1000)) {
     throw new Error(
-      "CARACAL_SUBJECT_TOKEN is expired — refresh the bootstrap token before starting the application",
+      "CARACAL_SUBJECT_TOKEN is expired: refresh the bootstrap token before starting the application",
     );
   }
 }

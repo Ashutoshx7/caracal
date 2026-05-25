@@ -17,7 +17,7 @@ import (
 )
 
 // FuzzExchangeRequestParsing feeds random form-encoded payloads into the HTTP handler.
-// The handler must never panic regardless of input — it may return 4xx/5xx but not crash.
+// The handler must never panic regardless of input: it may return 4xx/5xx but not crash.
 func FuzzExchangeRequestParsing(f *testing.F) {
 	// Seed corpus: valid-structure forms that exercise different code paths.
 	seeds := []url.Values{

@@ -484,7 +484,7 @@ func TestProxySSEStreamsAndFlushes(t *testing.T) {
 	select {
 	case <-gotChunk:
 	case <-time.After(2 * time.Second):
-		t.Fatal("first SSE chunk not received within 2s — flushing broken")
+		t.Fatal("first SSE chunk not received within 2s: flushing broken")
 	}
 }
 

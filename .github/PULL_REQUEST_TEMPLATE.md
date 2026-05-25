@@ -6,7 +6,7 @@
 
 ## Summary
 
-<!-- What does this PR do in 2–3 sentences? -->
+<!-- What does this PR do in 2 to 3 sentences? -->
 
 
 ## Related Issue

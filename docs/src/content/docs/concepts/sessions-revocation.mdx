@@ -94,7 +94,7 @@ The Coordinator does not kill an arbitrary AI framework process. It changes Cara
 
 When a session is terminated (or when a delegation edge is revoked), the Coordinator writes events to the `caracal_outbox` table. A background publisher reads the outbox and publishes to the `caracal.sessions.revoke` Redis stream.
 
-**Why the outbox**: The Coordinator wraps session operations in a database transaction. Writing the revocation event to the same transaction guarantees that the event is published if and only if the session was actually terminated — no dual-write bugs.
+**Why the outbox**: The Coordinator wraps session operations in a database transaction. Writing the revocation event to the same transaction guarantees that the event is published if and only if the session was actually terminated: no dual-write bugs.
 
 The revocation stream has two consumers:
 
@@ -102,7 +102,7 @@ The revocation stream has two consumers:
 
 **`gateway-revocation`** (Gateway): The Gateway subscribes and updates its `revocationStore`. On every request, the Gateway checks the mandate's `sid`, `root_sid`, `agent_session_id`, and `delegation_edge_id` against the revocation cache. If any authority anchor was revoked, the request returns HTTP 401 before reaching the upstream. If revocation arrives during an in-progress streaming response, the Gateway checks at each 4 KB chunk boundary and truncates the stream.
 
-Revocation entries in the Gateway's store are kept for 24 hours — long enough to outlive any resource mandate's 15-minute TTL.
+Revocation entries in the Gateway's store are kept for 24 hours: long enough to outlive any resource mandate's 15-minute TTL.
 
 ## Triggers for revocation
 
@@ -146,6 +146,6 @@ When an agent is terminated, the Coordinator publishes both the execution sessio
 
 ## Next steps
 
-- [Delegation Graph](./delegation/) — how cascade revocation propagates through the session tree
-- [Audit Ledger](./audit-ledger/) — what gets recorded when a session is revoked
-- [Mandate](./mandate/) — the `sid` claim that links mandates to sessions
+- [Delegation Graph](./delegation/): how cascade revocation propagates through the session tree
+- [Audit Ledger](./audit-ledger/): what gets recorded when a session is revoked
+- [Mandate](./mandate/): the `sid` claim that links mandates to sessions

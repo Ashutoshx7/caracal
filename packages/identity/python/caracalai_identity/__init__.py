@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# caracalai_identity — JWT verify, JWKS cache, scope evaluation, and claim shapes.
+# caracalai_identity: JWT verify, JWKS cache, scope evaluation, and claim shapes.
 
 from .jwks import JwksCache
 from .scope import has_scope

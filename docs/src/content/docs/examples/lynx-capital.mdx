@@ -6,7 +6,7 @@ pageType: workflow
 
 The Lynx Capital example is a complete Python application at `examples/lynxCapital/` that runs a realistic weekly payout cycle: 4,200 invoices, 5 geographic regions, approximately $8.5M USD in payments, multi-currency settlement, regional tax compliance, vendor contract verification, and threshold-based routing across banking rails. Caracal is real in this example: the Python SDK, STS token exchange, coordinator sessions, gateway resource routing, Console, and control API are the actual integration path. Local provider fixtures are isolated under `_mock/`; application code treats providers through normal clients and transports.
 
-The application is not a tutorial scaffold. It is a production-pattern reference that demonstrates how Caracal's authorization model maps to real enterprise workloads — specifically the patterns of hierarchical agent spawning, delegation scope enforcement, ephemeral single-operation agents, and application-level provider clients across REST, gRPC, MCP, and SSE fixtures.
+The application is not a tutorial scaffold. It is a production-pattern reference that demonstrates how Caracal's authorization model maps to real enterprise workloads: specifically the patterns of hierarchical agent spawning, delegation scope enforcement, ephemeral single-operation agents, and application-level provider clients across REST, gRPC, MCP, and SSE fixtures.
 
 ---
 
@@ -20,7 +20,7 @@ The application is not a tutorial scaffold. It is a production-pattern reference
 
 **Application-level provider transport.** Within the same orchestration run, agents call local provider fixtures over REST (Mercury Bank, Wise, NetSuite), gRPC (Treasury Operations), MCP (Vendor Portal), and SSE streaming (FX rates). Caracal enforces the agent/session authority before those calls; non-HTTP transports are application connector examples, not automatic Gateway brokering paths.
 
-**Full traceability.** Every action — spawn, delegation, tool call, service call, result — emits a typed event. The complete lineage of who spawned whom, what tools they called, and what the external services returned is reconstructable from the event log.
+**Full traceability.** Every action (spawn, delegation, tool call, service call, result) emits a typed event. The complete lineage of who spawned whom, what tools they called, and what the external services returned is reconstructable from the event log.
 
 ---
 
@@ -34,7 +34,7 @@ examples/lynxCapital/
 │   ├── agents/
 │   │   ├── roles.py            # 9 agent role definitions with scope templates
 │   │   ├── tools.py            # 40+ tool functions (one per provider action)
-│   │   └── runner.py           # AgentHandle, AgentRunner — session lifecycle
+│   │   └── runner.py           # AgentHandle, AgentRunner: session lifecycle
 │   ├── orchestration/
 │   │   ├── swarm.py            # LLM orchestration loop (Finance Control + Regional)
 │   │   └── topology.py         # Agent topology graph for visualization
@@ -71,7 +71,7 @@ examples/lynxCapital/
 
 - Python 3.14+
 - Docker and Docker Compose
-- An OpenAI API key (`OPENAI_API_KEY`) — the application fails at startup if this is absent
+- An OpenAI API key (`OPENAI_API_KEY`): the application fails at startup if this is absent
 
 ### Install dependencies
 
@@ -158,7 +158,7 @@ Edit `.env` and set `OPENAI_API_KEY`. All other variables have defaults that poi
 ```bash
 OPENAI_API_KEY=sk-...
 
-# Provider URLs (defaults shown — no change needed for local setup)
+# Provider URLs (defaults shown: no change needed for local setup)
 LYNX_MERCURY_URL=http://127.0.0.1:8800
 LYNX_WISE_URL=http://127.0.0.1:8800
 LYNX_FX_STREAM_URL=http://127.0.0.1:8810/v1/stream
@@ -205,9 +205,9 @@ Finance Control              global scope
     └── Exception *           exception:{vendor_id}
 ```
 
-`*` — Ephemeral agents. They are spawned for a single operation and terminated on completion.
+`*`: Ephemeral agents. They are spawned for a single operation and terminated on completion.
 
-**Scope templates determine tool authority.** The Payment Execution agent's scope is `payment:{vendor_id}:{invoice_id}` — scoped to exactly one vendor and one invoice. It is the only agent permitted to call `submit_payment`, `submit_payout`, and `create_outbound_payment`. No other agent has these tools. The Exception agent's scope explicitly excludes all payment tools; it can only call `check_vendor` and `get_vendor_profile`.
+**Scope templates determine tool authority.** The Payment Execution agent's scope is `payment:{vendor_id}:{invoice_id}`: scoped to exactly one vendor and one invoice. It is the only agent permitted to call `submit_payment`, `submit_payout`, and `create_outbound_payment`. No other agent has these tools. The Exception agent's scope explicitly excludes all payment tools; it can only call `check_vendor` and `get_vendor_profile`.
 
 ---
 
@@ -407,7 +407,7 @@ event: agent_terminate
 data: {"agent_id": "pe-001", "status": "completed"}
 ```
 
-Mercury Bank enqueues two webhook callbacks — `transaction.posted` (0.5 seconds) and `transaction.settled` (1.5 seconds) — which arrive asynchronously and update the event stream.
+Mercury Bank enqueues two webhook callbacks (`transaction.posted` (0.5 seconds) and `transaction.settled` (1.5 seconds)) which arrive asynchronously and update the event stream.
 
 ### 7. Finance Control receives the result
 

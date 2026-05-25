@@ -917,7 +917,7 @@ async def run_swarm(run_id: str, prompt: str) -> None:
 
         mem = memory_store.open(fc.id, SystemMessage(content=cfg.prompts.financeControl))
         if ctx:
-            mem.append(SystemMessage(content=f"[Session context — prior runs and conversation]\n{ctx}"))
+            mem.append(SystemMessage(content=f"[Session context: prior runs and conversation]\n{ctx}"))
         mem.append(HumanMessage(content=prompt))
         _emit_memory_snapshot(run_id, mem)
 

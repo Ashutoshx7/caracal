@@ -58,7 +58,7 @@ Postgres 17 and earlier are not tested and may not support all features used in 
 | Required policy | `maxmemory-policy noeviction` |
 | Persistence | AOF (`appendonly yes`, `appendfsync everysec`) |
 
-Redis 7 and earlier are not tested. The noeviction policy is mandatory — eviction of stream or session data causes correctness failures in the revocation pipeline.
+Redis 7 and earlier are not tested. The noeviction policy is mandatory: eviction of stream or session data causes correctness failures in the revocation pipeline.
 
 ---
 
@@ -109,4 +109,4 @@ The provided `docker-compose.yml` at `infra/docker/docker-compose.yml` pins all 
 
 ## Browser support (docs and UI)
 
-The Caracal documentation site and any web UI components in examples target modern evergreen browsers (Chrome, Firefox, Safari, Edge — current and one prior release). Internet Explorer is not supported.
+The Caracal documentation site and any web UI components in examples target modern evergreen browsers (Chrome, Firefox, Safari, Edge: current and one prior release). Internet Explorer is not supported.

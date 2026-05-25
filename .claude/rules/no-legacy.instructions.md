@@ -23,4 +23,4 @@ applyTo: "**"
 - Must not layer new implementations on top of existing ones.
 - Must not leave stubs, wrappers, or adapters whose only purpose is bridging old and new.
 - Must not add migration helpers unless a migration is explicitly required now.
-- Must not patch on top of legacy code — rewrite it fully.
+- Must not patch on top of legacy code: rewrite it fully.

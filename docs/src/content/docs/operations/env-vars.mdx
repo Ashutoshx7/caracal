@@ -36,7 +36,7 @@ For service deployments, prefer the `*_FILE` form for sensitive values so the se
 | Variable | Default | Description |
 | --- | --- | --- |
 | `POSTGRES_USER` | `caracal` | Database user |
-| `POSTGRES_PASSWORD` | — | **Required.** Database password |
+| `POSTGRES_PASSWORD` | None | **Required.** Database password |
 | `POSTGRES_DB` | `caracal` | Database name |
 
 Application services read `DATABASE_URL`. The Docker/engine tooling uses the individual `POSTGRES_*` variables to initialize Postgres and generate the `DATABASE_URL` secret mounted into services.
@@ -47,7 +47,7 @@ Application services read `DATABASE_URL`. The Docker/engine tooling uses the ind
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `REDIS_PASSWORD` | — | **Required.** Redis auth password |
+| `REDIS_PASSWORD` | None | **Required.** Redis auth password |
 | `REDIS_HOST` | `localhost` | Redis host (used when REDIS_URL is absent) |
 | `REDIS_PORT` | `6379` | Redis port |
 
@@ -59,15 +59,15 @@ Application services read `REDIS_URL`. Redis provisioning scripts use `REDIS_HOS
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `DATABASE_URL` | — | **Required.** Postgres connection string |
-| `REDIS_URL` | — | **Required.** Redis connection string |
-| `ZONE_KEK` | — | **Required.** 32-byte hex-encoded KEK |
-| `AUDIT_HMAC_KEY` | — | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`. 32-byte hex-encoded HMAC key |
-| `ISSUER_URL` | — | **Required.** Absolute URL of the STS (e.g., `http://localhost:8080`). Written into JWT `iss` claim. |
-| `PORT` | — | **Required.** Listen port. Must be `8080`. |
+| `DATABASE_URL` | None | **Required.** Postgres connection string |
+| `REDIS_URL` | None | **Required.** Redis connection string |
+| `ZONE_KEK` | None | **Required.** 32-byte hex-encoded KEK |
+| `AUDIT_HMAC_KEY` | None | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`. 32-byte hex-encoded HMAC key |
+| `ISSUER_URL` | None | **Required.** Absolute URL of the STS (e.g., `http://localhost:8080`). Written into JWT `iss` claim. |
+| `PORT` | None | **Required.** Listen port. Must be `8080`. |
 | `ZONE_KEK_PROVIDER` | `local` | KEK provider. Currently only `local` is supported. |
-| `STREAMS_HMAC_KEY` | — | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`. 32-byte hex-encoded key for signing Redis stream messages |
-| `GATEWAY_STS_HMAC_KEY` | — | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`. 32-byte hex-encoded key for verifying signed internal Gateway/API calls |
+| `STREAMS_HMAC_KEY` | None | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`. 32-byte hex-encoded key for signing Redis stream messages |
+| `GATEWAY_STS_HMAC_KEY` | None | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`. 32-byte hex-encoded key for verifying signed internal Gateway/API calls |
 | `MAX_GRANT_TTL_SECONDS` | `3600` | Maximum persisted provider-grant token lifetime in seconds |
 | `OPA_POLL_SECONDS` | `60` | Interval (seconds) between OPA policy bundle polls |
 | `LOG_LEVEL` | `info` | Log verbosity (`debug`, `info`, `warn`, `error`) |
@@ -78,16 +78,16 @@ Application services read `REDIS_URL`. Redis provisioning scripts use `REDIS_HOS
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `DATABASE_URL` | — | **Required.** Postgres connection string |
-| `REDIS_URL` | — | **Required.** Redis connection string |
-| `STS_URL` | — | **Required.** STS base URL (e.g., `http://sts:8080`) |
-| `ZONE_KEK` | — | **Required.** 32-byte hex-encoded KEK |
-| `CARACAL_ADMIN_TOKEN` / `CARACAL_ADMIN_TOKEN_FILE` | — | Bootstrap admin token. Seeded into the database on first startup. Prefer the file-backed form. |
+| `DATABASE_URL` | None | **Required.** Postgres connection string |
+| `REDIS_URL` | None | **Required.** Redis connection string |
+| `STS_URL` | None | **Required.** STS base URL (e.g., `http://sts:8080`) |
+| `ZONE_KEK` | None | **Required.** 32-byte hex-encoded KEK |
+| `CARACAL_ADMIN_TOKEN` / `CARACAL_ADMIN_TOKEN_FILE` | None | Bootstrap admin token. Seeded into the database on first startup. Prefer the file-backed form. |
 | `PORT` | `3000` | Listen port |
 | `HOST` | `0.0.0.0` in rc or stable, `127.0.0.1` otherwise | Listen host |
 | `WORKER_ID` | Derived from hostname and process ID | Outbox worker identifier |
-| `STREAMS_HMAC_KEY` | — | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`. 32-byte hex-encoded key for signing outbox stream messages |
-| `GATEWAY_STS_HMAC_KEY` | — | Optional. Enables signed STS policy simulation calls; must be 32-byte hex when set. |
+| `STREAMS_HMAC_KEY` | None | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`. 32-byte hex-encoded key for signing outbox stream messages |
+| `GATEWAY_STS_HMAC_KEY` | None | Optional. Enables signed STS policy simulation calls; must be 32-byte hex when set. |
 | `LOG_LEVEL` | `info` | Log verbosity |
 | `SHUTDOWN_GRACE_MS` | `15000` | Graceful shutdown window in milliseconds |
 | `API_BODY_LIMIT_BYTES` | `1048576` | Request body size limit (1 MB) |
@@ -117,16 +117,16 @@ Application services read `REDIS_URL`. Redis provisioning scripts use `REDIS_HOS
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `DATABASE_URL` | — | **Required.** Postgres connection string |
-| `REDIS_URL` | — | **Required.** Redis connection string |
-| `STS_URL` | — | **Required.** STS base URL with scheme (http or https) |
+| `DATABASE_URL` | None | **Required.** Postgres connection string |
+| `REDIS_URL` | None | **Required.** Redis connection string |
+| `STS_URL` | None | **Required.** STS base URL with scheme (http or https) |
 | `CARACAL_MODE` | `stable` | `dev`, `rc`, or `stable`; controls safety checks |
-| `STREAMS_HMAC_KEY` | — | **Required.** 32-byte hex-encoded key for verifying stream signatures |
-| `AUDIT_HMAC_KEY` | — | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable` |
-| `GATEWAY_STS_HMAC_KEY` | — | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`. 32-byte hex-encoded key for signing Gateway-to-STS exchanges. |
+| `STREAMS_HMAC_KEY` | None | **Required.** 32-byte hex-encoded key for verifying stream signatures |
+| `AUDIT_HMAC_KEY` | None | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable` |
+| `GATEWAY_STS_HMAC_KEY` | None | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`. 32-byte hex-encoded key for signing Gateway-to-STS exchanges. |
 | `PORT` | `8081` | Must be `8081`. Enforced at startup; any other value panics. |
 | `ALLOW_PRIVATE_UPSTREAMS` | `false` | Allow proxying to private/loopback upstream URLs |
-| `UPSTREAM_HOST_ALLOWLIST` | — | Comma-separated upstream host allowlist. Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable` and `ALLOW_PRIVATE_UPSTREAMS=true`. |
+| `UPSTREAM_HOST_ALLOWLIST` | None | Comma-separated upstream host allowlist. Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable` and `ALLOW_PRIVATE_UPSTREAMS=true`. |
 | `JTI_FAIL_OPEN` | `false` | Skip JTI replay check on Redis error. Forbidden when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`. |
 | `STS_TIMEOUT` | `5s` | STS request timeout (duration format, e.g., `5s`, `500ms`) |
 | `UPSTREAM_TIMEOUT` | `30s` | Upstream proxy timeout |
@@ -143,16 +143,16 @@ Application services read `REDIS_URL`. Redis provisioning scripts use `REDIS_HOS
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `DATABASE_URL` | — | **Required.** Postgres connection string |
-| `REDIS_URL` | — | **Required.** Redis connection string |
-| `AUDIT_HMAC_KEY` | — | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`. 32-byte hex-encoded HMAC key for audit chain verification |
-| `PORT` | — | **Must be `9090`.** |
+| `DATABASE_URL` | None | **Required.** Postgres connection string |
+| `REDIS_URL` | None | **Required.** Redis connection string |
+| `AUDIT_HMAC_KEY` | None | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`. 32-byte hex-encoded HMAC key for audit chain verification |
+| `PORT` | None | **Must be `9090`.** |
 | `AUDIT_RETENTION_DAYS` | `365` | Number of days to retain audit events. Older monthly partitions are dropped. |
 | `AUDIT_MAX_DELIVERIES` | `8` | Max delivery attempts for an audit event before DLQ routing |
 | `AUDIT_CLAIM_IDLE_SECS` | `30` | Seconds before an unclaimed PEL entry is reclaimed by another consumer |
 | `AUDIT_TAMPER_ROLLING_HOURS` | `4` | Rolling window for tamper detection sweep |
-| `AUDIT_EXPORT_S3_ENDPOINT` | — | S3-compatible endpoint URL for Parquet export (e.g., MinIO) |
-| `AUDIT_EXPORT_S3_BUCKET` | — | S3 bucket name for Parquet export. Leave empty to disable export. |
+| `AUDIT_EXPORT_S3_ENDPOINT` | None | S3-compatible endpoint URL for Parquet export (e.g., MinIO) |
+| `AUDIT_EXPORT_S3_BUCKET` | None | S3 bucket name for Parquet export. Leave empty to disable export. |
 | `AUDIT_EXPORT_S3_REGION` | `us-east-1` | AWS region for S3 export |
 | `HOSTNAME` | `audit-worker-0` | Consumer name for the audit stream consumer group |
 | `LOG_LEVEL` | `info` | Log verbosity |
@@ -163,14 +163,14 @@ Application services read `REDIS_URL`. Redis provisioning scripts use `REDIS_HOS
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `DATABASE_URL` | — | **Required.** Postgres connection string |
-| `REDIS_URL` | — | **Required.** Redis connection string |
-| `STS_URL` | — | **Required.** STS base URL |
-| `ISSUER_URL` | — | **Required.** STS issuer URL (same as `ISSUER_URL` in STS). Also the required `aud` claim on bearer JWTs. |
-| `AGENT_COORDINATOR_SCOPE` | — | **Required.** Required scope for coordinator calls (e.g., `agent:lifecycle`) |
+| `DATABASE_URL` | None | **Required.** Postgres connection string |
+| `REDIS_URL` | None | **Required.** Redis connection string |
+| `STS_URL` | None | **Required.** STS base URL |
+| `ISSUER_URL` | None | **Required.** STS issuer URL (same as `ISSUER_URL` in STS). Also the required `aud` claim on bearer JWTs. |
+| `AGENT_COORDINATOR_SCOPE` | None | **Required.** Required scope for coordinator calls (e.g., `agent:lifecycle`) |
 | `PORT` | `4000` | Listen port |
 | `HOST` | `0.0.0.0` in rc or stable, `127.0.0.1` otherwise | Listen host |
-| `STREAMS_HMAC_KEY` | — | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`. 32-byte hex-encoded key for signing outbox stream messages |
+| `STREAMS_HMAC_KEY` | None | Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`. 32-byte hex-encoded key for signing outbox stream messages |
 | **Database pool** | | |
 | `DB_POOL_MAX` | `20` | Maximum Postgres connection pool size |
 | `DB_STATEMENT_TIMEOUT_MS` | `10000` | Per-statement timeout |
@@ -216,13 +216,13 @@ The control service is unmounted by default and managed through the authenticate
 | `CARACAL_CONTROL_STATE_DIR` | managed by the runtime | Host directory mounted read-only into the Control container so runtime/console can open or close the endpoint gate |
 | `CONTROL_PORT` | `8087` | Listen port |
 | `CONTROL_HOST` | `127.0.0.1` (dev), `0.0.0.0` (rc/stable) | Listen address |
-| `STS_JWKS_URL` | — | **Required.** STS JWKS URL used to verify bearer tokens (`?zone_id=…` is appended per token) |
-| `STS_ISSUER_URL` | — | **Required.** Expected issuer for control bearer tokens |
-| `CONTROL_AUDIENCE` | — | **Required.** Expected audience for control bearer tokens |
-| `CARACAL_API_URL` | — | **Required.** Admin API base URL the engine dispatches to (e.g. `http://api:3000`) |
-| `CONTROL_API_TOKEN` / `CONTROL_API_TOKEN_FILE` | — | **Required.** Admin token used by the engine when calling the API. Prefer the file-backed form. |
-| `CONTROL_REDIS_URL` | — | Replay cache and audit sink Redis URL. Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`; optional in dev mode |
-| `AUDIT_HMAC_KEY` | — | Hex-encoded ≥32-byte key for HMAC-SHA256 signing of audit rows. Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable` |
+| `STS_JWKS_URL` | None | **Required.** STS JWKS URL used to verify bearer tokens (`?zone_id=…` is appended per token) |
+| `STS_ISSUER_URL` | None | **Required.** Expected issuer for control bearer tokens |
+| `CONTROL_AUDIENCE` | None | **Required.** Expected audience for control bearer tokens |
+| `CARACAL_API_URL` | None | **Required.** Admin API base URL the engine dispatches to (e.g. `http://api:3000`) |
+| `CONTROL_API_TOKEN` / `CONTROL_API_TOKEN_FILE` | None | **Required.** Admin token used by the engine when calling the API. Prefer the file-backed form. |
+| `CONTROL_REDIS_URL` | None | Replay cache and audit sink Redis URL. Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable`; optional in dev mode |
+| `AUDIT_HMAC_KEY` | None | Hex-encoded ≥32-byte key for HMAC-SHA256 signing of audit rows. Required when `CARACAL_MODE=rc` or `CARACAL_MODE=stable` |
 | `CONTROL_RATE_CAPACITY` | `60` | Per-subject token-bucket capacity |
 | `CONTROL_RATE_WINDOW_SEC` | `60` | Per-subject token-bucket refill window |
 | `CONTROL_REPLAY_TTL_SEC` | `3600` | Maximum JTI replay retention; bounded further by the token's `exp` |

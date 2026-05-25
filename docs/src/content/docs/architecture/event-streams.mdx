@@ -4,7 +4,7 @@ description: The nine Redis streams, consumer groups, the transactional outbox p
 pageType: architecture
 ---
 
-Caracal uses Redis Streams as its event bus. State changes that need to propagate across service boundaries — session revocation, policy activation, key rotation, audit events — are published to named streams and consumed by subscriber services. All production stream messages are HMAC-signed. The transactional outbox pattern guarantees that events are published if and only if the database transaction that produced them committed.
+Caracal uses Redis Streams as its event bus. State changes that need to propagate across service boundaries (session revocation, policy activation, key rotation, audit events) are published to named streams and consumed by subscriber services. All production stream messages are HMAC-signed. The transactional outbox pattern guarantees that events are published if and only if the database transaction that produced them committed.
 
 ## Stream inventory
 
@@ -18,7 +18,7 @@ Caracal uses Redis Streams as its event bus. State changes that need to propagat
 | `caracal.agents.lifecycle` | Coordinator | `coordinator-relay` | Agent spawn, suspend, resume, terminate events |
 | `caracal.invocations.lifecycle` | Coordinator | `invocations-observer` | Agent invocation state transitions |
 | `caracal.delegations.invalidate` | Coordinator | `delegations-observer` | Delegation edge creation and revocation |
-| `caracal.providers.ratelimit` | API | — | Rate limit tracking for credential providers |
+| `caracal.providers.ratelimit` | API | None | Rate limit tracking for credential providers |
 
 ---
 
@@ -30,7 +30,7 @@ At startup the Compose Redis container entrypoint runs `provision-streams.sh` af
 redis-cli XGROUP CREATE "${stream}" "${group}" '$' MKSTREAM
 ```
 
-`MKSTREAM` creates the stream if it does not exist. `$` positions the group cursor at the end of the stream — each group only receives messages published after it was created. The script is idempotent: `BUSYGROUP` errors (group already exists) are ignored.
+`MKSTREAM` creates the stream if it does not exist. `$` positions the group cursor at the end of the stream: each group only receives messages published after it was created. The script is idempotent: `BUSYGROUP` errors (group already exists) are ignored.
 
 The script exits with code 0 after all groups are created and writes a readiness marker for the Redis healthcheck. Application services start only after Redis reports healthy.
 
@@ -166,6 +166,6 @@ The STS subscribes via `sts-keys`. On receipt it calls `KeyCache.Invalidate(zone
 
 ## Consumer semantics
 
-All consumers use `XREADGROUP` with `XACK` sent only after successful processing — at-least-once delivery. A consumer that crashes between `XREADGROUP` and `XACK` leaves messages in the Pending Entry List. A `reapLoop` goroutine reclaims idle PEL entries after a configurable idle threshold.
+All consumers use `XREADGROUP` with `XACK` sent only after successful processing: at-least-once delivery. A consumer that crashes between `XREADGROUP` and `XACK` leaves messages in the Pending Entry List. A `reapLoop` goroutine reclaims idle PEL entries after a configurable idle threshold.
 
 The STS assigns each consumer instance a unique ID as `{hostname}-{pid}`. Multiple STS replicas can consume the same consumer group; Redis distributes messages across active consumers within the group.

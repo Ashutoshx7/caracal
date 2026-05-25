@@ -54,7 +54,7 @@ func verifyClientSecret(stored, presented string) bool {
 // verifyArgon2id checks `presented` against an `argon2id$<saltB64>$<hashB64>` storage
 // form. Malformed records are still run through one full Argon2id derivation against a
 // constant dummy salt so the verification time does not reveal whether the stored hash
-// is parseable — only legitimate operator misconfiguration produces a mismatch here,
+// is parseable: only legitimate operator misconfiguration produces a mismatch here,
 // but the constant-time stance avoids leaking format-validity bits over the network.
 func verifyArgon2id(stored, presented string) bool {
 	parts := strings.Split(strings.TrimPrefix(stored, argon2Prefix), "$")

@@ -10,7 +10,7 @@ Redis stream groups are provisioned by the Redis bootstrap script before Redis r
 
 ## Services
 
-### STS — Security Token Service
+### STS: Security Token Service
 
 | Attribute | Value |
 | --------- | ----- |
@@ -36,7 +36,7 @@ The STS is the sole issuer of mandates. It receives RFC 8693 token exchange requ
 
 ---
 
-### Gateway — MCP Reverse Proxy
+### Gateway: MCP Reverse Proxy
 
 | Attribute | Value |
 | --------- | ----- |
@@ -60,7 +60,7 @@ The Gateway is the ingress point for agent calls to Gateway-routable resources. 
 
 ---
 
-### API — Control Plane
+### API: Control Plane
 
 | Attribute | Value |
 | --------- | ----- |
@@ -76,7 +76,7 @@ The API is the admin control plane. It manages zones, applications, resources, c
 
 ---
 
-### Coordinator — Agent Session Manager
+### Coordinator: Agent Session Manager
 
 | Attribute | Value |
 | --------- | ----- |
@@ -99,7 +99,7 @@ The Coordinator manages agent session lifecycle and the delegation graph. It exp
 
 ---
 
-### Audit — Event Ingestor
+### Audit: Event Ingestor
 
 | Attribute | Value |
 | --------- | ----- |
@@ -173,12 +173,12 @@ Each service waits for a `healthy` signal from its dependencies before starting.
 
 |             | Postgres | Redis | STS | API | Gateway | Audit | Coordinator |
 | ----------- | :------: | :---: | :-: | :-: | :-----: | :---: | :---------: |
-| **STS**         | ✓ | ✓ | — | — | — | — | — |
-| **Gateway**     | ✓ | ✓ | ✓ | — | — | — | — |
-| **API**         | ✓ | ✓ | — | — | — | — | — |
-| **Audit**       | ✓ | ✓ | — | — | — | — | — |
-| **Coordinator** | ✓ | ✓ | ✓ | — | — | — | — |
-| **Console/SDK**     | — | — | ✓ | ✓ | ✓ | — | ✓ |
+| **STS**         | ✓ | ✓ | None | (| None |) | None |
+| **Gateway**     | ✓ | ✓ | ✓ | None | (| None |) |
+| **API**         | ✓ | ✓ | None | (| None |) | None |
+| **Audit**       | ✓ | ✓ | None | (| None |) | None |
+| **Coordinator** | ✓ | ✓ | ✓ | None | (| None |) |
+| **Console/SDK**     | None |: | ✓ | ✓ | ✓ | None | ✓ |
 
 No service makes direct HTTP calls to another service except where the matrix shows ✓. The Gateway calls STS for every inbound request. The Coordinator calls STS only for bearer verification. The API publishes to Redis streams via the outbox; it does not call any other service directly.
 

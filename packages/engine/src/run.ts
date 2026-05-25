@@ -66,8 +66,8 @@ export interface RunExecOpts {
   env?: Record<string, string | undefined>
   onLine?: (line: string, stream: 'stdout' | 'stderr') => void
   cwd?: string
-  // Default true for runtime ergonomics. Hosts that own the keymap — Console, embedded
-  // libraries — must pass false so engine signals don't tear the parent down.
+  // Default true for runtime ergonomics. Hosts that own the keymap: Console, embedded
+  // libraries: must pass false so engine signals don't tear the parent down.
   forwardSignals?: boolean
 }
 
@@ -225,7 +225,7 @@ export function runExec(opts: RunExecOpts): RunExecHandle {
   const env = buildChildEnv(opts.env)
 
   const stdio: StdioOptions = opts.onLine ? ['ignore', 'pipe', 'pipe'] : 'inherit'
-  // shell:true is forbidden — argv tokens are passed verbatim to the OS.
+  // shell:true is forbidden: argv tokens are passed verbatim to the OS.
   const child = spawn(cmd!, args, { env, stdio, cwd: opts.cwd })
 
   if (opts.onLine) {

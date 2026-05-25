@@ -1,6 +1,6 @@
 ---
 title: Hardening Checklist
-description: Required configuration and verification steps before exposing Caracal to live traffic — organized by enforcement area.
+description: Required configuration and verification steps before exposing Caracal to live traffic: organized by enforcement area.
 pageType: config
 ---
 
@@ -54,7 +54,7 @@ Inject it via a secrets manager (HashiCorp Vault, AWS Secrets Manager, GCP Secre
 
 ### Zone signing key rotation
 
-Zone signing keys are rotated by the Control-Plane API. The JWKS endpoint returns the two most recent keys; all verifying services pick up the new key within the 5-minute JWKS cache TTL. Rotation does not invalidate outstanding session mandates — existing mandates remain valid until their TTL expires.
+Zone signing keys are rotated by the Control-Plane API. The JWKS endpoint returns the two most recent keys; all verifying services pick up the new key within the 5-minute JWKS cache TTL. Rotation does not invalidate outstanding session mandates: existing mandates remain valid until their TTL expires.
 
 **Rotation procedure:**
 1. Call `POST /v1/zones/{zoneId}/keys/rotate`.
@@ -107,7 +107,7 @@ Without Redis, or with `JTI_FAIL_OPEN=true`, resource mandate replay protection 
 
 ### Redis access control
 
-Restrict Redis access to the Caracal service network. Redis does not support per-key ACLs by default — any client with network access can read or write stream entries. Use Redis AUTH passwords and network-level controls (firewall rules, VPC isolation) to limit access to authorized services.
+Restrict Redis access to the Caracal service network. Redis does not support per-key ACLs by default: any client with network access can read or write stream entries. Use Redis AUTH passwords and network-level controls (firewall rules, VPC isolation) to limit access to authorized services.
 
 ---
 
@@ -130,7 +130,7 @@ Set `UPSTREAM_HOST_ALLOWLIST` to a strict allowlist of the upstream MCP server h
 
 ### STS timeout
 
-`STS_TIMEOUT` defaults to 5 seconds. If your STS is consistently slower (e.g., due to high OPA policy complexity), increase it — but be aware that a high timeout makes the Gateway more vulnerable to slowloris-style attacks from callers with nearly-expired tokens.
+`STS_TIMEOUT` defaults to 5 seconds. If your STS is consistently slower (e.g., due to high OPA policy complexity), increase it: but be aware that a high timeout makes the Gateway more vulnerable to slowloris-style attacks from callers with nearly-expired tokens.
 
 ---
 
@@ -138,7 +138,7 @@ Set `UPSTREAM_HOST_ALLOWLIST` to a strict allowlist of the upstream MCP server h
 
 ### Rate limiting
 
-The STS rate-limits token exchanges using Redis. If Redis is unavailable, the STS rejects all exchanges with `503`. This is intentional fail-closed behavior — do not route around it.
+The STS rate-limits token exchanges using Redis. If Redis is unavailable, the STS rejects all exchanges with `503`. This is intentional fail-closed behavior: do not route around it.
 
 Per-client rate limits are enforced per `(zone_id, client_id)`. Verify that your Redis connection is stable before enabling production traffic.
 
@@ -214,10 +214,10 @@ The audit service verifies the HMAC chain on startup and hourly. Chain breaks pr
 ### Denial rate anomalies
 
 The Gateway exposes per-denial-type counters at `GET /metrics`. Alert on sudden increases in:
-- `caracal_gateway_denials_signature_total` — possible key rotation issue or token forgery attempt.
-- `caracal_gateway_denials_jti_replay_total` — possible token replay attack.
-- `caracal_gateway_denials_revoked_total` — unusually high revocation activity.
-- `caracal_gateway_sts_exchange_errors_total` — STS availability or policy evaluation issues.
+- `caracal_gateway_denials_signature_total`: possible key rotation issue or token forgery attempt.
+- `caracal_gateway_denials_jti_replay_total`: possible token replay attack.
+- `caracal_gateway_denials_revoked_total`: unusually high revocation activity.
+- `caracal_gateway_sts_exchange_errors_total`: STS availability or policy evaluation issues.
 
 ### Dead-letter queues
 

@@ -20,7 +20,7 @@ appendonly yes
 appendfsync everysec
 save 3600 1
 
-# Eviction — noeviction protects stream data from silent drops
+# Eviction: noeviction protects stream data from silent drops
 maxmemory-policy noeviction
 
 tcp-keepalive 60
@@ -57,12 +57,12 @@ The split allows different memory policies to be applied to db 1 if needed, sinc
 | `caracal.policy.invalidate` | 10,000 | `opa-engine` | API outbox |
 | `caracal.sessions.revoke` | 10,000 | `sts-revocation`, `resource-revocation` | Coordinator outbox |
 | `caracal.keys.invalidate` | 10,000 | `sts-keys` | API outbox |
-| `caracal.agents.lifecycle` | — | `coordinator-relay` | Coordinator outbox |
-| `caracal.invocations.lifecycle` | — | `invocations-observer` | Coordinator outbox |
-| `caracal.delegations.invalidate` | — | `delegations-observer` | Coordinator outbox |
-| `caracal.providers.ratelimit` | ~1 (approximate) | — | API (direct XADD) |
+| `caracal.agents.lifecycle` | None | `coordinator-relay` | Coordinator outbox |
+| `caracal.invocations.lifecycle` | None | `invocations-observer` | Coordinator outbox |
+| `caracal.delegations.invalidate` | None | `delegations-observer` | Coordinator outbox |
+| `caracal.providers.ratelimit` | ~1 (approximate) | None | API (direct XADD) |
 
-`MAXLEN ~` uses approximate trimming (stream is trimmed lazily). This is safe for all streams where the consumer group is caught up — old entries are not needed after delivery.
+`MAXLEN ~` uses approximate trimming (stream is trimmed lazily). This is safe for all streams where the consumer group is caught up: old entries are not needed after delivery.
 
 ---
 
@@ -148,4 +148,4 @@ Monitor Redis memory:
 redis-cli -a $REDIS_PASSWORD INFO memory
 ```
 
-If `used_memory` approaches `maxmemory`, investigate consumer lag. With `noeviction`, Redis will start rejecting writes rather than dropping data — which will surface as errors in the outbox dispatcher.
+If `used_memory` approaches `maxmemory`, investigate consumer lag. With `noeviction`, Redis will start rejecting writes rather than dropping data: which will surface as errors in the outbox dispatcher.

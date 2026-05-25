@@ -9,7 +9,7 @@ Delegation constraints are typed restrictions attached to a delegation edge. The
 
 ## What constraints are
 
-When application A creates a delegation edge to application B, A can attach constraints that restrict what B can do with the delegated authority. These constraints are stored in `constraints_json` on the delegation edge and cannot be modified after the edge is created — they are part of the edge's definition.
+When application A creates a delegation edge to application B, A can attach constraints that restrict what B can do with the delegated authority. These constraints are stored in `constraints_json` on the delegation edge and cannot be modified after the edge is created: they are part of the edge's definition.
 
 Constraints narrow authority; they cannot expand it. B can request only what the edge's `scopes` permit, and constraints impose additional limits on top of that.
 
@@ -58,7 +58,7 @@ The STS first checks that the exchange's requested scopes are contained within t
 
 A boolean flag that a policy can check to distinguish pre-approved delegations from ad hoc ones.
 
-This constraint has no standalone authorization effect in the STS — it is a signal for policy rules. A policy can inspect `input.delegation_edge.constraints_json.policy_approved`, but policy must still allow the final resource and scope request.
+This constraint has no standalone authorization effect in the STS: it is a signal for policy rules. A policy can inspect `input.delegation_edge.constraints_json.policy_approved`, but policy must still allow the final resource and scope request.
 
 ## How constraints are enforced
 
@@ -77,7 +77,7 @@ At token exchange, after the delegation edge is loaded and validated as active, 
 
 Constraint enforcement happens before OPA evaluation. If any constraint check fails, the STS returns an error without calling OPA. The failure is recorded in the audit ledger.
 
-The edge's typed `constraints_json` is also passed to OPA in `input.delegation_edge.constraints_json`, so policies can write additional logic against constraint values — for example, denying exchanges for edges with `max_hops > 2`, or requiring `policy_approved = true` for high-value resources.
+The edge's typed `constraints_json` is also passed to OPA in `input.delegation_edge.constraints_json`, so policies can write additional logic against constraint values: for example, denying exchanges for edges with `max_hops > 2`, or requiring `policy_approved = true` for high-value resources.
 
 ## Constraint immutability
 
@@ -106,6 +106,6 @@ await caracal.delegate(
 
 ## Next steps
 
-- [Delegation Graph](./delegation/) — how edges form a tracked graph with cycle detection and cascade revocation
-- [Sessions and Revocation](./sessions-revocation/) — what happens to sessions when an edge is revoked
-- [Authority Model](./authority-model/) — how the STS enforces constraints before calling OPA
+- [Delegation Graph](./delegation/): how edges form a tracked graph with cycle detection and cascade revocation
+- [Sessions and Revocation](./sessions-revocation/): what happens to sessions when an edge is revoked
+- [Authority Model](./authority-model/): how the STS enforces constraints before calling OPA

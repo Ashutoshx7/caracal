@@ -24,8 +24,7 @@ import (
 )
 
 // preflightWindow gives STS time to mint a fresh token before the inbound bearer expires.
-// The window is consulted via an unverified JWT peek, so it is a UX optimisation only —
-// signature validity is established at STS exchange and at the upstream resource.
+// The window is consulted via an unverified JWT peek, so it is a UX optimisation only: // signature validity is established at STS exchange and at the upstream resource.
 const preflightWindow = 35 * time.Second
 
 const maxBearerBytes = 4096

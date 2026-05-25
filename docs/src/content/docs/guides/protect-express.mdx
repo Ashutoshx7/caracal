@@ -45,11 +45,11 @@ import type { CaracalRequest } from '@caracalai/mcp-express';
 
 app.get('/items', (req: CaracalRequest, res) => {
   const claims = req.caracalClaims!;
-  // claims.sub        — principal subject
-  // claims.zoneId     — zone the mandate was issued in
-  // claims.scope      — space-separated scopes
-  // claims.sid        — session ID (for revocation lookup)
-  // claims.agentSessionId — set when called from a spawned agent
+  // claims.sub: principal subject
+  // claims.zoneId: zone the mandate was issued in
+  // claims.scope: space-separated scopes
+  // claims.sid: session ID (for revocation lookup)
+  // claims.agentSessionId: set when called from a spawned agent
   res.json({ principal: claims.sub });
 });
 ```
@@ -157,5 +157,5 @@ app.listen(8080, () => console.log('listening on :8080'));
 
 ## What to read next
 
-- [Integrate the TypeScript SDK](./sdk-typescript/) — make outbound calls from protected routes
-- [Author a Rego Policy](./author-policy/) — write the policy that controls which scopes are granted
+- [Integrate the TypeScript SDK](./sdk-typescript/): make outbound calls from protected routes
+- [Author a Rego Policy](./author-policy/): write the policy that controls which scopes are granted

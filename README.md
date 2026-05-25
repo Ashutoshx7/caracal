@@ -42,7 +42,7 @@ Platform teams can evaluate Caracal locally with `caracal up` and check dependen
 <tr>
 <td align="center">
 <a href="https://www.youtube.com/live/tZ4FdO-zjeE" target="_blank" rel="noopener">
-<img src="https://img.youtube.com/vi/tZ4FdO-zjeE/hqdefault.jpg" alt="Open Source Friday — Preview" height="180"><br>
+<img src="https://img.youtube.com/vi/tZ4FdO-zjeE/hqdefault.jpg" alt="Open Source Friday: Preview" height="180"><br>
 <strong>GitHub's Open Source Friday</strong>
 </a>
 </td>
@@ -184,7 +184,7 @@ Management workflows require an admin token. Console discovers local tokens gene
 | `CARACAL_API_URL` | `http://localhost:3000` | |
 | `CARACAL_COORDINATOR_URL` | `http://localhost:4000` | |
 | `CARACAL_COORDINATOR_TOKEN` | Auto-discovered when possible | Required for `agent` and `delegation` commands |
-| `CARACAL_ZONE_ID` | — | Or set `zone_id` in `caracal.toml` |
+| `CARACAL_ZONE_ID` | None | Or set `zone_id` in `caracal.toml` |
 
 </details>
 

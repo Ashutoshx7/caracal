@@ -1,6 +1,6 @@
 ---
 title: Python SDK
-description: Complete API reference for caracalai-sdk — the Caracal client for async Python, FastAPI, and ASGI apps.
+description: Complete API reference for caracalai-sdk: the Caracal client for async Python, FastAPI, and ASGI apps.
 pageType: reference
 ---
 
@@ -276,7 +276,7 @@ Returns the current envelope as `dict[str, str]`. Use for manual header injectio
 def headers(self, *, allow_root: bool = False) -> dict[str, str]: ...
 ```
 
-Raises `RuntimeError` when no `CaracalContext` is bound on the current task. Pass `allow_root=True` only from trusted boundary code (background workers, long-lived service transports) that intentionally acts under the bootstrap subject identity. Inside any request, agent, or delegated scope, bind a context with `caracal.spawn()`, `caracal.delegate*()`, or `caracal.bind_from_headers()` first — this prevents silently leaking the bootstrap token into per-user paths.
+Raises `RuntimeError` when no `CaracalContext` is bound on the current task. Pass `allow_root=True` only from trusted boundary code (background workers, long-lived service transports) that intentionally acts under the bootstrap subject identity. Inside any request, agent, or delegated scope, bind a context with `caracal.spawn()`, `caracal.delegate*()`, or `caracal.bind_from_headers()` first: this prevents silently leaking the bootstrap token into per-user paths.
 
 ### `bind_from_headers(headers)`
 

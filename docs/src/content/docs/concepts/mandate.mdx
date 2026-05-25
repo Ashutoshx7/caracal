@@ -76,7 +76,7 @@ JWKS responses are cached in-process. The Gateway caches per zone and refreshes 
 Each mandate carries a unique `jti` (JWT ID). Resource mandates are subject to replay protection:
 
 1. On issuance, the STS writes `audit:jti:{jti}` to Redis using `SETNX` with TTL equal to the token lifetime.
-2. If `SETNX` fails, the JTI already exists — the STS rejects the exchange and emits a `jti_collision` audit event. Under normal operation this never occurs; it indicates clock skew or a UUID generation fault.
+2. If `SETNX` fails, the JTI already exists: the STS rejects the exchange and emits a `jti_collision` audit event. Under normal operation this never occurs; it indicates clock skew or a UUID generation fault.
 3. The Gateway maintains a parallel check using `seen:jti:{jti}` in Redis, also with `SETNX`. The first request carrying a resource mandate succeeds; any subsequent request with the same JTI is rejected with HTTP 401.
 
 Session mandates are not Gateway execution credentials. They are reusable only as STS exchange input.
@@ -150,6 +150,6 @@ A mandate is not a session cookie, an API key, or a long-lived secret. It expire
 
 ## Next steps
 
-- [Authority Model](./authority-model/) — the STS enforcement model that produces mandates
-- [Policy](./policy/) — the Rego document that determines whether a mandate is issued
-- [Sessions and Revocation](./sessions-revocation/) — how sessions bound to mandates are managed
+- [Authority Model](./authority-model/): the STS enforcement model that produces mandates
+- [Policy](./policy/): the Rego document that determines whether a mandate is issued
+- [Sessions and Revocation](./sessions-revocation/): how sessions bound to mandates are managed

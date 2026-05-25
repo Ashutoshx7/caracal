@@ -1,6 +1,6 @@
 ---
 title: A2A Transport
-description: Agent-to-agent delegated call transport — a2aCall() function, wire protocol, retry behavior, and context propagation headers.
+description: Agent-to-agent delegated call transport: a2aCall() function, wire protocol, retry behavior, and context propagation headers.
 pageType: reference
 ---
 
@@ -28,7 +28,7 @@ async function a2aCall(
 ): Promise<A2AResponse>
 ```
 
-Calls the target agent. Never returns a partial result — either resolves with `A2AResponse` or throws.
+Calls the target agent. Never returns a partial result: either resolves with `A2AResponse` or throws.
 
 ### `A2ARequest`
 
@@ -79,11 +79,11 @@ interface A2AResponse {
 
 `a2aCall` executes two HTTP requests:
 
-**Step 1 — Token exchange**
+**Step 1: Token exchange**
 
 Posts to `{opts.stsUrl}/oauth/2/token` via `OAuthClient.exchange()` to obtain a short-lived bearer mandate scoped to `req.resource` (or `req.agentUrl` if `resource` is absent). The response is cached internally for the duration of the mandate's validity window.
 
-**Step 2 — Agent call**
+**Step 2: Agent call**
 
 Posts to `{req.agentUrl}/a2a` as JSON with the following headers:
 
@@ -121,10 +121,10 @@ Backoff formula per attempt: `min(retryBaseMs × 2^attempt, 5000) / 2 + random(b
 
 `a2aCall` throws on unrecoverable errors:
 
-- `Error('A2A call failed: {status}')` — target agent returned a non-2xx status after all retries.
-- `Error('A2A response invalid: ...')` — target response is not an object, omits `result`, or echoes a different `requestId`.
-- `InteractionRequiredError` — STS token exchange requires step-up; contains `challengeId`. The transport package does not carry `challenge_secret` or submit `challenge_response`; use the direct STS token endpoint for flows that must complete challenge consumption.
-- `AbortError` — request timed out.
+- `Error('A2A call failed: {status}')`: target agent returned a non-2xx status after all retries.
+- `Error('A2A response invalid: ...')`: target response is not an object, omits `result`, or echoes a different `requestId`.
+- `InteractionRequiredError`: STS token exchange requires step-up; contains `challengeId`. The transport package does not carry `challenge_secret` or submit `challenge_response`; use the direct STS token endpoint for flows that must complete challenge consumption.
+- `AbortError`: request timed out.
 - Network fetch errors propagate unchanged.
 
 ---

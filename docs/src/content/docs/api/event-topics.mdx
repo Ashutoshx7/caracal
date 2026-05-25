@@ -1,6 +1,6 @@
 ---
 title: Event Topics
-description: Redis stream topics — message schemas, publishers, consumer groups, HMAC signing, outbox pattern, and retention configuration.
+description: Redis stream topics: message schemas, publishers, consumer groups, HMAC signing, outbox pattern, and retention configuration.
 pageType: api
 ---
 
@@ -173,7 +173,7 @@ Failed rows beyond `max_attempts` are not retried and remain in the table for ma
 | `caracal.audit.events.dlq` | 100 000 |
 | `caracal.sessions.revoke.dead` | 100 000 |
 
-`MAXLEN` is approximate (`~`), meaning Redis may retain slightly more entries than the configured limit. Entries are not time-expired — they are evicted only when the stream exceeds `MAXLEN`.
+`MAXLEN` is approximate (`~`), meaning Redis may retain slightly more entries than the configured limit. Entries are not time-expired: they are evicted only when the stream exceeds `MAXLEN`.
 
 ---
 
@@ -184,6 +184,6 @@ Failed rows beyond `max_attempts` are not retried and remain in the table for ma
 | `caracal.sessions.revoke` | API, Coordinator | Gateway, STS, resource servers |
 | `caracal.audit.events` | STS | Audit service, SIEM |
 | `caracal.policy.invalidate` | API | STS |
-| `caracal.agents.lifecycle` | Coordinator | — |
-| `caracal.invocations.lifecycle` | Coordinator | — |
-| `caracal.delegations.invalidate` | Coordinator | — |
+| `caracal.agents.lifecycle` | Coordinator | None |
+| `caracal.invocations.lifecycle` | Coordinator | None |
+| `caracal.delegations.invalidate` | Coordinator | None |

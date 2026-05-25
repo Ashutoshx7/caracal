@@ -5,7 +5,7 @@ pageType: concept
 keywords: [principal, application, credential type, DCR, session, identity, client secret]
 ---
 
-A **principal** is the identity that acts in Caracal. At token-exchange time, the principal is always an **application** — a registered client that presents credentials to the STS to obtain a mandate. This page explains how applications are structured, how they authenticate, and how the principal appears in policy input.
+A **principal** is the identity that acts in Caracal. At token-exchange time, the principal is always an **application**: a registered client that presents credentials to the STS to obtain a mandate. This page explains how applications are structured, how they authenticate, and how the principal appears in policy input.
 
 ## What an application is
 
@@ -29,11 +29,11 @@ The `credential_type` field determines how the STS authenticates the application
 
 | Type | Description |
 | ---- | ----------- |
-| `token` | Bearer token exchanged for a mandate — the default for machine clients |
+| `token` | Bearer token exchanged for a mandate: the default for machine clients |
 | `password` | Client ID + secret (OAuth 2.0 client credentials) |
 | `public-key` | Asymmetric key assertion |
 | `url` | Callback URL-based assertion |
-| `public` | No client authentication — for public clients |
+| `public` | No client authentication: for public clients |
 
 For most agent workloads, `token` or `password` are the appropriate choices.
 
@@ -41,8 +41,8 @@ For most agent workloads, `token` or `password` are the appropriate choices.
 
 At token exchange (`POST /oauth/2/token`), the application presents its credentials in one of:
 
-- `client_secret` form field — symmetric secret stored as a hash in the database
-- `client_assertion` form field — signed assertion for public-key clients
+- `client_secret` form field: symmetric secret stored as a hash in the database
+- `client_assertion` form field: signed assertion for public-key clients
 
 The STS looks up the application by `application_id` and `zone_id`, verifies the credential, and then proceeds to OPA evaluation. No mandate is issued before the application credential is validated.
 
@@ -66,13 +66,13 @@ Policies can gate on any of these fields. The `id` is the application UUID; use 
 
 ## The `traits` field
 
-Applications have an optional `traits` string array. Traits are arbitrary labels — for example, `["trusted-internal", "finance-team"]` — that the application carries into the OPA input via `actor_claims`. Policies can inspect traits to grant broader access to specific application categories without hardcoding UUIDs.
+Applications have an optional `traits` string array. Traits are arbitrary labels (for example, `["trusted-internal", "finance-team"]`) that the application carries into the OPA input via `actor_claims`. Policies can inspect traits to grant broader access to specific application categories without hardcoding UUIDs.
 
 ## Users and grants
 
 Caracal does not include a built-in user directory. A `user_id` is an opaque string passed by the calling application; Caracal stores it in the grant but does not validate it against any identity provider.
 
-A **grant** binds a `(application_id, user_id, resource_id)` triple to a set of scopes, representing that the specified application is authorized to access the resource on behalf of the specified user. Grants are the connection point between an application and a resource — without a grant, the application has no access to the resource regardless of policy.
+A **grant** binds a `(application_id, user_id, resource_id)` triple to a set of scopes, representing that the specified application is authorized to access the resource on behalf of the specified user. Grants are the connection point between an application and a resource: without a grant, the application has no access to the resource regardless of policy.
 
 In a typical agent workflow, the `user_id` in a grant represents the end user who delegated the agent to act on their behalf. The agent application holds the grant; the user identity is carried for audit and policy purposes.
 
@@ -86,6 +86,6 @@ The `principal` in Caracal always identifies an application at the time of token
 
 ## Next steps
 
-- [Zone](./zone/) — the tenancy boundary each application belongs to
-- [Resource and Grant](./resource-grant/) — how grants bind applications to resource access
-- [Policy](./policy/) — using `input.principal` in policy rules
+- [Zone](./zone/): the tenancy boundary each application belongs to
+- [Resource and Grant](./resource-grant/): how grants bind applications to resource access
+- [Policy](./policy/): using `input.principal` in policy rules

@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# caracalai_core — generic primitives shared across Caracal Python packages.
+# caracalai_core: generic primitives shared across Caracal Python packages.
 
 from .audit import AUDIT_STREAM, AuditClient, AuditEvent, AuditStreamer, create_event_id, default_replay_dir
 from .errors import CaracalError, ErrorCode

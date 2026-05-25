@@ -773,7 +773,7 @@ export class MenuView implements View {
         const stale = this.zoneId
         this.zoneId = undefined
         this.state?.clearSelectedZone()
-        app.setStatus(`configured zone ${stale} no longer exists — press z to pick another or open Zones to create one`, 'error')
+        app.setStatus(`configured zone ${stale} no longer exists: press z to pick another or open Zones to create one`, 'error')
         app.invalidate()
       }
     }
@@ -827,7 +827,7 @@ export class MenuView implements View {
     const entries = menuEntries()
     const e = entries[this.cursor]!
     if (e.needsZone && !this.zoneId) {
-      app.setStatus('zone required — press z to set one or pick Zones first', 'error')
+      app.setStatus('zone required: press z to set one or pick Zones first', 'error')
       return
     }
     const ctx: Ctx = {
@@ -842,7 +842,7 @@ export class MenuView implements View {
   private async promptZone(app: App): Promise<void> {
     try {
       const zones = await this.client.zones.list()
-      if (zones.length === 0) { app.setStatus('no zones — open Zones (n) to create one', 'error'); return }
+      if (zones.length === 0) { app.setStatus('no zones: open Zones (n) to create one', 'error'); return }
       app.push(new ZonePickerView(zones, (id, slug) => this.setZone(id, slug, app)))
     } catch (err) {
       app.setStatus(`zone list: ${explainError(err)}`, 'error')

@@ -4,7 +4,7 @@ description: Wrap Go HTTP handlers with the mcp-nethttp middleware to verify man
 pageType: workflow
 ---
 
-The `mcp-nethttp` package provides `Middleware` — a standard `func(http.Handler) http.Handler` adapter. It extracts the bearer mandate from the `Authorization` header, verifies the ES256 signature against the zone JWKS, checks revocation, and enforces scope and agent requirements. Validated claims are stored in the request context and retrieved with `ClaimsFromContext`.
+The `mcp-nethttp` package provides `Middleware`: a standard `func(http.Handler) http.Handler` adapter. It extracts the bearer mandate from the `Authorization` header, verifies the ES256 signature against the zone JWKS, checks revocation, and enforces scope and agent requirements. Validated claims are stored in the request context and retrieved with `ClaimsFromContext`.
 
 ## Prerequisites
 
@@ -66,12 +66,12 @@ func listInventory(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // claims.Sub          — principal subject
-    // claims.ZoneID       — zone the mandate was issued in
-    // claims.Scope        — space-separated scopes
-    // claims.Sid          — session ID (for revocation lookup)
-    // claims.AgentSessionID — set when called from a spawned agent
-    // claims.HopCount     — delegation depth
+    // claims.Sub: principal subject
+    // claims.ZoneID: zone the mandate was issued in
+    // claims.Scope: space-separated scopes
+    // claims.Sid: session ID (for revocation lookup)
+    // claims.AgentSessionID: set when called from a spawned agent
+    // claims.HopCount: delegation depth
     w.Header().Set("Content-Type", "application/json")
     w.Write([]byte(`{"principal":"` + claims.Sub + `"}`))
 }
@@ -200,5 +200,5 @@ func main() {
 
 ## What to read next
 
-- [Integrate the Go SDK](./sdk-go/) — make outbound calls from protected handlers
-- [Author a Rego Policy](./author-policy/) — write the policy controlling which scopes are granted
+- [Integrate the Go SDK](./sdk-go/): make outbound calls from protected handlers
+- [Author a Rego Policy](./author-policy/): write the policy controlling which scopes are granted

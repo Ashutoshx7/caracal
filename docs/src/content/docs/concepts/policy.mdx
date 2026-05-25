@@ -135,7 +135,7 @@ The `schema_version` field (`"2026-05-20"`) identifies the input schema this pol
 
 ## Policy sets and manifests
 
-A **policy set** groups one or more policy versions into a bundle evaluated together. The bundle is described by a **manifest** — an ordered list of `policy_version_id` entries. The STS computes a `manifest_sha256` over the manifest content to cache invalidation.
+A **policy set** groups one or more policy versions into a bundle evaluated together. The bundle is described by a **manifest**: an ordered list of `policy_version_id` entries. The STS computes a `manifest_sha256` over the manifest content to cache invalidation.
 
 Creating a policy set version:
 
@@ -158,7 +158,7 @@ The optional `shadow_version_id` registers a shadow binding alongside the active
 The STS loads policies lazily per zone:
 
 1. On first exchange for a zone, the STS queries the active policy set binding and compiles the Rego bundle into memory.
-2. Compiled bundles are cached in an atomic `opaZoneState` per zone. Cache hits are identified by `manifest_sha256` — a bundle with the same SHA is not recompiled.
+2. Compiled bundles are cached in an atomic `opaZoneState` per zone. Cache hits are identified by `manifest_sha256`: a bundle with the same SHA is not recompiled.
 3. A background poll refreshes all known zones every 60 seconds as a safety net.
 4. The Redis stream `caracal.policy.invalidate` is the fast path: the STS subscribes to this stream and reloads the affected zone immediately when a new binding is activated, bypassing the 60-second poll.
 
@@ -184,7 +184,7 @@ When the STS detects `step_up_required` in diagnostics and the exchange has not 
 
 ## Next steps
 
-- [Authority Model](./authority-model/) — how the STS uses policy results to make decisions
-- [Principal and Application](./principal/) — what `input.principal` contains
-- [Resource and Grant](./resource-grant/) — what `input.resource` contains
-- [Step-Up Challenge](./step-up/) — signaling elevated authentication from a policy
+- [Authority Model](./authority-model/): how the STS uses policy results to make decisions
+- [Principal and Application](./principal/): what `input.principal` contains
+- [Resource and Grant](./resource-grant/): what `input.resource` contains
+- [Step-Up Challenge](./step-up/): signaling elevated authentication from a policy
