@@ -60,9 +60,19 @@ pnpm caracal console          # Human-facing product management
 
 #### Standalone execution
 
-`pnpm caracal run -- <command>` reads validated runtime config from platform environment variables or a local `caracal.toml` profile, exchanges the configured application credentials with STS, injects only the configured scoped resource-token environment variables into the child process, and executes without a shell.
+`pnpm caracal run -- <command>` reads validated runtime config from platform environment variables or an explicit runtime profile, exchanges the configured application credentials with STS, injects only the configured scoped resource-token environment variables into the child process, and executes without a shell. The stack does not create zones, applications, client secrets, or runtime profiles. Create a managed application with credential type `token`, copy the one-time client secret from the create result, and use that secret below.
 
 ```bash
+printf '%s\n' '<client-secret>' > "$XDG_RUNTIME_DIR/caracal-client-secret"
+chmod 600 "$XDG_RUNTIME_DIR/caracal-client-secret"
+cat > "$XDG_RUNTIME_DIR/caracal-credentials.json" <<'JSON'
+[{ "env": "RESOURCE_TOKEN", "resource": "resource://local-http" }]
+JSON
+export CARACAL_STS_URL="http://localhost:8080"
+export CARACAL_ZONE_ID="<zone-id>"
+export CARACAL_APPLICATION_ID="<application-id>"
+export CARACAL_APP_CLIENT_SECRET_FILE="$XDG_RUNTIME_DIR/caracal-client-secret"
+export CARACAL_RUN_CREDENTIALS_FILE="$XDG_RUNTIME_DIR/caracal-credentials.json"
 pnpm caracal run -- node examples/agent.js
 ```
 

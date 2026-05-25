@@ -17,7 +17,7 @@ pnpm caracal status --ready
 pnpm caracal-console
 ```
 
-Use the Console to create the first zone, application, resource, and policy. When you need credential injection for a local process, provide the values produced by the Console through the same env/secret-file interface used by release deployments:
+Use the Console to create the first zone, application, resource, and policy. Create the application as a managed `token` credential and copy the one-time client secret from the create result. When you need credential injection for a local process, provide those values through the same env/secret-file interface used by release deployments:
 
 ```bash
 printf '%s\n' '<client-secret>' > "$XDG_RUNTIME_DIR/caracal-client-secret"
