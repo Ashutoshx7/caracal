@@ -15,6 +15,7 @@ export const DEFAULT_ZONE_URL = 'http://localhost:8080';
 export interface Credential {
   env: string;
   resource: string;
+  upstream_prefix?: string;
 }
 
 export interface OptionalCredential extends Credential {
@@ -27,6 +28,9 @@ export interface McpGovernance {
 
 export interface RuntimeConfig {
   zone_url: string;
+  sts_url?: string;
+  coordinator_url?: string;
+  gateway_url?: string;
   zone_id: string;
   application_id: string;
   app_client_secret: string;

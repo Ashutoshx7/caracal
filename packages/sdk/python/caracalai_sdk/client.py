@@ -659,7 +659,13 @@ class Caracal:
         await self.config.coordinator.close()
 
     def middleware(self, *, allow_root: bool = False) -> Callable[[ASGIApp], CaracalASGIMiddleware]:
-        """ASGI middleware factory. Install at module load: `app.add_middleware()`
+        """ASGI context-propagation middleware factory.
+
+        This binds an existing Caracal envelope into request context after a
+        verifier boundary. It does not verify JWT signatures, audience, scopes,
+        token use, or revocation.
+
+        Install at module load: `app.add_middleware()`
         only registers middleware before Starlette/FastAPI startup, so this cannot
         be called from inside a `lifespan` context manager.
 

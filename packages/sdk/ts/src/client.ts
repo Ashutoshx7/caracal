@@ -370,6 +370,10 @@ export class Caracal {
     return { url: target, resourceId: binding?.resourceId ?? explicitResource! };
   }
 
+  /**
+   * Binds Caracal context after a verifier boundary. This does not verify JWT
+   * signatures, audience, scopes, token use, or revocation.
+   */
   middleware(opts: RootOptions = {}) {
     return (
       req: { headers: Record<string, string | string[] | undefined> },

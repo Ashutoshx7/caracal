@@ -2,7 +2,7 @@
 Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 Caracal, a product of Garudex Labs
 
-Generic ASGI middleware that extracts the envelope and binds CaracalContext per request.
+ASGI middleware that binds CaracalContext after a verifier boundary.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 
 class CaracalASGIMiddleware:
     """ASGI middleware (Starlette/FastAPI/raw ASGI) that binds a Caracal
-    context for every HTTP request scope from inbound envelope headers."""
+    context from inbound envelope headers after a verifier boundary."""
 
     def __init__(self, app: ASGIApp, caracal: Caracal, *, allow_root: bool = False) -> None:
         self.app = app
