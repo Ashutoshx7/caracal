@@ -32,6 +32,7 @@ The tag drives binaries, OCI image tags, GitHub Releases, Helm `appVersion`/imag
 Use rc when a downstream project must consume Caracal as a normal third-party dependency before stable. The consumer changes only package versions and registry/index endpoints; it must not reference Caracal source paths, workspace links, editable installs, or Docker build contexts from the Caracal checkout.
 
 ```sh
+scripts/rc.sh dry-run --base-version 2026.05.26 --suffix rc.1
 scripts/rc.sh prepare --base-version 2026.05.26 --suffix rc.1
 git add -A
 git commit -m "rc: v2026.05.26-rc.1"
@@ -40,7 +41,7 @@ git push origin HEAD
 git push origin v2026.05.26-rc.1
 ```
 
-`scripts/rc.sh prepare` writes `releases/<rc-tag>/manifest.json`, stamps Helm metadata, stamps npm package versions as `<base>-rc.<number>` or `<base>-rc.sha<gitsha>`, and stamps PyPI versions as `<base>rc<number>` or `<base>rc0+sha<gitsha>`. Use `scripts/rc.sh version` only when you need to preview the manifest without stamping package or Helm metadata. Pushing the rc tag runs the release workflow, publishes GHCR images, and creates a GitHub Release for rc.
+`scripts/rc.sh dry-run` previews the rc manifest and stamped versions without writing files. `scripts/rc.sh prepare` writes `releases/<rc-tag>/manifest.json`, stamps Helm metadata, stamps npm package versions as `<base>-rc.<number>` or `<base>-rc.sha<gitsha>`, and stamps PyPI versions as `<base>rc<number>` or `<base>rc0+sha<gitsha>`. Use `scripts/rc.sh version` only when you need to preview the manifest and keep it on disk without stamping package or Helm metadata. Pushing the rc tag runs the release workflow, publishes GHCR images, and creates a GitHub Release for rc.
 
 Publish packages after `prepare`:
 

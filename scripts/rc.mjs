@@ -83,38 +83,54 @@ function cleanBase(version) {
   return version
 }
 
+function npmRcBase(version, suffix) {
+  if (version.endsWith(`-${suffix}`)) return version.slice(0, -suffix.length - 1)
+  return cleanBase(version)
+}
+
+function pythonRcBase(version, suffix) {
+  const numeric = suffix.match(/^rc\.([0-9]+)$/)?.[1]
+  const sha = suffix.match(/^rc\.sha([A-Za-z0-9]+)$/)?.[1]
+  if (numeric && version.endsWith(`rc${numeric}`)) return version.slice(0, -`rc${numeric}`.length)
+  if (sha && version.endsWith(`rc0+sha${sha}`)) return version.slice(0, -`rc0+sha${sha}`.length)
+  return cleanBase(version)
+}
+
 function rcSuffix(options) {
   return options.suffix ?? process.env.CARACAL_SUFFIX ?? `rc.sha${shortSha()}`
 }
 
 function npmRcVersion(version, suffix) {
+  if (version.endsWith(`-${suffix}`)) return version
   return `${cleanBase(version)}-${suffix}`
 }
 
 function pythonRcVersion(version, suffix) {
-  const base = cleanBase(version)
   const numeric = suffix.match(/^rc\.([0-9]+)$/)?.[1]
   const sha = suffix.match(/^rc\.sha([A-Za-z0-9]+)$/)?.[1]
+  if (numeric && version.endsWith(`rc${numeric}`)) return version
+  if (sha && version.endsWith(`rc0+sha${sha}`)) return version
+  const base = cleanBase(version)
   if (numeric) return `${base}rc${numeric}`
   if (sha) return `${base}rc0+sha${sha}`
   die(`unsupported Python rc suffix: ${suffix}; use rc.<number> or rc.sha<gitsha>`)
 }
 
-function readPackageVersions(paths) {
+function readPackageVersions(paths, suffix) {
   return Object.fromEntries(paths.map((path) => {
     const pkg = JSON.parse(readFileSync(join(repoRoot, path, 'package.json'), 'utf8'))
     if (!pkg.name || !pkg.version) die(`missing name or version in ${path}/package.json`)
-    return [pkg.name, cleanBase(pkg.version)]
+    return [pkg.name, npmRcBase(pkg.version, suffix)]
   }))
 }
 
-function readPythonVersions(paths) {
+function readPythonVersions(paths, suffix) {
   return Object.fromEntries(paths.map((path) => {
     const text = readFileSync(join(repoRoot, path, 'pyproject.toml'), 'utf8')
     const name = text.match(/^name = "([^"]+)"/m)?.[1]
     const version = text.match(/^version = "([^"]+)"/m)?.[1]
     if (!name || !version) die(`missing name or version in ${path}/pyproject.toml`)
-    return [name, cleanBase(version)]
+    return [name, pythonRcBase(version, suffix)]
   }))
 }
 
@@ -141,8 +157,8 @@ function makeManifest(options = {}) {
   const baseVersion = cleanBase(options['base-version'] ?? process.env.CARACAL_BASE_VERSION ?? currentCalVer())
   const version = `${baseVersion}-${suffix}`
   const tag = `v${version}`
-  const npm = Object.fromEntries(Object.entries(readPackageVersions(npmPaths)).map(([name, base]) => [name, npmRcVersion(base, suffix)]))
-  const pypi = Object.fromEntries(Object.entries(readPythonVersions(pyPaths)).map(([name, base]) => [name, pythonRcVersion(base, suffix)]))
+  const npm = Object.fromEntries(Object.entries(readPackageVersions(npmPaths, suffix)).map(([name, base]) => [name, npmRcVersion(base, suffix)]))
+  const pypi = Object.fromEntries(Object.entries(readPythonVersions(pyPaths, suffix)).map(([name, base]) => [name, pythonRcVersion(base, suffix)]))
   const reg = registries(options)
   return {
     release: tag,
@@ -250,6 +266,16 @@ function printVersion(options) {
   say(JSON.stringify({ manifest: path, ...manifest }, null, 2))
 }
 
+function dryRun(options) {
+  const manifest = makeManifest(options.values)
+  const path = manifestPath(manifest)
+  say(`rc dry-run: ${manifest.release}`)
+  say(`would write ${path}`)
+  say(`would stamp Helm chart ${manifest.helm.chartVersion}`)
+  say(`would stamp binaries, images, and Helm app tag ${manifest.version}`)
+  say(JSON.stringify({ manifest: path, ...manifest }, null, 2))
+}
+
 function clean(options) {
   const manifest = loadManifest(options.values.manifest)
   rmSync(dirname(manifestPath(manifest)), { recursive: true, force: true })
@@ -261,6 +287,9 @@ function main() {
   switch (options.command) {
     case 'version':
       printVersion(options)
+      break
+    case 'dry-run':
+      dryRun(options)
       break
     case 'prepare':
       prepare(options)
@@ -274,6 +303,7 @@ function main() {
       say(`Usage: scripts/rc.sh <command> [options]
 
 Commands:
+  dry-run                Preview an rc manifest and stamped versions without writing files.
   version                 Generate an rc manifest under releases/<tag>/manifest.json.
   prepare [--allow-dirty] Generate the manifest and stamp package metadata to rc versions.
   clean --manifest PATH   Remove an rc manifest directory.
