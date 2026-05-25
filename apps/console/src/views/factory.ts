@@ -31,7 +31,7 @@ import { readFileSync } from 'node:fs'
 import type { App, View } from '../screen.ts'
 import type { ConsoleStateStore } from '../state.ts'
 import { maskSecretField } from '../errors.ts'
-import { DEFAULT_CONTROL_AUDIENCE } from '@caracalai/engine'
+import { DEFAULT_CONTROL_AUDIENCE, generateClientSecret } from '@caracalai/engine'
 import { AuditTailView } from './audit.ts'
 import { DetailView } from './detail.ts'
 import { ConfirmView, FormView, type Field } from './form.ts'
@@ -69,7 +69,7 @@ function bool(v: string | undefined): boolean | undefined {
   return v === 'true'
 }
 
-const CREDENTIAL_TYPES: CredentialType[] = ['public', 'token', 'password', 'public-key', 'url']
+const CREDENTIAL_TYPES: CredentialType[] = ['token', 'password', 'public-key', 'url', 'public']
 const PROVIDER_KINDS: ProviderKind[] = ['oauth2', 'oidc', 'apikey', 'workload']
 
 type PolicyVersionRow = PolicyVersion & { policy_name: string }
@@ -439,17 +439,34 @@ export function applicationsView(ctx: Ctx): View {
           title: 'create application',
           fields: [
             { key: 'name', label: 'name', kind: 'text', required: true },
-            { key: 'credential_type', label: 'credential', kind: 'select', options: CREDENTIAL_TYPES, default: 'public' },
+            { key: 'credential_type', label: 'credential', kind: 'select', options: CREDENTIAL_TYPES, default: 'token' },
             { key: 'consent', label: 'require consent', kind: 'bool', default: 'false' },
           ],
           onSubmit: async (v, app) => {
-            await ctx.client.applications.create(ctx.zoneId, {
+            const credentialType = (v.credential_type as CredentialType) || 'token'
+            const clientSecret = credentialType === 'public' ? undefined : generateClientSecret()
+            const application = await ctx.client.applications.create(ctx.zoneId, {
               name: v.name!,
               registration_method: 'managed',
-              credential_type: (v.credential_type as CredentialType) || undefined,
+              credential_type: credentialType,
+              client_secret: clientSecret,
               consent: bool(v.consent),
             })
             await popAndReload(app, list as unknown as ListView<unknown>)
+            if (clientSecret) {
+              open(app, new DetailView({
+                title: `app / ${application.name}`,
+                load: async () => ({
+                  id: application.id,
+                  zone_id: application.zone_id,
+                  name: application.name,
+                  credential_type: application.credential_type,
+                  client_secret: clientSecret,
+                  note: 'store client_secret now - it cannot be retrieved later',
+                }),
+                mask: maskSecretField,
+              }))
+            }
           },
         }),
       },
@@ -465,13 +482,31 @@ export function applicationsView(ctx: Ctx): View {
               { key: 'consent', label: 'require consent', kind: 'bool', default: String(row.consent === 'required') },
             ],
             onSubmit: async (v, app) => {
-              await ctx.client.applications.patch(ctx.zoneId, row.id, {
+              const credentialType = (v.credential_type as CredentialType) || row.credential_type
+              const clientSecret = row.credential_type === 'public' && credentialType !== 'public'
+                ? generateClientSecret()
+                : undefined
+              const application = await ctx.client.applications.patch(ctx.zoneId, row.id, {
                 name: v.name || undefined,
-                credential_type: (v.credential_type as CredentialType) || undefined,
+                credential_type: credentialType,
+                client_secret: clientSecret,
                 traits: v.traits ? splitList(v.traits) : undefined,
                 consent: bool(v.consent),
               } as Partial<ApplicationInput>)
               await popAndReload(app, list as unknown as ListView<unknown>)
+              if (clientSecret) {
+                open(app, new DetailView({
+                  title: `app / ${application.name}`,
+                  load: async () => ({
+                    id: application.id,
+                    name: application.name,
+                    credential_type: credentialType,
+                    client_secret: clientSecret,
+                    note: 'store client_secret now - it cannot be retrieved later',
+                  }),
+                  mask: maskSecretField,
+                }))
+              }
             },
           })
         },
@@ -494,7 +529,7 @@ export function applicationsView(ctx: Ctx): View {
             title: 'dynamic client registration',
             fields: [
               { key: 'name', label: 'name', kind: 'text', required: true, default: row?.name ?? '' },
-              { key: 'credential_type', label: 'credential', kind: 'select', options: CREDENTIAL_TYPES, default: row?.credential_type ?? 'public' },
+              { key: 'credential_type', label: 'credential', kind: 'select', options: CREDENTIAL_TYPES, default: row?.credential_type ?? 'token' },
               { key: 'traits', label: 'traits', kind: 'list', default: (row?.traits ?? []).join(','), hint: 'comma-separated' },
               { key: 'expires_in', label: 'expires in', kind: 'text', validate: (v) => v && !Number.isFinite(Number.parseInt(v, 10)) ? 'expires in must be an integer' : undefined },
             ],

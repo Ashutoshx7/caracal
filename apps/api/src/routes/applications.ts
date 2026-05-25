@@ -31,6 +31,11 @@ const DCRBody = z.object({
   expires_in: z.number().int().positive().optional(),
 })
 
+function validateSecretForCredentialType(credentialType: string, hasSecret: boolean): string | undefined {
+  if (credentialType === 'public') return hasSecret ? 'client_secret_not_allowed' : undefined
+  return hasSecret ? undefined : 'client_secret_required'
+}
+
 export const applicationsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get('/zones/:zoneId/applications', async (req, reply) => {
     const params = parseParams(ZoneParams, req, reply)
@@ -72,13 +77,16 @@ export const applicationsRoutes: FastifyPluginAsync = async (fastify) => {
     const body = AppBody.parse(req.body)
     const traitErr = validateTraits(body.traits, req.actor)
     if (traitErr) return reply.code(403).send(traitErr)
+    const credentialType = body.credential_type ?? 'public'
+    const secretError = validateSecretForCredentialType(credentialType, body.client_secret !== undefined)
+    if (secretError) return reply.code(400).send({ error: secretError })
     const id = uuidv7()
     const secretHash = body.client_secret ? await hashClientSecret(body.client_secret) : null
     const { rows } = await fastify.db.query(
       `INSERT INTO applications (id, zone_id, name, registration_method, credential_type, client_secret_hash, traits, consent)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, zone_id, name, registration_method, credential_type, traits, consent, created_at`,
-      [id, params.zoneId, body.name, body.registration_method, body.credential_type ?? 'public', secretHash, body.traits ?? [], body.consent ? 'required' : 'implicit'],
+      [id, params.zoneId, body.name, body.registration_method, credentialType, secretHash, body.traits ?? [], body.consent ? 'required' : 'implicit'],
     )
     return reply.code(201).send(rows[0])
   })
@@ -91,6 +99,17 @@ export const applicationsRoutes: FastifyPluginAsync = async (fastify) => {
     if (traitErr) return reply.code(403).send(traitErr)
     if (body.credential_type === 'public' && await activePolicyReferencesApp(fastify.db, params.zoneId, params.id)) {
       return reply.code(409).send({ error: 'app_referenced_by_active_policy' })
+    }
+    if (body.credential_type !== undefined || body.client_secret !== undefined) {
+      const { rows: existing } = await fastify.db.query(
+        `SELECT credential_type, client_secret_hash FROM applications WHERE id = $1 AND zone_id = $2 AND archived_at IS NULL`,
+        [params.id, params.zoneId],
+      )
+      if (!existing[0]) return reply.code(404).send({ error: 'application_not_found' })
+      const credentialType = body.credential_type ?? existing[0].credential_type
+      const hasSecret = body.client_secret !== undefined || existing[0].client_secret_hash !== null
+      const secretError = validateSecretForCredentialType(credentialType, hasSecret)
+      if (secretError) return reply.code(400).send({ error: secretError })
     }
     const patchedHash = body.client_secret === undefined ? undefined : await hashClientSecret(body.client_secret)
     const update = buildPatchUpdate([params.id, params.zoneId], [
@@ -129,6 +148,9 @@ export const applicationsRoutes: FastifyPluginAsync = async (fastify) => {
     const body = DCRBody.parse(req.body)
     const traitErr = validateTraits(body.traits, req.actor)
     if (traitErr) return reply.code(403).send(traitErr)
+    const credentialType = body.credential_type ?? 'public'
+    const secretError = validateSecretForCredentialType(credentialType, body.client_secret !== undefined)
+    if (secretError) return reply.code(400).send({ error: secretError })
 
     const rlKey = `rl:dcr:${params.zoneId}`
     await fastify.redis.set(rlKey, 0, 'EX', 1, 'NX')
@@ -172,7 +194,7 @@ export const applicationsRoutes: FastifyPluginAsync = async (fastify) => {
         `INSERT INTO applications (id, zone_id, name, registration_method, credential_type, client_secret_hash, traits, expires_at)
          VALUES ($1, $2, $3, 'dcr', $4, $5, $6, $7)
          RETURNING id, zone_id, name, registration_method, credential_type, expires_at, created_at`,
-        [id, params.zoneId, body.name, body.credential_type ?? 'public', dcrSecretHash, body.traits ?? [], expiresAt],
+        [id, params.zoneId, body.name, credentialType, dcrSecretHash, body.traits ?? [], expiresAt],
       )
       await client.query('COMMIT')
       return reply.code(201).send(rows[0])

@@ -78,9 +78,10 @@ export class FormView implements View {
 
   hints(): string[] {
     if (this.multilineMode) return ['esc:done', 'enter:newline']
-    const base = ['tab/j/k:next', 'enter:advance/submit', 'esc:cancel']
+    const base = ['tab/↑/↓:next', 'enter:advance/submit', 'esc:cancel']
     const field = this.fields[this.focus]
     if (field?.pick) base.push('→:pick')
+    else if (field?.kind === 'select') base.push('→:options')
     else if (field?.kind === 'file') base.push('→:file')
     else if (field?.kind === 'secret') base.push('→:reveal')
     return base
@@ -114,6 +115,7 @@ export class FormView implements View {
         const hints = [
           f.hint,
           f.pick ? 'right arrow opens a searchable picker' : undefined,
+          f.kind === 'select' ? 'right arrow opens an options picker' : undefined,
           f.pick && (this.values[f.key] ?? '').trim() ? 'V reveals ID · N copies name · I copies ID' : undefined,
         ].filter((hint): hint is string => Boolean(hint))
         if (hints.length > 0) lines.push('   ' + ui.muted('hint: ' + hints.join(' · ')))
@@ -195,6 +197,12 @@ export class FormView implements View {
       }, this.values[f.key] ?? '')
       return
     }
+    if (key === 'right' && f?.kind === 'select') {
+      ctx.app.push(new OptionPickerView(f.label, f.options ?? [], this.values[f.key] ?? '', (value) => {
+        this.values[f.key] = value
+      }))
+      return
+    }
     if (key === 'right' && f?.kind === 'secret') {
       if (this.revealed.has(f.key)) this.revealed.delete(f.key)
       else this.revealed.add(f.key)
@@ -206,11 +214,11 @@ export class FormView implements View {
       }))
       return
     }
-    if (key === 'tab' || key === 'down' || key === 'j' && this.notTyping(f)) {
+    if (key === 'tab' || key === 'down') {
       this.focus = Math.min(this.fields.length, this.focus + 1)
       return
     }
-    if (key === 'up' || key === 'k' && this.notTyping(f)) {
+    if (key === 'up') {
       this.focus = Math.max(0, this.focus - 1)
       return
     }
@@ -221,10 +229,7 @@ export class FormView implements View {
         return
       }
       if (f && f.kind === 'select') {
-        const opts = f.options ?? []
-        if (opts.length === 0) { this.focus++; return }
-        const cur = opts.indexOf(this.values[f.key] ?? '')
-        this.values[f.key] = opts[(cur + 1) % opts.length]!
+        this.focus = Math.min(this.fields.length, this.focus + 1)
         return
       }
       if (this.focus === this.fields.length - 1) return this.trySubmit(ctx.app)
@@ -236,6 +241,7 @@ export class FormView implements View {
       return
     }
     if (!f) return
+    if (f.kind === 'bool' || f.kind === 'select') return
     if (f.kind === 'multiline') {
       const text = textInput(key, true)
       if (text !== undefined) {
@@ -280,10 +286,6 @@ export class FormView implements View {
       const msg = err instanceof Error ? err.message : String(err)
       app.setStatus(scrubTokens(`label lookup for ${field.label}: ${msg}`), 'error')
     }
-  }
-
-  private notTyping(f: Field | undefined): boolean {
-    return !f || f.kind === 'bool' || f.kind === 'select'
   }
 
   private async trySubmit(app: App): Promise<void> {
@@ -380,6 +382,84 @@ export class ConfirmView implements View {
       this.cancel?.(ctx.app)
       ctx.app.pop()
     }
+  }
+}
+
+class OptionPickerView implements View {
+  readonly title: string
+  readonly isTextEntry = true
+  private readonly options: string[]
+  private readonly pick: (value: string) => void
+  private cursor = 0
+  private query = ''
+
+  constructor(label: string, options: string[], currentValue: string, pick: (value: string) => void) {
+    this.title = `${label} options`
+    this.options = options
+    this.pick = pick
+    const index = options.indexOf(currentValue)
+    if (index >= 0) this.cursor = index
+  }
+
+  hints(): string[] { return ['↑/↓:move', 'type:search', 'enter:select', 'esc:back'] }
+
+  dispose(): void { /* no resources to release */ }
+
+  render(ctx: ViewContext): string[] {
+    const filtered = this.filtered()
+    const lines = [
+      ' ' + ui.title(this.title),
+      ' ' + ui.muted('search ') + ui.input(`[ ${sanitizeAnsi(this.query) || 'type to filter'} ]`),
+    ]
+    if (filtered.length === 0) {
+      lines.push(' ' + ui.muted('No matches. Backspace clears the search.'))
+      return lines
+    }
+    const visible = Math.max(1, ctx.size.rows - lines.length)
+    this.cursor = Math.min(this.cursor, filtered.length - 1)
+    for (let i = 0; i < Math.min(filtered.length, visible); i++) {
+      const value = filtered[i]!
+      const label = value || '<empty>'
+      const text = sanitizeAnsi(label)
+      lines.push(i === this.cursor ? ui.selected(' ' + text + ' ') : ' ' + text)
+    }
+    return lines
+  }
+
+  onKey(key: Key, ctx: ViewContext): void {
+    const filtered = this.filtered()
+    const last = Math.max(0, filtered.length - 1)
+    if (key === 'up') { this.cursor = Math.max(0, this.cursor - 1); return }
+    if (key === 'down') { this.cursor = Math.min(last, this.cursor + 1); return }
+    if (key === 'pgup') { this.cursor = Math.max(0, this.cursor - 10); return }
+    if (key === 'pgdn') { this.cursor = Math.min(last, this.cursor + 10); return }
+    if (key === 'home') { this.cursor = 0; return }
+    if (key === 'end') { this.cursor = last; return }
+    if (key === 'backspace') {
+      this.query = this.query.slice(0, -1)
+      this.cursor = Math.min(this.cursor, Math.max(0, this.filtered().length - 1))
+      return
+    }
+    if (key === 'esc' || key === 'left') { ctx.app.pop(); return }
+    if (key === 'enter') {
+      const value = filtered[this.cursor]
+      if (value === undefined) return
+      this.pick(value)
+      ctx.app.pop()
+      ctx.app.setStatus(`selected ${value || '<empty>'}`)
+      return
+    }
+    const text = textInput(key, false)
+    if (text !== undefined) {
+      this.query += text
+      this.cursor = 0
+    }
+  }
+
+  private filtered(): string[] {
+    const query = this.query.trim().toLowerCase()
+    if (!query) return this.options
+    return this.options.filter((option) => option.toLowerCase().includes(query))
   }
 }
 
