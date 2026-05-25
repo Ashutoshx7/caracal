@@ -141,7 +141,7 @@ Each archive contains a single executable (`caracal`, `caracal-console`, or `car
 ### Start the stack
 
 ```bash
-caracal up                            # start all services and write ~/.config/caracal/caracal.toml when missing
+caracal up                            # start all services and wait for dependency readiness
 caracal status                        # probe all services
 caracal status --ready                # dependency-aware readiness probe
 caracal down                          # stop; add -v to remove volumes
@@ -152,7 +152,7 @@ caracal purge                         # interactive cleanup (containers, volumes
 
 ### Run workloads with scoped tokens
 
-`caracal run` is a top-level execution command, not a runtime/console management command. It reads `caracal.toml`, exchanges the configured application credentials with STS for the resources listed in `credentials` and `optional_credentials`, injects only those token environment variables into the child process, and runs the command without a shell.
+`caracal run` is a top-level execution command, not a runtime/console management command. It reads `CARACAL_CONFIG` or `~/.config/caracal/caracal.toml`, exchanges the configured application credentials with STS for the resources listed in `credentials` and `optional_credentials`, injects only those token environment variables into the child process, and runs the command without a shell.
 
 ```bash
 caracal run -- node worker.js

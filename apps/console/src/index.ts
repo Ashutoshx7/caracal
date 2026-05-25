@@ -11,6 +11,7 @@ import {
   formatVersionOutput,
 } from '@caracalai/engine'
 import {
+  assertRuntimeConfigFileSecure,
   resolveRuntimeConfigPath,
   type RuntimeConfig,
 } from '@caracalai/engine/runtime-config'
@@ -23,6 +24,7 @@ import { MenuView } from './views/menu.ts'
 function loadConfig(): RuntimeConfig | undefined {
   const path = resolveRuntimeConfigPath()
   if (!path) return undefined
+  assertRuntimeConfigFileSecure(path)
   return parse(readFileSync(path, 'utf8')) as unknown as RuntimeConfig
 }
 

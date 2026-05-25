@@ -3,7 +3,7 @@
 //
 // Shared runtime helpers: caracal.toml discovery and service URL resolution.
 
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CaracalError } from '@caracalai/core';
@@ -36,6 +36,19 @@ export interface RuntimeConfig {
   mcp_governance?: McpGovernance;
 }
 
+export class RuntimeConfigPermissionError extends CaracalError {
+  readonly path: string;
+  readonly mode: number;
+  constructor(path: string, mode: number) {
+    super('config_permissions', `caracal.toml permissions are too broad: ${path} is ${formatMode(mode)}; run chmod 600 ${path}`, {
+      details: { path, mode: formatMode(mode) },
+    });
+    this.name = 'RuntimeConfigPermissionError';
+    this.path = path;
+    this.mode = mode;
+  }
+}
+
 export function defaultRuntimeConfigPath(env: NodeJS.ProcessEnv = process.env): string {
   const xdg = env.XDG_CONFIG_HOME && env.XDG_CONFIG_HOME.length > 0
     ? env.XDG_CONFIG_HOME
@@ -44,19 +57,22 @@ export function defaultRuntimeConfigPath(env: NodeJS.ProcessEnv = process.env): 
 }
 
 // Resolves the path to caracal.toml using the documented precedence:
-//   $CARACAL_CONFIG → ./caracal.toml (cwd / $PWD / $INIT_CWD) → $XDG_CONFIG_HOME/caracal/caracal.toml
+//   $CARACAL_CONFIG → $XDG_CONFIG_HOME/caracal/caracal.toml
 // Returns undefined when no candidate exists on disk.
 export function resolveRuntimeConfigPath(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const candidates: string[] = [];
-  if (env.CARACAL_CONFIG) candidates.push(env.CARACAL_CONFIG);
-  for (const dir of [process.cwd(), env.PWD, env.INIT_CWD]) {
-    if (dir) candidates.push(join(dir, 'caracal.toml'));
-  }
-  candidates.push(defaultRuntimeConfigPath(env));
-  for (const path of candidates) {
-    if (existsSync(path)) return path;
-  }
-  return undefined;
+  if (env.CARACAL_CONFIG) return existsSync(env.CARACAL_CONFIG) ? env.CARACAL_CONFIG : undefined;
+  const path = defaultRuntimeConfigPath(env);
+  return existsSync(path) ? path : undefined;
+}
+
+export function assertRuntimeConfigFileSecure(path: string): void {
+  if (process.platform === 'win32') return;
+  const mode = statSync(path).mode & 0o777;
+  if ((mode & 0o077) !== 0) throw new RuntimeConfigPermissionError(path, mode);
+}
+
+function formatMode(mode: number): string {
+  return '0o' + mode.toString(8).padStart(3, '0');
 }
 
 export class ServiceUrlMissingError extends CaracalError {
