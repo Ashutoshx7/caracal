@@ -50,6 +50,7 @@ jobs:
       - run: mkdir -p "$FINDINGS_DIR" && bash scripts/postRelease/validateRegistryMetadata.sh
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: findings-registry
           path: findings/*.jsonl
@@ -97,6 +98,7 @@ jobs:
       - run: mkdir -p "$FINDINGS_DIR" && bash scripts/postRelease/validatePypiInstall.sh
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: findings-pypi-${{ matrix.os }}-${{ matrix.pm }}-${{ matrix.py }}
           path: findings/*.jsonl
@@ -138,6 +140,7 @@ jobs:
       - run: mkdir -p "$FINDINGS_DIR" && bash scripts/postRelease/validateNpmInstall.sh
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: findings-npm-${{ matrix.os }}-${{ matrix.pm }}-${{ matrix.node }}
           path: findings/*.jsonl
@@ -166,6 +169,7 @@ jobs:
       - run: bash scripts/postRelease/validateConsoleBinaries.sh
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: findings-binaries-${{ matrix.os }}
           path: findings/*.jsonl
@@ -190,6 +194,7 @@ jobs:
       - run: mkdir -p "$FINDINGS_DIR" && bash scripts/postRelease/validateInstallers.sh
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: findings-installers-${{ matrix.os }}
           path: findings/*.jsonl
@@ -212,6 +217,7 @@ jobs:
       - run: mkdir -p "$FINDINGS_DIR" && bash scripts/postRelease/validateContainers.sh
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: findings-containers
           path: findings/*.jsonl
@@ -235,6 +241,7 @@ jobs:
       - run: mkdir -p "$FINDINGS_DIR" && bash scripts/postRelease/validateProvenance.sh
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: findings-provenance
           path: findings/*.jsonl
@@ -264,6 +271,7 @@ jobs:
       - run: mkdir -p "$FINDINGS_DIR" && bash scripts/postRelease/validateExamples.sh
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: findings-examples
           path: findings/*.jsonl
