@@ -3,7 +3,7 @@
 //
 // Resource CRUD routes: identifier, scopes, and provider binding per zone.
 
-import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
+import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
 import type { PoolClient } from 'pg'
 import { z } from 'zod'
 import { v7 as uuidv7 } from 'uuid'
@@ -27,6 +27,9 @@ const ResourceBody = z.object({
   gateway_application_id: z.string().min(1).nullable().optional(),
 })
 
+const DEFAULT_CONTROL_AUDIENCE = 'caracal-control'
+const CONTROL_RESOURCE_HEADER = 'x-caracal-control-resource'
+
 async function providerExists(fastify: FastifyInstance, zoneId: string, providerId: string): Promise<boolean> {
   const { rows } = await fastify.db.query(
     `SELECT 1 FROM providers WHERE id = $1 AND zone_id = $2 AND archived_at IS NULL`,
@@ -49,6 +52,18 @@ function validateGatewayBinding(upstreamURL: string | null | undefined, gatewayA
   if (upstreamURL && !gatewayApplicationID) return 'gateway_application_required'
   if (!upstreamURL && gatewayApplicationID) return 'gateway_application_requires_upstream'
   return null
+}
+
+function controlAudience(): string {
+  return process.env.CONTROL_AUDIENCE ?? DEFAULT_CONTROL_AUDIENCE
+}
+
+function isControlResource(identifier: string): boolean {
+  return identifier === controlAudience()
+}
+
+function isControlResourceOperation(req: FastifyRequest): boolean {
+  return req.headers[CONTROL_RESOURCE_HEADER] === 'manage'
 }
 
 async function syncGatewayBinding(
@@ -82,8 +97,13 @@ export const resourcesRoutes: FastifyPluginAsync = async (fastify) => {
     if (!params) return
     const page = parseListPagination(req, reply)
     if (!page) return
+    const base = { conds: ['r.zone_id = $1', 'r.archived_at IS NULL'], values: [params.zoneId] }
+    if (!isControlResourceOperation(req)) {
+      base.values.push(controlAudience())
+      base.conds.push(`r.identifier <> $${base.values.length}`)
+    }
     const keyset = appendKeysetCondition(
-      { conds: ['r.zone_id = $1', 'r.archived_at IS NULL'], values: [params.zoneId] },
+      base,
       page,
       'r.created_at',
       'r.id',
@@ -116,8 +136,11 @@ export const resourcesRoutes: FastifyPluginAsync = async (fastify) => {
        WHERE r.id = $1 AND r.zone_id = $2 AND r.archived_at IS NULL`,
       [params.id, params.zoneId],
     )
-    if (!rows[0]) return reply.code(404).send({ error: 'resource_not_found' })
-    return rows[0]
+    const resource = rows[0]
+    if (!resource || (isControlResource(resource.identifier) && !isControlResourceOperation(req))) {
+      return reply.code(404).send({ error: 'resource_not_found' })
+    }
+    return resource
   })
 
   fastify.post('/zones/:zoneId/resources', async (req, reply) => {
@@ -127,6 +150,9 @@ export const resourcesRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(404).send({ error: 'zone_not_found' })
     }
     const body = ResourceBody.parse(req.body)
+    if (isControlResource(body.identifier) && !isControlResourceOperation(req)) {
+      return reply.code(409).send({ error: 'protected_resource', detail: 'control API resource is managed only through the Control console path' })
+    }
     if (body.credential_provider_id && !(await providerExists(fastify, params.zoneId, body.credential_provider_id))) {
       return reply.code(404).send({ error: 'provider_not_found' })
     }
@@ -208,6 +234,10 @@ export const resourcesRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.code(404).send({ error: 'resource_not_found' })
       }
       const nextIdentifier = body.identifier ?? current.identifier
+      if ((isControlResource(current.identifier) || isControlResource(nextIdentifier)) && !isControlResourceOperation(req)) {
+        await client.query('ROLLBACK')
+        return reply.code(409).send({ error: 'protected_resource', detail: 'control API resource is managed only through the Control console path' })
+      }
       const nextUpstreamURL = body.upstream_url !== undefined ? body.upstream_url : current.upstream_url
       const nextGatewayApplicationID = body.gateway_application_id !== undefined
         ? body.gateway_application_id
@@ -254,17 +284,27 @@ export const resourcesRoutes: FastifyPluginAsync = async (fastify) => {
     const client = await fastify.db.connect()
     try {
       await client.query('BEGIN')
-      const { rows } = await client.query<{ identifier: string }>(
-        `UPDATE resources SET archived_at = now(), updated_at = now()
+      const { rows: currentRows } = await client.query<{ identifier: string }>(
+        `SELECT identifier FROM resources
          WHERE id = $1 AND zone_id = $2 AND archived_at IS NULL
-         RETURNING identifier`,
+         FOR UPDATE`,
         [params.id, params.zoneId],
       )
-      if (!rows[0]) {
+      const current = currentRows[0]
+      if (!current) {
         await client.query('ROLLBACK')
         return reply.code(404).send({ error: 'resource_not_found' })
       }
-      await syncGatewayBinding(client, params.zoneId, rows[0].identifier, null)
+      if (isControlResource(current.identifier)) {
+        await client.query('ROLLBACK')
+        return reply.code(409).send({ error: 'protected_resource', detail: 'control API resource cannot be deleted' })
+      }
+      await client.query(
+        `UPDATE resources SET archived_at = now(), updated_at = now()
+         WHERE id = $1 AND zone_id = $2 AND archived_at IS NULL`,
+        [params.id, params.zoneId],
+      )
+      await syncGatewayBinding(client, params.zoneId, current.identifier, null)
       await client.query('COMMIT')
       return reply.code(204).send()
     } catch (err) {

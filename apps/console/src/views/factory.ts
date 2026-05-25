@@ -30,6 +30,7 @@ import { readFileSync } from 'node:fs'
 import type { App, View } from '../screen.ts'
 import type { ConsoleStateStore } from '../state.ts'
 import { maskSecretField } from '../errors.ts'
+import { DEFAULT_CONTROL_AUDIENCE } from '@caracalai/engine'
 import { AuditTailView } from './audit.ts'
 import { DetailView } from './detail.ts'
 import { ConfirmView, FormView, type Field } from './form.ts'
@@ -41,6 +42,15 @@ export interface Ctx {
   zoneId: string
   onZoneSelect?: (id: string, slug: string) => void
   state?: ConsoleStateStore | undefined
+}
+
+function controlAudience(): string {
+  return process.env.CONTROL_AUDIENCE ?? DEFAULT_CONTROL_AUDIENCE
+}
+
+function userResources(resources: Resource[]): Resource[] {
+  const audience = controlAudience()
+  return resources.filter((resource) => resource.identifier !== audience)
 }
 
 function detail(title: string, load: () => Promise<unknown>): DetailView {
@@ -106,7 +116,7 @@ export function applicationPicker(ctx: Ctx): Field['pick'] {
 function resourcePicker(ctx: Ctx): Field['pick'] {
   return pickFromList<Resource>(
     'pick resource',
-    () => ctx.client.resources.list(ctx.zoneId),
+    async () => userResources(await ctx.client.resources.list(ctx.zoneId)),
     [
       { header: 'identifier', width: 30, value: (row) => row.identifier },
       { header: 'scopes', width: 28, value: (row) => (row.scopes ?? []).join(',') || '-' },
@@ -120,7 +130,7 @@ function resourcePicker(ctx: Ctx): Field['pick'] {
 export function resourceIdentifierPicker(ctx: Ctx): Field['pick'] {
   return pickFromList<Resource>(
     'pick resource',
-    () => ctx.client.resources.list(ctx.zoneId),
+    async () => userResources(await ctx.client.resources.list(ctx.zoneId)),
     [
       { header: 'identifier', width: 30, value: (row) => row.identifier },
       { header: 'name', width: 20, value: (row) => row.name ?? '-' },
@@ -376,7 +386,7 @@ export function resourcesView(ctx: Ctx): View {
       { header: 'upstream', width: 32, value: (r) => r.upstream_url ?? '-' },
       { header: 'scopes', value: (r) => (r.scopes ?? []).join(' ') || '-' },
     ],
-    load: () => ctx.client.resources.list(ctx.zoneId),
+    load: async () => userResources(await ctx.client.resources.list(ctx.zoneId)),
     state: ctx.state,
     stateKey: 'resources',
     zoneId: ctx.zoneId,

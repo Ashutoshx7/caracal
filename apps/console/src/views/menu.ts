@@ -14,6 +14,7 @@ import {
   controlKeyRotate,
   controlPermissions,
   controlServiceStatus,
+  DEFAULT_CONTROL_AUDIENCE,
   credentialInspect,
   credentialRead,
   readControlState,
@@ -85,6 +86,10 @@ function credentialConfig(ctx: Ctx, cfg: RuntimeConfig | undefined, values: Reco
     application_id: applicationId,
     app_client_secret: values.app_client_secret ?? '',
   }
+}
+
+function controlAudience(): string {
+  return process.env.CONTROL_AUDIENCE ?? DEFAULT_CONTROL_AUDIENCE
 }
 
 function resolveControlStackMode(): StackMode {
@@ -261,6 +266,9 @@ class CredentialMenuView implements View {
       title: 'credential read',
       fields,
       onSubmit: async (v, app) => {
+        if (v.resource === controlAudience()) {
+          throw new Error('Control API tokens are issued from control → issue invocation token')
+        }
         const token = await credentialRead({ cfg: credentialConfig(this.ctx, cfg, v), resource: v.resource! })
         app.pop()
         app.push(new DetailView({
@@ -331,6 +339,7 @@ class ControlMenuView implements View {
       { key: 'l', label: 'list keys', build: () => this.listView() },
       { key: 'g', label: 'get key', build: () => this.getForm() },
       { key: 'c', label: 'create key', build: () => this.createForm() },
+      { key: 't', label: 'issue invocation token', build: () => this.tokenForm() },
       { key: 'r', label: 'rotate key', build: () => this.rotateForm() },
       { key: 'v', label: 'revoke key', build: () => this.revokeForm() },
     ]
@@ -467,6 +476,58 @@ class ControlMenuView implements View {
         app.push(new DetailView({
           title: `control / ${v.id}`,
           load: () => controlKeyGet(client, zoneId, v.id!),
+          mask: maskSecretField,
+        }))
+      },
+    })
+  }
+
+  private tokenForm(): View {
+    const { client, zoneId } = this.ctx
+    return new FormView({
+      title: 'control token issue',
+      fields: [
+        { key: 'id', label: 'control key', kind: 'text', required: true, pick: controlKeyPicker(client, zoneId) },
+        { key: 'client_secret', label: 'client secret', kind: 'secret', required: true, hint: 'paste the one-time secret from create or rotate' },
+        { key: 'scopes', label: 'permissions', kind: 'list', required: true, pick: controlPermissionPicker(), hint: 'must be granted on the selected key' },
+        { key: 'ttl_seconds', label: 'token TTL', kind: 'select', options: ['300', '600', '900'], default: '300' },
+      ],
+      onSubmit: async (v, app) => {
+        const record = await controlKeyGet(client, zoneId, v.id!)
+        const resource = controlAudience()
+        const scopes = splitList(v.scopes ?? '')
+        const allowed = new Set(record.allowed_scopes)
+        if (scopes.length === 0) throw new Error('at least one control permission is required')
+        for (const scope of scopes) {
+          if (!allowed.has(scope)) throw new Error(`control key ${record.client_id} does not grant ${scope}`)
+        }
+        const ttlSeconds = parseSeconds(v.ttl_seconds)
+        if (record.max_ttl_seconds !== undefined && ttlSeconds !== undefined && ttlSeconds > record.max_ttl_seconds) {
+          throw new Error(`token TTL exceeds control key maximum of ${record.max_ttl_seconds} seconds`)
+        }
+        const accessToken = await credentialRead({
+          cfg: {
+            zone_url: process.env.CARACAL_STS_URL ?? resolveServiceUrl('CARACAL_ZONE_URL', DEFAULT_ZONE_URL),
+            zone_id: zoneId,
+            application_id: record.client_id,
+            app_client_secret: v.client_secret!,
+          },
+          resource,
+          scopes,
+          ttlSeconds,
+        })
+        app.pop()
+        app.push(new DetailView({
+          title: `control token / ${record.client_id}`,
+          load: async () => ({
+            client_id: record.client_id,
+            resource,
+            scopes,
+            token_type: 'Bearer',
+            access_token: accessToken,
+            invoke_path: '/v1/control/invoke',
+            restrictions: record.restrictions,
+          }),
           mask: maskSecretField,
         }))
       },
