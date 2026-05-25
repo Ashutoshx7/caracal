@@ -71,7 +71,7 @@ if $run_smoke; then
   pnpm install --frozen-lockfile --prefer-offline
   if ! command -v bun >/dev/null 2>&1; then
     say_error "bun is required for pnpm -r build (apps/runtime, apps/console)."
-    say_label "Install: curl -fsSL https://bun.sh/install | bash"
+    say_label "Install: npm install --global bun@1.3.14"
     exit 1
   fi
   step "smoke: pnpm -r build"

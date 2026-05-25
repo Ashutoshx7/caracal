@@ -110,7 +110,7 @@ func (c *stsClient) Exchange(ctx context.Context, subjectToken string, bind bind
 		timestamp := time.Now().UTC()
 		req.Header.Set(corests.GatewayTimestampHeader, fmt.Sprintf("%d", timestamp.Unix()))
 		req.Header.Set(corests.GatewayRequestHeader, requestID)
-		req.Header.Set(corests.GatewaySignatureHeader, corests.SignGatewayExchange(c.exchangeHMACKey, timestamp, requestID, []byte(body)))
+		req.Header.Set(corests.GatewaySignatureHeader, corests.SignGatewayExchange(c.exchangeHMACKey, timestamp, requestID, req.Method, req.URL.Path, []byte(body)))
 	}
 
 	start := time.Now()

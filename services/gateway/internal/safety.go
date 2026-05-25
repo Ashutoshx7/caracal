@@ -43,8 +43,18 @@ func stripHopByHop(h http.Header) {
 	}
 }
 
-// pathContainsTraversal reports whether p contains a "." or ".." segment.
+// pathContainsTraversal reports whether p contains a "." or ".." segment, recursively
+// undoing percent-encoding so multi-decoded sequences like %252e are also caught.
 func pathContainsTraversal(p string) bool {
+	prev := ""
+	for p != prev {
+		prev = p
+		decoded, err := url.PathUnescape(p)
+		if err != nil {
+			return true
+		}
+		p = decoded
+	}
 	for _, seg := range strings.Split(p, "/") {
 		if seg == ".." || seg == "." {
 			return true
