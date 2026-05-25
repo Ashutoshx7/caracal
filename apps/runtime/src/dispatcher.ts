@@ -44,7 +44,7 @@ function loadConfig(required: boolean): RuntimeConfig | undefined {
   const path = resolveRuntimeConfigPath()
   if (!path) {
     if (!required) return undefined
-    throw new LoadConfigError('caracal.toml not found; open `caracal console` to create a zone, create a confidential runner app, and write the config, or pass CARACAL_CONFIG to an existing file.')
+    throw new LoadConfigError('caracal.toml not found; open `caracal console` to create a zone and confidential runner app, then pass CARACAL_CONFIG to a file containing zone_id, application_id, and app_client_secret.')
   }
   try {
     return parse(readFileSync(path, 'utf8')) as unknown as RuntimeConfig

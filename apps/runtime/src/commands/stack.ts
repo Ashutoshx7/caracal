@@ -17,7 +17,7 @@ import {
 import { flagBool, parseArgs, printJSON, showHelp } from './shared.ts'
 import { CARACAL_MODE, CARACAL_REGISTRY, CARACAL_SHA, CARACAL_VERSION } from '../runtime/version.gen.ts'
 import { style, SYMBOL, printError, printInfo } from '../style.ts'
-import { ensureRuntimeConfig } from './onboarding.ts'
+import { completeRuntimeOnboarding } from './onboarding.ts'
 
 function resolveMode(): StackMode {
   const override = process.env.CARACAL_MODE
@@ -90,7 +90,7 @@ export async function upCommand(argv: string[]): Promise<void> {
   const code = await handle.exitCode
   if (code === 0 && argv.length === 0) {
     try {
-      await ensureRuntimeConfig()
+      await completeRuntimeOnboarding()
     } catch (err) {
       printError(err instanceof Error ? err.message : String(err))
       process.exit(1)

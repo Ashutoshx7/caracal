@@ -3,15 +3,13 @@
 //
 // Unit tests for runtime stack command Docker Compose preflight handling.
 
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const engineMocks = vi.hoisted(() => ({
-  buildAdminClient: vi.fn(),
   defaultServiceProbes: vi.fn(() => []),
-  generateClientSecret: vi.fn(() => 'cs_test-secret'),
   resolveStackPaths: vi.fn(),
   stackDown: vi.fn(),
   stackStatus: vi.fn(),
@@ -50,22 +48,7 @@ describe('stack commands', () => {
     })
     engineMocks.stackDown.mockReturnValue({ dispose: vi.fn(), exitCode: Promise.resolve(0) })
     engineMocks.stackUp.mockReturnValue({ dispose: vi.fn(), exitCode: Promise.resolve(0) })
-    engineMocks.buildAdminClient.mockReturnValue({
-      apiUrl: 'http://localhost:3000',
-      zoneId: undefined,
-      client: {
-        zones: {
-          list: vi.fn().mockResolvedValue([{ id: 'zone-1', name: 'Zone', slug: 'zone' }]),
-          get: vi.fn(),
-          create: vi.fn(),
-        },
-        applications: {
-          list: vi.fn().mockResolvedValue([]),
-          create: vi.fn().mockResolvedValue({ id: 'app-1', name: 'Caracal local runner' }),
-          patch: vi.fn(),
-        },
-      },
-    })
+    engineMocks.stackStatus.mockResolvedValue([{ name: 'api', port: 3000, url: 'http://localhost:3000/ready', ok: true, detail: '200' }])
     spawnSyncMock.mockReturnValue({ status: 0 })
     vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
       stderr += chunk.toString()
@@ -118,16 +101,15 @@ describe('stack commands', () => {
     await expect(upCommand(['api'])).rejects.toThrow('exit:0')
 
     expect(engineMocks.stackUp).toHaveBeenCalledWith(expect.objectContaining({ args: ['api'] }))
-    expect(engineMocks.buildAdminClient).not.toHaveBeenCalled()
+    expect(engineMocks.stackStatus).not.toHaveBeenCalled()
   })
 
-  it('writes runtime config after a full stack start when config is missing', async () => {
+  it('completes onboarding without creating runtime config after a full stack start', async () => {
     await expect(upCommand([])).rejects.toThrow('exit:0')
 
-    const cfg = readFileSync(join(xdg, 'caracal', 'caracal.toml'), 'utf8')
-    expect(cfg).toContain('zone_id = "zone-1"')
-    expect(cfg).toContain('application_id = "app-1"')
-    expect(cfg).toContain('app_client_secret = "cs_test-secret"')
-    expect(engineMocks.buildAdminClient).toHaveBeenCalledOnce()
+    expect(engineMocks.stackStatus).toHaveBeenCalledWith({
+      probes: [],
+    })
+    expect(existsSync(join(xdg, 'caracal', 'caracal.toml'))).toBe(false)
   })
 })
