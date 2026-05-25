@@ -20,8 +20,8 @@ Production and cloud workloads should avoid inline secrets and provide config th
 | `CARACAL_APP_CLIENT_SECRET_FILE` | yes | Path to a mounted secret file containing the client secret. |
 | `CARACAL_RUN_CREDENTIALS_FILE` | no | Path to a JSON credential manifest. |
 | `CARACAL_RUN_CREDENTIALS` | no | Inline JSON credential manifest for ephemeral automation. |
-| `CARACAL_RUN_CONTINUE_ON_FAILURE` | no | `true` or `false`; controls required credential failure behavior. |
-| `CARACAL_MCP_GOVERNANCE_MODE` | no | Platform override for MCP governance: `block` or `log`. |
+| `CARACAL_RUN_CONTINUE_ON_FAILURE` | no | `true` or `false`; `true` is accepted only in development unless `CARACAL_ALLOW_REQUIRED_CREDENTIAL_FAILURE=true`. |
+| `CARACAL_MCP_GOVERNANCE_MODE` | no | Platform override for MCP governance: `block` or `log`. `log` is accepted outside development only with `CARACAL_ALLOW_MCP_GOVERNANCE_LOG=true`. |
 
 The credential manifest may be an array of required credentials:
 
@@ -79,10 +79,10 @@ Explicit `CARACAL_CONFIG` paths may be read-only secret mounts, but they must no
 | `application_id` | yes | Confidential application used by the runner. |
 | `app_client_secret_file` | yes, unless `app_client_secret` is set | Path to a secret file containing the confidential application secret. Preferred outside local development. |
 | `app_client_secret` | yes, unless `app_client_secret_file` is set | Inline confidential application secret. Local development only. |
-| `continue_on_failure` | no | Continue when optional credential acquisition fails. Defaults to `false`. |
+| `continue_on_failure` | no | Continue when required credential acquisition fails. Defaults to `false`; `true` is local-development only unless explicitly allowed by environment. |
 | `credentials[]` | no | Required resource tokens to inject into the subprocess. |
 | `optional_credentials[]` | no | Optional resource tokens with per-entry failure behavior. |
-| `mcp_governance.mode` | no | `block` or `log` when the subprocess command references MCP server binaries. `CARACAL_MCP_GOVERNANCE_MODE` overrides this value. |
+| `mcp_governance.mode` | no | `block` or `log` when the subprocess command references MCP server binaries. `log` is local-development only unless explicitly allowed by environment. |
 
 Credential entries use:
 

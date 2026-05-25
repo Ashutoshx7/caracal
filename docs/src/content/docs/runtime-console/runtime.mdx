@@ -63,3 +63,4 @@ mode = "block"   # "block" or "log"
 ```
 
 `"block"` exits before spawning the subprocess. `"log"` writes the notice and continues.
+Outside development, `"log"` requires an explicit platform override so local profiles cannot silently weaken enforcement.

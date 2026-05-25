@@ -42,6 +42,8 @@ afterEach(() => {
   delete process.env.CARACAL_RUN_CONTINUE_ON_FAILURE
   delete process.env.CARACAL_MCP_GOVERNANCE_MODE
   delete process.env.CARACAL_ALLOW_INSECURE_CONFIG_URLS
+  delete process.env.CARACAL_ALLOW_MCP_GOVERNANCE_LOG
+  delete process.env.CARACAL_ALLOW_REQUIRED_CREDENTIAL_FAILURE
   delete process.env.PWD
   delete process.env.INIT_CWD
   delete process.env.XDG_CONFIG_HOME
@@ -253,6 +255,29 @@ describe('resolveRuntimeConfigPath', () => {
 
     process.env.CARACAL_ALLOW_INSECURE_CONFIG_URLS = 'true'
     expect(loadRuntimeConfig(true)?.zone_url).toBe('http://sts.example.com')
+  })
+
+  it('rejects weakened runtime policy outside development unless explicitly allowed', () => {
+    process.env.NODE_ENV = 'production'
+    process.env.CARACAL_STS_URL = 'https://sts.example.com'
+    process.env.CARACAL_ZONE_ID = 'zone1'
+    process.env.CARACAL_APPLICATION_ID = 'app1'
+    process.env.CARACAL_APP_CLIENT_SECRET = 'secret-value'
+    process.env.CARACAL_RUN_CREDENTIALS = JSON.stringify({
+      credentials: [{ env: 'RESOURCE_TOKEN', resource: 'resource://api' }],
+      continue_on_failure: true,
+    })
+
+    expect(() => loadRuntimeConfig(true)).toThrow(/continue_on_failure=true is not allowed outside development/)
+
+    process.env.CARACAL_RUN_CREDENTIALS = JSON.stringify({
+      credentials: [{ env: 'RESOURCE_TOKEN', resource: 'resource://api' }],
+      mcp_governance: { mode: 'log' },
+    })
+    expect(() => loadRuntimeConfig(true)).toThrow(/mcp_governance\.mode=log is not allowed outside development/)
+
+    process.env.CARACAL_ALLOW_MCP_GOVERNANCE_LOG = 'true'
+    expect(loadRuntimeConfig(true)?.mcp_governance).toEqual({ mode: 'log' })
   })
 })
 

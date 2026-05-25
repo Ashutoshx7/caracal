@@ -294,6 +294,7 @@ function normalizeMcpGovernance(record: UnknownRecord, source: string, env: Node
   const override = env.CARACAL_MCP_GOVERNANCE_MODE;
   if (override !== undefined) {
     if (override !== 'block' && override !== 'log') failConfig(source, 'CARACAL_MCP_GOVERNANCE_MODE must be block or log');
+    assertMcpGovernanceModeAllowed(override, source, env);
     return { mode: override };
   }
   const value = record.mcp_governance;
@@ -302,6 +303,7 @@ function normalizeMcpGovernance(record: UnknownRecord, source: string, env: Node
   assertNoUnknownKeys(value, new Set(['mode']), source, 'mcp_governance');
   const mode = requiredStringField(value, 'mode', source);
   if (mode !== 'block' && mode !== 'log') failConfig(source, 'mcp_governance.mode must be block or log');
+  assertMcpGovernanceModeAllowed(mode, source, env);
   return { mode };
 }
 
@@ -323,6 +325,13 @@ function normalizeRuntimeConfig(value: unknown, source: string, env: NodeJS.Proc
   const gatewayUrl = stringField(value, 'gateway_url', source);
   if (gatewayUrl) cfg.gateway_url = validateEndpointUrl(gatewayUrl, 'gateway_url', source, env);
   const continueOnFailure = booleanField(value, 'continue_on_failure', source);
+  if (
+    continueOnFailure === true &&
+    (env.NODE_ENV ?? 'development') !== 'development' &&
+    env.CARACAL_ALLOW_REQUIRED_CREDENTIAL_FAILURE !== 'true'
+  ) {
+    failConfig(source, 'continue_on_failure=true is not allowed outside development');
+  }
   if (continueOnFailure !== undefined) cfg.continue_on_failure = continueOnFailure;
   const credentials = normalizeCredentials(value, 'credentials', source);
   if (credentials) cfg.credentials = credentials;
@@ -332,6 +341,16 @@ function normalizeRuntimeConfig(value: unknown, source: string, env: NodeJS.Proc
   const governance = normalizeMcpGovernance(value, source, env);
   if (governance) cfg.mcp_governance = governance;
   return cfg;
+}
+
+function assertMcpGovernanceModeAllowed(mode: 'block' | 'log', source: string, env: NodeJS.ProcessEnv): void {
+  if (
+    mode === 'log' &&
+    (env.NODE_ENV ?? 'development') !== 'development' &&
+    env.CARACAL_ALLOW_MCP_GOVERNANCE_LOG !== 'true'
+  ) {
+    failConfig(source, 'mcp_governance.mode=log is not allowed outside development');
+  }
 }
 
 function assertUniqueCredentialEnv(credentials: readonly Credential[] | undefined, optionalCredentials: readonly OptionalCredential[] | undefined, source: string): void {
