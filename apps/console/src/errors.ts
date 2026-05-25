@@ -68,7 +68,7 @@ function rawExplain(err: unknown): string {
       return 'coordinator URL not set — export CARACAL_COORDINATOR_URL'
     }
     if (/coordinator_token_not_configured/.test(msg)) {
-      return 'coordinator token not set — export CARACAL_COORDINATOR_TOKEN'
+      return 'coordinator token not found — run `caracal up` or set CARACAL_COORDINATOR_TOKEN'
     }
     if (/fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EAI_AGAIN/i.test(msg)) {
       return `${msg} — are local services running? try \`caracal up\` and \`caracal status\``

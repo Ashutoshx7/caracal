@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AdminClient } from '@caracalai/admin'
-import { discoverAdminToken, installedHome } from '@caracalai/core'
+import { discoverAdminToken, discoverCoordinatorToken, installedHome } from '@caracalai/core'
 import {
   DEFAULT_API_URL,
   DEFAULT_COORDINATOR_URL,
@@ -29,7 +29,7 @@ export function buildAdminClient(cfg?: RuntimeConfig): AdminContext {
   }
   const apiUrl = resolveServiceUrl('CARACAL_API_URL', DEFAULT_API_URL)
   const coordinatorUrl = resolveServiceUrl('CARACAL_COORDINATOR_URL', DEFAULT_COORDINATOR_URL)
-  const coordinatorToken = process.env.CARACAL_COORDINATOR_TOKEN
+  const coordinatorToken = discoverCoordinatorToken()
   const zoneId = process.env.CARACAL_ZONE_ID ?? cfg?.zone_id
   return {
     client: new AdminClient({ apiUrl, coordinatorUrl, adminToken, coordinatorToken }),
