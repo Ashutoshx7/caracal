@@ -24,7 +24,7 @@
     "expected_sig_hex": "93c82e377fc1ff7f1430549aa20cd20971150173b5996308ab84cb48d6f2683d"
   },
   {
-    "description": "boolean and numeric values serialize correctly",
+    "description": "string values (including empty) serialize correctly",
     "stream": "audit:events",
     "values": { "active": "true", "count": "0", "name": "" },
     "expected_canonical": "audit:events\nactive=true\ncount=0\nname=\n",
