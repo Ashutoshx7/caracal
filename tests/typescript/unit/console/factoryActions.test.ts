@@ -212,6 +212,22 @@ describe('applications actions', () => {
 })
 
 describe('resources actions', () => {
+  it('hides the Control API audience from generic resource management', async () => {
+    const { client, ctx } = newCtx()
+    client.resources.list.mockResolvedValueOnce([
+      { id: 'res-control', identifier: 'caracal-control', name: 'Control API', scopes: ['control:agent:write'] },
+      { id: 'res-demo', identifier: 'demo-api', name: 'Demo API', scopes: ['read'] },
+    ])
+    const list = resourcesView(ctx as unknown as Parameters<typeof resourcesView>[0]) as ListView<unknown>
+    const app = fakeApp()
+
+    await list.init(app)
+    const body = list.render({ app, size: { rows: 20, cols: 100 }, status: '' }).join('\n')
+
+    expect(body).toContain('demo-api')
+    expect(body).not.toContain('caracal-control')
+  })
+
   it('n opens FormView with identifier+scopes required', async () => {
     const { ctx } = newCtx()
     const list = resourcesView(ctx as unknown as Parameters<typeof resourcesView>[0]) as ListView<unknown>

@@ -7,6 +7,65 @@ import { describe, it, expect, vi } from 'vitest'
 import { resourcesRoutes } from '../../../../../apps/api/src/routes/resources.js'
 import { buildRouteApp } from '../../../../shared/test-utils/typescript/fastify.js'
 
+describe('GET /v1/zones/:zoneId/resources', () => {
+  it('hides the Control API resource from generic resource lists', async () => {
+    const { app, db } = buildRouteApp(resourcesRoutes)
+    db.query.mockResolvedValueOnce({
+      rows: [{ id: 'res-demo', identifier: 'demo-api', created_at: '2026-05-25T00:00:00.000Z' }],
+    })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/zones/z1/resources',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body)).toEqual([{ id: 'res-demo', identifier: 'demo-api', created_at: '2026-05-25T00:00:00.000Z' }])
+    expect(db.query).toHaveBeenCalledWith(
+      expect.stringContaining('r.identifier <> $2'),
+      ['z1', 'caracal-control', 200],
+    )
+  })
+
+  it('lets the Control path include the Control API resource', async () => {
+    const { app, db } = buildRouteApp(resourcesRoutes)
+    db.query.mockResolvedValueOnce({
+      rows: [{ id: 'res-control', identifier: 'caracal-control', created_at: '2026-05-25T00:00:00.000Z' }],
+    })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/zones/z1/resources',
+      headers: { 'x-caracal-control-resource': 'manage' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body)).toEqual([{ id: 'res-control', identifier: 'caracal-control', created_at: '2026-05-25T00:00:00.000Z' }])
+    expect(db.query).not.toHaveBeenCalledWith(
+      expect.stringContaining('r.identifier <> $2'),
+      expect.anything(),
+    )
+  })
+})
+
+describe('GET /v1/zones/:zoneId/resources/:id', () => {
+  it('hides the Control API resource from generic resource details', async () => {
+    const { app, db } = buildRouteApp(resourcesRoutes)
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'res-control', identifier: 'caracal-control' }] })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/zones/z1/resources/res-control',
+    })
+
+    expect(res.statusCode).toBe(404)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'resource_not_found' })
+  })
+})
+
 describe('POST /v1/zones/:zoneId/resources', () => {
   it('rejects provider references outside the zone', async () => {
     const { app, db } = buildRouteApp(resourcesRoutes)
@@ -116,6 +175,46 @@ describe('POST /v1/zones/:zoneId/resources', () => {
     expect(client.query).toHaveBeenCalledWith('COMMIT')
     expect(client.release).toHaveBeenCalled()
   })
+
+  it('blocks generic creation of the Control API resource', async () => {
+    const { app, db } = buildRouteApp(resourcesRoutes)
+    db.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/resources',
+      payload: {
+        identifier: 'caracal-control',
+        scopes: ['control:agent:write'],
+      },
+    })
+
+    expect(res.statusCode).toBe(409)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'protected_resource' })
+    expect(db.connect).not.toHaveBeenCalled()
+  })
+
+  it('allows the Control path to create the Control API resource', async () => {
+    const { app, db } = buildRouteApp(resourcesRoutes)
+    db.query
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'res-control', identifier: 'caracal-control', scopes: ['control:agent:write'] }] })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/resources',
+      headers: { 'x-caracal-control-resource': 'manage' },
+      payload: {
+        identifier: 'caracal-control',
+        scopes: ['control:agent:write'],
+      },
+    })
+
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body)).toMatchObject({ id: 'res-control', identifier: 'caracal-control' })
+  })
 })
 
 describe('PATCH /v1/zones/:zoneId/resources/:id', () => {
@@ -184,6 +283,35 @@ describe('PATCH /v1/zones/:zoneId/resources/:id', () => {
       ['resource://api/v2', 'z1', 'app-1'],
     )
   })
+
+  it('blocks generic edits to the Control API resource', async () => {
+    const { app, db } = buildRouteApp(resourcesRoutes)
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [{
+            identifier: 'caracal-control',
+            upstream_url: null,
+            gateway_application_id: null,
+          }],
+        })
+        .mockResolvedValueOnce({ rows: [] }),
+      release: vi.fn(),
+    }
+    db.connect.mockResolvedValueOnce(client)
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/v1/zones/z1/resources/res-control',
+      payload: { scopes: ['control:agent:write'] },
+    })
+
+    expect(res.statusCode).toBe(409)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'protected_resource' })
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK')
+  })
 })
 
 describe('DELETE /v1/zones/:zoneId/resources/:id', () => {
@@ -193,6 +321,7 @@ describe('DELETE /v1/zones/:zoneId/resources/:id', () => {
       query: vi.fn()
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [{ identifier: 'resource://api' }] })
+        .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [] }),
       release: vi.fn(),
@@ -212,5 +341,27 @@ describe('DELETE /v1/zones/:zoneId/resources/:id', () => {
     )
     expect(client.query).toHaveBeenCalledWith('COMMIT')
     expect(client.release).toHaveBeenCalled()
+  })
+
+  it('blocks deletion of the Control API resource', async () => {
+    const { app, db } = buildRouteApp(resourcesRoutes)
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ identifier: 'caracal-control' }] })
+        .mockResolvedValueOnce({ rows: [] }),
+      release: vi.fn(),
+    }
+    db.connect.mockResolvedValueOnce(client)
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/v1/zones/z1/resources/res-control',
+    })
+
+    expect(res.statusCode).toBe(409)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'protected_resource' })
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK')
   })
 })

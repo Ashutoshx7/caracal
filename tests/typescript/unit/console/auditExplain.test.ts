@@ -3,6 +3,9 @@
 //
 // audit-explain form submits the request_id and pushes a populated DetailView.
 
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, it, expect, vi } from 'vitest'
 
 import { MenuView } from '../../../../apps/console/src/views/menu.ts'
@@ -194,7 +197,32 @@ describe('audit explain entry', () => {
     expect(typeof (form as unknown as { fields: { pick?: unknown }[] }).fields[0]?.pick).toBe('function')
   })
 
+  it('points Control API token requests to the Control menu', async () => {
+    const client = { audit: { byRequest: vi.fn() } } as unknown as AdminClient
+    const menu = new MenuView(client, 'z1')
+    const app = fakeApp()
+
+    await menu.onKey('c', { app, size: { rows: 25, cols: 80 }, status: '' })
+    const pushed = (app as unknown as { _pushed: unknown[] })._pushed
+    const credential = pushed[pushed.length - 1] as { onKey: MenuView['onKey'] }
+    await credential.onKey('r', { app, size: { rows: 25, cols: 80 }, status: '' })
+    const form = pushed[pushed.length - 1] as FormView
+    ;(form as unknown as { values: Record<string, string> }).values = { resource: 'caracal-control' }
+    ;(form as unknown as { focus: number }).focus = 1
+    await form.onKey('enter', { app, size: { rows: 25, cols: 80 }, status: '' })
+
+    expect(app.setStatus).toHaveBeenCalledWith(
+      'Control API tokens are issued from control → issue invocation token',
+      'error',
+    )
+  })
+
   it('reads credentials without requiring caracal.toml by using selected application fields', async () => {
+    const cwd = process.cwd()
+    const dir = mkdtempSync(join(tmpdir(), 'caracal-console-credential-'))
+    vi.stubEnv('PWD', dir)
+    vi.stubEnv('INIT_CWD', dir)
+    vi.stubEnv('XDG_CONFIG_HOME', join(dir, '.config'))
     vi.stubEnv('CARACAL_ZONE_URL', 'https://sts.example.com')
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       access_token: 'token-value',
@@ -210,32 +238,38 @@ describe('audit explain entry', () => {
     const menu = new MenuView(client, 'z1')
     const app = fakeApp()
 
-    await menu.onKey('c', { app, size: { rows: 25, cols: 80 }, status: '' })
-    const pushed = (app as unknown as { _pushed: unknown[] })._pushed
-    const credential = pushed[pushed.length - 1] as { onKey: MenuView['onKey'] }
-    await credential.onKey('r', { app, size: { rows: 25, cols: 80 }, status: '' })
-    const form = pushed[pushed.length - 1] as FormView
-    const fields = (form as unknown as { fields: { key: string; pick?: unknown }[] }).fields
-    expect(fields.map((field) => field.key)).toEqual(['resource', 'application_id', 'app_client_secret'])
-    expect(typeof fields[1]?.pick).toBe('function')
+    try {
+      process.chdir(dir)
+      await menu.onKey('c', { app, size: { rows: 25, cols: 80 }, status: '' })
+      const pushed = (app as unknown as { _pushed: unknown[] })._pushed
+      const credential = pushed[pushed.length - 1] as { onKey: MenuView['onKey'] }
+      await credential.onKey('r', { app, size: { rows: 25, cols: 80 }, status: '' })
+      const form = pushed[pushed.length - 1] as FormView
+      const fields = (form as unknown as { fields: { key: string; pick?: unknown }[] }).fields
+      expect(fields.map((field) => field.key)).toEqual(['resource', 'application_id', 'app_client_secret'])
+      expect(typeof fields[1]?.pick).toBe('function')
 
-    ;(form as unknown as { values: Record<string, string> }).values = {
-      resource: 'resource://api',
-      application_id: 'app-1',
-      app_client_secret: 'secret',
+      ;(form as unknown as { values: Record<string, string> }).values = {
+        resource: 'resource://api',
+        application_id: 'app-1',
+        app_client_secret: 'secret',
+      }
+      ;(form as unknown as { focus: number }).focus = 3
+      await form.onKey('enter', { app, size: { rows: 25, cols: 80 }, status: '' })
+
+      expect(fetchMock).toHaveBeenCalledWith('https://sts.example.com/oauth/2/token', expect.objectContaining({
+        method: 'POST',
+      }))
+      const detail = pushed[pushed.length - 1] as DetailView
+      expect(detail).toBeInstanceOf(DetailView)
+      await detail.init(app)
+      const body = detail.render({ app, size: { rows: 25, cols: 80 }, status: '' }).join('\n')
+      expect(body).toContain('resource://api')
+      expect(body).toContain('••••')
+    } finally {
+      process.chdir(cwd)
+      rmSync(dir, { recursive: true, force: true })
     }
-    ;(form as unknown as { focus: number }).focus = 3
-    await form.onKey('enter', { app, size: { rows: 25, cols: 80 }, status: '' })
-
-    expect(fetchMock).toHaveBeenCalledWith('https://sts.example.com/oauth/2/token', expect.objectContaining({
-      method: 'POST',
-    }))
-    const detail = pushed[pushed.length - 1] as DetailView
-    expect(detail).toBeInstanceOf(DetailView)
-    await detail.init(app)
-    const body = detail.render({ app, size: { rows: 25, cols: 80 }, status: '' }).join('\n')
-    expect(body).toContain('resource://api')
-    expect(body).toContain('••••')
   })
 
   it('opens credential inspect and decodes local JWT claims', async () => {
@@ -260,6 +294,93 @@ describe('audit explain entry', () => {
     const body = detail.render({ app, size: { rows: 25, cols: 80 }, status: '' }).join('\n')
     expect(body).toContain('user-1')
     expect(body).toContain('k1')
+  })
+
+  it('issues control invocation tokens only through scoped control keys', async () => {
+    vi.stubEnv('CARACAL_ZONE_URL', 'https://sts.example.com')
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      access_token: 'control-token',
+      token_type: 'Bearer',
+      expires_in: 300,
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const client = {
+      audit: { byRequest: vi.fn() },
+      applications: {
+        get: vi.fn(async () => ({
+          id: 'control-app',
+          name: 'robot',
+          credential_type: 'token',
+          traits: ['control:invoke', 'control:scope:control:zone:read'],
+          created_at: 'now',
+        })),
+      },
+    } as unknown as AdminClient
+    const menu = new MenuView(client, 'z1')
+    const app = fakeApp()
+
+    await menu.onKey('t', { app, size: { rows: 25, cols: 80 }, status: '' })
+    const pushed = (app as unknown as { _pushed: unknown[] })._pushed
+    const control = pushed[pushed.length - 1] as { onKey: MenuView['onKey'] }
+    await control.onKey('t', { app, size: { rows: 25, cols: 80 }, status: '' })
+    const form = pushed[pushed.length - 1] as FormView
+    ;(form as unknown as { values: Record<string, string> }).values = {
+      id: 'control-app',
+      client_secret: 'secret',
+      scopes: 'control:zone:read',
+      ttl_seconds: '300',
+    }
+    ;(form as unknown as { focus: number }).focus = 4
+    await form.onKey('enter', { app, size: { rows: 25, cols: 80 }, status: '' })
+
+    const request = fetchMock.mock.calls[0][1] as { body: URLSearchParams }
+    expect(request.body.get('application_id')).toBe('control-app')
+    expect(request.body.get('resource')).toBe('caracal-control')
+    expect(request.body.get('scope')).toBe('control:zone:read')
+    expect(request.body.get('ttl_seconds')).toBe('300')
+    const detail = pushed[pushed.length - 1] as DetailView
+    await detail.init(app)
+    const body = detail.render({ app, size: { rows: 25, cols: 80 }, status: '' }).join('\n')
+    expect(body).toContain('caracal-control')
+    expect(body).toContain('••••')
+  })
+
+  it('blocks control token scopes that are not granted to the key', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const client = {
+      audit: { byRequest: vi.fn() },
+      applications: {
+        get: vi.fn(async () => ({
+          id: 'control-app',
+          name: 'robot',
+          credential_type: 'token',
+          traits: ['control:invoke', 'control:scope:control:zone:read'],
+          created_at: 'now',
+        })),
+      },
+    } as unknown as AdminClient
+    const menu = new MenuView(client, 'z1')
+    const app = fakeApp()
+
+    await menu.onKey('t', { app, size: { rows: 25, cols: 80 }, status: '' })
+    const pushed = (app as unknown as { _pushed: unknown[] })._pushed
+    const control = pushed[pushed.length - 1] as { onKey: MenuView['onKey'] }
+    await control.onKey('t', { app, size: { rows: 25, cols: 80 }, status: '' })
+    const form = pushed[pushed.length - 1] as FormView
+    ;(form as unknown as { values: Record<string, string> }).values = {
+      id: 'control-app',
+      client_secret: 'secret',
+      scopes: 'control:application:write',
+      ttl_seconds: '300',
+    }
+    ;(form as unknown as { focus: number }).focus = 4
+    await form.onKey('enter', { app, size: { rows: 25, cols: 80 }, status: '' })
+    expect(app.setStatus).toHaveBeenCalledWith(
+      'control key control-app does not grant control:application:write',
+      'error',
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
 })

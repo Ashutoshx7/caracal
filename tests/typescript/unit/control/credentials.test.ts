@@ -52,10 +52,11 @@ describe('control credentials', () => {
       expiresAt: '2999-01-01T00:00:00.000Z',
     })
 
+    expect(c.resources.list).toHaveBeenCalledWith('z1', { controlResource: true })
     expect(c.resources.create).toHaveBeenCalledWith('z1', expect.objectContaining({
       identifier: 'caracal-control',
       scopes: expect.arrayContaining(['control:zone:read', 'control:zone:write', 'control:zone:delete']),
-    }))
+    }), { controlResource: true })
     expect(c.applications.create).toHaveBeenCalledWith('z1', expect.objectContaining({
       name: 'robot',
       client_secret: expect.stringMatching(/^cs_[A-Za-z0-9_-]+$/),
@@ -112,6 +113,6 @@ describe('control credentials', () => {
 
     expect(c.resources.patch).toHaveBeenCalledWith('z1', 'res-1', expect.objectContaining({
       scopes: expect.arrayContaining(['control:zone:write', 'control:zone:delete']),
-    }))
+    }), { controlResource: true })
   })
 })
