@@ -27,12 +27,10 @@ import {
   type StackPaths,
 } from '@caracalai/engine'
 import { readFileSync } from 'node:fs'
-import { parse } from 'smol-toml'
 import {
-  assertRuntimeConfigFileSecure,
   DEFAULT_ZONE_URL,
-  resolveRuntimeConfigPath,
   resolveServiceUrl,
+  loadRuntimeConfig as loadValidatedRuntimeConfig,
   type RuntimeConfig,
 } from '@caracalai/engine/runtime-config'
 import { pad, ui } from '../ansi.ts'
@@ -72,10 +70,7 @@ interface Entry {
 }
 
 function loadRuntimeConfig(): RuntimeConfig | undefined {
-  const path = resolveRuntimeConfigPath()
-  if (!path) return undefined
-  assertRuntimeConfigFileSecure(path)
-  return parse(readFileSync(path, 'utf8')) as unknown as RuntimeConfig
+  return loadValidatedRuntimeConfig(false)
 }
 
 function credentialConfig(ctx: Ctx, cfg: RuntimeConfig | undefined, values: Record<string, string>): RuntimeConfig {

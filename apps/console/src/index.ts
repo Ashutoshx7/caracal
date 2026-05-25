@@ -4,15 +4,12 @@
 // Caracal Console entry point bootstraps the AdminClient and launches the menu.
 
 import '@caracalai/engine/scrubCwdEnv'
-import { readFileSync } from 'node:fs'
-import { parse } from 'smol-toml'
 import {
   buildAdminClient,
   formatVersionOutput,
 } from '@caracalai/engine'
 import {
-  assertRuntimeConfigFileSecure,
-  resolveRuntimeConfigPath,
+  loadRuntimeConfig,
   type RuntimeConfig,
 } from '@caracalai/engine/runtime-config'
 import { installCrashHandlers } from '@caracalai/engine/crash'
@@ -22,10 +19,7 @@ import { ConsoleStateStore } from './state.ts'
 import { MenuView } from './views/menu.ts'
 
 function loadConfig(): RuntimeConfig | undefined {
-  const path = resolveRuntimeConfigPath()
-  if (!path) return undefined
-  assertRuntimeConfigFileSecure(path)
-  return parse(readFileSync(path, 'utf8')) as unknown as RuntimeConfig
+  return loadRuntimeConfig(false)
 }
 
 function nonInteractiveReason(): string | undefined {

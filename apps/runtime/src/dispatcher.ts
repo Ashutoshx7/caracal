@@ -4,9 +4,11 @@
 // Shared dispatcher kernel: builds usage text and routes argv through the runtime shell registry.
 
 import { COMMAND_NAME_PATTERN, type CommandGroup } from '@caracalai/engine/commands'
-import { parse } from 'smol-toml'
-import { readFileSync } from 'node:fs'
-import { assertRuntimeConfigFileSecure, resolveRuntimeConfigPath } from '@caracalai/engine/runtime-config'
+import {
+  RuntimeConfigMissingError,
+  RuntimeConfigValidationError,
+  loadRuntimeConfig as loadValidatedRuntimeConfig,
+} from '@caracalai/engine/runtime-config'
 import { formatVersionOutput } from '@caracalai/engine'
 import { style, printError } from './style.ts'
 import type { CommandRegistry } from './registry.ts'
@@ -31,28 +33,8 @@ export interface DispatchOptions {
   readonly loadConfig?: boolean
 }
 
-class LoadConfigError extends Error {
-  readonly userMessage: string
-  constructor(userMessage: string) {
-    super(userMessage)
-    this.name = 'LoadConfigError'
-    this.userMessage = userMessage
-  }
-}
-
 function loadConfig(required: boolean): RuntimeConfig | undefined {
-  const path = resolveRuntimeConfigPath()
-  if (!path) {
-    if (!required) return undefined
-    throw new LoadConfigError('caracal.toml not found; open `caracal console` to create a zone and confidential runner app, then pass CARACAL_CONFIG to a file containing zone_id, application_id, and app_client_secret.')
-  }
-  try {
-    assertRuntimeConfigFileSecure(path)
-    return parse(readFileSync(path, 'utf8')) as unknown as RuntimeConfig
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err)
-    throw new LoadConfigError(`failed to parse ${path}: ${reason}`)
-  }
+  return loadValidatedRuntimeConfig(required)
 }
 
 export function loadRuntimeConfig(required: boolean): RuntimeConfig | undefined {
@@ -135,8 +117,8 @@ export async function dispatch(opts: DispatchOptions, rawArgs: readonly string[]
     try {
       cfg = loadConfig(binding.descriptor.requiresConfig ?? false)
     } catch (err) {
-      if (err instanceof LoadConfigError) {
-        printError(err.userMessage)
+      if (err instanceof RuntimeConfigMissingError || err instanceof RuntimeConfigValidationError) {
+        printError(err.message)
         process.exit(1)
       }
       throw err
