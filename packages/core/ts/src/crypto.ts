@@ -92,7 +92,19 @@ export const GATEWAY_TIMESTAMP_HEADER = 'X-Caracal-Gateway-Timestamp';
 export const GATEWAY_REQUEST_HEADER = 'X-Caracal-Gateway-Request';
 export const GATEWAY_SIGNATURE_HEADER = 'X-Caracal-Gateway-Signature';
 
-export function signGatewayExchange(key: Buffer, timestampUnix: number, requestId: string, body: Buffer | string): string {
+// signGatewayExchange returns the hex HMAC-SHA256 over the canonical envelope:
+//   `${unix}\n${requestId}\n${METHOD}\n${path}\n${sha256(body)}`
+// Method and path bind the signature to a specific endpoint so a signed
+// envelope cannot be replayed against any other endpoint accepting the same key.
+export function signGatewayExchange(
+  key: Buffer,
+  timestampUnix: number,
+  requestId: string,
+  method: string,
+  path: string,
+  body: Buffer | string,
+): string {
   const digest = createHash('sha256').update(body).digest('hex');
-  return createHmac('sha256', key).update(`${timestampUnix}\n${requestId}\n${digest}`).digest('hex');
+  const payload = `${timestampUnix}\n${requestId}\n${method.toUpperCase()}\n${path}\n${digest}`;
+  return createHmac('sha256', key).update(payload).digest('hex');
 }

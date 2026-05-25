@@ -79,5 +79,8 @@ func (s *Server) verifySignedJSONRequest(r *http.Request, body []byte) error {
 	timestamp := r.Header.Get(corests.GatewayTimestampHeader)
 	requestID := r.Header.Get(corests.GatewayRequestHeader)
 	signature := r.Header.Get(corests.GatewaySignatureHeader)
-	return corests.VerifyGatewayExchange(s.cfg.GatewayHMACKey, time.Now().UTC(), gatewayExchangeSkew, timestamp, requestID, signature, body)
+	if err := corests.VerifyGatewayExchange(s.cfg.GatewayHMACKey, time.Now().UTC(), gatewayExchangeSkew, timestamp, requestID, signature, r.Method, r.URL.EscapedPath(), body); err != nil {
+		return err
+	}
+	return s.consumeGatewayNonce(r.Context(), requestID)
 }

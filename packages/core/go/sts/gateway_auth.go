@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -21,16 +22,22 @@ const (
 	GatewaySignatureHeader = "X-Caracal-Gateway-Signature"
 )
 
-func SignGatewayExchange(key []byte, timestamp time.Time, requestID string, body []byte) string {
+// SignGatewayExchange returns the hex HMAC-SHA256 over the canonical envelope:
+//
+//	{unix}\n{requestID}\n{METHOD}\n{path}\n{sha256(body)}
+//
+// Method and path bind the signature to the specific endpoint, preventing a
+// signature captured on one endpoint from being replayed against another.
+func SignGatewayExchange(key []byte, timestamp time.Time, requestID, method, path string, body []byte) string {
 	if len(key) == 0 {
 		return ""
 	}
 	mac := hmac.New(sha256.New, key)
-	mac.Write(gatewayExchangePayload(timestamp.Unix(), requestID, body))
+	mac.Write(gatewayExchangePayload(timestamp.Unix(), requestID, method, path, body))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func VerifyGatewayExchange(key []byte, now time.Time, maxSkew time.Duration, timestamp, requestID, signature string, body []byte) error {
+func VerifyGatewayExchange(key []byte, now time.Time, maxSkew time.Duration, timestamp, requestID, signature, method, path string, body []byte) error {
 	if len(key) == 0 {
 		return errors.New("gateway exchange key not configured")
 	}
@@ -50,14 +57,14 @@ func VerifyGatewayExchange(key []byte, now time.Time, maxSkew time.Duration, tim
 		return errors.New("gateway exchange signature invalid")
 	}
 	mac := hmac.New(sha256.New, key)
-	mac.Write(gatewayExchangePayload(unix, requestID, body))
+	mac.Write(gatewayExchangePayload(unix, requestID, method, path, body))
 	if !hmac.Equal(got, mac.Sum(nil)) {
 		return errors.New("gateway exchange signature mismatch")
 	}
 	return nil
 }
 
-func gatewayExchangePayload(timestamp int64, requestID string, body []byte) []byte {
+func gatewayExchangePayload(timestamp int64, requestID, method, path string, body []byte) []byte {
 	digest := sha256.Sum256(body)
-	return []byte(fmt.Sprintf("%d\n%s\n%x", timestamp, requestID, digest))
+	return []byte(fmt.Sprintf("%d\n%s\n%s\n%s\n%x", timestamp, requestID, strings.ToUpper(method), path, digest))
 }
