@@ -59,7 +59,8 @@ Create or sync the runtime Secret, then install:
 helm upgrade --install caracal ./infra/helm/caracal \
   --namespace caracal \
   --create-namespace \
-  --set global.tag=0.1.2 \
+  --set global.tag=2026.05.26-rc.1 \
+  --set global.mode=rc \
   --set secrets.runtimeSecretName=caracal-runtime
 ```
 

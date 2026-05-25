@@ -12,9 +12,9 @@ Caracal uses only three versioning modes: dev, rc, and stable. rc and stable art
 
 | Mode | Purpose | OCI/binary example | npm example | PyPI example |
 | --- | --- | --- | --- | --- |
-| dev | Development builds | `2026.05.14-dev.shaabc1234` | `1.4.2-dev.shaabc1234` | not published |
-| rc | rc builds | `2026.05.14-rc.shaabc1234` | `1.4.2-rc.shaabc1234` | `1.4.2rc0+shaabc1234` |
-| stable | Released production versions | `2026.05.14` | `1.4.2` | `1.4.2` |
+| dev | Development builds | `2026.05.26-dev.shaabc1234` | `0.1.3-dev.shaabc1234` | not published |
+| rc | rc builds | `2026.05.26-rc.1` | `0.1.3-rc.1` | `0.1.3rc1` |
+| stable | Released production versions | `2026.05.26` | `0.1.3` | `0.1.3` |
 
 The PyPI rc form is PEP 440 compatible while preserving the same rc/sha meaning used by npm, OCI tags, binaries, and GitHub tags.
 
@@ -32,15 +32,15 @@ The tag drives binaries, OCI image tags, GitHub Releases, Helm `appVersion`/imag
 Use rc when a downstream project must consume Caracal as a normal third-party dependency before stable. The consumer changes only package versions and registry/index endpoints; it must not reference Caracal source paths, workspace links, editable installs, or Docker build contexts from the Caracal checkout.
 
 ```sh
-scripts/rc.sh prepare
+scripts/rc.sh prepare --base-version 2026.05.26 --suffix rc.1
 git add -A
-git commit -m "rc: vYYYY.MM.DD-rc.sha<gitsha>"
-git tag -a vYYYY.MM.DD-rc.sha<gitsha> -m vYYYY.MM.DD-rc.sha<gitsha>
+git commit -m "rc: v2026.05.26-rc.1"
+git tag -a v2026.05.26-rc.1 -m v2026.05.26-rc.1
 git push origin HEAD
-git push origin vYYYY.MM.DD-rc.sha<gitsha>
+git push origin v2026.05.26-rc.1
 ```
 
-`scripts/rc.sh prepare` writes `releases/<rc-tag>/manifest.json`, stamps Helm metadata, stamps npm package versions as `<base>-rc.sha<gitsha>`, and stamps PyPI versions as `<base>rc0+sha<gitsha>`. Use `scripts/rc.sh version` only when you need to preview the manifest without stamping package or Helm metadata. Pushing the rc tag runs the release workflow, publishes GHCR images, and creates a GitHub Release for rc.
+`scripts/rc.sh prepare` writes `releases/<rc-tag>/manifest.json`, stamps Helm metadata, stamps npm package versions as `<base>-rc.<number>` or `<base>-rc.sha<gitsha>`, and stamps PyPI versions as `<base>rc<number>` or `<base>rc0+sha<gitsha>`. Use `scripts/rc.sh version` only when you need to preview the manifest without stamping package or Helm metadata. Pushing the rc tag runs the release workflow, publishes GHCR images, and creates a GitHub Release for rc.
 
 Publish packages after `prepare`:
 
@@ -52,10 +52,10 @@ Publish packages after `prepare`:
 Switch a downstream project between rc and stable by changing only the Caracal versions it already consumes:
 
 ```sh
-npm install @caracalai/sdk@1.4.2-rc.sha<gitsha>   # rc
-npm install @caracalai/sdk@1.4.2                  # stable
-uv add caracalai-sdk==1.4.2rc0+sha<gitsha>        # rc
-uv add caracalai-sdk==1.4.2                       # stable
+npm install @caracalai/sdk@0.1.3-rc.1             # rc
+npm install @caracalai/sdk@0.1.3                  # stable
+uv add caracalai-sdk==0.1.3rc1                    # rc
+uv add caracalai-sdk==0.1.3                       # stable
 ```
 
 For containers, change only `ghcr.io/garudex-labs/caracal-{svc}:v<version>`. For binaries, install the desired `--version`. Consumers must not add Caracal source paths, editable installs, Docker build contexts from this checkout, or extra env files.
@@ -169,9 +169,9 @@ The Helm chart uses SemVer-compatible `Chart.yaml` versions and CalVer applicati
 | Field | Stable example | Meaning |
 | --- | --- | --- |
 | `Chart.yaml version` | `2026.5.14` | Helm package version; numeric components are normalized for SemVer compatibility |
-| `Chart.yaml appVersion` | `2026.05.14` | Caracal release version without the leading `v` |
-| `values.yaml global.tag` | `2026.05.14` | Image tag suffix; templates render images as `v<global.tag>` |
-| `manifest.json helm.imageTag` | `2026.05.14` | Source of truth for Helm image alignment |
+| `Chart.yaml appVersion` | `2026.05.26-rc.1` | Caracal release version without the leading `v` |
+| `values.yaml global.tag` | `2026.05.26-rc.1` | Image tag suffix; templates render images as `v<global.tag>` |
+| `manifest.json helm.imageTag` | `2026.05.26-rc.1` | Source of truth for Helm image alignment |
 
 Do not edit chart versions by hand during a release. `scripts/release.sh` and `scripts/rc.sh prepare` stamp the chart and manifest from the same release identity. The release workflow rejects tags when `Chart.yaml`, `values.yaml`, and `manifest.json` disagree.
 
@@ -207,18 +207,18 @@ The local scripts refuse stable publishing unless `CARACAL_ALLOW_LOCAL_STABLE_PU
 The release pipeline generates SLSA Level 3 provenance attestations for binaries and container images. Verify an artifact:
 
 ```sh
-gh attestation verify caracal-console-linux-amd64-v2026.05.12.tar.gz --repo garudex-labs/caracal
+gh attestation verify caracal-console-linux-amd64-v2026.05.26-rc.1.tar.gz --repo garudex-labs/caracal
 ```
 
 High-assurance installs fail closed when provenance cannot be verified:
 
 ```sh
-curl -fsSLO https://github.com/Garudex-Labs/caracal/releases/download/v2026.05.12/install-console.sh
-sh install-console.sh --version v2026.05.12 --require-provenance
+curl -fsSLO https://github.com/Garudex-Labs/caracal/releases/download/v2026.05.26-rc.1/install-console.sh
+sh install-console.sh --version v2026.05.26-rc.1 --require-provenance
 ```
 
 ```powershell
-.\install-console.ps1 -Version v2026.05.12 -RequireProvenance
+.\install-console.ps1 -Version v2026.05.26-rc.1 -RequireProvenance
 ```
 
 ---
@@ -227,7 +227,7 @@ sh install-console.sh --version v2026.05.12 --require-provenance
 
 For a critical fix on an already-released version:
 
-1. Branch from the release tag: `git checkout -b hotfix-jti v2026.05.12`.
+1. Branch from the release tag: `git checkout -b hotfix-jti v2026.05.26`.
 2. Apply the fix and open a PR against `main`.
 3. Merge after review; cherry-pick to `main` if the fix landed elsewhere first.
 4. Run `scripts/release.sh --dry-run` from updated `main`.
@@ -264,6 +264,6 @@ The `.github/workflows/postReleaseValidation.yml` workflow runs inside `release.
 Run a single check locally:
 
 ```sh
-CARACAL_RELEASE=v2026.05.12 FINDINGS_DIR=/tmp/findings \
+CARACAL_RELEASE=v2026.05.26-rc.1 FINDINGS_DIR=/tmp/findings \
   bash caracal/scripts/postRelease/validateRegistryMetadata.sh
 ```
