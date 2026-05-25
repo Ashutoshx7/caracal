@@ -3,10 +3,12 @@
 //
 // Coordinator-token guard for agent and delegation commands.
 
+import { discoverCoordinatorToken } from '@caracalai/core'
+
 export function ensureCoordinatorToken(): void {
-  if (!process.env.CARACAL_COORDINATOR_TOKEN) {
+  if (!discoverCoordinatorToken()) {
     throw new Error(
-      'CARACAL_COORDINATOR_TOKEN required (JWT issued by STS with scope "agent:lifecycle"); set it before invoking agent/delegation commands.',
+      'Coordinator token not found; run `caracal up` or set CARACAL_COORDINATOR_TOKEN for agent/delegation commands.',
     )
   }
 }

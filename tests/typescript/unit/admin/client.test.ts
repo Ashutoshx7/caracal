@@ -104,6 +104,24 @@ describe('AdminClient', () => {
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer jwt')
   })
 
+  it('marks coordinator response errors with the coordinator target', async () => {
+    const f = fetchErr(401, { error: 'invalid_token' })
+    const c = new AdminClient({
+      apiUrl: 'http://api',
+      coordinatorUrl: 'http://coord',
+      adminToken: 'a',
+      coordinatorToken: 'jwt',
+      fetchImpl: f,
+    })
+
+    await expect(c.agents.list('z1')).rejects.toMatchObject({
+      name: 'AdminApiError',
+      status: 401,
+      code: 'invalid_token',
+      target: 'coordinator',
+    })
+  })
+
   it('throws when coordinator URL is missing', async () => {
     const c = new AdminClient({ apiUrl: 'http://api', adminToken: 'a', fetchImpl: fetchOk([]) })
     await expect(c.agents.list('z1')).rejects.toThrow(/coordinator_url_not_configured/)
