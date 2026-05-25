@@ -386,6 +386,30 @@ class FromConfigBindingsTests(unittest.TestCase):
         rids = [b.resource_id for b in c.config.resources]
         self.assertIn("calendar", rids)
 
+    def test_from_config_reads_client_secret_file(self) -> None:
+        import os
+        import tempfile
+
+        secret_file = tempfile.NamedTemporaryFile("w", delete=False)
+        secret_file.write("secret-from-file\n")
+        secret_file.close()
+        if os.name != "nt":
+            os.chmod(secret_file.name, 0o400)
+        cfg_path = self._write_toml(
+            'zone_id = "z"\n'
+            'application_id = "a"\n'
+            f'app_client_secret_file = "{secret_file.name}"\n'
+            'sts_url = "https://sts.example.com"\n'
+            'coordinator_url = "https://coord.example.com"\n'
+            '[[credentials]]\n'
+            'resource = "calendar"\n'
+            'upstream_prefix = "https://api.example.com/v1"\n'
+        )
+
+        c = Caracal.from_config(cfg_path)
+
+        self.assertEqual([b.resource_id for b in c.config.resources], ["calendar"])
+
     def test_from_config_unions_toml_and_env_resources(self) -> None:
         import os
 

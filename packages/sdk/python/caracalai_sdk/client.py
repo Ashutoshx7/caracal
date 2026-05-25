@@ -262,6 +262,31 @@ def _required_str(cfg: dict, key: str) -> str:
     return v
 
 
+def _client_secret_from_config(cfg: dict) -> str:
+    from pathlib import Path
+
+    value = cfg.get("app_client_secret")
+    file_value = cfg.get("app_client_secret_file")
+    if value and file_value:
+        raise RuntimeError(
+            "caracal.toml must set only one of 'app_client_secret' or "
+            "'app_client_secret_file'"
+        )
+    if isinstance(file_value, str) and file_value:
+        path = Path(file_value)
+        if not path.exists():
+            raise RuntimeError(f"caracal.toml secret file does not exist: {path}")
+        if os.name != "nt" and path.stat().st_mode & 0o022:
+            raise RuntimeError(
+                f"caracal.toml secret file is group/world writable: {path}"
+            )
+        secret = path.read_text().strip()
+        if not secret:
+            raise RuntimeError(f"caracal.toml secret file is empty: {path}")
+        return secret
+    return _required_str(cfg, "app_client_secret")
+
+
 def _validate_subject_token(token: str) -> None:
     """Local sanity check on a static bootstrap subject token. Rejects JWTs
     whose `exp` claim is already in the past. Opaque tokens are accepted
@@ -430,7 +455,7 @@ class Caracal:
 
         zone_id = _required_str(cfg, "zone_id")
         application_id = _required_str(cfg, "application_id")
-        client_secret = _required_str(cfg, "app_client_secret")
+        client_secret = _client_secret_from_config(cfg)
         sts_url = (
             cfg.get("sts_url")
             or cfg.get("zone_url")

@@ -55,8 +55,12 @@ def _config_status() -> tuple[bool, str]:
         cfg = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         return False, f"{path} is invalid TOML: {exc}"
-    required = ("zone_id", "application_id", "app_client_secret")
+    required = ("zone_id", "application_id")
     missing = [key for key in required if not isinstance(cfg.get(key), str) or not cfg.get(key)]
+    has_inline_secret = isinstance(cfg.get("app_client_secret"), str) and cfg.get("app_client_secret")
+    has_secret_file = isinstance(cfg.get("app_client_secret_file"), str) and cfg.get("app_client_secret_file")
+    if not has_inline_secret and not has_secret_file:
+        missing.append("app_client_secret_file")
     creds = cfg.get("credentials")
     if missing:
         return False, f"{path} missing: {', '.join(missing)}"
