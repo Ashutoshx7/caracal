@@ -20,11 +20,9 @@ The first surface that resolves to a valid configuration wins. The remaining sur
 
 The SDK exposes a single entry point that mirrors the runtime resolution:
 
-- **TypeScript / Go** — `Caracal.connect()` / `caracal.Connect()` dispatch to `fromEnv()` / `FromEnv()`, which select between subject-token mode (`CARACAL_SUBJECT_TOKEN`) and client-secret mode (`CARACAL_APP_CLIENT_SECRET` + `CARACAL_STS_URL`) based on which variables are set. Pass explicit `ClientSecretOptions` to `connect()` to bypass env discovery.
-- **Python** — `Caracal.connect()` additionally honours `caracal.toml`:
-  1. Explicit `config_path=` argument → `from_config(path)`.
-  2. Default `caracal.toml` at `$XDG_CONFIG_HOME/caracal/caracal.toml` (or `~/.config/caracal/caracal.toml`) → `from_config()`.
-  3. Otherwise → `from_env()` with the same env-variable resolution as TS/Go.
+- **TypeScript** — `Caracal.connect({ configPath })` loads the explicit profile when supplied, then `CARACAL_CONFIG`, then the default profile at `$XDG_CONFIG_HOME/caracal/caracal.toml` (or `~/.config/caracal/caracal.toml`), then `fromEnv()`.
+- **Python** — `Caracal.connect(config_path=...)` loads the explicit profile when supplied, then `CARACAL_CONFIG`, then the default profile, then `from_env()`.
+- **Go** — `caracal.Connect()` loads `CARACAL_CONFIG`, then the default profile, then `FromEnv()`. Pass `ClientSecretOptions` to bypass discovery.
 
 `from_env()` and `from_config()` remain as explicit escape hatches when an application needs to pin a single resolution path.
 
@@ -32,9 +30,9 @@ The SDK exposes a single entry point that mirrors the runtime resolution:
 
 | Mode | Required | Optional |
 | --- | --- | --- |
-| Subject-token | `CARACAL_COORDINATOR_URL`, `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`, `CARACAL_SUBJECT_TOKEN` | `CARACAL_GATEWAY_URL`, `CARACAL_RESOURCES` |
-| Client-secret | `CARACAL_COORDINATOR_URL`, `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`, `CARACAL_APP_CLIENT_SECRET`, `CARACAL_STS_URL` | `CARACAL_APP_RESOURCES`, `CARACAL_RESOURCES`, `CARACAL_GATEWAY_URL` |
-| `caracal.toml` (Python only) | `zone_id`, `application_id`, `app_client_secret` (or `app_client_secret_file`), `sts_url`, `coordinator_url`, at least one resource binding | `gateway_url` |
+| Generated profile | `zone_id`, `application_id`, `app_client_secret_file` or `app_client_secret`, `sts_url` or `zone_url`, `coordinator_url`, at least one credential resource | `gateway_url`, `credentials[].upstream_prefix`, `optional_credentials[]` |
+| Client-secret env | `CARACAL_COORDINATOR_URL`, `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`, `CARACAL_APP_CLIENT_SECRET_FILE` or `CARACAL_APP_CLIENT_SECRET`, `CARACAL_STS_URL` | `CARACAL_APP_RESOURCES`, `CARACAL_RUN_CREDENTIALS_FILE`, `CARACAL_RUN_CREDENTIALS`, `CARACAL_RESOURCES_FILE`, `CARACAL_RESOURCES`, `CARACAL_GATEWAY_URL` |
+| Advanced subject-token env | `CARACAL_COORDINATOR_URL`, `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`, `CARACAL_SUBJECT_TOKEN` | `CARACAL_GATEWAY_URL`, `CARACAL_RESOURCES_FILE`, `CARACAL_RESOURCES` |
 
 ## Diagnosing the resolved source
 

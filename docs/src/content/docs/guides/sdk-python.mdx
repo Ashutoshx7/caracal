@@ -4,7 +4,7 @@ description: Install caracalai-sdk, use async context managers to spawn and dele
 pageType: workflow
 ---
 
-The Python SDK uses async context managers for session lifecycle. `Caracal.from_env()` reads configuration from environment variables. `spawn()` and `delegate()` are async context managers that open and close sessions automatically. `transport()` returns an `httpx.AsyncClient` with mandate headers injected on every request.
+The Python SDK uses async context managers for session lifecycle. `Caracal.connect()` reads the generated Caracal profile first, then falls back to environment variables. `spawn()` and `delegate()` are async context managers that open and close sessions automatically. `transport()` returns an `httpx.AsyncClient` with Caracal access headers injected on every request.
 
 ## Prerequisites
 
@@ -18,15 +18,19 @@ The Python SDK uses async context managers for session lifecycle. `Caracal.from_
 pip install caracalai-sdk
 ```
 
-## Environment variables
+## Configuration
+
+Use the Console-generated `caracal.toml` profile for the first integration. `Caracal.connect()` reads `config_path` when passed, then `CARACAL_CONFIG`, then the default profile at `$XDG_CONFIG_HOME/caracal/caracal.toml` or `~/.config/caracal/caracal.toml`, then environment variables.
+
+For platform-managed workloads, set these environment variables instead of mounting a profile:
 
 | Variable | Required | Description |
 | -------- | -------- | ----------- |
 | `CARACAL_COORDINATOR_URL` | Yes | Base URL of the Coordinator service (e.g., `http://localhost:4000`) |
 | `CARACAL_ZONE_ID` | Yes | Zone identifier |
 | `CARACAL_APPLICATION_ID` | Yes | Registered application ID |
-| `CARACAL_SUBJECT_TOKEN` | Token mode | Session bearer token for this application |
-| `CARACAL_APP_CLIENT_SECRET` | Client-secret mode | Application secret used to refresh session mandates through STS |
+| `CARACAL_APP_CLIENT_SECRET_FILE` | Preferred | Secret-file path used to refresh session authority through STS |
+| `CARACAL_APP_CLIENT_SECRET` | Local development | Application secret used to refresh session authority through STS |
 | `CARACAL_STS_URL` | Client-secret mode | STS base URL |
 | `CARACAL_APP_RESOURCES` | Client-secret mode if `CARACAL_RESOURCES` is unset | Comma-separated resource IDs for token exchange |
 | `CARACAL_GATEWAY_URL` | No | Gateway base URL for resource-routed calls |
@@ -38,13 +42,14 @@ pip install caracalai-sdk
 ```python
 from caracalai_sdk import Caracal
 
-# Reads all CARACAL_* env vars
-caracal = Caracal.from_env()
+# Reads the generated profile first, then falls back to CARACAL_* env vars.
+caracal = Caracal.connect()
 ```
 
 To configure programmatically:
 
 ```python
+import os
 from caracalai_sdk import Caracal, CaracalConfig
 from caracalai_sdk.advanced import CoordinatorClient, AgentKind, ResourceBinding
 
@@ -52,7 +57,7 @@ caracal = Caracal(CaracalConfig(
     coordinator=CoordinatorClient(base_url='http://coordinator:4000'),
     zone_id='my-zone',
     application_id='my-app',
-    subject_token='eyJ...',
+    token_source=lambda: os.environ['MY_APP_TOKEN'],
     gateway_url='http://gateway:8081',
     resources=[
         ResourceBinding(
@@ -121,7 +126,7 @@ async with caracal.spawn() as source:
 
 `caracal.transport()` returns an `httpx.AsyncClient`. It reads the current context from Python context vars and injects:
 
-- `Authorization: Bearer <subject_token>`
+- `Authorization: Bearer <access_token>`
 - `traceparent: 00-{traceId}-{spanId}-01`
 - `baggage: caracal.agent_session=…;caracal.delegation_edge=…;caracal.hop=N`
 
@@ -150,7 +155,7 @@ For FastAPI and Starlette, attach the ASGI middleware to bind already-verified i
 from fastapi import FastAPI
 
 app = FastAPI()
-app.add_middleware(caracal.middleware())
+app.add_middleware(caracal.context_middleware())
 
 @app.get('/items')
 async def list_items():
@@ -158,7 +163,7 @@ async def list_items():
     return {'agent': ctx.agent_session_id if ctx else None}
 ```
 
-The SDK ASGI middleware is not a verifier. It does not check JWT signatures, audience, scopes, token use, or revocation. Use Gateway for the default protected-resource path. If the service must verify directly, build the adapter around `caracalai_transport_mcp.authenticate()` and a production revocation store.
+The SDK ASGI context middleware is not a verifier. It does not check JWT signatures, audience, scopes, token use, or revocation. Use Gateway for the default protected-resource path. If the service must verify directly, build the adapter around `caracalai_transport_mcp.authenticate()` and a production revocation store.
 
 ## Complete example
 
@@ -167,7 +172,7 @@ import asyncio
 from caracalai_sdk import Caracal
 from caracalai_sdk.advanced import AgentKind
 
-caracal = Caracal.from_env()
+caracal = Caracal.connect()
 
 async def run_batch(invoice_ids: list[str]):
     async with caracal.spawn(kind=AgentKind.EPHEMERAL, ttl_seconds=120) as ctx:

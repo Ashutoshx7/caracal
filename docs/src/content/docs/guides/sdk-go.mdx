@@ -4,7 +4,7 @@ description: Install the Go SDK, configure environment variables, use Spawn and 
 pageType: workflow
 ---
 
-The Go SDK propagates identity through standard `context.Context`: there is no goroutine-local storage. `sdk.FromEnv()` constructs the client from environment variables. `Spawn` runs a function inside an agent session bound to the provided context. `Current` retrieves the agent context. `Transport` wraps `http.DefaultClient` with automatic envelope injection.
+The Go SDK propagates identity through standard `context.Context`: there is no goroutine-local storage. `sdk.Connect()` reads the generated Caracal profile first, then falls back to environment variables. `Spawn` runs a function inside an agent session bound to the provided context. `Current` retrieves the agent context. `Transport` wraps `http.DefaultClient` with automatic Caracal access-header injection.
 
 ## Prerequisites
 
@@ -18,26 +18,31 @@ The Go SDK propagates identity through standard `context.Context`: there is no g
 go get github.com/garudex-labs/caracal/packages/sdk/go
 ```
 
-## Environment variables
+## Configuration
+
+Use the Console-generated `caracal.toml` profile for the first integration. `sdk.Connect()` reads `CARACAL_CONFIG`, then the default profile at `$XDG_CONFIG_HOME/caracal/caracal.toml` or `~/.config/caracal/caracal.toml`, then environment variables.
+
+For platform-managed workloads, set these environment variables instead of mounting a profile:
 
 | Variable | Required | Description |
 | -------- | -------- | ----------- |
 | `CARACAL_COORDINATOR_URL` | Yes | Base URL of the Coordinator service (e.g., `http://localhost:4000`) |
 | `CARACAL_ZONE_ID` | Yes | Zone identifier |
 | `CARACAL_APPLICATION_ID` | Yes | Registered application ID |
-| `CARACAL_SUBJECT_TOKEN` | Token mode | Session bearer token for this application |
-| `CARACAL_APP_CLIENT_SECRET` | Client-secret mode | Application secret used to refresh session mandates through STS |
+| `CARACAL_APP_CLIENT_SECRET_FILE` | Preferred | Secret-file path used to refresh session authority through STS |
+| `CARACAL_APP_CLIENT_SECRET` | Local development | Application secret used to refresh session authority through STS |
 | `CARACAL_STS_URL` | Client-secret mode | STS base URL |
 | `CARACAL_APP_RESOURCES` | Client-secret mode if `CARACAL_RESOURCES` is unset | Comma-separated resource IDs for token exchange |
 | `CARACAL_GATEWAY_URL` | No | Gateway base URL for resource-routed calls |
 | `CARACAL_RESOURCES` | No | Comma-separated bindings: `resourceId=https://upstream/prefix,other=…` |
+| `CARACAL_RESOURCES_FILE` | No | JSON resource-binding file |
 
 ## Construct the client
 
 ```go
 import sdk "github.com/garudex-labs/caracal/packages/sdk/go"
 
-client, err := sdk.FromEnv()
+client, err := sdk.Connect()
 if err != nil {
     log.Fatal(err)
 }
@@ -50,7 +55,7 @@ client := &sdk.Caracal{
     Coordinator:   &sdk.CoordinatorClient{BaseURL: "http://coordinator:4000"},
     ZoneID:        "my-zone",
     ApplicationID: "my-app",
-    SubjectToken:  os.Getenv("MY_APP_TOKEN"),
+    TokenSource: func(context.Context) (string, error) { return os.Getenv("MY_APP_TOKEN"), nil },
     GatewayURL:    "http://gateway:8081",
     Resources: []sdk.ResourceBinding{
         {ResourceID: "resource://inventory", UpstreamPrefix: "http://inventory:8080"},
@@ -130,7 +135,7 @@ err = client.Spawn(ctx, func(ctx context.Context) error {
 
 `client.Transport(nil)` returns an `*http.Client` that reads the context from each request and injects:
 
-- `Authorization: Bearer <subjectToken>`
+- `Authorization: Bearer <accessToken>`
 - `traceparent: 00-{traceId}-{spanId}-01`
 - `baggage: caracal.agent_session=…,caracal.delegation_edge=…,caracal.hop=N`
 
@@ -182,7 +187,7 @@ Wrap a handler to bind inbound envelope headers automatically:
 
 ```go
 mux := http.NewServeMux()
-mux.Handle("/api/", client.Middleware(http.HandlerFunc(handler)))
+mux.Handle("/api/", client.ContextMiddleware(http.HandlerFunc(handler)))
 http.ListenAndServe(":8080", mux)
 ```
 
@@ -214,7 +219,7 @@ import (
 )
 
 func main() {
-    client, err := sdk.FromEnv()
+    client, err := sdk.Connect()
     if err != nil {
         log.Fatal(err)
     }

@@ -4,7 +4,7 @@ description: Install @caracalai/sdk, configure environment variables, spawn agen
 pageType: workflow
 ---
 
-The TypeScript SDK provides `Caracal.fromEnv()` as the entry point, `spawn()` to open an agent session bound to an async context, `delegate()` to create authority edges to other agents, and `transport()` to get a `fetch` implementation that auto-injects W3C headers on every outbound call.
+The TypeScript SDK provides `Caracal.connect()` as the entry point, `spawn()` to open an agent session bound to an async context, `delegate()` to create authority edges to other agents, and `transport()` to get a `fetch` implementation that auto-injects Caracal access headers on every outbound call.
 
 ## Prerequisites
 
@@ -18,29 +18,32 @@ The TypeScript SDK provides `Caracal.fromEnv()` as the entry point, `spawn()` to
 npm install @caracalai/sdk
 ```
 
-## Environment variables
+## Configuration
 
-Set these in your process environment or `.env` file:
+Use the Console-generated `caracal.toml` profile for the first integration. `Caracal.connect()` reads `CARACAL_CONFIG` when set, then the default profile at `$XDG_CONFIG_HOME/caracal/caracal.toml` or `~/.config/caracal/caracal.toml`, then environment variables.
+
+For platform-managed workloads, set these environment variables instead of mounting a profile:
 
 | Variable | Required | Description |
 | -------- | -------- | ----------- |
 | `CARACAL_COORDINATOR_URL` | Yes | Base URL of the Coordinator service (e.g., `http://localhost:4000`) |
 | `CARACAL_ZONE_ID` | Yes | Zone identifier |
 | `CARACAL_APPLICATION_ID` | Yes | Registered application ID |
-| `CARACAL_SUBJECT_TOKEN` | Token mode | Session bearer token for this application |
-| `CARACAL_APP_CLIENT_SECRET` | Client-secret mode | Application secret used to refresh session mandates through STS |
+| `CARACAL_APP_CLIENT_SECRET_FILE` | Preferred | Secret-file path used to refresh session authority through STS |
+| `CARACAL_APP_CLIENT_SECRET` | Local development | Application secret used to refresh session authority through STS |
 | `CARACAL_STS_URL` | Client-secret mode | STS base URL |
 | `CARACAL_APP_RESOURCES` | Client-secret mode if `CARACAL_RESOURCES` is unset | Comma-separated resource IDs for token exchange |
 | `CARACAL_GATEWAY_URL` | No | Gateway base URL for resource-routed calls |
 | `CARACAL_RESOURCES` | No | Comma-separated resource bindings: `resourceId=upstreamPrefix,other=prefix` |
+| `CARACAL_RESOURCES_FILE` | No | JSON resource-binding file |
 
 ## Construct the client
 
 ```typescript
 import { Caracal } from '@caracalai/sdk';
 
-// Reads all CARACAL_* env vars
-const caracal = Caracal.fromEnv();
+// Reads the generated profile first, then falls back to CARACAL_* env vars.
+const caracal = Caracal.connect();
 ```
 
 To configure programmatically:
@@ -52,7 +55,7 @@ const caracal = new Caracal({
   coordinator: { baseUrl: 'http://coordinator:4000' },
   zoneId: 'my-zone',
   applicationId: 'my-app',
-  subjectToken: process.env.MY_APP_TOKEN!,
+  tokenSource: async () => process.env.MY_APP_TOKEN!,
   gatewayUrl: 'http://gateway:8081',
   resources: [
     { resourceId: 'resource://inventory', upstreamPrefix: 'http://inventory:8080' },
@@ -121,7 +124,7 @@ await caracal.spawn(async () => {
 
 `caracal.transport()` returns a `fetch`-compatible function that reads the current context from `AsyncLocalStorage` and injects:
 
-- `Authorization: Bearer <subjectToken>`
+- `Authorization: Bearer <accessToken>`
 - `traceparent: 00-{traceId}-{spanId}-01`
 - `baggage: caracal.agent_session=…,caracal.delegation_edge=…,caracal.hop=N`
 
@@ -154,7 +157,7 @@ app.use(async (req, res, next) => {
 });
 ```
 
-`bindFromHeaders()` and `caracal.middleware()` do not verify JWT signatures, audience, scopes, token use, or revocation. Use [`@caracalai/mcp-express`](../protect-express/) for direct Express protection, or keep the service behind Gateway.
+`bindFromHeaders()` and `caracal.contextMiddleware()` bind already-verified context only. They do not verify JWT signatures, audience, scopes, token use, or revocation. Use [`@caracalai/mcp-express`](../protect-express/) for direct Express protection, or keep the service behind Gateway.
 
 ## Lifecycle hooks
 
@@ -175,7 +178,7 @@ caracal.onAgentEnd((ctx) => {
 ```typescript
 import { Caracal, AgentKind } from '@caracalai/sdk';
 
-const caracal = Caracal.fromEnv();
+const caracal = Caracal.connect();
 
 async function runBatch(invoiceIds: string[]) {
   await caracal.spawn(
