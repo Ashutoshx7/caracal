@@ -56,7 +56,7 @@ interface SetupResult {
 
 export function firstSetupView(ctx: Ctx): View {
   return new FormView({
-    title: 'first setup',
+    title: 'guided setup',
     submitLabel: 'create',
     fields: [
       {

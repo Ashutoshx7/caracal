@@ -326,10 +326,10 @@ function policyVersionPicker(ctx: Ctx): Field['pick'] {
 
 function policySetVersionPicker(ctx: Ctx, policySet: PolicySet): Field['pick'] {
   return pickFromList<PolicySetVersionRow>(
-    'pick policy-set version',
+    'pick policy set version',
     () => loadPolicySetVersions(ctx, policySet),
     [
-      { header: 'policy-set', width: 24, value: (row) => row.policy_set_name },
+      { header: 'policy set', width: 24, value: (row) => row.policy_set_name },
       { header: 'version', width: 8, value: (row) => String(row.version) },
       { header: 'schema', value: (row) => row.schema_version },
     ],
@@ -815,7 +815,7 @@ export function policiesView(ctx: Ctx): View {
 
 export function policySetsView(ctx: Ctx): View {
   const list: ListView<PolicySetRow> = new ListView<PolicySetRow>({
-    title: 'policy-sets',
+    title: 'policy sets',
     columns: [
       { header: 'name', width: 24, value: (r) => r.name },
       { header: 'active version', width: 16, value: (r) => r.active_version_label },
@@ -828,11 +828,11 @@ export function policySetsView(ctx: Ctx): View {
     rowKey: (row) => row.id,
     rowId: (row) => row.id,
     rowName: (row) => row.name,
-    onEnter: (app, row) => open(app, detail(`policy-set / ${row.name}`, () => ctx.client.policySets.get(ctx.zoneId, row.id))),
+    onEnter: (app, row) => open(app, detail(`policy set / ${row.name}`, () => ctx.client.policySets.get(ctx.zoneId, row.id))),
     actions: [
       {
         key: 'n', label: 'new', build: () => new FormView({
-          title: 'create policy-set',
+          title: 'create policy set',
           fields: [
             { key: 'name', label: 'name', kind: 'text', required: true },
             { key: 'description', label: 'description', kind: 'text' },
@@ -894,7 +894,7 @@ export function policySetsView(ctx: Ctx): View {
                 inputValue ? parseJsonObject(inputValue) : undefined,
               )
               app.pop()
-              app.push(detail(`policy-set simulate / ${row.name}`, async () => result))
+              app.push(detail(`policy set simulate / ${row.name}`, async () => result))
             },
           })
         },
@@ -903,7 +903,7 @@ export function policySetsView(ctx: Ctx): View {
         key: 'd', label: 'delete', build: (row) => {
           if (!row) throw new Error('no row selected')
           return new ConfirmView({
-            message: `delete policy-set ${row.name}?`,
+            message: `delete policy set ${row.name}?`,
             onConfirm: async (app) => {
               await ctx.client.policySets.delete(ctx.zoneId, row.id)
               await popAndReload(app, list as unknown as ListView<unknown>)
