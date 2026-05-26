@@ -139,11 +139,12 @@ function withDependents(packages, selected) {
 }
 
 function selectPackages(packages, options, files) {
-  if (options.allPackages) return packages
+  const publishable = packages.filter((pkg) => pkg.publish !== false)
+  if (options.allPackages) return publishable
   if (options.packages.size) {
-    return withDependents(packages, packages.filter((pkg) => packageMatches(pkg, options.packages)))
+    return withDependents(publishable, publishable.filter((pkg) => packageMatches(pkg, options.packages)))
   }
-  return withDependents(packages, packages.filter((pkg) => packageTouched(pkg, files)))
+  return withDependents(publishable, publishable.filter((pkg) => packageTouched(pkg, files)))
 }
 
 function packageSets(packages, selected) {
