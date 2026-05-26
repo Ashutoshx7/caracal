@@ -37,9 +37,10 @@ Readiness fails when a service cannot safely serve its role:
 | Area | Signals |
 | --- | --- |
 | Policy | `caracal_sts_opa_compile_errors_total`, `caracal_sts_opa_max_policy_age_seconds` |
-| Audit | `caracal_audit_dlq_size`, `caracal_audit_consumer_lag`, tamper mismatch counters |
+| Provider refresh | `caracal_sts_provider_refresh_leased_total`, `caracal_sts_provider_refresh_waited_total`, `caracal_sts_provider_refresh_errors_total`, `caracal_sts_provider_circuit_open_total` |
+| Audit | `caracal_audit_dlq_size`, `caracal_audit_consumer_lag`, STS/Gateway replay file age and bytes, tamper mismatch counters |
 | API | `caracal_api_outbox_pending_total`, `caracal_api_outbox_dead_total`, oldest outbox age gauges |
-| Gateway | `caracal_gateway_sts_exchange_errors_total`, `caracal_gateway_revocation_snapshot_fresh`, `caracal_gateway_revocation_snapshot_age_seconds`, request latency and denial counters |
+| Gateway | `caracal_gateway_sts_exchange_errors_total`, `caracal_gateway_sts_circuit_open`, `caracal_gateway_revocation_snapshot_fresh`, `caracal_gateway_revocation_snapshot_age_seconds`, revocation propagation/replay counters, request latency and denial counters |
 | Database | `caracal_db_pool_in_use_ratio`, query latency, migration Job status |
 | Platform | Kubernetes readiness changes, restarts, CPU throttling, OOM kills |
 
@@ -65,3 +66,5 @@ Run an end-to-end synthetic request through Gateway, then confirm the same reque
 Gateway readiness fails with `revocation_snapshot_stale` when no successful revocation snapshot has been loaded or the last snapshot is older than the freshness window. Track `caracal_gateway_revocation_snapshot_age_seconds` and `caracal_gateway_revocation_snapshot_fresh` with the revocation stream lag metric; a stale snapshot means Gateway may miss revoked grants and must be treated as an access-safety incident.
 
 The API exposes transactional-outbox delivery gauges on `/metrics`: `caracal_api_outbox_pending_total`, `caracal_api_outbox_dead_total`, `caracal_api_outbox_oldest_pending_age_seconds`, and `caracal_api_outbox_oldest_dead_age_seconds`. `/ready` returns `503 outbox_dead_messages` when abandoned rows exceed `API_READY_OUTBOX_DEAD_MAX`, which defaults to zero so Redis stream delivery failures become visible before control-plane changes silently stop reaching dependent services.
+
+STS and Gateway expose local audit replay watermarks: replay file count, bytes, and oldest file age. These metrics should stay at zero during normal operation. If they rise, preserve the replay volumes, recover Redis/Audit, and confirm the files drain before closing the incident.

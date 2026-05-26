@@ -103,6 +103,10 @@ If you use the release name `caracal`, objects are named `caracal-caracal-*` by 
 | `networkPolicy.extraEgress` | Allows explicit external endpoints such as object storage, identity providers, or provider APIs |
 | `serviceMonitor.enabled` | Publishes scrape targets for Prometheus Operator |
 | `alertRules.enabled` | Publishes baseline Prometheus alerts mapped to failure-mode recovery |
+| `alertRules.auditReplayOldestAgeSeconds` | Sets the maximum acceptable age for local STS/Gateway replay files before operators investigate evidence lag |
+| `alertRules.gatewayRevocationPropagationSeconds` | Sets the revocation propagation safety window for Gateway stream processing |
+| `alertRules.gatewayStsCircuitOpen` | Alerts when Gateway is fast-failing STS exchanges after repeated STS-unavailable failures |
+| `alertRules.stsProviderRefreshErrors` | Alerts on distributed provider refresh coordination failures |
 | `ingress.gateway.*` | Exposes only the Gateway to protected clients |
 | `ingress.api.*` | Optional operator-only API ingress |
 

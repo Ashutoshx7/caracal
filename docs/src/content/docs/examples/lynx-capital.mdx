@@ -8,6 +8,8 @@ The Lynx Capital example is a complete Python reference lab at `examples/lynxCap
 
 The application is not a tutorial scaffold. It is a production-pattern reference that demonstrates how Caracal's authorization model maps to real enterprise workloads: specifically the patterns of hierarchical agent spawning, delegation scope enforcement, ephemeral single-operation agents, and application-level provider clients across REST, gRPC, MCP, and SSE fixtures.
 
+The fixture providers are only the local lab boundary. Production use must replace `_mock/` with real provider endpoints, real provider credentials from the platform secret manager, measured provider rate limits, and incident-owned rollback paths. Do not treat fixture response timing, fixture credentials, or fixture data volume as production evidence; use them only to exercise Caracal's real runtime, policy, Gateway, STS, and audit paths.
+
 ---
 
 ## What this example demonstrates
@@ -162,6 +164,8 @@ LYNX_WISE_KEY=local-wise-payouts-key
 
 Provider credentials are not Caracal credentials and should be replaced if you
 point Lynx at hosted provider APIs.
+
+For production-shaped validation, replace each fixture URL with the provider endpoint approved for the target environment, store provider credentials outside the repository, and run the first-success validator against a real protected path. A production acceptance run should record Gateway success, STS decision evidence, provider response status, and Audit traceability for the same request ID.
 
 ### Start the application
 

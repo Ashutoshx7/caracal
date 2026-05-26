@@ -26,13 +26,23 @@ pageType: reference
 
 ## STS unavailable
 
-**Detection:** STS readiness fails and `CaracalGatewaySTSExchangeErrors` fires.
+**Detection:** STS readiness fails, `CaracalGatewaySTSExchangeErrors` fires, and Gateway may report `CaracalGatewaySTSCircuitOpen` after repeated STS-unavailable failures.
 
 **Impact:** Gateway cannot mint/exchange mandates for protected requests. Existing upstream calls that require fresh authority fail closed.
 
 **Recovery:** check STS logs for policy compile, database, Redis, and key-file errors. Restart only unhealthy replicas after dependency recovery.
 
-**Verification:** STS `/ready` returns success and Gateway synthetic requests succeed.
+**Verification:** STS `/ready` returns success, `caracal_gateway_sts_circuit_open` returns to `0`, and Gateway synthetic requests succeed.
+
+## Provider refresh outage
+
+**Detection:** `CaracalSTSProviderRefreshErrors` or `CaracalSTSProviderCircuitOpen`.
+
+**Impact:** Provider-backed resources can fail closed during token refresh. Caracal-issued authority remains bounded; stale provider credentials are not served as a fallback.
+
+**Recovery:** identify the provider from STS logs, verify provider endpoint reachability and client secret rotation state, restore Redis refresh coordination if errors reference lease/result publishing, and slow large provider-backed agent launches until refreshes stabilize.
+
+**Verification:** provider refresh errors stop increasing, provider circuit-open increments stop, and a controlled request for the affected provider-backed resource succeeds through Gateway.
 
 ## Gateway upstream failure
 
@@ -54,6 +64,16 @@ pageType: reference
 
 **Verification:** DLQ size reaches zero and recent Gateway events appear in `audit_events`.
 
+## Audit replay backlog aging
+
+**Detection:** `CaracalGatewayAuditReplayBacklogOld` or `CaracalSTSAuditReplayBacklogOld`.
+
+**Impact:** STS or Gateway has audit evidence buffered on local replay storage. Evidence is durable while the replay volume is preserved, but operators should treat aged replay files as incomplete downstream evidence until they drain.
+
+**Recovery:** preserve replay PVCs, restore Redis and Audit, keep the affected pods running so replay drains, and avoid audit HMAC key rotation while old replay files are pending.
+
+**Verification:** replay file and replay byte metrics return to zero and recent STS/Gateway actions appear in Audit.
+
 ## Coordinator unavailable
 
 **Detection:** Coordinator readiness fails, outbox lag rises, or agent lifecycle updates stop.
@@ -73,6 +93,22 @@ pageType: reference
 **Recovery:** pause policy rollout, fix Rego/schema input, and validate with Console simulation before activating again.
 
 **Verification:** compile-error counter stops increasing and the changed policy simulates successfully.
+
+## Revocation propagation delay
+
+**Detection:** `CaracalGatewayRevocationPropagationLag`, `CaracalGatewayRevocationReloadErrors`, or `CaracalGatewayRevocationSnapshotStale`.
+
+**Impact:** Gateway cannot prove revoked sessions, agent sessions, or delegation edges are being applied inside the expected safety window. Treat this as an access-safety incident.
+
+**Recovery:** restore Redis consumer group health and Postgres revocation query health. After Postgres is healthy, force a snapshot reload through the Gateway internal endpoint:
+
+```bash
+curl -fsS -X POST \
+  -H "Authorization: Bearer $CARACAL_ADMIN_TOKEN" \
+  "$CARACAL_GATEWAY_URL/internal/revocations/reload"
+```
+
+**Verification:** snapshot freshness returns to `1`, propagation lag returns below the threshold, and a newly revoked grant is denied by every Gateway replica.
 
 ## High database pool saturation
 
