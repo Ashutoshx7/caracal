@@ -517,7 +517,7 @@ jobs:
             echo "| Channel | \`${{ needs.context.outputs.channel }}\` |"
             echo "| Published | \`false\` |"
             echo ""
-            echo "Built archives and container images, verified release assets, and skipped GitHub Release creation, GHCR pushes, post-release validation, and stable promotion."
+            echo "Built and verified assets. Publishing, validation, and promotion were skipped."
           } >> "$GITHUB_STEP_SUMMARY"
 
   postValidate:

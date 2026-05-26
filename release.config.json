@@ -1,0 +1,68 @@
+{
+  "product": {
+    "versionScheme": "calver",
+    "binaries": {
+      "shell": {
+        "sourceDir": "apps/runtime/dist",
+        "sourceBase": "caracal",
+        "binaryName": "caracal"
+      },
+      "console": {
+        "sourceDir": "apps/console/dist",
+        "sourceBase": "caracal-console",
+        "binaryName": "caracal-console"
+      }
+    },
+    "archiveTargets": [
+      { "os": "linux", "arch": "amd64", "bunArch": "x64" },
+      { "os": "linux", "arch": "arm64", "bunArch": "arm64" },
+      { "os": "darwin", "arch": "amd64", "bunArch": "x64" },
+      { "os": "darwin", "arch": "arm64", "bunArch": "arm64" },
+      { "os": "windows", "arch": "amd64", "bunArch": "x64" }
+    ],
+    "containers": [
+      { "name": "api", "context": ".", "dockerfile": "apps/api/Dockerfile" },
+      { "name": "sts", "context": ".", "dockerfile": "infra/docker/Dockerfile.go-service", "buildArgs": { "SERVICE": "sts", "PORT": "8080", "STATE_DIRS": "audit-replay" } },
+      { "name": "gateway", "context": ".", "dockerfile": "infra/docker/Dockerfile.go-service", "buildArgs": { "SERVICE": "gateway", "PORT": "8081" } },
+      { "name": "audit", "context": ".", "dockerfile": "infra/docker/Dockerfile.go-service", "buildArgs": { "SERVICE": "audit", "PORT": "9090" } },
+      { "name": "coordinator", "context": ".", "dockerfile": "apps/coordinator/Dockerfile" },
+      { "name": "control", "context": ".", "dockerfile": "apps/control/Dockerfile" },
+      { "name": "postgres", "context": "infra/postgres", "dockerfile": "infra/postgres/Dockerfile" },
+      { "name": "redis", "context": "infra/redis", "dockerfile": "infra/redis/Dockerfile" },
+      { "name": "runtime", "context": ".", "dockerfile": "apps/runtime/Dockerfile" }
+    ],
+    "helm": {
+      "chart": "infra/helm/caracal/Chart.yaml",
+      "values": "infra/helm/caracal/values.yaml"
+    }
+  },
+  "packages": {
+    "npm": [
+      { "id": "core", "name": "@caracalai/core", "dir": "packages/core/ts", "group": "core" },
+      { "id": "oauth", "name": "@caracalai/oauth", "dir": "packages/oauth/ts", "group": "oauth" },
+      { "id": "admin", "name": "@caracalai/admin", "dir": "packages/admin/ts", "group": "admin" },
+      { "id": "identity", "name": "@caracalai/identity", "dir": "packages/identity/ts", "group": "identity" },
+      { "id": "revocation", "name": "@caracalai/revocation", "dir": "packages/revocation/ts", "group": "revocation" },
+      { "id": "sdk", "name": "@caracalai/sdk", "dir": "packages/sdk/ts", "group": "sdk" },
+      { "id": "transport-mcp", "name": "@caracalai/transport-mcp", "dir": "packages/transport/mcp/ts", "group": "transport-mcp" },
+      { "id": "transport-a2a", "name": "@caracalai/transport-a2a", "dir": "packages/transport/a2a/ts", "group": "transport-a2a" },
+      { "id": "express", "name": "@caracalai/mcp-express", "dir": "packages/connectors/express/ts", "group": "mcp-express" },
+      { "id": "fastmcp", "name": "@caracalai/mcp-fastmcp", "dir": "packages/connectors/fastmcp/ts", "group": "mcp-fastmcp" },
+      { "id": "postgres", "name": "@caracalai/tokenstate-postgres", "dir": "packages/connectors/postgres/ts", "group": "tokenstate-postgres" },
+      { "id": "redis", "name": "@caracalai/revocation-redis", "dir": "packages/connectors/redis/ts", "group": "revocation-redis" }
+    ],
+    "pypi": [
+      { "id": "core", "name": "caracalai-core", "dir": "packages/core/python", "module": "caracalai_core", "group": "core" },
+      { "id": "oauth", "name": "caracalai-oauth", "dir": "packages/oauth/python", "module": "caracalai_oauth", "group": "oauth" },
+      { "id": "identity", "name": "caracalai-identity", "dir": "packages/identity/python", "module": "caracalai_identity", "group": "identity" },
+      { "id": "revocation", "name": "caracalai-revocation", "dir": "packages/revocation/python", "module": "caracalai_revocation", "group": "revocation" },
+      { "id": "sdk", "name": "caracalai-sdk", "dir": "packages/sdk/python", "module": "caracalai_sdk", "group": "sdk" },
+      { "id": "transport-mcp", "name": "caracalai-transport-mcp", "dir": "packages/transport/mcp/python", "module": "caracalai_transport_mcp", "group": "transport-mcp" },
+      { "id": "fastmcp", "name": "caracalai-mcp-fastmcp", "dir": "packages/connectors/fastmcp/python", "module": "caracalai_mcp_fastmcp", "group": "mcp-fastmcp" },
+      { "id": "redis", "name": "caracalai-revocation-redis", "dir": "packages/connectors/redis/python", "module": "caracalai_revocation_redis", "group": "revocation-redis" }
+    ]
+  },
+  "ignore": [
+    "examples/**"
+  ]
+}

@@ -3,7 +3,7 @@
   "$id": "https://github.com/Garudex-Labs/caracal/releases/schema/manifest.schema.json",
   "title": "Caracal release manifest",
   "type": "object",
-  "required": ["release", "mode", "publishedAt", "binaries", "runtimeImage", "containers", "helm", "pypi", "npm"],
+  "required": ["release", "mode", "binaries", "runtimeImage", "containers", "helm"],
   "properties": {
     "release": {
       "type": "string",
@@ -17,9 +17,21 @@
       "type": "string",
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
     },
+    "version": { "type": "string" },
     "baseVersion": { "type": "string" },
     "suffix": { "type": "string" },
     "sha": { "type": "string" },
+    "generatedAt": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "gitSha": { "type": "string" },
+        "dirty": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
     "registries": {
       "type": "object",
       "additionalProperties": { "type": "string" }
@@ -57,9 +69,57 @@
       "type": "object",
       "additionalProperties": { "type": "string" }
     },
+    "packages": {
+      "type": "object",
+      "required": ["published", "unchanged"],
+      "properties": {
+        "published": {
+          "type": "object",
+          "properties": {
+            "pypi": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            },
+            "npm": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          },
+          "additionalProperties": false
+        },
+        "unchanged": {
+          "type": "object",
+          "properties": {
+            "pypi": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            },
+            "npm": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "githubRelease": {
-      "type": "string",
-      "format": "uri"
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "uri"
+        },
+        {
+          "type": "object",
+          "required": ["tag", "assets"],
+          "properties": {
+            "tag": { "type": "string" },
+            "assets": { "type": "string", "format": "uri" }
+          },
+          "additionalProperties": false
+        }
+      ]
     }
   },
   "additionalProperties": false
