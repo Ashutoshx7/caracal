@@ -90,6 +90,11 @@ export interface ClientSecretOptions {
   scope?: string;
 }
 
+export interface ConnectOptions {
+  env?: NodeJS.ProcessEnv;
+  clientSecret?: Partial<ClientSecretOptions>;
+}
+
 export class Caracal {
   private agentStartHooks: LifecycleHook[] = [];
   private agentEndHooks: LifecycleHook[] = [];
@@ -101,6 +106,31 @@ export class Caracal {
     if (config.resources && config.resources.length > 1) {
       this.config = { ...config, resources: sortBindingsLongestFirst(config.resources) };
     }
+  }
+
+  /**
+   * Builds a Caracal client by auto-detecting available credentials. Pass
+   * `clientSecret` to override env discovery with explicit values. Otherwise
+   * dispatches to `fromEnv()`, which selects between subject-token and
+   * client-secret modes based on which `CARACAL_*` variables are set.
+   */
+  static connect(opts: ConnectOptions = {}): Caracal {
+    if (opts.clientSecret && Object.keys(opts.clientSecret).length > 0) {
+      const cs = opts.clientSecret;
+      const missing = [
+        ["coordinatorUrl", cs.coordinatorUrl],
+        ["stsUrl", cs.stsUrl],
+        ["zoneId", cs.zoneId],
+        ["applicationId", cs.applicationId],
+        ["clientSecret", cs.clientSecret],
+        ["resources", cs.resources?.length ? "set" : undefined],
+      ].filter(([, v]) => !v).map(([k]) => k);
+      if (missing.length) {
+        throw new Error(`Caracal.connect: clientSecret missing ${missing.join(", ")}`);
+      }
+      return Caracal.fromClientSecret(cs as ClientSecretOptions);
+    }
+    return Caracal.fromEnv(opts.env);
   }
 
   static fromEnv(env: NodeJS.ProcessEnv = process.env): Caracal {

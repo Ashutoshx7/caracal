@@ -310,6 +310,25 @@ class Caracal:
         self._agent_end_hooks: list[LifecycleHook] = []
 
     @classmethod
+    def connect(
+        cls,
+        *,
+        config_path: str | os.PathLike[str] | None = None,
+        env: Mapping[str, str] | None = None,
+    ) -> Caracal:
+        """Build a Caracal client by auto-detecting available credentials.
+        Pass `config_path` to force loading from a `caracal.toml` file. With
+        no arguments, loads from the default `caracal.toml` if present;
+        otherwise dispatches to `from_env()`.
+        """
+        if config_path is not None:
+            return cls.from_config(config_path)
+        default = _default_config_path()
+        if default.exists():
+            return cls.from_config(default)
+        return cls.from_env(env)
+
+    @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Caracal:
         """Build a Caracal client from environment variables.
 

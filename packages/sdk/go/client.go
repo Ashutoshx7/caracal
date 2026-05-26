@@ -47,6 +47,17 @@ type ResourceBinding struct {
 	UpstreamPrefix string
 }
 
+// Connect builds a Caracal client by auto-detecting available credentials.
+// Pass a ClientSecretOptions to force explicit client-secret mode; otherwise
+// dispatches to FromEnv, which selects between subject-token and client-secret
+// modes based on which CARACAL_* variables are set.
+func Connect(opts ...ClientSecretOptions) (*Caracal, error) {
+	if len(opts) > 0 {
+		return FromClientSecret(opts[0])
+	}
+	return FromEnv()
+}
+
 // FromEnv constructs a Caracal client from CARACAL_COORDINATOR_URL,
 // CARACAL_ZONE_ID, CARACAL_APPLICATION_ID, CARACAL_SUBJECT_TOKEN.
 func FromEnv() (*Caracal, error) {
