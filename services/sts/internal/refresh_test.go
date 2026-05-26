@@ -63,15 +63,26 @@ func TestJitteredBackoffDecorrelates(t *testing.T) {
 
 func TestCoordinatedGrantRefreshCoalescesConcurrentCalls(t *testing.T) {
 	s := &Server{metrics: &STSMetrics{}}
-	start := make(chan struct{})
 	done := make(chan struct{})
 	calls := make(chan struct{}, 4)
 	var wg sync.WaitGroup
-	for i := 0; i < 4; i++ {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		err := s.coordinatedGrantRefresh(context.Background(), "grant\x00g1", func(context.Context) *sharederr.CaracalError {
+			calls <- struct{}{}
+			<-done
+			return nil
+		})
+		if err != nil {
+			t.Errorf("coordinatedGrantRefresh: %v", err)
+		}
+	}()
+	<-calls
+	for i := 0; i < 3; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			<-start
 			err := s.coordinatedGrantRefresh(context.Background(), "grant\x00g1", func(context.Context) *sharederr.CaracalError {
 				calls <- struct{}{}
 				<-done
@@ -82,9 +93,7 @@ func TestCoordinatedGrantRefreshCoalescesConcurrentCalls(t *testing.T) {
 			}
 		}()
 	}
-
-	close(start)
-	<-calls
+	time.Sleep(25 * time.Millisecond)
 	select {
 	case <-calls:
 		t.Fatal("refresh was not coalesced")

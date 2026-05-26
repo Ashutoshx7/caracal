@@ -76,6 +76,22 @@ func (s *Server) tryRefreshBrokeredGrant(ctx context.Context, zoneID, userID, re
 	if len(grant.RefreshTokenCt) == 0 || grant.ProviderID == nil {
 		return sharederr.New(sharederr.CredentialExpired, "credential_expired_not_renewable")
 	}
+	return s.coordinatedGrantRefresh(ctx, refreshGrantKey(zoneID, userID, resourceID, providerID, grant), func(runCtx context.Context) *sharederr.CaracalError {
+		return s.refreshExpiredBrokeredGrant(runCtx, zoneID, userID, resourceID, providerID)
+	})
+}
+
+func (s *Server) refreshExpiredBrokeredGrant(ctx context.Context, zoneID, userID, resourceID string, providerID *string) *sharederr.CaracalError {
+	grant, err := s.db.GetDelegatedGrant(ctx, zoneID, userID, resourceID, providerID)
+	if err != nil {
+		return nil
+	}
+	if grant.ExpiresAt != nil && grant.ExpiresAt.After(time.Now()) {
+		return nil
+	}
+	if len(grant.RefreshTokenCt) == 0 || grant.ProviderID == nil {
+		return sharederr.New(sharederr.CredentialExpired, "credential_expired_not_renewable")
+	}
 	provider, err := s.db.GetProvider(ctx, *grant.ProviderID)
 	if err != nil {
 		return sharederr.New(sharederr.CredentialExpired, "credential_expired_not_renewable")
@@ -141,6 +157,39 @@ func (s *Server) tryRefreshBrokeredGrant(ctx context.Context, zoneID, userID, re
 		return sharederr.New(sharederr.Internal, "grant update failed")
 	}
 	return nil
+}
+
+func (s *Server) coordinatedGrantRefresh(ctx context.Context, key string, refresh func(context.Context) *sharederr.CaracalError) *sharederr.CaracalError {
+	ch := s.refreshGroup.DoChan(key, func() (any, error) {
+		return nil, refresh(ctx)
+	})
+	select {
+	case result := <-ch:
+		if result.Shared && s.metrics != nil {
+			s.metrics.ProviderRefreshShared.Add(1)
+		}
+		if result.Err == nil {
+			return nil
+		}
+		var caracalErr *sharederr.CaracalError
+		if errors.As(result.Err, &caracalErr) {
+			return caracalErr
+		}
+		return sharederr.New(sharederr.Internal, "credential refresh failed")
+	case <-ctx.Done():
+		return sharederr.New(sharederr.STSUnavailable, "credential refresh canceled")
+	}
+}
+
+func refreshGrantKey(zoneID, userID, resourceID string, providerID *string, grant *DelegatedGrant) string {
+	if grant != nil && grant.ID != "" {
+		return "grant\x00" + grant.ID
+	}
+	provider := ""
+	if providerID != nil {
+		provider = *providerID
+	}
+	return zoneID + "\x00" + userID + "\x00" + resourceID + "\x00" + provider
 }
 
 // capGrantTTL bounds the provider-returned lifetime to STS's configured maximum

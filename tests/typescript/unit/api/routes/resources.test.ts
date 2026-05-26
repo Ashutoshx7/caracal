@@ -180,6 +180,28 @@ describe('POST /v1/zones/:zoneId/resources', () => {
     expect(client.release).toHaveBeenCalled()
   })
 
+  it('rejects resource creation when the zone resource quota is exhausted', async () => {
+    const { app, db } = buildRouteApp(resourcesRoutes)
+    app.decorate('cfg', { maxResourcesPerZone: 1 })
+    db.query
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({ rows: [{ resource_count: '1' }] })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/resources',
+      payload: {
+        identifier: 'resource://api',
+        scopes: ['read'],
+      },
+    })
+
+    expect(res.statusCode).toBe(409)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'resource_quota_exceeded' })
+    expect(db.connect).not.toHaveBeenCalled()
+  })
+
   it('blocks generic creation of the Control API resource', async () => {
     const { app, db } = buildRouteApp(resourcesRoutes)
     db.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
