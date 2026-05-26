@@ -546,6 +546,7 @@ jobs:
           fi
           started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           gh workflow run publishPypi.yml \
+            --repo "$GITHUB_REPOSITORY" \
             --ref "$REF" \
             --field package=changed \
             --field baseRef='' \
@@ -556,6 +557,7 @@ jobs:
           while [[ -z "$run_id" && $SECONDS -lt $deadline ]]; do
             sleep 5
             run_id="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
               --workflow publishPypi.yml \
               --event workflow_dispatch \
               --limit 20 \
@@ -566,7 +568,7 @@ jobs:
             echo "::error::Timed out waiting for publishPypi.yml dispatch to appear."
             exit 1
           fi
-          gh run watch "$run_id" --exit-status
+          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
 
   githubRelease:
     name: Publish GitHub Release
