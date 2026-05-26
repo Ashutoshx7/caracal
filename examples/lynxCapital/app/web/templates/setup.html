@@ -40,8 +40,8 @@ Lynx Capital setup checklist for Caracal and provider configuration.
     <h2>1 · Connect Caracal through Console + control API</h2>
     <p>Install the released runtime/console, start Caracal, then use <code>caracal-console</code> to create or confirm the Lynx zone, control key, and protected resources.</p>
 <pre class="cmd">curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
 caracal up
+caracal status --ready
 caracal-console</pre>
     <p>In the Console, open <strong>Control</strong> and confirm <strong>enable endpoint</strong> before creating the Lynx control key.</p>
   </div>
@@ -68,17 +68,9 @@ lynx/vendor-portal</pre>
   </div>
 
   <div class="panel">
-    <h2>3 · Write caracal.toml</h2>
-    <p>Create <code>~/.config/caracal/caracal.toml</code> from the Console values. The SDK reads this file directly, so keep the control key secret here and do not put Caracal credentials in <code>.env</code>.</p>
-<pre class="cmd">zone_url = "http://127.0.0.1:8080"
-sts_url = "http://127.0.0.1:8080"
-coordinator_url = "http://127.0.0.1:4000"
-gateway_url = "http://127.0.0.1:8081"
-zone_id = "&lt;zone id from Console&gt;"
-application_id = "&lt;control key client_id&gt;"
-app_client_secret = "&lt;control key client_secret&gt;"
-
-[[credentials]]
+    <h2>3 · Create the runtime profile</h2>
+    <p>Use the Console-generated profile contract. Enable <code>write files</code> when the Console should create the profile and one-time secret file locally; otherwise write an owner-only secret file and point <code>app_client_secret_file</code> at it. The SDK reads this profile directly, so keep Caracal credentials out of <code>.env</code>.</p>
+<pre class="cmd">[[credentials]]
 env = "LYNX_MERCURY_BANK_TOKEN"
 resource = "lynx/mercury-bank"
 upstream_prefix = "http://127.0.0.1:8800"</pre>

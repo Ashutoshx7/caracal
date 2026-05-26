@@ -345,6 +345,49 @@ class TransportRootGuardTests(unittest.IsolatedAsyncioTestCase):
             await client.get("https://api.example.com/v1/events")
         self.assertEqual(seen["auth"], "Bearer tok")
 
+    async def test_gateway_request_builds_explicit_gateway_target(self) -> None:
+        c = Caracal(
+            CaracalConfig(
+                coordinator=CoordinatorClient(base_url="http://coord"),
+                zone_id="z",
+                application_id="app",
+                subject_token="tok",
+                gateway_url="https://gateway.example.com/proxy",
+            )
+        )
+        request = c.gateway_request("resource://calendar", "events?limit=10")
+        seen = {}
+
+        async def handler(http_request):
+            seen["url"] = str(http_request.url)
+            seen["resource"] = http_request.headers["X-Caracal-Resource"]
+            seen["auth"] = http_request.headers[HEADER_AUTHORIZATION]
+            return httpx.Response(204)
+
+        async with c.transport(transport=httpx.MockTransport(handler), allow_root=True) as client:
+            await client.get(request.url, headers=request.headers)
+
+        self.assertEqual(seen["url"], "https://gateway.example.com/proxy/events?limit=10")
+        self.assertEqual(seen["resource"], "resource://calendar")
+        self.assertEqual(seen["auth"], "Bearer tok")
+
+    async def test_gateway_request_rejects_invalid_inputs(self) -> None:
+        c = Caracal(
+            CaracalConfig(
+                coordinator=CoordinatorClient(base_url="http://coord"),
+                zone_id="z",
+                application_id="app",
+                subject_token="tok",
+                gateway_url="https://gateway.example.com/proxy",
+            )
+        )
+        with self.assertRaises(RuntimeError):
+            _build_caracal().gateway_request("resource://calendar", "/events")
+        with self.assertRaises(ValueError):
+            c.gateway_request("", "/events")
+        with self.assertRaises(ValueError):
+            c.gateway_request("resource://calendar", "https://api.example.com/events")
+
 
 class FromConfigBindingsTests(unittest.TestCase):
     """CP-2: ``from_config`` must honour ``CARACAL_RESOURCES_FILE`` like ``from_env``."""

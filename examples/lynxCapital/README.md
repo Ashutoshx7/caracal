@@ -1,6 +1,6 @@
 # Lynx Capital
 
-Autonomous financial execution layer demo. A FastAPI + LangGraph swarm that
+Autonomous financial execution reference lab. A FastAPI + LangGraph swarm that
 processes a global SaaS payout cycle (~4,200 invoices, 5 regions) end-to-end
 with a live agent topology view and SSE log stream.
 
@@ -44,10 +44,10 @@ an end user would: **do not build from the caracal source tree**:
 ```bash
 # Install the runtime shell and Console once (no sudo, lands in ~/.local/bin)
 curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
 
 # Bring up the OSS stack
 caracal up
+caracal status --ready
 
 # Open the Console. Use it to inspect/create:
 #   1. control endpoint: enable from the Control menu
@@ -62,22 +62,16 @@ Caracal application credential with the `control:invoke` trait; Lynx stores
 its `client_id` as `application_id` and its one-time `client_secret` as
 an owner-only secret file referenced by `caracal.toml`.
 
-### 4: Write `caracal.toml` from Console values
+### 4: Create the runtime profile from Console values
 
-After creating the Lynx zone, control key, and resources in the Console, write
-the client secret to an owner-only file, then write
-`~/.config/caracal/caracal.toml`. The Python SDK reads this file directly, so
-Caracal credentials stay out of `.env`.
+After creating the Lynx zone, control key, and resources in the Console, use
+the Console-generated runtime profile contract. Enable **write files** when you
+want the Console to create the profile and one-time secret file locally. If you
+write files through platform automation, store the control key secret in an
+owner-only secret file and write `~/.config/caracal/caracal.toml`. The Python
+SDK reads this profile directly, so Caracal credentials stay out of `.env`.
 
 ```toml
-zone_url = "http://127.0.0.1:8080"
-sts_url = "http://127.0.0.1:8080"
-coordinator_url = "http://127.0.0.1:4000"
-gateway_url = "http://127.0.0.1:8081"
-zone_id = "<zone id from Console>"
-application_id = "<control key client_id>"
-app_client_secret_file = "/home/me/.config/caracal/lynx-client-secret"
-
 [[credentials]]
 env = "LYNX_MERCURY_BANK_TOKEN"
 resource = "lynx/mercury-bank"
@@ -108,10 +102,10 @@ different hosts/ports, edit the `CARACAL_*` block in `.env` and the URLs in
 
 ### 5: Start the local provider network
 
-The local provider network lives under `_mock/` and supplies the demo's
-third-party provider fixtures across REST, SSE, gRPC, and MCP. The Lynx app
+The local provider network lives under `_mock/` and supplies deterministic
+reference-lab provider fixtures across REST, SSE, gRPC, and MCP. The Lynx app
 still calls providers through its registry and transport clients, and the image
-joins `caracalData` so the Caracal gateway can forward to REST providers by
+joins `caracalData` so the Caracal Gateway can forward to REST providers by
 resource.
 
 ```bash
@@ -138,7 +132,7 @@ docker compose up -d --build
 
 Open **http://localhost:8000**.
 
-## Demo flow
+## Run flow
 
 1. Open `caracal-console` and verify the Lynx zone,
    control key, resources, live agent sessions, tickets, and delegation tree.
@@ -161,7 +155,7 @@ Open **http://localhost:8000**.
 | `/logs` | Color-coded runtime activity stream |
 | `/prompts` | Example prompts grouped by execution pattern |
 
-## Example prompts
+## Reference prompts
 
 The `/prompts` page lists ready-to-run prompts. A few to start with:
 
