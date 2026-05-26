@@ -2,9 +2,7 @@
  * Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
  * Caracal, a product of Garudex Labs
  *
- * Generic HTTP server middleware: extracts the wire envelope from incoming requests
- * and binds a CaracalContext for the handler scope. Works with Express, Connect,
- * Fastify (via preHandler), and any framework exposing (req, res, next).
+ * HTTP server middleware that binds Caracal context after a verifier boundary.
  */
 
 import { Caracal, type RootOptions } from "./client.js";
@@ -21,7 +19,7 @@ export type ConnectMiddleware = (
   next: (err?: unknown) => void,
 ) => void;
 
-export function caracalHttpMiddleware(caracal: Caracal, opts: RootOptions = {}): ConnectMiddleware {
+export function caracalContextMiddleware(caracal: Caracal, opts: RootOptions = {}): ConnectMiddleware {
   return (req, _res, next) => {
     caracal
       .bindFromHeaders(req.headers, async () => {

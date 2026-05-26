@@ -1,15 +1,15 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Generic net/http middleware: extracts the wire envelope and binds CaracalContext per request.
+// Context net/http middleware that binds CaracalContext after a verifier boundary.
 
 package sdk
 
 import "net/http"
 
-// Middleware returns an http.Handler middleware that binds a CaracalContext
-// for each inbound request from envelope headers.
-func (c *Caracal) Middleware(next http.Handler, opts ...RootOptions) http.Handler {
+// ContextMiddleware returns an http.Handler middleware that binds a CaracalContext
+// from inbound envelope headers after token verification.
+func (c *Caracal) ContextMiddleware(next http.Handler, opts ...RootOptions) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, err := c.BindFromRequest(r.Context(), r, opts...)
 		if err != nil {

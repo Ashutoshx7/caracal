@@ -20,9 +20,8 @@ Send = Callable[[dict[str, Any]], Awaitable[None]]
 ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 
 
-class CaracalASGIMiddleware:
-    """ASGI middleware (Starlette/FastAPI/raw ASGI) that binds a Caracal
-    context from inbound envelope headers after a verifier boundary."""
+class CaracalContextASGIMiddleware:
+    """ASGI middleware that binds verified Caracal context from inbound headers."""
 
     def __init__(self, app: ASGIApp, caracal: Caracal, *, allow_root: bool = False) -> None:
         self.app = app
