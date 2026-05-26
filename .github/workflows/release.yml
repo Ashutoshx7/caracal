@@ -144,6 +144,28 @@ jobs:
           test -f "$manifest" || { echo "::error::Missing release manifest: $manifest"; exit 1; }
           CARACAL_VALIDATE_HELM_FILES=1 node scripts/validateReleaseManifest.mjs "$manifest"
 
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Stamp drift
+        run: node scripts/release.mjs stamp --check
+
+      - name: Changesets ignore drift
+        run: node scripts/generateChangesetsIgnore.mjs --check
+
+      - name: Changeset status
+        run: pnpm changeset status
+
   archives:
     name: Build archives
     needs: context

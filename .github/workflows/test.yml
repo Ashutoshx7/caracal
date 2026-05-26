@@ -517,6 +517,27 @@ jobs:
       - name: Validate Helm chart
         run: bash infra/helm/caracal/scripts/validate.sh
 
+  releaseConfig:
+    name: Release config drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Verify version pins
+        run: node scripts/release.mjs stamp --check
+
+      - name: Verify Changesets ignore
+        run: node scripts/generateChangesetsIgnore.mjs --check
+
   coverage:
     name: Upload coverage
     needs:
@@ -581,6 +602,7 @@ jobs:
       - docs
       - postgres
       - helm
+      - releaseConfig
       - coverage
     if: always() && github.repository == 'Garudex-Labs/caracal'
     runs-on: ubuntu-latest
@@ -590,7 +612,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for result in '${{ needs.smoke.result }}' '${{ needs.changes.result }}' '${{ needs.typescript.result }}' '${{ needs.go.result }}' '${{ needs.python.result }}' '${{ needs.docs.result }}' '${{ needs.postgres.result }}' '${{ needs.helm.result }}' '${{ needs.coverage.result }}'; do
+          for result in '${{ needs.smoke.result }}' '${{ needs.changes.result }}' '${{ needs.typescript.result }}' '${{ needs.go.result }}' '${{ needs.python.result }}' '${{ needs.docs.result }}' '${{ needs.postgres.result }}' '${{ needs.helm.result }}' '${{ needs.releaseConfig.result }}' '${{ needs.coverage.result }}'; do
             if [[ "$result" == 'failure' || "$result" == 'cancelled' ]]; then
               echo "A required test workflow job ended with $result."
               exit 1
