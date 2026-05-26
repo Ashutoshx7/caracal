@@ -26,6 +26,7 @@ interface SetupValues {
   resource_name?: string
   resource_scopes?: string
   upstream_url?: string
+  request_path?: string
   provider_id?: string
   activate_policy?: string
   generate_profile?: string
@@ -50,8 +51,10 @@ interface SetupResult {
     path: string
     secretPath: string
     credentialEnv: string
+    gatewayUrl: string
     content: string
   }
+  requestPath?: string
 }
 
 export function firstSetupView(ctx: Ctx): View {
@@ -70,6 +73,7 @@ export function firstSetupView(ctx: Ctx): View {
       { key: 'resource_name', label: 'resource name', kind: 'text', hint: 'optional display name' },
       { key: 'resource_scopes', label: 'scopes', kind: 'list', required: true, hint: 'comma-separated scopes this resource accepts' },
       { key: 'upstream_url', label: 'upstream URL', kind: 'text', hint: 'optional; creates a Gateway route when set' },
+      { key: 'request_path', label: 'first request path', kind: 'text', hint: 'optional real upstream path for the generated Gateway check' },
       { key: 'provider_id', label: 'provider ID', kind: 'text', hint: 'optional existing provider credential source' },
       { key: 'activate_policy', label: 'activate policy', kind: 'bool', default: 'true' },
       { key: 'generate_profile', label: 'runtime profile', kind: 'bool', default: 'true' },
@@ -118,8 +122,9 @@ async function runFirstSetup(ctx: Ctx, values: SetupValues, app: App): Promise<S
 
   const policy = bool(values.activate_policy) ? await createFirstPolicy(ctx, zone.id, application.id, resource.identifier, scopes) : undefined
   const profile = bool(values.generate_profile) ? buildProfile(values, agentAppName, zone.id, application.id, resource.identifier, upstreamUrl) : undefined
+  const requestPath = normalizeRequestPath(values.request_path)
 
-  return { zone, application, clientSecret, resource, policy, profile }
+  return { zone, application, clientSecret, resource, policy, profile, requestPath }
 }
 
 async function ensureZone(ctx: Ctx, values: SetupValues, app: App): Promise<Zone | { id: string; name: string }> {
@@ -207,7 +212,7 @@ function buildProfile(
     `resource = ${quoteToml(resourceIdentifier)}`,
   ]
   if (upstreamUrl) lines.push(`upstream_prefix = ${quoteToml(upstreamUrl)}`)
-  return { path, secretPath, credentialEnv, content: lines.join('\n') + '\n' }
+  return { path, secretPath, credentialEnv, gatewayUrl, content: lines.join('\n') + '\n' }
 }
 
 function setupSummary(result: SetupResult): Record<string, unknown> {
@@ -239,15 +244,29 @@ function setupSummary(result: SetupResult): Record<string, unknown> {
     }
   }
   if (result.profile) {
+    const profile = result.profile
     summary.runtime_profile = {
-      path: result.profile.path,
-      secret_file: result.profile.secretPath,
-      token_env: result.profile.credentialEnv,
-      content: result.profile.content,
+      path: profile.path,
+      secret_file: profile.secretPath,
+      token_env: profile.credentialEnv,
+      content: profile.content,
+      local_profile_setup: {
+        posix: posixSetupCommands(profile),
+        powershell: powershellSetupCommands(profile),
+        secret_file_rule: 'Paste the revealed agent_app.client_secret as the only line in secret_file and keep the file owner-readable only.',
+      },
+      first_success: {
+        run_command_prefix: `CARACAL_CONFIG=${shellQuote(profile.path)} caracal run --`,
+        workload_command: 'Append the real command that starts this workload.',
+        sdk_process: `Set CARACAL_CONFIG=${profile.path} before calling Caracal.connect() from TypeScript, Python, or Go.`,
+        gateway_request: result.resource.gateway_application_id
+          ? gatewayRequest(result, profile)
+          : 'Gateway routing was not configured because no upstream URL was provided.',
+      },
       next_steps: [
-        'Write the masked client_secret value to the secret_file path with owner-only permissions.',
-        'Write the profile content to the profile path.',
-        'Run your workload through caracal run with CARACAL_CONFIG set to the profile path.',
+        'Create the profile and secret files with the local_profile_setup commands.',
+        'Run the real workload through caracal run with CARACAL_CONFIG set to the profile path.',
+        'Use the injected token_env value on Gateway or SDK-managed requests for this resource.',
       ],
     }
   }
@@ -256,6 +275,44 @@ function setupSummary(result: SetupResult): Record<string, unknown> {
     if_no_event: 'Re-check the active policy, resource identifier, Gateway route, and runtime profile before retrying.',
   }
   return summary
+}
+
+function posixSetupCommands(profile: NonNullable<SetupResult['profile']>): string[] {
+  const dirs = Array.from(new Set([dirname(profile.path), dirname(profile.secretPath)]))
+  return [
+    `mkdir -p -- ${dirs.map(shellQuote).join(' ')}`,
+    `umask 077; : > ${shellQuote(profile.secretPath)}`,
+    `cat > ${shellQuote(profile.path)} <<'CARACAL_PROFILE'\n${profile.content}CARACAL_PROFILE`,
+    `chmod 600 -- ${shellQuote(profile.path)} ${shellQuote(profile.secretPath)}`,
+  ]
+}
+
+function powershellSetupCommands(profile: NonNullable<SetupResult['profile']>): string[] {
+  const dirs = Array.from(new Set([dirname(profile.path), dirname(profile.secretPath)]))
+  return [
+    `New-Item -ItemType Directory -Force -Path ${dirs.map(powershellQuote).join(', ')} | Out-Null`,
+    `New-Item -ItemType File -Force -Path ${powershellQuote(profile.secretPath)} | Out-Null`,
+    `Set-Content -NoNewline -Path ${powershellQuote(profile.path)} -Value @'\n${profile.content}'@`,
+  ]
+}
+
+function gatewayRequest(result: SetupResult, profile: NonNullable<SetupResult['profile']>): string | Record<string, string> {
+  if (!result.requestPath) {
+    return {
+      gateway_url: profile.gatewayUrl,
+      resource_header: `X-Caracal-Resource: ${result.resource.identifier}`,
+      authorization_header: `Authorization: Bearer $${profile.credentialEnv}`,
+      request_path: 'Set first request path during guided setup to generate an exact curl command.',
+    }
+  }
+  const url = `${profile.gatewayUrl.replace(/\/+$/, '')}${result.requestPath}`
+  return `curl -fsS ${shellQuote(url)} -H "Authorization: Bearer \$${profile.credentialEnv}" -H ${shellQuote(`X-Caracal-Resource: ${result.resource.identifier}`)}`
+}
+
+function normalizeRequestPath(value: string | undefined): string | undefined {
+  const path = trimmed(value)
+  if (!path) return undefined
+  return path.startsWith('/') ? path : `/${path}`
 }
 
 function splitList(value: string | undefined): string[] {
@@ -283,6 +340,14 @@ function quoteRego(value: string): string {
 
 function quoteToml(value: string): string {
   return JSON.stringify(value)
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+function powershellQuote(value: string): string {
+  return `'${value.replace(/'/g, `''`)}'`
 }
 
 function safeName(value: string): string {

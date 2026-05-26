@@ -103,6 +103,7 @@ describe('first setup workflow', () => {
       resource_name: 'Payroll API',
       resource_scopes: 'read',
       upstream_url: 'https://payroll.internal',
+      request_path: '/health',
       provider_id: '',
       activate_policy: 'true',
       generate_profile: 'true',
@@ -110,7 +111,7 @@ describe('first setup workflow', () => {
       secret_file_path: '/secure/caracal/payroll-secret',
       credential_env: '',
     }
-    ;(view as unknown as { focus: number }).focus = 11
+    ;(view as unknown as { focus: number }).focus = 12
 
     await view.onKey('enter', { app, size: { rows: 40, cols: 120 }, status: '' })
 
@@ -140,8 +141,12 @@ describe('first setup workflow', () => {
     const body = detail.render({ app, size: { rows: 80, cols: 120 }, status: '' }).join('\n')
     expect(body).toContain('/secure/caracal/payroll.toml')
     expect(body).toContain('CARACAL_RESOURCE_PAYROLL_TOKEN')
+    expect(body).toContain("CARACAL_CONFIG='/secure/caracal/payroll.toml' caracal run --")
+    expect(body).toContain("curl -fsS 'http://localhost:8081/health'")
+    expect(body).toContain("X-Caracal-Resource: resource://payroll")
     expect(body).toContain('Audit Explanation')
     expect(body).toContain('••••')
+    expect(body).not.toContain('cs_')
   })
 
   it('lets optional policy, profile, and Gateway setup be skipped', async () => {
@@ -158,6 +163,7 @@ describe('first setup workflow', () => {
       resource_name: '',
       resource_scopes: 'invoke',
       upstream_url: '',
+      request_path: '',
       provider_id: '',
       activate_policy: 'false',
       generate_profile: 'false',
@@ -165,7 +171,7 @@ describe('first setup workflow', () => {
       secret_file_path: '',
       credential_env: '',
     }
-    ;(view as unknown as { focus: number }).focus = 11
+    ;(view as unknown as { focus: number }).focus = 12
 
     await view.onKey('enter', { app, size: { rows: 40, cols: 120 }, status: '' })
 
