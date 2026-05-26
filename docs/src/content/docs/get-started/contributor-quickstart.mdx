@@ -1,0 +1,47 @@
+---
+title: Contributor Quickstart
+description: Run Caracal from the source tree with pnpm for development and local validation.
+pageType: workflow
+---
+
+Use this path when you are developing Caracal itself or validating source-tree changes. Product users should start with [Quickstart: Released Product](../quickstart/) so onboarding uses installed commands and released artifacts.
+
+## Prerequisites
+
+- Docker 24+ with the Compose v2 plugin
+- Node 24
+- pnpm 11.1.1
+- Bun 1.3.14
+- Go 1.26 and Python 3.14 when running the full test suite
+
+## Install dependencies
+
+```bash
+corepack enable
+corepack prepare pnpm@11.1.1 --activate
+pnpm install --frozen-lockfile --prefer-offline
+```
+
+## Start the source-tree stack
+
+```bash
+pnpm caracal up
+pnpm caracal status --ready
+pnpm caracal-console
+```
+
+`pnpm caracal` runs the workspace runtime shim. `pnpm caracal-console` runs the workspace Console shim. These commands are for contributors; released-product docs use `caracal` and `caracal console`.
+
+## Use the same product setup
+
+In the Console, choose **guided setup**. The setup flow is identical to the released product: it creates real Caracal objects, generates a runtime profile, keeps optional provider and Gateway fields skippable, and ends with audit explanation guidance.
+
+Set `CARACAL_CONFIG` to the generated profile path, then run source-tree workloads with `pnpm caracal run --` followed by the workload command.
+
+## Stop the stack
+
+```bash
+pnpm caracal down
+```
+
+For contributor workflow, tests, release checks, and repository conventions, continue with [Contributing](../../contributing/).

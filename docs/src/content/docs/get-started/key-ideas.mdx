@@ -38,7 +38,7 @@ Everything else supports those terms. For example, an **Application** is the sto
 
 ## Reference primitives
 
-Caracal is an authority plane, not a universal integration framework. Under the product vocabulary, the durable reference model is intentionally small:
+Caracal is an access-control boundary, not a universal provider wrapper. Under the product vocabulary, the durable reference model is intentionally small:
 
 | Primitive | Product meaning |
 | --- | --- |
@@ -114,7 +114,7 @@ There are three important credentials:
 | Caracal access token | Agent runtime | Short-lived scoped proof that Caracal allowed the action. |
 | Provider-native credential | Gateway or contract-complete adapter only | Authenticates to the upstream provider. |
 
-The public STS returns only Caracal access tokens. Provider-native credentials are resolved through the internal broker path for Gateway or adapters that satisfy the full enforcement contract.
+The Caracal token service returns only Caracal access tokens. Provider-native credentials are resolved through the Gateway credential broker or adapters that satisfy the full enforcement contract.
 
 ## Delegation in one rule
 
