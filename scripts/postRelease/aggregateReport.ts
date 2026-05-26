@@ -55,7 +55,6 @@ const AREAS = [
   ["installers", "Installers"],
   ["containers", "Container Stack"],
   ["provenance", "Provenance & Signing"],
-  ["examples", "Docs & Examples"],
 ] as const;
 
 const collectFindingFiles = (dir: string): string[] =>
@@ -173,7 +172,6 @@ ${topFixes || "_No failing findings._"}
 - [ ] Installers verified
 - [ ] Containers boot cleanly
 - [ ] Provenance verified
-- [ ] Examples run against released packages
 `;
 
 const releaseDir = dirname(outPath);

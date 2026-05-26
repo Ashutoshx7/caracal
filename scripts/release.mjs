@@ -506,13 +506,13 @@ function simulateWorkflow(manifest) {
   say()
   say(`jobs`)
   say(`  context`)
-    say(`    would verify release actor against .github/MAINTAINERS`)
-    say(`    would validate tag format for ${manifest.release}`)
-    say(`    would validate ${path} with CARACAL_VALIDATE_HELM_FILES=1`)
+  say(`    would verify release actor against .github/MAINTAINERS`)
+  say(`    would validate tag format for ${manifest.release}`)
+  say(`    would validate ${path} with CARACAL_VALIDATE_HELM_FILES=1`)
   say(`  archives`)
-    say(`    would install pnpm 11.1.1, Node 24, and Bun 1.3.14`)
-    say(`    would run pnpm install --frozen-lockfile --prefer-offline`)
-    say(`    would run pnpm run build:typescript`)
+  say(`    would install pnpm 11.1.1, Node 24, and Bun 1.3.14`)
+  say(`    would run pnpm install --frozen-lockfile --prefer-offline`)
+  say(`    would run pnpm run build:typescript`)
   say(`    would build runtime and Console binaries for linux/darwin/windows amd64/arm64 targets`)
   say(`    would package release archives:`)
   for (const name of archiveTargets) say(`      ${name}-${manifest.release}.${name.includes('windows') ? 'zip' : 'tar.gz'}`)
@@ -527,13 +527,13 @@ function simulateWorkflow(manifest) {
   say(`    would build linux/amd64,linux/arm64 ${manifest.images.runtime} from apps/runtime/Dockerfile`)
   say(`    would push the immutable rc runtime image tag only on the real tag workflow`)
   say(`  githubRelease`)
-    say(`    would use environment rc-release`)
-    say(`    would create GitHub Release ${manifest.release} with prerelease=true`)
-    say(`    would attach release archives, manifest.json, SHA256SUMS, and installers`)
+  say(`    would use environment rc-release`)
+  say(`    would create GitHub Release ${manifest.release} with prerelease=true`)
+  say(`    would attach release archives, manifest.json, SHA256SUMS, and installers`)
   say(`  postValidate`)
-    say(`    would run .github/workflows/postReleaseValidation.yml with release=${manifest.release}`)
+  say(`    would run .github/workflows/postReleaseValidation.yml with release=${manifest.release}`)
   say(`  promoteStable`)
-    say(`    skipped for rc; would not move latest or series tags`)
+  say(`    skipped for rc; would not move latest or series tags`)
   say()
   say(JSON.stringify({ manifest: path, ...manifest }, null, 2))
 }
@@ -546,9 +546,18 @@ function clean(options) {
 
 function main() {
   const raw = process.argv.slice(2)
-  const normalized = raw[0] === 'rc' ? [`rc-${raw[1] ?? ''}`, ...raw.slice(2)] : raw
+  const normalized = raw[0] === 'rc' && !['-h', '--help', undefined].includes(raw[1]) ? [`rc-${raw[1]}`, ...raw.slice(2)] : raw
   const options = parseArgs(normalized)
   switch (options.command) {
+    case 'rc':
+      say(`Usage: scripts/release.sh rc <command> [options]
+
+Commands:
+  dry-run                Queue release.yml through workflow_dispatch without publishing.
+  version                Generate an rc manifest under releases/<tag>/manifest.json.
+  prepare                Generate the manifest and stamp package metadata to rc versions.
+  clean --manifest PATH  Remove an rc manifest directory.`)
+      break
     case 'stable':
       stable(options)
       break

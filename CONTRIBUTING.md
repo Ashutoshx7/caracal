@@ -137,8 +137,8 @@ The local `build:release` stamps the binary with `CARACAL_VERSION=<base>-dev.sha
 Use rc when a downstream project must consume Caracal exactly like a third-party dependency before stable:
 
 ```bash
-scripts/rc.sh dry-run --base-version 2026.05.26 --suffix rc.1  # run release.yml as a non-publishing rc dry-run
-scripts/rc.sh prepare --base-version 2026.05.26 --suffix rc.1
+scripts/release.sh rc dry-run --base-version 2026.05.26 --suffix rc.1  # run release.yml as a non-publishing rc dry-run
+scripts/release.sh rc prepare --base-version 2026.05.26 --suffix rc.1
 git add -A && git commit -m "rc: v2026.05.26-rc.1"
 git tag -a v2026.05.26-rc.1 -m v2026.05.26-rc.1
 git push origin HEAD && git push origin v2026.05.26-rc.1
@@ -147,8 +147,8 @@ git push origin HEAD && git push origin v2026.05.26-rc.1
 ### Create and publish stable
 
 ```bash
-scripts/release.sh               # applies changesets, stamps Helm metadata, computes CalVer, tags, pushes stable
-scripts/release.sh --dry-run     # preview stable without tagging
+scripts/release.sh stable             # applies changesets, stamps Helm metadata, computes CalVer, tags, pushes stable
+scripts/release.sh stable --dry-run   # preview stable without tagging
 ```
 
 ### Post-release validation

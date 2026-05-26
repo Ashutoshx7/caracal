@@ -12,7 +12,7 @@
 - Must source `lib/common.sh` from shell validators.
 - Must honor `DRY_RUN=1` and the `ONLY` filter.
 - Must emit findings through `logFinding`; the orchestrator decides final status.
-- Must validate published binaries, containers, registry metadata, provenance, installers, npm, PyPI, and examples without rebuilding local artifacts.
+- Must validate published binaries, containers, registry metadata, provenance, installers, npm, and PyPI without rebuilding local artifacts.
 
 ## Forbidden
 - Must not consume secrets beyond tokens explicitly provided by release workflows.
@@ -21,4 +21,3 @@
 
 ## Validation
 - Validate with the touched post-release script in `DRY_RUN=1` mode when possible.
-
