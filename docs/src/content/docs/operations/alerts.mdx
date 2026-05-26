@@ -76,9 +76,9 @@ The Helm chart can install these alerts through `alertRules.enabled=true`. Every
 
 **Likely causes:** Audit write failure, invalid producer HMAC, Redis stream replay failure, or Postgres latency.
 
-**Immediate action:** inspect Audit logs, Redis stream health, and producer HMAC configuration. Keep services running if replay is draining; pause deployments if the queue is growing.
+**Immediate action:** inspect Audit logs, Redis stream health, and producer HMAC configuration. Browse `/api/audit/dlq` with `AUDIT_ADMIN_TOKEN` to classify reasons before replay. Keep services running if replay is draining; pause deployments if the queue is growing.
 
-**Verification:** DLQ size returns to `0`, replay logs report success, and recent Gateway requests have matching audit records.
+**Verification:** DLQ size returns to `0`, replay logs report success, `/api/audit/dlq` returns an empty list, and recent Gateway requests have matching audit records.
 
 ## CaracalAuditDLQGrowth
 
@@ -86,7 +86,7 @@ The Helm chart can install these alerts through `alertRules.enabled=true`. Every
 
 **Likely causes:** sustained Audit outage, Redis pressure, Postgres outage, incompatible audit schema, or rotated HMAC keys not deployed consistently.
 
-**Immediate action:** declare an incident, freeze rollouts, preserve Audit and Redis logs, restore the failed dependency, and replay the DLQ. If HMAC mismatch is suspected, follow [Incident Response](./incident-response/#audit-tamper-or-hmac-failure).
+**Immediate action:** declare an incident, freeze rollouts, preserve Audit and Redis logs, browse `/api/audit/dlq` to separate replayable transient rows from forensic rows, restore the failed dependency, and replay only replayable DLQ entries. If HMAC mismatch is suspected, follow [Incident Response](./incident-response/#audit-tamper-or-hmac-failure).
 
 **Verification:** DLQ growth stops, queue drains, tamper alerts stay clear, and synthetic Gateway requests produce complete audit events.
 

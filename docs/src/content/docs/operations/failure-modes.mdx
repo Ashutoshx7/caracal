@@ -60,7 +60,7 @@ pageType: reference
 
 **Impact:** evidence is delayed and may become incomplete if replay storage is lost.
 
-**Recovery:** freeze rollouts, recover Audit dependencies, preserve Redis streams and pod replay volumes, then let replay drain.
+**Recovery:** freeze rollouts, recover Audit dependencies, preserve Redis streams and pod replay volumes, then browse `/api/audit/dlq` with `AUDIT_ADMIN_TOKEN` to classify failures. Replay only entries marked replayable; HMAC and tamper rows stay in DLQ for forensic review.
 
 **Verification:** DLQ size reaches zero and recent Gateway events appear in `audit_events`.
 
