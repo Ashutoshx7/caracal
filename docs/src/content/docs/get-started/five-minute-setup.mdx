@@ -1,45 +1,36 @@
 ---
 title: Five-Minute Setup
-description: Start the local stack, protect one HTTP resource, call it through the Gateway, and inspect the audit trail.
+description: Start the released local stack, protect one HTTP resource, call it through the Gateway, and explain the audit trail.
 pageType: workflow
 ---
 
-This path starts a local authority plane, creates one protected resource from the Console, calls it through Gateway, and explains the audit evidence. Use a real upstream service that is reachable from the Gateway container or process.
+This path starts the released local stack, creates one protected resource from the Console, calls it through Gateway, and explains the audit evidence. Use a real upstream service that is reachable from the Gateway container or process.
 
 ## Prerequisites
 
-- Docker with Compose v2
-- Node 24, pnpm 11.1.1, Bun 1.3.14
-- Go 1.26 and Python 3.14 if you plan to run the full test suite
-
-Install dependencies:
-
-```bash
-corepack enable
-corepack prepare pnpm@11.1.1 --activate
-pnpm install --frozen-lockfile --prefer-offline
-```
+- Docker 24+ with the Compose v2 plugin
+- `caracal` and `caracal-console` installed from [Installation](../installation/)
 
 ## Start the stack
 
 ```bash
-pnpm caracal up
-pnpm caracal status --ready
+caracal up
+caracal status --ready
 ```
 
-`status --ready` must return success before you configure resources. If it fails, inspect `pnpm caracal status --ready --json` and the service logs from Docker Compose.
+`status --ready` must return success before you configure resources. If it fails, inspect `caracal status --ready --json` and the service logs from Docker Compose.
 
 ## Configure the first resource with Console
 
 Open the Console:
 
 ```bash
-pnpm caracal-console
+caracal console
 ```
 
 In the Console:
 
-1. Choose **first-setup**.
+1. Choose **guided setup**.
 2. Enter the zone name and agent application name used by the team that will own the workload.
 3. Enter the resource ID and scopes for the upstream you are protecting.
 4. Enter the real upstream URL when you want Gateway routing.
@@ -50,7 +41,7 @@ The result view shows the created objects, the one-time client secret, the activ
 
 ## Call the protected resource
 
-Set `CARACAL_CONFIG` to the profile path shown by Console, then run your workload command through `pnpm caracal run --`.
+Set `CARACAL_CONFIG` to the profile path shown by Console, then run your workload command through `caracal run --`.
 
 The token environment variable in the generated profile is derived from the resource ID you entered. Use that injected token when your workload calls Gateway or the protected service. For Gateway-routed resources, include `Authorization: Bearer` with the injected token and `X-Caracal-Resource` with the resource ID shown by Console.
 
@@ -61,5 +52,5 @@ Return to the Console **audit** view after the first request. Select the request
 ## Shut down
 
 ```bash
-pnpm caracal down
+caracal down
 ```

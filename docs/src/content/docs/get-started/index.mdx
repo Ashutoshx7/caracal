@@ -1,6 +1,6 @@
 ---
 title: Get Started
-description: Install Caracal, run the stack, and ship your first integration.
+description: Install Caracal, run the released product, and ship your first integration.
 pageType: landing
 ---
 
@@ -10,26 +10,28 @@ The default product path is intentionally narrow:
 
 1. Create a zone.
 2. Register an agent app.
-3. Register a tool or provider resource with an upstream URL.
-4. Choose a policy template.
-5. Run the agent through the SDK or `caracal run`.
-6. Send tool/provider calls through the Gateway.
-7. Inspect audit records for both the authorization decision and the action result.
+3. Register a protected resource with scopes and an upstream URL when Gateway routing is needed.
+4. Activate an access policy.
+5. Run the workload through the SDK or `caracal run`.
+6. Send protected calls through the Gateway.
+7. Explain the first audit decision and action result.
 
 Other provider flows fit into three buckets: connector-verified services you own, application-managed external provider calls that keep Caracal context for attribution, and future native broker plugins. Start with the Gateway path unless you know which bucket applies.
 
-For a first OSS integration, keep the mental model simple: use the Console to create the zone, application, resource, and policy; use the SDK or `caracal run` to run the agent; send protected calls through Gateway. SDK middleware is for propagating already-verified context, not for replacing the Gateway enforcement boundary.
+For a first integration, keep the mental model simple: use Console guided setup to create the zone, agent app, protected resource, policy, and runtime profile; use the SDK or `caracal run` to run the workload; send protected calls through Gateway. SDK middleware is for propagating already-verified context, not for replacing the Gateway enforcement boundary.
 
 ## In this section
 
 | Page | What you will do |
 | ---- | ---------------- |
 | [Welcome](./welcome/) | Understand the product promise and where to start |
-| [What Caracal Does](./what-caracal-does/) | Learn the Gateway-first enforcement model before touching code |
 | [Installation](./installation/) | Install the Console, runtime shell, and SDK packages |
-| [Quickstart](./quickstart/) | Bring up the local authority plane with a single command |
+| [Quickstart: Released Product](./quickstart/) | Bring up Caracal using installed release commands |
+| [Five-Minute Setup](./five-minute-setup/) | Protect a resource and explain the first audit result |
 | [First Integration](./first-integration/) | Run an agent and call a provider through the Gateway |
 | [Key Ideas at a Glance](./key-ideas/) | Review the simplified mental model and terminology |
+| [What Caracal Does](./what-caracal-does/) | Learn the execution model after you have a real run |
+| [Contributor Quickstart](./contributor-quickstart/) | Run Caracal from the source tree with pnpm |
 
 ## Prerequisites
 
