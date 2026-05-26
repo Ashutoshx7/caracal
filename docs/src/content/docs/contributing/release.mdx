@@ -70,9 +70,9 @@ git push origin HEAD
 git push origin v2026.05.26-rc.1
 ```
 
-`rc dry-run` queues `release.yml` without publishing. `rc prepare` writes the manifest and stamps package and Helm metadata. Pushing the rc tag publishes images and creates the GitHub prerelease.
+`rc dry-run` queues `release.yml` without publishing. `rc prepare` writes the manifest and stamps package and Helm metadata. Pushing the rc tag publishes packages, images, and the GitHub prerelease.
 
-Publish packages after `prepare`:
+The tag workflow publishes changed packages automatically. For manual package-only recovery:
 
 ```sh
 pnpm release:plan --since v2026.05.14
@@ -237,7 +237,7 @@ node scripts/validateReleaseManifest.mjs
 
 ## npm and PyPI packages
 
-npm and PyPI stable publishing must use protected workflows. `release.config.json` selects changed packages, ignores `examples/**`, and adds exact-pin dependents. Use `--since`, `--package`, or `--all-packages` for deliberate full publishes. npm rc uses `rc`; stable uses `latest`.
+npm and PyPI stable publishing must use protected workflows. `release.config.json` selects changed packages, ignores `examples/**`, and adds exact-pin dependents. Use `--since`, `--package`, or `--all-packages` for deliberate full publishes. npm rc uses `rc`; stable uses `latest`. npm uses the repository secret `NPM_TOKEN`; PyPI uses trusted publishing from the `pypi` environment.
 
 ```sh
 pnpm release:plan --since v2026.05.14
