@@ -31,6 +31,7 @@ TABLES=(
   delegation_edges
   delegation_graph_epochs
   event_outbox
+  gateway_binding_revision
   gateway_resource_bindings
   invitations
   policies
