@@ -11,6 +11,8 @@ FROM node:24-slim@sha256:24dc26ef1e3c3690f27ebc4136c9c186c3133b25563ae4d7f0692e4
 ARG PNPM_VERSION
 ARG BUN_VERSION
 ARG TARGETARCH
+ARG CARACAL_RELEASE_VERSION
+ARG CARACAL_DEV_SHA
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:/root/.bun/bin:$PATH \
     CI=1
@@ -23,17 +25,22 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/runtime/package.json apps/runtime/package.json
 COPY packages/ packages/
 COPY apps/runtime/ apps/runtime/
+COPY infra/docker/runtime-compose.yml infra/docker/runtime-compose.yml
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store,sharing=locked \
     pnpm config set store-dir /pnpm/store && \
     pnpm install --frozen-lockfile --ignore-scripts --filter @caracalai/runtime...
-RUN pnpm run build:typescript
+RUN set -e; \
+    pnpm --filter @caracalai/core build; \
+    pnpm --filter @caracalai/admin build; \
+    pnpm --filter @caracalai/oauth build; \
+    pnpm --filter @caracalai/engine build
 RUN case "${TARGETARCH}" in \
       amd64) bunTarget=bun-linux-x64 ;; \
       arm64) bunTarget=bun-linux-arm64 ;; \
       *) echo "unsupported arch ${TARGETARCH}"; exit 1 ;; \
     esac && \
     cd apps/runtime && \
-    node scripts/stampRelease.mjs && \
+    CARACAL_RELEASE_VERSION="${CARACAL_RELEASE_VERSION}" CARACAL_DEV_SHA="${CARACAL_DEV_SHA}" node scripts/stampRelease.mjs && \
     bun build --compile --target=${bunTarget} src/shell.ts --outfile dist/caracal && \
     chmod +x dist/caracal
 

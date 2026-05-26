@@ -455,11 +455,29 @@ jobs:
             type=raw,value=${{ github.event.inputs.releaseVersion }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.releaseVersion != '' }}
             type=raw,value=dispatch-${{ github.run_id }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.releaseVersion == '' }}
 
+      - name: Resolve runtime image version
+        id: ver
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [ -n "${{ github.event.inputs.releaseVersion }}" ]; then
+            VERSION="${{ github.event.inputs.releaseVersion }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION=""
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: apps/runtime/Dockerfile
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            CARACAL_RELEASE_VERSION=${{ steps.ver.outputs.version }}
+            CARACAL_DEV_SHA=${{ steps.ver.outputs.sha }}
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
