@@ -62,6 +62,7 @@ env:
 jobs:
   select:
     name: Select packages
+    if: github.repository == 'Garudex-Labs/caracal'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -161,7 +162,7 @@ jobs:
 
   publish:
     name: Publish ${{ matrix.name }}
-    if: github.repository == 'Garudex-Labs/caracal' && needs.select.outputs.hasPackages == 'true'
+    if: github.repository == 'Garudex-Labs/caracal' && needs.select.outputs.hasPackages == 'true' && inputs.dryRun != true
     needs: [select, preflight]
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 15

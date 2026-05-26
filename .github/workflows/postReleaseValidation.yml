@@ -23,7 +23,6 @@ permissions:
   contents: read
   packages: read
   attestations: read
-  id-token: write
 
 concurrency:
   group: post-release-${{ inputs.release }}
@@ -42,8 +41,36 @@ env:
   FINDINGS_DIR: findings
 
 jobs:
+  authorize:
+    name: Authorize validation
+    if: github.repository == 'Garudex-Labs/caracal'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Validate release and actor
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release }}
+        run: |
+          set -euo pipefail
+          if ! echo "$RELEASE_TAG" | grep -qE '^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}(\.[0-9]+)?(-rc\.(sha[0-9A-Za-z]+|[0-9]+))?$'; then
+            echo "::error::Invalid release tag: $RELEASE_TAG"
+            exit 1
+          fi
+          actor="${{ github.actor }}"
+          maintainers="$(mktemp)"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/.github/MAINTAINERS?ref=${{ github.event.repository.default_branch }}" --jq '.content' | base64 -d > "$maintainers"
+          if ! grep -Eo '@[[:alnum:]_-]+' "$maintainers" | sed 's/^@//' | grep -qiFx "$actor"; then
+            echo "::error::$actor is not listed in .github/MAINTAINERS on ${{ github.event.repository.default_branch }} and cannot run post-release validation."
+            exit 1
+          fi
+
   registryMetadata:
     name: Registry metadata
+    if: github.repository == 'Garudex-Labs/caracal'
+    needs: authorize
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -65,6 +92,7 @@ jobs:
 
   pypiInstall:
     name: PyPI (${{ matrix.os }}, ${{ matrix.pm }})
+    if: github.repository == 'Garudex-Labs/caracal'
     runs-on: ${{ matrix.os }}
     needs: registryMetadata
     timeout-minutes: 20
@@ -111,6 +139,7 @@ jobs:
 
   npmInstall:
     name: npm (${{ matrix.os }}, ${{ matrix.pm }})
+    if: github.repository == 'Garudex-Labs/caracal'
     runs-on: ${{ matrix.os }}
     needs: registryMetadata
     timeout-minutes: 15
@@ -151,6 +180,8 @@ jobs:
 
   cliAndTui:
     name: Binaries (${{ matrix.os }})
+    if: github.repository == 'Garudex-Labs/caracal'
+    needs: authorize
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -180,6 +211,8 @@ jobs:
 
   installers:
     name: Installers (${{ matrix.os }})
+    if: github.repository == 'Garudex-Labs/caracal'
+    needs: authorize
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -205,6 +238,8 @@ jobs:
 
   containers:
     name: Containers
+    if: github.repository == 'Garudex-Labs/caracal'
+    needs: authorize
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -228,6 +263,8 @@ jobs:
 
   provenance:
     name: Provenance
+    if: github.repository == 'Garudex-Labs/caracal'
+    needs: authorize
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -257,6 +294,7 @@ jobs:
       contents: write
       pull-requests: write
     needs:
+      - authorize
       - registryMetadata
       - pypiInstall
       - npmInstall
@@ -264,7 +302,7 @@ jobs:
       - installers
       - containers
       - provenance
-    if: always()
+    if: always() && github.repository == 'Garudex-Labs/caracal' && needs.authorize.result == 'success'
     timeout-minutes: 10
     env:
       CARACAL_RELEASE: ${{ inputs.release }}
