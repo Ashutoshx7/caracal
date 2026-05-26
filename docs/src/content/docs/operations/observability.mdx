@@ -70,3 +70,5 @@ The API exposes transactional-outbox delivery gauges on `/metrics`: `caracal_api
 STS and Gateway expose local audit replay watermarks: replay file count, bytes, and oldest file age. These metrics should stay at zero during normal operation. If they rise, preserve the replay volumes, recover Redis/Audit, and confirm the files drain before closing the incident.
 
 Audit exposes operator-only DLQ browse and detail endpoints when `AUDIT_ADMIN_TOKEN` is configured. Use `GET /api/audit/dlq` to list reason, replayability, source stream ID, event ID, zone, request ID, and age; use `GET /api/audit/dlq/{id}` for the parsed source event and original DLQ fields. Use `POST /api/audit/dlq/replay` only after classifying entries.
+
+Set `secrets.plaintext.auditAdminToken` in Helm values (or `secrets.auditAdminToken.secretName` to reference an operator-managed secret) to provision this token. Without it, the DLQ endpoints return 404 and are disabled.

@@ -50,6 +50,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
+{{- define "caracal.auditAdminTokenSecretName" -}}
+{{- if .Values.secrets.auditAdminToken.secretName -}}
+{{- .Values.secrets.auditAdminToken.secretName -}}
+{{- else if and .Values.secrets.create .Values.secrets.plaintext.auditAdminToken -}}
+{{- include "caracal.runtimeSecretName" . -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "caracal.image" -}}
 {{- $root := index . "root" -}}
 {{- $image := index . "image" -}}

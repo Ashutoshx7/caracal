@@ -27,6 +27,7 @@ secrets:
     redisPassword: ""
     caracalAdminToken: ""
     stsAdminToken: ""
+    auditAdminToken: ""
     caracalCoordinatorToken: ""
     zoneKek: ""
     auditHmacKey: ""
@@ -47,6 +48,9 @@ secrets:
   stsAdminToken:
     secretName: ""
     key: stsAdminToken
+  auditAdminToken:
+    secretName: ""
+    key: auditAdminToken
 
 migrations:
   enabled: true

@@ -12,6 +12,7 @@ Workload templates for Caracal control-plane services.
 {{- $replayService := or (eq $name "sts") (eq $name "gateway") -}}
 {{- $statefulReplay := and $root.Values.replayPersistence.enabled $replayService -}}
 {{- $stsAdminTokenSecretName := include "caracal.stsAdminTokenSecretName" $root -}}
+{{- $auditAdminTokenSecretName := include "caracal.auditAdminTokenSecretName" $root -}}
 {{- if $service.enabled }}
 apiVersion: apps/v1
 kind: {{ ternary "StatefulSet" "Deployment" $statefulReplay }}
@@ -94,6 +95,10 @@ spec:
             - name: STS_ADMIN_TOKEN_FILE
               value: /run/secrets/sts-admin-token/token
             {{- end }}
+            {{- if and (eq $name "audit") $auditAdminTokenSecretName }}
+            - name: AUDIT_ADMIN_TOKEN_FILE
+              value: /run/secrets/audit-admin-token/token
+            {{- end }}
             - name: STS_URL
               value: http://{{ include "caracal.fullname" $root }}-sts:{{ $root.Values.services.sts.port }}
             - name: ISSUER_URL
@@ -135,6 +140,11 @@ spec:
               mountPath: /run/secrets/sts-admin-token
               readOnly: true
             {{- end }}
+            {{- if and (eq $name "audit") $auditAdminTokenSecretName }}
+            - name: audit-admin-token
+              mountPath: /run/secrets/audit-admin-token
+              readOnly: true
+            {{- end }}
             {{- if $replayService }}
             - name: replay
               mountPath: /var/lib/caracal
@@ -174,6 +184,14 @@ spec:
             secretName: {{ $stsAdminTokenSecretName | quote }}
             items:
               - key: {{ default "stsAdminToken" $root.Values.secrets.stsAdminToken.key | quote }}
+                path: token
+        {{- end }}
+        {{- if and (eq $name "audit") $auditAdminTokenSecretName }}
+        - name: audit-admin-token
+          secret:
+            secretName: {{ $auditAdminTokenSecretName | quote }}
+            items:
+              - key: {{ default "auditAdminToken" $root.Values.secrets.auditAdminToken.key | quote }}
                 path: token
         {{- end }}
         {{- if and $replayService (not $statefulReplay) }}

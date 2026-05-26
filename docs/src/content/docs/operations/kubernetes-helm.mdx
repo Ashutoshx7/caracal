@@ -61,6 +61,17 @@ secrets:
     key: stsAdminToken
 ```
 
+Audit DLQ triage endpoints (`GET /api/audit/dlq`, `GET /api/audit/dlq/{id}`, `POST /api/audit/dlq/replay`) are disabled unless `AUDIT_ADMIN_TOKEN` is configured. Mount from a dedicated Secret:
+
+```yaml
+secrets:
+  auditAdminToken:
+    secretName: caracal-audit-admin
+    key: auditAdminToken
+```
+
+Without this, those routes return 404. Set it once; rotate it as a standard secret rotation with no service restart required once the new token file is written.
+
 For disposable evaluations only, set `secrets.create=true` and provide `secrets.plaintext.*` values. The chart rejects plaintext Secret creation when `global.mode=stable`; rc renders require `global.evaluation=true` before plaintext Secret creation is allowed. Do not commit plaintext secret values to Git.
 
 ## Install path
@@ -93,6 +104,7 @@ If you use the release name `caracal`, objects are named `caracal-caracal-*` by 
 | `global.registry`, `global.tag` | Pins the image source and release version |
 | `secrets.runtimeSecretName` | Integrates with your secret-management system |
 | `secrets.stsAdminToken.secretName` | Enables STS operator endpoints from a token separate from the API bootstrap admin token |
+| `secrets.auditAdminToken.secretName` | Enables Audit DLQ browse, detail, and replay endpoints; without it those routes return 404 |
 | `secrets.database.*` | Lets the migration Job connect to managed Postgres |
 | `services.*.replicas` | Sets baseline availability per component |
 | `services.*.resources` | Controls scheduling and capacity planning |
