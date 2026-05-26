@@ -79,6 +79,26 @@ spec:
             summary: Audit tamper evidence detected
             description: Audit chain verification detected mismatch, ordering break, or stored HMAC failure. Treat as a security incident.
             runbook_url: https://docs.caracal.run/operations/alerts/#caracalaudittamperdetected
+        - alert: CaracalAPIOutboxDeadMessages
+          expr: caracal_api_outbox_dead_total > {{ .Values.alertRules.apiOutboxDead }}
+          for: 2m
+          labels:
+            severity: critical
+            component: api
+          annotations:
+            summary: API transactional outbox has abandoned messages
+            description: Control-plane events exhausted delivery attempts and may not have reached Redis consumers. Recover Redis or stream consumers, inspect API logs, and reconcile affected rows before continuing rollouts.
+            runbook_url: https://docs.caracal.run/operations/alerts/#caracalapioutboxdeadmessages
+        - alert: CaracalAPIOutboxPendingOldest
+          expr: caracal_api_outbox_oldest_pending_age_seconds > {{ .Values.alertRules.apiOutboxPendingAgeSeconds }}
+          for: 5m
+          labels:
+            severity: warning
+            component: api
+          annotations:
+            summary: API transactional outbox is not draining promptly
+            description: Control-plane events are delayed before Redis publication. Check Redis health, API outbox workers, DB pool saturation, and stream memory pressure.
+            runbook_url: https://docs.caracal.run/operations/alerts/#caracalapioutboxpendingoldest
         - alert: CaracalGatewaySTSExchangeErrors
           expr: increase(caracal_gateway_sts_exchange_errors_total[5m]) > {{ .Values.alertRules.gatewayStsExchangeErrors }}
           for: 2m
@@ -89,6 +109,16 @@ spec:
             summary: Gateway cannot reliably exchange mandates with STS
             description: Protected requests may fail before upstream dispatch. Check Gateway readiness, STS readiness, route bindings, and service-to-service auth.
             runbook_url: https://docs.caracal.run/operations/alerts/#caracalgatewaystsexchangeerrors
+        - alert: CaracalGatewayRevocationSnapshotStale
+          expr: caracal_gateway_revocation_snapshot_fresh <= {{ .Values.alertRules.gatewayRevocationSnapshotFresh }}
+          for: 2m
+          labels:
+            severity: critical
+            component: gateway
+          annotations:
+            summary: Gateway revocation snapshot is stale
+            description: Gateway cannot prove it has a fresh revocation baseline. Treat as an access-safety incident and restore Postgres/Redis revocation snapshot loading before relying on protected routes.
+            runbook_url: https://docs.caracal.run/operations/alerts/#caracalgatewayrevocationsnapshotstale
         - alert: CaracalPostgresPoolSaturation
           expr: max by (service) (caracal_db_pool_in_use_ratio) > {{ .Values.alertRules.dbPoolInUseRatio }}
           for: 5m

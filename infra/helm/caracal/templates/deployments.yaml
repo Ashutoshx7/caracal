@@ -11,6 +11,7 @@ Workload templates for Caracal control-plane services.
 {{- $service := index $root.Values.services $name -}}
 {{- $replayService := or (eq $name "sts") (eq $name "gateway") -}}
 {{- $statefulReplay := and $root.Values.replayPersistence.enabled $replayService -}}
+{{- $stsAdminTokenSecretName := include "caracal.stsAdminTokenSecretName" $root -}}
 {{- if $service.enabled }}
 apiVersion: apps/v1
 kind: {{ ternary "StatefulSet" "Deployment" $statefulReplay }}
@@ -89,6 +90,10 @@ spec:
               value: /run/secrets/gatewayStsHmacKey
             - name: CARACAL_ADMIN_TOKEN_FILE
               value: /run/secrets/caracalAdminToken
+            {{- if and (eq $name "sts") $stsAdminTokenSecretName }}
+            - name: STS_ADMIN_TOKEN_FILE
+              value: /run/secrets/sts-admin-token/token
+            {{- end }}
             - name: STS_URL
               value: http://{{ include "caracal.fullname" $root }}-sts:{{ $root.Values.services.sts.port }}
             - name: ISSUER_URL
@@ -125,6 +130,11 @@ spec:
             - name: runtime-secrets
               mountPath: /run/secrets
               readOnly: true
+            {{- if and (eq $name "sts") $stsAdminTokenSecretName }}
+            - name: sts-admin-token
+              mountPath: /run/secrets/sts-admin-token
+              readOnly: true
+            {{- end }}
             {{- if $replayService }}
             - name: replay
               mountPath: /var/lib/caracal
@@ -158,6 +168,14 @@ spec:
       volumes:
         - name: runtime-secrets
           {{ include "caracal.secretVolume" $root | nindent 10 }}
+        {{- if and (eq $name "sts") $stsAdminTokenSecretName }}
+        - name: sts-admin-token
+          secret:
+            secretName: {{ $stsAdminTokenSecretName | quote }}
+            items:
+              - key: {{ default "stsAdminToken" $root.Values.secrets.stsAdminToken.key | quote }}
+                path: token
+        {{- end }}
         {{- if and $replayService (not $statefulReplay) }}
         - name: replay
           emptyDir: {}
