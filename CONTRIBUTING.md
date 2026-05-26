@@ -73,7 +73,7 @@ export CARACAL_ZONE_ID="<zone-id>"
 export CARACAL_APPLICATION_ID="<application-id>"
 export CARACAL_APP_CLIENT_SECRET_FILE="$XDG_RUNTIME_DIR/caracal-client-secret"
 export CARACAL_RUN_CREDENTIALS_FILE="$XDG_RUNTIME_DIR/caracal-credentials.json"
-pnpm caracal run -- node examples/agent.js
+pnpm caracal run -- node -e "if (!process.env.RESOURCE_TOKEN) process.exit(1)"
 ```
 
 #### Control API (optional)

@@ -25,9 +25,9 @@ caracal console
 
 In the Console, choose **guided setup**. Enter the real zone name, agent application name, protected resource ID, scopes, and upstream URL you want to protect. Leave optional fields blank when the resource does not need Gateway routing or a provider credential yet.
 
-The result view gives you the real zone ID, application ID, resource ID, client secret, policy set, and generated runtime profile. Store the one-time client secret in the secret-file path shown by Console, copy the generated profile to the profile path shown by Console, and keep the file permissions owner-only.
+The result view gives you the real zone ID, application ID, resource ID, client secret, policy set, generated runtime profile, local file setup commands, and first-success commands. Use the local setup commands to create the profile and secret files; paste the revealed one-time client secret as the only line in the secret file and keep both files owner-readable only.
 
-Set `CARACAL_CONFIG` to the profile path shown by Console, then run the workload command through `caracal run --`. Do not use copied placeholder profiles for onboarding; generate a profile from the objects you just created.
+Use the generated `CARACAL_CONFIG=... caracal run --` command prefix with the real command that starts your workload. Do not use copied placeholder profiles for onboarding; generate a profile from the objects you just created.
 
 Stop the stack with:
 

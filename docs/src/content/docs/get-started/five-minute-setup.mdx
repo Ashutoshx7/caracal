@@ -34,16 +34,17 @@ In the Console:
 2. Enter the zone name and agent application name used by the team that will own the workload.
 3. Enter the resource ID and scopes for the upstream you are protecting.
 4. Enter the real upstream URL when you want Gateway routing.
-5. Leave provider ID blank unless the resource already has a provider credential source.
-6. Keep **activate policy** and **runtime profile** enabled for the first run.
+5. Enter a real first request path when you want Console to generate an exact Gateway check.
+6. Leave provider ID blank unless the resource already has a provider credential source.
+7. Keep **activate policy** and **runtime profile** enabled for the first run.
 
-The result view shows the created objects, the one-time client secret, the active policy set, and a generated runtime profile. Store the client secret in the secret-file path shown by Console and copy the profile content to the shown profile path.
+The result view shows the created objects, the one-time client secret, the active policy set, the generated runtime profile, local setup commands, and first-success commands. Run the local setup commands, paste the revealed one-time client secret as the only line in the secret file, and keep the profile and secret files owner-readable only.
 
 ## Call the protected resource
 
-Set `CARACAL_CONFIG` to the profile path shown by Console, then run your workload command through `caracal run --`.
+Use the generated `CARACAL_CONFIG=... caracal run --` command prefix with the real command that starts your workload.
 
-The token environment variable in the generated profile is derived from the resource ID you entered. Use that injected token when your workload calls Gateway or the protected service. For Gateway-routed resources, include `Authorization: Bearer` with the injected token and `X-Caracal-Resource` with the resource ID shown by Console.
+The token environment variable in the generated profile is derived from the resource ID you entered. Use that injected token when your workload calls Gateway or the protected service. For Gateway-routed resources, the result view includes an exact `curl` command when first request path was provided; otherwise it shows the required Gateway URL and headers so you can run the request against a real protected path.
 
 ## Explain the first success
 

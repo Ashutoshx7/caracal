@@ -92,7 +92,7 @@ Use a known protected test resource and include a unique request ID:
 curl -fsS \
   -H "Authorization: Bearer $CARACAL_TEST_TOKEN" \
   -H "X-Request-ID: recovery-$(date +%s)" \
-  https://gateway.example.com/health-protected
+  "$CARACAL_PROTECTED_HEALTH_URL"
 ```
 
 Then verify the request ID exists in Audit through the Console Audit view or the operator-only API.

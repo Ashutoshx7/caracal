@@ -28,7 +28,7 @@ The default profile path is `$XDG_CONFIG_HOME/caracal/caracal.toml`, otherwise `
 
 `caracal run` reads validated runtime config from platform environment variables or an explicit runtime profile, exchanges credentials with the STS, and injects tokens under the configured environment variable names.
 
-Use `caracal run` for scripts that read the token environment variable generated in the Console runtime profile. For Gateway-routed resources, send that token as `Authorization: Bearer` and set `X-Caracal-Resource` to the resource ID from the Console result.
+Use `caracal run` for scripts that read the token environment variable generated in the Console runtime profile. For Gateway-routed resources, use the generated first-success request from Console: it sends the injected token as `Authorization: Bearer` and sets `X-Caracal-Resource` to the resource identifier from the setup result.
 
 For SDK processes, use `Caracal.connect()` with the same generated profile. See the language-specific SDK pages for complete environment setup.
 
@@ -40,14 +40,14 @@ Install the SDK:
 npm install @caracalai/sdk
 ```
 
-Minimal example: spawn an agent run and call a resource through the Gateway:
+Minimal example: spawn an agent run and call the real upstream URL you configured in guided setup. `transport()` routes matching resources through the Gateway and injects the Caracal access headers.
 
 ```typescript
 import { Caracal, AgentKind } from "@caracalai/sdk";
 
 const caracal = Caracal.connect();
-const protectedResourceUrl = process.env.PROTECTED_RESOURCE_URL;
-if (!protectedResourceUrl) throw new Error("PROTECTED_RESOURCE_URL is required");
+const protectedResourceUrl = process.env.CARACAL_PROTECTED_URL;
+if (!protectedResourceUrl) throw new Error("CARACAL_PROTECTED_URL is required");
 
 await caracal.spawn(async () => {
   const ctx = caracal.current();
@@ -84,7 +84,7 @@ import os
 from caracalai_sdk import Caracal, AgentKind
 
 caracal = Caracal.connect()
-protected_resource_url = os.environ["PROTECTED_RESOURCE_URL"]
+protected_resource_url = os.environ["CARACAL_PROTECTED_URL"]
 
 async def main():
     async with caracal.spawn(kind=AgentKind.EPHEMERAL) as ctx:
@@ -130,9 +130,9 @@ func main() {
     if err != nil {
         panic(err)
     }
-    protectedResourceURL := os.Getenv("PROTECTED_RESOURCE_URL")
+    protectedResourceURL := os.Getenv("CARACAL_PROTECTED_URL")
     if protectedResourceURL == "" {
-        panic("PROTECTED_RESOURCE_URL is required")
+        panic("CARACAL_PROTECTED_URL is required")
     }
 
     err = c.Spawn(context.Background(), func(ctx context.Context) error {

@@ -29,8 +29,11 @@ await caracal.spawn(async () => {
   const ctx = caracal.current();
   console.log("Agent session:", ctx?.agentSessionId);
 
+  const protectedResourceUrl = process.env.CARACAL_PROTECTED_URL;
+  if (!protectedResourceUrl) throw new Error("CARACAL_PROTECTED_URL is required");
+
   const client = caracal.transport();
-  const response = await client("https://gateway.example.com/billing-api/charge", {
+  const response = await client(protectedResourceUrl, {
     method: "POST",
     body: JSON.stringify({ amount: 1200 }),
     headers: { "Content-Type": "application/json" },
@@ -47,15 +50,17 @@ pip install caracalai-sdk
 
 ```python
 import asyncio
+import os
 from caracalai_sdk import Caracal, AgentKind
 
 caracal = Caracal.connect()
+protected_resource_url = os.environ["CARACAL_PROTECTED_URL"]
 
 async def main():
     async with caracal.spawn(kind=AgentKind.EPHEMERAL) as ctx:
         async with caracal.transport() as client:
             r = await client.post(
-                "https://gateway.example.com/billing-api/charge",
+                protected_resource_url,
                 json={"amount": 1200},
             )
             print(r.json())
@@ -72,11 +77,13 @@ go get github.com/garudex-labs/caracal/packages/sdk/go
 ```go
 c, err := caracal.Connect()
 if err != nil { panic(err) }
+protectedResourceURL := os.Getenv("CARACAL_PROTECTED_URL")
+if protectedResourceURL == "" { panic("CARACAL_PROTECTED_URL is required") }
 
 err = c.Spawn(context.Background(), func(ctx context.Context) error {
     client := c.Transport(nil)
     resp, err := client.Post(
-        "https://gateway.example.com/billing-api/charge",
+        protectedResourceURL,
         "application/json",
         strings.NewReader(`{"amount":1200}`),
     )
@@ -86,7 +93,7 @@ err = c.Spawn(context.Background(), func(ctx context.Context) error {
 })
 ```
 
-`spawn()` opens an agent run, exchanges a short-lived Caracal mandate, and tears the run down when the function returns. `transport()` injects the mandate and trace context on outbound requests; for upstreams that match a configured resource binding, it rewrites the URL through the Gateway and replaces the `Authorization` header with the mandate.
+`CARACAL_PROTECTED_URL` must be a real URL on the upstream resource you registered in guided setup. `spawn()` opens an agent run, exchanges a short-lived Caracal mandate, and tears the run down when the function returns. `transport()` injects the mandate and trace context on outbound requests; for upstreams that match a configured resource binding, it rewrites the URL through the Gateway and replaces the `Authorization` header with the mandate.
 
 ## 3. Delegate to a child agent (optional)
 
