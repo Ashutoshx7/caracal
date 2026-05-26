@@ -45,11 +45,14 @@ function validate(path) {
   if (!manifest.release?.startsWith('v')) fail(`${path}: release must start with v`)
   const version = manifest.release.slice(1)
   const mode = version.includes('-rc.') ? 'rc' : 'stable'
+  const packages = manifest.packages?.published ?? {}
+  const npm = packages.npm ?? manifest.npm ?? {}
+  const pypi = packages.pypi ?? manifest.pypi ?? {}
   if (manifest.mode !== mode) fail(`${path}: mode ${manifest.mode} does not match ${mode}`)
   assertVersions('binaries', manifest.binaries, version)
   assertVersions('containers', manifest.containers, version)
-  assertVersions('npm', manifest.npm, version)
-  assertVersions('pypi', manifest.pypi, version)
+  assertVersions('npm', npm, version)
+  assertVersions('pypi', pypi, version)
   if (manifest.runtimeImage !== version) fail(`${path}: runtimeImage ${manifest.runtimeImage} does not match ${version}`)
   const expectedChartVersion = chartVersion(version)
   if (!manifest.helm || typeof manifest.helm !== 'object') fail(`${path}: helm metadata is required`)

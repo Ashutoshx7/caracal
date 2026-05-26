@@ -25,8 +25,18 @@ type Manifest = {
   imagePrefix?: string;
   binaries: Record<string, string>;
   containers: Record<string, string>;
-  pypi: Record<string, string>;
-  npm: Record<string, string>;
+  pypi?: Record<string, string>;
+  npm?: Record<string, string>;
+  packages?: {
+    published?: {
+      pypi?: Record<string, string>;
+      npm?: Record<string, string>;
+    };
+    unchanged?: {
+      pypi?: Record<string, string>;
+      npm?: Record<string, string>;
+    };
+  };
 };
 
 const findingsDir = process.env.FINDINGS_DIR;
@@ -45,6 +55,8 @@ if (manifest.release !== release) {
 }
 const registry = manifest.registry ?? "ghcr.io/garudex-labs";
 const imagePrefix = manifest.imagePrefix ?? "caracal-";
+const publishedPypi = manifest.packages?.published?.pypi ?? manifest.pypi ?? {};
+const publishedNpm = manifest.packages?.published?.npm ?? manifest.npm ?? {};
 
 const AREAS = [
   ["registryMetadata", "Registry Metadata"],
@@ -103,8 +115,8 @@ const compat = (() => {
   return [
     sec("Runtime / Console binaries", manifest.binaries),
     sec(`Container images (${registry})`, containerView),
-    sec("PyPI packages", manifest.pypi),
-    sec("npm packages", manifest.npm),
+    sec("Published PyPI packages", publishedPypi),
+    sec("Published npm packages", publishedNpm),
   ].join("\n");
 })();
 
@@ -149,9 +161,9 @@ ${tableRows}
 
 ## Severity rubric
 
-- **blocker**: artifact is unusable for consumers (download fails, install errors, signature invalid)
-- **major**: published but a contract is broken (wrong version, missing export, broken healthcheck)
-- **minor**: cosmetic or documentation issue
+- **blocker**: unusable artifact
+- **major**: broken contract
+- **minor**: cosmetic or docs issue
 - **info**: informational only
 
 ## Findings

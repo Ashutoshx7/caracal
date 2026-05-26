@@ -8,59 +8,20 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { productArchiveTargets, productContainers, releaseInventory } from './releaseInventory.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const inventory = releaseInventory()
 
-const npmPaths = [
-  'packages/core/ts',
-  'packages/oauth/ts',
-  'packages/admin/ts',
-  'packages/identity/ts',
-  'packages/revocation/ts',
-  'packages/sdk/ts',
-  'packages/transport/mcp/ts',
-  'packages/transport/a2a/ts',
-  'packages/connectors/express/ts',
-  'packages/connectors/fastmcp/ts',
-  'packages/connectors/postgres/ts',
-  'packages/connectors/redis/ts',
-]
-
-const pyPaths = [
-  'packages/core/python',
-  'packages/oauth/python',
-  'packages/identity/python',
-  'packages/revocation/python',
-  'packages/sdk/python',
-  'packages/transport/mcp/python',
-  'packages/connectors/fastmcp/python',
-  'packages/connectors/redis/python',
-]
-
-const containers = ['api', 'coordinator', 'control', 'audit', 'gateway', 'sts', 'postgres', 'redis']
-const archiveTargets = [
-  'caracal-shell-linux-amd64',
-  'caracal-shell-linux-arm64',
-  'caracal-shell-darwin-amd64',
-  'caracal-shell-darwin-arm64',
-  'caracal-shell-windows-amd64',
-  'caracal-console-linux-amd64',
-  'caracal-console-linux-arm64',
-  'caracal-console-darwin-amd64',
-  'caracal-console-darwin-arm64',
-  'caracal-console-windows-amd64',
-]
-const imageBuilds = [
-  ['api', '.', 'apps/api/Dockerfile'],
-  ['sts', '.', 'infra/docker/Dockerfile.go-service'],
-  ['gateway', '.', 'infra/docker/Dockerfile.go-service'],
-  ['audit', '.', 'infra/docker/Dockerfile.go-service'],
-  ['coordinator', '.', 'apps/coordinator/Dockerfile'],
-  ['control', '.', 'apps/control/Dockerfile'],
-  ['postgres', 'infra/postgres', 'infra/postgres/Dockerfile'],
-  ['redis', 'infra/redis', 'infra/redis/Dockerfile'],
-  ['runtime', '.', 'apps/runtime/Dockerfile'],
-]
+const npmPaths = inventory.packages.npm.map((pkg) => pkg.dir)
+const pyPaths = inventory.packages.pypi.map((pkg) => pkg.dir)
+const productImages = productContainers(inventory.config)
+const containers = productImages.filter((image) => image.name !== 'runtime').map((image) => image.name)
+const archiveTargets = productArchiveTargets(inventory.config).flatMap((target) => [
+  `caracal-shell-${target.os}-${target.arch}`,
+  `caracal-console-${target.os}-${target.arch}`,
+])
+const imageBuilds = productImages.map((image) => [image.name, image.context, image.dockerfile])
 
 function die(message) {
   process.stderr.write(`release: ${message}\n`)
@@ -120,6 +81,11 @@ function remoteSha(ref) {
 function currentCalVer() {
   const date = new Date()
   return `${date.getUTCFullYear()}.${`${date.getUTCMonth() + 1}`.padStart(2, '0')}.${`${date.getUTCDate()}`.padStart(2, '0')}`
+}
+
+function currentDate() {
+  const date = new Date()
+  return `${date.getUTCFullYear()}-${`${date.getUTCMonth() + 1}`.padStart(2, '0')}-${`${date.getUTCDate()}`.padStart(2, '0')}`
 }
 
 function cleanBase(version) {
@@ -224,6 +190,10 @@ function makeManifest(options = {}) {
     images: Object.fromEntries([...containers, 'runtime'].map((name) => [name, `${reg.oci.replace(/\/$/, '')}/caracal-${name}:v${version}`])),
     npm,
     pypi,
+    packages: {
+      published: { npm, pypi },
+      unchanged: { npm: {}, pypi: {} },
+    },
     githubRelease: {
       tag,
       assets: `${reg.githubReleases.replace(/\/$/, '')}/${tag}`,
@@ -248,13 +218,17 @@ function makeStableManifest(version, tag) {
   return {
     release: tag,
     mode: 'stable',
-    publishedAt: currentCalVer(),
+    publishedAt: currentDate(),
     binaries: { shell: version, console: version },
     runtimeImage: version,
     containers: Object.fromEntries(containers.map((name) => [name, version])),
     helm: { chartVersion, appVersion: version, imageTag: version },
     pypi,
     npm,
+    packages: {
+      published: { npm, pypi },
+      unchanged: { npm: {}, pypi: {} },
+    },
   }
 }
 
@@ -324,40 +298,40 @@ function assertStableCommit(tag) {
   execFileSync('node', ['scripts/validateReleaseManifest.mjs', manifest], { cwd: repoRoot, stdio: 'inherit' })
   const files = run('git', ['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD']).trim().split('\n')
   for (const file of [manifest, 'infra/helm/caracal/Chart.yaml', 'infra/helm/caracal/values.yaml']) {
-    if (!files.includes(file)) die(`release commit must include ${file}`)
+    if (!files.includes(file)) die(`release commit missing ${file}`)
   }
 }
 
 function stable(options) {
-  if (dirtyTree()) die('working tree is dirty; commit or stash before releasing')
+  if (dirtyTree()) die('dirty tree; commit or stash first')
   const dryRun = options.flags.has('dry-run')
   const branch = currentBranch()
-  if (branch !== 'main' && !dryRun) die(`stable release must run from main (current: ${branch})`)
+  if (branch !== 'main' && !dryRun) die(`stable must run from main (current: ${branch})`)
   execFileSync('git', ['fetch', '--tags', '--quiet', 'origin'], { cwd: repoRoot, stdio: 'inherit' })
   if (!dryRun) {
     execFileSync('git', ['pull', '--ff-only', 'origin', 'main'], { cwd: repoRoot, stdio: 'inherit' })
-    if (headSha() !== run('git', ['rev-parse', 'origin/main']).trim()) die('local main does not match origin/main after pull')
+    if (headSha() !== run('git', ['rev-parse', 'origin/main']).trim()) die('main is behind origin/main')
   }
   const tag = nextStableTag()
   const version = tag.slice(1)
   if (remoteTagExists(tag)) die(`remote tag already exists: ${tag}`)
   const pending = pendingChangesets()
-  say(`stable release: ${tag}`)
-  say(`${pending} pending changeset(s)`)
+  say(`stable: ${tag}`)
+  say(`changesets: ${pending}`)
   if (dryRun) {
     if (pending > 0) {
       execFileSync('pnpm', ['changeset', 'status'], { cwd: repoRoot, stdio: 'inherit' })
       execFileSync('pnpm', ['changeset', 'version'], { cwd: repoRoot, stdio: 'inherit' })
     } else {
-      say('initial release; no changesets to apply')
+      say('no changesets')
     }
     writeStableManifest(makeStableManifest(version, tag))
-    say('dry-run release diff')
+    say('dry-run diff')
     execFileSync('git', ['--no-pager', 'diff', '--', '**/package.json', '**/pyproject.toml', 'infra/helm/caracal/Chart.yaml', 'infra/helm/caracal/values.yaml', `releases/${tag}/manifest.json`], { cwd: repoRoot, stdio: 'inherit' })
     execFileSync('git', ['restore', '--worktree', '--staged', '.'], { cwd: repoRoot, stdio: 'inherit' })
     execFileSync('git', ['clean', '-fd', '--', '.changeset', 'packages', 'apps', 'releases'], { cwd: repoRoot, stdio: 'inherit' })
-    if (dirtyTree()) die('dry-run revert failed; working tree is not clean')
-    say('dry-run complete; no commits made')
+    if (dirtyTree()) die('dry-run cleanup failed')
+    say('dry-run complete')
     return
   }
   if (pending > 0) execFileSync('pnpm', ['changeset', 'version'], { cwd: repoRoot, stdio: 'inherit' })
@@ -373,10 +347,10 @@ function stable(options) {
   try {
     execFileSync('git', ['push', '--atomic', 'origin', 'main', `refs/tags/${tag}`], { cwd: repoRoot, stdio: 'inherit' })
   } catch {
-    die(`atomic push failed; main and ${tag} were not both accepted`)
+    die(`atomic push failed for main and ${tag}`)
   }
   say(`pushed ${tag}`)
-  say('GitHub Actions will publish GHCR images, release archives, and the GitHub Release')
+  say('Actions will publish release assets.')
 }
 
 function loadManifest(pathOrTag) {
@@ -386,12 +360,12 @@ function loadManifest(pathOrTag) {
     return JSON.parse(readFileSync(path, 'utf8'))
   }
   const root = join(repoRoot, 'releases')
-  if (!existsSync(root)) die('no rc manifest found; run scripts/release.sh rc version first')
+  if (!existsSync(root)) die('no rc manifest; run rc version first')
   const entries = readdirSync(root, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && /-rc\./.test(entry.name) && existsSync(join(root, entry.name, 'manifest.json')))
     .map((entry) => ({ name: entry.name, time: statSync(join(root, entry.name, 'manifest.json')).mtimeMs }))
     .sort((a, b) => a.time - b.time)
-  if (!entries.length) die('no rc manifest found; run scripts/release.sh rc version first')
+  if (!entries.length) die('no rc manifest; run rc version first')
   return JSON.parse(readFileSync(join(root, entries.at(-1).name, 'manifest.json'), 'utf8'))
 }
 
@@ -431,13 +405,13 @@ function rewriteHelm(manifest) {
 }
 
 function prepare(options) {
-  if (dirtyTree() && !options.flags.has('allow-dirty')) die('working tree is dirty; commit/stash first or pass --allow-dirty')
+  if (dirtyTree() && !options.flags.has('allow-dirty')) die('dirty tree; commit/stash or pass --allow-dirty')
   const manifest = makeManifest(options.values)
   const path = writeManifest(manifest)
   for (const pkgPath of npmPaths) rewritePackageJson(join(repoRoot, pkgPath, 'package.json'), manifest.npm)
   for (const pyPath of pyPaths) rewritePyproject(join(repoRoot, pyPath, 'pyproject.toml'), manifest.pypi)
   rewriteHelm(manifest)
-  say(`prepared ${manifest.release}`)
+  say(`prepared: ${manifest.release}`)
   say(path)
 }
 
@@ -467,22 +441,22 @@ function dryRun(options) {
     '-f',
     'dryRun=true',
   ]
-  say(`rc release workflow dry-run: ${manifest.release}`)
-  say(`queuing .github/workflows/release.yml on ${ref}`)
-  say(`publishing: disabled by workflow_dispatch`)
-  if (manifest.source.dirty) say(`warning: local working tree is dirty; GitHub Actions will run the remote ${ref}, not local uncommitted changes`)
+  say(`rc dry-run: ${manifest.release}`)
+  say(`workflow ref: ${ref}`)
+  say('publishing: off')
+  if (manifest.source.dirty) say(`warning: dirty tree; Actions uses remote ${ref}`)
   if (options.flags.has('print-command')) {
     say(`gh ${args.map(shellArg).join(' ')}`)
     return
   }
   const remote = remoteSha(ref)
-  if (!remote) die(`origin does not have ref ${ref}; push a branch or choose an existing --ref`)
+  if (!remote) die(`origin ref not found: ${ref}`)
   if (!options.flags.has('allow-stale-ref') && ref === currentBranch() && remote !== headSha()) {
-    die(`origin/${ref} does not match local HEAD; GitHub Actions would run the old remote workflow. Push ${ref}, choose another --ref, or pass --allow-stale-ref.`)
+    die(`origin/${ref} differs from HEAD; push, choose --ref, or pass --allow-stale-ref`)
   }
   execFileSync('gh', args, { cwd: repoRoot, stdio: 'inherit' })
-  say(`queued release.yml dry run for ${manifest.release}`)
-  say(`monitor with: gh run list --workflow release.yml --limit 5`)
+  say(`queued: ${manifest.release}`)
+  say('monitor: gh run list --workflow release.yml --limit 5')
 }
 
 function shellArg(value) {
@@ -492,48 +466,41 @@ function shellArg(value) {
 
 function simulateWorkflow(manifest) {
   const path = manifestPath(manifest)
-  say(`rc release workflow dry-run: ${manifest.release}`)
+  say(`rc dry-run: ${manifest.release}`)
   say(`workflow: .github/workflows/release.yml`)
-  say(`trigger: simulated tag push ${manifest.release}`)
+  say(`trigger: tag ${manifest.release}`)
   say(`mode: ${manifest.mode}`)
-  say(`publishing: disabled`)
+  say('publishing: off')
   say()
-  say(`release metadata`)
-  say(`  would write ${path}`)
-  say(`  would stamp Helm chart ${manifest.helm.chartVersion}`)
-  say(`  would stamp Helm appVersion/image tag ${manifest.version}`)
-  say(`  would stamp runtime and Console binaries ${manifest.version}`)
+  say('metadata')
+  say(`  manifest: ${path}`)
+  say(`  helm: ${manifest.helm.chartVersion}`)
+  say(`  app/image: ${manifest.version}`)
+  say(`  binaries: ${manifest.version}`)
   say()
   say(`jobs`)
   say(`  context`)
-  say(`    would verify release actor against .github/MAINTAINERS`)
-  say(`    would validate tag format for ${manifest.release}`)
-  say(`    would validate ${path} with CARACAL_VALIDATE_HELM_FILES=1`)
+  say('    check maintainer, tag, manifest')
   say(`  archives`)
-  say(`    would install pnpm 11.1.1, Node 24, and Bun 1.3.14`)
-  say(`    would run pnpm install --frozen-lockfile --prefer-offline`)
-  say(`    would run pnpm run build:typescript`)
-  say(`    would build runtime and Console binaries for linux/darwin/windows amd64/arm64 targets`)
-  say(`    would package release archives:`)
+  say('    install deps, build TypeScript, build binaries')
+  say('    archives:')
   for (const name of archiveTargets) say(`      ${name}-${manifest.release}.${name.includes('windows') ? 'zip' : 'tar.gz'}`)
-  say(`    would generate SHA256SUMS, verify checksums, smoke-test linux-amd64 archives, and upload release-archives`)
-  say(`    would request build provenance attestations for pushed-tag artifacts`)
+  say('    checksums, smoke tests, provenance')
   say(`  serviceImages`)
   for (const [name, context, dockerfile] of imageBuilds.filter(([name]) => name !== 'runtime')) {
-    say(`    would build linux/amd64,linux/arm64 ${manifest.images[name]} from ${dockerfile} (context ${context})`)
+    say(`    ${name}: ${dockerfile} (${context})`)
   }
-  say(`    would push immutable rc image tags only on the real tag workflow`)
+  say('    push only on tag workflow')
   say(`  runtimeImage`)
-  say(`    would build linux/amd64,linux/arm64 ${manifest.images.runtime} from apps/runtime/Dockerfile`)
-  say(`    would push the immutable rc runtime image tag only on the real tag workflow`)
+  say(`    apps/runtime/Dockerfile -> ${manifest.images.runtime}`)
+  say('    push only on tag workflow')
   say(`  githubRelease`)
-  say(`    would use environment rc-release`)
-  say(`    would create GitHub Release ${manifest.release} with prerelease=true`)
-  say(`    would attach release archives, manifest.json, SHA256SUMS, and installers`)
+  say(`    prerelease: ${manifest.release}`)
+  say('    attach archives, manifest, sums, installers')
   say(`  postValidate`)
-  say(`    would run .github/workflows/postReleaseValidation.yml with release=${manifest.release}`)
+  say(`    release=${manifest.release}`)
   say(`  promoteStable`)
-  say(`    skipped for rc; would not move latest or series tags`)
+  say('    skipped for rc')
   say()
   say(JSON.stringify({ manifest: path, ...manifest }, null, 2))
 }
@@ -541,7 +508,7 @@ function simulateWorkflow(manifest) {
 function clean(options) {
   const manifest = loadManifest(options.values.manifest)
   rmSync(dirname(manifestPath(manifest)), { recursive: true, force: true })
-  say(`cleaned ${manifest.release}`)
+  say(`cleaned: ${manifest.release}`)
 }
 
 function main() {
@@ -553,10 +520,10 @@ function main() {
       say(`Usage: scripts/release.sh rc <command> [options]
 
 Commands:
-  dry-run                Queue release.yml through workflow_dispatch without publishing.
-  version                Generate an rc manifest under releases/<tag>/manifest.json.
-  prepare                Generate the manifest and stamp package metadata to rc versions.
-  clean --manifest PATH  Remove an rc manifest directory.`)
+  dry-run                Queue release.yml without publishing.
+  version                Write an rc manifest.
+  prepare                Write manifest and stamp rc metadata.
+  clean --manifest PATH  Remove an rc manifest.`)
       break
     case 'stable':
       stable(options)
@@ -579,24 +546,24 @@ Commands:
       say(`Usage: scripts/release.sh <command> [options]
 
 Commands:
-  stable [--dry-run]      Prepare or publish a stable CalVer release.
-  rc dry-run              Queue release.yml through workflow_dispatch without publishing.
-  rc version              Generate an rc manifest under releases/<tag>/manifest.json.
-  rc prepare              Generate the manifest and stamp package metadata to rc versions.
-  rc clean --manifest PATH Remove an rc manifest directory.
+  stable [--dry-run]      Prepare or publish stable.
+  rc dry-run              Queue release.yml without publishing.
+  rc version              Write an rc manifest.
+  rc prepare              Write manifest and stamp rc metadata.
+  rc clean --manifest PATH Remove an rc manifest.
 
 Options:
-  --base-version VER      Base version; default UTC CalVer.
-  --suffix VALUE          rc suffix; default rc.sha<gitsha>. Also supports rc.<number>.
-  --ref REF               GitHub ref to run for dry-run; default current branch.
-  --manifest PATH|TAG     rc manifest path or tag for clean.
-  --npm-registry URL      npm registry endpoint; default https://registry.npmjs.org/.
-  --pypi-index URL        Python simple index endpoint; default https://pypi.org/simple/.
-  --oci-registry HOST     OCI registry namespace; default ghcr.io/garudex-labs.
-  --github-release-base   GitHub Releases download base URL.
-  --local                 Print the local workflow simulation instead of queuing Actions.
-  --print-command         Print the gh workflow command without running it.
-  --allow-stale-ref       Queue Actions even when the selected branch differs from local HEAD.`)
+  --base-version VER      Base version. Default: UTC CalVer.
+  --suffix VALUE          rc suffix. Default: rc.sha<gitsha>.
+  --ref REF               Dry-run ref. Default: current branch.
+  --manifest PATH|TAG     rc manifest path or tag.
+  --npm-registry URL      npm registry.
+  --pypi-index URL        Python index.
+  --oci-registry HOST     OCI namespace.
+  --github-release-base   GitHub asset base.
+  --local                 Print local simulation.
+  --print-command         Print gh command.
+  --allow-stale-ref       Allow remote/local ref drift.`)
       break
     default:
       die(`unknown command: ${options.command}`)

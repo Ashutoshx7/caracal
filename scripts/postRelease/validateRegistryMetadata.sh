@@ -67,6 +67,9 @@ checkNpm() {
   logFinding "$AREA" "$pkg" "registry" "npm" "-" "$SEV_INFO" "$STATUS_PASS" "metadata ok @ $ver" "curl $url"
 }
 
+if (( ${#PYPI_NAMES[@]} == 0 && ${#NPM_NAMES[@]} == 0 )); then
+  logFinding "$AREA" "packages" "registry" "all" "-" "$SEV_INFO" "$STATUS_PASS" "no packages published" "read releases/$CARACAL_RELEASE/manifest.json"
+fi
 for (( i = 0; i < ${#PYPI_NAMES[@]}; i++ )); do checkPyPi "${PYPI_NAMES[$i]}" "${PYPI_VERS[$i]}"; done
 for (( i = 0; i < ${#NPM_NAMES[@]}; i++ )); do checkNpm "${NPM_NAMES[$i]}" "${NPM_VERS[$i]}"; done
 exitForFindings
