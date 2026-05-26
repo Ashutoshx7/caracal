@@ -135,6 +135,26 @@ func TestSinkFailurePersistsToDisk(t *testing.T) {
 	}
 }
 
+func TestCloseWaitsForReplayPersistence(t *testing.T) {
+	c, s, dir := newTestClient(t, nil, false)
+	s.failN = 100
+	s.failErr = errors.New("redis down")
+	ctx, cancel := context.WithCancel(context.Background())
+	c.Start(ctx)
+	c.Emit(Event{ID: "ev"})
+	cancel()
+	if err := c.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("expected persisted batch")
+	}
+}
+
 func TestEmitDropsWhenFull(t *testing.T) {
 	dir := t.TempDir()
 	var dropped atomic.Uint64

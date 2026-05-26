@@ -6,6 +6,7 @@
 package internal
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -39,6 +40,29 @@ func TestAuditBufferPersistsWhenFull(t *testing.T) {
 
 	if buf.Dropped() != 0 {
 		t.Errorf("want zero dropped, got %d", buf.Dropped())
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("want one replay file, got %d", len(entries))
+	}
+}
+
+func TestAuditBufferCloseWaitsForFlush(t *testing.T) {
+	dir := t.TempDir()
+	buf := &AuditBuffer{
+		ch:        make(chan AuditEvent, 1),
+		log:       zerolog.Nop(),
+		replayDir: dir,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	buf.start(ctx)
+	buf.Emit(AuditEvent{ID: "ev-1"})
+	cancel()
+	if err := buf.Close(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
