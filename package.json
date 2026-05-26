@@ -28,9 +28,8 @@
     "packages:changed": "node scripts/detectChangedPackages.mjs",
     "changeset": "changeset",
     "version": "changeset version",
-    "rc": "scripts/rc.sh",
     "release": "scripts/release.sh",
-    "release:dry-run": "scripts/release.sh --dry-run",
+    "release:dry-run": "scripts/release.sh stable --dry-run",
     "knip": "node ./node_modules/knip/dist/cli.js"
   },
   "devDependencies": {

@@ -32,8 +32,8 @@ The tag drives binaries, OCI image tags, GitHub Releases, Helm `appVersion`/imag
 Use rc when a downstream project must consume Caracal as a normal third-party dependency before stable. The consumer changes only package versions and registry/index endpoints; it must not reference Caracal source paths, workspace links, editable installs, or Docker build contexts from the Caracal checkout.
 
 ```sh
-scripts/rc.sh dry-run --base-version 2026.05.26 --suffix rc.1
-scripts/rc.sh prepare --base-version 2026.05.26 --suffix rc.1
+scripts/release.sh rc dry-run --base-version 2026.05.26 --suffix rc.1
+scripts/release.sh rc prepare --base-version 2026.05.26 --suffix rc.1
 git add -A
 git commit -m "rc: v2026.05.26-rc.1"
 git tag -a v2026.05.26-rc.1 -m v2026.05.26-rc.1
@@ -41,7 +41,7 @@ git push origin HEAD
 git push origin v2026.05.26-rc.1
 ```
 
-`scripts/rc.sh dry-run` queues `.github/workflows/release.yml` through workflow dispatch with `releaseVersion=v2026.05.26-rc.1`. The workflow builds binaries, builds images with `push: false`, uploads and verifies release archives, and skips GitHub Release creation, GHCR pushes, post-release publication checks, and stable image promotion. The selected `--ref` must already exist on GitHub with the current workflow file, and the helper refuses to queue the run when that branch differs from local `HEAD` unless `--allow-stale-ref` is passed. Use `--local` only when you want a local text simulation instead of an Actions run. `scripts/rc.sh prepare` writes `releases/<rc-tag>/manifest.json`, stamps Helm metadata, stamps npm package versions as `<base>-rc.<number>` or `<base>-rc.sha<gitsha>`, and stamps PyPI versions as `<base>rc<number>` or `<base>rc0+sha<gitsha>`. Use `scripts/rc.sh version` only when you need to preview the manifest and keep it on disk without stamping package or Helm metadata. Pushing the rc tag runs the release workflow, publishes GHCR images, and creates a GitHub Release for rc.
+`scripts/release.sh rc dry-run` queues `.github/workflows/release.yml` through workflow dispatch with `releaseVersion=v2026.05.26-rc.1`. The workflow builds binaries, builds images with `push: false`, uploads and verifies release archives, and skips GitHub Release creation, GHCR pushes, post-release publication checks, and stable image promotion. The selected `--ref` must already exist on GitHub with the current workflow file, and the helper refuses to queue the run when that branch differs from local `HEAD` unless `--allow-stale-ref` is passed. Use `--local` only when you want a local text simulation instead of an Actions run. `scripts/release.sh rc prepare` writes `releases/<rc-tag>/manifest.json`, stamps Helm metadata, stamps npm package versions as `<base>-rc.<number>` or `<base>-rc.sha<gitsha>`, and stamps PyPI versions as `<base>rc<number>` or `<base>rc0+sha<gitsha>`. Use `scripts/release.sh rc version` only when you need to preview the manifest and keep it on disk without stamping package or Helm metadata. Pushing the rc tag runs the release workflow, publishes GHCR images, and creates a GitHub Release for rc.
 
 Publish packages after `prepare`:
 
@@ -68,8 +68,8 @@ For containers, change only `ghcr.io/garudex-labs/caracal-{svc}:v<version>`. For
 Stable releases are created from `main` with the release script:
 
 ```sh
-scripts/release.sh
-scripts/release.sh --dry-run
+scripts/release.sh stable
+scripts/release.sh stable --dry-run
 ```
 
 The script applies pending changesets, stamps Helm metadata, writes `releases/<tag>/manifest.json`, tags the release, and pushes `main` plus the tag. The tag triggers the unified `release.yml` workflow in GitHub Actions. The stable pipeline:
@@ -175,7 +175,7 @@ The Helm chart uses SemVer-compatible `Chart.yaml` versions and CalVer applicati
 | `values.yaml global.tag` | `2026.05.26-rc.1` | Image tag suffix; templates render images as `v<global.tag>` |
 | `manifest.json helm.imageTag` | `2026.05.26-rc.1` | Source of truth for Helm image alignment |
 
-Do not edit chart versions by hand during a release. `scripts/release.sh` and `scripts/rc.sh prepare` stamp the chart and manifest from the same release identity. The release workflow rejects tags when `Chart.yaml`, `values.yaml`, and `manifest.json` disagree.
+Do not edit chart versions by hand during a release. `scripts/release.sh stable` and `scripts/release.sh rc prepare` stamp the chart and manifest from the same release identity. The release workflow rejects tags when `Chart.yaml`, `values.yaml`, and `manifest.json` disagree.
 
 Validate committed manifests locally:
 
@@ -232,7 +232,7 @@ For a critical fix on an already-released version:
 1. Branch from the release tag: `git checkout -b hotfix-jti v2026.05.26`.
 2. Apply the fix and open a PR against `main`.
 3. Merge after review; cherry-pick to `main` if the fix landed elsewhere first.
-4. Run `scripts/release.sh --dry-run` from updated `main`.
+4. Run `scripts/release.sh stable --dry-run` from updated `main`.
 5. Cut the recut tag with `scripts/release.sh`; same-day releases use `vYYYY.MM.DD.N`.
 6. Promote only after `release-approval` and release validation pass.
 
