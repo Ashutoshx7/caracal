@@ -78,6 +78,7 @@ async function syncGatewayBinding(
        WHERE resource_identifier = $1 AND zone_id = $2`,
       [resourceIdentifier, zoneId],
     )
+    await bumpGatewayBindingRevision(client)
     return
   }
   await client.query(
@@ -86,8 +87,18 @@ async function syncGatewayBinding(
      ON CONFLICT (zone_id, resource_identifier)
      DO UPDATE SET zone_id = EXCLUDED.zone_id,
                    application_id = EXCLUDED.application_id,
-                   updated_at = now()`,
+                    updated_at = now()`,
     [resourceIdentifier, zoneId, gatewayApplicationID],
+  )
+  await bumpGatewayBindingRevision(client)
+}
+
+async function bumpGatewayBindingRevision(client: PoolClient): Promise<void> {
+  await client.query(
+    `UPDATE gateway_binding_revision
+     SET version = version + 1,
+         updated_at = now()
+     WHERE id = true`,
   )
 }
 
