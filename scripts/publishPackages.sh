@@ -22,6 +22,7 @@ head_ref="HEAD"
 select=0
 npmrc=""
 venv=""
+python_cmd=""
 
 cleanup() {
     [[ -n "${npmrc:-}" ]] && rm -f "$npmrc"
@@ -91,11 +92,43 @@ if [[ ${#npm_packages[@]} -eq 0 && ${#pypi_packages[@]} -eq 0 ]]; then
     exit 0
 fi
 
+npmField() {
+    node -e "console.log(JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))[process.argv[2]] ?? '')" "$1/package.json" "$2"
+}
+
+pyField() {
+    awk -v key="$2" -F'"' '$0 ~ "^" key " = " {print $2; exit}' "$1/pyproject.toml"
+}
+
+pythonCmd() {
+    if [[ -n "$python_cmd" ]]; then
+        printf '%s' "$python_cmd"
+        return 0
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        python_cmd="python3"
+    elif command -v python >/dev/null 2>&1; then
+        python_cmd="python"
+    else
+        say_error "Python is required."
+        exit 2
+    fi
+    printf '%s' "$python_cmd"
+}
+
+venvPython() {
+    if [[ -x "$venv/Scripts/python.exe" ]]; then
+        printf '%s' "$venv/Scripts/python.exe"
+    else
+        printf '%s' "$venv/bin/python"
+    fi
+}
+
 publishNpm() {
     [[ ${#npm_packages[@]} -gt 0 ]] || return 0
     say_info "npm packages: ${#npm_packages[@]}"
     for d in "${npm_packages[@]}"; do
-        ver="$(jq -r .version "$d/package.json")"
+        ver="$(npmField "$d" version)"
         if [[ "$ver" != *"-rc."* && "${CARACAL_ALLOW_LOCAL_STABLE_PUBLISH:-}" != "1" ]]; then
             say_error "Stable npm publish must use publishNpm.yml."
             say_label "Emergency local publish: set CARACAL_ALLOW_LOCAL_STABLE_PUBLISH=1 after approval."
@@ -123,8 +156,8 @@ publishNpm() {
     pnpm run build:typescript
     say_header "Publishing npm"
     for d in "${npm_packages[@]}"; do
-        name="$(jq -r .name "$d/package.json")"
-        ver="$(jq -r .version "$d/package.json")"
+        name="$(npmField "$d" name)"
+        ver="$(npmField "$d" version)"
         if [[ "$ver" == *"dev.sha"* || "$ver" == *"dev."* ]]; then
             say_error "Dev version blocked: ${name}@${ver}"
             exit 1
@@ -156,7 +189,7 @@ publishPypi() {
     [[ ${#pypi_packages[@]} -gt 0 ]] || return 0
     say_info "PyPI packages: ${#pypi_packages[@]}"
     for d in "${pypi_packages[@]}"; do
-        ver="$(awk -F'"' '/^version = /{print $2; exit}' "$d/pyproject.toml")"
+        ver="$(pyField "$d" version)"
         if [[ "$repo" == "pypi" && "$ver" != *"rc"* && "${CARACAL_ALLOW_LOCAL_STABLE_PUBLISH:-}" != "1" ]]; then
             say_error "Stable PyPI publish must use publishPypi.yml."
             say_label "Emergency local publish: set CARACAL_ALLOW_LOCAL_STABLE_PUBLISH=1 after approval."
@@ -172,15 +205,16 @@ publishPypi() {
         exit 1
     fi
     venv="$(mktemp -d)"
-    python3 -m venv "$venv"
-    "$venv/bin/python" -m pip install --quiet --require-hashes --requirement scripts/publishPypiRequirements.lock
+    "$(pythonCmd)" -m venv "$venv"
+    pypi_python="$(venvPython)"
+    "$pypi_python" -m pip install --quiet --require-hashes --requirement scripts/publishPypiRequirements.lock
     export TWINE_USERNAME="__token__"
     export TWINE_PASSWORD="$PYPI_API_TOKEN"
     delay="${PYPI_UPLOAD_DELAY:-30}"
     say_header "Publishing ${repo}"
     for d in "${pypi_packages[@]}"; do
-        name="$(awk -F'"' '/^name = /{print $2; exit}' "$d/pyproject.toml")"
-        ver="$(awk -F'"' '/^version = /{print $2; exit}' "$d/pyproject.toml")"
+        name="$(pyField "$d" name)"
+        ver="$(pyField "$d" version)"
         if [[ "$ver" == *"dev.sha"* || "$ver" == *"dev."* ]]; then
             say_error "Dev version blocked: ${name}==${ver}"
             exit 1
@@ -191,11 +225,11 @@ publishPypi() {
         fi
         say_step "Build $d"
         rm -rf "$d/dist" "$d/build" "$d"/*.egg-info
-        ( cd "$d" && "$venv/bin/python" -m build )
+        ( cd "$d" && "$pypi_python" -m build )
         say_step "Check $d"
-        "$venv/bin/twine" check "$d"/dist/*
+        "$pypi_python" -m twine check "$d"/dist/*
         say_step "${name}==${ver} -> ${repo}"
-        "$venv/bin/twine" upload --skip-existing --repository "${repo}" "$d"/dist/*
+        "$pypi_python" -m twine upload --skip-existing --repository "${repo}" "$d"/dist/*
         say_success "${name}==${ver}"
         rm -rf "$d/dist" "$d/build" "$d"/*.egg-info
         say_label "Wait ${delay}s"

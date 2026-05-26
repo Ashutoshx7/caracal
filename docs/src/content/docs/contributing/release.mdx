@@ -4,7 +4,7 @@ description: dev, rc, stable, and package publishing.
 pageType: workflow
 ---
 
-Caracal uses only three versioning modes: dev, rc, and stable. rc and stable artifacts use the same artifact destinations; dev artifacts stay local.
+Caracal has three release modes: dev, rc, and stable. dev stays local; rc and stable use release registries.
 
 ---
 
@@ -16,20 +16,20 @@ Caracal uses only three versioning modes: dev, rc, and stable. rc and stable art
 | rc | rc builds | `2026.05.26-rc.1` | `0.1.3-rc.1` | `0.1.3rc1` |
 | stable | Released production versions | `2026.05.26` | `0.1.3` | `0.1.3` |
 
-The PyPI rc form is PEP 440 compatible while preserving the same rc/sha meaning used by npm, OCI tags, binaries, and GitHub tags.
+PyPI rc versions are PEP 440 compatible and match the npm/OCI rc meaning.
 
 Git tags use a leading `v`:
 
 - stable: `vYYYY.MM.DD[.N]`
 - rc: `vYYYY.MM.DD[.N]-rc.<number>` or `vYYYY.MM.DD[.N]-rc.sha<gitsha>`
 
-The tag drives binaries, OCI image tags, GitHub Releases, Helm `appVersion`/image values, and release manifests. Package metadata drives npm and PyPI publishing.
+The tag drives binaries, OCI images, GitHub Releases, Helm, and manifests. npm and PyPI keep independent package versions. `release.config.json` is the release inventory.
 
 ---
 
 ## rc workflow
 
-Use rc when a downstream project must consume Caracal as a normal third-party dependency before stable. The consumer changes only package versions and registry/index endpoints; it must not reference Caracal source paths, workspace links, editable installs, or Docker build contexts from the Caracal checkout.
+Use rc for downstream testing before stable. Consumers change only versions and registry/index endpoints.
 
 ```sh
 scripts/release.sh rc dry-run --base-version 2026.05.26 --suffix rc.1
@@ -41,16 +41,16 @@ git push origin HEAD
 git push origin v2026.05.26-rc.1
 ```
 
-`scripts/release.sh rc dry-run` queues `.github/workflows/release.yml` through workflow dispatch with `releaseVersion=v2026.05.26-rc.1`. The workflow builds binaries, builds images with `push: false`, uploads and verifies release archives, and skips GitHub Release creation, GHCR pushes, post-release publication checks, and stable image promotion. The selected `--ref` must already exist on GitHub with the current workflow file, and the helper refuses to queue the run when that branch differs from local `HEAD` unless `--allow-stale-ref` is passed. Use `--local` only when you want a local text simulation instead of an Actions run. `scripts/release.sh rc prepare` writes `releases/<rc-tag>/manifest.json`, stamps Helm metadata, stamps npm package versions as `<base>-rc.<number>` or `<base>-rc.sha<gitsha>`, and stamps PyPI versions as `<base>rc<number>` or `<base>rc0+sha<gitsha>`. Use `scripts/release.sh rc version` only when you need to preview the manifest and keep it on disk without stamping package or Helm metadata. Pushing the rc tag runs the release workflow, publishes GHCR images, and creates a GitHub Release for rc.
+`rc dry-run` queues `release.yml` without publishing. `rc prepare` writes the manifest and stamps package and Helm metadata. Pushing the rc tag publishes images and creates the GitHub prerelease.
 
 Publish packages after `prepare`:
 
 ```sh
-./scripts/publishNpm.sh       # changed rc packages publish with dist-tag rc
-./scripts/publishPypi.sh      # changed rc packages use PEP 440 rc metadata
+pnpm release:plan --since v2026.05.14
+./scripts/publishPackages.sh --ecosystem all       # publish changed rc packages
 ```
 
-Switch a downstream project between rc and stable by changing only the Caracal versions it already consumes:
+Switch between rc and stable by changing only Caracal versions:
 
 ```sh
 npm install @caracalai/sdk@0.1.3-rc.1             # rc
@@ -59,7 +59,7 @@ uv add caracalai-sdk==0.1.3rc1                    # rc
 uv add caracalai-sdk==0.1.3                       # stable
 ```
 
-For containers, change only `ghcr.io/garudex-labs/caracal-{svc}:v<version>`. For binaries, install the desired `--version`. Consumers must not add Caracal source paths, editable installs, Docker build contexts from this checkout, or extra env files.
+For containers, change only `ghcr.io/garudex-labs/caracal-{svc}:v<version>`. For binaries, install with `--version`. Do not consume source paths or editable installs.
 
 ---
 
@@ -187,16 +187,18 @@ node scripts/validateReleaseManifest.mjs
 
 ## npm and PyPI packages
 
-npm and PyPI package publishing must run through protected release automation for stable releases. The local scripts in `scripts/` are maintainer tools for package selection, local dry-runs, and emergency recovery; they must not be the normal stable publishing path. Each protected publish workflow diffs the current `HEAD` against the latest reachable release tag and selects only changed publishable package directories by default. Use `--base <ref>` to override the diff base, `--select` to manually narrow the detected set, or `--all` only for an intentional full-package publish. npm rc versions publish with the `rc` dist-tag; stable versions publish with `latest`.
+npm and PyPI stable publishing must use protected workflows. `release.config.json` selects changed packages, ignores `examples/**`, and adds exact-pin dependents. Use `--since`, `--package`, or `--all-packages` for deliberate full publishes. npm rc uses `rc`; stable uses `latest`.
 
 ```sh
-gh workflow run publishNpm.yml -f package=changed -f dryRun=true
-gh workflow run publishNpm.yml -f package=changed
-gh workflow run publishPypi.yml -f package=changed -f dryRun=true
-gh workflow run publishPypi.yml -f package=changed
+pnpm release:plan --since v2026.05.14
+pnpm release:sync-packages --check
+gh workflow run publishNpm.yml -f package=changed -f dryRun=true -f runner=ubuntu-24.04
+gh workflow run publishNpm.yml -f package=changed -f runner=ubuntu-24.04
+gh workflow run publishPypi.yml -f package=changed -f dryRun=true -f runner=ubuntu-24.04
+gh workflow run publishPypi.yml -f package=changed -f runner=ubuntu-24.04
 ```
 
-The local scripts refuse stable publishing unless `CARACAL_ALLOW_LOCAL_STABLE_PUBLISH=1` is set. Use that override only for approved emergency recovery after recording the reason in the release notes.
+Publishing preflights run on Ubuntu, macOS, and Windows with one current Node or Python version. `runner` selects the OS that performs the final publish. Local stable publishing requires `CARACAL_ALLOW_LOCAL_STABLE_PUBLISH=1` and release approval.
 
 **npm packages** (`@caracalai/*`): `core`, `oauth`, `admin`, `identity`, `revocation`, `sdk`, `transport-mcp`, `transport-a2a`, `mcp-express`, `mcp-fastmcp`, `tokenstate-postgres`, `revocation-redis`. Browse at [npmjs.com/~caracal-run](https://www.npmjs.com/~caracal-run).
 
@@ -261,7 +263,7 @@ Every release tag has a directory under `caracal/releases/<tag>/` that owns all 
 - `validation.md`: the aggregated post-release validation report.
 - `findings/*.jsonl`: raw per-area findings.
 
-The `.github/workflows/postReleaseValidation.yml` workflow runs after `release.yml` publishes rc and stable tags, or independently via `workflow_dispatch`, and opens a PR that adds `validation.md` and `findings/` to that directory. Blocker findings fail release validation and prevent stable image promotion.
+`postReleaseValidation.yml` runs after rc and stable releases, or by dispatch. npm, PyPI, binary, and installer checks run on Ubuntu, macOS, and Windows with one current language version. Blockers fail validation and block promotion.
 
 Run a single check locally:
 

@@ -11,7 +11,7 @@ source "$HERE/lib/common.sh"
 
 readonly AREA="npmInstall"
 readonly PM="${PM:-npm}"
-readonly NODE_V="${NODE_V:-22}"
+readonly NODE_V="${NODE_V:-24}"
 
 prepareProject() {
   local dir="$1"; shift
