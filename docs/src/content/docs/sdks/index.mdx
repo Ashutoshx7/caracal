@@ -63,4 +63,4 @@ The SDK layer is not a provider-wrapper strategy. Its job is to preserve authori
 
 **Protocol boundaries**: Gateway-mediated HTTP, REST, and MCP-over-HTTP are the default execution path. Connector-verified services and enforcement adapters are supported patterns that must implement verification, replay, revocation, and result audit themselves. Application-managed external provider calls can carry Caracal context for attribution, but they are not Caracal-enforced provider calls unless the application performs equivalent checks.
 
-**Environment variables**: All SDK clients read `CARACAL_COORDINATOR_URL`, `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`, and `CARACAL_SUBJECT_TOKEN` via their `fromEnv()` / `from_env()` / `FromEnv()` constructors.
+**Configuration**: All SDK clients use the same generated profile contract as `caracal run`. `connect()` / `Connect()` reads an explicit profile, `CARACAL_CONFIG`, the default profile path, then platform environment variables.

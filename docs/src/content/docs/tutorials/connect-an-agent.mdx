@@ -8,13 +8,11 @@ This tutorial wires an agent app through Caracal so every tool call presents a s
 
 ## 1. Confirm the application is registered
 
-In the Console **Application** view, confirm the application exists in the zone and has a client secret. The client secret is what the SDK exchanges for short-lived authority. Save the `zone_id`, `application_id`, and `client_secret` returned by the create form — the SDK reads them from environment variables, a `caracal.toml` file, or both.
-
-If you are still on a static bootstrap subject token, the SDK accepts it via `CARACAL_SUBJECT_TOKEN`; client-secret mode is preferred for long-running services because the SDK refreshes authority on demand.
+In the Console **Application** view, confirm the application exists in the zone and has a client secret. The client secret is what the SDK exchanges for short-lived authority. Save the generated runtime profile and secret file from guided setup, or use the equivalent platform-managed environment variables.
 
 ## 2. Install the SDK and call `connect()`
 
-`Caracal.connect()` is the single entry point. It auto-detects credentials: explicit config first, then `caracal.toml` (Python only), then environment variables. The full resolution order is documented in [Configuration Precedence](/reference/config-precedence/).
+`Caracal.connect()` is the single entry point. It auto-detects credentials from an explicit profile, `CARACAL_CONFIG`, the default generated profile path, then environment variables. The full resolution order is documented in [Configuration Precedence](/reference/config-precedence/).
 
 ### TypeScript
 

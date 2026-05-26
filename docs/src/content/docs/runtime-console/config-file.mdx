@@ -4,7 +4,7 @@ description: Runtime configuration sources, caracal.toml compatibility, permissi
 pageType: config
 ---
 
-`caracal run` loads workload credential-injection settings from platform environment variables or from an explicit runtime profile. Use Console guided setup to generate the first profile from real zone, application, resource, policy, and secret-file values. `caracal.toml` is a compatibility format for humans and SDKs that need a readable file; it is not Console state and it does not create, select, or manage zones.
+`caracal run` and the TypeScript, Python, and Go SDKs load workload settings from platform environment variables or from the same generated runtime profile. Use Console guided setup to generate the first profile from real zone, application, resource, policy, and secret-file values. `caracal.toml` is a portable profile contract; it is not Console state and it does not create, select, or manage zones.
 
 The runtime validates configuration before token exchange. Unknown fields are rejected, credential environment names must be safe process environment keys, and non-local `http://` STS endpoints are rejected outside development unless `CARACAL_ALLOW_INSECURE_CONFIG_URLS=true` is set explicitly.
 
@@ -53,8 +53,8 @@ Explicit `CARACAL_CONFIG` paths may be read-only secret mounts, but they must no
 | --- | --- | --- |
 | `zone_url` | yes | STS zone URL used by `caracal run` for OAuth token exchange. Local default is `http://localhost:8080`; use HTTPS outside development. |
 | `sts_url` | no | SDK-readable STS alias. The runtime can use it as a fallback when `zone_url` is absent. |
-| `coordinator_url` | no | SDK-readable Coordinator endpoint for clients that use `Caracal.from_config()`. The runtime ignores this field. |
-| `gateway_url` | no | SDK-readable Gateway endpoint for clients that route provider calls through Gateway. The runtime ignores this field. |
+| `coordinator_url` | yes for SDKs | Coordinator endpoint for clients that use generated profiles. The runtime ignores this field. |
+| `gateway_url` | no | Gateway endpoint for SDK clients that route provider calls through Gateway. The runtime ignores this field. |
 | `zone_id` | yes | Zone created in the Console. |
 | `application_id` | yes | Confidential application used by the runner. |
 | `app_client_secret_file` | yes, unless `app_client_secret` is set | Path to a secret file containing the confidential application secret. Preferred outside local development. |
@@ -68,12 +68,12 @@ Credential entries use:
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `env` | yes | Environment variable name that receives the access token. |
+| `env` | yes for `caracal run` | Environment variable name that receives the access token. SDKs use the same entry as a resource audience even when `env` is omitted. |
 | `resource` | yes | Resource identifier registered in Caracal. |
 | `upstream_prefix` | no | SDK-readable absolute URL prefix for Gateway-routed provider calls. The runtime ignores this field. |
 | `on_failure` | optional | Optional credentials only: `warn` or `error`. |
 
-`caracal run` only exchanges the listed credentials and injects the resulting access tokens into the configured `env` names. It does not automatically set `CARACAL_COORDINATOR_URL`, `CARACAL_GATEWAY_URL`, or other SDK environment variables for the subprocess.
+`caracal run` exchanges the listed credentials and injects the resulting access tokens into the configured `env` names. SDKs use the same `credentials[]` and `optional_credentials[]` entries as token-exchange audiences; when `upstream_prefix` is present, SDK transports can also route matching calls through Gateway.
 
 ### Generated profiles
 

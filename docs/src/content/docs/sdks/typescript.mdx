@@ -12,19 +12,22 @@ pageType: reference
 npm install @caracalai/sdk
 ```
 
-## Environment variables
+## Configuration
+
+`Caracal.connect()` reads the shared generated profile contract first, then falls back to environment variables. The profile path can be passed explicitly with `configPath`, set with `CARACAL_CONFIG`, or placed at `$XDG_CONFIG_HOME/caracal/caracal.toml` or `~/.config/caracal/caracal.toml`.
 
 | Variable | Required | Description |
 | -------- | -------- | ----------- |
 | `CARACAL_COORDINATOR_URL` | Yes | Coordinator base URL (e.g., `http://coordinator:4000`) |
 | `CARACAL_ZONE_ID` | Yes | Zone identifier |
 | `CARACAL_APPLICATION_ID` | Yes | Registered application ID |
-| `CARACAL_SUBJECT_TOKEN` | Token mode | Session mandate |
-| `CARACAL_APP_CLIENT_SECRET` | Client-secret mode | Application secret used to refresh session mandates through STS |
+| `CARACAL_APP_CLIENT_SECRET_FILE` | Preferred | Application secret file used to refresh session authority through STS |
+| `CARACAL_APP_CLIENT_SECRET` | Local development | Application secret used to refresh session authority through STS |
 | `CARACAL_STS_URL` | Client-secret mode | STS base URL |
 | `CARACAL_APP_RESOURCES` | Client-secret mode if `CARACAL_RESOURCES` is unset | Comma-separated resource IDs for token exchange |
 | `CARACAL_GATEWAY_URL` | No | Gateway base URL for resource-routed calls |
 | `CARACAL_RESOURCES` | No | Comma-separated `resourceId=upstreamPrefix` pairs |
+| `CARACAL_RESOURCES_FILE` | No | JSON resource-binding file |
 
 ## `Caracal` class
 
@@ -50,12 +53,28 @@ interface CaracalConfig {
 }
 ```
 
+### `Caracal.connect(opts?)`
+
+Loads explicit client-secret options, a generated profile, or environment variables.
+
+```typescript
+static connect(opts?: { configPath?: string; env?: NodeJS.ProcessEnv; clientSecret?: Partial<ClientSecretOptions> }): Caracal
+```
+
 ### `Caracal.fromEnv(env?)`
 
-Reads all `CARACAL_*` environment variables and constructs a `Caracal` instance. Static-token mode uses `CARACAL_SUBJECT_TOKEN`; client-secret mode uses `CARACAL_APP_CLIENT_SECRET`, `CARACAL_STS_URL`, and resource IDs from `CARACAL_APP_RESOURCES` or `CARACAL_RESOURCES`.
+Reads `CARACAL_*` environment variables and constructs a `Caracal` instance.
 
 ```typescript
 static fromEnv(env?: NodeJS.ProcessEnv): Caracal
+```
+
+### `Caracal.fromConfig(path?)`
+
+Reads the shared generated profile contract.
+
+```typescript
+static fromConfig(path?: string, env?: NodeJS.ProcessEnv): Caracal
 ```
 
 ### `Caracal.fromClientSecret(opts)`
@@ -203,12 +222,12 @@ bindFromHeaders<T>(
 ): Promise<T>
 ```
 
-### `middleware()`
+### `contextMiddleware()`
 
 Returns an Express/Connect-compatible request handler that calls `bindFromHeaders` on every request:
 
 ```typescript
-middleware(opts?: { allowRoot?: boolean }): (req: IncomingMessage, res: ServerResponse, next: () => void) => void
+contextMiddleware(opts?: { allowRoot?: boolean }): (req: IncomingMessage, res: ServerResponse, next: () => void) => void
 ```
 
 This is context propagation only. It does not verify JWT signatures, audience, scopes, token use, or revocation. Use the Gateway path or [`@caracalai/mcp-express`](../../guides/protect-express/) for protected inbound routes.

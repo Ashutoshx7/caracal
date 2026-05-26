@@ -12,15 +12,17 @@ pageType: reference
 pip install caracalai-sdk
 ```
 
-## Environment variables
+## Configuration
+
+`Caracal.connect()` reads the shared generated profile contract first, then falls back to environment variables. The profile path can be passed explicitly with `config_path`, set with `CARACAL_CONFIG`, or placed at `$XDG_CONFIG_HOME/caracal/caracal.toml` or `~/.config/caracal/caracal.toml`.
 
 | Variable | Required | Description |
 | -------- | -------- | ----------- |
 | `CARACAL_COORDINATOR_URL` | Yes | Coordinator base URL (e.g., `http://coordinator:4000`) |
 | `CARACAL_ZONE_ID` | Yes | Zone identifier |
 | `CARACAL_APPLICATION_ID` | Yes | Registered application ID |
-| `CARACAL_SUBJECT_TOKEN` | Token mode | Session mandate |
-| `CARACAL_APP_CLIENT_SECRET` | Client-secret mode | Application secret used to refresh session mandates through STS |
+| `CARACAL_APP_CLIENT_SECRET_FILE` | Preferred | Application secret file used to refresh session authority through STS |
+| `CARACAL_APP_CLIENT_SECRET` | Local development | Application secret used to refresh session authority through STS |
 | `CARACAL_STS_URL` | Client-secret mode | STS base URL |
 | `CARACAL_APP_RESOURCES` | Client-secret mode if no bindings are set | Comma-separated resource IDs for token exchange |
 | `CARACAL_GATEWAY_URL` | No | Gateway base URL for resource-routed calls |
@@ -52,9 +54,18 @@ caracal = Caracal(CaracalConfig(
 ))
 ```
 
+### `Caracal.connect(config_path?, env?)`
+
+Loads an explicit profile, the default generated profile, or environment variables.
+
+```python
+@classmethod
+def connect(cls, config_path: str | None = None, env: Mapping[str, str] | None = None) -> Caracal: ...
+```
+
 ### `Caracal.from_env(env?)`
 
-Reads all `CARACAL_*` environment variables and constructs a `Caracal` instance. Static-token mode uses `CARACAL_SUBJECT_TOKEN`. Client-secret mode uses `CARACAL_APP_CLIENT_SECRET`, `CARACAL_STS_URL`, and resources from `CARACAL_APP_RESOURCES`, `CARACAL_RESOURCES`, or `CARACAL_RESOURCES_FILE`.
+Reads `CARACAL_*` environment variables and constructs a `Caracal` instance.
 
 ```python
 @classmethod
@@ -307,12 +318,12 @@ async with caracal.bind(parent_ctx):
     await run_child_work()
 ```
 
-### `middleware()`
+### `context_middleware()`
 
 Returns an ASGI middleware factory for use with FastAPI or Starlette. Wraps each request with `bind_from_headers` after the request has passed a verifier boundary.
 
 ```python
-def middleware(self) -> Callable[[ASGIApp], CaracalASGIMiddleware]: ...
+def context_middleware(self) -> Callable[[ASGIApp], CaracalContextASGIMiddleware]: ...
 ```
 
 Usage:
@@ -321,7 +332,7 @@ Usage:
 from fastapi import FastAPI
 
 app = FastAPI()
-app.add_middleware(caracal.middleware())
+app.add_middleware(caracal.context_middleware())
 ```
 
 This middleware is context propagation only. Use Gateway for the default protected-resource path, or build a verified adapter around `caracalai_transport_mcp.authenticate()` and a production revocation store.

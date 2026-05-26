@@ -20,34 +20,17 @@ When `spawn()` exits (normally or on error) the agent run is terminated in the C
 
 ## Configuration
 
-All three SDKs read the same base configuration from environment variables:
+All three SDKs read the same generated runtime profile. Use the profile from Console guided setup, or set `CARACAL_CONFIG` to the profile path provided by your platform team. The profile contains the zone, application, STS, Coordinator, secret-file path, and resource credentials needed for SDK-managed token exchange.
 
-| Variable | Source | Description |
-| -------- | ------ | ----------- |
-| `CARACAL_COORDINATOR_URL` | Stack | URL of the Coordinator service |
-| `CARACAL_ZONE_ID` | Runtime environment | Zone the application belongs to |
-| `CARACAL_APPLICATION_ID` | Runtime environment | Application ID in that zone |
-| `CARACAL_SUBJECT_TOKEN` | Runtime bootstrap | Static subject token for startup |
-
-The subject token is short-lived Caracal authority. It is not a static secret. Long-running services should prefer client-secret mode so the SDK can exchange and refresh authority on demand.
-
-Client-secret mode requires these variables:
-
-| Variable | Description |
-| -------- | ----------- |
-| `CARACAL_APP_CLIENT_SECRET` | Application client secret for SDK-managed token refresh |
-| `CARACAL_STS_URL` | STS base URL required with `CARACAL_APP_CLIENT_SECRET` |
-| `CARACAL_APP_RESOURCES` | Comma-separated resource IDs for token exchange when `CARACAL_RESOURCES` is not set |
-| `CARACAL_RESOURCES` | Comma-separated `resourceId=https://upstream/prefix` pairs |
-| `CARACAL_GATEWAY_URL` | URL of the Gateway when SDK transport should route matching upstream calls through it |
+The default profile path is `$XDG_CONFIG_HOME/caracal/caracal.toml`, otherwise `~/.config/caracal/caracal.toml`. Environment variables remain available for platform-managed workloads, but the beginner path should start with the generated profile so local and deployed behavior use the same contract.
 
 ## Using `caracal run` with SDK examples
 
-`caracal run` reads validated runtime config from platform environment variables or an explicit runtime profile, exchanges credentials with the STS, and injects tokens under the configured environment variable names. It does not automatically set `CARACAL_COORDINATOR_URL`, `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`, or `CARACAL_SUBJECT_TOKEN`.
+`caracal run` reads validated runtime config from platform environment variables or an explicit runtime profile, exchanges credentials with the STS, and injects tokens under the configured environment variable names.
 
 Use `caracal run` for scripts that read the token environment variable generated in the Console runtime profile. For Gateway-routed resources, send that token as `Authorization: Bearer` and set `X-Caracal-Resource` to the resource ID from the Console result.
 
-For SDK processes, set the SDK environment variables explicitly or run in client-secret mode. See the language-specific SDK pages for complete environment setup.
+For SDK processes, use `Caracal.connect()` with the same generated profile. See the language-specific SDK pages for complete environment setup.
 
 ## TypeScript
 
@@ -83,33 +66,7 @@ await caracal.spawn(async () => {
 }, { kind: AgentKind.Ephemeral });
 ```
 
-`Caracal.connect()` auto-detects credentials: when a `caracal.toml` is present it loads from there (Python only); otherwise it dispatches to `fromEnv()`, which requires the base Coordinator, zone, and application variables plus either `CARACAL_SUBJECT_TOKEN` or `CARACAL_APP_CLIENT_SECRET` with `CARACAL_STS_URL`. Use client-secret mode for long-running services that should refresh authority automatically. See [Configuration precedence](/reference/config-precedence/) for the full resolution order.
-
-### Context propagation in Express
-
-If a request has already passed through Gateway or a verified connector, the SDK middleware can bind the incoming Caracal context so downstream calls keep the same identity and trace:
-
-```sh
-npm install @caracalai/sdk
-```
-
-```typescript
-import express from "express";
-import { Caracal } from "@caracalai/sdk";
-
-const app = express();
-const caracal = Caracal.connect();
-
-app.use(caracal.middleware());
-
-app.post("/tool", (req, res) => {
-  const ctx = caracal.current();
-  // ctx.zoneId, ctx.agentSessionId, ctx.scope are available here
-  res.json({ ok: true });
-});
-```
-
-This middleware is context propagation only. It does not verify JWT signature, audience, scopes, token use, or revocation. To protect an Express route directly, use [`@caracalai/mcp-express`](../../guides/protect-express/), or keep the service behind Gateway.
+`Caracal.connect()` auto-detects the generated profile first, then falls back to environment variables. See [Configuration precedence](/reference/config-precedence/) for the full resolution order. To protect an inbound Express route, use the verifier connector in [Protect an Express App](../../guides/protect-express/).
 
 ## Python
 
@@ -144,31 +101,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### Context propagation in FastAPI or Starlette
-
-If a FastAPI or Starlette request has already been verified by Gateway or a trusted adapter, bind the inbound Caracal context with the ASGI middleware:
-
-```sh
-pip install caracalai-sdk
-```
-
-```python
-from fastapi import FastAPI
-from caracalai_sdk import Caracal
-
-app = FastAPI()
-caracal = Caracal.connect()
-
-app.add_middleware(caracal.middleware())
-
-@app.post("/tool")
-async def tool():
-    ctx = caracal.current()
-    # ctx.zone_id, ctx.agent_session_id, ctx.scope are available
-    return {"ok": True}
-```
-
-The ASGI middleware binds the agent's Caracal envelope to the request scope. It is not a verifier. For direct protection of Python services, use Gateway first or implement a verified adapter with `caracalai_transport_mcp.authenticate()` plus a production revocation store.
+To protect an inbound Python service, route it through Gateway first or use a verifier connector. Context-only SDK middleware is documented in the SDK reference for services that already sit behind a verified boundary.
 
 ## Go
 
@@ -227,7 +160,7 @@ func main() {
 }
 ```
 
-### net/http middleware
+### Protect a net/http service
 
 ```sh
 go get github.com/garudex-labs/caracal/packages/connectors/nethttp/go
@@ -247,8 +180,10 @@ mux.HandleFunc("/tool", func(w http.ResponseWriter, r *http.Request) {
     fmt.Fprintln(w, "Agent session:", ctx.AgentSessionID)
 })
 
-http.ListenAndServe(":8090", c.Middleware(mux))
+http.ListenAndServe(":8090", c.ContextMiddleware(mux))
 ```
+
+For direct inbound protection, use the net/http verifier connector before binding SDK context.
 
 ## Delegation example
 
