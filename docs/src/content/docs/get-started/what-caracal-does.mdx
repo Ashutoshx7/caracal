@@ -111,11 +111,11 @@ Use the Gateway path by default. The full product surface collapses into four pa
 | Pattern | Status | Enforcement meaning |
 | --- | --- | --- |
 | Gateway-mediated HTTP | Implemented default | Gateway verifies the mandate, checks replay and revocation, brokers provider credentials, proxies the call, and writes action-result audit. |
-| Connector-verified service/tool | Supported pattern | Your service or tool verifies mandates, replay, revocation, and result audit itself. Use this when you own the boundary. |
+| Connector-verified service/tool | Supported pattern | The connector verifies mandates and revocation at your service boundary; your service or adapter owns replay protection where applicable and result audit. Use this when you own the boundary. |
 | Application-managed external provider call | Supported attribution pattern | Your application calls the provider directly and attaches Caracal context for traceability. The provider call is not Caracal-enforced unless your code performs the same checks. |
 | Native broker plugins | Future direction | A plugin contract may later move provider-specific credential brokering behind a native Caracal boundary. This is not current runtime behavior. |
 
-Connector and application-managed paths are not production boundaries merely because a package exists. They are production boundaries only when mandate verification, replay protection, revocation checks, and action-result audit are implemented end to end.
+Connector and application-managed paths are not production boundaries merely because a package exists. They are production boundaries only when mandate verification, revocation checks, replay protection where the transport requires it, and action-result audit are implemented end to end.
 
 ## Status labels
 
@@ -125,7 +125,7 @@ The docs use these labels intentionally:
 | --- | --- |
 | Implemented behavior | Runtime behavior available in the OSS stack. |
 | Supported pattern | A documented path with a clear enforcement contract that operators can adopt when they meet the requirements. |
-| Example-only pattern | Demo or sample-app code that illustrates usage but is not a production integration contract. |
+| Example-only pattern | Reference-application code that illustrates usage but is not a production integration contract. |
 | Future direction | Product direction that is not current runtime behavior. |
 
 ## Next step

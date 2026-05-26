@@ -54,7 +54,7 @@ Provider catalog entries describe how Caracal obtains or brokers provider-side c
 
 | Pattern | Use when | Required inputs | Operational gate |
 | --- | --- | --- | --- |
-| No provider credential | The resource accepts Caracal resource mandates directly. | resource ID, accepted scopes | Gateway or connector verifies the mandate and emits audit. |
+| No provider credential | The resource accepts Caracal resource mandates directly. | resource ID, accepted scopes | Gateway verifies and emits audit, or a connector-verified service verifies the mandate and emits service-side result audit. |
 | External credential broker | Gateway or a verified adapter exchanges Caracal authority for an external credential. | provider identifier, credential source reference, resource binding, audit mapping | Secret reference resolves through the platform secret manager; provider credentials never reach agents. |
 | OIDC-backed provider | Provider accepts tokens from a trusted issuer. | issuer metadata, audience, resource binding, rotation owner | JWKS/issuer metadata is monitored and rotation is tested. |
 | API-key-backed provider | Provider only supports static credentials. | secret reference, owner, rotation period, resource binding | Credential is stored in the platform secret manager and rotated by runbook. |

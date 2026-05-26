@@ -4,7 +4,7 @@ description: Put a Caracal-enforced boundary in front of a service you own.
 pageType: workflow
 ---
 
-This tutorial puts a Caracal-enforced boundary in front of a service you control. By the end, every call to the service either presents a verified Caracal mandate or is rejected, and every accepted call writes an action-result audit row.
+This tutorial puts a Caracal-enforced boundary in front of a service you control. By the end, every call to the service either presents a verified Caracal mandate or is rejected. Gateway-mediated calls write action-result audit automatically; connector-verified services must include a service-side result-audit path before they are a complete production boundary.
 
 There are two production patterns. Pick the one that fits your service:
 
@@ -44,13 +44,13 @@ If you own the service, mount a connector at the request boundary:
 - Go / `net/http` → [Protect a Go net/http Service](/guides/protect-nethttp/)
 - MCP servers (any language) → [Protect an MCP Server](/guides/protect-mcp/)
 
-Each connector verifies the mandate signature against the zone key, checks replay and revocation, and emits the matching action-result audit event. A connector is a production boundary only when those four checks are wired end to end.
+The connector packages verify the mandate signature against the zone key, check revocation, and attach verified claims to the framework context. A connector-verified service is a production boundary only when the service also preserves replay protection where applicable and emits the matching action-result audit event for accepted work.
 
 ## 4. Verify the boundary
 
 From an agent app configured with `Caracal.connect()`, call the resource. Two outcomes are valid:
 
-1. Policy allows → the call reaches the upstream and the audit ledger gains one authorization event plus one action-result event.
+1. Policy allows → the call reaches the upstream and the audit ledger gains one authorization event plus one Gateway or service-side action-result event.
 2. Policy denies → the STS returns HTTP 403 and the audit ledger records the denial with the determining policies.
 
 Open the Console **Audit** view and confirm both events appear. Use **Explain** to confirm the policy that decided the call.
