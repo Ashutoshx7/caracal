@@ -13,6 +13,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,14 +22,15 @@ import (
 )
 
 const (
-	streamRevoke      = "caracal.sessions.revoke"
-	groupRevoke       = "gateway-revocation"
-	revocationTTL     = 24 * time.Hour
-	revocationGCPause = 30 * time.Minute
-	snapshotPoll      = 30 * time.Second
-	pendingIdle       = 30 * time.Second
-	failureTTL        = 24 * time.Hour
-	maxFailures       = 5
+	streamRevoke       = "caracal.sessions.revoke"
+	groupRevoke        = "gateway-revocation"
+	revocationTTL      = 24 * time.Hour
+	revocationGCPause  = 30 * time.Minute
+	snapshotPoll       = 30 * time.Second
+	snapshotStaleAfter = 2*snapshotPoll + 10*time.Second
+	pendingIdle        = 30 * time.Second
+	failureTTL         = 24 * time.Hour
+	maxFailures        = 5
 )
 
 type revocationRedis interface {
@@ -48,11 +50,12 @@ type revocationRedis interface {
 // pruned after revocationTTL: by then any resource mandate bound to that authority
 // has long since expired (max ttlResourceMandate = 15m).
 type revocationStore struct {
-	mu       sync.RWMutex
-	sessions map[string]time.Time
-	agents   map[string]time.Time
-	edges    map[string]time.Time
-	log      zerolog.Logger
+	mu           sync.RWMutex
+	sessions     map[string]time.Time
+	agents       map[string]time.Time
+	edges        map[string]time.Time
+	snapshotUnix atomic.Int64
+	log          zerolog.Logger
 }
 
 func newRevocationStore(log zerolog.Logger) *revocationStore {
@@ -119,6 +122,30 @@ func applyRevocationSnapshot(store *revocationStore, sessions, agents, edges []s
 	for _, delegationEdgeID := range edges {
 		store.markDelegation(delegationEdgeID)
 	}
+}
+
+func (s *revocationStore) markSnapshotFresh(now time.Time) {
+	s.snapshotUnix.Store(now.Unix())
+}
+
+func (s *revocationStore) SnapshotAge(now time.Time) (time.Duration, bool) {
+	if s == nil {
+		return 0, false
+	}
+	seen := s.snapshotUnix.Load()
+	if seen <= 0 {
+		return 0, false
+	}
+	age := now.Sub(time.Unix(seen, 0))
+	if age < 0 {
+		return 0, true
+	}
+	return age, true
+}
+
+func (s *revocationStore) SnapshotFresh(now time.Time) bool {
+	age, ok := s.SnapshotAge(now)
+	return ok && age <= snapshotStaleAfter
 }
 
 // Size reports how many active revocations are currently tracked.
@@ -207,6 +234,7 @@ func reloadRevocationSnapshot(ctx context.Context, pool *pgxpool.Pool, store *re
 		return err
 	}
 	applyRevocationSnapshot(store, sessions, agents, edges)
+	store.markSnapshotFresh(time.Now())
 	return nil
 }
 

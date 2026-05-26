@@ -200,6 +200,11 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		writeReadyFailure(w, "redis_unreachable")
 		return
 	}
+	if s.revocations == nil || !s.revocations.SnapshotFresh(time.Now()) {
+		s.log.Warn().Msg("ready: revocation snapshot stale")
+		writeReadyFailure(w, "revocation_snapshot_stale")
+		return
+	}
 	if err := s.audit.Ready(); err != nil {
 		s.log.Warn().Err(err).Msg("ready: audit replay unavailable")
 		writeReadyFailure(w, "audit_replay_unavailable")
@@ -249,6 +254,8 @@ func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 		{Name: "caracal_gateway_upstream_errors_total", Help: "Gateway upstream request failures", Type: coremetrics.Counter, Value: float64(snap.UpstreamErrors)},
 		{Name: "caracal_gateway_bindings_loaded", Help: "Gateway resource bindings loaded in memory", Type: coremetrics.Gauge, Value: float64(snap.BindingsLoaded)},
 		{Name: "caracal_gateway_revocations_active", Help: "Gateway revocation anchors loaded in memory", Type: coremetrics.Gauge, Value: float64(snap.RevocationsActive)},
+		{Name: "caracal_gateway_revocation_snapshot_age_seconds", Help: "Seconds since the last successful Gateway revocation snapshot reload", Type: coremetrics.Gauge, Value: float64(snap.RevocationSnapshotAgeSeconds)},
+		{Name: "caracal_gateway_revocation_snapshot_fresh", Help: "Whether the Gateway revocation snapshot is fresh enough for readiness", Type: coremetrics.Gauge, Value: float64(snap.RevocationSnapshotFresh)},
 	}
 	if s.pool != nil {
 		stat := s.pool.Stat()
@@ -279,6 +286,17 @@ func (s *Server) refreshMetricGauges() {
 	}
 	if s.revocations != nil {
 		s.metrics.RevocationsActive.Store(uint64(s.revocations.Size()))
+		if age, ok := s.revocations.SnapshotAge(time.Now()); ok {
+			s.metrics.RevocationSnapshotAgeSeconds.Store(uint64(age / time.Second))
+			if age <= snapshotStaleAfter {
+				s.metrics.RevocationSnapshotFresh.Store(1)
+			} else {
+				s.metrics.RevocationSnapshotFresh.Store(0)
+			}
+		} else {
+			s.metrics.RevocationSnapshotAgeSeconds.Store(0)
+			s.metrics.RevocationSnapshotFresh.Store(0)
+		}
 	}
 }
 
