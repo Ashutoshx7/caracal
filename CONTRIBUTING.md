@@ -151,11 +151,9 @@ scripts/release.sh               # applies changesets, stamps Helm metadata, com
 scripts/release.sh --dry-run     # preview stable without tagging
 ```
 
-Pushing the tag triggers `.github/workflows/release.yml`. RC dry-runs use workflow dispatch and require the selected `--ref` to exist on GitHub with the current workflow file; the helper refuses to queue the run when the selected branch differs from local `HEAD` unless `--allow-stale-ref` is passed. Stable GitHub Release creation waits for `release-approval`; configure the repository so `v*` tags are protected from deletion and force-push.
-
 ### Post-release validation
 
-`postReleaseValidation.yml` runs automatically after `release.yml` succeeds. It exercises registries, archives, installers, containers, and provenance, then opens a PR with `releases/<tag>/validation.md`.
+`postReleaseValidation.yml` runs automatically after `release.yml` publishes a real rc or stable release. It exercises registries, archives, installers, containers, and provenance, then opens a PR with `releases/<tag>/validation.md`.
 
 Reproduce one area locally:
 
