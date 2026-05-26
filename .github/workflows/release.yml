@@ -494,9 +494,39 @@ jobs:
       - name: Verify release assets
         run: node scripts/verifyReleaseAssets.mjs "${{ needs.context.outputs.releaseTag }}" dist
 
+  publishNpmPackages:
+    name: Publish npm packages
+    needs: context
+    if: github.repository == 'Garudex-Labs/caracal'
+    uses: ./.github/workflows/publishNpm.yml
+    with:
+      package: changed
+      baseRef: ''
+      dryRun: ${{ needs.context.outputs.dryRun == 'true' }}
+      runner: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    secrets: inherit
+
+  publishPypiPackages:
+    name: Publish PyPI packages
+    needs: context
+    if: github.repository == 'Garudex-Labs/caracal'
+    uses: ./.github/workflows/publishPypi.yml
+    with:
+      package: changed
+      baseRef: ''
+      dryRun: ${{ needs.context.outputs.dryRun == 'true' }}
+      runner: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    secrets: inherit
+
   githubRelease:
     name: Publish GitHub Release
-    needs: [context, verifyAssets, serviceImages, runtimeImage]
+    needs: [context, verifyAssets, serviceImages, runtimeImage, publishNpmPackages, publishPypiPackages]
     if: github.repository == 'Garudex-Labs/caracal' && needs.context.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -527,7 +557,7 @@ jobs:
 
   dryRunSummary:
     name: Dry-run summary
-    needs: [context, verifyAssets, serviceImages, runtimeImage]
+    needs: [context, verifyAssets, serviceImages, runtimeImage, publishNpmPackages, publishPypiPackages]
     if: github.repository == 'Garudex-Labs/caracal' && needs.context.outputs.dryRun == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5

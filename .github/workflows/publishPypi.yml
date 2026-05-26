@@ -43,6 +43,26 @@ on:
           - ubuntu-24.04
           - macos-15
           - windows-2022
+  workflow_call:
+    inputs:
+      package:
+        description: 'Packages to publish.'
+        required: true
+        type: string
+      baseRef:
+        description: 'Diff base. Empty uses latest release tag.'
+        required: false
+        default: ''
+        type: string
+      dryRun:
+        description: 'Build only.'
+        required: false
+        default: false
+        type: boolean
+      runner:
+        description: 'Publish runner.'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -171,6 +191,7 @@ jobs:
       url: https://pypi.org/project/${{ matrix.name }}
     permissions:
       contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.select.outputs.matrix) }}
@@ -199,14 +220,10 @@ jobs:
 
       - name: Publish package
         if: inputs.dryRun != true
-        working-directory: ${{ matrix.dir }}
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-          TWINE_NON_INTERACTIVE: '1'
-        run: |
-          set -euo pipefail
-          python -m twine upload --skip-existing dist/*
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+        with:
+          packages-dir: ${{ matrix.dir }}/dist
+          skip-existing: true
 
       - name: Verify published package
         if: inputs.dryRun != true
