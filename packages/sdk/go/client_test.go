@@ -244,6 +244,69 @@ func TestHTTPClientInjects(t *testing.T) {
 	}
 }
 
+func TestGatewayRequestBuildsExplicitGatewayTarget(t *testing.T) {
+	c := &sdk.Caracal{
+		ZoneID:        "z",
+		ApplicationID: "a",
+		SubjectToken:  "tok",
+		GatewayURL:    "https://gateway.example.com/proxy",
+	}
+	var got http.Header
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		gotPath = r.URL.String()
+		w.WriteHeader(204)
+	}))
+	defer srv.Close()
+	c.GatewayURL = srv.URL + "/proxy"
+	target, err := c.GatewayRequest("resource://calendar", "events?limit=10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := sdk.Bind(context.Background(), sdk.CaracalContext{
+		SubjectToken: "tok",
+		ZoneID:       "z",
+		ClientID:     "a",
+		Hop:          1,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header = target.Header.Clone()
+	resp, err := c.Transport(nil).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if target.Header.Get("X-Caracal-Resource") != "resource://calendar" {
+		t.Fatalf("unexpected helper header: %v", target.Header)
+	}
+	if gotPath != "/proxy/events?limit=10" {
+		t.Fatalf("unexpected path: %s", gotPath)
+	}
+	if got.Get("X-Caracal-Resource") != "resource://calendar" {
+		t.Fatalf("missing resource header: %v", got)
+	}
+	if got.Get(sdk.HeaderAuthorization) != "Bearer tok" {
+		t.Fatalf("missing authorization: %v", got)
+	}
+}
+
+func TestGatewayRequestRejectsInvalidInputs(t *testing.T) {
+	c := &sdk.Caracal{GatewayURL: "https://gateway.example.com/proxy"}
+	if _, err := (&sdk.Caracal{}).GatewayRequest("resource://calendar", "/events"); err == nil {
+		t.Fatal("expected GatewayURL error")
+	}
+	if _, err := c.GatewayRequest("", "/events"); err == nil {
+		t.Fatal("expected resourceID error")
+	}
+	if _, err := c.GatewayRequest("resource://calendar", "https://api.example.com/events"); err == nil {
+		t.Fatal("expected relative path error")
+	}
+}
+
 func TestHTTPClientRejectsUnboundRootByDefault(t *testing.T) {
 	c := &sdk.Caracal{ZoneID: "z", ApplicationID: "a", SubjectToken: "tok"}
 	client := c.Transport(nil)

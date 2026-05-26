@@ -48,6 +48,12 @@ type ResourceBinding struct {
 	UpstreamPrefix string
 }
 
+// GatewayRequest is a Gateway target and resource header for explicit resource routing.
+type GatewayRequest struct {
+	URL    string
+	Header http.Header
+}
+
 // Connect builds a Caracal client from explicit values, a generated profile, or env.
 func Connect(opts ...ClientSecretOptions) (*Caracal, error) {
 	if len(opts) > 0 {
@@ -825,6 +831,23 @@ func (c *Caracal) Transport(base *http.Client, opts ...RootOptions) *http.Client
 	return &out
 }
 
+// GatewayRequest builds a Gateway URL and X-Caracal-Resource header for explicit resource routing.
+func (c *Caracal) GatewayRequest(resourceID, path string) (GatewayRequest, error) {
+	if c.GatewayURL == "" {
+		return GatewayRequest{}, fmt.Errorf("caracal: GatewayRequest requires GatewayURL")
+	}
+	if strings.TrimSpace(resourceID) == "" {
+		return GatewayRequest{}, fmt.Errorf("caracal: GatewayRequest requires resourceID")
+	}
+	target, err := joinGatewayPath(c.GatewayURL, path)
+	if err != nil {
+		return GatewayRequest{}, err
+	}
+	header := http.Header{}
+	header.Set("X-Caracal-Resource", resourceID)
+	return GatewayRequest{URL: target, Header: header}, nil
+}
+
 type caracalTransport struct {
 	base      http.RoundTripper
 	client    *Caracal
@@ -936,6 +959,35 @@ func (c *Caracal) routeThroughGateway(target *url.URL, explicitResource string) 
 		rid = binding.ResourceID
 	}
 	return &gatewayRoute{url: rewritten, resourceID: rid}
+}
+
+func joinGatewayPath(gatewayURL, path string) (string, error) {
+	parsed, err := url.Parse(path)
+	if err != nil {
+		return "", err
+	}
+	if parsed.IsAbs() || parsed.Host != "" {
+		return "", fmt.Errorf("caracal: GatewayRequest path must be relative to the configured gateway")
+	}
+	gw, err := url.Parse(gatewayURL)
+	if err != nil {
+		return "", err
+	}
+	pathname := parsed.EscapedPath()
+	if pathname == "" {
+		pathname = parsed.Path
+	}
+	if pathname == "" {
+		pathname = "/"
+	}
+	if !strings.HasPrefix(pathname, "/") {
+		pathname = "/" + pathname
+	}
+	base := strings.TrimRight(gw.Scheme+"://"+gw.Host+gw.Path, "/")
+	if parsed.RawQuery != "" {
+		return base + pathname + "?" + parsed.RawQuery, nil
+	}
+	return base + pathname, nil
 }
 
 func sameOrigin(a, b *url.URL) bool {

@@ -40,6 +40,12 @@ class ResourceBinding:
     upstream_prefix: str
 
 
+@dataclass(frozen=True)
+class GatewayRequest:
+    url: str
+    headers: dict[str, str]
+
+
 class CaracalConfig:
     """Bound configuration for a Caracal client.
 
@@ -885,6 +891,16 @@ class Caracal:
 
         return httpx.AsyncClient(auth=_CaracalAuth(), **kwargs)
 
+    def gateway_request(self, resource_id: str, path: str = "/") -> GatewayRequest:
+        if not self.config.gateway_url:
+            raise RuntimeError("Caracal.gateway_request: gateway_url is not configured")
+        if not resource_id.strip():
+            raise ValueError("Caracal.gateway_request: resource_id is required")
+        return GatewayRequest(
+            url=_join_gateway_path(self.config.gateway_url, path),
+            headers={"X-Caracal-Resource": resource_id},
+        )
+
     def sync_transport(self, *, allow_root: bool = False, **kwargs: Any) -> httpx.Client:
         """Sync counterpart to transport(): returns an httpx.Client that auto-injects
         the envelope on every request and rewrites resource-bound calls through the
@@ -982,3 +998,16 @@ def _url_matches_prefix(target, prefix: str) -> bool:
         return True
     pp = p.path if p.path.endswith("/") else p.path + "/"
     return target.path.startswith(pp)
+
+
+def _join_gateway_path(gateway_url: str, path: str) -> str:
+    parsed_path = urlparse(path)
+    if parsed_path.scheme or parsed_path.netloc:
+        raise ValueError("Caracal.gateway_request: path must be relative to the configured gateway")
+    gw = urlparse(gateway_url)
+    normalized = path if path.startswith("/") else f"/{path}"
+    split = normalized.split("?", 1)
+    pathname = split[0] or "/"
+    query = split[1] if len(split) == 2 else ""
+    base_path = gw.path.rstrip("/")
+    return urlunparse((gw.scheme, gw.netloc, base_path + pathname, "", query, ""))
