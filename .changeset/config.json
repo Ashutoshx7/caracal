@@ -8,10 +8,13 @@
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "ignore": [
-    "@caracalai/runtime",
-    "@caracalai/console",
+    "@caracalai/admin-audit",
     "@caracalai/api",
+    "@caracalai/console",
+    "@caracalai/control",
     "@caracalai/coordinator",
-    "@caracalai/docs"
+    "@caracalai/docs",
+    "@caracalai/engine",
+    "@caracalai/runtime"
   ]
 }
