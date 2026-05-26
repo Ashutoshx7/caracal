@@ -77,13 +77,22 @@ type Client struct {
 
 // Metrics captures a stable snapshot of audit client counters.
 type Metrics struct {
-	Emitted    uint64 `json:"emitted"`
-	Dropped    uint64 `json:"dropped"`
-	Persisted  uint64 `json:"persisted"`
-	Drained    uint64 `json:"drained"`
-	SinkErrors uint64 `json:"sink_errors"`
-	QueueDepth uint64 `json:"queue_depth"`
-	QueueCap   uint64 `json:"queue_cap"`
+	Emitted                 uint64 `json:"emitted"`
+	Dropped                 uint64 `json:"dropped"`
+	Persisted               uint64 `json:"persisted"`
+	Drained                 uint64 `json:"drained"`
+	SinkErrors              uint64 `json:"sink_errors"`
+	QueueDepth              uint64 `json:"queue_depth"`
+	QueueCap                uint64 `json:"queue_cap"`
+	ReplayFiles             uint64 `json:"replay_files"`
+	ReplayBytes             uint64 `json:"replay_bytes"`
+	ReplayOldestAgeSeconds  uint64 `json:"replay_oldest_age_seconds"`
+}
+
+type ReplayStats struct {
+	Files            uint64 `json:"files"`
+	Bytes            uint64 `json:"bytes"`
+	OldestAgeSeconds uint64 `json:"oldest_age_seconds"`
 }
 
 // Snapshot returns a stable view of all observability counters.
@@ -91,15 +100,50 @@ func (c *Client) Snapshot() Metrics {
 	if c == nil {
 		return Metrics{}
 	}
+	replay := ReplayStatsForDir(c.cfg.ReplayDir, time.Now())
 	return Metrics{
-		Emitted:    c.emitted.Load(),
-		Dropped:    c.dropped.Load(),
-		Persisted:  c.persisted.Load(),
-		Drained:    c.drained.Load(),
-		SinkErrors: c.sinkErrors.Load(),
-		QueueDepth: uint64(len(c.ch)),
-		QueueCap:   uint64(cap(c.ch)),
+		Emitted:                c.emitted.Load(),
+		Dropped:                c.dropped.Load(),
+		Persisted:              c.persisted.Load(),
+		Drained:                c.drained.Load(),
+		SinkErrors:             c.sinkErrors.Load(),
+		QueueDepth:             uint64(len(c.ch)),
+		QueueCap:               uint64(cap(c.ch)),
+		ReplayFiles:            replay.Files,
+		ReplayBytes:            replay.Bytes,
+		ReplayOldestAgeSeconds: replay.OldestAgeSeconds,
 	}
+}
+
+func ReplayStatsForDir(dir string, now time.Time) ReplayStats {
+	if dir == "" {
+		return ReplayStats{}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ReplayStats{}
+	}
+	var stats ReplayStats
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != replayFileExt {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		stats.Files++
+		stats.Bytes += uint64(info.Size())
+		age := now.Sub(info.ModTime())
+		if age < 0 {
+			age = 0
+		}
+		seconds := uint64(age / time.Second)
+		if seconds > stats.OldestAgeSeconds {
+			stats.OldestAgeSeconds = seconds
+		}
+	}
+	return stats
 }
 
 // NewClient validates configuration and prepares the on-disk replay directory.

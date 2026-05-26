@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+
+	"github.com/garudex-labs/caracal/packages/core/go/audit"
 )
 
 const (
@@ -120,6 +122,16 @@ func (a *AuditBuffer) Ready() error {
 		return err
 	}
 	return os.Remove(name)
+}
+
+func (a *AuditBuffer) RefreshReplayStats(now time.Time) {
+	if a == nil || a.metrics == nil {
+		return
+	}
+	stats := audit.ReplayStatsForDir(a.replayDir, now)
+	a.metrics.AuditReplayFiles.Store(stats.Files)
+	a.metrics.AuditReplayBytes.Store(stats.Bytes)
+	a.metrics.AuditReplayOldestAge.Store(stats.OldestAgeSeconds)
 }
 
 func (a *AuditBuffer) sign(data []byte) string {
