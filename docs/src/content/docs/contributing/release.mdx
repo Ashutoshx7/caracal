@@ -72,15 +72,16 @@ scripts/release.sh
 scripts/release.sh --dry-run
 ```
 
-The script applies pending changesets, stamps Helm metadata, writes `releases/<tag>/manifest.json`, tags the release, and pushes `main` plus the tag. The tag triggers `release.yml` in GitHub Actions. The stable pipeline:
+The script applies pending changesets, stamps Helm metadata, writes `releases/<tag>/manifest.json`, tags the release, and pushes `main` plus the tag. The tag triggers the unified `release.yml` workflow in GitHub Actions. The stable pipeline:
 
 1. Verifies the pushing actor is listed in `.github/MAINTAINERS`.
-2. Builds runtime/console binaries and container images in parallel.
-3. Pushes immutable image tags to GHCR with SLSA provenance and SBOM.
-4. Waits for the protected `release-approval` environment.
-5. Creates a GitHub Release with generated release notes, binaries, checksums, and provenance attestations.
-6. Runs release validation for rc and stable tags.
-7. Promotes stable images to the `vYYYY.MM` series tag and `latest` only after validation passes.
+2. Resolves one release context shared by archive, image, dry-run, and publish jobs.
+3. Builds runtime/console archives and container images in parallel.
+4. Verifies archive assets and checksums through the shared asset verifier.
+5. Waits for the protected `release-approval` environment.
+6. Creates a GitHub Release with generated release notes, binaries, checksums, and provenance attestations.
+7. Runs release validation for rc and stable tags.
+8. Promotes stable images to the `vYYYY.MM` series tag and `latest` only after validation passes.
 
 Only maintainers cut stable releases. Do not push CalVer tags from feature branches.
 
@@ -260,7 +261,7 @@ Every release tag has a directory under `caracal/releases/<tag>/` that owns all 
 - `validation.md`: the aggregated post-release validation report.
 - `findings/*.jsonl`: raw per-area findings.
 
-The `.github/workflows/postReleaseValidation.yml` workflow runs inside `release.yml` for rc and stable tags, or independently via `workflow_dispatch`, and opens a PR that adds `validation.md` and `findings/` to that directory. Blocker findings fail release validation and prevent stable image promotion.
+The `.github/workflows/postReleaseValidation.yml` workflow runs after `release.yml` publishes rc and stable tags, or independently via `workflow_dispatch`, and opens a PR that adds `validation.md` and `findings/` to that directory. Blocker findings fail release validation and prevent stable image promotion.
 
 Run a single check locally:
 
