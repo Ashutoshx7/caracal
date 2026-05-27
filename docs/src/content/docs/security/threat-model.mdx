@@ -1,280 +1,59 @@
 ---
 title: Threat Model
-description: "Trust boundaries, attack surface, and mitigations: how Caracal reasons about adversaries and what each enforcement point actually prevents."
-pageType: concept
+description: Assets, boundaries, threats, mitigations, and validation checks for Caracal.
+pageType: reference
 ---
 
-This page describes what Caracal defends against, where each defense is located, and what the residual risk is when a defense is absent or degraded. It is written for operators configuring a production deployment and for security reviewers auditing the system.
+The repository threat model covers the current open-source Caracal runtime, services, packages, deployment assets, and release artifacts.
 
----
+## In-scope areas
 
-## Trust boundaries
+| Area | Scope |
+| --- | --- |
+| API | Control-plane routes, admin auth, product state, step-up APIs, admin audit. |
+| Coordinator | Agent lifecycle, delegation, invocation, TTL, retention, outbox. |
+| STS | OAuth token exchange, signing, JWKS, policy decisions, replay, revocation, step-up, audit emission. |
+| Gateway | Proxy enforcement, upstream safety, STS exchange, bindings, replay, revocation checks. |
+| Audit | Redis stream consumption, append-only ledger, HMAC chain, tamper sweeps, retention, export. |
+| Control | Optional invoke endpoint, engine catalog enforcement, JTI replay, rate limits, audit. |
+| Relay and streams | Coordinator lifecycle relay, Redis Streams signatures, dedupe, pending-entry handling. |
+| Packages and infra | SDKs, transports, connectors, Docker, Helm, migrations, installers, release artifacts. |
 
-Caracal operates four services. Each has a distinct role in the trust hierarchy.
+Enterprise-only code and customer deployments outside the provided deployment model are out of scope for this open-source threat model.
 
-```
-Caller (agent/user)
-  │  session mandate (ES256 JWT)
-  ▼
-Gateway  ─── verifies signature ───► STS JWKS
-  │  exchanges for per-resource mandate
-  ▼
-STS  ─── issues mandate ──────────► upstream MCP server
-  │        policy evaluation
-  ▼
-OPA bundle (compiled Rego)
+## Assets
 
-Coordinator ◄── STS JWT (bearer) ── SDK / agent
-  │  agent sessions + delegation edges
-  ▼
-Postgres
-
-Control-Plane API ◄── admin token (Argon2id verified) ── operator
-  │  zones, applications, policies, grants
-  ▼
-Postgres + Redis outbox
-```
-
-**Nothing trusts caller-supplied identity claims.** The Gateway strips `X-Caracal-Client-ID` and rejects requests that include it. The STS re-verifies the JWT signature on every exchange even though the Gateway already verified it: the STS validation includes checking the session record in Postgres (matching `sub` to `sessions.subject_id`), which the Gateway cannot do. The Coordinator verifies bearer tokens independently using zone-specific JWKS.
-
-**Zone boundaries are enforced at the data layer.** All tables carry `zone_id`. Composite `(zone_id, id)` unique constraints and foreign keys that include `zone_id` on both sides make cross-zone data access impossible without a query that explicitly supplies both identifiers. Zone-scoped admin tokens are restricted at the application layer by matching the URL `zoneId` path segment against the token's zone field.
-
----
-
-## Attack surface
-
-### Gateway (port 8081)
-
-The Gateway is the sole inbound entry point for MCP tool calls. Its attack surface is:
-
-- Inbound HTTP from any caller bearing a session mandate
-- Outbound HTTP/2 to upstream MCP servers (URLs supplied by the STS, not by callers)
-- Redis (revocation stream consumer + JTI store)
-- Postgres (upstream binding lookup)
-- STS (token exchange, JWKS fetch)
-
-### STS (port 8080)
-
-The STS accepts token exchange requests and serves JWKS. Its attack surface is:
-
-- `POST /oauth/2/token`: open to any caller with a client credential
-- `GET /.well-known/jwks.json`: unauthenticated, zone-scoped
-- Postgres (session and policy reads, token writes)
-- Redis (revocation stream read, rate limit counters, JTI write at issuance, audit stream write)
-- OPA (in-process evaluation, no network)
-
-### Coordinator (port 4000)
-
-The Coordinator accepts STS-issued JWTs. Its attack surface is:
-
-- `POST /v1/begin`, `/v1/end`, `/v1/exchange`: requires valid bearer
-- `POST /v1/verify`: unauthenticated, rate-limited
-- Postgres (agent session and delegation graph)
-- Redis (outbox publishing)
-
-### Control-Plane API (port 3000)
-
-The API accepts admin tokens verified against Argon2id hashes. Its attack surface is:
-
-- All `/v1/*` routes: requires admin token
-- Postgres (all administrative tables)
-- Redis (outbox publishing)
-
----
+| Asset | Why it matters |
+| --- | --- |
+| Agent and application authority | Controls what autonomous agents can access and do. |
+| Policies, grants, zones, resource bindings | Define authorization and proxy destinations. |
+| Signing keys, KEKs, admin tokens, client secrets, database/Redis credentials | Compromise enables impersonation or service takeover. |
+| Tokens, sessions, JTIs, revocations, step-up state | Enforce identity, replay prevention, expiry, and emergency denial. |
+| Audit events and chain state | Provide evidence for incidents and tamper detection. |
+| Redis Streams and outboxes | Carry lifecycle, invalidation, audit, and revocation events. |
+| Images, installers, releases, lockfiles | Define what users execute. |
 
 ## Threats and mitigations
 
-### T1: Forged token (invalid signature)
-
-**Threat:** An attacker presents a JWT with a fabricated or modified signature.
-
-**Mitigation:** All verifying services (Gateway, STS, Coordinator, resource server connectors) call `verify()` against the zone's JWKS. The JWKS endpoint returns only EC P-256 public keys with `"alg": "ES256"`. Verification rejects any token whose signature does not match the key identified by the `kid` header. A misconfigured or absent `kid` causes verification to fail.
-
-**Residual risk:** A compromised zone signing key allows arbitrary token forgery until the key is rotated and the JWKS cache (5-minute TTL) expires. Rotation is the recovery action; all consumers pick up the new key within 5 minutes.
-
----
-
-### T2: Replay of a resource mandate
-
-**Threat:** An attacker captures a valid resource mandate and reuses it after the original request completed.
-
-**Mitigation:** Resource mandates (`"use": "resource"`) have their `jti` recorded in Redis with a TTL equal to the token's remaining lifetime (`seen:jti:{jti}`). The Gateway checks this on every inbound request using SETNX semantics. A second presentation of the same JTI returns `401 InvalidToken`. The STS records JTIs at issuance time and rejects JTI collisions.
-
-**Residual risk:** If Redis is unavailable and `JTI_FAIL_OPEN=true`, replay protection is disabled. In production, `JTI_FAIL_OPEN=false` is required; the Gateway rejects all resource mandates when Redis is unreachable. Session mandates (`"use": "session"`) are intentionally reusable session tokens: they are not subject to JTI replay checks and are instead revoked via the session revocation stream.
-
----
-
-### T3: Replay of a session mandate after session revocation
-
-**Threat:** An attacker with a captured session mandate continues to use it after the victim's session is revoked.
-
-**Mitigation (inbound check):** The Gateway checks the session `sid` claim against its in-memory revocation cache on every request. The cache is populated from the `caracal.sessions.revoke` Redis stream, typically within one second of revocation.
-
-**Mitigation (exchange check):** The STS validates the session record in Postgres on every exchange. A revoked session (status `'revoked'`) causes the exchange to fail with `403 access_denied` before any mandate is issued.
-
-**Mitigation (mid-stream):** During streaming responses the Gateway re-checks revocation at every 4 KB chunk boundary. A revoked session causes the stream to be truncated and the `X-Caracal-Revoked: true` HTTP trailer to be set.
-
-**Residual risk:** A session mandate presented to the Gateway before the revocation event arrives (sub-second window) may succeed. A resource mandate issued before revocation remains valid until its TTL (≤ 15 minutes) expires: but it cannot generate further mandates because the STS will reject subsequent exchanges. The maximum exposure window for an already-issued resource mandate is its TTL.
-
----
-
-### T4: Token expiry preflight bypass
-
-**Threat:** An attacker presents a session mandate that is seconds from expiry, knowing it will expire before the Gateway can exchange it with the STS and forward the request.
-
-**Mitigation:** The Gateway performs an unverified expiry preflight before making any STS call. If the token expires within 35 seconds, the request is rejected with `401 CredentialExpired`. The 35-second window accounts for STS exchange latency (typically < 5 seconds) and upstream request processing.
-
----
-
-### T5: SSRF via upstream URL injection
-
-**Threat:** An attacker manipulates the upstream URL returned by the STS to redirect Gateway requests to internal services (cloud metadata endpoints, database, Redis).
-
-**Mitigation:** The upstream URL is returned by the STS, not supplied by the caller: callers provide `X-Caracal-Resource`, and the STS resolves the upstream URL from its database. Even so, the Gateway applies two SSRF guards:
-
-1. **Pre-flight check:** The URL is checked against a blocklist before the dial.
-2. **Dial-time check:** `SafeDialContext` re-resolves the hostname at connection time, preventing DNS rebinding attacks where a hostname resolves to a safe address at check time but an internal address at dial time.
-
-**Blocked IP ranges:** loopback (`127.0.0.0/8`), private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local (`169.254.0.0/16`: AWS/GCP/Azure metadata), carrier-grade NAT (`100.64.0.0/10`), and multicast ranges.
-
-**Residual risk:** The SSRF guard operates on resolved IP addresses. DNS rebinding that changes a hostname's A record between the pre-flight check and the dial-time check is blocked by `SafeDialContext`. The `UPSTREAM_HOST_ALLOWLIST` environment variable provides an additional allowlist of permitted upstream hostnames when `ALLOW_PRIVATE_UPSTREAMS=false`.
-
----
-
-### T6: Client identity spoofing via header injection
-
-**Threat:** A caller injects `X-Caracal-Client-ID` to impersonate a different application and bypass the Gateway's resource binding lookup.
-
-**Mitigation:** The Gateway explicitly forbids this header. Any request containing `X-Caracal-Client-ID` is rejected with `400 InvalidToken` before proceeding to authentication. The header is also stripped from all outbound upstream requests.
-
----
-
-### T7: Privilege escalation via delegation
-
-**Threat:** An agent forges a delegation edge or uses a delegation edge to claim scopes it was not granted.
-
-**Mitigation: ownership verification:** At exchange time, the STS verifies that the authenticated application owns the delegation edge's source agent session. An application cannot use a delegation edge issued to a different application.
-
-**Mitigation: scope constraint enforcement:** The delegation edge carries a scope list. The STS enforces that the requested scopes are a subset of the edge's declared scopes. Additionally, the edge may carry a scope budget (maximum number of scopes per exchange) that is enforced independently.
-
-**Mitigation: hop count enforcement:** The `max_hops` constraint on the edge limits the delegation chain depth. The STS traverses the full delegation path via recursive CTE and rejects exchanges that exceed the constraint.
-
-**Mitigation (path integrity at exchange time:** The delegation path is re-validated on every exchange) not just at edge creation. Each edge on the path must be active and non-revoked at exchange time. A revoked edge anywhere in the path causes the exchange to fail.
-
-**Mitigation: cycle prevention:** The Coordinator prevents cycle creation using a recursive CTE with a depth limit of 10. Cycle detection checks whether the proposed target can reach back to the proposed source within 10 hops before the edge is inserted.
-
-**Mitigation (delegation graph epoch:** The epoch is stored in the JWT. Resource servers that track the epoch can reject mandates issued against a stale graph) for example, a mandate issued before an edge was revoked but not yet expired.
-
----
-
-### T8: Policy bypass or injection
-
-**Threat:** An attacker causes the STS to skip policy evaluation or evaluate a policy that grants access it should not.
-
-**Mitigation: fail-closed OPA:** If the OPA engine is unavailable or if no policy set is active for the zone, the STS installs a deny-all policy. No mandate is issued unless the policy evaluates to `{"decision": "allow", "evaluation_status": "complete"}`. Any other status causes a `403 policy_eval_failed` or `503`.
-
-**Mitigation: policy immutability:** Policy versions are immutable rows with a `UNIQUE(policy_id, version)` constraint. Once written, a version's Rego content cannot be overwritten. New content requires a new version. Activation is a separate atomic operation that updates the zone's active policy set binding and publishes an invalidation event.
-
-**Mitigation: OPA sandbox:** The OPA evaluator runs with a restricted capability set. Network access (`http.send`, `net.*`), host clock (`time.now_ns`), runtime introspection (`opa.runtime`), and randomness (`rand.intn`) builtins are removed. Policies cannot exfiltrate data or introduce non-determinism.
-
-**Mitigation: Rego validation at write time:** Policy content is validated by the API before storage. Invalid Rego, or Rego that does not declare `package caracal.authz` and emit `data.caracal.authz.result`, is rejected with `422 invalid_rego`.
-
----
-
-### T9: Client secret or admin token brute force
-
-**Threat:** An attacker attempts to recover a client secret or admin token by exhaustive guessing.
-
-**Mitigation: client secrets (Argon2id):** Client secrets are hashed with Argon2id (time=3, memory=64 MiB, parallelism=2, output=32 bytes) before storage. The STS compares the hash using `subtle.ConstantTimeCompare`. Malformed hash formats are also run through Argon2id with a dummy salt to prevent format-validity timing leaks. A 64 MiB memory cost makes GPU-accelerated attacks expensive.
-
-**Mitigation: admin tokens (lookup fingerprint + Argon2id):** Admin tokens use a SHA-256 lookup fingerprint with a unique active-token index, then require Argon2id verification before the request is accepted. The fingerprint comparison is timing-safe, and failed attempts are rate-limited per source IP and token prefix when Redis is available.
-
-**Residual risk:** Admin tokens are bearer credentials. Generate them with sufficient entropy (≥ 32 bytes random), scope them to zones where possible, rotate them if suspected compromised, and keep ingress-level rate limits in front of the API.
-
----
-
-### T10: Audit trail tampering
-
-**Threat:** An attacker with database access modifies or deletes audit records to cover their tracks.
-
-**Mitigation: append-only:** The `audit_events` table has no application-layer DELETE path. There are no API endpoints that remove audit records.
-
-**Mitigation: content hash and HMAC chain:** Each audit event carries a SHA-256 content hash derived from its forensically meaningful fields. Events are chained: each event's HMAC covers its own content hash combined with the previous event's content hash using `AUDIT_HMAC_KEY`. The audit service runs a sweep on startup and hourly to verify chain continuity. A broken chain produces logged errors detectable by monitoring.
-
-**Mitigation: out-of-band export:** The audit service writes Parquet files outside the live database after the retention window. These files represent a second copy of the audit record that persists independently of Postgres.
-
-**Residual risk:** Chain integrity relies on `AUDIT_HMAC_KEY` not being compromised. An attacker with the HMAC key and write access to the database can forge the chain. Protect `AUDIT_HMAC_KEY` with the same care as zone signing keys.
-
----
-
-### T11: Revocation stream tampering
-
-**Threat:** An attacker injects a fabricated revocation message into the `caracal.sessions.revoke` stream to revoke a legitimate session they do not control (denial of service).
-
-**Mitigation:** All stream messages are HMAC-SHA256 signed using `STREAMS_HMAC_KEY`. Consumers verify the signature using `hmac.Equal()` (timing-safe) before processing. Messages with invalid signatures are acknowledged (to prevent stream stall) and dead-lettered to `caracal.sessions.revoke.dead`. They are never acted upon.
-
-**Residual risk:** An attacker who obtains `STREAMS_HMAC_KEY` can forge revocation messages. Protect this key with the same care as signing keys. Revocation is a denial-of-service vector even with forgery: a legitimate revocation for a real session is irreversible.
-
----
-
-### T12: Provider credential exposure
-
-**Threat:** Provider OAuth tokens or API keys stored by Caracal are read by an attacker with database access.
-
-**Mitigation:** Provider credentials are encrypted at rest using ChaCha20-Poly1305 (AEAD) with the zone KEK as the encryption key. The nonce (12 bytes) is randomly generated per encryption and stored alongside the ciphertext. The plaintext is never stored. Decrypted secrets are never returned by any API response: only `secret_config_keys` (the names of which secrets are stored) is exposed.
-
-**Residual risk:** The zone KEK (`ZONE_KEK`) is loaded from an environment variable. An attacker with access to the process environment or the database and the KEK can decrypt credentials. Use a secrets manager (HashiCorp Vault, AWS Secrets Manager) to inject `ZONE_KEK` rather than storing it in plaintext configuration files.
-
----
-
-### T13: Man-in-the-middle between services
-
-**Threat:** An attacker intercepts traffic between the Gateway and STS, or between the Coordinator and STS, to capture or modify tokens.
-
-**Mitigation:** rc and stable deployments should keep service-to-service traffic on private networks and use TLS or platform mTLS where required. The Gateway requires an absolute `STS_URL`; HTTP is allowed only for internal hosts such as Docker service names, localhost, or loopback. Gateway↔STS token exchange also requires `GATEWAY_STS_HMAC_KEY` in rc and stable modes. When the Gateway serves HTTPS directly, TLS minimum version is 1.2 via `tls.Config`. Operators are responsible for valid TLS certificates or trusted ingress-level TLS termination.
-
----
-
-### T14: Cross-zone data access
-
-**Threat:** An authenticated caller in zone A accesses or modifies data belonging to zone B.
-
-**Mitigation (data layer):** All core tables use composite `(zone_id, id)` primary and unique keys. Foreign keys reference `(zone_id, id)` on both tables, so a relationship can only be created between records in the same zone. A query that omits `zone_id` in the WHERE clause will never accidentally match a record from another zone via a single-column index.
-
-**Mitigation (API layer):** All zone-scoped routes extract `zoneId` from the URL path and include it in every query. Zone-scoped admin tokens are compared against the URL's `zoneId` and rejected if they do not match.
-
----
-
-### T15: Path traversal to internal resources
-
-**Threat:** A caller includes `../` sequences in the request path to redirect the Gateway's upstream request to a different URL on the same host.
-
-**Mitigation:** The Gateway checks the inbound request path for segments equal to `"."` or `".."` before forwarding. Any such path returns `400 InvalidToken`.
-
----
-
-## Degraded-mode behavior
-
-| Component unavailable | Effect | Is it safe? |
-| --- | --- | --- |
-| Redis (Gateway) | JTI replay detection disabled if `JTI_FAIL_OPEN=true`; rejected if false | Safe in production (fail-closed) |
-| Redis (STS rate limiter) | Token exchange rejected with 503 | Safe: fails closed |
-| Redis (revocation stream) | Revocations not propagated to Gateway; STS still validates at exchange | Partial: no mid-stream abort |
-| OPA unavailable | Deny-all policy installed; no mandates issued | Safe: fails closed |
-| OPA policy missing | Same as OPA unavailable | Safe |
-| Postgres (STS exchange) | Exchange fails; mandate not issued | Safe |
-| Postgres (Gateway binding) | Stale bindings used until reload; new resources unavailable | Degraded availability, not security |
-| Audit service | Events buffered in Redis stream; replayed on recovery | Data preserved |
-
----
-
-## Out of scope
-
-The following are not mitigated by Caracal and are the operator's responsibility:
-
-- **Compromised zone signing key:** Rotate the key. All verifying services pick up the new JWKS within their cache TTL (5 minutes).
-- **Compromised `ZONE_KEK`:** All encrypted provider credentials and zone signing keys are exposed. Rotation requires re-encrypting all secrets with a new KEK.
-- **Compromised `STREAMS_HMAC_KEY`:** Revocation and policy invalidation stream messages can be forged. Rotate the key and update all services simultaneously.
-- **Compromised `AUDIT_HMAC_KEY`:** The audit HMAC chain can be forged. Rotate and re-sweep.
-- **Physical database access:** Caracal does not use PostgreSQL row-level security or column-level encryption (except for the secrets described above). Unrestricted database access bypasses all application-layer controls.
-- **Process memory access:** Decrypted zone signing keys and unsealed credentials are held in process memory for their cache TTL. A process memory dump exposes them.
+| Threat | Required mitigation |
+| --- | --- |
+| Control-plane mutation bypass | Mandatory auth hooks, schemas, zone guards, and admin audit. |
+| STS over-issues authority | Deny-by-default policy, grant/session validation, step-up, replay, revocation, and signing checks. |
+| Gateway forwards unsafely | Per-request STS exchange, upstream bindings, SSRF guard, header stripping, timeouts, replay and revocation checks. |
+| Agent/delegation state races | Transactions, locks, outbox events, dedupe, bounded relay retry. |
+| Secrets leak | File-secret resolution, redaction, no plaintext key material in responses/logs/audit/examples. |
+| Audit evidence is missing or forgeable | Append-only audit role, HMAC signing, DLQ, replay, tamper checks. |
+| Stream messages are forged or replayed | HMAC signatures, dedupe, pending-entry reclaim, ack only after durable handling. |
+| Control becomes unsafe command execution | Gate file, JWT auth, scope checks, engine dispatch only, no shelling out, audit. |
+| Release artifact compromise | Lockfile review, trusted workflows, image/archive validation, installer secret scans. |
+| Product boundary drift | Update threat model and reject OSS changes that depend on enterprise-only code. |
+
+## Validation
+
+Use targeted suites for the changed boundary: API/Coordinator TypeScript tests, STS/Gateway/Audit Go tests, Control/Engine tests, stream consumer tests, release checks, and broader `pnpm run ci` when shared packages, crypto, config, release, or infra change.
+
+## Related pages
+
+- [Trust Boundaries](/architecture/trust-boundaries/)
+- [Incident Response](/operations/incident-response/)
+- [Contributing Testing](/contributing/testing/)

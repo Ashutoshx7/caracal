@@ -1,29 +1,47 @@
 ---
 title: Security
-description: "Caracal's security posture: where authority is enforced, how trust is bounded, and what guarantees the system makes at runtime."
+description: Security model, hardening checklist, threat model, and disclosure policy for Caracal.
 pageType: landing
 ---
 
-Caracal is built around a small set of verifiable security guarantees. Every mandate is cryptographically signed and scope-narrowed to a single resource. Every token exchange is policy-evaluated at the STS before a mandate is issued. Every revocation propagates to all verifying services in under a second under normal operating conditions. No service extends implicit trust to another service's claims: every boundary is verified.
+Security in Caracal centers on pre-execution authority: STS issues scoped mandates, Gateway enforces protected-resource access, Coordinator tracks agent/delegation state, Audit preserves evidence, and Operations keeps storage, streams, secrets, and releases recoverable.
 
-## What Caracal enforces
+## Security model at a glance
 
-**Cryptographic mandate verification.** Every mandate is an ES256 JWT signed by the zone's ECDSA P-256 signing key. No mandate is accepted without a verified signature against the zone's JWKS. The STS is the only issuer; all verifying services (Gateway, Coordinator, resource servers) independently fetch and cache the JWKS.
+```mermaid
+flowchart LR
+  Operator[Operator] --> API[API and Console]
+  Workload[Workload] --> STS[STS]
+  Request[Protected request] --> Gateway[Gateway]
+  Agent[Agent SDK] --> Coordinator[Coordinator]
+  API --> Audit[Audit evidence]
+  STS --> Audit
+  Gateway --> Audit
+  Coordinator --> Audit
+  Audit --> Postgres[(Append-only audit)]
+```
 
-**Resource scope narrowing.** Session mandates cannot be used directly at resources. The STS exchanges a session mandate for a resource mandate scoped to exactly the declared scopes of the resource. The mandate's `aud` claim is set to the resource identifier, not the issuer: preventing session mandates from being forwarded as resource credentials.
+## Start here
 
-**Policy-gated issuance.** Every token exchange evaluates the zone's active Rego policy bundle via OPA before issuing a mandate. If OPA is unavailable, the zone falls back to a deny-all policy. No mandate is issued without a `"complete"` evaluation result.
-
-**Sub-second revocation propagation.** When a session is revoked, the event is published to the `caracal.sessions.revoke` Redis stream. The Gateway, STS, and any resource server running `RedisRevocationConsumer` receive the event within one consumer poll cycle: typically under one second. The Gateway checks revocation on every inbound request and at every 4 KB boundary during streaming responses.
-
-**Delegation integrity.** Delegation edges are verified at token-exchange time against the live delegation graph. Scope, TTL, hop count, and path integrity are validated before a delegated mandate is issued. The delegation graph epoch is embedded in the JWT; resource servers can reject mandates issued against a stale graph.
-
-**Zone isolation.** All data is partitioned by `zone_id`. Composite `(zone_id, id)` unique constraints and foreign keys that include `zone_id` on both sides prevent cross-zone data access at the database layer. Zone-scoped admin tokens cannot access other zones.
-
-## Security pages
-
-| Page | Contents |
+| Need | Page |
 | --- | --- |
-| [Threat Model](./threat-model/) | Trust boundaries, attack surface, specific threats and mitigations |
-| [Hardening Checklist](./hardening/) | Production configuration requirements before live traffic |
-| [Disclosure Policy](./disclosure/) | How to report a vulnerability |
+| Understand the security boundaries | [Threat Model](/security/threat-model/) |
+| Harden a deployment | [Hardening Checklist](/security/hardening/) |
+| Report a vulnerability | [Disclosure Policy](/security/disclosure/) |
+| Operate a security incident | [Incident Response](/operations/incident-response/) |
+
+## Core invariants
+
+- STS must fail closed on policy, key, session, revocation, replay, step-up, and signing errors.
+- Gateway must never trust caller-supplied destinations and must deny before upstream dispatch when authority or routing is unsafe.
+- Redis stream messages require HMAC signing in published modes where configured.
+- Audit evidence must remain append-only, tamper-evident, and recoverable through replay/DLQ paths.
+- Secrets must come from secret files or platform secret managers in production.
+- The open-source product must not depend on enterprise-only code or controls.
+
+## Related sections
+
+- [Trust Boundaries](/architecture/trust-boundaries/)
+- [TLS and Production Hardening](/operations/tls-hardening/)
+- [Key Management and Rotation](/operations/key-management/)
+- [Alerting Recipes](/operations/alerts/)

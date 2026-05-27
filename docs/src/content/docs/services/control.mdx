@@ -1,291 +1,58 @@
 ---
-title: Control Service
-description: Default-off automation surface that wraps the shared engine dispatch with JWT auth, JTI replay, per-subject rate limiting, per-resource scopes, and audit emission.
+title: Control
+description: Service reference for optional remote management invocation.
 pageType: reference
 ---
 
-The Control service is the only network-reachable entry point for management automation. It is a small TypeScript service (`apps/control`) that wraps the same `@caracalai/engine` dispatch the Runtime and Console run in-process. Every surface (human (runtime/console) and machine (Control / SDK)) funnels through one function, so behaviour, validation, audit records, and scope enforcement cannot drift between them.
+Control is an optional automation surface for remote management operations. It dispatches through the shared engine after gate, authentication, replay, rate-limit, and scope checks.
 
-The service is **unmounted by default** and managed through the Console. Operators can mount it for long-term availability, enable the endpoint only when automation is needed, disable it for fast logical off, and unmount it when the service will not be used for a while. The engine persists structured lifecycle state and exposes the localhost management endpoint only while Control is enabled.
+## Runtime
 
----
-
-## Architecture at a glance
-
-```
-                packages/engine  (TypeScript: single source of truth)
-                ├── command catalog            ◄── one definition
-                ├── dispatch(req, principal, ctx)  ◄── one entry point
-                ├── handlers → AdminClient (HTTP → apps/api)
-                └── shared types / errors / scope names
-
-         ┌──────────────────┬──────────────────┬───────────────────┐
-         │                  │                  │                   │
-     apps/runtime           apps/console           apps/control        SDK / curl
-     (Bun binary,       (Bun binary,       (Node service,       (calls Control's
-      human)             human-only,        default OFF)         HTTP contract)
-     in-process         TTY-isolated,
-     engine call        in-process call    JWT + JTI replay
-                                           + rate limit
-                                           + per-resource scope
-                                           + audit emit
-                                           → engine.dispatch
-```
-
-Three rules make this work:
-
-1. **One engine.** `packages/engine` is the only place where commands, descriptors, validation, and the dispatcher live. There is no Go catalog, no parity test, no second copy.
-2. **Surfaces are adapters.** Runtime and Console hand the engine a `local` principal and execute in-process. Control hands the engine a `remote` principal derived from a verified JWT and runs the same code path on a managed service process.
-3. **Hidden commands are remote-blocked.** Descriptors marked `hidden: true` (credential read, runtime asset provisioning, the `control` and `completion` helpers themselves) are rejected before the scope check when the principal is `remote`.
-
----
-
-## Principals
-
-```ts
-interface Principal {
-  kind: 'local' | 'remote'
-  subject: string
-  zoneId?: string
-  clientId?: string
-  scopes: readonly string[]
-}
-```
-
-- **Local**: Runtime and Console. `assertScope` returns immediately; hidden commands are reachable. There is no network boundary, so authorisation is the OS's responsibility (file permissions on credentials, the operator's shell).
-- **Remote** (Control. Built from the JWT claims (`sub`, `zone_id`, `client_id`, `scope`). The dispatcher enforces (a) the command is not hidden and (b) the principal's scope list contains `scopeName(descriptor, subcommand)`. No blanket scope exists) every call needs the exact per-resource scope.
-
----
-
-## Request flow
-
-`POST /v1/control/invoke`
-
-```json
-{
-  "command":    "zone",
-  "subcommand": "list",
-  "flags":      { "limit": 25 }
-}
-```
-
-| Step | Component | Failure response |
-| --- | --- | --- |
-| 1. Assign `x-request-id` (16 random bytes) | `handler.ts` | None |
-| 2. Verify bearer token: ES256 + issuer + audience + `exp`/`iat` + required claims | `auth.ts` | `401 unauthorized` |
-| 3. Fetch JWKS for `zone_id` (refresh-on-miss, 30 s floor) | `auth.ts` | `401 unauthorized` |
-| 4. Mark JTI in replay cache (fail-closed on Redis error) | `replay.ts` | `401 token replay` |
-| 5. Allow per-subject token bucket | `ratelimit.ts` | `429 rate limited` |
-| 6. Parse JSON body (≤ 64 KB) and build remote `Principal` | `handler.ts` | `400 invalid request` |
-| 7. `engine.dispatch(req, principal, ctx)` | `packages/engine` | `403 / 400 / 501` |
-| 8. Emit audit row to `caracal.audit.events` (allow or deny) | `audit.ts` | logged only |
-| 9. Return `{ ok: true, result }` | `handler.ts` | None |
-
-Audit is emitted on **every** Console state (auth failure, replay, rate limit, dispatch denied, dispatch invalid, dispatch unsupported, allow). The audit row carries `request_id`, `decision`, `subject`, `jti`, `command`, `subcommand`, and `reason`, and (when `AUDIT_HMAC_KEY` is set) an HMAC-SHA256 signature over the canonical JSON payload.
-
-Errors map as:
-
-| Source | HTTP |
+| Property | Value |
 | --- | --- |
-| `AuthError` (any) | 401 |
-| `DispatchError { code: 'denied' }` (hidden command, missing scope, unknown command) | 403 |
-| `DispatchError { code: 'invalid' }` (bad flags, missing required flag) | 400 |
-| `DispatchError { code: 'unsupported' }` (subcommand not implemented) | 501 |
-| Anything else (admin API failure, network) | 502 |
+| Port | `8087` |
+| Health | `GET /health` |
+| Readiness | `GET /ready` |
+| Invoke | `POST /v1/control/invoke` |
+| Compose profile | `control` |
+| Helm default | disabled |
 
----
+## Invoke flow
 
-## Security model
-
-**Transport.** Bind to `127.0.0.1` in dev; `0.0.0.0` only in `rc`/`stable` modes, behind a terminating proxy.
-
-**Authentication.** Bearer JWTs minted by the in-cluster STS for Console-managed Control keys. The verifier enforces:
-
-- `alg: ES256` (only). RS256/HS256 tokens are rejected.
-- `iss` matches `STS_ISSUER_URL`.
-- `aud` matches `CONTROL_AUDIENCE`.
-- `exp` and `iat` are present and `exp` is in the future.
-- `zone_id`, `jti`, `sub` are present.
-
-JWKS lookups are scoped per zone (`${STS_JWKS_URL}?zone_id=<id>`). A key miss triggers a single refresh (rate-limited to once per 30 s) before the request is rejected.
-
-**Authorisation.** Per-resource scopes are derived from the engine catalog by `scopeName(descriptor, subcommand)`. The naming pattern is `control:<command>:<verb>` where verb is one of `read`, `write`, `delete`. Examples:
-
-| Command | Sub | Required scope |
-| --- | --- | --- |
-| `zone` | `list` | `control:zone:read` |
-| `zone` | `create` | `control:zone:write` |
-| `zone` | `delete` | `control:zone:delete` |
-| `policy-set` | `activate` | `control:policy-set:write` |
-
-There is no `control:invoke` blanket scope. `control:invoke` is an internal trait on the Control key application, not a permission presented to the Control API. A token that needs both reads and writes must carry both scopes.
-
-**Control keys.** Operators create Control keys from the Console Control menu. A Control key is a managed confidential application with:
-
-- `control:invoke`, which marks the application as eligible for the STS Control-key exchange path.
-- One or more `control:scope:<scope>` traits, which bound the scopes the key may request.
-- Optional TTL and expiry restrictions, which STS enforces when issuing tokens.
-
-The Console shows the client secret only when the key is created or rotated. To mint an invocation token, use **Control → issue invocation token**, paste that one-time secret, select a subset of the key's granted permissions, and choose a TTL that does not exceed the key restriction. The Console verifies the requested scopes locally before calling STS; STS repeats the same checks and issues a token only for the Control audience.
-
-The `caracal-control` audience is maintained by the Control management path and is hidden from generic resource management. It exists so STS can validate Control scopes; operators should not edit or delete it as an ordinary resource.
-
-**Replay defence.** Every accepted `jti` is recorded in Redis (`caracal:control:jti:<jti>`) using `SET NX PX`. TTL is `min(CONTROL_REPLAY_TTL_SEC * 1000, exp_ms - now_ms)`. Memory replay is permitted only in `dev` mode; `rc`/`stable` refuse to start without `CONTROL_REDIS_URL`. Redis errors fail closed: a replay-check failure rejects the request.
-
-**Rate limiting.** Per-subject token bucket: `CONTROL_RATE_CAPACITY` tokens refilled over `CONTROL_RATE_WINDOW_SEC`. Buckets evict at 10× the window. Capped at 10 000 distinct subjects to bound memory. Empty subjects are rejected.
-
-**Audit integrity.** Rows are XADD'd to `caracal.audit.events` with `MAXLEN ~ 100000`. When `AUDIT_HMAC_KEY` is set, an HMAC-SHA256 `sig` field accompanies the canonical payload so the audit consumer can detect tampering.
-
-**Hidden surface.** The dispatcher consults `descriptor.hidden` before the scope check. A remote caller cannot reach `control`, `completion`, or any descriptor that is not registered in `HANDLERS` (currently: `credential` and `run` are not handler-backed and are therefore unreachable from Control by construction).
-
-**Body size.** Bodies are capped at 64 KB at the Fastify level. Flag validation in the engine caps flag count (32), key length (64), string length (4 096), and array length (64).
-
----
-
-## Runtime / Console relationship
-
-The Runtime and Console consume the same `@caracalai/engine` package the Control service does:
-
-- Console commands resolve descriptors from the engine catalog and call the engine's helpers directly.
-- Console views call the same helpers from menu actions.
-- The authenticated interactive `caracal-console ...` lifecycle flow and the Console Control menu use the same engine lifecycle helpers, so mounted state, enablement state, endpoint health, and cleanup behavior stay synchronized.
-
-The Control service does not call the Console binary or shell out. It calls `engine.dispatch` exactly the way runtime/console do: with a different `Principal`.
-
-**Console isolation.** The Console is a human-only surface. `apps/console/src/index.ts` refuses to start unless:
-
-- `process.stdin.isTTY` and `process.stdout.isTTY` are both true,
-- `process.send` is undefined (no IPC channel from a parent),
-- `process.env.CI` is unset (or not `true`),
-- `process.env.TERM` is set and not `dumb`.
-
-Piping stdin to the Console, running it under `CI=true`, or spawning it via `child_process.fork` exits non-zero with an isolation error. Automation must use the Control API (or the SDK built on top of it). There is no `--script` or `--input-file` flag.
-
-**Control management access.** Lifecycle actions and Control key management are accepted only from a controlling Console with the local managed admin secret. Lifecycle changes require explicit typed confirmation in the Control menu. Thin scripts, direct Docker profile use, generic credential reads, and non-interactive Console execution are not valid Control management paths.
-
-**Console control section.** The control-management menu entry is always visible. Operators can mount the runtime, enable or disable the endpoint, inspect lifecycle status, unmount long-term runtime components, and manage Control credentials without leaving the Console.
-
----
-
-## Management lifecycle
-
-Control is optimized for intermittent use with two lifecycle levels:
-
-- **Mount / unmount** is the long-term resource switch. Mount loads the optional Control runtime and starts it with the endpoint gate closed. Unmount removes the Control container and clears lifecycle state when Control will not be used for a while.
-- **Enable / disable** is the fast logical switch. Enable opens the local endpoint gate for authenticated automation. Disable closes that gate without stopping the Control runtime, container, or supporting stack.
-
-The base API, STS, Gateway, Audit, Coordinator, Redis, and Postgres services continue to be managed normally by the stack. Control uses those existing services and does not create a dedicated persistent volume.
-
-| Interface | Action | Result |
-| --- | --- | --- |
-| Console | Interactive `control mount` | Loads the Control runtime with the endpoint gate closed |
-| Console | Interactive `control enable` | Opens the endpoint gate for authenticated automation |
-| Console | Interactive `control disable` | Closes the endpoint gate while leaving the runtime loaded |
-| Console | Interactive `control unmount` | Removes the Control runtime and clears lifecycle state |
-| Console | Interactive `control status` | Shows mounted state, enabled state, endpoint, health, lifecycle, and optimization details |
-| Console | Control menu → mount / enable / disable / unmount / status | Performs the same lifecycle actions through stable structured views |
-
-`caracal up` includes the Control runtime only when the engine-managed Control state requires it. A mounted-but-disabled runtime stays loaded and returns a disabled response on invoke/readiness while the gate is closed. Disabled or unmounted users do not need to know or operate Docker profiles directly.
-
----
-
-## Configuration
-
-See [Environment variables → Optional Control service](../operations/env-vars/#optional-control-service) for the complete list.
-
-Critical defaults:
-
-| Variable | Dev | rc / stable |
-| --- | --- | --- |
-| Control enablement | runtime/console managed | runtime/console managed |
-| Endpoint binding | `127.0.0.1:8087` | `127.0.0.1:8087` in the bundled stack; publish through a trusted reverse proxy for remote access |
-| `CONTROL_REDIS_URL` | optional (falls back to in-memory) | **required** |
-| `AUDIT_HMAC_KEY` | optional | **required**, ≥ 32 bytes hex |
-| Replay cache | in-memory, single-replica | Redis, multi-replica safe |
-| Audit sink | log only | Redis stream |
-
-The service refuses to start if any required variable is missing for the active mode; misconfigured `rc`/`stable` deployments fail fast rather than silently degrading.
-
----
-
-## Operations
-
-**Mount.** Use the authenticated interactive Console lifecycle flow or Console Control menu → mount. The engine loads the optional runtime, records mounted state, and starts Control with the endpoint gate closed.
-
-**Enable.** Use the authenticated interactive Console lifecycle flow or Console Control menu → enable. The engine opens the local gate file for the mounted runtime and records enabled state under the Caracal runtime home.
-
-**Status.** Use the authenticated interactive Console lifecycle flow or Console Control menu → status. The result includes endpoint URL, health, lifecycle, and cleanup state. Automation should query the Control API after an operator enables it.
-
-**Disable.** Use the authenticated interactive Console lifecycle flow or Console Control menu → disable. The engine closes the local gate file while keeping the mounted Control runtime loaded for fast re-enable.
-
-**Unmount.** Use the authenticated interactive Console lifecycle flow or Console Control menu → unmount. The engine removes the Control container and clears persisted lifecycle state so future stack starts do not include Control.
-
-**Health.** `GET /health` always returns `200`. Use for liveness probes.
-
-**Readiness.** `GET /ready` pings the replay backing store. Returns `200` when reachable, `503` when not. Use for readiness probes.
-
-**Shutdown.** SIGTERM/SIGINT trigger a graceful Fastify close and Redis quit. Unhandled rejections and uncaught exceptions exit the process: restart policies belong to the orchestrator.
-
-**Logging.** Pino-style line-delimited JSON via `@caracalai/core` logger. Token bodies, HMAC keys, and admin tokens are never logged.
-
-**Scaling.** The Control service is stateless. Run as many replicas as you need behind a load balancer; the replay cache must be Redis-backed (`rc`/`stable` enforces this).
-
----
-
-## Automation flow
-
-1. Open `caracal console`.
-2. Go to **control → create key** and grant only the permissions the automation needs, such as `control:zone:read`.
-3. Copy the displayed client secret. It is shown only at create or rotate time.
-4. Go to **control → issue invocation token**, choose the Control key, paste the secret, select a subset of the key permissions, and choose a TTL.
-5. Use the returned bearer token against `POST /v1/control/invoke`.
-
-Applications used for workload runtime credential injection are not Control keys and should not be used for Control API automation.
-
----
-
-## Wire example
-
-```bash
-# Prefer Console → control → issue invocation token. This raw STS request is the
-# equivalent exchange for a Console-managed Control key.
-STS=${STS:-http://localhost:8080}
-: "${ZONE_ID:?set the zone id}"
-: "${CLIENT_ID:?set the Control key client id}"
-: "${CLIENT_SECRET:?set the Control key client secret from create or rotate}"
-
-# 1. Mint a token. The requested scope must be granted on the Control key,
-# and the resource value must match CONTROL_AUDIENCE.
-TOKEN=$(curl -fsS -X POST "${STS%/}/oauth/2/token" \
-  -d "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
-  -d "zone_id=$ZONE_ID" \
-  -d "application_id=$CLIENT_ID" \
-  -d "client_secret=$CLIENT_SECRET" \
-  -d "resource=caracal-control" \
-  -d "scope=control:zone:read" \
-  -d "ttl_seconds=300" \
-  | jq -er .access_token)
-: "${TOKEN:?token mint failed}"
-
-# 2. Invoke.
-curl -sH "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"command":"zone","subcommand":"list"}' \
-  http://localhost:8087/v1/control/invoke
+```mermaid
+sequenceDiagram
+  participant Client
+  participant Control
+  participant Redis
+  participant API
+  Client->>Control: POST /v1/control/invoke
+  Control->>Control: gate enabled?
+  Control->>Control: verify JWT and scope
+  Control->>Redis: mark JTI replay key
+  Control->>Control: subject rate limit
+  Control->>API: dispatch supported management operation
 ```
 
-Responses:
+## Required config
 
-```json
-{ "ok": true, "result": [ { "id": "z1", "name": "Production", ... } ] }
-```
+| Variable | Purpose |
+| --- | --- |
+| `STS_JWKS_URL` | JWT verification keys. |
+| `STS_ISSUER_URL` | Expected issuer. |
+| `CONTROL_AUDIENCE` | Expected token audience. |
+| `CONTROL_REDIS_URL` | Replay protection and rate state in published modes. |
+| `CONTROL_API_TOKEN` | API token used for downstream dispatch. |
+| `CARACAL_API_URL` | API base URL. |
+| `CONTROL_GATE_FILE` | File gate that must exist before invoke is available. |
 
-```json
-{ "error": "denied" }           // missing scope or hidden command
-{ "error": "invalid request" }  // bad flags / unknown subcommand
-{ "error": "token replay" }     // jti seen within TTL
-{ "error": "rate limited" }     // bucket exhausted
-{ "error": "upstream error" }   // admin API unreachable
-```
+## Safety behavior
 
-Every response carries an `x-request-id` header; the same id appears in the audit row.
+Control returns `503` when the gate is disabled, `401` for authentication or replay failures, `429` for rate limiting, `403` for denied dispatch, `400` for invalid requests, `501` for unsupported commands, and `502` for upstream errors.
+
+Control is a product-management surface. Do not expose it as a top-level `caracal` runtime command.
+
+## Related pages
+
+- [CLI and Console](/runtime-console/cli-and-console/)
+- [Trust Boundaries](/architecture/trust-boundaries/)
+- [Control API Reference](/api/control-plane/)
