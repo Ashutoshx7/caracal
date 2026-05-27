@@ -1,39 +1,42 @@
 ---
 title: Configuration Precedence
-description: How Caracal resolves runtime configuration across explicit files, environment variables, and default locations.
-pageType: reference
+description: How Caracal chooses runtime profiles, environment values, file secrets, and deployment values.
+pageType: config
 ---
 
-Caracal accepts configuration from three input surfaces. When more than one is present, the loader applies a fixed precedence so the resolved configuration is deterministic. This page documents that order for both the runtime shell (`caracal up`, `caracal run`) and the SDK factories (`Caracal.connect()`, `from_env`, `from_config`).
+## Runtime workload config
 
-## Runtime shell precedence
+`caracal run` and SDK loaders use this order:
 
-`caracal run` and `caracal up` resolve runtime configuration through `loadRuntimeConfig()` in `packages/engine/src/runtimeConfig.ts`. The order is:
+1. `CARACAL_CONFIG`, when set and the file exists.
+2. Environment runtime config.
+3. `$XDG_CONFIG_HOME/caracal/caracal.toml`.
+4. `~/.config/caracal/caracal.toml`.
 
-1. **`$CARACAL_CONFIG` file** — if set and the file exists, it is parsed as TOML and used as the sole source. Environment variables are not read after this. If the variable is set but the file is missing, the load fails when configuration is required.
-2. **Environment variables** — if `$CARACAL_CONFIG` is unset and `CARACAL_*` runtime variables are present, configuration is built from them.
-3. **Default file location** — if neither of the above produced a configuration, the loader falls back to the platform default (`$XDG_CONFIG_HOME/caracal/caracal.toml`, otherwise `~/.config/caracal/caracal.toml`).
+The runtime does not read `./caracal.toml` from the current working directory.
 
-The first surface that resolves to a valid configuration wins. The remaining surfaces are not merged on top of it.
+## Environment runtime config detection
 
-## SDK precedence
+Environment config is considered when workload identity or credential-manifest variables are present, including `CARACAL_APPLICATION_ID`, `CARACAL_APP_CLIENT_SECRET`, `CARACAL_APP_CLIENT_SECRET_FILE`, `CARACAL_RUN_CREDENTIALS`, or `CARACAL_RUN_CREDENTIALS_FILE`.
 
-The SDK exposes a single entry point that mirrors the runtime resolution:
+Set only one of `CARACAL_RUN_CREDENTIALS` and `CARACAL_RUN_CREDENTIALS_FILE`.
 
-- **TypeScript** — `Caracal.connect({ configPath })` loads the explicit profile when supplied, then `CARACAL_CONFIG`, then the default profile at `$XDG_CONFIG_HOME/caracal/caracal.toml` (or `~/.config/caracal/caracal.toml`), then `fromEnv()`.
-- **Python** — `Caracal.connect(config_path=...)` loads the explicit profile when supplied, then `CARACAL_CONFIG`, then the default profile, then `from_env()`.
-- **Go** — `caracal.Connect()` loads `CARACAL_CONFIG`, then the default profile, then `FromEnv()`. Pass `ClientSecretOptions` to bypass discovery.
+## File-secret resolution
 
-`from_env()` and `from_config()` remain as explicit escape hatches when an application needs to pin a single resolution path.
+Services support `*_FILE` variants for configured secret keys. File values are resolved before validation so deployment templates can mount secrets instead of placing sensitive material directly in environment variables.
 
-## Variables consumed in each mode
+## Deployment values
 
-| Mode | Required | Optional |
-| --- | --- | --- |
-| Generated profile | `zone_id`, `application_id`, `app_client_secret_file` or `app_client_secret`, `sts_url` or `zone_url`, `coordinator_url`, at least one credential resource | `gateway_url`, `credentials[].upstream_prefix`, `optional_credentials[]` |
-| Client-secret env | `CARACAL_COORDINATOR_URL`, `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`, `CARACAL_APP_CLIENT_SECRET_FILE` or `CARACAL_APP_CLIENT_SECRET`, `CARACAL_STS_URL` | `CARACAL_APP_RESOURCES`, `CARACAL_RUN_CREDENTIALS_FILE`, `CARACAL_RUN_CREDENTIALS`, `CARACAL_RESOURCES_FILE`, `CARACAL_RESOURCES`, `CARACAL_GATEWAY_URL` |
-| Advanced subject-token env | `CARACAL_COORDINATOR_URL`, `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`, `CARACAL_SUBJECT_TOKEN` | `CARACAL_GATEWAY_URL`, `CARACAL_RESOURCES_FILE`, `CARACAL_RESOURCES` |
+| Deployment path | Precedence model |
+| --- | --- |
+| Docker Compose | Shell environment overrides defaults in compose files; secrets are mounted from files. |
+| Helm | CLI `--set` and later values files override earlier chart values; runtime Secret keys feed mounted service env. |
+| Console generated profile | Explicit values from guided setup write a profile and secret file when file writing is enabled. |
 
-## Diagnosing the resolved source
+## Troubleshooting
 
-The runtime shell records the source it loaded from (`environment`, the TOML path, or `default`) in startup logs. When debugging configuration disputes, capture that line first — it identifies which surface was applied and what the remaining surfaces would have contributed.
+| Symptom | Check |
+| --- | --- |
+| Expected profile is ignored | `CARACAL_CONFIG` may point elsewhere or environment runtime config may be winning. |
+| Service fails with missing secret | Confirm the `*_FILE` variable name is supported by that service and the file is readable. |
+| Helm values render unexpected defaults | Check values file order and CLI overrides. |

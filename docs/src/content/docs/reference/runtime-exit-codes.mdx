@@ -1,17 +1,29 @@
 ---
 title: Runtime Exit Codes
-description: Exit statuses returned by `caracal`, `caracal-console`, and `caracal-console` for scripts and orchestrator probes.
+description: Exit behavior for top-level caracal runtime shell commands and Console launch.
 pageType: reference
 ---
 
-This page no longer documents standalone management command examples. Human-facing management now runs through the Console.
+Top-level `caracal` commands are limited to local runtime lifecycle, status, purge, `run`, and Console launch.
 
-Open the interface with:
+## Exit behavior
 
-```bash
-caracal console
-```
+| Command | Success | Failure |
+| --- | --- | --- |
+| `caracal up` | `0` after stack start succeeds. | Non-zero when Compose/build/start fails. |
+| `caracal down` | `0` after stack stop succeeds. | Non-zero when Compose stop fails. |
+| `caracal status` | `0` when health probes pass. | `1` when service health fails. |
+| `caracal status --ready` | `0` when readiness probes pass. | `1` when dependency readiness fails. |
+| `caracal purge` | `0` after selected state is removed. | Non-zero when cleanup fails. |
+| `caracal run -- <command>` | Child process exit code after credentials are acquired. | Non-zero before spawn when config, credential exchange, step-up, or governance fails. |
+| `caracal console` | Console process exit code. | Non-zero when Console launcher or TTY requirements fail. |
 
-Use the matching view for the workflow covered by this page. For automation, enable the Control API from the Console Control menu and call the authenticated HTTP surface.
+## Structured output
 
-Runtime lifecycle commands (`caracal up`, `caracal down`, `caracal status`, `caracal purge`) and workload execution (`caracal run -- <command>`) remain documented in [Runtime and Console](/runtime-console/).
+`caracal status --json` emits machine-readable status. Console-owned diagnostics are available through the Console `diagnostics` view and management command catalog, not as top-level runtime shell workflows.
+
+## Related pages
+
+- [CLI and Console](/runtime-console/cli-and-console/)
+- [Runtime Lifecycle](/runtime-console/stack/)
+- [Runtime Execution](/runtime-console/runtime/)

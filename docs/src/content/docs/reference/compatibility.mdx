@@ -1,112 +1,35 @@
 ---
 title: Compatibility Matrix
-description: Supported language, infrastructure, and SDK versions for the Caracal system.
+description: Supported runtimes, package manager, service deployment targets, and docs build assumptions.
 pageType: reference
 ---
 
-All version requirements listed here reflect the pinned versions in the Caracal repository. Using earlier versions is unsupported.
+## Language runtimes
 
----
-
-## Language requirements
-
-### TypeScript and Node.js
-
-| Component | Minimum version | Notes |
-| --- | --- | --- |
-| Node.js | 24 | Required by the Console (`engines.node: ">=24"`) |
-| TypeScript | 5.x | Required by all TypeScript packages |
-
-The TypeScript SDK, connectors (Express, net/http JS), and Console all require Node.js 24 or later. Earlier Node.js releases are not tested and are not supported.
-
-### Python
-
-| Component | Minimum version | Notes |
-| --- | --- | --- |
-| Python | 3.14 | Required by all Python packages (`requires-python = ">=3.14"`) |
-
-The Python SDK, FastMCP connector, Redis connector, and the LynxCapital example all require Python 3.14 or later. Earlier Python releases are not supported.
-
-### Go
-
-| Component | Minimum version | Notes |
-| --- | --- | --- |
-| Go | 1.26 | Required by all Go modules (`go 1.26` in all `go.mod` files) |
-
-The Go SDK, net/http connector, Redis revocation connector, and all Go services (STS, Gateway, Audit, Coordinator relay) require Go 1.26. Earlier Go releases are not supported.
-
----
-
-## Infrastructure requirements
-
-### Postgres
-
-| Requirement | Value |
+| Area | Current target |
 | --- | --- |
-| Version | Postgres 18 |
-| Base image | `postgres:18-alpine` |
-| Extensions | None required beyond core |
+| TypeScript/Node packages | Node `>=24` where package engines are declared. |
+| Python packages | Python `>=3.14`. |
+| Go modules | Go `1.26` where modules declare a version. |
+| Root package manager | `pnpm@11.1.1`. |
 
-Postgres 17 and earlier are not tested and may not support all features used in the schema (partitioning, advisory locks, or generated column behavior). Use the pinned `postgres:18-alpine` image for Docker deployments.
+## Deployment targets
 
-### Redis
-
-| Requirement | Value |
+| Target | Source |
 | --- | --- |
-| Version | Redis 8 |
-| Base image | `redis:8-alpine` |
-| Required policy | `maxmemory-policy noeviction` |
-| Persistence | AOF (`appendonly yes`, `appendfsync everysec`) |
+| Local development | `caracal up` and `infra/docker/docker-compose.yml`. |
+| Self-hosted Compose | `infra/docker/runtime-compose.yml` with versioned GHCR images. |
+| Kubernetes | `infra/helm/caracal`. |
+| Docs site | Astro `^6.3.1` and Starlight `0.39.2`. |
 
-Redis 7 and earlier are not tested. The noeviction policy is mandatory: eviction of stream or session data causes correctness failures in the revocation pipeline.
+## Platform notes
 
----
+- Runtime and Console binaries are documented for Linux, macOS, and Windows launchers where release packaging provides them.
+- Local OSS ports must remain distinct from any enterprise product ports.
+- Published modes are `rc` and `stable`; both enforce stricter service config.
 
-## Package versions
+## Related pages
 
-Use packages from the same Caracal release tag. Keep dependent packages within each ecosystem on the version set published for that release; mixing SDKs, connectors, transports, or services across release boundaries is unsupported. Package version numbers can differ across ecosystems, so the repository release tag is the source of truth for a compatible set.
-
-### TypeScript packages
-
-| Package | Import path |
-| --- | --- |
-| Core | `@caracalai/core` |
-| SDK | `@caracalai/sdk` |
-| Express connector | `@caracalai/mcp-express` |
-| Redis connector | `@caracalai/revocation-redis` |
-
-### Python packages
-
-| Package | Import name |
-| --- | --- |
-| Core | `caracalai_core` |
-| SDK | `caracalai_sdk` |
-| FastMCP connector | `caracalai_mcp_fastmcp` |
-| Redis connector | `caracalai_revocation_redis` |
-
-### Go modules
-
-| Module | Import path |
-| --- | --- |
-| Core | `github.com/garudex-labs/caracal/packages/core/go` |
-| SDK | `github.com/garudex-labs/caracal/packages/sdk/go` |
-| net/http connector | `github.com/garudex-labs/caracal/packages/connectors/nethttp/go` |
-| Redis connector | `github.com/garudex-labs/caracal/packages/connectors/redis/go` |
-
----
-
-## Service compatibility
-
-Caracal services and client packages must run at the same release version. The five services (STS, API, Gateway, Coordinator, Audit) are versioned and deployed together. Deploying mismatched service versions is unsupported and may produce undefined behavior in the delegation graph traversal, audit chain, or mandate validation.
-
----
-
-## Docker Compose
-
-The provided `docker-compose.yml` at `infra/docker/docker-compose.yml` pins all service images to their tested versions. For production deployments, do not override image tags unless you have validated the alternative image against the full test suite.
-
----
-
-## Browser support (docs and UI)
-
-The Caracal documentation site and any web UI components in examples target modern evergreen browsers (Chrome, Firefox, Safari, Edge: current and one prior release). Internet Explorer is not supported.
+- [Release and Package Versions](/reference/release-package-runtime-map/)
+- [Kubernetes with Helm](/operations/kubernetes-helm/)
+- [Contributing Setup](/contributing/setup/)

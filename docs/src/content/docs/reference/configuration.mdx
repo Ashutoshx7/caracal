@@ -1,17 +1,67 @@
 ---
 title: Configuration Reference
-description: Where Caracal configuration lives, which pages own each configuration surface, and the client-side schemas used by tools and SDKs.
-pageType: reference
+description: Runtime profile, service environment, and deployment configuration keys.
+pageType: config
 ---
 
-This page no longer documents standalone management command examples. Human-facing management now runs through the Console.
+Caracal has three configuration domains:
 
-Open the interface with:
+| Domain | Used by | Choose it when |
+| --- | --- | --- |
+| Runtime workload config | `caracal run` and SDK clients. | A workload needs Caracal-issued resource credentials. |
+| Service environment config | API, STS, Gateway, Audit, Coordinator, and Control. | A service needs URLs, secrets, limits, or readiness settings. |
+| Deployment values | Helm, Compose, Postgres, and Redis. | Operators size, schedule, expose, or secure infrastructure. |
 
-```bash
-caracal console
+```mermaid
+flowchart TD
+  Need{What are you configuring?}
+  Need -->|workload credentials| Runtime[Runtime profile and CARACAL_CONFIG]
+  Need -->|service behavior| Env[Service environment variables]
+  Need -->|deployment shape| Deploy[Helm values or Compose files]
+  Runtime --> Precedence[Config precedence reference]
+  Env --> Ops[Environment variables reference]
+  Deploy --> Platform[Operations deployment pages]
 ```
 
-Use the matching view for the workflow covered by this page. For automation, enable the Control API from the Console Control menu and call the authenticated HTTP surface.
+## Runtime profile fields
 
-Runtime lifecycle commands (`caracal up`, `caracal down`, `caracal status`, `caracal purge`) and workload execution (`caracal run -- <command>`) remain documented in [Runtime and Console](/runtime-console/).
+| Field | Meaning |
+| --- | --- |
+| `zone_url` | STS zone URL for token exchange. |
+| `sts_url` | SDK-readable STS alias/fallback. |
+| `coordinator_url` | SDK/Console Coordinator URL. |
+| `gateway_url` | Gateway URL for SDK transports. |
+| `zone_id` | Zone identifier. |
+| `application_id` | Confidential application ID. |
+| `app_client_secret_file` | Preferred secret-file path. |
+| `app_client_secret` | Inline local-development secret. |
+| `continue_on_failure` | Required credential failure behavior. |
+| `credentials[]` | Required resource credentials. |
+| `optional_credentials[]` | Optional resource credentials with `on_failure`. |
+| `mcp_governance.mode` | `block` or `log` for likely MCP subprocesses. |
+
+Credential entries use `env`, `resource`, and optional `upstream_prefix`.
+
+## Core service env keys
+
+| Key | Services |
+| --- | --- |
+| `CARACAL_MODE` | All services. |
+| `DATABASE_URL` / `DATABASE_URL_FILE` | API, STS, Gateway, Audit, Coordinator. |
+| `REDIS_URL` / `REDIS_URL_FILE` | API, STS, Gateway, Audit, Coordinator. |
+| `STREAMS_HMAC_KEY` / `STREAMS_HMAC_KEY_FILE` | Stream producers and consumers. |
+| `AUDIT_HMAC_KEY` / `AUDIT_HMAC_KEY_FILE` | Audit producers and Audit service. |
+| `GATEWAY_STS_HMAC_KEY` / `GATEWAY_STS_HMAC_KEY_FILE` | API, STS, Gateway. |
+| `ZONE_KEK` / `ZONE_KEK_FILE` | API and STS. |
+| `CARACAL_ADMIN_TOKEN` / `CARACAL_ADMIN_TOKEN_FILE` | API and management clients. |
+| `CARACAL_COORDINATOR_TOKEN` / `CARACAL_COORDINATOR_TOKEN_FILE` | Coordinator and Console agent/delegation views. |
+
+## Deployment values
+
+Helm values live under `infra/helm/caracal/values.yaml`. Compose environment and secrets are defined by `infra/docker/docker-compose.yml` and `infra/docker/runtime-compose.yml`.
+
+## Related pages
+
+- [Configuration File](/runtime-console/config-file/)
+- [Environment Variables](/operations/env-vars/)
+- [Cloud-Native Deployment Profiles](/operations/cloud-native-profiles/)
