@@ -67,6 +67,8 @@ services:
       - ALL
     cap_add:
       - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
     read_only: true
     command:
       - sh
