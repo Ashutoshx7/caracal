@@ -13,42 +13,28 @@ import {
 } from '@caracalai/engine/runtime-config'
 import { access, chmod, mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { sanitizeAnsi, truncate, ui } from '../ansi.ts'
+import { truncate, ui } from '../ansi.ts'
 import type { Key } from '../keys.ts'
 import { maskSecretField, scrubTokens } from '../errors.ts'
 import type { App, View, ViewContext } from '../screen.ts'
 import { DetailView } from './detail.ts'
-import { FormView } from './form.ts'
+import { FormView, type Field } from './form.ts'
 import { infoPage, openInfo } from './info.ts'
 import { EntityPickerView } from './picker.ts'
 import type { Ctx } from './factory.ts'
 
 const DEFAULT_GATEWAY_URL = 'http://localhost:8081'
 const PROVIDER_KINDS: ProviderKind[] = ['oauth2', 'oidc', 'apikey', 'workload']
-const BRACKETED_PASTE_PATTERN = /\u001b\[(?:200|201)~/g
-const ANSI_SEQUENCE_PATTERN = /\u001b\[[0-9;?]*[A-Za-z~]/g
-const NAMED_KEYS = new Set([
-  'up',
-  'down',
-  'left',
-  'right',
-  'enter',
-  'esc',
-  'tab',
-  'backspace',
-  'pgup',
-  'pgdn',
-  'home',
-  'end',
-  'ctrl-c',
-])
 
 interface SetupValues {
+  zone_mode?: string
   selected_zone_id?: string
   zone_name?: string
+  application_mode?: string
   selected_agent_app_id?: string
   agent_app_name?: string
   existing_app_client_secret?: string
+  resource_mode?: string
   selected_resource_id?: string
   resource_identifier?: string
   resource_name?: string
@@ -56,6 +42,7 @@ interface SetupValues {
   upstream_url?: string
   request_path?: string
   advanced_options?: string
+  provider_mode?: string
   selected_provider_id?: string
   provider_name?: string
   provider_identifier?: string
@@ -122,37 +109,24 @@ export function firstSetupView(ctx: Ctx): View {
   return new FirstSetupWizardView(ctx)
 }
 
-type SetupStepKey =
-  | 'zone'
-  | 'application'
-  | 'resource'
-  | 'upstream'
-  | 'provider'
-  | 'provider_kind'
-  | 'provider_issuer'
-  | 'provider_token_endpoint'
-  | 'provider_api_key_header'
-  | 'provider_workload_audience'
-  | 'scopes'
-  | 'review'
+type SetupStepKey = 'zone' | 'application' | 'provider' | 'resource' | 'review'
 
 interface SetupStep {
   key: SetupStepKey
-  question: string
+  title: string
   explanation: string
-  emptyLabel: string
-  kind?: 'text' | 'bool'
-  required?: boolean
-  picker?: boolean
-  options?: string[]
 }
 
 class FirstSetupWizardView implements View {
   readonly title = 'guided setup'
-  readonly isTextEntry = true
+  readonly isTextEntry = false
   private readonly ctx: Ctx
   private step: SetupStepKey = 'zone'
   private values: SetupValues = {
+    zone_mode: 'create',
+    application_mode: 'create',
+    provider_mode: 'create',
+    resource_mode: 'create',
     activate_policy: 'true',
     generate_profile: 'true',
     write_files: 'false',
@@ -180,32 +154,34 @@ class FirstSetupWizardView implements View {
 
   hints(): string[] {
     if (this.submitting) return []
-    if (this.step === 'review') return ['enter:create', 'left:back', 'A:advanced', '?:info', 'esc:cancel']
-    const step = this.currentStep()
-    const hints = ['enter:next', 'left:back', 'A:advanced', '?:info', 'esc:cancel']
-    if (step.kind === 'bool') hints.unshift('space:toggle')
-    else if (step.options) hints.unshift('→:option')
-    else hints.unshift('type:answer')
-    if (step.options) hints.push('→:option')
-    else if (step.picker) hints.push('→:select')
-    return hints
+    return this.step === 'review'
+      ? ['enter:create', '↑/↓:steps', 'A:advanced', '?:guide', 'esc:cancel']
+      : ['enter:open page', '↑/↓:steps', 'A:advanced', '?:guide', 'esc:cancel']
   }
 
   render(ctx: ViewContext): string[] {
     this.normalizeStep()
-    if (this.step === 'review') return this.renderReview(ctx)
-    const step = this.currentStep()
     const steps = this.steps()
+    const step = this.currentStep()
     const lines: string[] = [
       '',
-      ' ' + ui.title(`Step ${steps.indexOf(this.step) + 1} of ${steps.length}: ${step.question}`),
+      ' ' + ui.title(`Step ${steps.indexOf(this.step) + 1} of ${steps.length}: ${step.title}`),
       ' ' + ui.muted(step.explanation),
       '',
-      ` ${ui.muted('Answer')} ${this.renderInput(step)}`,
+      ' ' + ui.accent('+-- guided path -----------------------------------------------------------+'),
+      ' ' + ui.muted('| Open each page, fill the guided fields, press ? for field help, then save. |'),
+      ' ' + ui.accent('+------------------------------------------------------------------------+'),
+      '',
     ]
-    if (step.required) lines.push(' ' + ui.muted('Required for first success.'))
-    if (step.options) lines.push(' ' + ui.muted('Press right arrow to cycle options.'))
-    else if (step.picker) lines.push(' ' + ui.muted('Press right arrow to choose an existing item, or type a name to create one.'))
+    for (const item of steps) {
+      const active = item === this.step
+      const mark = active ? '> ' : '  '
+      const label = this.stepTitle(item)
+      lines.push(` ${active ? ui.accent(mark) : mark}${ui.muted(label.padEnd(18))}${this.stepStatus(item)}`)
+    }
+    lines.push('')
+    if (this.step === 'review') lines.push(' ' + ui.key('enter') + ui.muted(':create setup  ') + ui.key('A') + ui.muted(':advanced'))
+    else lines.push(' ' + ui.key('enter') + ui.muted(':open guided page  ') + ui.key('?') + ui.muted(':step guide'))
     if (this.submitting) lines.push('', ' ' + ui.muted('creating setup...'))
     return lines.map((line) => truncate(line, ctx.size.cols))
   }
@@ -229,125 +205,43 @@ class FirstSetupWizardView implements View {
       this.previousStep()
       return
     }
+    if (key === 'right' || key === 'down' || key === 'tab') {
+      this.nextVisibleStep()
+      return
+    }
     if (this.step === 'review') {
       if (key === 'enter') await this.create(ctx.app)
       return
     }
-    const step = this.currentStep()
-    if (key === 'right' && step.options) {
-      this.cycleOption(step)
-      return
-    }
-    if (key === 'right' && step.picker) {
-      await this.openPicker(ctx.app)
-      return
-    }
-    if (key === 'space' && step.kind === 'bool') {
-      const valueKey = stepValueKey(step.key)
-      if (valueKey) this.values[valueKey] = this.values[valueKey] === 'true' ? 'false' : 'true'
-      return
-    }
-    if (key === 'enter' || key === 'tab' || key === 'down') {
-      this.nextStep(ctx.app)
-      return
-    }
-    if (step.kind === 'bool' || step.options) return
-    if (key === 'backspace') {
-      const valueKey = stepValueKey(step.key)
-      this.setTextValue(step.key, ((valueKey ? this.values[valueKey] : '') ?? '').slice(0, -1))
-      return
-    }
-    const text = textInput(key)
-    if (text !== undefined) this.appendText(step.key, text)
+    if (key === 'enter') this.openStepPage(ctx.app)
   }
 
   private currentStep(): SetupStep {
     const steps: Record<SetupStepKey, SetupStep> = {
       zone: {
         key: 'zone',
-        question: 'Choose or create a zone',
-        explanation: 'A zone groups the apps, resources, and policies for one workload or team.',
-        emptyLabel: 'zone name',
-        required: true,
-        picker: true,
+        title: 'Zone',
+        explanation: 'Choose the boundary where this onboarding will create or select every object.',
       },
       application: {
         key: 'application',
-        question: 'Create or select an agent app',
-        explanation: 'The agent app is the workload identity that will ask for access to the resource.',
-        emptyLabel: 'agent app name',
-        required: true,
-        picker: this.hasExistingZone(),
-      },
-      resource: {
-        key: 'resource',
-        question: 'Create or select a resource',
-        explanation: 'A resource is the protected API, OAuth audience, gRPC service, MCP server, or SDK capability this agent app will call.',
-        emptyLabel: 'resource name',
-        required: true,
-        picker: this.hasExistingZone(),
-      },
-      upstream: {
-        key: 'upstream',
-        question: 'Enter external upstream URL',
-        explanation: 'Most first setups protect an external API, gRPC service, MCP server, or SDK endpoint through Gateway. Leave blank only for a direct Caracal resource.',
-        emptyLabel: 'https://api.example.com',
+        title: 'Agent app',
+        explanation: 'Create or select the workload identity that will request access.',
       },
       provider: {
         key: 'provider',
-        question: 'Choose or create a credential provider',
-        explanation: 'A provider supplies upstream OAuth/OIDC, API-key, or workload identity context for this Gateway-routed resource. Leave blank only when the upstream needs no provider credentials.',
-        emptyLabel: 'provider name',
-        picker: this.hasExistingZone(),
+        title: 'Provider',
+        explanation: 'Create or select the external credential source before defining the resource that will use it.',
       },
-      provider_kind: {
-        key: 'provider_kind',
-        question: 'Choose provider type',
-        explanation: 'Provider type controls the credential fields needed below.',
-        emptyLabel: 'oauth2',
-        required: true,
-        options: [...PROVIDER_KINDS],
-      },
-      provider_issuer: {
-        key: 'provider_issuer',
-        question: 'Enter provider issuer',
-        explanation: 'Issuer identifies the OIDC or workload identity trust authority.',
-        emptyLabel: 'https://issuer.example.com',
-        required: true,
-      },
-      provider_token_endpoint: {
-        key: 'provider_token_endpoint',
-        question: 'Enter provider token endpoint',
-        explanation: 'Gateway uses this HTTPS endpoint to exchange or refresh upstream provider tokens.',
-        emptyLabel: 'https://issuer.example.com/oauth/token',
-        required: true,
-      },
-      provider_api_key_header: {
-        key: 'provider_api_key_header',
-        question: 'Enter API key header',
-        explanation: 'This is the HTTP header where the upstream service expects its API key.',
-        emptyLabel: 'X-API-Key',
-        required: true,
-      },
-      provider_workload_audience: {
-        key: 'provider_workload_audience',
-        question: 'Enter workload audience',
-        explanation: 'Audience is the exact value the workload identity provider expects for exchanged tokens.',
-        emptyLabel: 'api://payments',
-        required: true,
-      },
-      scopes: {
-        key: 'scopes',
-        question: 'Enter Caracal scopes',
-        explanation: 'A Caracal scope is the permission your policy evaluates for this resource. Keep upstream OAuth scopes in the provider config.',
-        emptyLabel: 'Caracal scopes',
-        required: true,
+      resource: {
+        key: 'resource',
+        title: 'Resource',
+        explanation: 'Create or select the protected API, OAuth audience, gRPC service, MCP server, or SDK capability.',
       },
       review: {
         key: 'review',
-        question: 'Review and create',
+        title: 'Review and create',
         explanation: 'Check the setup plan, then create the missing objects and first access policy.',
-        emptyLabel: '',
       },
     }
     return steps[this.step]
@@ -356,20 +250,7 @@ class FirstSetupWizardView implements View {
   private steps(): SetupStepKey[] {
     const steps: SetupStepKey[] = []
     if (!this.selectedZone) steps.push('zone')
-    steps.push('application', 'resource')
-    if (!this.selectedResource) steps.push('upstream')
-    if (this.needsProviderStep()) {
-      steps.push('provider')
-      if (this.needsProviderCreateSteps()) {
-        steps.push('provider_kind')
-        const kind = providerKind(this.values.provider_kind)
-        if (kind === 'oidc' || kind === 'workload') steps.push('provider_issuer')
-        if (kind === 'oauth2' || kind === 'oidc' || kind === 'workload') steps.push('provider_token_endpoint')
-        if (kind === 'apikey') steps.push('provider_api_key_header')
-        if (kind === 'workload') steps.push('provider_workload_audience')
-      }
-    }
-    if (this.needsScopesStep()) steps.push('scopes')
+    steps.push('application', 'provider', 'resource')
     steps.push('review')
     return steps
   }
@@ -379,68 +260,27 @@ class FirstSetupWizardView implements View {
     if (!steps.includes(this.step)) this.step = steps[0] ?? 'review'
   }
 
-  private needsScopesStep(): boolean {
-    return !this.selectedResource || splitList(this.values.resource_scopes).length === 0
+  private stepTitle(step: SetupStepKey): string {
+    return this.stepDefinition(step).title
   }
 
-  private needsProviderStep(): boolean {
-    return !this.selectedResource && Boolean(trimmed(this.values.upstream_url))
+  private stepDefinition(step: SetupStepKey): SetupStep {
+    const current = this.step
+    this.step = step
+    const definition = this.currentStep()
+    this.step = current
+    return definition
   }
 
-  private needsProviderCreateSteps(): boolean {
-    return this.needsProviderStep() && !this.selectedProvider && Boolean(trimmed(this.values.provider_name))
+  private stepStatus(step: SetupStepKey): string {
+    if (step === 'zone') return this.selectedZone ? `${zoneLabel(this.selectedZone)} selected` : trimmed(this.values.zone_name) ? `${this.values.zone_name} will be created` : ui.muted('open page')
+    if (step === 'application') return this.selectedApplication ? `${this.selectedApplication.name} selected` : trimmed(this.values.agent_app_name) ? `${this.values.agent_app_name} will be created` : ui.muted('open page')
+    if (step === 'provider') return this.providerReviewLabel()
+    if (step === 'resource') return this.selectedResource ? `${resourceLabel(this.selectedResource)} selected` : trimmed(this.values.resource_name) ? `${this.values.resource_name} will be created` : ui.muted('open page')
+    return this.validateReady() ? ui.muted('complete required pages first') : 'ready'
   }
 
-  private renderInput(step: SetupStep): string {
-    const key = stepValueKey(step.key)
-    if (step.kind === 'bool') return ui.input((key && this.values[key] === 'true') ? '[ yes ]' : '[ no ]')
-    const value = this.displayValue(step.key)
-    return ui.input(`[ ${sanitizeAnsi(value || `<${step.emptyLabel}>`)} ]`)
-  }
-
-  private displayValue(step: SetupStepKey): string {
-    if (step === 'zone' && this.selectedZone && !this.values.zone_name) return `${zoneLabel(this.selectedZone)} (selected)`
-    if (step === 'application' && this.selectedApplication && !this.values.agent_app_name) return `${this.selectedApplication.name} (selected)`
-    if (step === 'resource' && this.selectedResource && !this.values.resource_name) return `${resourceLabel(this.selectedResource)} (selected)`
-    if (step === 'provider' && this.selectedProvider && !this.values.provider_name) return `${providerLabel(this.selectedProvider)} (selected)`
-    if (step === 'provider_kind') return providerKind(this.values.provider_kind)
-    if (step === 'resource' && this.values.resource_name && !this.selectedResource) {
-      return this.values.resource_name
-    }
-    const key = stepValueKey(step)
-    return key ? this.values[key] ?? '' : ''
-  }
-
-  private renderReview(ctx: ViewContext): string[] {
-    const resourceName = this.selectedResource ? resourceLabel(this.selectedResource) : requiredText(this.values.resource_name, 'resource is required')
-    const resourceIdentifier = this.selectedResource?.identifier ?? resourceIdentifierFor(this.values)
-    const lines: string[] = [
-      '',
-      ' ' + ui.title('Review and create'),
-      ' ' + ui.muted('Console will create only what is missing and keep internal IDs resolved in the background.'),
-      '',
-      ` ${ui.muted('Zone')} ${this.selectedZone ? `${zoneLabel(this.selectedZone)} (selected)` : `${this.values.zone_name} (create)`}`,
-      ` ${ui.muted('Agent app')} ${this.selectedApplication ? `${this.selectedApplication.name} (selected)` : `${this.values.agent_app_name} (create)`}`,
-      ` ${ui.muted('Resource')} ${resourceName}${this.selectedResource ? ' (selected)' : ' (create)'}`,
-      ` ${ui.muted('Resource identifier')} ${resourceIdentifier}`,
-      ` ${ui.muted('Credential provider')} ${this.providerReviewLabel()}`,
-      ` ${ui.muted('Caracal scopes')} ${splitList(this.values.resource_scopes).join(', ') || '<required>'}`,
-      ` ${ui.muted('Access policy')} ${bool(this.values.activate_policy) ? 'create and activate real Rego allow-list' : 'skip'}`,
-      ` ${ui.muted('Gateway')} ${trimmed(this.values.upstream_url) ? `${this.values.upstream_url}${normalizeRequestPath(this.values.request_path) ?? ''}` : 'skip for now'}`,
-      ` ${ui.muted('Runtime profile')} ${boolDefault(this.values.generate_profile, true) ? boolDefault(this.values.write_files, false) ? 'write profile and secret files' : 'show commands only' : 'skip'}`,
-      '',
-      ' ' + ui.key('enter') + ui.muted(':create  ') + ui.key('A') + ui.muted(':advanced  ') + ui.key('left') + ui.muted(':back'),
-    ]
-    if (this.submitting) lines.push(' ' + ui.muted('creating setup...'))
-    return lines.map((line) => truncate(line, ctx.size.cols))
-  }
-
-  private nextStep(app: App): void {
-    const message = this.validateStep()
-    if (message) {
-      app.setStatus(message, 'error')
-      return
-    }
+  private nextVisibleStep(): void {
     const steps = this.steps()
     const index = steps.indexOf(this.step)
     this.step = steps[Math.min(index + 1, steps.length - 1)] ?? 'review'
@@ -450,127 +290,6 @@ class FirstSetupWizardView implements View {
     const steps = this.steps()
     const index = steps.indexOf(this.step)
     this.step = steps[Math.max(0, index - 1)] ?? 'review'
-  }
-
-  private cycleOption(step: SetupStep): void {
-    if (!step.options || step.options.length === 0) return
-    const key = stepValueKey(step.key)
-    if (!key) return
-    const current = this.values[key] || step.options[0]!
-    const index = step.options.indexOf(current)
-    this.setTextValue(step.key, step.options[(index + 1) % step.options.length]!)
-  }
-
-  private validateStep(): string | undefined {
-    if (this.step === 'zone' && !this.selectedZone && !trimmed(this.values.zone_name)) return 'zone is required'
-    if (this.step === 'application' && !this.selectedApplication && !trimmed(this.values.agent_app_name)) return 'agent app is required'
-    if (this.step === 'resource' && !this.selectedResource && !trimmed(this.values.resource_name)) return 'resource is required'
-    if (this.step === 'provider_kind' && !PROVIDER_KINDS.includes(providerKind(this.values.provider_kind))) return 'provider type is required'
-    if (this.step === 'provider_issuer' && !trimmed(this.values.provider_issuer)) return 'provider issuer is required'
-    if (this.step === 'provider_token_endpoint' && !trimmed(this.values.provider_token_endpoint)) return 'provider token endpoint is required'
-    if (this.step === 'provider_api_key_header' && !trimmed(this.values.provider_api_key_header)) return 'API key header is required'
-    if (this.step === 'provider_workload_audience' && !trimmed(this.values.provider_workload_audience)) return 'workload audience is required'
-    if (this.step === 'scopes' && splitList(this.values.resource_scopes).length === 0) return 'at least one Caracal scope is required'
-    return undefined
-  }
-
-  private async openPicker(app: App): Promise<void> {
-    if (this.step === 'zone') {
-      app.push(new EntityPickerView<Zone>({
-        title: 'choose zone',
-        load: () => this.ctx.client.zones.list(),
-        value: (row) => row.id,
-        label: zoneLabel,
-        description: (row) => row.slug,
-        onPick: async (id) => {
-          this.selectedZone = await this.ctx.client.zones.get(id)
-          this.values.selected_zone_id = id
-          this.values.zone_name = ''
-          this.clearZoneDependents()
-        },
-      }))
-      return
-    }
-    const zoneId = this.selectedZone?.id
-    if (!zoneId) {
-      app.setStatus('select an existing zone before picking existing apps or resources', 'error')
-      return
-    }
-    if (this.step === 'application') {
-      app.push(new EntityPickerView<Application>({
-        title: 'choose agent app',
-        load: () => this.ctx.client.applications.list(zoneId),
-        value: (row) => row.id,
-        label: (row) => row.name,
-        description: (row) => row.credential_type,
-        onPick: async (id) => {
-          this.selectedApplication = await this.ctx.client.applications.get(zoneId, id)
-          this.values.selected_agent_app_id = id
-          this.values.agent_app_name = ''
-          this.values.existing_app_client_secret = ''
-        },
-      }))
-      return
-    }
-    if (this.step === 'resource') {
-      app.push(new EntityPickerView<Resource>({
-        title: 'choose resource',
-        load: async () => userResources(await this.ctx.client.resources.list(zoneId)),
-        value: (row) => row.id,
-        label: resourceLabel,
-        description: (row) => [row.identifier, (row.scopes ?? []).join(',')].filter(Boolean).join('  '),
-        onPick: async (id) => {
-          this.selectedResource = await this.ctx.client.resources.get(zoneId, id)
-          this.values.selected_resource_id = id
-          this.values.resource_name = ''
-          this.values.resource_scopes = (this.selectedResource.scopes ?? []).join(',')
-          this.values.upstream_url = this.selectedResource.upstream_url ?? ''
-          this.values.selected_provider_id = this.selectedResource.credential_provider_id ?? ''
-        },
-      }))
-      return
-    }
-    if (this.step === 'provider') {
-      app.push(new EntityPickerView<Provider>({
-        title: 'choose provider',
-        load: () => this.ctx.client.providers.list(zoneId),
-        value: (row) => row.id,
-        label: providerLabel,
-        description: (row) => [row.identifier, row.kind ?? undefined].filter(Boolean).join('  '),
-        onPick: async (id) => {
-          this.selectedProvider = await this.ctx.client.providers.get(zoneId, id)
-          this.values.selected_provider_id = id
-          this.values.provider_name = ''
-          this.clearProviderCreateValues()
-        },
-      }))
-    }
-  }
-
-  private appendText(step: SetupStepKey, text: string): void {
-    if (step === 'zone' && this.selectedZone) this.clearZoneSelection()
-    if (step === 'application' && this.selectedApplication) this.clearApplicationSelection()
-    if (step === 'resource' && this.selectedResource) this.clearResourceSelection()
-    if (step === 'provider' && this.selectedProvider) this.clearProviderSelection()
-    if (step === 'provider_kind') this.clearProviderTypeValues()
-    const key = stepValueKey(step)
-    if (key) this.values[key] = (this.values[key] ?? '') + text
-  }
-
-  private setTextValue(step: SetupStepKey, value: string): void {
-    if (step === 'zone' && this.selectedZone) this.clearZoneSelection()
-    if (step === 'application' && this.selectedApplication) this.clearApplicationSelection()
-    if (step === 'resource' && this.selectedResource) this.clearResourceSelection()
-    if (step === 'provider' && this.selectedProvider) this.clearProviderSelection()
-    if (step === 'provider_kind') this.clearProviderTypeValues()
-    const key = stepValueKey(step)
-    if (key) this.values[key] = value
-  }
-
-  private clearZoneSelection(): void {
-    this.selectedZone = undefined
-    this.values.selected_zone_id = ''
-    this.clearZoneDependents()
   }
 
   private clearZoneDependents(): void {
@@ -619,8 +338,163 @@ class FirstSetupWizardView implements View {
     this.values.provider_forward_caracal_identity = 'false'
   }
 
-  private hasExistingZone(): boolean {
-    return Boolean(this.selectedZone?.id)
+  private currentZoneId(): string | undefined {
+    return this.selectedZone?.id ?? trimmed(this.values.selected_zone_id) ?? this.ctx.zoneId
+  }
+
+  private hasProviderSelection(): boolean {
+    return this.values.provider_mode !== 'none' && Boolean(trimmed(this.values.selected_provider_id) ?? trimmed(this.values.provider_name))
+  }
+
+  private openStepPage(app: App): void {
+    if (this.step === 'zone') this.openZonePage(app)
+    else if (this.step === 'application') this.openApplicationPage(app)
+    else if (this.step === 'provider') this.openProviderPage(app)
+    else if (this.step === 'resource') this.openResourcePage(app)
+  }
+
+  private openZonePage(app: App): void {
+    app.push(new FormView({
+      title: 'guided setup / zone',
+      submitLabel: 'save zone',
+      info: guidedInfo('Zone setup', 'A zone is the workspace boundary for apps, providers, resources, policies, and grants.', 'Team Payments production', 'Create a named zone or pick an existing zone.', 'The selected zone is used by every later setup page.'),
+      fields: [
+        { key: 'zone_mode', label: 'zone action', kind: 'select', options: ['create', 'select'], default: this.values.zone_mode ?? 'create', info: guidedInfo('Zone action', 'Choose whether setup should create a zone or reuse one.', 'select when the production zone already exists', 'create or select', 'Setup either stores the typed zone name or resolves the picked zone ID.') },
+        { key: 'zone_name', label: 'zone name', kind: 'text', required: true, default: this.values.zone_name ?? '', dependsOn: { zone_mode: 'create' }, info: guidedInfo('Zone name', 'Human-readable boundary name for this workload or team.', 'Payments Production', 'Short text, not an internal ID.', 'Console creates the zone before creating apps, providers, and resources.') },
+        { key: 'selected_zone_id', label: 'existing zone', kind: 'text', required: true, default: this.values.selected_zone_id ?? '', dependsOn: { zone_mode: 'select' }, pick: zonePicker(this.ctx), resolve: zoneResolver(this.ctx), info: guidedInfo('Existing zone', 'Pick the zone that should own this setup.', 'Payments Production', 'Use the picker instead of typing an ID.', 'Console resolves the zone and skips zone creation.') },
+      ],
+      onSubmit: async (raw, formApp) => {
+        Object.assign(this.values, raw)
+        if (raw.zone_mode === 'select') {
+          this.selectedZone = await this.ctx.client.zones.get(requiredText(raw.selected_zone_id, 'zone is required'))
+          this.values.zone_name = ''
+        } else {
+          this.selectedZone = undefined
+          this.values.selected_zone_id = ''
+          this.clearZoneDependents()
+        }
+        formApp.pop()
+        this.step = 'application'
+      },
+    }))
+  }
+
+  private openApplicationPage(app: App): void {
+    const zoneId = this.currentZoneId()
+    if (!zoneId && !trimmed(this.values.zone_name)) {
+      app.setStatus('complete the zone page before the agent app page', 'error')
+      return
+    }
+    app.push(new FormView({
+      title: 'guided setup / agent app',
+      submitLabel: 'save app',
+      info: guidedInfo('Agent app setup', 'The app is the workload identity that receives Caracal tokens.', 'payments-worker', 'Create a managed token app or pick an existing app.', 'Setup creates or selects this app before policies and runtime profile output are generated.'),
+      fields: [
+        { key: 'application_mode', label: 'app action', kind: 'select', options: ['create', 'select'], default: this.values.application_mode ?? 'create', info: guidedInfo('App action', 'Choose whether setup should create the workload app or reuse one.', 'create for a first worker service', 'create or select', 'Console uses the app as the requesting principal in the generated policy.') },
+        { key: 'agent_app_name', label: 'app name', kind: 'text', required: true, default: this.values.agent_app_name ?? '', dependsOn: { application_mode: 'create' }, info: guidedInfo('App name', 'Name of the workload that will request resource access.', 'payments-worker', 'Short text, not an internal ID.', 'Console creates a managed token app and reveals its one-time client secret in the result.') },
+        { key: 'selected_agent_app_id', label: 'existing app', kind: 'text', required: true, default: this.values.selected_agent_app_id ?? '', dependsOn: { application_mode: 'select' }, pick: applicationPicker(this.ctx, () => this.currentZoneId()), resolve: applicationResolver(this.ctx, () => this.currentZoneId()), info: guidedInfo('Existing app', 'Pick an app that already represents this workload.', 'payments-worker', 'Use the picker instead of typing an ID.', 'Console uses the selected app in the generated policy and profile.') },
+        { key: 'existing_app_client_secret', label: 'existing app secret', kind: 'text', default: this.values.existing_app_client_secret ?? '', dependsOn: { application_mode: 'select' }, advanced: true, info: guidedInfo('Existing app secret', 'Client secrets cannot be retrieved later, so file writing needs the existing secret.', 'cs_live_...', 'Secret text from your secure store.', 'If profile file writing is enabled, Console writes this secret to the generated secret file.') },
+      ],
+      onSubmit: async (raw, formApp) => {
+        Object.assign(this.values, raw)
+        if (raw.application_mode === 'select') {
+          const id = requiredText(raw.selected_agent_app_id, 'agent app is required')
+          this.selectedApplication = zoneId ? await this.ctx.client.applications.get(zoneId, id) : undefined
+          this.values.agent_app_name = ''
+        } else {
+          this.clearApplicationSelection()
+          this.values.agent_app_name = raw.agent_app_name
+        }
+        formApp.pop()
+        this.step = 'provider'
+      },
+    }))
+  }
+
+  private openProviderPage(app: App): void {
+    const zoneId = this.currentZoneId()
+    if (!zoneId && !trimmed(this.values.zone_name)) {
+      app.setStatus('complete the zone page before the provider page', 'error')
+      return
+    }
+    app.push(new FormView({
+      title: 'guided setup / provider',
+      submitLabel: 'save provider',
+      info: guidedInfo('Provider setup', 'A provider describes the upstream credential source Caracal will use for an external service.', 'Okta OAuth provider for the payments API', 'Create, select, or choose none for direct Caracal resources.', 'Setup creates or links the provider before the resource page so the resource can attach it cleanly.'),
+      fields: [
+        { key: 'provider_mode', label: 'provider action', kind: 'select', options: ['create', 'select', 'none'], default: this.values.provider_mode ?? 'create', info: guidedInfo('Provider action', 'Most external resources need a provider; direct resources can choose none.', 'create for a new OAuth provider', 'create, select, or none', 'Console either creates a provider, links an existing provider, or leaves the resource direct.') },
+        { key: 'selected_provider_id', label: 'existing provider', kind: 'text', required: true, default: this.values.selected_provider_id ?? '', dependsOn: { provider_mode: 'select' }, pick: providerPicker(this.ctx, () => this.currentZoneId()), resolve: providerResolver(this.ctx, () => this.currentZoneId()), info: guidedInfo('Existing provider', 'Pick the provider that supplies upstream credentials.', 'Okta OAuth', 'Use the picker instead of typing an ID.', 'The resource page can attach this provider to the Gateway route.') },
+        { key: 'provider_name', label: 'provider name', kind: 'text', required: true, default: this.values.provider_name ?? '', dependsOn: { provider_mode: 'create' }, info: guidedInfo('Provider name', 'Human-readable name for the upstream credential source.', 'Okta Payments OAuth', 'Short text, not an internal ID.', 'Console creates this provider before creating the resource.') },
+        { key: 'provider_kind', label: 'provider type', kind: 'select', options: PROVIDER_KINDS, default: this.values.provider_kind ?? 'oauth2', dependsOn: { provider_mode: 'create' }, info: guidedInfo('Provider type', 'Type controls which credential fields are required.', 'oauth2 for a token endpoint; apikey for header injection', 'oauth2, oidc, apikey, or workload', 'The form hides irrelevant fields and validates only the selected provider type.') },
+        { key: 'provider_issuer', label: 'issuer', kind: 'text', required: true, default: this.values.provider_issuer ?? '', dependsOn: { provider_mode: 'create', provider_kind: ['oidc', 'workload'] }, info: guidedInfo('Issuer', 'Authority URL for OIDC discovery or workload identity trust.', 'https://login.example.com', 'Absolute HTTPS issuer URL.', 'Console stores it in provider config for token validation or exchange.') },
+        { key: 'provider_token_endpoint', label: 'token endpoint', kind: 'text', required: true, default: this.values.provider_token_endpoint ?? '', dependsOn: { provider_mode: 'create', provider_kind: ['oauth2', 'oidc', 'workload'] }, info: guidedInfo('Token endpoint', 'Endpoint where Gateway exchanges or refreshes upstream tokens.', 'https://login.example.com/oauth/token', 'Absolute HTTPS URL.', 'Console infers allowed token hosts from this URL unless Advanced overrides them.') },
+        { key: 'provider_api_key_header', label: 'API key header', kind: 'text', required: true, default: this.values.provider_api_key_header ?? '', dependsOn: { provider_mode: 'create', provider_kind: 'apikey' }, info: guidedInfo('API key header', 'Header where the upstream API expects its key.', 'X-API-Key', 'HTTP header name.', 'Gateway uses this header when calling the upstream API.') },
+        { key: 'provider_workload_audience', label: 'audience', kind: 'text', required: true, default: this.values.provider_workload_audience ?? '', dependsOn: { provider_mode: 'create', provider_kind: 'workload' }, info: guidedInfo('Audience', 'Audience value expected by the workload identity provider.', 'api://payments', 'Exact audience string from the provider.', 'Console stores it in provider config for token exchange.') },
+        { key: 'provider_identifier', label: 'identifier', kind: 'text', default: this.values.provider_identifier ?? '', dependsOn: { provider_mode: 'create' }, advanced: true, info: guidedInfo('Provider identifier', 'Stable provider identifier used by APIs and audit output.', 'provider://okta-payments', 'Leave blank to generate from provider name.', 'Console sends this identifier when creating the provider.') },
+        { key: 'provider_client_id', label: 'client ID', kind: 'text', default: this.values.provider_client_id ?? '', dependsOn: { provider_mode: 'create', provider_kind: ['oauth2', 'oidc'] }, advanced: true, info: guidedInfo('Client ID', 'OAuth client identifier when the provider requires one.', 'payments-client', 'Provider-issued client ID.', 'Console stores it on the provider for token exchange flows.') },
+        { key: 'provider_authorization_endpoint', label: 'authorization endpoint', kind: 'text', default: this.values.provider_authorization_endpoint ?? '', dependsOn: { provider_mode: 'create', provider_kind: ['oauth2', 'oidc'] }, advanced: true, info: guidedInfo('Authorization endpoint', 'Browser authorization URL for providers with consent flows.', 'https://login.example.com/oauth/authorize', 'Absolute HTTPS URL.', 'Console stores it only for flows that need authorization redirects.') },
+        { key: 'provider_upstream_oauth_scopes', label: 'upstream OAuth scopes', kind: 'list', default: this.values.provider_upstream_oauth_scopes ?? '', dependsOn: { provider_mode: 'create', provider_kind: ['oauth2', 'oidc'] }, advanced: true, info: guidedInfo('Upstream OAuth scopes', 'Provider-side scopes requested from the external OAuth server.', 'payments.read,payments.write', 'Comma-separated provider scopes.', 'These stay separate from Caracal resource scopes used by policy.') },
+        { key: 'provider_allowed_token_hosts', label: 'allowed token hosts', kind: 'list', default: this.values.provider_allowed_token_hosts ?? '', dependsOn: { provider_mode: 'create', provider_kind: ['oauth2', 'oidc', 'workload'] }, advanced: true, info: guidedInfo('Allowed token hosts', 'Host allow-list for token exchange endpoints.', 'login.example.com', 'Comma-separated host names.', 'Blank uses the host inferred from token endpoint.') },
+        { key: 'provider_auth_scheme', label: 'auth scheme', kind: 'text', default: this.values.provider_auth_scheme ?? '', dependsOn: { provider_mode: 'create', provider_kind: 'apikey' }, advanced: true, info: guidedInfo('Auth scheme', 'Optional prefix for API-key authorization values.', 'Bearer', 'Short scheme name, or blank for raw key.', 'Gateway formats provider credentials using this scheme when needed.') },
+        { key: 'provider_forward_caracal_identity', label: 'forward Caracal identity', kind: 'bool', default: this.values.provider_forward_caracal_identity ?? 'false', dependsOn: { provider_mode: 'create' }, advanced: true, info: guidedInfo('Forward Caracal identity', 'Forward selected Caracal identity context to the upstream provider.', 'Enable for an internal broker that trusts Caracal identity.', 'Boolean toggle.', 'Provider config records the forwarding preference.') },
+      ],
+      onSubmit: async (raw, formApp) => {
+        Object.assign(this.values, raw)
+        if (raw.provider_mode === 'select') {
+          const id = requiredText(raw.selected_provider_id, 'provider is required')
+          this.selectedProvider = zoneId ? await this.ctx.client.providers.get(zoneId, id) : undefined
+          this.values.provider_name = ''
+        } else if (raw.provider_mode === 'none') {
+          this.clearProviderSelection()
+          this.values.provider_mode = 'none'
+        } else {
+          this.selectedProvider = undefined
+          this.values.selected_provider_id = ''
+        }
+        formApp.pop()
+        this.step = 'resource'
+      },
+    }))
+  }
+
+  private openResourcePage(app: App): void {
+    const zoneId = this.currentZoneId()
+    if (!zoneId && !trimmed(this.values.zone_name)) {
+      app.setStatus('complete the zone page before the resource page', 'error')
+      return
+    }
+    app.push(new FormView({
+      title: 'guided setup / resource',
+      submitLabel: 'save resource',
+      info: guidedInfo('Resource setup', 'A resource is the protected target the app will request and policy will evaluate.', 'payments-api with read/write scopes', 'Create or select a protected resource and define Caracal scopes.', 'Setup creates or updates the resource, links the provider when selected, and uses it in the generated policy.'),
+      fields: [
+        { key: 'resource_mode', label: 'resource action', kind: 'select', options: ['create', 'select'], default: this.values.resource_mode ?? 'create', info: guidedInfo('Resource action', 'Choose whether setup should create a protected resource or reuse one.', 'create for a new API target', 'create or select', 'Console uses this resource as the policy target and runtime credential resource.') },
+        { key: 'selected_resource_id', label: 'existing resource', kind: 'text', required: true, default: this.values.selected_resource_id ?? '', dependsOn: { resource_mode: 'select' }, pick: resourcePicker(this.ctx, () => this.currentZoneId()), resolve: resourceResolver(this.ctx, () => this.currentZoneId()), info: guidedInfo('Existing resource', 'Pick the protected target that already exists.', 'payments-api', 'Use the picker instead of typing an ID.', 'Console can update scopes, Gateway URL, and provider link when needed.') },
+        { key: 'resource_name', label: 'resource name', kind: 'text', required: true, default: this.values.resource_name ?? '', dependsOn: { resource_mode: 'create' }, info: guidedInfo('Resource name', 'Human-readable target name for the API, service, MCP server, or SDK capability.', 'payments-api', 'Short text, not an internal ID.', 'Console creates a resource identifier from this name unless Advanced overrides it.') },
+        { key: 'resource_scopes', label: 'Caracal scopes', kind: 'list', required: (current) => current.resource_mode === 'create', default: this.values.resource_scopes ?? '', info: guidedInfo('Caracal scopes', 'Permissions that Caracal policy evaluates for this resource.', 'payments.read,payments.refund', 'Comma-separated Caracal scope names.', 'Console writes these scopes to the resource and generated allow-list policy.') },
+        { key: 'upstream_url', label: 'external upstream URL', kind: 'text', required: () => this.hasProviderSelection(), default: this.values.upstream_url ?? '', info: guidedInfo('External upstream URL', 'Gateway target for the protected external service.', 'https://api.payments.example.com', 'Absolute URL; leave blank only for direct Caracal resources.', 'Console enables Gateway routing and attaches the selected provider when present.') },
+        { key: 'resource_identifier', label: 'resource identifier', kind: 'text', default: this.values.resource_identifier ?? '', dependsOn: { resource_mode: 'create' }, advanced: true, info: guidedInfo('Resource identifier', 'Stable identifier used in tokens, policy input, SDK config, and audit.', 'resource://payments-api', 'Leave blank to generate from resource name.', 'Console stores this as the policy resource target.') },
+        { key: 'request_path', label: 'first request path', kind: 'text', default: this.values.request_path ?? '', dependsOn: 'upstream_url', advanced: true, info: guidedInfo('First request path', 'Optional path used only to show an exact first Gateway curl command.', '/v1/refunds', 'Path starting with /, or blank.', 'The result page includes a ready-to-copy request example.') },
+      ],
+      onSubmit: async (raw, formApp) => {
+        Object.assign(this.values, raw)
+        if (raw.resource_mode === 'select') {
+          const id = requiredText(raw.selected_resource_id, 'resource is required')
+          this.selectedResource = zoneId ? await this.ctx.client.resources.get(zoneId, id) : undefined
+          this.values.resource_name = ''
+          if (this.selectedResource) {
+            this.values.resource_scopes = raw.resource_scopes || (this.selectedResource.scopes ?? []).join(',')
+            this.values.upstream_url = raw.upstream_url || (this.selectedResource.upstream_url ?? '')
+            this.values.selected_provider_id = this.values.selected_provider_id || (this.selectedResource.credential_provider_id ?? '')
+          }
+        } else {
+          this.selectedResource = undefined
+          this.values.selected_resource_id = ''
+        }
+        formApp.pop()
+        this.step = 'review'
+      },
+    }))
   }
 
   private openAdvanced(app: App): void {
@@ -628,25 +502,16 @@ class FirstSetupWizardView implements View {
     app.push(new FormView({
       title: 'guided setup advanced',
       submitLabel: 'save',
-      initialValues: { upstream_url: values.upstream_url ?? '' },
+      info: guidedInfo('Guided setup advanced', 'Optional final setup controls stay separate from object-building pages.', 'Disable profile generation for CI-only setup.', 'Every field can keep its default unless you need a non-standard setup.', 'Saving updates the final create behavior without changing the object pages.'),
       fields: [
-        { key: 'resource_identifier', label: 'resource identifier', kind: 'text', default: values.resource_identifier ?? '', visible: () => !this.selectedResource, hint: 'optional; generated from the resource name when blank' },
-        { key: 'request_path', label: 'first request path', kind: 'text', default: values.request_path ?? '', dependsOn: 'upstream_url', hint: 'optional; used only to show an exact first Gateway curl example' },
-        { key: 'provider_identifier', label: 'provider identifier', kind: 'text', default: values.provider_identifier ?? '', visible: () => this.needsProviderCreateSteps(), hint: 'optional; generated from provider name when blank' },
-        { key: 'provider_client_id', label: 'provider client ID', kind: 'text', default: values.provider_client_id ?? '', visible: () => this.needsProviderCreateSteps() && ['oauth2', 'oidc'].includes(providerKind(this.values.provider_kind)), hint: 'optional OAuth client identifier when the upstream provider requires one' },
-        { key: 'provider_authorization_endpoint', label: 'authorization endpoint', kind: 'text', default: values.provider_authorization_endpoint ?? '', visible: () => this.needsProviderCreateSteps() && ['oauth2', 'oidc'].includes(providerKind(this.values.provider_kind)), hint: 'optional OAuth browser authorization endpoint' },
-        { key: 'provider_upstream_oauth_scopes', label: 'upstream OAuth scopes', kind: 'list', default: values.provider_upstream_oauth_scopes ?? '', visible: () => this.needsProviderCreateSteps() && ['oauth2', 'oidc'].includes(providerKind(this.values.provider_kind)), hint: 'provider-side scopes; Caracal scopes stay in the main setup step' },
-        { key: 'provider_allowed_token_hosts', label: 'allowed token hosts', kind: 'list', default: values.provider_allowed_token_hosts ?? '', visible: () => this.needsProviderCreateSteps() && ['oauth2', 'oidc', 'workload'].includes(providerKind(this.values.provider_kind)), hint: 'optional; inferred from token endpoint when blank' },
-        { key: 'provider_auth_scheme', label: 'auth scheme', kind: 'text', default: values.provider_auth_scheme ?? '', visible: () => this.needsProviderCreateSteps() && providerKind(this.values.provider_kind) === 'apikey', hint: 'optional; leave blank when the upstream expects the raw API key' },
-        { key: 'provider_forward_caracal_identity', label: 'forward Caracal identity', kind: 'bool', default: values.provider_forward_caracal_identity ?? 'false', visible: () => this.needsProviderCreateSteps() },
-        { key: 'activate_policy', label: 'activate policy', kind: 'bool', default: values.activate_policy ?? 'true' },
-        { key: 'generate_profile', label: 'runtime profile', kind: 'bool', default: values.generate_profile ?? 'true' },
-        { key: 'write_files', label: 'write profile files', kind: 'bool', default: values.write_files ?? 'false', dependsOn: { generate_profile: 'true' } },
-        { key: 'existing_app_client_secret', label: 'existing app secret', kind: 'text', default: values.existing_app_client_secret ?? '', visible: () => Boolean(this.selectedApplication), required: (current) => current.write_files === 'true', dependsOn: { generate_profile: 'true', write_files: 'true' }, hint: 'required only when writing files for a selected existing app because secrets cannot be retrieved' },
-        { key: 'overwrite_files', label: 'overwrite files', kind: 'bool', default: values.overwrite_files ?? 'false', dependsOn: { generate_profile: 'true', write_files: 'true' }, hint: 'kept off unless replacing existing generated setup files is intended' },
-        { key: 'profile_path', label: 'profile path', kind: 'text', default: values.profile_path ?? defaultRuntimeConfigPath(), dependsOn: { generate_profile: 'true' } },
-        { key: 'secret_file_path', label: 'secret file', kind: 'text', default: values.secret_file_path ?? '', dependsOn: { generate_profile: 'true' }, hint: 'optional; derived from profile path when blank' },
-        { key: 'credential_env', label: 'token env', kind: 'text', default: values.credential_env ?? '', dependsOn: { generate_profile: 'true' }, hint: 'optional; derived from the resource identifier when blank' },
+        { key: 'activate_policy', label: 'activate policy', kind: 'bool', default: values.activate_policy ?? 'true', info: guidedInfo('Activate policy', 'Create and activate the first real allow-list policy.', 'Enabled for first setup.', 'Boolean toggle.', 'When enabled, Console creates a deny-by-default Rego policy and active policy set.') },
+        { key: 'generate_profile', label: 'runtime profile', kind: 'bool', default: values.generate_profile ?? 'true', info: guidedInfo('Runtime profile', 'Generate a runnable local profile from the selected zone, app, and resource.', 'Enabled for local first run.', 'Boolean toggle.', 'The result page shows profile content and setup commands.') },
+        { key: 'write_files', label: 'write profile files', kind: 'bool', default: values.write_files ?? 'false', dependsOn: { generate_profile: 'true' }, info: guidedInfo('Write profile files', 'Write the generated profile and secret file locally.', 'Enable on a trusted workstation.', 'Boolean toggle.', 'Console writes owner-only files instead of only showing copy commands.') },
+        { key: 'existing_app_client_secret', label: 'existing app secret', kind: 'text', default: values.existing_app_client_secret ?? '', visible: () => Boolean(this.selectedApplication), required: (current) => current.write_files === 'true', dependsOn: { generate_profile: 'true', write_files: 'true' }, info: guidedInfo('Existing app secret', 'Required only when writing files for a selected existing app.', 'cs_live_...', 'Existing client secret from your secure store.', 'Console writes this value to the generated secret file.') },
+        { key: 'overwrite_files', label: 'overwrite files', kind: 'bool', default: values.overwrite_files ?? 'false', dependsOn: { generate_profile: 'true', write_files: 'true' }, info: guidedInfo('Overwrite files', 'Allow Console to replace existing generated files.', 'Enable only when refreshing a local setup.', 'Boolean toggle.', 'When disabled, Console refuses to overwrite existing files.') },
+        { key: 'profile_path', label: 'profile path', kind: 'text', default: values.profile_path ?? defaultRuntimeConfigPath(), dependsOn: { generate_profile: 'true' }, info: guidedInfo('Profile path', 'Local path for the generated runtime profile.', '~/.config/caracal/config.toml', 'Absolute or user-relative file path.', 'The profile path is used in generated CARACAL_CONFIG commands.') },
+        { key: 'secret_file_path', label: 'secret file', kind: 'text', default: values.secret_file_path ?? '', dependsOn: { generate_profile: 'true' }, info: guidedInfo('Secret file', 'Local file that stores the app client secret.', '~/.config/caracal/payments-worker-client-secret', 'File path different from profile path; blank derives one.', 'SDKs and runtime read the app secret from this file.') },
+        { key: 'credential_env', label: 'token env', kind: 'text', default: values.credential_env ?? '', dependsOn: { generate_profile: 'true' }, info: guidedInfo('Token env', 'Environment variable name that receives the protected resource token.', 'CARACAL_RESOURCE_PAYMENTS_API_TOKEN', 'Uppercase env var name; blank derives one.', 'Generated examples use this variable for Gateway and SDK calls.') },
       ],
       onSubmit: async (raw, advancedApp) => {
         Object.assign(this.values, raw)
@@ -658,11 +523,12 @@ class FirstSetupWizardView implements View {
   private openStepInfo(app: App): void {
     const step = this.currentStep()
     openInfo(app, infoPage({
-      title: step.question,
+      title: step.title,
       meaning: step.explanation,
-      when: step.key === 'review' ? 'Use this after checking the plan and advanced settings.' : 'Use this step to give Console the smallest value needed for the first working setup.',
-      valid: step.kind === 'bool' ? 'Toggle yes or no.' : step.options ? `Choose one of: ${step.options.join(', ')}.` : step.picker ? 'Select an existing object or type a name to create one.' : 'Plain text; comma-separated where the prompt asks for scopes.',
-      after: step.key === 'review' ? 'Console creates only missing objects, activates the selected policy path, and shows setup output.' : 'Console carries this value forward and resolves internal IDs in the background.',
+      when: step.key === 'review' ? 'Use this after completing the object pages and advanced settings.' : 'Open this page to fill the real fields for that object with picker and field-level help.',
+      example: step.key === 'provider' ? 'Create an OAuth provider before creating the payments API resource.' : 'Use the page fields and press ? on any field for examples.',
+      valid: 'Press enter to open the page. Use pickers for existing objects and normal field validation for new objects.',
+      after: step.key === 'review' ? 'Console creates only missing objects, activates the selected policy path, and shows setup output.' : 'Saving the page returns here and moves to the next guided step.',
     }))
   }
 
@@ -691,14 +557,7 @@ class FirstSetupWizardView implements View {
   }
 
   private validateAll(): string | undefined {
-    for (const step of this.steps()) {
-      if (step === 'review') continue
-      this.step = step
-      const message = this.validateStep()
-      if (message) return message
-    }
-    this.step = 'review'
-    return undefined
+    return this.validateReady()
   }
 
   private buildValues(): SetupValues {
@@ -718,10 +577,29 @@ class FirstSetupWizardView implements View {
   private providerReviewLabel(): string {
     if (this.selectedResource?.credential_provider_id) return this.selectedResource.credential_provider_id
     if (this.selectedProvider) return `${providerLabel(this.selectedProvider)} (selected)`
+    if (this.values.provider_mode === 'none') return 'none; direct resource'
     if (trimmed(this.values.provider_name)) return `${this.values.provider_name} (${providerKind(this.values.provider_kind)} create)`
     const selectedProviderId = trimmed(this.values.selected_provider_id)
     if (selectedProviderId) return selectedProviderId
-    return trimmed(this.values.upstream_url) ? 'none selected' : 'not needed'
+    return ui.muted('open page')
+  }
+
+  private validateReady(): string | undefined {
+    if (!this.selectedZone && !trimmed(this.values.selected_zone_id) && !trimmed(this.values.zone_name) && !this.ctx.zoneId) return 'zone is required'
+    if (!this.selectedApplication && !trimmed(this.values.selected_agent_app_id) && !trimmed(this.values.agent_app_name)) return 'agent app is required'
+    if (this.values.provider_mode === 'select' && !trimmed(this.values.selected_provider_id)) return 'provider is required'
+    if (this.values.provider_mode === 'create') {
+      if (!trimmed(this.values.provider_name)) return 'provider is required'
+      try {
+        providerConfigFromValues(this.values)
+      } catch (err) {
+        return err instanceof Error ? err.message : String(err)
+      }
+    }
+    if (!this.selectedResource && !trimmed(this.values.selected_resource_id) && !trimmed(this.values.resource_name)) return 'resource is required'
+    if (splitList(this.values.resource_scopes).length === 0) return 'at least one Caracal scope is required'
+    if (this.hasProviderSelection() && !trimmed(this.values.upstream_url)) return 'external upstream URL is required when a provider is selected'
+    return undefined
   }
 }
 
@@ -843,6 +721,7 @@ async function ensureProvider(
   upstreamUrl: string | undefined,
 ): Promise<string | undefined> {
   if (!upstreamUrl) return undefined
+  if (values.provider_mode === 'none') return undefined
   const selectedProviderId = trimmed(values.selected_provider_id)
   if (selectedProviderId) return selectedProviderId
   if (!trimmed(values.provider_name)) return undefined
@@ -899,25 +778,91 @@ async function ensureResource(
   }
 }
 
-function stepValueKey(step: SetupStepKey): keyof SetupValues | undefined {
-  switch (step) {
-    case 'zone': return 'zone_name'
-    case 'application': return 'agent_app_name'
-    case 'resource': return 'resource_name'
-    case 'upstream': return 'upstream_url'
-    case 'provider': return 'provider_name'
-    case 'provider_kind': return 'provider_kind'
-    case 'provider_issuer': return 'provider_issuer'
-    case 'provider_token_endpoint': return 'provider_token_endpoint'
-    case 'provider_api_key_header': return 'provider_api_key_header'
-    case 'provider_workload_audience': return 'provider_workload_audience'
-    case 'scopes': return 'resource_scopes'
-    case 'review': return undefined
+function resourceIdentifierFor(values: SetupValues): string {
+  return trimmed(values.resource_identifier) ?? `resource://${safeName(requiredText(values.resource_name, 'resource is required'))}`
+}
+
+function guidedInfo(title: string, meaning: string, example: string, valid: string, after: string) {
+  return infoPage({
+    title,
+    meaning,
+    when: 'Use this during guided setup when this value defines how Caracal creates or links the object.',
+    example,
+    valid,
+    after,
+  })
+}
+
+function zonePicker(ctx: Ctx): Field['pick'] {
+  return (app, setValue) => {
+    app.push(new EntityPickerView<Zone>({
+      title: 'choose zone',
+      load: () => ctx.client.zones.list(),
+      value: (row) => row.id,
+      label: zoneLabel,
+      description: (row) => row.slug,
+      onPick: setValue,
+    }))
   }
 }
 
-function resourceIdentifierFor(values: SetupValues): string {
-  return trimmed(values.resource_identifier) ?? `resource://${safeName(requiredText(values.resource_name, 'resource is required'))}`
+function zoneResolver(ctx: Ctx): Field['resolve'] {
+  return async (id) => zoneLabel(await ctx.client.zones.get(id))
+}
+
+function requireSetupZoneId(zoneId: () => string | undefined): string {
+  return requiredText(zoneId(), 'zone is required before opening this picker')
+}
+
+function applicationPicker(ctx: Ctx, zoneId: () => string | undefined): Field['pick'] {
+  return (app, setValue) => {
+    app.push(new EntityPickerView<Application>({
+      title: 'choose agent app',
+      load: () => ctx.client.applications.list(requireSetupZoneId(zoneId)),
+      value: (row) => row.id,
+      label: (row) => row.name,
+      description: (row) => row.credential_type,
+      onPick: setValue,
+    }))
+  }
+}
+
+function applicationResolver(ctx: Ctx, zoneId: () => string | undefined): Field['resolve'] {
+  return async (id) => (await ctx.client.applications.get(requireSetupZoneId(zoneId), id)).name
+}
+
+function providerPicker(ctx: Ctx, zoneId: () => string | undefined): Field['pick'] {
+  return (app, setValue) => {
+    app.push(new EntityPickerView<Provider>({
+      title: 'choose provider',
+      load: () => ctx.client.providers.list(requireSetupZoneId(zoneId)),
+      value: (row) => row.id,
+      label: providerLabel,
+      description: (row) => [row.identifier, row.kind ?? undefined].filter(Boolean).join('  '),
+      onPick: setValue,
+    }))
+  }
+}
+
+function providerResolver(ctx: Ctx, zoneId: () => string | undefined): Field['resolve'] {
+  return async (id) => providerLabel(await ctx.client.providers.get(requireSetupZoneId(zoneId), id))
+}
+
+function resourcePicker(ctx: Ctx, zoneId: () => string | undefined): Field['pick'] {
+  return (app, setValue) => {
+    app.push(new EntityPickerView<Resource>({
+      title: 'choose resource',
+      load: async () => userResources(await ctx.client.resources.list(requireSetupZoneId(zoneId))),
+      value: (row) => row.id,
+      label: resourceLabel,
+      description: (row) => [row.identifier, (row.scopes ?? []).join(',')].filter(Boolean).join('  '),
+      onPick: setValue,
+    }))
+  }
+}
+
+function resourceResolver(ctx: Ctx, zoneId: () => string | undefined): Field['resolve'] {
+  return async (id) => resourceLabel(await ctx.client.resources.get(requireSetupZoneId(zoneId), id))
 }
 
 function providerIdentifierFor(values: SetupValues): string {
@@ -1288,16 +1233,6 @@ function normalizeRequestPath(value: string | undefined): string | undefined {
 
 function splitList(value: string | undefined): string[] {
   return (value ?? '').split(',').map((item) => item.trim()).filter(Boolean)
-}
-
-function textInput(key: Key): string | undefined {
-  if (key === 'space') return ' '
-  if (typeof key !== 'string' || NAMED_KEYS.has(key)) return undefined
-  const text = key
-    .replace(BRACKETED_PASTE_PATTERN, '')
-    .replace(ANSI_SEQUENCE_PATTERN, '')
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
-  return text.length > 0 ? text : undefined
 }
 
 function bool(value: string | undefined): boolean {
