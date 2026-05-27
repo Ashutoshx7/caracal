@@ -12,3 +12,4 @@ token, err := client.Exchange(ctx, subjectToken, "resource://api", oauth.Exchang
 
 Successful responses are validated before caching. Cache keys isolate subject tokens, actor tokens, session/delegation context, scopes, TTL, and client authentication context. The default cache is in-memory and process-local.
 
+Docs: https://caracal.run/sdks/oauth/

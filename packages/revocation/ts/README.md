@@ -4,3 +4,4 @@ TypeScript revocation lookup interface and in-memory default for Caracal resourc
 
 The in-memory store is process-local. Distributed production deployments should use a connector-backed store and fail closed when revocation cannot be checked or writes cannot be confirmed.
 
+Docs: https://caracal.run/sdks/revocation/

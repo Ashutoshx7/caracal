@@ -13,5 +13,5 @@ pip install caracalai-transport-mcp
 ## Links
 
 - Source: https://github.com/Garudex-Labs/caracal
-- Docs: https://caracal.run
+- Docs: https://caracal.run/sdks/transport-mcp/
 - License: Apache-2.0

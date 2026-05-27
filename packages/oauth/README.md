@@ -20,3 +20,7 @@ Token cache keys include the STS identity, hashed subject token, actor token, se
 
 OAuth does not verify JWTs, check revocation, issue tokens directly, persist secrets, implement browser redirect/callback handling, or make authorization decisions. Callers must verify inbound identity with `identity`, enforce revocation with `revocation`, and apply policy in the service boundary that owns the resource.
 
+## Docs
+
+- OAuth package reference: https://caracal.run/sdks/oauth/
+- Token exchange flow: https://caracal.run/architecture/token-exchange-flow/

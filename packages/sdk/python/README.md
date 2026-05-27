@@ -13,5 +13,5 @@ pip install caracalai-sdk
 ## Links
 
 - Source: https://github.com/Garudex-Labs/caracal
-- Docs: https://caracal.run
+- Docs: https://caracal.run/sdks/python/
 - License: Apache-2.0

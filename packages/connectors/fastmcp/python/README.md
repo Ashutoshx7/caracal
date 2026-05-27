@@ -13,5 +13,5 @@ pip install caracalai-mcp-fastmcp
 ## Links
 
 - Source: https://github.com/Garudex-Labs/caracal
-- Docs: https://caracal.run
+- Docs: https://caracal.run/sdks/connectors/fastmcp/
 - License: Apache-2.0

@@ -20,3 +20,7 @@ The package does not perform transport authentication, framework middleware, tok
 
 Malformed tokens, missing required claims, issuer/audience/zone mismatches, insufficient scopes, invalid delegation claims, and unsupported signing keys fail closed. Callers must treat verification failure as authentication failure and must not continue with anonymous or partially trusted identity state.
 
+## Docs
+
+- Identity package reference: https://caracal.run/sdks/identity/
+- Mandate concept: https://caracal.run/concepts/mandate/

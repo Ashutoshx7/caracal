@@ -20,3 +20,7 @@ The in-memory store is process-local and suited for tests, local development, an
 
 Revocation does not parse JWTs, define identity claims, manage OAuth exchange, run framework middleware, or own Redis/Postgres clients. It stays small so transport and connector packages can compose it safely without duplicating invalidation policy.
 
+## Docs
+
+- Revocation package reference: https://caracal.run/sdks/revocation/
+- Sessions and revocation concept: https://caracal.run/concepts/sessions-revocation/

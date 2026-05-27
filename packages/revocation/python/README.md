@@ -17,5 +17,5 @@ The in-memory store is process-local and intended for tests, local development, 
 ## Links
 
 - Source: https://github.com/Garudex-Labs/caracal
-- Docs: https://caracal.run
+- Docs: https://caracal.run/sdks/revocation/
 - License: Apache-2.0

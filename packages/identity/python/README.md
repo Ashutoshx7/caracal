@@ -19,5 +19,5 @@ Verification failures are authentication failures. Do not continue with anonymou
 ## Links
 
 - Source: https://github.com/Garudex-Labs/caracal
-- Docs: https://caracal.run
+- Docs: https://caracal.run/sdks/identity/
 - License: Apache-2.0
