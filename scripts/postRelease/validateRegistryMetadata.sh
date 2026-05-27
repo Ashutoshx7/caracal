@@ -25,14 +25,14 @@ checkPyPi() {
     logFinding "$AREA" "$pkg" "registry" "pypi" "-" "$SEV_BLOCKER" "$STATUS_FAIL" "package not found on PyPI" "curl -fsSL $url"
     return 0
   fi
-  local got
-  got="$(printf '%s' "$body" | "$CARACAL_PYTHON" -c "import json,sys;d=json.load(sys.stdin);print(d['info']['version'])")"
-  if [[ "$got" != "$ver" ]]; then
-    logFinding "$AREA" "$pkg" "registry" "pypi" "-" "$SEV_BLOCKER" "$STATUS_FAIL" "version mismatch: got $got expected $ver" "curl $url | jq .info.version"
+  local hasV
+  hasV="$(printf '%s' "$body" | V="$ver" "$CARACAL_PYTHON" -c "import json,os,sys;d=json.load(sys.stdin);print('yes' if os.environ['V'] in d.get('releases',{}) else 'no')")"
+  if [[ "$hasV" != "yes" ]]; then
+    logFinding "$AREA" "$pkg" "registry" "pypi" "-" "$SEV_BLOCKER" "$STATUS_FAIL" "version $ver missing from releases[]" "curl $url | jq '.releases | keys'"
     return 0
   fi
   local lic
-  lic="$(printf '%s' "$body" | "$CARACAL_PYTHON" -c "import json,sys;d=json.load(sys.stdin);print(d['info'].get('license') or '')")"
+  lic="$(printf '%s' "$body" | "$CARACAL_PYTHON" -c "import json,sys;d=json.load(sys.stdin);i=d['info'];print(' '.join([i.get('license') or '', i.get('license_expression') or '', *i.get('classifiers', [])]))")"
   if [[ "$lic" != *"Apache"* && "$lic" != *"apache"* ]]; then
     logFinding "$AREA" "$pkg" "registry" "pypi" "-" "$SEV_MAJOR" "$STATUS_WARN" "license not Apache-2.0: '$lic'" "curl $url | jq .info.license"
   fi

@@ -38,7 +38,9 @@ validateStack() {
   fi
   local dir; dir="$(mktemp -d)"
   mkdir -p "$dir/secrets"
-  cat >"$dir/stack.env" <<'EOF'
+  cat >"$dir/stack.env" <<EOF
+CARACAL_VERSION=${CARACAL_RELEASE#v}
+CARACAL_REGISTRY=${REGISTRY%/}/
 POSTGRES_USER=caracal
 POSTGRES_DB=caracal
 POSTGRES_PASSWORD=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -105,7 +107,6 @@ for name in secret_names:
 out.write("services:\n")
 for svc, ver in manifest["containers"].items():
     out.write(f"  {svc}:\n")
-    out.write("    build: null\n")
     out.write(f"    image: {os.environ['REG']}/{os.environ['PREFIX']}{svc}:v{ver}\n")
     out.write("    pull_policy: never\n")
 PY
