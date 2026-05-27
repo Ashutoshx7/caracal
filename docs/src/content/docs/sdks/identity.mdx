@@ -1,310 +1,61 @@
 ---
 title: Identity Package
-description: "JWT verification, JWKS caching, Claims types, scope evaluation, and delegation chain inspection: available in TypeScript, Python, and Go."
-pageType: reference
+description: JWT verification packages for mandate claims, scopes, targets, agents, delegation, and hop count.
 ---
 
-The identity packages verify ES256-signed Caracal mandates against a zone's JWKS endpoint. They handle JWKS fetching and caching internally. Each package exposes the same conceptual API (`verify` / `Verify`) with consistent `Config` and `Claims` types across languages.
+The identity packages verify Caracal mandate JWTs. Use them when you are building a connector, transport, or custom resource-server boundary.
 
-## TypeScript: `@caracalai/identity`
+## Install
 
-```bash
-npm install @caracalai/identity
+| Ecosystem | Package |
+| --- | --- |
+| TypeScript | `npm install @caracalai/identity` |
+| Python | `pip install caracalai-identity` |
+| Go | `go get github.com/garudex-labs/caracal/packages/identity/go` |
+
+Node packages target Node `>=24`; Python packages require Python `>=3.14`.
+
+## Verification inputs
+
+| Option | Meaning |
+| --- | --- |
+| `issuer` / `Issuer` | Expected STS issuer. |
+| `audience` / `Audience` | Expected audience for the mandate. |
+| `zoneId` / `expected_zone_id` / `ZoneID` | Optional zone claim check. |
+| `requiredScopes` / `required_scopes` / `RequiredScopes` | Scopes every accepted mandate must contain. |
+| `requiredTargets` / `required_targets` / `RequiredTargets` | Target resources every accepted mandate must include. |
+| `requiredUse` / `required_use` / `RequiredUse` | Token use, usually `resource`. |
+| `requireAgent` / `require_agent` / `RequireAgent` | Require agent-session claims. |
+| `requireDelegation` / `require_delegation` / `RequireDelegation` | Require a delegation edge. |
+| `requireChainContains` / `require_chain_contains` / `RequireChainContains` | Require an application in the delegation chain. |
+| `maxHopCount` / `max_hop_count` / `MaxHopCount` | Cap delegation chain depth. |
+
+## TypeScript example
+
+```ts
+import { verify } from "@caracalai/identity";
+
+const claims = await verify(token, {
+  issuer: "https://sts.example.com",
+  audience: "https://api.example.com",
+  zoneId: "zone_prod",
+  requiredScopes: ["tickets:read"],
+  requiredTargets: ["https://api.example.com/tickets"],
+});
 ```
 
-### `verify(token, config)`
+## Failure classes
 
-```typescript
-import { verify } from '@caracalai/identity';
+| Error | Meaning |
+| --- | --- |
+| `TokenInvalidError` | Signature, issuer, audience, expiry, use, or claim validation failed. |
+| `ZoneInvalidError` | The token zone did not match the expected zone. |
+| `ScopeInsufficientError` | A required scope is missing. |
+| `AgentIdentityRequiredError` | The verifier requires an agent identity. |
+| `DelegationRequiredError` | The verifier requires delegated authority. |
+| `ChainMismatchError` | The delegation chain is missing a required application. |
+| `HopCountExceededError` | The mandate exceeds the configured hop limit. |
 
-async function verify(token: string, config: JwtConfig): Promise<Claims>
-```
+## When to use transport-mcp instead
 
-Fetches the JWKS from `{config.issuer}/.well-known/jwks.json`, selects the key matching the `kid` header, verifies the ES256 signature, checks expiry, and enforces all `config` constraints. JWKS responses are cached for 5 minutes per issuer with stale-while-revalidate on error.
-
-### `JwtConfig`
-
-```typescript
-interface JwtConfig {
-  issuer: string;                       // STS base URL; JWKS at {issuer}/.well-known/jwks.json
-  audience: string;                     // Must be present in the 'aud' claim
-  zoneId?: string;                      // If set, 'zone_id' claim must match
-  requiredScopes?: string[];            // All listed scopes must be in the 'scope' claim
-  requiredTargets?: string[];           // All listed resources must be in the 'target' claim
-  requiredUse?: string;                 // If set, 'use' claim must match
-  requireAgent?: boolean;               // Reject tokens without 'agent_session_id'
-  requireDelegation?: boolean;          // Reject tokens without 'delegation_edge_id'
-  requireChainContains?: string[];      // All IDs must appear in 'delegation_chain'
-  maxHopCount?: number;                 // Reject tokens with 'hop_count' above this (default: 10)
-}
-```
-
-### `Claims`
-
-```typescript
-interface Claims {
-  sub: string;
-  zoneId: string;
-  clientId: string;                     // Application ID
-  sid: string;                          // Session ID (revocation key)
-  rootSid?: string;                     // Authority root, if present
-  use: string;                          // Mandate use: 'session' or 'resource'
-  jti: string;                          // Token ID
-  issuedAt: number;                     // NumericDate from 'iat'
-  expiresAt: number;                    // NumericDate from 'exp'
-  scope: string;                        // Space-separated OAuth scopes
-  targetResources?: string[];           // Resource identifiers from the 'target' claim
-  agentSessionId?: string;
-  delegationEdgeId?: string;
-  sourceSessionId?: string;
-  targetSessionId?: string;
-  delegationPath?: string[];
-  delegationChain?: ChainHop[];
-  graphEpoch?: number;
-  hopCount?: number;
-}
-
-interface ChainHop {
-  applicationId: string;
-  agentSessionId?: string;
-  delegationEdgeId?: string;
-}
-```
-
-### Helpers
-
-```typescript
-// Check if a space-separated scope string contains the target scope
-function hasScope(scopeStr: string, target: string): boolean
-
-// Check if an application ID appears in the delegation chain or as clientId
-function verifyChainContains(claims: Claims, applicationId: string): boolean
-```
-
-### Error classes
-
-All errors extend `Error`. Catch the specific class to identify the failure:
-
-| Class | Meaning |
-| ----- | ------- |
-| `TokenInvalidError` | JWT signature invalid, expired, or malformed |
-| `ZoneInvalidError` | `zone_id` claim does not match `config.zoneId` |
-| `ScopeInsufficientError` | Missing a required scope; has `.missingScope: string` |
-| `AgentIdentityRequiredError` | `requireAgent` is true but `agent_session_id` is absent |
-| `DelegationRequiredError` | `requireDelegation` is true but `delegation_edge_id` is absent |
-| `ChainMismatchError` | Required app not in chain; has `.missingApplicationId: string` |
-| `HopCountExceededError` | `hop_count` exceeds `maxHopCount` |
-
----
-
-## Python: `caracalai-identity`
-
-```bash
-pip install caracalai-identity
-```
-
-### `verify_config(token, config)`
-
-```python
-from caracalai_identity import verify_config, JwtConfig
-
-async def verify_config(token: str, config: JwtConfig) -> Claims: ...
-```
-
-### `verify_token(token, issuer, audience, ...)`
-
-Convenience function for simple cases:
-
-```python
-async def verify_token(
-    token: str,
-    issuer: str,
-    audience: str,
-    required_scopes: list[str] | None = None,
-    expected_zone_id: str | None = None,
-) -> dict[str, Any]: ...
-```
-
-Returns the raw decoded claims dict. Use `verify_config` for full constraint enforcement.
-
-### `JwtConfig`
-
-```python
-@dataclass
-class JwtConfig:
-    issuer: str
-    audience: str
-    expected_zone_id: str | None = None
-    required_scopes: list[str] = field(default_factory=list)
-    required_targets: list[str] = field(default_factory=list)
-    required_use: str | None = None
-    require_agent: bool = False
-    require_delegation: bool = False
-    require_chain_contains: list[str] = field(default_factory=list)
-    max_hop_count: int | None = None
-```
-
-### `Claims`
-
-```python
-@dataclass
-class Claims:
-    sub: str
-    zone_id: str
-    client_id: str
-    sid: str
-    use: str
-    jti: str
-    scope: str
-    issued_at: int
-    expires_at: int
-    target_resources: list[str] = field(default_factory=list)
-    root_sid: str | None = None
-    agent_session_id: str | None = None
-    delegation_edge_id: str | None = None
-    source_session_id: str | None = None
-    target_session_id: str | None = None
-    delegation_path: list[str] = field(default_factory=list)
-    delegation_chain: list[ChainHop] = field(default_factory=list)
-    graph_epoch: int | None = None
-    hop_count: int | None = None
-
-@dataclass
-class ChainHop:
-    application_id: str
-    agent_session_id: str | None = None
-    delegation_edge_id: str | None = None
-```
-
-### Helpers
-
-```python
-from caracalai_identity import has_scope, verify_chain_contains
-
-def has_scope(scope_str: str, target: str) -> bool: ...
-def verify_chain_contains(claims: Claims, application_id: str) -> bool: ...
-```
-
-### Exception classes
-
-| Class | Meaning |
-| ----- | ------- |
-| `TokenInvalidError(ValueError)` | JWT signature invalid, expired, or malformed |
-| `ZoneInvalidError(ValueError)` | Zone mismatch |
-| `ScopeInsufficientError(PermissionError)` | Missing scope; `.missing_scope: str` |
-| `AgentIdentityRequiredError(PermissionError)` | Agent session required but absent |
-| `DelegationRequiredError(PermissionError)` | Delegation edge required but absent |
-| `ChainMismatchError(PermissionError)` | Required app not in chain; `.missing_application_id: str` |
-| `HopCountExceededError(PermissionError)` | Hop count exceeded |
-
----
-
-## Go: `github.com/garudex-labs/caracal/packages/identity/go`
-
-```bash
-go get github.com/garudex-labs/caracal/packages/identity/go
-```
-
-### `Verify(tokenStr, cfg)`
-
-```go
-import "github.com/garudex-labs/caracal/packages/identity/go"
-
-func Verify(tokenStr string, cfg Config) (Claims, error)
-```
-
-### `Config`
-
-```go
-type Config struct {
-    Issuer               string
-    Audience             string
-    ZoneID               string
-    RequiredScopes       []string
-    RequiredTargets      []string
-    RequiredUse          string
-    RequireAgent         bool
-    RequireDelegation    bool
-    RequireChainContains []string
-    MaxHopCount          int      // 0 uses DefaultMaxHopCount (10)
-}
-
-const DefaultMaxHopCount = 10
-```
-
-### `Claims`
-
-```go
-type Claims struct {
-    Sub              string
-    ZoneID           string
-    ClientID         string
-    Sid              string
-    RootSid          string
-    Use              string
-    JTI              string
-    IssuedAt         int64
-    ExpiresAt        int64
-    Scope            string
-    TargetResources  []string
-    AgentSessionID   string
-    DelegationEdgeID string
-    SourceSessionID  string
-    TargetSessionID  string
-    DelegationPath   []string
-    DelegationChain  []ChainHop
-    GraphEpoch       int64
-    HopCount         int
-}
-
-type ChainHop struct {
-    ApplicationID    string
-    AgentSessionID   string
-    DelegationEdgeID string
-}
-```
-
-### Helpers
-
-```go
-func HasScope(scopeStr, target string) bool
-func VerifyChainContains(claims Claims, applicationID string) bool
-```
-
-### Error values
-
-```go
-var (
-    ErrTokenInvalid          = errors.New("token validation failed")
-    ErrZoneInvalid           = errors.New("token zone validation failed")
-    ErrAgentIdentityRequired = errors.New("agent identity required")
-    ErrDelegationRequired    = errors.New("delegation required")
-    ErrHopCountExceeded      = errors.New("hop count exceeded")
-)
-
-type ScopeMissingError struct {
-    Scope string
-}
-
-type ChainMismatchError struct {
-    ApplicationID string
-}
-```
-
-Use `errors.As` to inspect structured errors:
-
-```go
-claims, err := identity.Verify(token, cfg)
-var scopeErr *identity.ScopeMissingError
-if errors.As(err, &scopeErr) {
-    log.Printf("missing scope: %s", scopeErr.Scope)
-}
-```
-
----
-
-## JWKS caching
-
-All three packages cache JWKS responses per issuer with a 5-minute TTL. On cache miss or expiry, the package fetches `{issuer}/.well-known/jwks.json`. On fetch failure during a stale entry, the stale entry is used (stale-while-revalidate) and an error is logged. The `kid` header in the JWT determines which key from the JWKS response is used for verification.
-
-The JWKS endpoint returns the two most recent zone signing keys, enabling zero-downtime key rotation.
+Use [MCP Transport](/sdks/transport-mcp/) when you also need revocation checks and transport-neutral auth result mapping. Use the identity package directly when you are composing your own verifier.

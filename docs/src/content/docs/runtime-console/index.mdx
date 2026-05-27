@@ -4,51 +4,54 @@ description: Complete reference for the Caracal runtime shell and Console.
 pageType: landing
 ---
 
-Caracal ships two installed tools:
+Caracal has two local operator surfaces with a deliberate boundary:
 
-- **`caracal`**: thin runtime shell for stack lifecycle, readiness checks, purging local state, token-injected process execution, and launching the management surface.
-- **`caracal-console`**: the Console for human operational workflows across zones, applications, resources, providers, policies, grants, sessions, agents, audit events, diagnostics, and Control API lifecycle.
-
-The runtime shell intentionally does not include product-management commands. Use `caracal console` or `caracal-console` for interactive management, and use the Control API for automation that must manage Caracal remotely.
-
-Both tools are compiled with Bun for Linux (x64, arm64), macOS (x64, arm64), and Windows (x64). The runtime is self-contained; no separate Node.js installation is required.
-
----
-
-## Authentication and endpoints
-
-The Console communicates with the control-plane API and discovers operator credentials from the same places as the engine:
-
-| Variable | Default | Purpose |
+| Surface | Owns | Does not own |
 | --- | --- | --- |
-| `CARACAL_ADMIN_TOKEN` | Auto-discovered when possible | Bearer token for control-plane management routes. |
-| `CARACAL_API_URL` | `http://localhost:3000` in development | Control-plane API base URL. |
-| `CARACAL_ZONE_ID` | Environment or saved Console state | Default zone for zone-scoped views. |
-| `CARACAL_COORDINATOR_URL` | `http://localhost:4000` in development | Coordinator service URL for agent and delegation views. |
-| `CARACAL_COORDINATOR_TOKEN` | Auto-discovered when possible | JWT with `agent:lifecycle` authority for agent and delegation views. |
-| `CARACAL_CONFIG` | `~/.config/caracal/caracal.toml` | Explicit local TOML profile path. |
-| `CARACAL_APP_CLIENT_SECRET_FILE` | None | Secret-file source for production runtime credential exchange. |
-| `CARACAL_RUN_CREDENTIALS_FILE` | None | JSON manifest of tokens to inject for `caracal run`. |
+| `caracal` | Local stack lifecycle, readiness, local reset, token-injected process execution, and Console launch. | Product-management workflows. |
+| `caracal console` / `caracal-console` | Human management for zones, applications, providers, resources, policies, policy sets, grants, sessions, Control, audit, explanations, agent runs, delegation, diagnostics, and credentials. | Starting/stopping the stack or running workloads. |
 
-`CARACAL_ADMIN_TOKEN` is discovered in order: `CARACAL_ADMIN_TOKEN`, `CARACAL_ADMIN_TOKEN_FILE`, the runtime secret file written by `caracal up`, and `infra/secrets/files/caracalAdminToken` in development mode. `CARACAL_COORDINATOR_TOKEN` follows the same order using `CARACAL_COORDINATOR_TOKEN_FILE`, `$CARACAL_HOME/secrets/caracalCoordinatorToken`, and `infra/secrets/files/caracalCoordinatorToken`.
+The runtime shell stays small so local lifecycle and workload execution do not depend on admin tokens, zone selection, or Control credentials. Product management belongs to the Console or to the authenticated Control/Admin APIs.
 
----
+## Runtime map
 
-## Supported surfaces
+| Command | Purpose |
+| --- | --- |
+| `caracal up` | Start the local Docker Compose stack. |
+| `caracal down` | Stop the stack; pass `-v` to remove volumes. |
+| `caracal status` | Probe service health. |
+| `caracal status --ready` | Probe dependency readiness. |
+| `caracal purge` | Remove stack artifacts and selected local state. |
+| `caracal run -- <command>` | Run a subprocess with scoped resource tokens injected. |
+| `caracal console` | Launch the Console when the Console binary or workspace shim is available. |
 
-| Area | Surface | Purpose |
+No other top-level `caracal` product-management commands are part of the runtime shell.
+
+## Console map
+
+| Menu label | Key | Purpose |
 | --- | --- | --- |
-| Stack lifecycle | `caracal up`, `caracal down`, `caracal status`, `caracal purge` | Start, stop, probe, and reset the local stack. |
-| Workload execution | `caracal run -- <command>` | Inject scoped resource tokens into subprocesses. |
-| Human management | `caracal console` or `caracal-console` | Manage Caracal entities interactively. |
-| Remote automation | Control API | Drive approved management actions through authenticated HTTP. |
+| `guided setup` | `s` | Create the first zone, agent app, provider, resource, policy, and runtime profile. |
+| `zone` | `1` | Manage zones. |
+| `application` | `2` | Manage confidential agent applications. |
+| `provider` | `3` | Manage provider credential sources. |
+| `resource` | `4` | Manage protected resources. |
+| `policy` | `5` | Manage access policies. |
+| `policy set` | `6` | Manage active policy sets. |
+| `grant` | `7` | Manage access grants. |
+| `session` | `8` | List active authority sessions. |
+| `control` | `9` | Manage the Control automation service and credentials. |
+| `audit` | `a` | Search audit events. |
+| `explain` | `e` | Explain an audit decision. |
+| `agent run` | `r` | Manage agent runs. |
+| `delegation` | `g` | Manage delegated permissions. |
+| `diagnostics` | `d` | Run operator diagnostics. |
+| `credential` | `c` | Read or inspect protected-resource tokens. |
 
-`caracal run` is a runtime execution command, not a management workflow. The Console does not run workloads; use the top-level runtime shell for token-injected processes.
+## Learning path
 
----
-
-## Exit behavior
-
-Runtime shell commands write errors to stderr and exit `0` on success or `1` for validation, readiness, or API failures. `caracal run` returns the subprocess exit code after credentials are acquired.
-
-The Console requires a controlling TTY. In non-interactive environments it exits `1` and directs automation to the Control API or SDK.
+1. Start with [CLI and Console](/runtime-console/cli-and-console/) to choose the right surface.
+2. Use [Runtime Lifecycle](/runtime-console/stack/) to start and check the local stack.
+3. Run [Console guided setup](/runtime-console/console/) to create a real runtime profile.
+4. Use [Configuration File](/runtime-console/config-file/) and [Runtime Execution](/runtime-console/runtime/) when running workloads.
+5. Use [Management Workflows](/runtime-console/admin/), [Observability Workflows](/runtime-console/observability/), and [Agents and Delegation](/runtime-console/agents/) for day-to-day operations.

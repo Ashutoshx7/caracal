@@ -4,54 +4,67 @@ description: Use caracal run to inject scoped tokens into subprocesses.
 pageType: reference
 ---
 
-Runtime execution is intentionally limited to the top-level `caracal run` command. Product management belongs to the Console or the Control API.
-
----
-
-## `caracal run`
-
-Inject scoped tokens into a subprocess environment and run it:
-
-```bash
-caracal run -- <command> [args...]
-```
-
-The `--` separator is optional but recommended when the subprocess accepts flags. Arguments after `--` are passed verbatim to the subprocess.
-
-### What it does
-
-1. Loads validated runtime config from environment variables or `caracal.toml`.
-2. Checks MCP governance rules.
-3. Exchanges each required `credentials[]` entry for a scoped Caracal access token.
-4. Attempts each `optional_credentials[]` entry and follows its configured failure behavior.
-5. Spawns the subprocess with the resulting tokens injected as named environment variables.
-6. Forwards stdin, stdout, and stderr unchanged.
-7. Exits with the subprocess exit code.
-
-Each credential exchange posts to `{zone_url}/oauth/2/token` using `zone_id`, `application_id`, and the confidential application secret from the validated runtime config. Tokens are injected under the declared `env` names.
-
-The runtime first resolves platform configuration from `CARACAL_STS_URL`, `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`, `CARACAL_APP_CLIENT_SECRET_FILE`, and `CARACAL_RUN_CREDENTIALS_FILE`. TOML remains available through `CARACAL_CONFIG` or the XDG runtime profile path for tools that need a readable file. It does not load project-local files from the current working directory because local config may contain credential material, and Console/admin commands do not load runtime profiles.
-
-### Minimal configuration
-
-Generate the first runtime profile from Console **guided setup**. The generated profile includes the STS URL, zone ID, application ID, secret-file path, and resource token entries created from real onboarding values.
+`caracal run` is the runtime execution command. It starts a subprocess with scoped Caracal resource tokens in environment variables and returns the subprocess exit code.
 
 ```bash
 caracal run -- python3 agent.py
 ```
 
-### Step-up challenges
+Use `--` when the child command accepts flags.
 
-If the STS returns `interaction_required`, `caracal run` writes a JSON notice to stderr, polls the step-up endpoint for satisfaction, and retries the exchange until the challenge succeeds or the runtime window expires.
+## Execution flow
 
-### MCP governance
+```text
+runtime config -> MCP governance check -> STS token exchange -> env injection -> child process
+```
 
-`caracal run` detects subprocess commands that reference MCP server binaries. Configure the behavior in `caracal.toml`:
+1. Load runtime config from environment, `CARACAL_CONFIG`, or the default XDG profile.
+2. Validate config keys, URL safety, secret-file permissions, and credential environment names.
+3. Check `[mcp_governance]` rules before spawning likely MCP server commands.
+4. Exchange each required `credentials[]` entry for a resource token.
+5. Exchange each `optional_credentials[]` entry and apply its `on_failure` behavior.
+6. Spawn the child process without `shell: true`.
+7. Forward stdin, stdout, stderr, and the child exit code.
+
+Injected tokens have a one-hour TTL from the runtime exchange.
+
+## Required runtime identity
+
+`caracal run` needs:
+
+| Input | Source |
+| --- | --- |
+| STS/zone URL | `CARACAL_STS_URL`, `CARACAL_ZONE_URL`, or `zone_url` in a profile. |
+| Zone ID | `CARACAL_ZONE_ID` or `zone_id`. |
+| Application ID | `CARACAL_APPLICATION_ID` or `application_id`. |
+| Client secret | `CARACAL_APP_CLIENT_SECRET_FILE`, `CARACAL_APP_CLIENT_SECRET`, `app_client_secret_file`, or `app_client_secret`. |
+| Credential manifest | `CARACAL_RUN_CREDENTIALS_FILE`, `CARACAL_RUN_CREDENTIALS`, `credentials[]`, or `optional_credentials[]`. |
+
+Console `guided setup` is the recommended way to generate the first profile and one-time client secret file.
+
+## Step-up challenges
+
+When STS returns `interaction_required`, the runtime writes the challenge notice, polls the step-up endpoint every two seconds, and retries exchange for up to five minutes. If the challenge is not satisfied in time, the subprocess is not spawned.
+
+## Environment safety
+
+The runtime injects only configured credential environment variables and a small inherited allowlist such as path, home, shell, temporary directory, locale, color, CI, XDG, and Docker-related variables. Credential names that can alter process loading, such as `NODE_OPTIONS`, `LD_PRELOAD`, or dynamic-library path variables, are blocked.
+
+## MCP governance
 
 ```toml
 [mcp_governance]
-mode = "block"   # "block" or "log"
+mode = "block"
 ```
 
-`"block"` exits before spawning the subprocess. `"log"` writes the notice and continues.
-Outside development, `"log"` requires an explicit platform override so runtime profiles cannot silently weaken enforcement.
+`block` stops likely MCP server subprocesses before launch. `log` records the governance event and continues; outside development it requires an explicit platform override.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| `runtime config not found` | Run Console `guided setup`, set platform env vars, or point `CARACAL_CONFIG` at a profile. |
+| Secret-file validation fails | Store the secret value in the file and ensure it is not group- or world-writable. |
+| Token exchange fails | Confirm `caracal status --ready`, zone ID, application ID, client secret, resource ID, and policy/grant coverage. |
+| Child command never starts | Required credential exchange, step-up, config validation, or MCP governance failed before spawn. |
+| Child command exits non-zero | The runtime returns the child process exit code after successful token injection. |

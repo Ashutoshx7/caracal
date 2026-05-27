@@ -1,97 +1,98 @@
 ---
 title: Configuration File
-description: Runtime configuration sources, caracal.toml compatibility, permission rules, and credential injection configuration.
+description: Runtime configuration sources, caracal.toml schema, permission rules, and credential injection settings.
 pageType: config
 ---
 
-`caracal run` and the TypeScript, Python, and Go SDKs load workload settings from platform environment variables or from the same generated runtime profile. Use Console guided setup to generate the first profile from real zone, application, resource, policy, and secret-file values. `caracal.toml` is a portable profile contract; it is not Console state and it does not create, select, or manage zones.
+Runtime config is workload input for `caracal run` and SDK credential loaders. It is not Console state and it does not create, select, or manage zones.
 
-The runtime validates configuration before token exchange. Unknown fields are rejected, credential environment names must be safe process environment keys, and non-local `http://` STS endpoints are rejected outside development unless `CARACAL_ALLOW_INSECURE_CONFIG_URLS=true` is set explicitly.
+## Source precedence
 
-## Production configuration
+| Order | Source |
+| --- | --- |
+| 1 | `CARACAL_CONFIG`, when set and the file exists. |
+| 2 | Environment runtime config. |
+| 3 | `$XDG_CONFIG_HOME/caracal/caracal.toml` or `~/.config/caracal/caracal.toml`. |
 
-Production and cloud workloads should avoid inline secrets and provide config through the platform:
+The runtime does not read `./caracal.toml` from the current working directory.
 
-| Variable | Required | Meaning |
-| --- | --- | --- |
-| `CARACAL_STS_URL` or `CARACAL_ZONE_URL` | yes | STS URL used for OAuth token exchange. Use HTTPS outside local development. |
-| `CARACAL_ZONE_ID` | yes | Zone identifier. |
-| `CARACAL_APPLICATION_ID` | yes | Confidential application identifier. |
-| `CARACAL_APP_CLIENT_SECRET_FILE` | yes | Path to a mounted secret file containing the client secret. |
-| `CARACAL_RUN_CREDENTIALS_FILE` | no | Path to a JSON credential manifest. |
-| `CARACAL_RUN_CREDENTIALS` | no | Inline JSON credential manifest for ephemeral automation. |
-| `CARACAL_RUN_CONTINUE_ON_FAILURE` | no | `true` or `false`; `true` is accepted only in development unless `CARACAL_ALLOW_REQUIRED_CREDENTIAL_FAILURE=true`. |
-| `CARACAL_MCP_GOVERNANCE_MODE` | no | Platform override for MCP governance: `block` or `log`. `log` is accepted outside development only with `CARACAL_ALLOW_MCP_GOVERNANCE_LOG=true`. |
+## Environment config
 
-The credential manifest may be an array of required credentials, or an object with required credentials, optional credentials, and runtime policy. Each credential entry must use the real resource ID registered in Console and the token environment variable generated for that resource.
+| Variable | Meaning |
+| --- | --- |
+| `CARACAL_STS_URL` or `CARACAL_ZONE_URL` | STS zone URL for token exchange. |
+| `CARACAL_GATEWAY_URL` | Gateway URL used by SDK transports. |
+| `CARACAL_COORDINATOR_URL` | Coordinator URL used by SDKs and Console agent views. |
+| `CARACAL_ZONE_ID` | Zone identifier. |
+| `CARACAL_APPLICATION_ID` | Confidential application identifier. |
+| `CARACAL_APP_CLIENT_SECRET_FILE` | Path to a mounted client-secret file. |
+| `CARACAL_APP_CLIENT_SECRET` | Inline local-development client secret. |
+| `CARACAL_RUN_CREDENTIALS_FILE` | JSON credential manifest file. |
+| `CARACAL_RUN_CREDENTIALS` | Inline JSON credential manifest. |
+| `CARACAL_RUN_CONTINUE_ON_FAILURE` | `true` or `false` for required credential failure behavior. |
+| `CARACAL_MCP_GOVERNANCE_MODE` | `block` or `log`. |
 
-Mount secret files read-only where possible. The runtime rejects secret files that are group- or world-writable.
+Set only one of `CARACAL_RUN_CREDENTIALS_FILE` and `CARACAL_RUN_CREDENTIALS`.
 
-## Optional `caracal.toml`
+## TOML schema
 
-### Lookup order
+```toml
+zone_url = "https://sts.example.com"
+gateway_url = "https://gateway.example.com"
+coordinator_url = "https://coordinator.example.com"
+zone_id = "zone_prod"
+application_id = "app_agent"
+app_client_secret_file = "/run/secrets/caracal-app-secret"
 
-1. `CARACAL_CONFIG`, when set and the file exists.
-2. `$XDG_CONFIG_HOME/caracal/caracal.toml`.
-3. `~/.config/caracal/caracal.toml`.
+[[credentials]]
+env = "TICKETS_TOKEN"
+resource = "https://api.example.com/tickets"
+upstream_prefix = "https://api.example.com"
 
-The runtime intentionally does not read `./caracal.toml` from the current working directory because local config may contain credential material. Console, Doctor, and stack lifecycle commands do not load this file; it is workload runtime input for `caracal run` and SDK credential loaders.
+[[optional_credentials]]
+env = "CALENDAR_TOKEN"
+resource = "https://api.example.com/calendar"
+on_failure = "warn"
 
-### Permissions
-
-On POSIX systems, the default config path must be owner-only:
-
-```bash
-chmod 600 ~/.config/caracal/caracal.toml
+[mcp_governance]
+mode = "block"
 ```
 
-Explicit `CARACAL_CONFIG` paths may be read-only secret mounts, but they must not be group- or world-writable.
+## Field reference
 
-### Schema
+| Field | Meaning |
+| --- | --- |
+| `zone_url` | STS zone URL used by `caracal run`; `sts_url` is accepted as an SDK-readable alias/fallback. |
+| `gateway_url` | Gateway endpoint for SDK transports. |
+| `coordinator_url` | Coordinator endpoint for SDK agent/delegation features. |
+| `zone_id` | Zone created in Console. |
+| `application_id` | Confidential application used by the workload. |
+| `app_client_secret_file` | Preferred secret-file path. |
+| `app_client_secret` | Inline local-development secret. |
+| `continue_on_failure` | Required credential failure behavior; defaults to `false`. |
+| `credentials[]` | Required resource tokens. |
+| `optional_credentials[]` | Optional resource tokens with `on_failure = "warn"` or `"error"`. |
+| `mcp_governance.mode` | `block` or `log` for likely MCP subprocesses. |
 
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `zone_url` | yes | STS zone URL used by `caracal run` for OAuth token exchange. Local default is `http://localhost:8080`; use HTTPS outside development. |
-| `sts_url` | no | SDK-readable STS alias. The runtime can use it as a fallback when `zone_url` is absent. |
-| `coordinator_url` | yes for SDKs | Coordinator endpoint for clients that use generated profiles. The runtime ignores this field. |
-| `gateway_url` | no | Gateway endpoint for SDK clients that route provider calls through Gateway. The runtime ignores this field. |
-| `zone_id` | yes | Zone created in the Console. |
-| `application_id` | yes | Confidential application used by the runner. |
-| `app_client_secret_file` | yes, unless `app_client_secret` is set | Path to a secret file containing the confidential application secret. Preferred outside local development. |
-| `app_client_secret` | yes, unless `app_client_secret_file` is set | Inline confidential application secret. Local development only. |
-| `continue_on_failure` | no | Continue when required credential acquisition fails. Defaults to `false`; `true` is local-development only unless explicitly allowed by environment. |
-| `credentials[]` | no | Required resource tokens to inject into the subprocess. |
-| `optional_credentials[]` | no | Optional resource tokens with per-entry failure behavior. |
-| `mcp_governance.mode` | no | `block` or `log` when the subprocess command references MCP server binaries. `log` is local-development only unless explicitly allowed by environment. |
+Credential entries use `env`, `resource`, and optional `upstream_prefix`. Runtime injection requires `env`; SDKs can also use entries as resource audiences and Gateway routing hints.
 
-Credential entries use:
+## Security rules
 
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `env` | yes for `caracal run` | Environment variable name that receives the access token. SDKs use the same entry as a resource audience even when `env` is omitted. |
-| `resource` | yes | Resource identifier registered in Caracal. |
-| `upstream_prefix` | no | SDK-readable absolute URL prefix for Gateway-routed provider calls. The runtime ignores this field. |
-| `on_failure` | optional | Optional credentials only: `warn` or `error`. |
+- Prefer `app_client_secret_file` outside local development.
+- Secret files and explicit config files must not be group- or world-writable.
+- The default profile path must use owner-only permissions on POSIX systems.
+- Non-local insecure `http://` STS URLs are rejected unless explicitly allowed by environment.
+- Environment names that affect runtime loading, such as `NODE_OPTIONS`, `LD_PRELOAD`, and dynamic-library path variables, are blocked.
 
-`caracal run` exchanges the listed credentials and injects the resulting access tokens into the configured `env` names. SDKs use the same `credentials[]` and `optional_credentials[]` entries as token-exchange audiences; when `upstream_prefix` is present, SDK transports can also route matching calls through Gateway.
+## Generated profiles
 
-### Generated profiles
+Console `guided setup` can generate a complete profile and one-time secret file using real zone, application, provider, resource, policy, and credential values. Enable file writing when you want the Console to write the profile and secret file with owner-only permissions.
 
-The Console guided setup result shows a complete profile with real values. Enable **write files** when you want the Console to write the profile and one-time secret file locally with owner-only permissions. If you leave file writing disabled, copy the generated profile to the shown profile path, store the one-time client secret in the shown secret-file path, and set owner-only permissions on both files. The checked-in `caracal.toml.example` is a reference schema, not an onboarding profile.
+## Troubleshooting
 
-## Diagnose profile and runtime config
-
-Use this sequence when `caracal run` or an SDK cannot find credentials:
-
-1. Check whether `CARACAL_CONFIG` is set. If it is set, that exact file is the only runtime profile considered; a missing path fails instead of falling back.
-2. Confirm the profile or platform environment contains `zone_id`, `application_id`, `app_client_secret_file` or `app_client_secret`, an STS URL, and every required credential resource.
-3. Confirm the secret-file path contains the secret value, not the path variable itself, and that the file is not group- or world-writable.
-4. Confirm each credential `env` is a safe process environment key and each `resource` is the real resource ID from Console.
-5. Run `caracal status --ready` before debugging token exchange; readiness failures mean the stack cannot serve STS, Gateway, or audit reliably.
-6. For SDK Gateway routing, confirm `gateway_url` is present and each Gateway-routed credential has the intended `upstream_prefix`.
-
-Runtime shell errors name the source being validated: `environment`, the explicit `CARACAL_CONFIG` path, or the default profile path. Fix that source first; Caracal does not merge values from the other surfaces after one source wins.
-
-## CI and secret mounts
-
-For CI, prefer environment variables and secret files sourced from the CI secret store or orchestration secret mount. Use the zone ID, application ID, secret-file path, and credential manifest from the Console-generated setup or from your platform provisioning system. Use `CARACAL_CONFIG` only when a tool or workflow specifically needs a TOML profile.
+| Symptom | Check |
+| --- | --- |
+| `CARACAL_CONFIG` is set but ignored | The file must exist; when it is set, no other profile path is considered. |
+| Runtime rejects a profile | Remove unknown fields and check permissions, URL safety, and credential env names. |
+| SDK Gateway routing does not happen | Confirm `gateway_url` and `upstream_prefix` are present. |
+| Optional credential stops the process | Set `on_failure = "warn"` for optional credentials that may be absent. |

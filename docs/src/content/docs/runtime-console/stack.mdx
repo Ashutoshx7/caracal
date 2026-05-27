@@ -4,38 +4,38 @@ description: Use caracal up, down, status, and purge to manage the local runtime
 pageType: reference
 ---
 
-Runtime lifecycle commands manage local infrastructure and do not perform product management. They delegate to Docker Compose, resolve release assets from the Caracal home, and preserve the Console as the single human management surface.
+Runtime lifecycle commands manage local infrastructure only. They delegate to Docker Compose and keep product state changes in the Console.
 
----
+## Service layout
 
-## `caracal up`
+| Service | Default local port |
+| --- | --- |
+| API | `3000` |
+| STS | `8080` |
+| Gateway | `8081` |
+| Audit | `9090` |
+| Coordinator | `4000` |
 
-Start the stack:
+Control runtime exposure is managed through the Console `control` menu, not by targeting a stack service directly from the shell.
+
+## Start
 
 ```bash
 caracal up
 ```
 
-In development mode, the command rebuilds local images. In rc and stable modes, it uses the installed release compose assets and injects `CARACAL_VERSION`.
+Development mode rebuilds local images. Release modes use installed compose assets and the selected Caracal version.
 
----
-
-## `caracal down`
-
-Stop stack containers:
+## Stop
 
 ```bash
 caracal down
 caracal down -v
 ```
 
-`-v` is passed to Docker Compose and removes persisted volumes.
+Use `-v` only when you intend to remove Docker volumes.
 
----
-
-## `caracal status`
-
-Probe service liveness or dependency-aware readiness:
+## Check health and readiness
 
 ```bash
 caracal status
@@ -43,16 +43,23 @@ caracal status --ready
 caracal status --ready --json
 ```
 
-Readiness checks include Postgres, Redis, STS reachability, Gateway bindings, audit replay, and stream consumers. The command exits `0` when every probe passes and `1` when any service is down, unreachable, or not ready.
+`status` probes service health endpoints. `status --ready` probes readiness endpoints and dependencies. The command exits `0` only when the selected probes pass.
 
----
-
-## `caracal purge`
-
-Remove the local stack, runtime data, generated logs, cached release assets, and installed runtime state:
+## Purge local state
 
 ```bash
 caracal purge
 ```
 
-Use `purge` only when you intentionally want a clean local environment. Recreate zones, applications, policies, grants, and Control keys through the Console after the next `caracal up`.
+`purge` can remove stack artifacts, volumes, logs, config, runtime state, secrets, cached assets, or all local runtime state depending on the selected purge target. Use it when you intentionally want a clean local environment.
+
+After a full purge, recreate product state through the Console: zones, applications, providers, resources, policies, grants, Control keys, and generated runtime profiles.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+| --- | --- |
+| `status` passes but `status --ready` fails | A service is alive but one of its dependencies or readiness checks is not ready. |
+| Console cannot connect after `up` | Check `caracal status --ready`, then confirm `CARACAL_API_URL` if you are not using localhost. |
+| Workloads cannot exchange tokens | Readiness for STS, Gateway, and audit must pass before debugging workload config. |
+| Local tokens are stale after `purge` and `up` | Prefer local generated secret files over exported shell tokens for localhost Console sessions. |

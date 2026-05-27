@@ -1,66 +1,49 @@
 ---
-title: SDKs
-description: Package reference for the TypeScript, Python, and Go SDKs and all companion packages.
-pageType: landing
+title: SDKs and Packages
+description: Reference map for Caracal SDKs, token exchange packages, verification packages, transports, and connectors.
 ---
 
-Caracal publishes a layered set of packages across TypeScript, Python, and Go. The main SDK packages are the default way to run agents through Caracal and call the Gateway with scoped access. Companion packages handle token exchange, identity verification, revocation, and administration. Connector packages adapt Caracal to connector-verified services and enforcement adapters when the Gateway is not the right boundary.
-
-Start with an SDK plus the Gateway. Install identity, revocation, transport, or connector packages directly only when you are protecting a service you own or building an adapter for a provider protocol the Gateway cannot proxy.
-
-The SDK layer is not a provider-wrapper strategy. Its job is to preserve authority context (agent app, agent run, mandate, resource, delegated permission, policy decision, and audit correlation) across the places where application code naturally crosses process, task, or protocol boundaries.
+Use this section when you need package-level details after following a guide. The Guides section shows task workflows; this section explains package names, install commands, public APIs, runtime requirements, and where each package fits.
 
 ## Package map
 
-### SDKs
+| Area | TypeScript / Node | Python | Go |
+| --- | --- | --- | --- |
+| App SDK | `@caracalai/sdk` | `caracalai-sdk` | `github.com/garudex-labs/caracal/packages/sdk/go` |
+| Identity verification | `@caracalai/identity` | `caracalai-identity` | `github.com/garudex-labs/caracal/packages/identity/go` |
+| OAuth token exchange | `@caracalai/oauth` | `caracalai-oauth` | `github.com/garudex-labs/caracal/packages/oauth/go` |
+| Revocation store | `@caracalai/revocation` | `caracalai-revocation` | `github.com/garudex-labs/caracal/packages/revocation/go` |
+| MCP transport | `@caracalai/transport-mcp` | `caracalai-transport-mcp` | `github.com/garudex-labs/caracal/packages/transport/mcp/go` |
+| A2A transport | `@caracalai/transport-a2a` | Not published in this repository | Not published in this repository |
+| Express connector | `@caracalai/mcp-express` | Not applicable | Not applicable |
+| FastMCP connector | `@caracalai/mcp-fastmcp` | `caracalai-mcp-fastmcp` | Not applicable |
+| net/http connector | Not applicable | Not applicable | `github.com/garudex-labs/caracal/packages/connectors/nethttp/go` |
+| Redis revocation connector | `@caracalai/revocation-redis` | `caracalai-revocation-redis` | `github.com/garudex-labs/caracal/packages/connectors/redis/go` |
+| Postgres token state | `@caracalai/tokenstate-postgres` | Not published in this repository | Not published in this repository |
 
-| Package | Language | Install | Purpose |
-| ------- | -------- | ------- | ------- |
-| [`@caracalai/sdk`](./typescript/) | TypeScript | `npm install @caracalai/sdk` | Agent sessions, delegation, Gateway-bound outbound calls, context propagation |
-| [`caracalai-sdk`](./python/) | Python | `pip install caracalai-sdk` | Agent sessions, delegation, Gateway-bound outbound calls, context propagation |
-| [`github.com/garudex-labs/caracal/packages/sdk/go`](./go/) | Go | `go get github.com/garudex-labs/caracal/packages/sdk/go` | Agent sessions, delegation, Gateway-bound outbound calls, context propagation |
+## Runtime requirements
 
-### Shared packages
+| Ecosystem | Current package target |
+| --- | --- |
+| Node.js | Node `>=24` for published TypeScript packages that declare an engine. |
+| Python | Python `>=3.14` for published Python packages. |
+| Go | Module paths under `github.com/garudex-labs/caracal/packages/...`; current modules declare Go `1.26` where specified. |
 
-| Package | Language | Install | Purpose |
-| ------- | -------- | ------- | ------- |
-| [`@caracalai/identity`](./identity/) | TypeScript | `npm install @caracalai/identity` | JWT verification, JWKS caching, scope evaluation |
-| [`caracalai-identity`](./identity/) | Python | `pip install caracalai-identity` | Same as above |
-| [`github.com/garudex-labs/caracal/packages/identity/go`](./identity/) | Go | `go get github.com/garudex-labs/caracal/packages/identity/go` | Same as above |
-| [`@caracalai/oauth`](./oauth/) | TypeScript | `npm install @caracalai/oauth` | RFC 8693 token exchange, token caching, step-up handling |
-| [`caracalai-oauth`](./oauth/) | Python | `pip install caracalai-oauth` | Same as above |
-| [`github.com/garudex-labs/caracal/packages/oauth/go`](./oauth/) | Go | `go get github.com/garudex-labs/caracal/packages/oauth/go` | Same as above |
-| [`@caracalai/revocation`](./revocation/) | TypeScript | `npm install @caracalai/revocation` | RevocationStore interface and in-memory implementation |
-| [`caracalai-revocation`](./revocation/) | Python | `pip install caracalai-revocation` | Same as above |
-| [`github.com/garudex-labs/caracal/packages/revocation/go`](./revocation/) | Go | `go get github.com/garudex-labs/caracal/packages/revocation/go` | Same as above |
-| [`@caracalai/admin`](./admin/) | TypeScript | `npm install @caracalai/admin` | Control-plane REST client (zones, apps, policies, grants, agents) |
+## How to choose
 
-### Transports
+| Need | Start with |
+| --- | --- |
+| Spawn agents, delegate, inject headers, or route through Gateway | [TypeScript SDK](/sdks/typescript/), [Python SDK](/sdks/python/), or [Go SDK](/sdks/go/) |
+| Verify mandates inside a resource server | [Identity Package](/sdks/identity/) or [MCP Transport](/sdks/transport-mcp/) |
+| Exchange tokens directly against STS | [OAuth Package](/sdks/oauth/) |
+| Track revoked sessions and delegation edges | [Revocation Package](/sdks/revocation/) and [Redis Token State](/sdks/connectors/redis/) |
+| Automate zones, resources, policies, grants, audit, agents, or delegation | [Admin Package](/sdks/admin/) |
+| Protect framework-specific servers | [Connectors](/sdks/connectors/) |
 
-| Package | Language | Install | Purpose |
-| ------- | -------- | ------- | ------- |
-| [`@caracalai/transport-mcp`](./transport-mcp/) | TypeScript | `npm install @caracalai/transport-mcp` | MCP server-side mandate verification |
-| [`caracalai-transport-mcp`](./transport-mcp/) | Python | `pip install caracalai-transport-mcp` | Same as above |
-| [`@caracalai/transport-a2a`](./transport-a2a/) | TypeScript | `npm install @caracalai/transport-a2a` | HTTP agent-to-agent calls that preserve Caracal authority context |
+## Related guides
 
-### Connectors
-
-| Package | Language | Install | Purpose |
-| ------- | -------- | ------- | ------- |
-| [`@caracalai/mcp-express`](./connectors/express/) | TypeScript | `npm install @caracalai/mcp-express` | Express middleware for mandate verification |
-| [`@caracalai/mcp-fastmcp`](./connectors/fastmcp/) | TypeScript | `npm install @caracalai/mcp-fastmcp` | FastMCP token verification helper |
-| [`caracalai-mcp-fastmcp`](./connectors/fastmcp/) | Python | `pip install caracalai-mcp-fastmcp` | FastMCP auth callable |
-| [`github.com/garudex-labs/caracal/packages/connectors/nethttp/go`](./connectors/nethttp/) | Go | `go get github.com/garudex-labs/caracal/packages/connectors/nethttp/go` | Go net/http middleware |
-| [`@caracalai/tokenstate-postgres`](./connectors/postgres/) | TypeScript | `npm install @caracalai/tokenstate-postgres` | Postgres-backed MCP token state |
-| [`@caracalai/revocation-redis`](./connectors/redis/) | TypeScript | `npm install @caracalai/revocation-redis` | Redis-backed revocation store and stream consumer |
-| [`caracalai-revocation-redis`](./connectors/redis/) | Python | `pip install caracalai-revocation-redis` | Same as above |
-
-## Shared concepts
-
-**Context propagation**: The SDK packages bind agent app, agent run, delegated-permission identity, trace ID, and hop to the execution context (AsyncLocalStorage in TypeScript, context vars in Python, `context.Context` in Go). Gateway-bound outbound calls within that context automatically carry the correct `Authorization`, `traceparent`, and `baggage` headers. Use the SDK capture helpers when crossing task, thread, goroutine, queue, or provider-adapter boundaries, and use the authority-summary helpers for redacted diagnostics.
-
-**Package layering**: The main SDKs own agent lifecycle and context propagation. TypeScript and Go use their OAuth packages for client-secret token exchange; Python implements its SDK token-source flow in `caracalai-sdk` and depends on `caracalai-identity`. Install companion packages directly when building a server that verifies mandates, a custom STS exchange client, or a control-plane tool.
-
-**Protocol boundaries**: Gateway-mediated HTTP, REST, and MCP-over-HTTP are the default execution path. Connector-verified services and enforcement adapters are supported patterns that must implement verification, replay, revocation, and result audit themselves. Application-managed external provider calls can carry Caracal context for attribution, but they are not Caracal-enforced provider calls unless the application performs equivalent checks.
-
-**Configuration**: All SDK clients use the same generated profile contract as `caracal run`. `connect()` / `Connect()` reads an explicit profile, `CARACAL_CONFIG`, the default profile path, then platform environment variables.
+- [Integrate the TypeScript SDK](/guides/sdk-typescript/)
+- [Integrate the Python SDK](/guides/sdk-python/)
+- [Integrate the Go SDK](/guides/sdk-go/)
+- [Protect an MCP Server](/guides/protect-mcp/)
+- [Implement Multi-Agent Delegation](/guides/delegation/)
