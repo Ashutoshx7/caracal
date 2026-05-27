@@ -1,129 +1,43 @@
 ---
 title: Services
-description: The five core Caracal services, optional control surface, sidecars, default ports, shared infrastructure, and communication topology.
+description: Service-by-service reference for the current Caracal runtime.
 pageType: landing
 ---
 
-Caracal is composed of five core application services. Three are written in Go (`sts`, `gateway`, `audit`); two are written in TypeScript (`api`, `coordinator`). The stack also includes a coordinator relay sidecar and an optional TypeScript [Control](./control/) automation surface that wraps the shared `@caracalai/engine` dispatch. All core services share a PostgreSQL database and a Redis instance but own distinct schema responsibilities and domain boundaries.
-
----
+Caracal services are small, explicit runtime components. Each service owns a bounded part of the authority lifecycle and exposes health/readiness endpoints for operations.
 
 ## Service map
 
-| Service | Language | Port | Plane | Role |
-| --- | --- | --- | --- | --- |
-| [Control-Plane API](./api/) | TypeScript (Fastify) | 3000 | Control | Manages zones, applications, resources, providers, policies, grants, and sessions |
-| [STS](./sts/) | Go (`net/http`) | 8080 | Data | Issues ES256 JWTs, evaluates OPA policies, emits audit events |
-| [Gateway](./gateway/) | Go (`net/http`) | 8081 | Data | Reverse-proxies MCP requests; exchanges a fresh mandate on every request |
-| [Coordinator](./coordinator/) | TypeScript (Fastify) | 4000 | Data | Manages agent lifecycle, invocations, and the delegation graph |
-| [Audit](./audit/) | Go (`net/http`) | 9090 | Data | Consumes the audit stream and persists events with chain HMAC integrity |
+| Service | Port | Owns |
+| --- | --- | --- |
+| [Control-Plane API](/services/api/) | `3000` | Product state, management routes, policy/grant resources, admin audit, API outbox. |
+| [Coordinator](/services/coordinator/) | `4000` | Agent sessions, service leases, delegation edges, invocations, Coordinator outbox. |
+| [STS](/services/sts/) | `8080` | Token exchange, mandate issuance, JWKS, policy evaluation, step-up status. |
+| [Gateway](/services/gateway/) | `8081` | Protected reverse proxy, per-request exchange, revocation checks, upstream safety. |
+| [Audit](/services/audit/) | `9090` | Audit ingestion, DLQ, tamper checks, retention, search. |
+| [Control](/services/control/) | `8087` | Optional remote management invocation through shared engine dispatch. |
 
-Optional runtime components:
+## Dependency map
 
-| Component | Language | Port | Role |
-| --- | --- | --- | --- |
-| [Control](./control/) | TypeScript (Fastify) | 8087 | Automation surface that wraps the shared engine dispatch with JWT auth, JTI replay, per-resource scopes, rate limit, and audit. Default OFF. |
-| Coordinator relay | Go | none | Sidecar process that forwards coordinator lifecycle events |
-
----
-
-## Shared infrastructure
-
-All services connect to the same PostgreSQL database and Redis instance. Schema ownership is strict: services only write to their own tables and read from others' when needed:
-
-**PostgreSQL**: primary durable store for all control and data-plane state. Schema migrations run before application startup through the Compose `dbMigrate` service or the Helm migration Job.
-
-**Redis**: used for three distinct purposes:
-- **Streams**: asynchronous event bus between services (transactional outbox pattern).
-- **Distributed locks**: advisory locks for spawn constraints (Coordinator) and leader election (Audit).
-- **Short-lived keys**: JTI deduplication (STS, Gateway), step-up challenge state (STS).
-
----
-
-## Communication topology
-
-```
-                ┌──────────────────────────────────┐
-                │      Control-Plane API :3000      │
-                │  TypeScript / Fastify             │
-                │  Owns: zones, apps, policies,     │
-                │  grants, sessions, secrets        │
-                └──────────────────┬───────────────┘
-                                   │ reads (admin API)
-              ┌────────────────────▼────────────────────┐
-              │              STS :8080                   │
-              │  Go / net/http                          │
-              │  Issues ES256 JWTs, runs OPA,           │
-              │  publishes audit events to Redis        │
-              └───┬────────────────────────────────┬────┘
-                  │ called by                      │ called by
-        ┌─────────▼──────────┐        ┌────────────▼───────────┐
-        │   Gateway :8081    │        │   Coordinator :4000    │
-        │  Go / net/http     │        │  TypeScript / Fastify  │
-        │  Reverse proxy;    │        │  Agent lifecycle,      │
-        │  exchanges mandate │        │  invocations,          │
-        │  on every request  │        │  delegation graph      │
-        └────────────────────┘        └────────────────────────┘
-
-                ┌──────────────────────────────────┐
-                │          Audit :9090             │
-                │  Go / net/http                  │
-                │  Consumes Redis stream,          │
-                │  persists with HMAC chain,       │
-                │  exports to S3 (optional)        │
-                └──────────────────────────────────┘
+```mermaid
+flowchart LR
+  API --> Postgres[(Postgres)]
+  API --> Redis[(Redis)]
+  Coordinator --> Postgres
+  Coordinator --> Redis
+  STS --> Postgres
+  STS --> Redis
+  Gateway --> Postgres
+  Gateway --> Redis
+  Gateway --> STS
+  Audit --> Postgres
+  Audit --> Redis
+  Control --> API
+  Control --> Redis
 ```
 
-**Redis stream topology:**
+## Related sections
 
-| Stream | Producer | Consumer(s) | Purpose |
-| --- | --- | --- | --- |
-| `caracal.audit.events` | STS | Audit | Audit event ingestion |
-| `caracal.sessions.revoke` | API (via outbox) | Gateway, STS | Session revocation propagation |
-| `caracal.policy.invalidate` | API (via outbox) | STS, Gateway | Policy cache invalidation |
-
-The API and Coordinator publish to Redis through a transactional outbox: events are written to a PostgreSQL `event_outbox` table inside the mutation transaction, then forwarded to Redis by a background dispatcher. This guarantees event delivery even if Redis is temporarily unavailable at write time.
-
----
-
-## Request flows
-
-**Token exchange (SDK or agent calling STS):**
-1. SDK presents a session mandate to `POST /oauth/2/token` on the STS.
-2. STS fetches the zone's application and resource records from PostgreSQL.
-3. STS evaluates the zone's compiled OPA policy.
-4. If allowed, STS signs a resource mandate (ES256 JWT) with the zone's private key.
-5. STS publishes an audit event to `caracal.audit.events`.
-6. SDK presents the resource mandate to the target MCP resource.
-
-**Gateway-proxied request:**
-1. Client sends an MCP request to Gateway with a bearer token in `Authorization`.
-2. Gateway verifies the JWT signature using the zone's JWKS (cached from STS).
-3. Gateway calls `POST /oauth/2/token` on STS to exchange a fresh resource mandate.
-4. Gateway forwards the request to the upstream resource with the new mandate.
-5. Gateway streams the upstream response back to the client.
-
-**Agent spawn:**
-1. SDK calls `Coordinator POST /zones/{z}/agents` with a bearer JWT (STS-issued, scope `agent:lifecycle`).
-2. Coordinator enforces spawn limits (max depth 10, max children 10, max 50/zone, max 200/app).
-3. Coordinator persists the agent session record.
-4. Coordinator's background dispatcher publishes to the outbox stream.
-
----
-
-## Health and readiness
-
-Every service exposes:
-
-- `GET /health`: always 200, no dependency checks. Use for liveness probes.
-- `GET /ready`: checks PostgreSQL and Redis connectivity. Returns 503 if any dependency is unhealthy. Use for readiness probes.
-
----
-
-## Scaling
-
-All five services are stateless with respect to request handling. Scale any service horizontally by adding replicas. Caveats:
-
-- **STS**: each instance maintains a per-instance cache of decrypted zone signing keys (15 min TTL) and compiled OPA bundles. These are rebuilt from PostgreSQL and Redis on cache miss: no shared memory required, but cold-start evaluation is slower.
-- **Gateway**: each instance caches JWKS (5 min TTL) and binding tables (30 s refresh). Revocation state is synchronized via the `caracal.sessions.revoke` Redis stream.
-- **Audit**: uses a Redis consumer group (`audit-ingestor`). Add replicas to increase throughput; the consumer group partitions delivery automatically. Leader election via Redis lock determines which replica runs the S3 exporter and retention rotator.
+- [Architecture](/architecture/)
+- [Operations](/operations/)
+- [API Reference](/api/)

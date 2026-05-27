@@ -4,6 +4,8 @@ Autonomous financial execution reference lab. A FastAPI + LangGraph swarm that
 processes a global SaaS payout cycle (~4,200 invoices, 5 regions) end-to-end
 with a live agent topology view and SSE log stream.
 
+Canonical walkthrough: https://caracal.run/examples/lynx-capital/
+
 ## Requirements
 
 - Python 3.14+
@@ -176,7 +178,7 @@ pytest tests/
 docker compose -f _mock/docker-compose.yml down
 caracal down
 # or, for a full reset (containers + volumes + caracal.toml):
-caracal purge --include-destructive all
+caracal purge all
 ```
 
 ## Layout

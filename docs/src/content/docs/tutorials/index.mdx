@@ -1,15 +1,41 @@
 ---
 title: Tutorials
-description: Outcome-named walkthroughs that pair a single user goal with the surfaces it touches.
+description: Outcome-based walkthroughs for protecting resources, connecting agents, and inspecting audit evidence.
 pageType: workflow
 ---
 
-Tutorials sit between [Get Started](/get-started/) and the surface-by-surface [Guides](/guides/). Each tutorial names an outcome you want to deliver and walks through the Caracal surfaces that produce it.
+Tutorials turn the onboarding model into practical outcomes. Start with [Get Started](/get-started/) if you do not yet have a running stack and generated runtime profile.
 
-| Outcome | What you do | Surfaces touched |
+## Tutorial path
+
+```mermaid
+flowchart LR
+  API[Protect an API]
+  Agent[Connect an agent]
+  Audit[Inspect a run]
+
+  API --> Agent --> Audit
+```
+
+| Outcome | Tutorial | What you use |
 | --- | --- | --- |
-| [Protect an API](./protect-an-api/) | Put a Caracal-enforced boundary in front of a service you own. | Console (resource, policy, grant), SDK connector or Gateway routing. |
-| [Connect an agent](./connect-an-agent/) | Wire an agent app through the SDK so its tool calls are authority-checked and audited. | TS / Python / Go SDK `Caracal.connect()`, Gateway. |
-| [Inspect a run](./inspect-a-run/) | Trace one agent run end-to-end through authorization decisions and action results. | Console (sessions, agents, audit), `audit explain`. |
+| Put an enforced boundary in front of a service or provider route. | [Protect an API](./protect-an-api/) | Console **resource**, **provider**, **policy**, Gateway, connector guides. |
+| Wire application code through Caracal. | [Connect an Agent](./connect-an-agent/) | TypeScript, Python, or Go SDK; generated runtime profile; Gateway. |
+| Prove what happened during one run. | [Inspect a Run](./inspect-a-run/) | Console **agent run**, **session**, **delegation**, **audit**, and **explain** flows. |
 
-If you do not yet have a running stack, start at [Quickstart: Released Product](/get-started/quickstart/). If you want surface-by-surface reference, jump to [Guides](/guides/) or [Concepts](/concepts/).
+## Before you begin
+
+You should have:
+
+- a local or deployed Caracal stack;
+- one zone;
+- one confidential agent app;
+- one protected resource;
+- one active policy set;
+- a generated runtime profile or equivalent environment configuration.
+
+The [Five-Minute Setup](/get-started/five-minute-setup/) creates all of these for a local evaluation path.
+
+## After tutorials
+
+Use [Guides](/guides/) for surface-specific implementation details, [SDKs](/sdks/) for package APIs, and [Concepts](/concepts/) when you need the reference model behind policy, delegation, revocation, or audit.

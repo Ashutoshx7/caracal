@@ -1,18 +1,31 @@
 ---
 title: Connect an Agent
-description: Wire an agent app through the SDK so its tool calls are authority-checked and audited.
+description: Wire an agent app through the SDK so protected calls carry Caracal authority and audit context.
 pageType: workflow
 ---
 
-This tutorial wires an agent app through Caracal so every tool call presents a short-lived mandate, propagates trace context, and lands in the audit ledger. The example uses the resource you created in [Protect an API](../protect-an-api/); any registered resource works.
+This tutorial connects application code to Caracal. The examples use a generated runtime profile, open one agent run, and call a Gateway-protected resource.
 
-## 1. Confirm the application is registered
+## 1. Confirm the app and profile
 
-In the Console **Application** view, confirm the application exists in the zone and has a client secret. The client secret is what the SDK exchanges for short-lived authority. Save the generated runtime profile and secret file from guided setup, or use the equivalent platform-managed environment variables.
+In the Console, confirm that the selected zone has:
 
-## 2. Install the SDK and call `connect()`
+- one confidential agent app;
+- a client secret stored in the secret file named by the generated runtime profile;
+- one protected resource with an active policy;
+- a Gateway URL and resource binding when using Gateway-mediated HTTP.
 
-`Caracal.connect()` is the single entry point. It auto-detects credentials from an explicit profile, `CARACAL_CONFIG`, the default generated profile path, then environment variables. The full resolution order is documented in [Configuration Precedence](/reference/config-precedence/).
+Set the profile path and the resource target for the examples:
+
+```bash
+export CARACAL_CONFIG=/path/to/caracal.toml
+export CARACAL_RESOURCE_ID=resource://billing-api
+export CARACAL_RESOURCE_PATH=/charge
+```
+
+## 2. Connect with the SDK
+
+`connect()` is the standard entry point. It loads the generated profile when available, then falls back to environment configuration. See [Configuration Precedence](/reference/config-precedence/) for the exact resolution order.
 
 ### TypeScript
 
@@ -21,24 +34,21 @@ npm install @caracalai/sdk
 ```
 
 ```typescript
-import { Caracal, AgentKind } from "@caracalai/sdk";
+import { AgentKind, Caracal } from "@caracalai/sdk";
 
 const caracal = Caracal.connect();
+const resourceId = process.env.CARACAL_RESOURCE_ID!;
+const resourcePath = process.env.CARACAL_RESOURCE_PATH!;
 
 await caracal.spawn(async () => {
-  const ctx = caracal.current();
-  console.log("Agent session:", ctx?.agentSessionId);
-
-  const protectedResourceUrl = process.env.CARACAL_PROTECTED_URL;
-  if (!protectedResourceUrl) throw new Error("CARACAL_PROTECTED_URL is required");
-
-  const client = caracal.transport();
-  const response = await client(protectedResourceUrl, {
+  const request = caracal.gatewayRequest(resourceId, resourcePath);
+  const response = await caracal.transport()(request.url, {
     method: "POST",
+    headers: { ...request.headers, "Content-Type": "application/json" },
     body: JSON.stringify({ amount: 1200 }),
-    headers: { "Content-Type": "application/json" },
   });
-  console.log(await response.json());
+
+  console.log(await response.text());
 }, { kind: AgentKind.Ephemeral });
 ```
 
@@ -51,19 +61,23 @@ pip install caracalai-sdk
 ```python
 import asyncio
 import os
-from caracalai_sdk import Caracal, AgentKind
+
+from caracalai_sdk import AgentKind, Caracal
 
 caracal = Caracal.connect()
-protected_resource_url = os.environ["CARACAL_PROTECTED_URL"]
+resource_id = os.environ["CARACAL_RESOURCE_ID"]
+resource_path = os.environ["CARACAL_RESOURCE_PATH"]
 
 async def main():
-    async with caracal.spawn(kind=AgentKind.EPHEMERAL) as ctx:
+    async with caracal.spawn(kind=AgentKind.EPHEMERAL):
+        request = caracal.gateway_request(resource_id, resource_path)
         async with caracal.transport() as client:
-            r = await client.post(
-                protected_resource_url,
+            response = await client.post(
+                request.url,
+                headers=request.headers,
                 json={"amount": 1200},
             )
-            print(r.json())
+            print(response.text)
 
 asyncio.run(main())
 ```
@@ -76,40 +90,80 @@ go get github.com/garudex-labs/caracal/packages/sdk/go
 
 ```go
 c, err := caracal.Connect()
-if err != nil { panic(err) }
-protectedResourceURL := os.Getenv("CARACAL_PROTECTED_URL")
-if protectedResourceURL == "" { panic("CARACAL_PROTECTED_URL is required") }
+if err != nil {
+    panic(err)
+}
+
+resourceID := os.Getenv("CARACAL_RESOURCE_ID")
+resourcePath := os.Getenv("CARACAL_RESOURCE_PATH")
 
 err = c.Spawn(context.Background(), func(ctx context.Context) error {
-    client := c.Transport(nil)
-    resp, err := client.Post(
-        protectedResourceURL,
-        "application/json",
-        strings.NewReader(`{"amount":1200}`),
-    )
-    if err != nil { return err }
+    target, err := c.GatewayRequest(resourceID, resourcePath)
+    if err != nil {
+        return err
+    }
+
+    req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.URL, strings.NewReader(`{"amount":1200}`))
+    if err != nil {
+        return err
+    }
+    req.Header = target.Header.Clone()
+    req.Header.Set("Content-Type", "application/json")
+
+    resp, err := c.Transport(nil).Do(req)
+    if err != nil {
+        return err
+    }
     defer resp.Body.Close()
     return nil
 })
+if err != nil {
+    panic(err)
+}
 ```
 
-`CARACAL_PROTECTED_URL` must be a real URL on the upstream resource you registered in guided setup. `spawn()` opens an agent run, exchanges a short-lived Caracal mandate, and tears the run down when the function returns. `transport()` injects the mandate and trace context on outbound requests; for upstreams that match a configured resource binding, it rewrites the URL through the Gateway and replaces the `Authorization` header with the mandate.
+## 3. Understand the runtime behavior
 
-## 3. Delegate to a child agent (optional)
+| SDK call | What happens |
+| --- | --- |
+| `connect()` / `Connect()` | Loads configuration and prepares app-secret token exchange. |
+| `spawn()` / `Spawn()` | Creates an agent run, binds context, and tears it down after the block returns. |
+| `gatewayRequest()` / `GatewayRequest()` | Builds the Gateway URL and `X-Caracal-Resource` header. |
+| `transport()` / `Transport()` | Injects Authorization, trace, baggage, and Gateway routing behavior. |
 
-If the agent app spawns subordinate agents, narrow the authority handed to each child with `delegate()` or `delegateToSpawn()`. Constraints (scope, TTL, hop, resource, policy) are applied at issuance and recorded in the delegation edge.
+`spawn()` is the run boundary. If the function exits or raises, the SDK terminates the agent run and active authority for that run is revoked.
 
-See [Implement Multi-Agent Delegation](/guides/delegation/) for the contract.
+## 4. Optional delegation
 
-## 4. Verify the call landed in audit
+Use delegation when a parent run needs to hand narrower authority to another run:
 
-Open the Console **Audit** view. A complete protected call produces two events:
+```typescript
+await caracal.spawn(async () => {
+  await caracal.delegate(
+    {
+      to: childAgentSessionId,
+      toApplicationId: "child-app",
+      scopes: ["billing:read"],
+      constraints: { ttlSeconds: 300, maxHops: 1 },
+    },
+    async () => {
+      console.log("Delegated edge:", caracal.current()?.delegationEdgeId);
+    },
+  );
+});
+```
 
-- An authorization event from the STS (allow or deny, with the policy that decided it).
-- An action-result event from the Gateway, or from the protected service when a connector-verified boundary emits service-side result audit.
+Use [Implement Multi-Agent Delegation](/guides/delegation/) before designing production delegation flows.
 
-If either event is missing for an accepted call, the enforcement boundary is incomplete. Re-check the Gateway resource binding first; for connector-verified services, confirm the service writes result audit after the connector verifies the mandate.
+## 5. Verify audit
+
+Open Console **audit** and find the request. A complete Gateway-mediated call produces:
+
+1. an authorization event from STS;
+2. an action-result event from Gateway.
+
+Open **explain** with the request ID to confirm the application, resource, scopes, policy, policy set version, and decision.
 
 ## Next step
 
-Move on to [Inspect a run](../inspect-a-run/) to follow one agent run through the audit ledger and explain its decisions.
+Continue with [Inspect a Run](../inspect-a-run/) to trace this run through sessions, delegations, and audit.
