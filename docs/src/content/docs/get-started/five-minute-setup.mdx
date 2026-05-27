@@ -31,20 +31,23 @@ caracal console
 In the Console:
 
 1. Choose **guided setup**.
-2. Enter the zone name and agent application name used by the team that will own the workload.
-3. Enter the resource ID and scopes for the upstream you are protecting.
-4. Enter the real upstream URL when you want Gateway routing.
-5. Enter a real first request path when you want Console to generate an exact Gateway check.
-6. Turn on **write files** when you want Console to create the runtime profile and secret file on this machine.
-7. Keep **advanced options** closed for the first run unless you need provider credentials, custom profile paths, a custom token environment variable, skipped policy activation, or file overwrite behavior.
+2. Choose the selected zone, pick an existing zone, or type a new zone name.
+3. Create a new agent app by typing its name, or press the picker key to select an existing app in the chosen zone.
+4. Create a new protected resource by typing a plain resource name, or select an existing resource.
+5. Enter only the scopes needed for the first successful call.
+6. Optionally enter the upstream URL and first request path when you want Gateway routing and an exact generated Gateway check.
+7. Optionally turn on **write files** when you want Console to create the runtime profile and secret file on this machine.
+8. Review the setup plan, then create it.
 
-The result view shows the created objects, the one-time client secret, the active policy set, the generated runtime profile, local setup commands, file-write status, and first-success commands. If file writing was skipped, run the local setup commands, paste the revealed one-time client secret as the only line in the secret file, and keep the profile and secret files owner-readable only.
+Guided setup asks one question at a time and keeps internal IDs out of the main path. Leave **advanced** closed for the first run unless you need provider credentials, a custom resource identifier, custom profile paths, a custom token environment variable, skipped policy activation, or file overwrite behavior.
+
+The result view shows which objects were created or selected, the one-time client secret for a newly created app, the active policy set, the generated runtime profile, local setup commands, file-write status, and first-success commands. If file writing was skipped, run the local setup commands, paste the revealed one-time client secret or selected app secret as the only line in the secret file, and keep the profile and secret files owner-readable only.
 
 ## Call the protected resource
 
 Use the generated `CARACAL_CONFIG=... caracal run --` command prefix with the real command that starts your workload.
 
-The token environment variable in the generated profile is derived from the resource ID you entered. Use that injected token when your workload calls Gateway or the protected service. For Gateway-routed resources, the result view includes an exact `curl` command when first request path was provided; otherwise it shows the required Gateway URL and headers so you can run the request against a real protected path.
+The token environment variable in the generated profile is derived from the resolved resource identifier. Use that injected token when your workload calls Gateway or the protected service. For Gateway-routed resources, the result view includes an exact `curl` command when first request path was provided; otherwise it shows the required Gateway URL and headers so you can run the request against a real protected path.
 
 ## Explain the first success
 

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// First setup workflow creates production onboarding resources without dummy data.
+// First setup wizard tests for guided onboarding and generated runtime output.
 
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -10,7 +10,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest'
 import { firstSetupView } from '../../../../apps/console/src/views/setup.ts'
 import { DetailView } from '../../../../apps/console/src/views/detail.ts'
 import { FormView } from '../../../../apps/console/src/views/form.ts'
-import type { App } from '../../../../apps/console/src/screen.ts'
+import type { App, View, ViewContext } from '../../../../apps/console/src/screen.ts'
 
 function fakeApp(): App {
   const pushed: unknown[] = []
@@ -30,37 +30,46 @@ function fakeApp(): App {
 }
 
 function makeClient() {
+  const zone = { id: 'zone-1', slug: 'zone-slug', name: 'zone-name' }
+  const application = {
+    id: 'app-1',
+    zone_id: 'zone-1',
+    name: 'agent-app-name',
+    registration_method: 'managed',
+    credential_type: 'token',
+    traits: [],
+    consent: 'false',
+    created_at: '2026-01-01T00:00:00.000Z',
+  }
+  const resource = {
+    id: 'res-1',
+    zone_id: 'zone-1',
+    name: 'resource-name',
+    identifier: 'resource://resource-name',
+    upstream_url: 'https://upstream-url',
+    gateway_application_id: 'app-1',
+    prefix: true,
+    scopes: ['scope-name'],
+    credential_provider_id: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+  }
   return {
     zones: {
-      get: vi.fn(async () => ({ id: 'zone-1', slug: 'platform', name: 'Platform' })),
-      create: vi.fn(async () => ({ id: 'zone-1', slug: 'platform', name: 'Platform' })),
+      list: vi.fn(async () => [zone]),
+      get: vi.fn(async () => zone),
+      create: vi.fn(async () => zone),
     },
     applications: {
-      create: vi.fn(async () => ({
-        id: 'app-1',
-        zone_id: 'zone-1',
-        name: 'Payroll agent',
-        registration_method: 'managed',
-        credential_type: 'token',
-        traits: [],
-        consent: 'false',
-        created_at: '2026-01-01T00:00:00.000Z',
-      })),
+      list: vi.fn(async () => [application]),
+      get: vi.fn(async () => application),
+      create: vi.fn(async () => application),
     },
     resources: {
-      create: vi.fn(async () => ({
-        id: 'res-1',
-        zone_id: 'zone-1',
-        name: 'Payroll API',
-        identifier: 'resource://payroll',
-        upstream_url: 'https://payroll.internal',
-        gateway_application_id: 'app-1',
-        prefix: true,
-        scopes: ['read'],
-        credential_provider_id: null,
-        created_at: '2026-01-01T00:00:00.000Z',
-        updated_at: '2026-01-01T00:00:00.000Z',
-      })),
+      list: vi.fn(async () => [resource]),
+      get: vi.fn(async () => resource),
+      create: vi.fn(async () => resource),
+      patch: vi.fn(async (_zoneId: string, _id: string, patch: Partial<typeof resource>) => ({ ...resource, ...patch })),
     },
     policies: {
       create: vi.fn(async () => ({
@@ -101,30 +110,54 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
+function ctx(app: App): ViewContext {
+  return { app, size: { rows: 80, cols: 140 }, status: '' }
+}
+
+async function answer(view: View, app: App, value?: string): Promise<void> {
+  if (value) await view.onKey(value, ctx(app))
+  await view.onKey('enter', ctx(app))
+}
+
+async function completeMainPath(view: View, app: App): Promise<void> {
+  await answer(view, app, 'zone-name')
+  await answer(view, app, 'agent-app-name')
+  await answer(view, app, 'resource-name')
+  await answer(view, app, 'scope-name')
+  await answer(view, app, 'https://upstream-url')
+  await answer(view, app, '/request-path')
+  await answer(view, app)
+  await view.onKey('enter', ctx(app))
+}
+
 describe('first setup workflow', () => {
-  it('keeps advanced setup controls hidden until requested', async () => {
+  it('shows one guided prompt at a time and keeps advanced fields out of the main path', async () => {
+    const app = fakeApp()
     const view = firstSetupView({
       client: makeClient() as never,
       zoneId: 'zone-1',
-    }) as FormView
-    const ctx = { app: fakeApp(), size: { rows: 40, cols: 120 }, status: '' }
+    })
+    await view.init?.(app)
 
-    let body = view.render(ctx).join('\n')
-    expect(body).toContain('advanced options')
+    const body = view.render(ctx(app)).join('\n')
+    expect(body).toContain('Step 1')
+    expect(body).toContain('Choose or create a zone')
+    expect(body).toContain('A zone groups')
+    expect(body).not.toContain('Create or select an agent app')
+    expect(body).not.toContain('resource identifier')
     expect(body).not.toContain('provider ID')
-    expect(body).not.toContain('overwrite files')
     expect(body).not.toContain('profile path')
 
-    ;(view as unknown as { focus: number }).focus = 8
-    await view.onKey('enter', ctx)
-
-    body = view.render(ctx).join('\n')
-    expect(body).toContain('provider ID')
-    expect(body).toContain('overwrite files')
-    expect(body).toContain('profile path')
+    await view.onKey('A', ctx(app))
+    const advanced = (app as unknown as { _pushed: unknown[] })._pushed.at(-1) as FormView
+    expect(advanced).toBeInstanceOf(FormView)
+    const advancedBody = advanced.render(ctx(app)).join('\n')
+    expect(advancedBody).toContain('resource identifier')
+    expect(advancedBody).toContain('provider ID')
+    expect(advancedBody).toContain('profile path')
   })
 
-  it('creates the first zone, app, resource, policy, and generated profile', async () => {
+  it('creates the first zone, app, resource, policy, and generated profile from sequential answers', async () => {
     const client = makeClient()
     const selected: string[] = []
     const app = fakeApp()
@@ -132,42 +165,24 @@ describe('first setup workflow', () => {
       client: client as never,
       zoneId: undefined,
       onZoneSelect: (id) => { selected.push(id) },
-    }) as FormView
-    ;(view as unknown as { values: Record<string, string> }).values = {
-      zone_name: 'Platform',
-      agent_app_name: 'Payroll agent',
-      resource_identifier: 'resource://payroll',
-      resource_name: 'Payroll API',
-      resource_scopes: 'read',
-      upstream_url: 'https://payroll.internal',
-      request_path: '/health',
-      advanced_options: 'true',
-      provider_id: '',
-      activate_policy: 'true',
-      generate_profile: 'true',
-      write_files: 'false',
-      overwrite_files: 'false',
-      profile_path: '/secure/caracal/payroll.toml',
-      secret_file_path: '/secure/caracal/payroll-secret',
-      credential_env: '',
-    }
-    ;(view as unknown as { focus: number }).focus = 16
+    } as never)
 
-    await view.onKey('enter', { app, size: { rows: 40, cols: 120 }, status: '' })
+    await completeMainPath(view, app)
 
-    expect(client.zones.create).toHaveBeenCalledWith({ name: 'Platform' })
+    expect(client.zones.create).toHaveBeenCalledWith({ name: 'zone-name' })
     expect(selected).toEqual(['zone-1'])
     expect(client.applications.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
-      name: 'Payroll agent',
+      name: 'agent-app-name',
       registration_method: 'managed',
       credential_type: 'token',
       client_secret: expect.stringMatching(/^cs_[A-Za-z0-9_-]+$/),
     }))
     expect(client.resources.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
-      identifier: 'resource://payroll',
-      upstream_url: 'https://payroll.internal',
+      identifier: 'resource://resource-name',
+      name: 'resource-name',
+      upstream_url: 'https://upstream-url',
       gateway_application_id: 'app-1',
-      scopes: ['read'],
+      scopes: ['scope-name'],
     }))
     expect(client.policies.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
       content: expect.stringContaining('input.principal.id == "app-1"'),
@@ -178,52 +193,84 @@ describe('first setup workflow', () => {
     const detail = pushed[pushed.length - 1] as DetailView
     expect(detail).toBeInstanceOf(DetailView)
     await detail.init(app)
-    const body = detail.render({ app, size: { rows: 80, cols: 120 }, status: '' }).join('\n')
-    expect(body).toContain('/secure/caracal/payroll.toml')
-    expect(body).toContain('CARACAL_RESOURCE_PAYROLL_TOKEN')
-    expect(body).toContain("CARACAL_CONFIG='/secure/caracal/payroll.toml' caracal run --")
-    expect(body).toContain("curl -fsS 'http://localhost:8081/health'")
-    expect(body).toContain("X-Caracal-Resource: resource://payroll")
+    const body = detail.render(ctx(app)).join('\n')
+    expect(body).toContain('created')
+    expect(body).toContain('CARACAL_RESOURCE_RESOURCE_NAME_TOKEN')
+    expect(body).toContain('caracal run --')
+    expect(body).toContain("curl -fsS 'http://localhost:8081/request-path'")
+    expect(body).toContain("X-Caracal-Resource: resource://resource-name")
     expect(body).toContain('Audit Explanation')
     expect(body).toContain('••••')
     expect(body).not.toContain('cs_')
   })
 
-  it('lets optional policy, profile, and Gateway setup be skipped', async () => {
+  it('selects existing objects without asking for their IDs in the main flow', async () => {
     const client = makeClient()
     const app = fakeApp()
     const view = firstSetupView({
       client: client as never,
       zoneId: 'zone-1',
-    }) as FormView
-    ;(view as unknown as { values: Record<string, string> }).values = {
-      zone_name: '',
-      agent_app_name: 'Internal agent',
-      resource_identifier: 'resource://internal',
-      resource_name: '',
-      resource_scopes: 'invoke',
-      upstream_url: '',
-      request_path: '',
-      advanced_options: 'true',
-      provider_id: '',
+    })
+    await view.init?.(app)
+
+    await answer(view, app)
+    await view.onKey('right', ctx(app))
+    let picker = (app as unknown as { _pushed: unknown[] })._pushed.at(-1) as View
+    await picker.init?.(app)
+    await picker.onKey('enter', ctx(app))
+    await answer(view, app)
+    await answer(view, app)
+    await view.onKey('right', ctx(app))
+    picker = (app as unknown as { _pushed: unknown[] })._pushed.at(-1) as View
+    await picker.init?.(app)
+    await picker.onKey('enter', ctx(app))
+    await answer(view, app)
+    await answer(view, app)
+    await answer(view, app)
+    await answer(view, app)
+    await answer(view, app)
+    await view.onKey('enter', ctx(app))
+
+    expect(client.zones.create).not.toHaveBeenCalled()
+    expect(client.applications.create).not.toHaveBeenCalled()
+    expect(client.resources.create).not.toHaveBeenCalled()
+    expect(client.resources.patch).not.toHaveBeenCalled()
+
+    const pushed = (app as unknown as { _pushed: unknown[] })._pushed
+    const detail = pushed[pushed.length - 1] as DetailView
+    await detail.init(app)
+    const body = detail.render(ctx(app)).join('\n')
+    expect(body).toContain('selected')
+    expect(body).toContain('Existing app selected')
+    expect(body).not.toContain('Client Secret          ••••')
+  })
+
+  it('lets optional policy, profile, and Gateway setup be skipped from advanced settings', async () => {
+    const client = makeClient()
+    const app = fakeApp()
+    const view = firstSetupView({
+      client: client as never,
+      zoneId: 'zone-1',
+    })
+    await view.init?.(app)
+    Object.assign((view as unknown as { values: Record<string, string> }).values, {
       activate_policy: 'false',
       generate_profile: 'false',
-      write_files: 'false',
-      overwrite_files: 'false',
-      profile_path: '',
-      secret_file_path: '',
-      credential_env: '',
-    }
-    ;(view as unknown as { focus: number }).focus = 16
+    })
 
-    await view.onKey('enter', { app, size: { rows: 40, cols: 120 }, status: '' })
+    await answer(view, app)
+    await answer(view, app, 'agent-app-name')
+    await answer(view, app, 'resource-name')
+    await answer(view, app, 'scope-name')
+    await answer(view, app)
+    await view.onKey('enter', ctx(app))
 
     expect(client.zones.create).not.toHaveBeenCalled()
     expect(client.resources.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
-      identifier: 'resource://internal',
+      identifier: 'resource://resource-name',
       upstream_url: undefined,
       gateway_application_id: undefined,
-      scopes: ['invoke'],
+      scopes: ['scope-name'],
     }))
     expect(client.policies.create).not.toHaveBeenCalled()
     expect(client.policySets.create).not.toHaveBeenCalled()
@@ -233,33 +280,27 @@ describe('first setup workflow', () => {
     const client = makeClient()
     const app = fakeApp()
     const dir = await tempDir()
-    const profilePath = join(dir, 'payroll.toml')
-    const secretPath = join(dir, 'payroll-secret')
+    const profilePath = join(dir, 'setup-profile.toml')
+    const secretPath = join(dir, 'setup-secret')
     const view = firstSetupView({
       client: client as never,
       zoneId: 'zone-1',
-    }) as FormView
-    ;(view as unknown as { values: Record<string, string> }).values = {
-      zone_name: '',
-      agent_app_name: 'Payroll agent',
-      resource_identifier: 'resource://payroll',
-      resource_name: 'Payroll API',
-      resource_scopes: 'read',
-      upstream_url: 'https://payroll.internal',
-      request_path: '/health',
-      advanced_options: 'true',
-      provider_id: '',
-      activate_policy: 'true',
-      generate_profile: 'true',
-      write_files: 'true',
-      overwrite_files: 'false',
+    })
+    await view.init?.(app)
+    Object.assign((view as unknown as { values: Record<string, string> }).values, {
       profile_path: profilePath,
       secret_file_path: secretPath,
-      credential_env: '',
-    }
-    ;(view as unknown as { focus: number }).focus = 16
+    })
 
-    await view.onKey('enter', { app, size: { rows: 40, cols: 120 }, status: '' })
+    await answer(view, app)
+    await answer(view, app, 'agent-app-name')
+    await answer(view, app, 'resource-name')
+    await answer(view, app, 'scope-name')
+    await answer(view, app, 'https://upstream-url')
+    await answer(view, app, '/request-path')
+    await view.onKey('space', ctx(app))
+    await answer(view, app)
+    await view.onKey('enter', ctx(app))
 
     const profile = await readFile(profilePath, 'utf8')
     const secret = await readFile(secretPath, 'utf8')
@@ -272,7 +313,7 @@ describe('first setup workflow', () => {
     const pushed = (app as unknown as { _pushed: unknown[] })._pushed
     const detail = pushed[pushed.length - 1] as DetailView
     await detail.init(app)
-    const body = detail.render({ app, size: { rows: 120, cols: 160 }, status: '' }).join('\n')
+    const body = detail.render(ctx(app)).join('\n')
     expect(body).toContain('File Write')
     expect(body).toContain('written')
     expect(body).toContain('Console wrote the one-time client secret')
@@ -283,33 +324,27 @@ describe('first setup workflow', () => {
     const client = makeClient()
     const app = fakeApp()
     const dir = await tempDir()
-    const profilePath = join(dir, 'payroll.toml')
+    const profilePath = join(dir, 'setup-profile.toml')
     await writeFile(profilePath, 'existing')
     const view = firstSetupView({
       client: client as never,
       zoneId: 'zone-1',
-    }) as FormView
-    ;(view as unknown as { values: Record<string, string> }).values = {
-      zone_name: '',
-      agent_app_name: 'Payroll agent',
-      resource_identifier: 'resource://payroll',
-      resource_name: 'Payroll API',
-      resource_scopes: 'read',
-      upstream_url: 'https://payroll.internal',
-      request_path: '/health',
-      advanced_options: 'true',
-      provider_id: '',
-      activate_policy: 'true',
-      generate_profile: 'true',
-      write_files: 'true',
-      overwrite_files: 'false',
+    })
+    await view.init?.(app)
+    Object.assign((view as unknown as { values: Record<string, string> }).values, {
       profile_path: profilePath,
-      secret_file_path: join(dir, 'payroll-secret'),
-      credential_env: '',
-    }
-    ;(view as unknown as { focus: number }).focus = 16
+      secret_file_path: join(dir, 'setup-secret'),
+    })
 
-    await view.onKey('enter', { app, size: { rows: 40, cols: 120 }, status: '' })
+    await answer(view, app)
+    await answer(view, app, 'agent-app-name')
+    await answer(view, app, 'resource-name')
+    await answer(view, app, 'scope-name')
+    await answer(view, app, 'https://upstream-url')
+    await answer(view, app, '/request-path')
+    await view.onKey('space', ctx(app))
+    await answer(view, app)
+    await view.onKey('enter', ctx(app))
 
     expect(app.setStatus).toHaveBeenCalledWith(expect.stringContaining('refusing to overwrite existing setup file'), 'error')
     expect(client.applications.create).not.toHaveBeenCalled()
