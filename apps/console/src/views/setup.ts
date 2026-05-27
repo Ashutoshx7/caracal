@@ -110,13 +110,8 @@ export function firstSetupView(ctx: Ctx): View {
 type SetupStepKey =
   | 'zone'
   | 'application'
-  | 'application_secret'
   | 'resource'
   | 'scopes'
-  | 'policy'
-  | 'upstream_url'
-  | 'request_path'
-  | 'write_files'
   | 'review'
 
 interface SetupStep {
@@ -182,7 +177,6 @@ class FirstSetupWizardView implements View {
     ]
     if (step.required) lines.push(' ' + ui.muted('Required for first success.'))
     if (step.picker) lines.push(' ' + ui.muted('Press right arrow to choose an existing item, or type a name to create one.'))
-    if (this.step === 'upstream_url') lines.push(' ' + ui.muted('Leave blank to skip Gateway route setup.'))
     if (this.submitting) lines.push('', ' ' + ui.muted('creating setup...'))
     return lines.map((line) => truncate(line, ctx.size.cols))
   }
@@ -252,12 +246,6 @@ class FirstSetupWizardView implements View {
         required: true,
         picker: this.hasExistingZone(),
       },
-      application_secret: {
-        key: 'application_secret',
-        question: 'Paste the existing app secret',
-        explanation: 'Console cannot retrieve an existing app secret. Leave this blank to add the secret file yourself later.',
-        emptyLabel: 'client secret',
-      },
       resource: {
         key: 'resource',
         question: 'Create or select a resource',
@@ -273,32 +261,6 @@ class FirstSetupWizardView implements View {
         emptyLabel: 'Caracal scopes',
         required: true,
       },
-      policy: {
-        key: 'policy',
-        question: 'Create and activate an access policy',
-        explanation: 'This creates a real Rego allow-list: deny by default, then allow only this agent app, this resource, and these Caracal scopes.',
-        emptyLabel: 'true',
-        kind: 'bool',
-      },
-      upstream_url: {
-        key: 'upstream_url',
-        question: 'Add an upstream URL',
-        explanation: 'The upstream URL is where Gateway sends the approved request for REST APIs, gRPC gateways, MCP servers, or services called by an SDK.',
-        emptyLabel: 'upstream URL',
-      },
-      request_path: {
-        key: 'request_path',
-        question: 'Add the first request path',
-        explanation: 'This lets the result screen show an exact curl command for the first Gateway check.',
-        emptyLabel: 'request path',
-      },
-      write_files: {
-        key: 'write_files',
-        question: 'Write local profile files',
-        explanation: 'Console can create the runtime profile and secret file on this machine, or show copy-paste commands.',
-        emptyLabel: 'false',
-        kind: 'bool',
-      },
       review: {
         key: 'review',
         question: 'Review and create',
@@ -310,18 +272,21 @@ class FirstSetupWizardView implements View {
   }
 
   private steps(): SetupStepKey[] {
-    const steps: SetupStepKey[] = ['zone', 'application']
-    if (this.selectedApplication) steps.push('application_secret')
-    steps.push('resource', 'scopes', 'policy', 'upstream_url')
-    if (trimmed(this.values.upstream_url)) steps.push('request_path')
-    if (boolDefault(this.values.generate_profile, true)) steps.push('write_files')
+    const steps: SetupStepKey[] = []
+    if (!this.selectedZone) steps.push('zone')
+    steps.push('application', 'resource')
+    if (this.needsScopesStep()) steps.push('scopes')
     steps.push('review')
     return steps
   }
 
   private normalizeStep(): void {
     const steps = this.steps()
-    if (!steps.includes(this.step)) this.step = steps[Math.min(steps.length - 1, steps.indexOf('review'))] ?? 'review'
+    if (!steps.includes(this.step)) this.step = steps[0] ?? 'review'
+  }
+
+  private needsScopesStep(): boolean {
+    return !this.selectedResource || splitList(this.values.resource_scopes).length === 0
   }
 
   private renderInput(step: SetupStep): string {
@@ -357,7 +322,7 @@ class FirstSetupWizardView implements View {
       ` ${ui.muted('Caracal scopes')} ${splitList(this.values.resource_scopes).join(', ') || '<required>'}`,
       ` ${ui.muted('Access policy')} ${bool(this.values.activate_policy) ? 'create and activate real Rego allow-list' : 'skip'}`,
       ` ${ui.muted('Gateway')} ${trimmed(this.values.upstream_url) ? `${this.values.upstream_url}${normalizeRequestPath(this.values.request_path) ?? ''}` : 'skip for now'}`,
-      ` ${ui.muted('Files')} ${boolDefault(this.values.write_files, false) ? 'write profile and secret files' : 'show commands only'}`,
+      ` ${ui.muted('Runtime profile')} ${boolDefault(this.values.generate_profile, true) ? boolDefault(this.values.write_files, false) ? 'write profile and secret files' : 'show commands only' : 'skip'}`,
       '',
       ' ' + ui.key('enter') + ui.muted(':create  ') + ui.key('A') + ui.muted(':advanced  ') + ui.key('left') + ui.muted(':back'),
     ]
@@ -379,7 +344,7 @@ class FirstSetupWizardView implements View {
   private previousStep(): void {
     const steps = this.steps()
     const index = steps.indexOf(this.step)
-    this.step = steps[Math.max(0, index - 1)] ?? 'zone'
+    this.step = steps[Math.max(0, index - 1)] ?? 'review'
   }
 
   private validateStep(): string | undefined {
@@ -496,10 +461,14 @@ class FirstSetupWizardView implements View {
       title: 'guided setup advanced',
       submitLabel: 'save',
       fields: [
-        { key: 'resource_identifier', label: 'resource identifier', kind: 'text', default: values.resource_identifier ?? '', hint: 'optional; generated from the resource name when blank' },
-        { key: 'provider_id', label: 'credential provider', kind: 'text', default: values.provider_id ?? '', visible: () => Boolean(trimmed(this.values.upstream_url)), hint: 'third-party credential source; select one only when this resource needs upstream credentials', pick: providerPicker(this.ctx), resolve: providerResolver(this.ctx) },
+        { key: 'resource_identifier', label: 'resource identifier', kind: 'text', default: values.resource_identifier ?? '', visible: () => !this.selectedResource, hint: 'optional; generated from the resource name when blank' },
+        { key: 'upstream_url', label: 'Gateway upstream URL', kind: 'text', default: values.upstream_url ?? '', hint: 'optional; blank skips Gateway route setup' },
+        { key: 'request_path', label: 'first request path', kind: 'text', default: values.request_path ?? '', dependsOn: 'upstream_url', hint: 'optional; used only to show an exact first Gateway curl example' },
+        { key: 'provider_id', label: 'credential provider', kind: 'text', default: values.provider_id ?? '', dependsOn: 'upstream_url', hint: 'third-party credential source; select one only when this resource needs upstream credentials', pick: providerPicker(this.ctx), resolve: providerResolver(this.ctx) },
         { key: 'activate_policy', label: 'activate policy', kind: 'bool', default: values.activate_policy ?? 'true' },
         { key: 'generate_profile', label: 'runtime profile', kind: 'bool', default: values.generate_profile ?? 'true' },
+        { key: 'write_files', label: 'write profile files', kind: 'bool', default: values.write_files ?? 'false', dependsOn: { generate_profile: 'true' } },
+        { key: 'existing_app_client_secret', label: 'existing app secret', kind: 'text', default: values.existing_app_client_secret ?? '', visible: () => Boolean(this.selectedApplication), required: (current) => current.write_files === 'true', dependsOn: { generate_profile: 'true', write_files: 'true' }, hint: 'required only when writing files for a selected existing app because secrets cannot be retrieved' },
         { key: 'overwrite_files', label: 'overwrite files', kind: 'bool', default: values.overwrite_files ?? 'false', dependsOn: { generate_profile: 'true', write_files: 'true' }, hint: 'kept off unless replacing existing generated setup files is intended' },
         { key: 'profile_path', label: 'profile path', kind: 'text', default: values.profile_path ?? defaultRuntimeConfigPath(), dependsOn: { generate_profile: 'true' } },
         { key: 'secret_file_path', label: 'secret file', kind: 'text', default: values.secret_file_path ?? '', dependsOn: { generate_profile: 'true' }, hint: 'optional; derived from profile path when blank' },
@@ -548,7 +517,8 @@ class FirstSetupWizardView implements View {
   }
 
   private validateAll(): string | undefined {
-    for (const step of ['zone', 'application', 'resource', 'scopes'] as const) {
+    for (const step of this.steps()) {
+      if (step === 'review') continue
       this.step = step
       const message = this.validateStep()
       if (message) return message
@@ -727,13 +697,8 @@ function stepValueKey(step: SetupStepKey): keyof SetupValues | undefined {
   switch (step) {
     case 'zone': return 'zone_name'
     case 'application': return 'agent_app_name'
-    case 'application_secret': return 'existing_app_client_secret'
     case 'resource': return 'resource_name'
     case 'scopes': return 'resource_scopes'
-    case 'policy': return 'activate_policy'
-    case 'upstream_url': return 'upstream_url'
-    case 'request_path': return 'request_path'
-    case 'write_files': return 'write_files'
     case 'review': return undefined
   }
 }

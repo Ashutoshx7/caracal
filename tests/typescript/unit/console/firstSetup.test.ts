@@ -68,7 +68,12 @@ function makeClient() {
     resources: {
       list: vi.fn(async () => [resource]),
       get: vi.fn(async () => resource),
-      create: vi.fn(async () => resource),
+      create: vi.fn(async (_zoneId: string, input: Partial<typeof resource>) => ({
+        ...resource,
+        ...input,
+        upstream_url: input.upstream_url ?? null,
+        gateway_application_id: input.gateway_application_id ?? null,
+      })),
       patch: vi.fn(async (_zoneId: string, _id: string, patch: Partial<typeof resource>) => ({ ...resource, ...patch })),
     },
     policies: {
@@ -124,10 +129,6 @@ async function completeMainPath(view: View, app: App): Promise<void> {
   await answer(view, app, 'agent-app-name')
   await answer(view, app, 'resource-name')
   await answer(view, app, 'scope-name')
-  await answer(view, app)
-  await answer(view, app, 'https://upstream-url')
-  await answer(view, app, '/request-path')
-  await answer(view, app)
   await view.onKey('enter', ctx(app))
 }
 
@@ -142,9 +143,9 @@ describe('first setup workflow', () => {
 
     const body = view.render(ctx(app)).join('\n')
     expect(body).toContain('Step 1')
-    expect(body).toContain('Choose or create a zone')
-    expect(body).toContain('A zone groups')
-    expect(body).not.toContain('Create or select an agent app')
+    expect(body).toContain('Create or select an agent app')
+    expect(body).toContain('workload identity')
+    expect(body).not.toContain('Choose or create a zone')
     expect(body).not.toContain('resource identifier')
     expect(body).not.toContain('provider ID')
     expect(body).not.toContain('profile path')
@@ -154,6 +155,7 @@ describe('first setup workflow', () => {
     expect(advanced).toBeInstanceOf(FormView)
     const advancedBody = advanced.render(ctx(app)).join('\n')
     expect(advancedBody).toContain('resource identifier')
+    expect(advancedBody).toContain('Gateway upstream URL')
     expect(advancedBody).toContain('profile path')
     expect(advancedBody).not.toContain('provider')
 
@@ -186,8 +188,8 @@ describe('first setup workflow', () => {
     expect(client.resources.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
       identifier: 'resource://resource-name',
       name: 'resource-name',
-      upstream_url: 'https://upstream-url',
-      gateway_application_id: 'app-1',
+      upstream_url: undefined,
+      gateway_application_id: undefined,
       scopes: ['scope-name'],
     }))
     expect(client.policies.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
@@ -204,8 +206,7 @@ describe('first setup workflow', () => {
     expect(body).toContain('created')
     expect(body).toContain('CARACAL_RESOURCE_RESOURCE_NAME_TOKEN')
     expect(body).toContain('caracal run --')
-    expect(body).toContain("curl -fsS 'http://localhost:8081/request-path'")
-    expect(body).toContain("X-Caracal-Resource: resource://resource-name")
+    expect(body).toContain('Gateway routing was not configured')
     expect(body).toContain('Audit Explanation')
     expect(body).toContain('real Rego allow-list policy')
     expect(body).toContain('deny by default')
@@ -222,22 +223,15 @@ describe('first setup workflow', () => {
     })
     await view.init?.(app)
 
-    await answer(view, app)
     await view.onKey('right', ctx(app))
     let picker = (app as unknown as { _pushed: unknown[] })._pushed.at(-1) as View
     await picker.init?.(app)
     await picker.onKey('enter', ctx(app))
     await answer(view, app)
-    await answer(view, app)
     await view.onKey('right', ctx(app))
     picker = (app as unknown as { _pushed: unknown[] })._pushed.at(-1) as View
     await picker.init?.(app)
     await picker.onKey('enter', ctx(app))
-    await answer(view, app)
-    await answer(view, app)
-    await answer(view, app)
-    await answer(view, app)
-    await answer(view, app)
     await answer(view, app)
     await view.onKey('enter', ctx(app))
 
@@ -268,12 +262,9 @@ describe('first setup workflow', () => {
       generate_profile: 'false',
     })
 
-    await answer(view, app)
     await answer(view, app, 'agent-app-name')
     await answer(view, app, 'resource-name')
     await answer(view, app, 'scope-name')
-    await answer(view, app)
-    await answer(view, app)
     await view.onKey('enter', ctx(app))
 
     expect(client.zones.create).not.toHaveBeenCalled()
@@ -301,17 +292,14 @@ describe('first setup workflow', () => {
     Object.assign((view as unknown as { values: Record<string, string> }).values, {
       profile_path: profilePath,
       secret_file_path: secretPath,
+      upstream_url: 'https://upstream-url',
+      request_path: '/request-path',
+      write_files: 'true',
     })
 
-    await answer(view, app)
     await answer(view, app, 'agent-app-name')
     await answer(view, app, 'resource-name')
     await answer(view, app, 'scope-name')
-    await answer(view, app)
-    await answer(view, app, 'https://upstream-url')
-    await answer(view, app, '/request-path')
-    await view.onKey('space', ctx(app))
-    await answer(view, app)
     await view.onKey('enter', ctx(app))
 
     const profile = await readFile(profilePath, 'utf8')
@@ -346,17 +334,12 @@ describe('first setup workflow', () => {
     Object.assign((view as unknown as { values: Record<string, string> }).values, {
       profile_path: profilePath,
       secret_file_path: join(dir, 'setup-secret'),
+      write_files: 'true',
     })
 
-    await answer(view, app)
     await answer(view, app, 'agent-app-name')
     await answer(view, app, 'resource-name')
     await answer(view, app, 'scope-name')
-    await answer(view, app)
-    await answer(view, app, 'https://upstream-url')
-    await answer(view, app, '/request-path')
-    await view.onKey('space', ctx(app))
-    await answer(view, app)
     await view.onKey('enter', ctx(app))
 
     expect(app.setStatus).toHaveBeenCalledWith(expect.stringContaining('refusing to overwrite existing setup file'), 'error')
