@@ -75,7 +75,7 @@ function makeClient() {
       create: vi.fn(async () => ({
         id: 'pol-1',
         zone_id: 'zone-1',
-        name: 'First access policy',
+        name: 'Guided setup access policy',
         description: '',
         owner_type: 'system',
         created_by: 'console',
@@ -91,7 +91,7 @@ function makeClient() {
       })),
     },
     policySets: {
-      create: vi.fn(async () => ({ id: 'ps-1', zone_id: 'zone-1', name: 'First access policy set', created_at: '2026-01-01T00:00:00.000Z' })),
+      create: vi.fn(async () => ({ id: 'ps-1', zone_id: 'zone-1', name: 'Guided setup access policy set', created_at: '2026-01-01T00:00:00.000Z' })),
       addVersion: vi.fn(async () => ({ id: 'psv-1', policy_set_id: 'ps-1', version: 1, manifest: [], created_at: '2026-01-01T00:00:00.000Z' })),
       activate: vi.fn(async () => ({ active_version_id: 'psv-1' })),
     },
@@ -124,6 +124,7 @@ async function completeMainPath(view: View, app: App): Promise<void> {
   await answer(view, app, 'agent-app-name')
   await answer(view, app, 'resource-name')
   await answer(view, app, 'scope-name')
+  await answer(view, app)
   await answer(view, app, 'https://upstream-url')
   await answer(view, app, '/request-path')
   await answer(view, app)
@@ -153,7 +154,7 @@ describe('first setup workflow', () => {
     expect(advanced).toBeInstanceOf(FormView)
     const advancedBody = advanced.render(ctx(app)).join('\n')
     expect(advancedBody).toContain('resource identifier')
-    expect(advancedBody).toContain('provider ID')
+    expect(advancedBody).toContain('provider')
     expect(advancedBody).toContain('profile path')
   })
 
@@ -185,6 +186,7 @@ describe('first setup workflow', () => {
       scopes: ['scope-name'],
     }))
     expect(client.policies.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
+      name: 'Guided setup access policy',
       content: expect.stringContaining('input.principal.id == "app-1"'),
     }))
     expect(client.policySets.activate).toHaveBeenCalledWith('zone-1', 'ps-1', 'psv-1')
@@ -200,6 +202,8 @@ describe('first setup workflow', () => {
     expect(body).toContain("curl -fsS 'http://localhost:8081/request-path'")
     expect(body).toContain("X-Caracal-Resource: resource://resource-name")
     expect(body).toContain('Audit Explanation')
+    expect(body).toContain('real Rego allow-list policy')
+    expect(body).toContain('deny by default')
     expect(body).toContain('••••')
     expect(body).not.toContain('cs_')
   })
@@ -224,6 +228,7 @@ describe('first setup workflow', () => {
     picker = (app as unknown as { _pushed: unknown[] })._pushed.at(-1) as View
     await picker.init?.(app)
     await picker.onKey('enter', ctx(app))
+    await answer(view, app)
     await answer(view, app)
     await answer(view, app)
     await answer(view, app)
@@ -263,6 +268,7 @@ describe('first setup workflow', () => {
     await answer(view, app, 'resource-name')
     await answer(view, app, 'scope-name')
     await answer(view, app)
+    await answer(view, app)
     await view.onKey('enter', ctx(app))
 
     expect(client.zones.create).not.toHaveBeenCalled()
@@ -296,6 +302,7 @@ describe('first setup workflow', () => {
     await answer(view, app, 'agent-app-name')
     await answer(view, app, 'resource-name')
     await answer(view, app, 'scope-name')
+    await answer(view, app)
     await answer(view, app, 'https://upstream-url')
     await answer(view, app, '/request-path')
     await view.onKey('space', ctx(app))
@@ -340,6 +347,7 @@ describe('first setup workflow', () => {
     await answer(view, app, 'agent-app-name')
     await answer(view, app, 'resource-name')
     await answer(view, app, 'scope-name')
+    await answer(view, app)
     await answer(view, app, 'https://upstream-url')
     await answer(view, app, '/request-path')
     await view.onKey('space', ctx(app))

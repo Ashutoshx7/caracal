@@ -343,6 +343,78 @@ describe('providers actions', () => {
     const keys = (pushed as unknown as { fields: { key: string }[] }).fields.map((f) => f.key)
     expect(keys).toContain('client_id')
   })
+
+  it('creates oauth providers with upstream OAuth scopes separated from Caracal scopes', async () => {
+    const { client, ctx } = newCtx()
+    const list = providersView(ctx as unknown as Parameters<typeof providersView>[0]) as ListView<unknown>
+    const app = fakeApp()
+    const pushed = await pressKey(list, 'n', app) as FormView
+    ;(pushed as unknown as { values: Record<string, string> }).values = {
+      identifier: 'provider-id',
+      name: '',
+      kind: 'oauth2',
+      client_id: 'client-id',
+      issuer: '',
+      authorization_endpoint: '',
+      token_endpoint: 'https://provider.example/token',
+      allowed_token_hosts: 'provider.example',
+      upstream_oauth_scopes: 'provider.scope',
+      api_key_header: '',
+      auth_scheme: '',
+      workload_audience: '',
+      workload_token_endpoint: '',
+      workload_allowed_token_hosts: '',
+      forward_caracal_identity: 'false',
+      config_file: '',
+      config_json: '',
+    }
+    ;(pushed as unknown as { focus: number }).focus = 99
+
+    await pushed.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
+
+    expect(client.providers.create).toHaveBeenCalledWith('z1', expect.objectContaining({
+      identifier: 'provider-id',
+      kind: 'oauth2',
+      client_id: 'client-id',
+      config_json: {
+        token_endpoint: 'https://provider.example/token',
+        allowed_token_hosts: ['provider.example'],
+        upstream_oauth_scopes: ['provider.scope'],
+      },
+    }))
+  })
+
+  it('rejects provider config that mixes upstream scopes with Caracal scopes', async () => {
+    const { client, ctx } = newCtx()
+    const list = providersView(ctx as unknown as Parameters<typeof providersView>[0]) as ListView<unknown>
+    const app = fakeApp()
+    const pushed = await pressKey(list, 'n', app) as FormView
+    ;(pushed as unknown as { values: Record<string, string> }).values = {
+      identifier: 'provider-id',
+      name: '',
+      kind: 'oauth2',
+      client_id: '',
+      issuer: '',
+      authorization_endpoint: '',
+      token_endpoint: 'https://provider.example/token',
+      allowed_token_hosts: 'provider.example',
+      upstream_oauth_scopes: '',
+      api_key_header: '',
+      auth_scheme: '',
+      workload_audience: '',
+      workload_token_endpoint: '',
+      workload_allowed_token_hosts: '',
+      forward_caracal_identity: 'false',
+      config_file: '',
+      config_json: '{"scopes":["provider.scope"]}',
+    }
+    ;(pushed as unknown as { focus: number }).focus = 99
+
+    await pushed.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
+
+    expect(client.providers.create).not.toHaveBeenCalled()
+    expect(app.setStatus).toHaveBeenCalledWith(expect.stringContaining('upstream_oauth_scopes'), 'error')
+  })
 })
 
 describe('policies actions', () => {
