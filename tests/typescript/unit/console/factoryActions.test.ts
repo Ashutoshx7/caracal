@@ -303,14 +303,16 @@ describe('resources actions', () => {
     expect(body).not.toContain('caracal-control')
   })
 
-  it('n opens FormView with identifier+scopes required', async () => {
+  it('n opens FormView with name+scopes required and identifier advanced', async () => {
     const { ctx } = newCtx()
     const list = resourcesView(ctx as unknown as Parameters<typeof resourcesView>[0]) as ListView<unknown>
     const pushed = await pressKey(list, 'n', fakeApp()) as FormView
-    const keys = (pushed as unknown as { fields: { key: string; required?: boolean }[] }).fields
+    const fields = (pushed as unknown as { fields: { key: string; required?: boolean; advanced?: boolean }[] }).fields
+    const keys = fields
       .filter((f) => f.required).map((f) => f.key)
-    expect(keys).toContain('identifier')
+    expect(keys).toContain('name')
     expect(keys).toContain('scopes')
+    expect(fields.find((f) => f.key === 'identifier')?.advanced).toBe(true)
   })
 
   it('n includes gateway and provider fields for resource creation', async () => {
@@ -425,7 +427,7 @@ describe('policies actions', () => {
     const pushed = await pressKey(list, 'v', fakeApp()) as FormView
     expect(pushed).toBeInstanceOf(FormView)
     const keys = (pushed as unknown as { fields: { key: string }[] }).fields.map((f) => f.key)
-    expect(keys).toEqual(['file', 'content'])
+    expect(keys).toEqual(['source', 'content', 'file'])
   })
 
   it('c opens validate form and calls policies.validate', async () => {

@@ -80,6 +80,30 @@ describe('FormView input UX', () => {
     expect(view.values_().name).toBe('Ryan\'s Workflow')
   })
 
+  it('hides advanced fields until requested and opens focused info', async () => {
+    const view = new FormView({
+      title: 't',
+      fields: [
+        { key: 'name', label: 'name', kind: 'text' },
+        { key: 'identifier', label: 'identifier', kind: 'text', advanced: true },
+      ],
+      onSubmit: async () => {},
+    })
+    const app = fakeApp()
+    const ctx = { app, size: { rows: 10, cols: 80 }, status: '' }
+
+    let lines = view.render(ctx).join('\n')
+    expect(lines).toContain('Common path shown')
+    expect(lines).not.toContain('identifier')
+
+    await view.onKey('?', ctx)
+    expect(app.push).toHaveBeenCalled()
+
+    await view.onKey('A', ctx)
+    lines = view.render(ctx).join('\n')
+    expect(lines).toContain('identifier')
+  })
+
   it('keeps select fields bounded to options and opens an option picker with right arrow', async () => {
     const view = new FormView({
       title: 't',

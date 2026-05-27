@@ -52,8 +52,8 @@ describe('buildAdminClient', () => {
     writeFileSync(join(dir, 'secrets', 'caracalAdminToken'), 'admin-secret\n')
     writeFileSync(join(dir, 'secrets', 'caracalCoordinatorToken'), 'coordinator-secret\n')
     mkdirSync(join(dir, 'infra', 'secrets', 'files'), { recursive: true })
-    writeFileSync(join(dir, 'infra', 'secrets', 'files', 'caracalAdminToken'), 'admin-secret\n')
-    writeFileSync(join(dir, 'infra', 'secrets', 'files', 'caracalCoordinatorToken'), 'coordinator-secret\n')
+    writeFileSync(join(dir, 'infra', 'secrets', 'files', 'caracalAdminToken'), 'dev-admin-secret\n')
+    writeFileSync(join(dir, 'infra', 'secrets', 'files', 'caracalCoordinatorToken'), 'dev-coordinator-secret\n')
     process.env = {
       ...saved,
       CARACAL_HOME: dir,
@@ -63,15 +63,22 @@ describe('buildAdminClient', () => {
       CARACAL_API_URL: 'http://localhost:3000',
       CARACAL_COORDINATOR_URL: 'http://localhost:4000',
     }
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ items: [], next_cursor: null }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    }))
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      return new Response(JSON.stringify(url.includes('/agents') ? { items: [], next_cursor: null } : []), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     const { client } = buildAdminClient()
+    await client.zones.list()
     await client.agents.list('z1')
 
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/v1/zones', expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer admin-secret' }),
+    }))
     expect(fetchMock).toHaveBeenCalledWith('http://localhost:4000/zones/z1/agents', expect.objectContaining({
       headers: expect.objectContaining({ Authorization: 'Bearer coordinator-secret' }),
     }))
