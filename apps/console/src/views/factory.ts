@@ -95,6 +95,106 @@ function providerConfig(filePath: string, inline: string): JsonObject | undefine
   return content.trim().length > 0 ? parseJsonObject(content) : undefined
 }
 
+function providerConfigForEdit(currentKind: ProviderKind, nextKind: ProviderKind, existingConfig: JsonObject, filePath: string, inline: string): JsonObject | undefined {
+  const config = providerConfig(filePath, inline)
+  if (config) {
+    validateProviderConfig(nextKind, config)
+    return config
+  }
+  if (currentKind !== nextKind) validateProviderConfig(nextKind, existingConfig)
+  return undefined
+}
+
+function providerConfigFromValues(values: Record<string, string>, requireConfig: boolean): JsonObject | undefined {
+  const kind = providerKind(values.kind)
+  const config = providerConfig(values.config_file ?? '', values.config_json ?? '') ?? {}
+  mergeConfigText(config, 'issuer', values.issuer)
+  mergeConfigText(config, 'authorization_endpoint', values.authorization_endpoint)
+  mergeConfigText(config, 'token_endpoint', values.token_endpoint || values.workload_token_endpoint)
+  mergeConfigList(config, 'allowed_token_hosts', values.allowed_token_hosts || values.workload_allowed_token_hosts)
+  mergeConfigList(config, 'upstream_oauth_scopes', values.upstream_oauth_scopes)
+  mergeConfigText(config, 'header_name', values.api_key_header)
+  mergeConfigText(config, 'auth_scheme', values.auth_scheme)
+  mergeConfigText(config, 'audience', values.workload_audience)
+  if (values.forward_caracal_identity === 'true') config.forward_caracal_identity = true
+  if (Object.keys(config).length === 0) {
+    if (requireConfig) throw new Error(`${kind} provider config is required`)
+    return undefined
+  }
+  validateProviderConfig(kind, config)
+  return config
+}
+
+function providerKind(value: string | undefined): ProviderKind {
+  return PROVIDER_KINDS.includes(value as ProviderKind) ? value as ProviderKind : 'oauth2'
+}
+
+function oauthProviderVisible(values: Readonly<Record<string, string>>): boolean {
+  const kind = providerKind(values.kind)
+  return kind === 'oauth2' || kind === 'oidc'
+}
+
+function apiKeyProviderVisible(values: Readonly<Record<string, string>>): boolean {
+  return providerKind(values.kind) === 'apikey'
+}
+
+function workloadProviderVisible(values: Readonly<Record<string, string>>): boolean {
+  return providerKind(values.kind) === 'workload'
+}
+
+function issuerProviderVisible(values: Readonly<Record<string, string>>): boolean {
+  const kind = providerKind(values.kind)
+  return kind === 'oauth2' || kind === 'oidc' || kind === 'workload'
+}
+
+function mergeConfigText(config: JsonObject, key: string, value: string | undefined): void {
+  const text = value?.trim()
+  if (text) config[key] = text
+}
+
+function mergeConfigList(config: JsonObject, key: string, value: string | undefined): void {
+  const items = splitList(value ?? '')
+  if (items.length > 0) config[key] = items
+}
+
+function validateProviderConfig(kind: ProviderKind, config: JsonObject): void {
+  if ('scopes' in config) throw new Error('provider config uses upstream_oauth_scopes; resource forms use Caracal scopes')
+  const allowed = providerConfigKeys(kind)
+  const unknown = Object.keys(config).filter((key) => !allowed.has(key))
+  if (unknown.length > 0) throw new Error(`${kind} provider config has unsupported keys: ${unknown.join(', ')}`)
+  if (kind === 'apikey') {
+    requireString(config, 'header_name', 'apikey provider config requires header_name')
+    return
+  }
+  if (kind === 'workload') {
+    requireString(config, 'issuer', 'workload provider config requires issuer')
+    requireString(config, 'audience', 'workload provider config requires audience')
+    requireString(config, 'token_endpoint', 'workload provider config requires token_endpoint')
+    requireStringList(config, 'allowed_token_hosts', 'workload provider config requires allowed_token_hosts')
+    return
+  }
+  if (kind === 'oidc') requireString(config, 'issuer', 'oidc provider config requires issuer')
+  requireString(config, 'token_endpoint', `${kind} provider config requires token_endpoint`)
+  requireStringList(config, 'allowed_token_hosts', `${kind} provider config requires allowed_token_hosts`)
+}
+
+function providerConfigKeys(kind: ProviderKind): Set<string> {
+  if (kind === 'apikey') return new Set(['header_name', 'auth_scheme', 'forward_caracal_identity'])
+  if (kind === 'workload') return new Set(['issuer', 'audience', 'token_endpoint', 'allowed_token_hosts', 'subject_token_type', 'auth_header', 'auth_scheme', 'forward_caracal_identity'])
+  return new Set(['issuer', 'authorization_endpoint', 'token_endpoint', 'allowed_token_hosts', 'upstream_oauth_scopes', 'auth_header', 'auth_scheme', 'forward_caracal_identity'])
+}
+
+function requireString(config: JsonObject, key: string, message: string): void {
+  if (typeof config[key] !== 'string' || config[key].trim().length === 0) throw new Error(message)
+}
+
+function requireStringList(config: JsonObject, key: string, message: string): void {
+  const value = config[key]
+  if (!Array.isArray(value) || value.length === 0 || value.some((item) => typeof item !== 'string' || item.trim().length === 0)) {
+    throw new Error(message)
+  }
+}
+
 function int(v: string | undefined): number | undefined {
   if (v === undefined || v.trim() === '') return undefined
   const n = Number.parseInt(v, 10)
@@ -246,7 +346,7 @@ function resourcePicker(ctx: Ctx): Field['pick'] {
     [
       { header: 'name', width: 24, value: named },
       { header: 'identifier', width: 30, value: (row) => row.identifier },
-      { header: 'scopes', width: 28, value: (row) => (row.scopes ?? []).join(',') || '-' },
+      { header: 'Caracal scopes', width: 28, value: (row) => (row.scopes ?? []).join(',') || '-' },
     ],
     (row) => row.id,
     named,
@@ -260,7 +360,7 @@ export function resourceIdentifierPicker(ctx: Ctx): Field['pick'] {
     [
       { header: 'name', width: 24, value: named },
       { header: 'identifier', width: 30, value: (row) => row.identifier },
-      { header: 'scopes', value: (row) => (row.scopes ?? []).join(',') || '-' },
+      { header: 'Caracal scopes', value: (row) => (row.scopes ?? []).join(',') || '-' },
     ],
     (row) => row.identifier,
     named,
@@ -557,7 +657,7 @@ export function resourcesView(ctx: Ctx): View {
       { header: 'name', width: 24, value: named },
       { header: 'identifier', width: 30, value: (r) => r.identifier },
       { header: 'upstream', width: 32, value: (r) => r.upstream_url ?? '-' },
-      { header: 'scopes', value: (r) => (r.scopes ?? []).join(' ') || '-' },
+      { header: 'Caracal scopes', value: (r) => (r.scopes ?? []).join(' ') || '-' },
     ],
     load: async () => userResources(await ctx.client.resources.list(ctx.zoneId)),
     state: ctx.state,
@@ -573,12 +673,12 @@ export function resourcesView(ctx: Ctx): View {
           title: 'create resource',
           fields: [
             { key: 'identifier', label: 'identifier', kind: 'text', required: true },
-            { key: 'scopes', label: 'scopes', kind: 'list', required: true, hint: 'comma-separated, e.g. read,write' },
+            { key: 'scopes', label: 'Caracal scopes', kind: 'list', required: true, hint: 'comma-separated authorization scopes for this resource' },
             { key: 'name', label: 'name', kind: 'text' },
             { key: 'upstream_url', label: 'upstream URL', kind: 'text' },
             { key: 'gateway_application_id', label: 'gateway app', kind: 'text', pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
             { key: 'prefix', label: 'prefix match', kind: 'bool', default: 'false' },
-            { key: 'credential_provider_id', label: 'provider', kind: 'text', pick: providerPicker(ctx), resolve: providerResolver(ctx) },
+            { key: 'credential_provider_id', label: 'credential provider', kind: 'text', pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'only when the upstream service needs provider-side credentials' },
           ],
           onSubmit: async (v, app) => {
             await ctx.client.resources.create(ctx.zoneId, {
@@ -604,9 +704,9 @@ export function resourcesView(ctx: Ctx): View {
               { key: 'identifier', label: 'identifier', kind: 'text', default: row.identifier },
               { key: 'upstream_url', label: 'upstream URL', kind: 'text', default: row.upstream_url ?? '' },
                { key: 'gateway_application_id', label: 'gateway app', kind: 'text', default: row.gateway_application_id ?? '', pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
-               { key: 'credential_provider_id', label: 'provider', kind: 'text', default: row.credential_provider_id ?? '', pick: providerPicker(ctx), resolve: providerResolver(ctx) },
+               { key: 'credential_provider_id', label: 'credential provider', kind: 'text', default: row.credential_provider_id ?? '', pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'only when the upstream service needs provider-side credentials' },
               { key: 'prefix', label: 'prefix match', kind: 'bool', default: String(row.prefix) },
-              { key: 'scopes', label: 'scopes', kind: 'list', default: (row.scopes ?? []).join(','), hint: 'comma-separated' },
+              { key: 'scopes', label: 'Caracal scopes', kind: 'list', default: (row.scopes ?? []).join(','), hint: 'comma-separated authorization scopes for this resource' },
             ],
             onSubmit: async (v, app) => {
               await ctx.client.resources.patch(ctx.zoneId, row.id, {
@@ -666,16 +766,27 @@ export function providersView(ctx: Ctx): View {
             { key: 'name', label: 'name', kind: 'text' },
             { key: 'kind', label: 'kind', kind: 'select', options: PROVIDER_KINDS, default: 'oauth2' },
             { key: 'client_id', label: 'client ID', kind: 'text' },
-            { key: 'config_file', label: 'config file', kind: 'file' },
-            { key: 'config_json', label: 'inline config', kind: 'multiline', hint: 'JSON object; secrets are sealed and hidden on read' },
+            { key: 'issuer', label: 'issuer', kind: 'text', visible: issuerProviderVisible, hint: 'required for OIDC and workload providers' },
+            { key: 'authorization_endpoint', label: 'authorization endpoint', kind: 'text', visible: oauthProviderVisible },
+            { key: 'token_endpoint', label: 'token endpoint', kind: 'text', visible: oauthProviderVisible, required: true },
+            { key: 'allowed_token_hosts', label: 'allowed token hosts', kind: 'list', visible: oauthProviderVisible, required: true, hint: 'comma-separated HTTPS token endpoint host allowlist' },
+            { key: 'upstream_oauth_scopes', label: 'upstream OAuth scopes', kind: 'list', visible: oauthProviderVisible, hint: 'provider-side scopes, separate from Caracal resource scopes' },
+            { key: 'api_key_header', label: 'API key header', kind: 'text', visible: apiKeyProviderVisible, required: true },
+            { key: 'auth_scheme', label: 'auth scheme', kind: 'text', visible: apiKeyProviderVisible, hint: 'optional; leave blank when the upstream expects the raw token' },
+            { key: 'workload_audience', label: 'audience', kind: 'text', visible: workloadProviderVisible, required: true },
+            { key: 'workload_token_endpoint', label: 'token endpoint', kind: 'text', visible: workloadProviderVisible, required: true },
+            { key: 'workload_allowed_token_hosts', label: 'allowed token hosts', kind: 'list', visible: workloadProviderVisible, required: true },
+            { key: 'forward_caracal_identity', label: 'forward Caracal identity', kind: 'bool', default: 'false' },
+            { key: 'config_file', label: 'provider config file', kind: 'file', hint: 'JSON object merged with the structured fields' },
+            { key: 'config_json', label: 'advanced provider JSON', kind: 'multiline', hint: 'paste a JSON object; multiline paste is preserved; provider-specific keys are validated' },
           ],
           onSubmit: async (v, app) => {
             await ctx.client.providers.create(ctx.zoneId, {
               identifier: v.identifier!,
               name: v.name || undefined,
-              kind: (v.kind as ProviderKind) || undefined,
+              kind: providerKind(v.kind),
               client_id: v.client_id || undefined,
-              config_json: providerConfig(v.config_file ?? '', v.config_json ?? ''),
+              config_json: providerConfigFromValues(v, true),
             })
             await popAndReload(app, list as unknown as ListView<unknown>)
           },
@@ -691,16 +802,16 @@ export function providersView(ctx: Ctx): View {
               { key: 'identifier', label: 'identifier', kind: 'text', default: row.identifier },
               { key: 'kind', label: 'kind', kind: 'select', options: PROVIDER_KINDS, default: row.kind ?? 'oauth2' },
               { key: 'client_id', label: 'client ID', kind: 'text', default: row.client_id ?? '' },
-              { key: 'config_file', label: 'merge config file', kind: 'file' },
-              { key: 'config_json', label: 'merge inline config', kind: 'multiline', hint: 'leave blank to keep existing config' },
+              { key: 'config_file', label: 'merge provider config file', kind: 'file', hint: 'JSON object; leave blank to keep existing config' },
+              { key: 'config_json', label: 'merge advanced provider JSON', kind: 'multiline', hint: 'paste JSON object; leave blank to keep existing config' },
             ],
             onSubmit: async (v, app) => {
               await ctx.client.providers.patch(ctx.zoneId, row.id, {
                 name: v.name || undefined,
                 identifier: v.identifier || undefined,
-                kind: (v.kind as ProviderKind) || undefined,
+                kind: providerKind(v.kind),
                 client_id: v.client_id || undefined,
-                config_json: providerConfig(v.config_file ?? '', v.config_json ?? ''),
+                config_json: providerConfigForEdit(providerKind(row.kind ?? ''), providerKind(v.kind), row.config_json, v.config_file ?? '', v.config_json ?? ''),
               } as Partial<ProviderInput>)
               await popAndReload(app, list as unknown as ListView<unknown>)
             },
@@ -924,7 +1035,7 @@ export function grantsView(ctx: Ctx): View {
       { header: 'user', width: 36, value: (r) => r.user_id },
       { header: 'resource', width: 28, value: (r) => r.resource_name },
       { header: 'status', width: 10, value: (r) => r.status },
-      { header: 'scopes', value: (r) => (r.scopes ?? []).join(' ') || '-' },
+      { header: 'Caracal scopes', value: (r) => (r.scopes ?? []).join(' ') || '-' },
     ],
     load: () => loadGrants(ctx),
     state: ctx.state,
@@ -942,7 +1053,7 @@ export function grantsView(ctx: Ctx): View {
             { key: 'application_id', label: 'application', kind: 'text', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
             { key: 'user_id', label: 'subject', kind: 'text', required: true },
             { key: 'resource_id', label: 'resource', kind: 'text', required: true, pick: resourcePicker(ctx), resolve: resourceResolver(ctx) },
-            { key: 'scopes', label: 'scopes', kind: 'list', required: true, hint: 'comma-separated subset of resource scopes' },
+            { key: 'scopes', label: 'Caracal scopes', kind: 'list', required: true, hint: 'comma-separated subset of the resource Caracal scopes' },
           ],
           onSubmit: async (v, app) => {
             await ctx.client.grants.create(ctx.zoneId, {

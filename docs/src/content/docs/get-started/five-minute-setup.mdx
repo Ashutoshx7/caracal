@@ -34,14 +34,15 @@ In the Console:
 2. Choose the selected zone, pick an existing zone, or type a new zone name.
 3. Create a new agent app by typing its name, or press the picker key to select an existing app in the chosen zone.
 4. Create a new protected resource by typing a plain resource name, or select an existing resource.
-5. Enter only the scopes needed for the first successful call.
-6. Optionally enter the upstream URL and first request path when you want Gateway routing and an exact generated Gateway check.
-7. Optionally turn on **write files** when you want Console to create the runtime profile and secret file on this machine.
-8. Review the setup plan, then create it.
+5. Enter only the Caracal scopes needed for the first successful call.
+6. Confirm whether Console should create and activate the first access policy.
+7. Optionally enter the upstream URL and first request path when you want Gateway routing and an exact generated Gateway check.
+8. Optionally turn on **write files** when you want Console to create the runtime profile and secret file on this machine.
+9. Review the setup plan, then create it.
 
-Guided setup asks one question at a time and keeps internal IDs out of the main path. Leave **advanced** closed for the first run unless you need provider credentials, a custom resource identifier, custom profile paths, a custom token environment variable, skipped policy activation, or file overwrite behavior.
+Guided setup asks one question at a time and keeps internal IDs out of the main path. Leave **advanced** closed for the first run unless you need a credential provider, a custom resource identifier, custom profile paths, a custom token environment variable, or file overwrite behavior.
 
-The result view shows which objects were created or selected, the one-time client secret for a newly created app, the active policy set, the generated runtime profile, local setup commands, file-write status, and first-success commands. If file writing was skipped, run the local setup commands, paste the revealed one-time client secret or selected app secret as the only line in the secret file, and keep the profile and secret files owner-readable only.
+The result view shows which objects were created or selected, the one-time client secret for a newly created app, the access policy status, the active policy set, the generated runtime profile, local setup commands, file-write status, and first-success commands. If file writing was skipped, run the local setup commands, paste the revealed one-time client secret or selected app secret as the only line in the secret file, and keep the profile and secret files owner-readable only.
 
 ## Call the protected resource
 
@@ -51,7 +52,7 @@ The token environment variable in the generated profile is derived from the reso
 
 ## Explain the first success
 
-Return to the Console **audit** view after the first request. Select the request and open **explain** with its request ID. The explanation should show the created application, protected resource, scopes, policy version, policy set version, Gateway result, and final decision. If the request failed, use the same explanation to identify whether the next correction belongs in runtime config, policy, resource routing, or the upstream service.
+Return to the Console **audit** view after the first request. Select the request and open **explain** with its request ID. The explanation should show the created application, protected resource, Caracal scopes, policy version, policy set version, Gateway result, and final decision. If the request failed, use the same explanation to identify whether the next correction belongs in runtime config, policy, resource routing, or the upstream service.
 
 ## Validate the path repeatably
 

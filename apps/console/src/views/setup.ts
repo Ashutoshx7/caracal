@@ -3,7 +3,7 @@
 //
 // Guided first setup workflow for production-shaped Caracal onboarding.
 
-import type { Application, PolicyVersion, Resource, ResourceInput, Zone } from '@caracalai/admin'
+import type { Application, PolicyVersion, Provider, Resource, ResourceInput, Zone } from '@caracalai/admin'
 import { DEFAULT_CONTROL_AUDIENCE, generateClientSecret } from '@caracalai/engine'
 import {
   DEFAULT_COORDINATOR_URL,
@@ -17,7 +17,7 @@ import type { Key } from '../keys.ts'
 import { maskSecretField, scrubTokens } from '../errors.ts'
 import type { App, View, ViewContext } from '../screen.ts'
 import { DetailView } from './detail.ts'
-import { FormView } from './form.ts'
+import { FormView, type Field } from './form.ts'
 import { EntityPickerView } from './picker.ts'
 import type { Ctx } from './factory.ts'
 
@@ -112,6 +112,7 @@ type SetupStepKey =
   | 'application_secret'
   | 'resource'
   | 'scopes'
+  | 'policy'
   | 'upstream_url'
   | 'request_path'
   | 'write_files'
@@ -121,7 +122,7 @@ interface SetupStep {
   key: SetupStepKey
   question: string
   explanation: string
-  placeholder: string
+  emptyLabel: string
   kind?: 'text' | 'bool'
   required?: boolean
   picker?: boolean
@@ -234,7 +235,7 @@ class FirstSetupWizardView implements View {
         key: 'zone',
         question: 'Choose or create a zone',
         explanation: 'A zone groups the apps, resources, and policies for one workload or team.',
-        placeholder: 'zone name',
+        emptyLabel: 'zone name',
         required: true,
         picker: true,
       },
@@ -242,7 +243,7 @@ class FirstSetupWizardView implements View {
         key: 'application',
         question: 'Create or select an agent app',
         explanation: 'The agent app is the workload identity that will ask for access to the resource.',
-        placeholder: 'agent app name',
+        emptyLabel: 'agent app name',
         required: true,
         picker: this.hasExistingZone(),
       },
@@ -250,47 +251,54 @@ class FirstSetupWizardView implements View {
         key: 'application_secret',
         question: 'Paste the existing app secret',
         explanation: 'Console cannot retrieve an existing app secret. Leave this blank to add the secret file yourself later.',
-        placeholder: 'client secret',
+        emptyLabel: 'client secret',
       },
       resource: {
         key: 'resource',
         question: 'Create or select a resource',
-        explanation: 'The resource is the service or API you want this agent app to call.',
-        placeholder: 'resource name',
+        explanation: 'A resource is the protected API, OAuth audience, gRPC service, MCP server, or SDK capability this agent app will call.',
+        emptyLabel: 'resource name',
         required: true,
         picker: this.hasExistingZone(),
       },
       scopes: {
         key: 'scopes',
-        question: 'Enter scopes',
-        explanation: 'Scopes are the few permissions this first run needs.',
-        placeholder: 'scopes',
+        question: 'Enter Caracal scopes',
+        explanation: 'A Caracal scope is the permission your policy evaluates for this resource. Keep upstream OAuth scopes in the provider config.',
+        emptyLabel: 'Caracal scopes',
         required: true,
+      },
+      policy: {
+        key: 'policy',
+        question: 'Create and activate an access policy',
+        explanation: 'This creates a real Rego allow-list: deny by default, then allow only this agent app, this resource, and these Caracal scopes.',
+        emptyLabel: 'true',
+        kind: 'bool',
       },
       upstream_url: {
         key: 'upstream_url',
         question: 'Add an upstream URL',
-        explanation: 'Use this when Gateway should route the first protected request to a real service.',
-        placeholder: 'upstream URL',
+        explanation: 'The upstream URL is where Gateway sends the approved request for REST APIs, gRPC gateways, MCP servers, or services called by an SDK.',
+        emptyLabel: 'upstream URL',
       },
       request_path: {
         key: 'request_path',
         question: 'Add the first request path',
         explanation: 'This lets the result screen show an exact curl command for the first Gateway check.',
-        placeholder: 'request path',
+        emptyLabel: 'request path',
       },
       write_files: {
         key: 'write_files',
         question: 'Write local profile files',
         explanation: 'Console can create the runtime profile and secret file on this machine, or show copy-paste commands.',
-        placeholder: 'false',
+        emptyLabel: 'false',
         kind: 'bool',
       },
       review: {
         key: 'review',
         question: 'Review and create',
         explanation: 'Check the setup plan, then create the missing objects and first access policy.',
-        placeholder: '',
+        emptyLabel: '',
       },
     }
     return steps[this.step]
@@ -299,7 +307,7 @@ class FirstSetupWizardView implements View {
   private steps(): SetupStepKey[] {
     const steps: SetupStepKey[] = ['zone', 'application']
     if (this.selectedApplication) steps.push('application_secret')
-    steps.push('resource', 'scopes', 'upstream_url')
+    steps.push('resource', 'scopes', 'policy', 'upstream_url')
     if (trimmed(this.values.upstream_url)) steps.push('request_path')
     if (boolDefault(this.values.generate_profile, true)) steps.push('write_files')
     steps.push('review')
@@ -315,7 +323,7 @@ class FirstSetupWizardView implements View {
     const key = stepValueKey(step.key)
     if (step.kind === 'bool') return ui.input((key && this.values[key] === 'true') ? '[ yes ]' : '[ no ]')
     const value = this.displayValue(step.key)
-    return ui.input(`[ ${sanitizeAnsi(value || `<${step.placeholder}>`)} ]`)
+    return ui.input(`[ ${sanitizeAnsi(value || `<${step.emptyLabel}>`)} ]`)
   }
 
   private displayValue(step: SetupStepKey): string {
@@ -341,7 +349,8 @@ class FirstSetupWizardView implements View {
       ` ${ui.muted('Agent app')} ${this.selectedApplication ? `${this.selectedApplication.name} (selected)` : `${this.values.agent_app_name} (create)`}`,
       ` ${ui.muted('Resource')} ${resourceName}${this.selectedResource ? ' (selected)' : ' (create)'}`,
       ` ${ui.muted('Resource identifier')} ${resourceIdentifier}`,
-      ` ${ui.muted('Scopes')} ${splitList(this.values.resource_scopes).join(', ') || '<required>'}`,
+      ` ${ui.muted('Caracal scopes')} ${splitList(this.values.resource_scopes).join(', ') || '<required>'}`,
+      ` ${ui.muted('Access policy')} ${bool(this.values.activate_policy) ? 'create and activate real Rego allow-list' : 'skip'}`,
       ` ${ui.muted('Gateway')} ${trimmed(this.values.upstream_url) ? `${this.values.upstream_url}${normalizeRequestPath(this.values.request_path) ?? ''}` : 'skip for now'}`,
       ` ${ui.muted('Files')} ${boolDefault(this.values.write_files, false) ? 'write profile and secret files' : 'show commands only'}`,
       '',
@@ -372,7 +381,7 @@ class FirstSetupWizardView implements View {
     if (this.step === 'zone' && !this.selectedZone && !trimmed(this.values.zone_name)) return 'zone is required'
     if (this.step === 'application' && !this.selectedApplication && !trimmed(this.values.agent_app_name)) return 'agent app is required'
     if (this.step === 'resource' && !this.selectedResource && !trimmed(this.values.resource_name)) return 'resource is required'
-    if (this.step === 'scopes' && splitList(this.values.resource_scopes).length === 0) return 'at least one scope is required'
+    if (this.step === 'scopes' && splitList(this.values.resource_scopes).length === 0) return 'at least one Caracal scope is required'
     return undefined
   }
 
@@ -483,7 +492,7 @@ class FirstSetupWizardView implements View {
       submitLabel: 'save',
       fields: [
         { key: 'resource_identifier', label: 'resource identifier', kind: 'text', default: values.resource_identifier ?? '', hint: 'optional; generated from the resource name when blank' },
-        { key: 'provider_id', label: 'provider ID', kind: 'text', default: values.provider_id ?? '', hint: 'optional existing provider credential source' },
+        { key: 'provider_id', label: 'credential provider', kind: 'text', default: values.provider_id ?? '', hint: 'third-party credential source; select one only when this resource needs upstream credentials', pick: providerPicker(this.ctx), resolve: providerResolver(this.ctx) },
         { key: 'activate_policy', label: 'activate policy', kind: 'bool', default: values.activate_policy ?? 'true' },
         { key: 'generate_profile', label: 'runtime profile', kind: 'bool', default: values.generate_profile ?? 'true' },
         { key: 'overwrite_files', label: 'overwrite files', kind: 'bool', default: values.overwrite_files ?? 'false', hint: 'kept off unless replacing existing generated setup files is intended' },
@@ -547,7 +556,7 @@ class FirstSetupWizardView implements View {
 
 async function runFirstSetup(ctx: Ctx, values: SetupValues, app: App): Promise<SetupResult> {
   const scopes = splitList(values.resource_scopes)
-  if (scopes.length === 0) throw new Error('at least one resource scope is required')
+  if (scopes.length === 0) throw new Error('at least one Caracal scope is required')
   const shouldGenerateProfile = boolDefault(values.generate_profile, true)
   const writeFiles = shouldGenerateProfile && boolDefault(values.write_files, false)
   const overwriteFiles = boolDefault(values.overwrite_files, false)
@@ -705,6 +714,7 @@ function stepValueKey(step: SetupStepKey): keyof SetupValues | undefined {
     case 'application_secret': return 'existing_app_client_secret'
     case 'resource': return 'resource_name'
     case 'scopes': return 'resource_scopes'
+    case 'policy': return 'activate_policy'
     case 'upstream_url': return 'upstream_url'
     case 'request_path': return 'request_path'
     case 'write_files': return 'write_files'
@@ -729,6 +739,31 @@ function resourceLabel(resource: Resource): string {
   return resource.name || resource.identifier || resource.id
 }
 
+function providerLabel(provider: Provider): string {
+  return provider.name || provider.identifier || provider.id
+}
+
+function providerPicker(ctx: Ctx): Field['pick'] {
+  return (app, setValue) => {
+    app.push(new EntityPickerView<Provider>({
+      title: 'choose provider',
+      load: () => ctx.client.providers.list(ctx.zoneId),
+      value: (row) => row.id,
+      label: providerLabel,
+      description: (row) => [row.identifier, row.kind ?? undefined].filter(Boolean).join('  '),
+      onPick: setValue,
+    }))
+  }
+}
+
+function providerResolver(ctx: Ctx): Field['resolve'] {
+  let cached: Map<string, string> | undefined
+  return async (id) => {
+    cached = cached ?? new Map((await ctx.client.providers.list(ctx.zoneId)).map((provider) => [provider.id, providerLabel(provider)]))
+    return cached.get(id)
+  }
+}
+
 function sameList(left: string[], right: string[]): boolean {
   if (left.length !== right.length) return false
   return left.every((value, index) => value === right[index])
@@ -742,11 +777,11 @@ async function createFirstPolicy(
   scopes: string[],
 ): Promise<SetupResult['policy']> {
   const policy = await ctx.client.policies.create(zoneId, {
-    name: 'First access policy',
-    description: 'Allows the configured agent app to request the configured protected resource.',
+    name: 'Guided setup access policy',
+    description: 'Real Rego allow-list approved during guided setup. Allows only the configured agent app to request the configured protected resource with the configured Caracal scopes.',
     content: firstAccessPolicy(applicationId, resourceIdentifier, scopes),
   })
-  const policySet = await ctx.client.policySets.create(zoneId, 'First access policy set', 'Active policy set created by first setup.')
+  const policySet = await ctx.client.policySets.create(zoneId, 'Guided setup access policy set', 'Active policy set approved during guided setup.')
   const version = await ctx.client.policySets.addVersion(zoneId, policySet.id, [{ policy_version_id: policy.version.id }])
   await ctx.client.policySets.activate(zoneId, policySet.id, version.id)
   return {
@@ -837,10 +872,25 @@ function setupSummary(result: SetupResult): Record<string, unknown> {
   }
   if (result.policy) {
     summary.access_policy = {
+      status: 'created and activated',
+      kind: 'real Rego allow-list policy',
+      why_created: 'Guided setup creates this only when approved so the first protected call has an active authorization rule.',
+      rules: [
+        'deny by default',
+        'allow only the selected agent app',
+        'allow only the selected resource identifier',
+        'allow only requested Caracal scopes that are in the configured scope list',
+      ],
       policy_id: result.policy.id,
+      policy_name: result.policy.name,
       policy_version_id: result.policy.version.id,
       policy_set_id: result.policy.policy_set_id,
       active_policy_set_version_id: result.policy.policy_set_version_id,
+    }
+  } else {
+    summary.access_policy = {
+      status: 'skipped',
+      next_step: 'Create and activate a policy before requesting access.',
     }
   }
   if (result.profile) {
