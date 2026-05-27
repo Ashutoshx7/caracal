@@ -40,6 +40,7 @@ Thumbs.db
 *~
 *.orig
 *.rej
+.playwright-mcp/*
 
 # Python
 __pycache__/
