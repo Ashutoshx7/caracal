@@ -25,6 +25,10 @@
           "type": "string",
           "minLength": 1
         },
+        "registration_method": {
+          "type": "string",
+          "enum": ["managed", "dcr"]
+        },
         "agent_session_id": {
           "type": "string"
         },
