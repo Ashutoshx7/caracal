@@ -27,7 +27,7 @@ ALTER TABLE providers
 
 ALTER TABLE providers
     ADD CONSTRAINT providers_provider_kind_check CHECK (
-        provider_kind IN ('oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token')
+        provider_kind IN ('caracal_mandate', 'oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token')
     );
 
 ALTER TABLE providers

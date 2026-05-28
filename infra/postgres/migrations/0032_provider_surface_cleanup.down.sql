@@ -20,6 +20,12 @@ SET provider_kind = 'apikey',
     updated_at = now()
 WHERE provider_kind IN ('api_key', 'bearer_token');
 
+UPDATE providers
+SET provider_kind = 'workload',
+    archived_at = COALESCE(archived_at, now()),
+    updated_at = now()
+WHERE provider_kind = 'caracal_mandate';
+
 ALTER TABLE providers
     ALTER COLUMN provider_kind DROP NOT NULL;
 
