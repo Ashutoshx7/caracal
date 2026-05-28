@@ -525,6 +525,7 @@ describe('resources actions', () => {
     expect(keys).toContain('name')
     expect(keys).toContain('scopes')
     expect(fields.find((f) => f.key === 'identifier')?.advanced).toBe(true)
+    expect(fields.find((f) => f.key === 'gateway_application_id')?.required).toBe(true)
   })
 
   it('n includes gateway and provider fields for resource creation', async () => {
@@ -550,14 +551,15 @@ describe('resources actions', () => {
     ;(form as unknown as { values: Record<string, string> }).values.mode = 'gateway'
     let body = form.render(ctxView).join('\n')
     expect(body).toContain('upstream URL *')
+    expect(body).toContain('gateway app *')
     expect(body).toContain('Advanced options')
 
-    ;(form as unknown as { focus: number }).focus = 4
+    ;(form as unknown as { focus: number }).focus = 5
     await form.onKey('right', ctxView)
     const advanced = (app as unknown as { _pushed: unknown[] })._pushed.at(-1) as FormView
     body = advanced.render(ctxView).join('\n')
-    expect(body).toContain('gateway app')
     expect(body).toContain('credential provider')
+    expect(body).not.toContain('prefix match')
   })
 })
 

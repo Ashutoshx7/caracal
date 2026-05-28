@@ -47,7 +47,6 @@ function makeClient() {
     identifier: 'resource://resource-name',
     upstream_url: 'https://upstream-url',
     gateway_application_id: 'app-1',
-    prefix: true,
     scopes: ['scope-name'],
     credential_provider_id: null,
     created_at: '2026-01-01T00:00:00.000Z',
@@ -289,7 +288,6 @@ describe('first setup workflow', () => {
       upstream_url: 'https://api.example.com',
       gateway_application_id: 'app-1',
       credential_provider_id: 'provider-1',
-      prefix: true,
     }))
   })
 

@@ -89,12 +89,11 @@ describe('POST /v1/zones/:zoneId/resources', () => {
     expect(db.query).toHaveBeenCalledTimes(2)
   })
 
-  it('creates a resource when provider belongs to the zone', async () => {
+  it('rejects provider references without Gateway routing', async () => {
     const { app, db } = buildRouteApp(resourcesRoutes)
     db.query
       .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
       .mockResolvedValueOnce({ rows: [{ exists: 1 }] })
-      .mockResolvedValueOnce({ rows: [{ id: 'res-1', zone_id: 'z1', credential_provider_id: 'provider-1' }] })
 
     await app.ready()
     const res = await app.inject({
@@ -107,8 +106,9 @@ describe('POST /v1/zones/:zoneId/resources', () => {
       },
     })
 
-    expect(res.statusCode).toBe(201)
-    expect(JSON.parse(res.body)).toMatchObject({ id: 'res-1', credential_provider_id: 'provider-1' })
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'provider_requires_gateway_upstream' })
+    expect(db.connect).not.toHaveBeenCalled()
   })
 
   it('requires a gateway application for gateway-routed resources', async () => {
@@ -269,6 +269,7 @@ describe('PATCH /v1/zones/:zoneId/resources/:id', () => {
           rows: [{
             identifier: 'resource://api',
             upstream_url: 'https://api.example.com',
+            credential_provider_id: null,
             gateway_application_id: 'app-1',
           }],
         })
@@ -324,6 +325,7 @@ describe('PATCH /v1/zones/:zoneId/resources/:id', () => {
           rows: [{
             identifier: 'caracal-control',
             upstream_url: null,
+            credential_provider_id: null,
             gateway_application_id: null,
           }],
         })
