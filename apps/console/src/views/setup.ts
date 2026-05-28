@@ -716,7 +716,6 @@ async function ensureApplication(
     registration_method: 'managed',
     credential_type: 'token',
     client_secret: clientSecret,
-    consent: false,
   })
   return { application, created: true, clientSecret }
 }

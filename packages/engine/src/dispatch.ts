@@ -167,21 +167,21 @@ const appHandler = bySubcommand({
   get: ({ principal, flags, ctx }) => ctx.admin.applications.get(requireZone(principal), mustStr(flags, 'id')),
   create: ({ principal, flags, ctx }) => ctx.admin.applications.create(requireZone(principal), {
     name: mustStr(flags, 'name'),
-    credential_type: getStr(flags, 'credential-type'),
-    client_secret: getStr(flags, 'client-secret'),
-    auth_method: getStr(flags, 'method'),
-    require_consent: getBool(flags, 'consent'),
-    token_expires_in: getNum(flags, 'expires-in'),
-  } as never),
+    registration_method: 'managed',
+    credential_type: 'token',
+    client_secret: mustStr(flags, 'client-secret'),
+  }),
   patch: ({ principal, flags, ctx }) => ctx.admin.applications.patch(requireZone(principal), mustStr(flags, 'id'), {
     name: getStr(flags, 'name'),
-    require_consent: getBool(flags, 'consent'),
-    token_expires_in: getNum(flags, 'expires-in'),
-  } as never),
+    client_secret: getStr(flags, 'client-secret'),
+  }),
   delete: ({ principal, flags, ctx }) => ctx.admin.applications.delete(requireZone(principal), mustStr(flags, 'id')),
   dcr: ({ principal, flags, ctx }) => ctx.admin.applications.dcr(requireZone(principal), {
+    name: mustStr(flags, 'name'),
+    credential_type: 'token',
     client_secret: mustStr(flags, 'client-secret'),
-  } as never),
+    expires_in: getNum(flags, 'expires-in'),
+  }),
 })
 
 const resourceHandler = bySubcommand({

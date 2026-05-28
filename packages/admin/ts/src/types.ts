@@ -30,22 +30,21 @@ export interface Application {
   registration_method: RegistrationMethod
   credential_type: CredentialType
   traits: string[]
-  consent: string
+  expires_at?: string | null
   created_at: string
 }
 
 export interface ApplicationInput {
   name: string
-  registration_method: RegistrationMethod
-  credential_type?: CredentialType
+  registration_method: 'managed'
+  credential_type?: 'token'
   client_secret?: string
   traits?: string[]
-  consent?: boolean
 }
 
 export interface DCRInput {
   name: string
-  credential_type?: CredentialType
+  credential_type?: 'token'
   client_secret?: string
   traits?: string[]
   expires_in?: number
