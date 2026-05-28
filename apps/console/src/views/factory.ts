@@ -34,7 +34,7 @@ import { formatDateTimeOrValue } from '../format.ts'
 import { DEFAULT_CONTROL_AUDIENCE } from '@caracalai/engine'
 import { AuditTailView } from './audit.ts'
 import { DetailView } from './detail.ts'
-import { ConfirmView, FormView, type Field } from './form.ts'
+import { ChoiceConfirmView, ConfirmView, FormView, type Field } from './form.ts'
 import { infoPage, openInfo, type InfoPage } from './info.ts'
 import { ListView } from './list.ts'
 import { appendCsv, EntityPickerView, pickFromList } from './picker.ts'
@@ -77,6 +77,70 @@ function applicationDetail(title: string, load: () => Promise<unknown>): DetailV
 const APPLICATION_INTERNAL_DETAIL_FIELDS = new Set(['consent', 'credential_type', 'traits'])
 
 function open(app: App, view: View): void { app.push(view) }
+
+type DcrShutdownChoice = 'keep_live' | 'revoke_live' | 'cancel'
+
+function dcrShutdownLiveApplications(err: unknown): number | undefined {
+  if (typeof err !== 'object' || err === null) return undefined
+  const apiError = err as { name?: unknown; status?: unknown; code?: unknown; body?: unknown }
+  if (apiError.name !== 'AdminApiError' || apiError.status !== 409 || apiError.code !== 'dcr_shutdown_required') return undefined
+  const body = apiError.body
+  if (typeof body !== 'object' || body === null) return 1
+  const live = (body as { live_dcr_applications?: unknown }).live_dcr_applications
+  return typeof live === 'number' && live > 0 ? live : 1
+}
+
+function liveDcrApplication(app: Application): boolean {
+  if (app.registration_method !== 'dcr') return false
+  if (!app.expires_at) return true
+  const expiresAt = Date.parse(app.expires_at)
+  return Number.isFinite(expiresAt) && expiresAt > Date.now()
+}
+
+async function liveDcrApplicationCount(ctx: Ctx, zoneId: string): Promise<number> {
+  return (await ctx.client.applications.list(zoneId)).filter(liveDcrApplication).length
+}
+
+async function chooseDcrShutdown(app: App, liveApplications: number): Promise<DcrShutdownChoice> {
+  return new Promise((resolve) => {
+    app.push(new ChoiceConfirmView({
+      message: `${liveApplications} live DCR application${liveApplications === 1 ? '' : 's'} exist in this zone.`,
+      options: [
+        {
+          key: 'k',
+          label: 'keep existing DCR apps live',
+          description: 'disable new DCR registrations only',
+          value: 'keep_live',
+        },
+        {
+          key: 'r',
+          label: 'revoke all live DCR apps',
+          description: 'archive active DCR identities and revoke related runtime access',
+          value: 'revoke_live',
+        },
+        {
+          key: 'c',
+          label: 'cancel',
+          description: 'leave the zone unchanged',
+          value: 'cancel',
+        },
+      ],
+      onChoose: (value, currentApp) => {
+        currentApp.pop()
+        resolve(value === 'keep_live' || value === 'revoke_live' ? value : 'cancel')
+      },
+      info: infoPage({
+        title: 'Disable dynamic client registration',
+        meaning: 'Disabling DCR blocks future dynamic application registration. Existing live DCR applications need an explicit keep-or-revoke decision.',
+        when: 'Choose keep when a drain period is acceptable. Choose revoke when DCR must stop immediately for the zone.',
+        impact: 'Keep leaves live DCR identities valid until expiry or later revocation. Revoke archives them, revokes related sessions, and terminates ephemeral agent access.',
+        example: 'revoke all live DCR apps',
+        valid: 'Press k to keep, r to revoke, c or esc to cancel.',
+        after: 'Console sends the selected shutdown mode with the zone update.',
+      }),
+    }))
+  })
+}
 
 function splitList(s: string): string[] {
   return s.split(',').map((x) => x.trim()).filter((x) => x.length > 0)
@@ -763,11 +827,38 @@ export function zonesView(ctx: Ctx): View {
               { key: 'dcr_enabled', label: 'dynamic clients', kind: 'bool', default: String(row.dcr_enabled) },
             ],
             onSubmit: async (v, app) => {
-              await ctx.client.zones.patch(row.id, {
+              const dcrEnabled = bool(v.dcr_enabled)
+              let dcrShutdown: DcrShutdownChoice | undefined
+              if (!dcrEnabled) {
+                const liveApplications = await liveDcrApplicationCount(ctx, row.id)
+                if (liveApplications > 0) {
+                  dcrShutdown = await chooseDcrShutdown(app, liveApplications)
+                  if (dcrShutdown === 'cancel') {
+                    app.setStatus('DCR disable canceled')
+                    return
+                  }
+                }
+              }
+              const patch = {
                 name: v.name || undefined,
                 slug: v.slug || undefined,
-                dcr_enabled: bool(v.dcr_enabled),
-              })
+                dcr_enabled: dcrEnabled,
+                dcr_shutdown: dcrShutdown === 'cancel' ? undefined : dcrShutdown,
+              }
+              try {
+                await ctx.client.zones.patch(row.id, patch)
+              } catch (err) {
+                const liveApplications = !dcrEnabled && dcrShutdown === undefined
+                  ? dcrShutdownLiveApplications(err)
+                  : undefined
+                if (liveApplications === undefined) throw err
+                dcrShutdown = await chooseDcrShutdown(app, liveApplications)
+                if (dcrShutdown === 'cancel') {
+                  app.setStatus('DCR disable canceled')
+                  return
+                }
+                await ctx.client.zones.patch(row.id, { ...patch, dcr_shutdown: dcrShutdown })
+              }
               await popAndReload(app, list as unknown as ListView<unknown>)
             },
           })

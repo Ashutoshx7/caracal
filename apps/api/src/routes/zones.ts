@@ -6,9 +6,13 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { v7 as uuidv7 } from 'uuid'
+import { insertAdminAuditRecord } from '@caracalai/admin-audit'
 import { buildPatchUpdate, patchColumn } from './patch.js'
 import { IdParams, parseParams } from './params.js'
 import { appendKeysetCondition, parseListPagination, setNextLink } from './list-pagination.js'
+import { enqueueOutbox } from '../outbox.js'
+import { STREAM_AGENTS_LIFECYCLE, STREAM_SESSIONS_REVOKE } from '../redis.js'
+import type { Actor } from '../auth.js'
 
 const ZoneCreateBody = z.object({
   name: z.string().min(1),
@@ -20,10 +24,220 @@ const ZoneUpdateBody = z.object({
   name: z.string().min(1).optional(),
   slug: z.string().regex(/^[a-z0-9-]+$/).optional(),
   dcr_enabled: z.boolean().optional(),
+  dcr_shutdown: z.enum(['keep_live', 'revoke_live']).optional(),
 }).strict()
+
+type ZoneUpdateBody = z.infer<typeof ZoneUpdateBody>
+
+interface Queryable {
+  query: <T = unknown>(text: string, params?: unknown[]) => Promise<{ rows: T[]; rowCount?: number | null }>
+}
+
+interface ZoneRow {
+  id: string
+  name: string
+  slug: string
+  dcr_enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+interface LiveDcrApplication {
+  id: string
+}
+
+interface RevokedSession {
+  id: string
+}
+
+interface TerminatedAgent {
+  id: string
+  subject_session_id: string
+  parent_id: string | null
+}
+
+interface RevokedDelegation {
+  id: string
+}
+
+function isDcrShutdownInfrastructureError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  const code = (err as { code?: unknown }).code
+  return code === '42501' || code === '42P01' || code === '42703'
+}
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+}
+
+function liveDcrPredicate(): string {
+  return `zone_id = $1
+    AND registration_method = 'dcr'
+    AND archived_at IS NULL
+    AND expires_at > now()`
+}
+
+async function liveDcrApplications(client: Queryable, zoneId: string, lock = false): Promise<LiveDcrApplication[]> {
+  const { rows } = await client.query<LiveDcrApplication>(
+    `SELECT id FROM applications
+     WHERE ${liveDcrPredicate()}
+     ORDER BY created_at
+     ${lock ? 'FOR UPDATE' : ''}`,
+    [zoneId],
+  )
+  return rows
+}
+
+async function revokeDcrIdentities(
+  client: Queryable,
+  zoneId: string,
+  applicationIds: string[],
+  requestId: string,
+): Promise<{ applications: number; sessions: number; agents: number; delegations: number }> {
+  if (applicationIds.length === 0) return { applications: 0, sessions: 0, agents: 0, delegations: 0 }
+
+  const { rows: apps } = await client.query<{ id: string }>(
+    `UPDATE applications
+     SET archived_at = now()
+     WHERE zone_id = $1 AND id = ANY($2::text[]) AND archived_at IS NULL
+     RETURNING id`,
+    [zoneId, applicationIds],
+  )
+
+  const { rows: sessions } = await client.query<RevokedSession>(
+    `WITH RECURSIVE revoked_tree AS (
+       SELECT id FROM sessions
+       WHERE zone_id = $1
+         AND session_type = 'application'
+         AND subject_id = ANY($2::text[])
+         AND status = 'active'
+       UNION
+       SELECT s.id FROM sessions s
+       JOIN revoked_tree r ON s.parent_id = r.id
+       WHERE s.zone_id = $1 AND s.status = 'active'
+     )
+     UPDATE sessions
+     SET status = 'revoked'
+     WHERE zone_id = $1 AND id IN (SELECT id FROM revoked_tree)
+     RETURNING id`,
+    [zoneId, applicationIds],
+  )
+
+  const { rows: agents } = await client.query<TerminatedAgent>(
+    `WITH RECURSIVE tree AS (
+       SELECT id, subject_session_id, parent_id
+       FROM agent_sessions
+       WHERE zone_id = $1
+         AND application_id = ANY($2::text[])
+         AND status IN ('active','suspended')
+       UNION
+       SELECT child.id, child.subject_session_id, child.parent_id
+       FROM agent_sessions child
+       JOIN tree parent ON child.parent_id = parent.id
+       WHERE child.zone_id = $1 AND child.status IN ('active','suspended')
+     )
+     UPDATE agent_sessions
+     SET status = 'terminated', terminated_at = now(), updated_at = now()
+     WHERE zone_id = $1 AND id IN (SELECT id FROM tree)
+     RETURNING id, subject_session_id, parent_id`,
+    [zoneId, applicationIds],
+  )
+
+  const agentIds = agents.map((row) => row.id)
+  const { rows: delegations } = agentIds.length > 0
+    ? await client.query<RevokedDelegation>(
+      `UPDATE delegation_edges
+       SET status = 'revoked', revoked_at = now(), edge_version = edge_version + 1, updated_at = now()
+       WHERE zone_id = $1
+         AND status = 'active'
+         AND (source_session_id = ANY($2::text[]) OR target_session_id = ANY($2::text[]))
+       RETURNING id`,
+      [zoneId, agentIds],
+    )
+    : { rows: [] as RevokedDelegation[] }
+
+  for (const row of sessions) {
+    await enqueueOutbox(client, {
+      streamName: STREAM_SESSIONS_REVOKE,
+      payload: { zone_id: zoneId, session_id: row.id, reason: 'dcr_shutdown' },
+      requestId,
+    })
+  }
+  for (const row of agents) {
+    await enqueueOutbox(client, {
+      streamName: STREAM_AGENTS_LIFECYCLE,
+      payload: {
+        event: 'terminate',
+        zone_id: zoneId,
+        agent_session_id: row.id,
+        parent_id: row.parent_id,
+        reason: 'dcr_shutdown',
+      },
+      requestId,
+    })
+    await enqueueOutbox(client, {
+      streamName: STREAM_SESSIONS_REVOKE,
+      payload: { zone_id: zoneId, session_id: row.subject_session_id, agent_session_id: row.id, reason: 'dcr_shutdown' },
+      requestId,
+    })
+  }
+  for (const row of delegations) {
+    await enqueueOutbox(client, {
+      streamName: STREAM_SESSIONS_REVOKE,
+      payload: { zone_id: zoneId, delegation_edge_id: row.id, reason: 'dcr_shutdown' },
+      requestId,
+    })
+  }
+
+  return { applications: apps.length, sessions: sessions.length, agents: agents.length, delegations: delegations.length }
+}
+
+async function auditDcrShutdown(
+  client: Queryable,
+  actor: Actor | null,
+  requestId: string,
+  zoneId: string,
+  mode: 'keep_live' | 'revoke_live' | 'no_live',
+  counts: { live: number; applications: number; sessions: number; agents: number; delegations: number },
+): Promise<void> {
+  await insertAdminAuditRecord(client, {
+    requestId,
+    actorId: actor?.id ?? null,
+    actorName: actor?.name ?? null,
+    actorScope: actor?.scope ?? null,
+    action: `DCR shutdown ${mode}`,
+    method: 'PATCH',
+    path: `/v1/zones/${zoneId}`,
+    zoneId,
+    entityType: 'zones',
+    entityId: zoneId,
+    statusCode: 200,
+    payloadJson: {
+      dcr_registration_disabled: true,
+      dcr_shutdown_mode: mode,
+      live_dcr_applications: counts.live,
+      revoked_applications: counts.applications,
+      revoked_sessions: counts.sessions,
+      terminated_agents: counts.agents,
+      revoked_delegations: counts.delegations,
+    },
+  })
+}
+
+async function patchZone(client: Queryable, id: string, body: ZoneUpdateBody): Promise<ZoneRow | null | undefined> {
+  const update = buildPatchUpdate([id], [
+    patchColumn('name', body.name),
+    patchColumn('slug', body.slug),
+    patchColumn('dcr_enabled', body.dcr_enabled),
+  ])
+  if (!update) return undefined
+  const { rows } = await client.query<ZoneRow>(
+    `UPDATE zones SET ${update.sets.join(', ')}, updated_at = now()
+     WHERE id = $1 AND archived_at IS NULL
+     RETURNING id, name, slug, dcr_enabled, created_at, updated_at`,
+    update.values,
+  )
+  return rows[0] ?? null
 }
 
 export const zonesRoutes: FastifyPluginAsync = async (fastify) => {
@@ -72,26 +286,102 @@ export const zonesRoutes: FastifyPluginAsync = async (fastify) => {
     return rows[0]
   })
 
+  fastify.get('/zones/:id/dcr-status', async (req, reply) => {
+    const params = parseParams(IdParams, req, reply)
+    if (!params) return
+    const { rows } = await fastify.db.query(
+      `SELECT z.id, z.dcr_enabled,
+              (
+                SELECT COUNT(*)::int FROM applications
+                WHERE zone_id = z.id
+                  AND registration_method = 'dcr'
+                  AND archived_at IS NULL
+                  AND expires_at > now()
+              ) AS live_dcr_applications
+       FROM zones z
+       WHERE z.id = $1 AND z.archived_at IS NULL`,
+      [params.id],
+    )
+    if (!rows[0]) return reply.code(404).send({ error: 'zone_not_found' })
+    return rows[0]
+  })
+
   fastify.patch('/zones/:id', async (req, reply) => {
     const params = parseParams(IdParams, req, reply)
     if (!params) return
     const parsed = ZoneUpdateBody.safeParse(req.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_zone' })
     const body = parsed.data
+    if (body.dcr_shutdown && body.dcr_enabled !== false) {
+      return reply.code(400).send({ error: 'dcr_shutdown_not_applicable' })
+    }
+    if (body.dcr_enabled !== false) {
+      const row = await patchZone(fastify.db, params.id, body)
+      if (row === null) return reply.code(404).send({ error: 'zone_not_found' })
+      if (row === undefined) return reply.code(400).send({ error: 'no_fields' })
+      return row
+    }
+
     const update = buildPatchUpdate([params.id], [
       patchColumn('name', body.name),
       patchColumn('slug', body.slug),
       patchColumn('dcr_enabled', body.dcr_enabled),
     ])
     if (!update) return reply.code(400).send({ error: 'no_fields' })
-    const { rows } = await fastify.db.query(
-      `UPDATE zones SET ${update.sets.join(', ')}, updated_at = now()
-       WHERE id = $1 AND archived_at IS NULL
-       RETURNING id, name, slug, dcr_enabled, created_at, updated_at`,
-      update.values,
-    )
-    if (!rows[0]) return reply.code(404).send({ error: 'zone_not_found' })
-    return rows[0]
+    const client = await fastify.db.connect()
+    try {
+      await client.query('BEGIN')
+      const { rows: zones } = await client.query<{ dcr_enabled: boolean }>(
+        `SELECT dcr_enabled FROM zones WHERE id = $1 AND archived_at IS NULL FOR UPDATE`,
+        [params.id],
+      )
+      if (!zones[0]) {
+        await client.query('ROLLBACK')
+        return reply.code(404).send({ error: 'zone_not_found' })
+      }
+
+      const apps = zones[0].dcr_enabled || body.dcr_shutdown
+        ? await liveDcrApplications(client, params.id, true)
+        : []
+      if (apps.length > 0 && !body.dcr_shutdown) {
+        await client.query('ROLLBACK')
+        return reply.code(409).send({ error: 'dcr_shutdown_required', live_dcr_applications: apps.length })
+      }
+
+      const { rows } = await client.query<ZoneRow>(
+        `UPDATE zones SET ${update.sets.join(', ')}, updated_at = now()
+         WHERE id = $1 AND archived_at IS NULL
+         RETURNING id, name, slug, dcr_enabled, created_at, updated_at`,
+        update.values,
+      )
+      const shutdown = body.dcr_shutdown === 'revoke_live'
+        ? await revokeDcrIdentities(client, params.id, apps.map((app) => app.id), req.id)
+        : { applications: 0, sessions: 0, agents: 0, delegations: 0 }
+      if (zones[0].dcr_enabled || body.dcr_shutdown) {
+        await auditDcrShutdown(
+          client,
+          req.actor ?? null,
+          req.id,
+          params.id,
+          apps.length === 0 ? 'no_live' : body.dcr_shutdown ?? 'keep_live',
+          { live: apps.length, ...shutdown },
+        )
+      }
+      await client.query('COMMIT')
+      return rows[0]
+    } catch (err) {
+      await client.query('ROLLBACK')
+      if (isDcrShutdownInfrastructureError(err)) {
+        req.log.error({ err }, 'dcr_shutdown_infrastructure_error')
+        return reply.code(503).send({
+          error: 'dcr_shutdown_unavailable',
+          message: 'DCR shutdown cannot revoke runtime state until database migrations are applied',
+        })
+      }
+      throw err
+    } finally {
+      client.release()
+    }
   })
 
   fastify.delete('/zones/:id', async (req, reply) => {

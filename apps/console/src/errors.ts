@@ -65,6 +65,12 @@ function rawExplain(err: unknown): string {
     if (err.status === 403 && err.code === 'dcr_disabled') {
       return 'This zone does not support DCR: enable dynamic clients on the zone'
     }
+    if (err.status === 409 && err.code === 'dcr_shutdown_required') {
+      return 'DCR disable needs a shutdown choice: keep live DCR apps or revoke them'
+    }
+    if (err.status === 503 && err.code === 'dcr_shutdown_unavailable') {
+      return 'DCR shutdown cannot revoke runtime state: run database migrations and restart the API'
+    }
     if (err.status === 403) return `forbidden (${err.code}): token lacks required scope`
     if (err.status === 404) return `not found: resource may have been deleted`
     return `${err.status} ${err.code}${detail ? ': ' + detail : ''}`

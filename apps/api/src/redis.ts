@@ -19,3 +19,4 @@ export function newRedis(url: string): RedisClient {
 
 export const STREAM_POLICY_INVALIDATE = 'caracal.policy.invalidate'
 export const STREAM_SESSIONS_REVOKE = 'caracal.sessions.revoke'
+export const STREAM_AGENTS_LIFECYCLE = 'caracal.agents.lifecycle'

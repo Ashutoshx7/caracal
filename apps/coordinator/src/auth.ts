@@ -6,7 +6,8 @@
 import { pathOnly } from '@caracalai/core'
 import { timingSafeEqual } from 'node:crypto'
 import { createRemoteJWKSet, decodeJwt, jwtVerify } from 'jose'
-import type { FastifyRequest, FastifyReply } from 'fastify'
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import type { Pool } from 'pg'
 import { cfg } from './config.js'
 import { CoordinatorIdPattern } from './routes/params.js'
 
@@ -42,6 +43,10 @@ function jwksForZone(zoneId: string): JwksResolver {
 }
 
 declare module 'fastify' {
+  interface FastifyInstance {
+    db: Pool
+  }
+
   interface FastifyRequest {
     caracalAuth?: {
       zoneId: string
@@ -53,6 +58,11 @@ declare module 'fastify' {
       sessionId?: string
     }
   }
+}
+
+interface RuntimeIdentityRow {
+  session_status: string | null
+  session_expires_at: Date | string | null
 }
 
 export function requireScope(req: FastifyRequest, scope: string): boolean {
@@ -105,6 +115,32 @@ function operatorZone(method: string, path: string): string | undefined {
     if (method === 'PATCH' && parts.length === 5 && parts[4] === 'revoke') return parts[1]
   }
   return undefined
+}
+
+async function validateRuntimeIdentity(
+  app: FastifyInstance,
+  zoneId: string,
+  clientId: string,
+  sessionId: string | undefined,
+): Promise<boolean> {
+  const { rows } = await app.db.query<RuntimeIdentityRow>(
+    `SELECT s.status AS session_status,
+            s.expires_at AS session_expires_at
+     FROM applications a
+     LEFT JOIN sessions s ON s.id = $3 AND s.zone_id = $2
+     WHERE a.id = $1
+       AND a.zone_id = $2
+       AND a.archived_at IS NULL
+       AND (a.expires_at IS NULL OR a.expires_at > now())`,
+    [clientId, zoneId, sessionId ?? ''],
+  )
+  const row = rows[0]
+  if (!row) return false
+  if (!sessionId) return true
+  const expiresAt = row.session_expires_at instanceof Date
+    ? row.session_expires_at
+    : row.session_expires_at ? new Date(row.session_expires_at) : undefined
+  return row.session_status === 'active' && Boolean(expiresAt && expiresAt.getTime() > Date.now())
 }
 
 export async function verifyBearer(req: FastifyRequest, reply: FastifyReply): Promise<void> {
@@ -185,5 +221,9 @@ export async function verifyBearer(req: FastifyRequest, reply: FastifyReply): Pr
   const agentSessionId = typeof payload['agent_session_id'] === 'string' ? payload['agent_session_id'] : undefined
   const delegationEdgeId = typeof payload['delegation_edge_id'] === 'string' ? payload['delegation_edge_id'] : undefined
   const sessionId = typeof payload['sid'] === 'string' ? payload['sid'] : undefined
+  if (!(await validateRuntimeIdentity(req.server, zoneId, clientId, sessionId))) {
+    reply.code(401).send({ error: 'identity_revoked' })
+    return
+  }
   req.caracalAuth = { zoneId, scopes, subject, clientId, agentSessionId, delegationEdgeId, sessionId }
 }
