@@ -4,6 +4,7 @@
 // Reusable searchable entity picker helpers for Console form fields.
 
 import { copyToClipboard, pad, sanitizeAnsi, truncate, ui } from '../ansi.ts'
+import { actions, composeActions, type FooterAction } from '../actions.ts'
 import { explainError } from '../errors.ts'
 import type { Key } from '../keys.ts'
 import type { App } from '../screen.ts'
@@ -95,6 +96,22 @@ export class EntityPickerView<T> implements View {
 
   hints(): string[] {
     return ['↑/↓:move', 'type:search', 'enter:select', '?:info', 'V:reveal-id', 'N:copy-name', 'I:copy-id', 'esc:back']
+  }
+
+  footerActions(): readonly FooterAction[] {
+    return composeActions([
+      actions.search,
+      actions.move,
+      actions.select,
+      actions.info,
+      actions.revealId,
+      actions.copyName,
+      actions.copyId,
+      actions.back,
+    ], {
+      selection: this.filtered()[this.cursor] ? 'single' : 'none',
+      flags: this.loading ? ['loading'] : this.error ? ['error'] : undefined,
+    })
   }
 
   async init(app: App): Promise<void> {

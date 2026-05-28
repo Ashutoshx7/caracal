@@ -4,6 +4,7 @@
 // Generic scrollable list view with column rendering and selection.
 
 import { ansi, copyToClipboard, pad, truncate, ui } from '../ansi.ts'
+import { actions, composeActions, type ActionDefinition, type ActionFlag, type ActionPriority, type FooterAction } from '../actions.ts'
 import { explainError } from '../errors.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
@@ -21,6 +22,16 @@ export interface ListAction<T> {
   label: string
   build: (row: T | undefined, app: App) => View | Promise<View>
   info?: InfoPage
+  id?: string
+  description?: string
+  priority?: ActionPriority
+  requiresSelection?: boolean
+  hiddenWhen?: readonly ActionFlag[]
+  disabledWhen?: readonly ActionFlag[]
+  requiredCapabilities?: readonly string[]
+  permissions?: readonly string[]
+  visible?: (row: T | undefined) => boolean
+  enabled?: (row: T | undefined) => boolean
 }
 
 export interface ListOptions<T> {
@@ -36,6 +47,12 @@ export interface ListOptions<T> {
   rowId?: (row: T) => string
   rowName?: (row: T) => string
   info?: InfoPage
+  showInfoAction?: boolean
+  showIdentityActions?: boolean
+  readonly?: boolean
+  capabilities?: readonly string[]
+  permissions?: readonly string[]
+  entityFlags?: (row: T) => readonly ActionFlag[]
 }
 
 export class ListView<T> implements View {
@@ -51,6 +68,12 @@ export class ListView<T> implements View {
   private readonly rowId?: (row: T) => string
   private readonly rowName?: (row: T) => string
   private readonly info: InfoPage
+  private readonly showInfoAction: boolean
+  private readonly showIdentityActions: boolean
+  private readonly readonlyMode: boolean
+  private readonly capabilities?: readonly string[]
+  private readonly permissions?: readonly string[]
+  private readonly entityFlags?: (row: T) => readonly ActionFlag[]
   private rows: T[] = []
   private cursor = 0
   private offset = 0
@@ -73,16 +96,27 @@ export class ListView<T> implements View {
     this.rowId = opts.rowId
     this.rowName = opts.rowName
     this.info = opts.info ?? actionInfo(opts.title, 'Opening a row shows details; action keys create, edit, delete, or operate on the selected record.')
+    this.showInfoAction = opts.showInfoAction === true
+    this.showIdentityActions = opts.showIdentityActions === true
+    this.readonlyMode = opts.readonly === true
+    this.capabilities = opts.capabilities
+    this.permissions = opts.permissions
+    this.entityFlags = opts.entityFlags
   }
 
   selected(): T | undefined { return this.rows[this.cursor] }
 
   hints(): string[] {
-    const base = ['↑/↓:move', 'enter:open', 'r:reload', '?:info', 'esc:back']
+    const base = ['↑/↓:move', 'enter:open', 'r:reload', 'esc:back']
     for (const a of this.actions) base.push(`${a.key}:${a.label}`)
-    if (this.rowId) base.push('V:reveal-id', 'I:copy-id')
-    if (this.rowName) base.push('N:copy-name')
+    if (this.showInfoAction) base.push('?:info')
+    if (this.showIdentityActions && this.rowId) base.push('V:reveal-id', 'I:copy-id')
+    if (this.showIdentityActions && this.rowName) base.push('N:copy-name')
     return base
+  }
+
+  footerActions(): readonly FooterAction[] {
+    return composeActions(this.actionDefinitions(), this.actionContext())
   }
 
   async init(app: App): Promise<void> { this.app = app; await this.reload() }
@@ -157,6 +191,8 @@ export class ListView<T> implements View {
     const last = Math.max(0, this.rows.length - 1)
     const action = this.actions.find((a) => a.key === key)
     if (action) {
+      const resolved = composeActions([this.listActionDefinition(action)], this.actionContext(false))
+      if (resolved.length === 0 || resolved[0]?.disabled) return
       this.persistSelection()
       const view = await action.build(this.selected(), ctx.app)
       ctx.app.push(view)
@@ -217,4 +253,73 @@ export class ListView<T> implements View {
         : this.info.after,
     }
   }
+
+  private actionDefinitions(): ActionDefinition[] {
+    const definitions: ActionDefinition[] = [
+      actions.move,
+      { ...actions.open, visibleWhen: () => Boolean(this.enter) },
+      actions.reload,
+      actions.back,
+    ]
+    if (this.showInfoAction) definitions.push(actions.info)
+    for (const listAction of this.actions) definitions.push(this.listActionDefinition(listAction))
+    if (this.showIdentityActions && this.rowId) definitions.push(actions.revealId, actions.copyId)
+    if (this.showIdentityActions && this.rowName) definitions.push(actions.copyName)
+    return definitions
+  }
+
+  private actionContext(includeLoading = true) {
+    const flags: ActionFlag[] = []
+    if (includeLoading && this.loading) flags.push('loading')
+    if (this.readonlyMode) flags.push('readonly')
+    if (this.error) flags.push('error')
+    const row = this.selected()
+    if (row) flags.push(...this.entityFlags?.(row) ?? [])
+    return {
+      selection: row ? 'single' as const : 'none' as const,
+      flags,
+      capabilities: this.capabilities,
+      permissions: this.permissions,
+    }
+  }
+
+  private listActionDefinition(listAction: ListAction<T>): ActionDefinition {
+    return {
+      id: listAction.id ?? actionId(listAction.label),
+      key: listAction.key,
+      label: listAction.label,
+      description: listAction.description,
+      priority: listAction.priority ?? listActionPriority(listAction),
+      group: listActionGroup(listAction),
+      requiresSelection: listAction.requiresSelection ?? listActionNeedsSelection(listAction),
+      hiddenWhen: listAction.hiddenWhen ?? ['loading'],
+      disabledWhen: listAction.disabledWhen,
+      requiredCapabilities: listAction.requiredCapabilities,
+      permissions: listAction.permissions,
+      visibleWhen: () => listAction.visible ? listAction.visible(this.selected()) : true,
+      enabledWhen: () => listAction.enabled ? listAction.enabled(this.selected()) : true,
+      order: 100 + this.actions.indexOf(listAction),
+    }
+  }
+}
+
+function listActionNeedsSelection<T>(listAction: ListAction<T>): boolean {
+  const label = listAction.label.toLowerCase()
+  if (label === 'new' || label === 'filter' || label === 'validate' || label === 'dcr') return false
+  return true
+}
+
+function listActionPriority<T>(listAction: ListAction<T>): ActionPriority {
+  const label = listAction.label.toLowerCase()
+  if (label === 'new' || label === 'edit' || label === 'delete' || label === 'filter' || label === 'activate' || label === 'revoke') return 'primary'
+  if (label === 'validate' || label === 'version' || label === 'simulate' || label === 'traverse') return 'secondary'
+  return 'utility'
+}
+
+function listActionGroup<T>(listAction: ListAction<T>): ActionDefinition['group'] {
+  return listActionPriority(listAction) === 'utility' ? 'utility' : 'workflow'
+}
+
+function actionId(label: string): string {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'action'
 }

@@ -3,8 +3,10 @@
 //
 // Structured detail view for scrollable operator inspection of records.
 
-import { pad, sanitizeAnsi, ui } from '../ansi.ts'
+import { copyToClipboard, pad, sanitizeAnsi, ui } from '../ansi.ts'
+import { actions, composeActions, type FooterAction } from '../actions.ts'
 import { explainError } from '../errors.ts'
+import { formatDateTime } from '../format.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
 import { actionInfo, openInfo, type InfoPage } from './info.ts'
@@ -40,7 +42,22 @@ export class DetailView implements View {
   hints(): string[] {
     const base = ['↑/↓:scroll', 'r:reload', '?:info', 'esc:back']
     if (this.mask) base.push(this.revealed ? 'v:mask' : 'v:reveal')
+    if (this.recordId()) base.push('I:copy-id')
     return base
+  }
+
+  footerActions(): readonly FooterAction[] {
+    const definitions = [
+      actions.scroll,
+      actions.reload,
+      this.recordId() ? actions.copyId : undefined,
+      this.mask ? (this.revealed ? actions.mask : actions.reveal) : undefined,
+      actions.back,
+    ].filter((item): item is NonNullable<typeof item> => Boolean(item))
+    return composeActions(definitions, {
+      selection: this.recordId() ? 'single' : 'none',
+      flags: this.loading ? ['loading'] : this.error ? ['error'] : undefined,
+    })
   }
 
   async init(app: App): Promise<void> { this.app = app; await this.reload() }
@@ -93,6 +110,10 @@ export class DetailView implements View {
     if (key === 'home' || key === 'g') { this.offset = 0; return }
     if (key === 'end' || key === 'G') { this.offset = max; return }
     if (key === 'r') return this.reload()
+    if (key === 'I') {
+      this.copyId(ctx.app)
+      return
+    }
     if (key === '?') {
       openInfo(ctx.app, this.info)
       return
@@ -104,6 +125,19 @@ export class DetailView implements View {
       return
     }
     if (key === 'left' || key === 'esc') ctx.app.pop()
+  }
+
+  private recordId(): string | undefined {
+    if (!this.data || typeof this.data !== 'object' || Array.isArray(this.data)) return undefined
+    const id = (this.data as Record<string, unknown>).id
+    return typeof id === 'string' && id.length > 0 ? id : undefined
+  }
+
+  private copyId(app: App): void {
+    const id = this.recordId()
+    if (!id) return
+    copyToClipboard(id)
+    app.setStatus(`copied id ${id}`)
   }
 }
 
@@ -214,10 +248,12 @@ function formatScalar(value: unknown, path: string[]): string {
   if (value === null || value === undefined) return ui.muted('none')
   if (typeof value === 'boolean') return value ? ui.success('yes') : ui.muted('no')
   if (typeof value === 'number' || typeof value === 'bigint') return ui.info(String(value))
-  if (value instanceof Date) return ui.input(value.toISOString())
+  if (value instanceof Date) return ui.input(formatDateTime(value) ?? value.toISOString())
   if (typeof value !== 'string') return ui.input(sanitizeAnsi(String(value)))
 
   const text = sanitizeAnsi(value)
+  const dateTime = formatDateTime(text)
+  if (dateTime) return ui.input(dateTime)
   if (text.length === 0) return ui.muted('empty')
   const lower = text.toLowerCase()
   if (isStatusPath(path)) {

@@ -1,0 +1,79 @@
+// Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+// Caracal, a product of Garudex Labs
+//
+// Shared display formatters for Console values.
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const ISO_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})?$/
+
+export interface DateTimeFormatOptions {
+  compact?: boolean
+}
+
+export function formatDateTime(value: string | Date, opts: DateTimeFormatOptions = {}): string | undefined {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return undefined
+    return renderDateTime({
+      year: value.getUTCFullYear(),
+      month: value.getUTCMonth() + 1,
+      day: value.getUTCDate(),
+      hour: value.getUTCHours(),
+      minute: value.getUTCMinutes(),
+      second: value.getUTCSeconds(),
+      zone: 'UTC',
+      source: opts.compact ? 'Date' : 'Date object',
+    }, opts)
+  }
+
+  const match = ISO_DATE_TIME.exec(value)
+  if (!match) return undefined
+  const [, year, month, day, hour, minute, second, zone] = match
+  const sourceZone = zoneText(zone)
+  if (!sourceZone) return undefined
+  return renderDateTime({
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    hour: Number(hour),
+    minute: Number(minute),
+    second: Number(second ?? '0'),
+    zone: sourceZone,
+    source: opts.compact ? 'ISO' : 'ISO 8601',
+  }, opts)
+}
+
+export function formatDateTimeOrValue(value: string | Date, opts: DateTimeFormatOptions = {}): string {
+  return formatDateTime(value, opts) ?? String(value)
+}
+
+interface DateParts {
+  year: number
+  month: number
+  day: number
+  hour: number
+  minute: number
+  second: number
+  zone: string
+  source: string
+}
+
+function renderDateTime(parts: DateParts, opts: DateTimeFormatOptions): string {
+  const month = MONTHS[parts.month - 1] ?? String(parts.month).padStart(2, '0')
+  const time = opts.compact
+    ? `${two(parts.hour)}:${two(parts.minute)}`
+    : `${two(parts.hour)}:${two(parts.minute)}:${two(parts.second)}`
+  const date = opts.compact
+    ? `${parts.day} ${month}`
+    : `${parts.day} ${month} ${parts.year}`
+  return `${date}, ${time} ${parts.zone} (${parts.source})`
+}
+
+function zoneText(zone: string | undefined): string | undefined {
+  if (zone === 'Z') return 'UTC'
+  if (/^[+-]\d{2}:\d{2}$/.test(zone ?? '')) return `UTC${zone}`
+  return undefined
+}
+
+function two(value: number): string {
+  return String(value).padStart(2, '0')
+}
