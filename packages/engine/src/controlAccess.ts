@@ -6,7 +6,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { installedHome } from '@caracalai/core'
+import { installedHome, managedSecretDirs } from '@caracalai/core'
 
 export interface ControlManagementAccessOptions {
   env?: NodeJS.ProcessEnv
@@ -28,11 +28,10 @@ function readToken(path: string): ControlTokenSource | undefined {
 
 function managedTokenSources(env: NodeJS.ProcessEnv): ControlTokenSource[] {
   const sources: ControlTokenSource[] = []
-  const installed = readToken(join(installedHome(), 'secrets', 'caracalAdminToken'))
-  if (installed) sources.push(installed)
-  if (env.CARACAL_REPO_ROOT) {
-    const dev = readToken(join(env.CARACAL_REPO_ROOT, 'infra', 'secrets', 'files', 'caracalAdminToken'))
-    if (dev) sources.push(dev)
+  const preferDev = env.CARACAL_MODE === 'dev' || (env.CARACAL_REPO_ROOT !== undefined && !env.CARACAL_HOME)
+  for (const dir of managedSecretDirs({ preferDev })) {
+    const token = readToken(join(dir, 'caracalAdminToken'))
+    if (token) sources.push(token)
   }
   return sources
 }
@@ -66,7 +65,7 @@ export function authorizeControlManagementAccess(opts: ControlManagementAccessOp
   const local = managedTokenSources(env)[0]
   if (!local) {
     throw new Error(
-      `Control management requires the local managed admin token at ${join(installedHome(), 'secrets', 'caracalAdminToken')} or the workspace secret from the Caracal launcher.`,
+      `Control management requires the local managed admin token at ${join(installedHome(), 'secrets', 'caracalAdminToken')} or the configured CARACAL_SECRETS_DIR.`,
     )
   }
   const token = configuredToken(env, local)

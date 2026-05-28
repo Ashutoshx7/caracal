@@ -71,7 +71,10 @@ export function composeEnv(paths: StackPaths): Record<string, string | undefined
   // Build-time pins are authoritative in rc/stable. They are forwarded so compose
   // substitution sees the same values the loader enforces; the schema's pinned
   // check then rejects any conflicting override file or process.env entry.
-  const env: Record<string, string | undefined> = { CARACAL_MODE: paths.mode }
+  const env: Record<string, string | undefined> = {
+    CARACAL_MODE: paths.mode,
+    CARACAL_SECRETS_DIR: paths.secretsDir,
+  }
   if (paths.mode !== 'dev') {
     env.CARACAL_VERSION = CARACAL_VERSION
     env.CARACAL_REGISTRY = CARACAL_REGISTRY

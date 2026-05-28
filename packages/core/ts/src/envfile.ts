@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Helpers for reading dotenv files and discovering the Caracal admin token.
+// Helpers for reading dotenv files and discovering Caracal managed secrets.
 
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
@@ -36,6 +36,11 @@ export function installedHome(): string {
   return join(base, 'caracal');
 }
 
+export function devSecretsHome(): string {
+  if (process.env.CARACAL_DEV_SECRETS_DIR) return process.env.CARACAL_DEV_SECRETS_DIR;
+  return join(installedHome(), 'dev-secrets');
+}
+
 function readSecretFile(path: string): string | undefined {
   if (!existsSync(path)) return undefined;
   const value = readFileSync(path, 'utf8').trim();
@@ -50,7 +55,7 @@ export function discoverRepoRoot(): string | undefined {
   if (process.env.CARACAL_REPO_ROOT) return process.env.CARACAL_REPO_ROOT;
   let dir = process.cwd();
   while (true) {
-    if (existsSync(join(dir, 'pnpm-workspace.yaml')) && existsSync(join(dir, 'infra', 'secrets', 'files'))) {
+    if (existsSync(join(dir, 'pnpm-workspace.yaml')) && existsSync(join(dir, 'package.json'))) {
       return dir;
     }
     const parent = dirname(dir);
@@ -59,15 +64,27 @@ export function discoverRepoRoot(): string | undefined {
   }
 }
 
+export interface ManagedSecretDirOptions {
+  preferDev?: boolean;
+}
+
+export function managedSecretDirs(opts: ManagedSecretDirOptions = {}): string[] {
+  const root = discoverRepoRoot();
+  const explicit = process.env.CARACAL_SECRETS_DIR;
+  const installedPath = join(installedHome(), 'secrets');
+  const devPath = devSecretsHome();
+  const workspacePath = process.env.CARACAL_ALLOW_WORKSPACE_SECRETS === 'true' && root
+    ? join(root, 'infra', 'secrets', 'files')
+    : undefined;
+  const generated = opts.preferDev ? [devPath, installedPath] : [installedPath, devPath];
+  return [...new Set([explicit, ...generated, workspacePath].filter((path): path is string => Boolean(path)))];
+}
+
 function readGeneratedSecret(fileName: string): string | undefined {
   const root = discoverRepoRoot();
-  const installedPath = join(installedHome(), 'secrets', fileName);
-  const devPath = root ? join(root, 'infra', 'secrets', 'files', fileName) : undefined;
   const preferDev = process.env.CARACAL_MODE === 'dev' || (!process.env.CARACAL_HOME && root !== undefined);
-  const paths = preferDev ? [devPath, installedPath] : [installedPath, devPath];
-  for (const path of paths) {
-    if (!path) continue;
-    const value = readSecretFile(path);
+  for (const dir of managedSecretDirs({ preferDev })) {
+    const value = readSecretFile(join(dir, fileName));
     if (value) return value;
   }
   return undefined;

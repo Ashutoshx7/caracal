@@ -24,6 +24,7 @@ export interface StackPaths {
   envFiles: string[]
   cwd: string
   mode: 'dev' | 'rc' | 'stable'
+  secretsDir: string
 }
 
 export interface StackComposeOpts {
