@@ -929,10 +929,10 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
     case 'provider':
       return {
         meaning: 'Providers describe upstream credential and identity systems that Caracal can call.',
-        when: 'Use this before Gateway or credential flows that need upstream OAuth, OIDC, API key, or workload identity configuration.',
-        impact: 'Provider config controls token endpoints, headers, audiences, and credential exchange behavior.',
-        example: 'Hooli OIDC',
-        terms: [{ label: 'Issuer', value: 'The upstream authority that signs or describes identity tokens.' }],
+        when: 'Use this before Gateway or credential flows that need upstream OAuth2 refresh or API-key forwarding.',
+        impact: 'Provider config controls token refresh endpoints, allow-listed token hosts, and upstream credential headers.',
+        example: 'Hooli OAuth2',
+        terms: [{ label: 'Token endpoint', value: 'The upstream HTTPS endpoint used to refresh OAuth2 provider tokens.' }],
       }
     case 'resource':
       return {

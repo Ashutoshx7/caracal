@@ -179,7 +179,7 @@ function bool(v: string | undefined): boolean | undefined {
 }
 
 const APPLICATION_REGISTRATION_METHODS = ['managed', 'dcr'] as const
-const PROVIDER_KINDS: ProviderKind[] = ['oauth2', 'oidc', 'apikey', 'workload']
+const PROVIDER_KINDS: ProviderKind[] = ['oauth2', 'apikey']
 const RESOURCE_MODES = ['direct', 'gateway'] as const
 const CONTENT_SOURCES = ['paste', 'file'] as const
 
@@ -295,15 +295,15 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
     case 'provider':
       return {
         title: 'Provider',
-        meaning: 'A provider describes an upstream identity or credential source Caracal can use when calling protected services.',
-        when: 'Use providers when Gateway or credential workflows must exchange, attach, or derive upstream credentials.',
-        impact: 'Provider kind and config decide which endpoints, headers, audiences, and credential rules are used at runtime.',
-        example: 'Hooli OIDC',
+        meaning: 'A provider describes an upstream credential source Caracal can use when calling protected services.',
+        when: 'Use providers when Gateway workflows must exchange or attach upstream credentials.',
+        impact: 'Provider kind and config decide which token endpoint or API-key header is used at runtime.',
+        example: 'Hooli OAuth2',
         valid: 'Only configured provider kinds and their implemented fields are sent to the API.',
-        after: 'Open details to inspect the merged provider config and exact backend field names.',
+        after: 'Open details to inspect the provider type and credential routing fields.',
         terms: [
-          { label: 'OIDC', value: 'OpenID Connect; identity metadata and tokens built on OAuth 2.0.' },
-          { label: 'Issuer', value: 'The authority URL that signs or describes identity tokens.' },
+          { label: 'OAuth2', value: 'Token refresh or exchange through a configured upstream token endpoint.' },
+          { label: 'API key', value: 'Header-based upstream credential forwarding at the Gateway boundary.' },
         ],
         notes: ['Secrets are masked in the terminal when present.', 'Use allowed token hosts to constrain outbound token endpoint calls.'],
       }
@@ -406,32 +406,16 @@ function parseJsonObject(input: string): JsonObject {
   return parsed as JsonObject
 }
 
-function providerConfig(filePath: string, inline: string): JsonObject | undefined {
-  const content = readFileOrInline(filePath, inline)
-  return content.trim().length > 0 ? parseJsonObject(content) : undefined
-}
-
-function providerConfigForEdit(currentKind: ProviderKind, nextKind: ProviderKind, existingConfig: JsonObject, filePath: string, inline: string): JsonObject | undefined {
-  const config = providerConfig(filePath, inline)
-  if (config) {
-    validateProviderConfig(nextKind, config)
-    return config
-  }
-  if (currentKind !== nextKind) validateProviderConfig(nextKind, existingConfig)
-  return undefined
-}
-
+function providerConfigFromValues(values: Record<string, string>, requireConfig: true): JsonObject
+function providerConfigFromValues(values: Record<string, string>, requireConfig: false): JsonObject | undefined
 function providerConfigFromValues(values: Record<string, string>, requireConfig: boolean): JsonObject | undefined {
   const kind = providerKind(values.kind)
-  const config = providerConfig(values.config_file ?? '', values.config_json ?? '') ?? {}
-  mergeConfigText(config, 'issuer', values.issuer)
-  mergeConfigText(config, 'authorization_endpoint', values.authorization_endpoint)
-  mergeConfigText(config, 'token_endpoint', values.token_endpoint || values.workload_token_endpoint)
-  mergeConfigList(config, 'allowed_token_hosts', values.allowed_token_hosts || values.workload_allowed_token_hosts || inferredTokenHosts(values.token_endpoint || values.workload_token_endpoint))
-  mergeConfigList(config, 'upstream_oauth_scopes', values.upstream_oauth_scopes)
+  const config: JsonObject = {}
+  mergeConfigText(config, 'token_endpoint', values.token_endpoint)
+  mergeConfigList(config, 'allowed_token_hosts', values.allowed_token_hosts || inferredTokenHosts(values.token_endpoint))
   mergeConfigText(config, 'header_name', values.api_key_header)
+  mergeConfigText(config, 'auth_header', values.auth_header)
   mergeConfigText(config, 'auth_scheme', values.auth_scheme)
-  mergeConfigText(config, 'audience', values.workload_audience)
   if (values.forward_caracal_identity === 'true') config.forward_caracal_identity = true
   if (Object.keys(config).length === 0) {
     if (requireConfig) throw new Error(`${kind} provider config is required`)
@@ -456,7 +440,6 @@ function mergeConfigList(config: JsonObject, key: string, value: string | undefi
 }
 
 function validateProviderConfig(kind: ProviderKind, config: JsonObject): void {
-  if ('scopes' in config) throw new Error('provider config uses upstream_oauth_scopes; resource forms use Caracal scopes')
   const allowed = providerConfigKeys(kind)
   const unknown = Object.keys(config).filter((key) => !allowed.has(key))
   if (unknown.length > 0) throw new Error(`${kind} provider config has unsupported keys: ${unknown.join(', ')}`)
@@ -464,22 +447,27 @@ function validateProviderConfig(kind: ProviderKind, config: JsonObject): void {
     requireString(config, 'header_name', 'apikey provider config requires header_name')
     return
   }
-  if (kind === 'workload') {
-    requireString(config, 'issuer', 'workload provider config requires issuer')
-    requireString(config, 'audience', 'workload provider config requires audience')
-    requireString(config, 'token_endpoint', 'workload provider config requires token_endpoint')
-    requireStringList(config, 'allowed_token_hosts', 'workload provider config requires allowed_token_hosts')
-    return
-  }
-  if (kind === 'oidc') requireString(config, 'issuer', 'oidc provider config requires issuer')
   requireString(config, 'token_endpoint', `${kind} provider config requires token_endpoint`)
   requireStringList(config, 'allowed_token_hosts', `${kind} provider config requires allowed_token_hosts`)
 }
 
 function providerConfigKeys(kind: ProviderKind): Set<string> {
   if (kind === 'apikey') return new Set(['header_name', 'auth_scheme', 'forward_caracal_identity'])
-  if (kind === 'workload') return new Set(['issuer', 'audience', 'token_endpoint', 'allowed_token_hosts', 'subject_token_type', 'auth_header', 'auth_scheme', 'forward_caracal_identity'])
-  return new Set(['issuer', 'authorization_endpoint', 'token_endpoint', 'allowed_token_hosts', 'upstream_oauth_scopes', 'auth_header', 'auth_scheme', 'forward_caracal_identity'])
+  return new Set(['token_endpoint', 'allowed_token_hosts', 'auth_header', 'auth_scheme', 'forward_caracal_identity'])
+}
+
+function configString(config: JsonObject, key: string): string {
+  const value = config[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function configList(config: JsonObject, key: string): string {
+  const value = config[key]
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').join(',') : ''
+}
+
+function configBool(config: JsonObject, key: string): string {
+  return config[key] === true ? 'true' : 'false'
 }
 
 function requireString(config: JsonObject, key: string, message: string): void {
@@ -1129,8 +1117,7 @@ export function providersView(ctx: Ctx): View {
     columns: [
       { header: 'name', width: 24, value: named },
       { header: 'identifier', width: 24, value: (r) => r.identifier },
-      { header: 'kind', width: 10, value: (r) => r.kind ?? '-' },
-      { header: 'owner', width: 10, value: (r) => r.owner_type },
+      { header: 'kind', width: 10, value: (r) => r.kind },
     ],
     load: () => ctx.client.providers.list(ctx.zoneId),
     state: ctx.state,
@@ -1148,31 +1135,19 @@ export function providersView(ctx: Ctx): View {
           fields: [
             { key: 'name', label: 'provider name', kind: 'text', required: true, hint: 'human-readable name; identifier is generated when blank' },
             { key: 'kind', label: 'provider type', kind: 'select', options: PROVIDER_KINDS, default: 'oauth2' },
-            { key: 'issuer', label: 'issuer', kind: 'text', dependsOn: { kind: ['oauth2', 'oidc', 'workload'] }, required: (values) => {
-              const kind = providerKind(values.kind)
-              return kind === 'oidc' || kind === 'workload'
-            }, hint: 'issuer URL for OIDC discovery or workload identity trust' },
-            { key: 'authorization_endpoint', label: 'authorization endpoint', kind: 'text', dependsOn: { kind: ['oauth2', 'oidc'] }, hint: 'OAuth authorization endpoint used by browser or consent flows' },
-            { key: 'token_endpoint', label: 'token endpoint', kind: 'text', dependsOn: { kind: ['oauth2', 'oidc'] }, required: true, hint: 'HTTPS endpoint where provider tokens are exchanged or refreshed' },
-            { key: 'upstream_oauth_scopes', label: 'upstream OAuth scopes', kind: 'list', dependsOn: { kind: ['oauth2', 'oidc'] }, hint: 'provider-side scopes, separate from Caracal resource scopes' },
+            { key: 'token_endpoint', label: 'token endpoint', kind: 'text', dependsOn: { kind: 'oauth2' }, required: true, hint: 'HTTPS endpoint where provider tokens are refreshed' },
             { key: 'api_key_header', label: 'API key header', kind: 'text', dependsOn: { kind: 'apikey' }, required: true, hint: 'header where the upstream service expects the API key' },
-            { key: 'workload_audience', label: 'audience', kind: 'text', dependsOn: { kind: 'workload' }, required: true, hint: 'audience value expected by the workload identity provider' },
-            { key: 'workload_token_endpoint', label: 'token endpoint', kind: 'text', dependsOn: { kind: 'workload' }, required: true, hint: 'HTTPS endpoint where workload tokens are exchanged' },
             { key: 'identifier', label: 'identifier', kind: 'text', advanced: true, hint: 'optional; generated from provider name when blank' },
-            { key: 'client_id', label: 'client ID', kind: 'text', dependsOn: { kind: ['oauth2', 'oidc'] }, advanced: true },
-            { key: 'allowed_token_hosts', label: 'allowed token hosts', kind: 'list', dependsOn: { kind: ['oauth2', 'oidc'] }, advanced: true, hint: 'optional; inferred from token endpoint when blank' },
-            { key: 'auth_scheme', label: 'auth scheme', kind: 'text', dependsOn: { kind: 'apikey' }, advanced: true, hint: 'optional; leave blank when the upstream expects the raw token' },
-            { key: 'workload_allowed_token_hosts', label: 'allowed token hosts', kind: 'list', dependsOn: { kind: 'workload' }, advanced: true, hint: 'optional; inferred from token endpoint when blank' },
+            { key: 'allowed_token_hosts', label: 'allowed token hosts', kind: 'list', dependsOn: { kind: 'oauth2' }, advanced: true, hint: 'optional; inferred from token endpoint when blank' },
+            { key: 'auth_header', label: 'auth header', kind: 'text', dependsOn: { kind: 'oauth2' }, advanced: true, hint: 'optional; leave blank for Authorization' },
+            { key: 'auth_scheme', label: 'auth scheme', kind: 'text', dependsOn: { kind: ['oauth2', 'apikey'] }, advanced: true, hint: 'optional; leave blank for the default upstream credential scheme' },
             { key: 'forward_caracal_identity', label: 'forward Caracal identity', kind: 'bool', default: 'false', advanced: true },
-            { key: 'config_file', label: 'provider config file', kind: 'file', advanced: true, hint: 'JSON object merged with the structured fields' },
-            { key: 'config_json', label: 'advanced provider JSON', kind: 'multiline', advanced: true, hint: 'paste a JSON object; multiline paste is preserved; provider-specific keys are validated' },
           ],
           onSubmit: async (v, app) => {
             await ctx.client.providers.create(ctx.zoneId, {
               identifier: providerIdentifierFromValues(v),
               name: v.name || undefined,
               kind: providerKind(v.kind),
-              client_id: v.client_id || undefined,
               config_json: providerConfigFromValues(v, true),
             })
             await popAndReload(app, list as unknown as ListView<unknown>)
@@ -1187,18 +1162,20 @@ export function providersView(ctx: Ctx): View {
             fields: [
               { key: 'name', label: 'name', kind: 'text', default: row.name },
               { key: 'identifier', label: 'identifier', kind: 'text', default: row.identifier },
-              { key: 'kind', label: 'kind', kind: 'select', options: PROVIDER_KINDS, default: row.kind ?? 'oauth2' },
-              { key: 'client_id', label: 'client ID', kind: 'text', default: row.client_id ?? '', dependsOn: { kind: ['oauth2', 'oidc'] } },
-              { key: 'config_file', label: 'merge provider config file', kind: 'file', hint: 'JSON object; leave blank to keep existing config' },
-              { key: 'config_json', label: 'merge advanced provider JSON', kind: 'multiline', hint: 'paste JSON object; leave blank to keep existing config' },
+              { key: 'kind', label: 'kind', kind: 'select', options: PROVIDER_KINDS, default: row.kind },
+              { key: 'token_endpoint', label: 'token endpoint', kind: 'text', default: configString(row.config_json, 'token_endpoint'), dependsOn: { kind: 'oauth2' }, required: true },
+              { key: 'api_key_header', label: 'API key header', kind: 'text', default: configString(row.config_json, 'header_name'), dependsOn: { kind: 'apikey' }, required: true },
+              { key: 'allowed_token_hosts', label: 'allowed token hosts', kind: 'list', default: configList(row.config_json, 'allowed_token_hosts'), dependsOn: { kind: 'oauth2' }, advanced: true },
+              { key: 'auth_header', label: 'auth header', kind: 'text', default: configString(row.config_json, 'auth_header'), dependsOn: { kind: 'oauth2' }, advanced: true },
+              { key: 'auth_scheme', label: 'auth scheme', kind: 'text', default: configString(row.config_json, 'auth_scheme'), dependsOn: { kind: ['oauth2', 'apikey'] }, advanced: true },
+              { key: 'forward_caracal_identity', label: 'forward Caracal identity', kind: 'bool', default: configBool(row.config_json, 'forward_caracal_identity'), advanced: true },
             ],
             onSubmit: async (v, app) => {
               await ctx.client.providers.patch(ctx.zoneId, row.id, {
                 name: v.name || undefined,
                 identifier: v.identifier || undefined,
                 kind: providerKind(v.kind),
-                client_id: v.client_id || undefined,
-                config_json: providerConfigForEdit(providerKind(row.kind ?? ''), providerKind(v.kind), row.config_json, v.config_file ?? '', v.config_json ?? ''),
+                config_json: providerConfigFromValues(v, true),
               } as Partial<ProviderInput>)
               await popAndReload(app, list as unknown as ListView<unknown>)
             },
