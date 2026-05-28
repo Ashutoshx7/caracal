@@ -204,6 +204,8 @@ describe('applications actions', () => {
     expect(pushed.values_().credential_type).toBe('token')
     const app = fakeApp()
     let body = pushed.render({ app, size: { rows: 20, cols: 100 }, status: '' }).join('\n')
+    expect(body).toContain('registration method ↳')
+    expect(body).toContain('[ managed ]')
     expect(body).toContain('require consent')
     expect(body).not.toContain('expires in')
 

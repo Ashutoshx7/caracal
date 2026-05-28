@@ -173,6 +173,7 @@ describe('FormView input UX', () => {
     const ctx = { app, size: { rows: 12, cols: 100 }, status: '' }
 
     expect(view.render(ctx).join('\n')).not.toContain('upstream URL')
+    expect(view.render(ctx).join('\n')).toContain('mode ↳')
     ;(view as unknown as { values: Record<string, string> }).values.mode = 'gateway'
     expect(view.render(ctx).join('\n')).toContain('upstream URL *')
     ;(view as unknown as { focus: number }).focus = 1
@@ -182,6 +183,30 @@ describe('FormView input UX', () => {
     expect(help).toContain('Shown when mode is gateway')
     expect(help).toContain('Impact')
     expect(help).toContain('Upstream values affect where Gateway sends protected traffic')
+  })
+
+  it('marks fields that control conditional fields and explains affected fields', async () => {
+    const view = new FormView({
+      title: 'conditional',
+      fields: [
+        { key: 'mode', label: 'mode', kind: 'select', options: ['basic', 'advanced'], default: 'basic' },
+        { key: 'secret', label: 'secret', kind: 'secret', required: true, dependsOn: { mode: 'advanced' } },
+      ],
+      onSubmit: async () => {},
+    })
+    const app = fakeApp()
+    const ctx = { app, size: { rows: 12, cols: 100 }, status: '' }
+    const body = view.render(ctx).join('\n')
+
+    expect(body).toContain('* required, ↳ changes visible fields')
+    expect(body).toContain('mode ↳')
+    ;(view as unknown as { focus: number }).focus = 0
+    await view.onKey('?', ctx)
+
+    const info = vi.mocked(app.push).mock.calls.at(-1)![0] as { render: FormView['render'] }
+    const help = info.render(ctx).join('\n')
+    expect(help).toContain('Affects fields')
+    expect(help).toContain('secret')
   })
 })
 

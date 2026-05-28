@@ -48,6 +48,7 @@ export interface FormOpts {
 
 const BRACKETED_PASTE_PATTERN = /\u001b\[(?:200|201)~/g
 const ANSI_SEQUENCE_PATTERN = /\u001b\[[0-9;?]*[A-Za-z~]/g
+const FLOW_MARKER = '↳'
 const NAMED_KEYS = new Set([
   'up',
   'down',
@@ -121,7 +122,7 @@ export class FormView implements View {
     this.clampFocus(rows)
     const lines: string[] = ['']
     lines.push(' ' + ui.title(this.title))
-    lines.push(' ' + ui.muted('Type or paste into fields. Required fields are marked *.'))
+    lines.push(' ' + ui.muted(`Type or paste into fields. * required, ${FLOW_MARKER} changes visible fields.`))
     lines.push('')
     const labelWidth = this.labelWidth(rows)
     let section = ''
@@ -141,7 +142,7 @@ export class FormView implements View {
       }
       const focused = i === this.focus
       const display = this.displayValue(f)
-      const label = pad(this.isRequired(f) ? `${f.label} *` : f.label, labelWidth)
+      const label = pad(this.fieldLabel(f), labelWidth)
       const cursorMark = focused ? (this.multilineMode ? '* ' : '> ') : '  '
       const text = focused
         ? ` ${ui.accent(cursorMark)}${ui.muted(label)}${display}`
@@ -181,10 +182,16 @@ export class FormView implements View {
     let width = 18
     for (const row of rows) {
       if (row.kind !== 'field') continue
-      const label = this.isRequired(row.field) ? `${row.field.label} *` : row.field.label
-      width = Math.max(width, label.length + 2)
+      width = Math.max(width, this.fieldLabel(row.field).length + 2)
     }
     return width
+  }
+
+  private fieldLabel(field: Field): string {
+    const parts = [field.label]
+    if (this.isRequired(field)) parts.push('*')
+    if (this.controlsFields(field)) parts.push(FLOW_MARKER)
+    return parts.join(' ')
   }
 
   async onKey(key: Key, ctx: ViewContext): Promise<void> {
@@ -424,13 +431,25 @@ export class FormView implements View {
 
   private fieldInfo(field: Field | undefined): InfoPage | undefined {
     if (!field) return this.info
-    return field.info ?? fieldInfo(field.label, field.kind, field.hint, {
+    const info = field.info ?? fieldInfo(field.label, field.kind, field.hint, {
       required: this.isRequired(field),
       picker: Boolean(field.pick),
       options: field.options,
       advanced: Boolean(field.advanced),
       dependency: this.dependencyText(field),
     })
+    if (!this.controlsFields(field)) return info
+    return {
+      ...info,
+      context: [
+        ...(info.context ?? []),
+        { label: 'Affects fields', value: this.controlledFieldLabels(field).join(', ') },
+      ],
+      notes: [
+        ...(info.notes ?? []),
+        `${FLOW_MARKER} means changing this value can show, hide, or change validation for other fields in this form.`,
+      ],
+    }
   }
 
   private isRequired(field: Field): boolean {
@@ -470,6 +489,16 @@ export class FormView implements View {
       return `${key} is ${expected}`
     })
     return `Shown when ${parts.join(' and ')}.`
+  }
+
+  private controlsFields(field: Field): boolean {
+    return this.fields.some((candidate) => candidate !== field && dependencyIncludes(candidate.dependsOn, field.key))
+  }
+
+  private controlledFieldLabels(field: Field): string[] {
+    return this.fields
+      .filter((candidate) => candidate !== field && dependencyIncludes(candidate.dependsOn, field.key))
+      .map((candidate) => candidate.label)
   }
 
   private focusField(field: Field): void {
@@ -817,4 +846,11 @@ function fileInfo(): InfoPage {
       { label: 'Provider JSON', value: 'Structured provider-specific configuration merged with form fields.' },
     ],
   })
+}
+
+function dependencyIncludes(dependency: FieldDependency | undefined, key: string): boolean {
+  if (!dependency) return false
+  if (typeof dependency === 'string') return dependency === key
+  if (Array.isArray(dependency)) return dependency.includes(key)
+  return Object.hasOwn(dependency, key)
 }
