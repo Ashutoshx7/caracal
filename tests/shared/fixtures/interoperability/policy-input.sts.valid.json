@@ -4,7 +4,6 @@
     "type": "user",
     "id": "user-1",
     "zone_id": "zone-1",
-    "credential_type": "jwt",
     "agent_session_id": "agent-session-1",
     "agent_kind": "planner",
     "capabilities": ["files.read"]
