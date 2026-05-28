@@ -21,7 +21,6 @@ export function formatDateTime(value: string | Date, opts: DateTimeFormatOptions
       minute: value.getUTCMinutes(),
       second: value.getUTCSeconds(),
       zone: 'UTC',
-      source: opts.compact ? 'Date' : 'Date object',
     }, opts)
   }
 
@@ -38,7 +37,6 @@ export function formatDateTime(value: string | Date, opts: DateTimeFormatOptions
     minute: Number(minute),
     second: Number(second ?? '0'),
     zone: sourceZone,
-    source: opts.compact ? 'ISO' : 'ISO 8601',
   }, opts)
 }
 
@@ -54,7 +52,6 @@ interface DateParts {
   minute: number
   second: number
   zone: string
-  source: string
 }
 
 function renderDateTime(parts: DateParts, opts: DateTimeFormatOptions): string {
@@ -66,7 +63,7 @@ function renderDateTime(parts: DateParts, opts: DateTimeFormatOptions): string {
   const date = opts.compact
     ? `${parts.day} ${month}`
     : `${parts.day} ${month} ${parts.year}`
-  return `${date}, ${time} ${zone} (${parts.source})`
+  return `${date}, ${time} ${zone}`
 }
 
 function zoneText(zone: string | undefined): string | undefined {

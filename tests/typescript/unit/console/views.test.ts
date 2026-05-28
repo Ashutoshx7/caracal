@@ -59,7 +59,7 @@ describe('AuditTailView', () => {
     const lines = view.render(ctx).join('\n')
     // Only the SGR escapes that the renderer itself emits (e.g. invert/fg) may
     // appear; injected ESC bytes from event_type / request_id must be gone.
-    expect(lines).toContain('1 Jan, 00:00 UTC (ISO)')
+    expect(lines).toContain('1 Jan, 00:00 UTC')
     expect(lines).not.toContain('evil\u001b[2J')
     expect(lines).not.toContain('\u001b]')
     expect(lines).not.toContain('\u0007')
@@ -323,7 +323,7 @@ describe('DetailView', () => {
 
     const joined = view.render({ app, size: { rows: 10, cols: 100 }, status: '' }).join('\n')
 
-    expect(joined).toContain('28 May 2026, 04:48:55 UTC (ISO 8601)')
+    expect(joined).toContain('28 May 2026, 04:48:55 UTC')
     expect(joined).not.toContain('2026-05-28T04:48:55.460Z')
   })
 

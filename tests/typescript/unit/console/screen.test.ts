@@ -88,15 +88,15 @@ describe('action footer', () => {
 
 describe('datetime formatting', () => {
   it('renders ISO timestamps as readable UTC values with source labels', () => {
-    expect(formatDateTime('2026-05-28T04:48:55.460Z')).toBe('28 May 2026, 04:48:55 UTC (ISO 8601)')
+    expect(formatDateTime('2026-05-28T04:48:55.460Z')).toBe('28 May 2026, 04:48:55 UTC')
   })
 
   it('uses compact readable timestamps for narrow table columns', () => {
-    expect(formatDateTimeOrValue('2026-05-28T04:48:55.460Z', { compact: true })).toBe('28 May, 04:48 UTC (ISO)')
+    expect(formatDateTimeOrValue('2026-05-28T04:48:55.460Z', { compact: true })).toBe('28 May, 04:48 UTC')
   })
 
   it('preserves explicit timezone offsets', () => {
-    expect(formatDateTime('2026-05-28T10:18:55+05:30')).toBe('28 May 2026, 10:18:55 UTC+05:30 (ISO 8601)')
+    expect(formatDateTime('2026-05-28T10:18:55+05:30')).toBe('28 May 2026, 10:18:55 UTC+05:30')
   })
 })
 
