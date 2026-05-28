@@ -185,7 +185,6 @@ function confidentialApplicationPicker(ctx: Ctx): Field['pick'] {
     [
       { header: 'name', width: 24, value: (row) => row.name },
       { header: 'credential', width: 12, value: (row) => row.credential_type },
-      { header: 'traits', value: (row) => (row.traits ?? []).join(',') || '-' },
     ],
     (row) => row.id,
     (row) => row.name,
@@ -922,10 +921,10 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
     case 'application':
       return {
         meaning: 'Applications are client identities for workloads, agents, gateways, or automation.',
-        when: 'Use this when a workload needs credentials or a stable app ID for token exchange.',
-        impact: 'Credential type and traits affect how software authenticates and what operational role it can perform.',
+        when: 'Use managed apps for known durable software and DCR apps for dynamic or self-registering clients.',
+        impact: 'Managed creation provisions a stable token application; DCR uses the zone-gated dynamic registration path and can expire clients.',
         example: 'payments-worker',
-        terms: [{ label: 'Trait', value: 'A capability label attached to an application.' }],
+        terms: [{ label: 'DCR', value: 'Dynamic Client Registration for self-service, high-churn, or ephemeral clients.' }],
       }
     case 'provider':
       return {

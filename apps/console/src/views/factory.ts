@@ -9,7 +9,6 @@ import type {
   Application,
   ApplicationInput,
   AuditQuery,
-  CredentialType,
   Grant,
   Policy,
   PolicyVersion,
@@ -102,7 +101,6 @@ function bool(v: string | undefined): boolean | undefined {
   return v === 'true'
 }
 
-const CREDENTIAL_TYPES: CredentialType[] = ['token', 'password', 'public-key', 'url', 'public']
 const APPLICATION_REGISTRATION_METHODS = ['managed', 'dcr'] as const
 const PROVIDER_KINDS: ProviderKind[] = ['oauth2', 'oidc', 'apikey', 'workload']
 const RESOURCE_MODES = ['direct', 'gateway'] as const
@@ -190,14 +188,15 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
       return {
         title: 'Application',
         meaning: 'An application is a client identity that requests Caracal tokens for a workload, agent, gateway, or automation actor.',
-        when: 'Use applications when software needs a stable identity and credential type for token exchange.',
-        impact: 'Credential type and traits affect how the app authenticates and what operational role it can play.',
-        example: 'payments-worker',
-        valid: 'Managed apps are created by Console; DCR apps are created through the zone DCR endpoint.',
-        after: 'Open the detail page to inspect exact traits, credential type, DCR metadata, and IDs.',
+        when: 'Use managed applications for known durable software and DCR applications for dynamic or self-registering clients.',
+        impact: 'The registration method decides which creation path is used. DCR is gated by the selected zone, rate-limited, capped, and may expire; managed applications are operator-provisioned and stable.',
+        example: 'payments-worker, github-connector, support-agent-runtime',
+        valid: 'Console creates token-credential applications and shows the one-time client secret immediately after creation.',
+        after: 'Open the detail page to inspect the exact API object, IDs, registration method, credential type, traits, and DCR expiry.',
         terms: [
-          { label: 'Credential', value: 'The method an app uses to authenticate, such as token, password, public key, URL, or public client.' },
-          { label: 'Traits', value: 'Capability labels used by Caracal workflows, for example agent or control behavior.' },
+          { label: 'Managed', value: 'Operator-provisioned identity for known long-lived agents, services, workers, gateways, CI jobs, and integrations.' },
+          { label: 'DCR', value: 'Dynamic Client Registration for self-service, high-churn, or ephemeral clients when dynamic clients are enabled on the zone.' },
+          { label: 'Client secret', value: 'One-time credential used by token applications; store it when Console displays it because it is not returned again.' },
         ],
         notes: ['One-time client secrets are shown only when created or rotated.', 'Use copy-page on details when debugging SDK or API calls.'],
       }
@@ -419,8 +418,8 @@ function requireStringList(config: JsonObject, key: string, message: string): vo
 
 function int(v: string | undefined): number | undefined {
   if (v === undefined || v.trim() === '') return undefined
+  if (!/^[1-9]\d*$/.test(v.trim())) throw new Error('value must be a positive integer')
   const n = Number.parseInt(v, 10)
-  if (!Number.isFinite(n) || n < 1) throw new Error('limit must be a positive integer')
   return n
 }
 
@@ -550,7 +549,6 @@ export function applicationPicker(ctx: Ctx): Field['pick'] {
     [
       { header: 'name', width: 24, value: (row) => row.name },
       { header: 'credential', width: 12, value: (row) => row.credential_type },
-      { header: 'traits', value: (row) => (row.traits ?? []).join(',') || '-' },
     ],
     (row) => row.id,
     (row) => row.name,
@@ -766,7 +764,6 @@ export function applicationsView(ctx: Ctx): View {
       { header: 'name', width: 24, value: (r) => r.name },
       { header: 'method', width: 8, value: (r) => r.registration_method },
       { header: 'cred', width: 12, value: (r) => r.credential_type },
-      { header: 'traits', width: 24, value: (r) => (r.traits ?? []).join(',') || '-' },
     ],
     load: () => ctx.client.applications.list(ctx.zoneId),
     state: ctx.state,
@@ -803,30 +800,40 @@ export function applicationsView(ctx: Ctx): View {
                 notes: ['Permanent known agents normally use managed.', 'Ephemeral or self-registering agents normally use DCR, with zone-level limits and cleanup.'],
               }),
             },
-            { key: 'credential_type', label: 'credential', kind: 'select', options: CREDENTIAL_TYPES, default: 'token' },
-            { key: 'consent', label: 'require consent', kind: 'bool', default: 'false', dependsOn: { registration_method: 'managed' } },
-            { key: 'traits', label: 'traits', kind: 'list', hint: 'comma-separated', dependsOn: { registration_method: 'dcr' } },
-            { key: 'expires_in', label: 'expires in', kind: 'text', dependsOn: { registration_method: 'dcr' }, validate: (v) => v && !Number.isFinite(Number.parseInt(v, 10)) ? 'expires in must be an integer' : undefined },
+            { key: 'expires_in', label: 'client lifetime seconds', kind: 'text', dependsOn: { registration_method: 'dcr' }, validate: (v) => v && !/^[1-9]\d*$/.test(v.trim()) ? 'client lifetime must be a positive integer' : undefined },
           ],
           onSubmit: async (v, app) => {
-            const credentialType = (v.credential_type as CredentialType) || 'token'
             if (v.registration_method === 'dcr') {
-              await ctx.client.applications.dcr(ctx.zoneId, {
+              const clientSecret = generateClientSecret()
+              const application = await ctx.client.applications.dcr(ctx.zoneId, {
                 name: v.name!,
-                credential_type: credentialType,
-                traits: v.traits ? splitList(v.traits) : undefined,
+                credential_type: 'token',
+                client_secret: clientSecret,
                 expires_in: int(v.expires_in),
               })
               await popAndReload(app, list as unknown as ListView<unknown>)
+              open(app, new DetailView({
+                title: `app / ${application.name}`,
+                load: async () => ({
+                  id: application.id,
+                  zone_id: application.zone_id,
+                  name: application.name,
+                  registration_method: application.registration_method,
+                  credential_type: application.credential_type,
+                  expires_at: (application as { expires_at?: string }).expires_at,
+                  client_secret: clientSecret,
+                  note: 'store client_secret now - it cannot be retrieved later',
+                }),
+                mask: maskSecretField,
+              }))
               return
             }
-            const clientSecret = credentialType === 'public' ? undefined : generateClientSecret()
+            const clientSecret = generateClientSecret()
             const application = await ctx.client.applications.create(ctx.zoneId, {
               name: v.name!,
               registration_method: 'managed',
-              credential_type: credentialType,
+              credential_type: 'token',
               client_secret: clientSecret,
-              consent: bool(v.consent),
             })
             await popAndReload(app, list as unknown as ListView<unknown>)
             if (clientSecret) {
@@ -836,6 +843,7 @@ export function applicationsView(ctx: Ctx): View {
                   id: application.id,
                   zone_id: application.zone_id,
                   name: application.name,
+                  registration_method: application.registration_method,
                   credential_type: application.credential_type,
                   client_secret: clientSecret,
                   note: 'store client_secret now - it cannot be retrieved later',
@@ -853,36 +861,12 @@ export function applicationsView(ctx: Ctx): View {
             title: `edit ${row.name}`,
             fields: [
               { key: 'name', label: 'name', kind: 'text', default: row.name },
-              { key: 'credential_type', label: 'credential', kind: 'select', options: CREDENTIAL_TYPES, default: row.credential_type },
-              { key: 'traits', label: 'traits', kind: 'list', default: (row.traits ?? []).join(','), hint: 'comma-separated' },
-              { key: 'consent', label: 'require consent', kind: 'bool', default: String(row.consent === 'required') },
             ],
             onSubmit: async (v, app) => {
-              const credentialType = (v.credential_type as CredentialType) || row.credential_type
-              const clientSecret = row.credential_type === 'public' && credentialType !== 'public'
-                ? generateClientSecret()
-                : undefined
-              const application = await ctx.client.applications.patch(ctx.zoneId, row.id, {
+              await ctx.client.applications.patch(ctx.zoneId, row.id, {
                 name: v.name || undefined,
-                credential_type: credentialType,
-                client_secret: clientSecret,
-                traits: v.traits ? splitList(v.traits) : undefined,
-                consent: bool(v.consent),
               } as Partial<ApplicationInput>)
               await popAndReload(app, list as unknown as ListView<unknown>)
-              if (clientSecret) {
-                open(app, new DetailView({
-                  title: `app / ${application.name}`,
-                  load: async () => ({
-                    id: application.id,
-                    name: application.name,
-                    credential_type: credentialType,
-                    client_secret: clientSecret,
-                    note: 'store client_secret now - it cannot be retrieved later',
-                  }),
-                  mask: maskSecretField,
-                }))
-              }
             },
           })
         },
