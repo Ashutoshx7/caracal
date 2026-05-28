@@ -812,9 +812,11 @@ function guidedInfo(title: string, meaning: string, example: string, valid: stri
     title,
     meaning,
     when: 'Use this during guided setup when this value defines how Caracal creates or links the object.',
+    impact: 'Guided setup stores this value in the setup plan and uses it to create or reuse real Control API objects.',
     example,
     valid,
     after,
+    notes: ['Values entered here are not placeholders; they flow into the final app, resource, policy, grant, or profile output.'],
   })
 }
 

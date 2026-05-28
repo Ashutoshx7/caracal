@@ -178,7 +178,10 @@ describe('FormView input UX', () => {
     ;(view as unknown as { focus: number }).focus = 1
     await view.onKey('?', ctx)
     const info = vi.mocked(app.push).mock.calls.at(-1)![0] as { render: FormView['render'] }
-    expect(info.render(ctx).join('\n')).toContain('Shown when mode is gateway')
+    const help = info.render(ctx).join('\n')
+    expect(help).toContain('Shown when mode is gateway')
+    expect(help).toContain('Impact')
+    expect(help).toContain('Upstream values affect where Gateway sends protected traffic')
   })
 })
 

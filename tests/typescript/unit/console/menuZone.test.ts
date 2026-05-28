@@ -93,6 +93,20 @@ describe('menu zone hotkey', () => {
     expect(rendered).toContain(' c  credential')
   })
 
+  it('opens operationally useful contextual menu help', async () => {
+    const app = fakeApp()
+    const menu = new MenuView(clientWithZones([]), 'zone-1')
+
+    await menu.onKey('?', { app, size: { rows: 25, cols: 100 }, status: '' })
+
+    const pushed = (app as unknown as { _pushed: Array<{ render: typeof menu.render }> })._pushed
+    const help = pushed[pushed.length - 1]!.render({ app, size: { rows: 25, cols: 100 }, status: '' }).map(stripAnsi).join('\n')
+    expect(help).toContain('Impact')
+    expect(help).toContain('Context')
+    expect(help).toContain('Current zone')
+    expect(help).toContain('Operational notes')
+  })
+
   it('opens the zone picker with z and applies the selected zone', async () => {
     const client = clientWithZones([
       { id: 'z1', slug: 'alpha', name: 'Alpha' },

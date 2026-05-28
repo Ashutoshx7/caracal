@@ -835,7 +835,7 @@ export class MenuView implements View {
     if (key === 'z' || key === 'Z') return this.promptZone(ctx.app)
     if (key === '?') {
       const entry = entries[this.cursor]
-      if (entry) openInfo(ctx.app, entry.info ?? menuInfo(entry))
+      if (entry) openInfo(ctx.app, entry.info ?? menuInfo(entry, this.zoneLabel ?? this.zoneId))
       return
     }
     const direct = entries.findIndex((e) => e.key === key)
@@ -881,13 +881,168 @@ export class MenuView implements View {
   }
 }
 
-function menuInfo(entry: Entry): InfoPage {
+function menuInfo(entry: Entry, zone: string | undefined): InfoPage {
+  const help = menuHelp(entry.label)
   return infoPage({
     title: entry.label,
-    meaning: entry.description,
-    when: entry.needsZone ? 'Use this after selecting the zone that owns the objects you want to manage.' : 'Use this from any Console state.',
-    example: entry.label === 'guided setup' ? 'Create first app, resource, policy, and profile.' : `Open ${entry.label}`,
-    valid: entry.needsZone ? 'Requires an active zone; press z to select one.' : 'No active zone is required.',
-    after: 'Console opens the selected section. Object IDs stay hidden unless you reveal or copy them.',
+    meaning: help.meaning,
+    when: entry.needsZone ? `${help.when} The active zone decides which objects are visible and mutable.` : help.when,
+    impact: help.impact,
+    example: help.example,
+    valid: entry.needsZone ? 'Requires an active zone; press z to select one or open Zones first.' : 'No active zone is required.',
+    after: 'The selected section opens with contextual actions. Complete entity detail pages can copy raw JSON with copy-page.',
+    context: [
+      { label: 'Current zone', value: zone ?? 'none selected' },
+      { label: 'Scope', value: entry.needsZone ? 'zone-scoped management' : 'global or local workflow' },
+    ],
+    terms: help.terms,
+    notes: help.notes,
   })
+}
+
+function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' | 'example' | 'terms' | 'notes'> {
+  switch (label) {
+    case 'guided setup':
+      return {
+        meaning: 'Guided setup creates the minimum connected objects needed for a working Caracal path.',
+        when: 'Use it when bootstrapping a zone or validating that app, resource, policy, grant, and runtime profile concepts fit together.',
+        impact: 'The workflow creates or reuses real Control API objects and ends with an operational setup summary.',
+        example: 'Create first app, resource, policy, grant, and profile.',
+        terms: [{ label: 'Profile', value: 'Runtime configuration used by workloads or SDKs to request tokens.' }],
+        notes: ['Guided setup favors implemented defaults and hides uncommon advanced fields until requested.'],
+      }
+    case 'zone':
+      return {
+        meaning: 'Zones are trust boundaries that own applications, resources, policies, grants, sessions, audit, and agents.',
+        when: 'Use Zones before any zone-scoped workflow or when separating environments and tenants.',
+        impact: 'Selecting a zone changes the active management scope for the rest of Console.',
+        example: 'prod-payments',
+        terms: [{ label: 'DCR', value: 'Dynamic Client Registration; zone-level switch for API-driven app registration.' }],
+      }
+    case 'application':
+      return {
+        meaning: 'Applications are client identities for workloads, agents, gateways, or automation.',
+        when: 'Use this when a workload needs credentials or a stable app ID for token exchange.',
+        impact: 'Credential type and traits affect how software authenticates and what operational role it can perform.',
+        example: 'payments-worker',
+        terms: [{ label: 'Trait', value: 'A capability label attached to an application.' }],
+      }
+    case 'provider':
+      return {
+        meaning: 'Providers describe upstream credential and identity systems that Caracal can call.',
+        when: 'Use this before Gateway or credential flows that need upstream OAuth, OIDC, API key, or workload identity configuration.',
+        impact: 'Provider config controls token endpoints, headers, audiences, and credential exchange behavior.',
+        example: 'github-oidc',
+        terms: [{ label: 'Issuer', value: 'The upstream authority that signs or describes identity tokens.' }],
+      }
+    case 'resource':
+      return {
+        meaning: 'Resources are protected APIs, services, audiences, or Gateway targets.',
+        when: 'Use this to define what applications request access to and which scopes exist.',
+        impact: 'Resource identifiers and scopes become part of grants, policy input, and token audiences.',
+        example: 'resource://payments-api',
+        terms: [{ label: 'Scope', value: 'A named permission string evaluated by grants and policies.' }],
+      }
+    case 'policy':
+      return {
+        meaning: 'Policies are authorization logic used to evaluate requests.',
+        when: 'Use this to create, validate, and version access rules.',
+        impact: 'Policy versions can affect authorization once included in an active policy set.',
+        example: 'allow read for finance users',
+        terms: [{ label: 'Version', value: 'An immutable policy content snapshot.' }],
+      }
+    case 'policy set':
+      return {
+        meaning: 'Policy sets group policy versions and control what policy bundle is active.',
+        when: 'Use this to promote tested policy versions into live authorization.',
+        impact: 'Activating a policy-set version changes future authorization decisions.',
+        example: 'baseline access v3',
+        terms: [{ label: 'Manifest', value: 'The policy-version list included in a policy-set version.' }],
+      }
+    case 'grant':
+      return {
+        meaning: 'Grants bind one subject, application, resource, and scope set into explicit authority.',
+        when: 'Use this for known users or workloads that need scoped access.',
+        impact: 'Grants allow authority to be requested; policies can still narrow or deny a request.',
+        example: 'user:alice can read resource://payments-api through payments-worker',
+        terms: [{ label: 'Subject', value: 'The user, workload, or actor receiving authority.' }],
+      }
+    case 'session':
+      return {
+        meaning: 'Sessions show tracked authority contexts created by token exchange, delegation, or agents.',
+        when: 'Use this to inspect active, expired, or revoked authority.',
+        impact: 'Session status explains whether related tokens or authority paths can continue.',
+        example: 'user:alice active until 28 May, 04:48 UTC',
+        terms: [{ label: 'TTL', value: 'Time to live; how long authority remains valid.' }],
+      }
+    case 'control':
+      return {
+        meaning: 'Control is the authenticated automation surface for scripts and CI that manage Caracal.',
+        when: 'Use this to enable Control, create keys, rotate secrets, or issue invocation tokens.',
+        impact: 'Control keys can automate management workflows and should be scoped tightly.',
+        example: 'issue token with zones:read resources:write',
+        terms: [{ label: 'Invocation token', value: 'Short-lived token used to call the Control API.' }],
+        notes: ['Control secrets are shown once; copy them immediately.'],
+      }
+    case 'audit':
+      return {
+        meaning: 'Audit records explain what happened, when it happened, and how authorization evaluated.',
+        when: 'Use this during incident response, policy debugging, and operational verification.',
+        impact: 'Audit is read-only evidence; it does not change authorization state.',
+        example: 'deny token_exchange req_123',
+        terms: [{ label: 'Decision', value: 'Authorization result such as allow, deny, or partial.' }],
+      }
+    case 'explain':
+      return {
+        meaning: 'Explain loads a focused decision explanation for one audit request ID.',
+        when: 'Use it when you already have a request ID from logs, audit tail, or an error report.',
+        impact: 'The result helps identify the determining policies, missing grants, or evaluation status.',
+        example: 'req_01HX...',
+        terms: [{ label: 'Request ID', value: 'Correlation identifier for one evaluated request.' }],
+      }
+    case 'agent run':
+      return {
+        meaning: 'Agent runs are coordinator sessions for agent applications and their child work.',
+        when: 'Use this to inspect status, tree shape, suspend, resume, or terminate agent activity.',
+        impact: 'Suspend and terminate can affect live work; tree/detail views are read-only.',
+        example: 'payments-agent running depth 1',
+        terms: [{ label: 'Depth', value: 'Distance from the root agent session.' }],
+      }
+    case 'delegation':
+      return {
+        meaning: 'Delegation tracks authority passed from one session to another.',
+        when: 'Use this to trace, traverse, or revoke delegated authority.',
+        impact: 'Revoking a delegation can interrupt downstream authority paths.',
+        example: 'session A delegates resource://payments-api to session B',
+        terms: [{ label: 'Edge', value: 'A directed authority link between two sessions.' }],
+      }
+    case 'diagnostics':
+      return {
+        meaning: 'Diagnostics check local service readiness, selected-zone visibility, and operational preflight state.',
+        when: 'Use this when the Console or local stack appears unhealthy.',
+        impact: 'Diagnostics are read-only and report failures or warnings for operator action.',
+        example: 'strict readiness before a demo or CI smoke run',
+        terms: [{ label: 'Preflight', value: 'A readiness check before running a workflow.' }],
+      }
+    case 'credential':
+      return {
+        meaning: 'Credential tools read or inspect protected-resource tokens for local operational debugging.',
+        when: 'Use this when validating a runtime profile, app secret, or protected resource access.',
+        impact: 'Read returns live token material and masks it in the terminal; inspect decodes supplied tokens locally.',
+        example: 'read token for resource://payments-api',
+        terms: [{ label: 'Access token', value: 'Bearer credential presented to a protected resource.' }],
+        notes: ['Treat copied tokens as secrets.'],
+      }
+    default:
+      return {
+        meaning: entryLikeMeaning(label),
+        when: 'Use this from the Console menu when it matches the operational task at hand.',
+        impact: 'Console opens a focused page with contextual actions and validation.',
+        example: `Open ${label}`,
+      }
+  }
+}
+
+function entryLikeMeaning(label: string): string {
+  return `${label} opens a focused Console workflow for an implemented Caracal surface.`
 }

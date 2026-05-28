@@ -171,6 +171,25 @@ describe('App key dispatch', () => {
     expect(visibleLength(line.trimEnd())).toBe(' menu / zones'.length)
   })
 
+  it('renders the default ready footer status in green', () => {
+    const app = new App('', '')
+
+    const line = (app as unknown as { statusLine(sz: { rows: number; cols: number }): string }).statusLine({ rows: 10, cols: 20 })
+
+    expect(line).toContain('\u001b[38;5;76m')
+    expect(stripSgr(line)).toBe(' ready' + ' '.repeat(14))
+  })
+
+  it('renders unhealthy footer status in red', () => {
+    const app = new App('', '')
+    ;(app as unknown as { setStatus(text: string, kind?: 'info' | 'error'): void }).setStatus('unhealthy')
+
+    const line = (app as unknown as { statusLine(sz: { rows: number; cols: number }): string }).statusLine({ rows: 10, cols: 20 })
+
+    expect(line).toContain('\u001b[38;5;196m')
+    expect(stripSgr(line)).toBe(' unhealthy' + ' '.repeat(10))
+  })
+
   it('routes q to exit when current view is not text-entry', async () => {
     const app = new App('', '')
     const exit = vi.spyOn(app, 'exit').mockImplementation(async () => {})
