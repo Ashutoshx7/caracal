@@ -175,7 +175,7 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
         meaning: 'A zone is the operational trust boundary for applications, resources, policies, grants, sessions, audit events, and agents.',
         when: 'Use zones to separate environments, tenants, or security domains that should not share authority.',
         impact: 'Selecting a zone scopes almost every management action; DCR on a zone controls whether apps can self-register through the DCR endpoint.',
-        example: 'prod-payments',
+        example: 'Pied Piper Production',
         valid: 'A zone has a name, slug, dynamic-client setting, and system metadata.',
         after: 'Open a zone to inspect its API object or select it as the active Console scope.',
         terms: [
@@ -190,7 +190,7 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
         meaning: 'An application is a client identity that requests Caracal tokens for a workload, agent, gateway, or automation actor.',
         when: 'Use managed applications for known durable software and DCR applications for dynamic or self-registering clients.',
         impact: 'The registration method decides which creation path is used. DCR is gated by the selected zone, rate-limited, capped, and may expire; managed applications are operator-provisioned and stable.',
-        example: 'payments-worker, github-connector, support-agent-runtime',
+        example: 'Son of Anton, Fiona, PiperNet AI',
         valid: 'Console creates token-credential applications and shows the one-time client secret immediately after creation.',
         after: 'Open the detail page to inspect the exact API object, IDs, registration method, credential type, traits, and DCR expiry.',
         terms: [
@@ -206,7 +206,7 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
         meaning: 'A resource is a protected API, service, audience, or Gateway route that applications request access to.',
         when: 'Use resources to define what can be accessed and which Caracal scopes exist for that target.',
         impact: 'Resource identifiers and scopes become the vocabulary used by grants, policies, tokens, and Gateway bindings.',
-        example: 'resource://payments-api',
+        example: 'resource://pipernet',
         valid: 'Gateway resources include upstream routing fields; direct resources define an audience and scopes only.',
         after: 'Open details to inspect routing, scopes, provider binding, and raw API identifiers.',
         terms: [
@@ -221,7 +221,7 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
         meaning: 'A provider describes an upstream identity or credential source Caracal can use when calling protected services.',
         when: 'Use providers when Gateway or credential workflows must exchange, attach, or derive upstream credentials.',
         impact: 'Provider kind and config decide which endpoints, headers, audiences, and credential rules are used at runtime.',
-        example: 'github-oidc',
+        example: 'Hooli OIDC',
         valid: 'Only configured provider kinds and their implemented fields are sent to the API.',
         after: 'Open details to inspect the merged provider config and exact backend field names.',
         terms: [
@@ -236,7 +236,7 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
         meaning: 'A policy is authorization logic that evaluates a request and produces an allow, deny, or partial result.',
         when: 'Use policies to encode access rules that are more precise than static grants.',
         impact: 'Policy versions can affect live authorization once included in an active policy set.',
-        example: 'allow read during business hours',
+        example: 'allow PiperNet read during business hours',
         valid: 'Policy content is validated before save; versions are immutable once created.',
         after: 'Open details to inspect metadata; validate before adding or activating a new version.',
         terms: [
@@ -251,7 +251,7 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
         meaning: 'A policy set groups specific policy versions and controls which authorization logic is active.',
         when: 'Use policy sets to promote tested policy versions into live evaluation.',
         impact: 'Activating a policy-set version changes the policy bundle used for new authorization decisions.',
-        example: 'prod baseline v3',
+        example: 'PiperNet baseline v3',
         valid: 'A policy set version references immutable policy version IDs.',
         after: 'Use simulate before activation when you need decision confidence for a concrete input.',
         terms: [
@@ -266,7 +266,7 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
         meaning: 'A grant binds an application, subject, resource, and scopes into explicit authority.',
         when: 'Use grants for known subjects or workloads that need scoped access to one resource.',
         impact: 'Grants establish requestable authority; policies can still narrow or deny individual requests.',
-        example: 'payments-worker -> user:alice -> resource://payments-api read',
+        example: 'Son of Anton -> Bertram Gilfoyle -> resource://pipernet read',
         valid: 'The resource and application must exist in the selected zone; scopes should come from the selected resource.',
         after: 'Open details to inspect status, subject, scopes, and linked object IDs before revoking.',
         terms: [
@@ -281,7 +281,7 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
         meaning: 'A session is a tracked authority context created by token exchange, delegation, or agent activity.',
         when: 'Use sessions to inspect active, expired, or revoked authority for a subject.',
         impact: 'Session status affects whether related authority can continue to be used.',
-        example: 'user:alice@example.com active until 28 May, 04:48 UTC',
+        example: 'Richard Hendricks active until 28 May, 04:48 UTC',
         valid: 'Filters narrow by status, subject, and result limit.',
         after: 'Use audit and delegation views for deeper request history or authority graph inspection.',
         terms: [
@@ -296,7 +296,7 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
         meaning: 'A delegation edge transfers bounded authority from one session to another.',
         when: 'Use delegation views to trace, traverse, or revoke authority passed between agents or sessions.',
         impact: 'Revoking a delegation can cut off downstream authority paths and affect active agents.',
-        example: 'session A -> session B for resource://payments-api',
+        example: 'Son of Anton session -> Fiona session for resource://pipernet',
         valid: 'Edges are zone-scoped and can be inspected by active, inbound, outbound, or traversal views.',
         after: 'Open details or traverse to understand the exact edge before revocation.',
         terms: [
@@ -311,7 +311,7 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
         meaning: 'An agent run is an operational session for an agent application and its child activity.',
         when: 'Use agent views to inspect status, parent/child trees, suspension, resume, and termination.',
         impact: 'Suspend and terminate affect live agent execution; tree inspection is read-only.',
-        example: 'payments-agent running depth 1',
+        example: 'Son of Anton running depth 1',
         valid: 'Agent rows come from the coordinator for the selected zone.',
         after: 'Open details for raw session state or tree for child-session relationships.',
         terms: [
@@ -708,7 +708,24 @@ export function zonesView(ctx: Ctx): View {
         key: 'n', label: 'new', build: () => new FormView({
           title: 'create zone',
           fields: [
-            { key: 'name', label: 'name', kind: 'text', required: true },
+            {
+              key: 'name',
+              label: 'name',
+              kind: 'text',
+              required: true,
+              info: infoPage({
+                title: 'Application name',
+                meaning: 'Human-readable name for the agent, service, gateway, or client identity being created.',
+                when: 'Use the name operators will recognize when selecting this application in grants, resources, and audit views.',
+                impact: 'Console sends this name to the Application API and shows it in lists, pickers, details, setup output, and generated profile summaries.',
+                example: 'Son of Anton',
+                valid: 'Required for this path. Use a short operational name, not an internal database ID.',
+                after: 'After submit, Console creates the application and shows the one-time client secret when the backend accepts the request.',
+                terms: [
+                  { label: 'Application', value: 'A client identity used by workloads, agents, gateways, or automation to request Caracal tokens.' },
+                ],
+              }),
+            },
           ],
           onSubmit: async (v, app) => {
             await ctx.client.zones.create({
@@ -790,7 +807,7 @@ export function applicationsView(ctx: Ctx): View {
                 meaning: 'Choose how this application identity should be created and owned.',
                 when: 'Use managed for known durable agents, services, workers, gateways, CI jobs, and integrations that an operator intentionally provisions. Use DCR for dynamic, self-service, high-churn, or ephemeral agents and clients when the selected zone enables dynamic clients.',
                 impact: 'Managed creation writes the application directly through the admin API. DCR calls the Dynamic Client Registration path and is blocked when the zone has dynamic clients disabled.',
-                example: 'managed for payments-worker; dcr for a short-lived self-registering task agent',
+                example: 'managed for Son of Anton; dcr for a short-lived Fiona task agent',
                 valid: 'Choose managed or dcr.',
                 after: 'Console shows only the fields relevant to the selected registration path before submitting.',
                 terms: [
@@ -916,7 +933,7 @@ export function resourcesView(ctx: Ctx): View {
             { key: 'scopes', label: 'Caracal scopes', kind: 'list', required: true, hint: 'comma-separated authorization scopes for this resource' },
             { key: 'mode', label: 'integration mode', kind: 'select', options: [...RESOURCE_MODES], default: 'direct', hint: 'direct protects an audience only; gateway adds upstream routing fields' },
             { key: 'upstream_url', label: 'upstream URL', kind: 'text', required: true, dependsOn: { mode: 'gateway' }, hint: 'Gateway target for REST APIs, gRPC gateways, MCP servers, or SDK-backed services' },
-            { key: 'identifier', label: 'identifier', kind: 'text', advanced: true, hint: 'optional; generated as resource://resource-name when blank' },
+            { key: 'identifier', label: 'identifier', kind: 'text', advanced: true, hint: 'optional; generated as resource://pipernet when blank' },
             { key: 'gateway_application_id', label: 'gateway app', kind: 'text', dependsOn: { mode: 'gateway' }, advanced: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx), hint: 'only when Gateway should exchange as a specific app' },
             { key: 'prefix', label: 'prefix match', kind: 'bool', default: 'true', dependsOn: { mode: 'gateway' }, advanced: true, hint: 'enabled by default for Gateway-routed API, gRPC, and MCP paths' },
             { key: 'credential_provider_id', label: 'credential provider', kind: 'text', dependsOn: { mode: 'gateway' }, advanced: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'only when the upstream service needs provider-side credentials' },
@@ -1318,7 +1335,7 @@ export function grantsView(ctx: Ctx): View {
           fields: [
             { key: 'resource_id', label: 'resource', kind: 'text', required: true, pick: resourcePicker(ctx), resolve: resourceResolver(ctx) },
             { key: 'application_id', label: 'application', kind: 'text', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
-            { key: 'user_id', label: 'subject ID', kind: 'text', required: true, hint: 'opaque subject such as user:alice@example.com or service:billing-worker' },
+            { key: 'user_id', label: 'subject ID', kind: 'text', required: true, hint: 'opaque subject such as user:richard.hendricks@piedpiper.example or service:son-of-anton' },
             { key: 'scopes', label: 'Caracal scopes', kind: 'list', required: true, dependsOn: 'resource_id', pick: grantScopePicker(ctx), hint: 'choose from the selected resource scopes or enter comma-separated scopes' },
           ],
           onSubmit: async (v, app) => {

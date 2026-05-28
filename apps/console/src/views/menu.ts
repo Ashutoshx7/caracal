@@ -906,7 +906,7 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
         meaning: 'Guided setup creates the minimum connected objects needed for a working Caracal path.',
         when: 'Use it when bootstrapping a zone or validating that app, resource, policy, grant, and runtime profile concepts fit together.',
         impact: 'The workflow creates or reuses real Control API objects and ends with an operational setup summary.',
-        example: 'Create first app, resource, policy, grant, and profile.',
+        example: 'Create Pied Piper zone, Son of Anton app, PiperNet resource, policy, grant, and profile.',
         terms: [{ label: 'Profile', value: 'Runtime configuration used by workloads or SDKs to request tokens.' }],
         notes: ['Guided setup favors implemented defaults and hides uncommon advanced fields until requested.'],
       }
@@ -915,7 +915,7 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
         meaning: 'Zones are trust boundaries that own applications, resources, policies, grants, sessions, audit, and agents.',
         when: 'Use Zones before any zone-scoped workflow or when separating environments and tenants.',
         impact: 'Selecting a zone changes the active management scope for the rest of Console.',
-        example: 'prod-payments',
+        example: 'Pied Piper Production',
         terms: [{ label: 'DCR', value: 'Dynamic Client Registration; zone-level switch for API-driven app registration.' }],
       }
     case 'application':
@@ -923,7 +923,7 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
         meaning: 'Applications are client identities for workloads, agents, gateways, or automation.',
         when: 'Use managed apps for known durable software and DCR apps for dynamic or self-registering clients.',
         impact: 'Managed creation provisions a stable token application; DCR uses the zone-gated dynamic registration path and can expire clients.',
-        example: 'payments-worker',
+        example: 'Son of Anton',
         terms: [{ label: 'DCR', value: 'Dynamic Client Registration for self-service, high-churn, or ephemeral clients.' }],
       }
     case 'provider':
@@ -931,7 +931,7 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
         meaning: 'Providers describe upstream credential and identity systems that Caracal can call.',
         when: 'Use this before Gateway or credential flows that need upstream OAuth, OIDC, API key, or workload identity configuration.',
         impact: 'Provider config controls token endpoints, headers, audiences, and credential exchange behavior.',
-        example: 'github-oidc',
+        example: 'Hooli OIDC',
         terms: [{ label: 'Issuer', value: 'The upstream authority that signs or describes identity tokens.' }],
       }
     case 'resource':
@@ -939,7 +939,7 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
         meaning: 'Resources are protected APIs, services, audiences, or Gateway targets.',
         when: 'Use this to define what applications request access to and which scopes exist.',
         impact: 'Resource identifiers and scopes become part of grants, policy input, and token audiences.',
-        example: 'resource://payments-api',
+        example: 'resource://pipernet',
         terms: [{ label: 'Scope', value: 'A named permission string evaluated by grants and policies.' }],
       }
     case 'policy':
@@ -947,7 +947,7 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
         meaning: 'Policies are authorization logic used to evaluate requests.',
         when: 'Use this to create, validate, and version access rules.',
         impact: 'Policy versions can affect authorization once included in an active policy set.',
-        example: 'allow read for finance users',
+        example: 'allow PiperNet read for Pied Piper operators',
         terms: [{ label: 'Version', value: 'An immutable policy content snapshot.' }],
       }
     case 'policy set':
@@ -955,7 +955,7 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
         meaning: 'Policy sets group policy versions and control what policy bundle is active.',
         when: 'Use this to promote tested policy versions into live authorization.',
         impact: 'Activating a policy-set version changes future authorization decisions.',
-        example: 'baseline access v3',
+        example: 'PiperNet baseline v3',
         terms: [{ label: 'Manifest', value: 'The policy-version list included in a policy-set version.' }],
       }
     case 'grant':
@@ -963,7 +963,7 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
         meaning: 'Grants bind one subject, application, resource, and scope set into explicit authority.',
         when: 'Use this for known users or workloads that need scoped access.',
         impact: 'Grants allow authority to be requested; policies can still narrow or deny a request.',
-        example: 'user:alice can read resource://payments-api through payments-worker',
+        example: 'Richard Hendricks can read resource://pipernet through Son of Anton',
         terms: [{ label: 'Subject', value: 'The user, workload, or actor receiving authority.' }],
       }
     case 'session':
@@ -971,7 +971,7 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
         meaning: 'Sessions show tracked authority contexts created by token exchange, delegation, or agents.',
         when: 'Use this to inspect active, expired, or revoked authority.',
         impact: 'Session status explains whether related tokens or authority paths can continue.',
-        example: 'user:alice active until 28 May, 04:48 UTC',
+        example: 'Richard Hendricks active until 28 May, 04:48 UTC',
         terms: [{ label: 'TTL', value: 'Time to live; how long authority remains valid.' }],
       }
     case 'control':
@@ -1004,7 +1004,7 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
         meaning: 'Agent runs are coordinator sessions for agent applications and their child work.',
         when: 'Use this to inspect status, tree shape, suspend, resume, or terminate agent activity.',
         impact: 'Suspend and terminate can affect live work; tree/detail views are read-only.',
-        example: 'payments-agent running depth 1',
+        example: 'Son of Anton running depth 1',
         terms: [{ label: 'Depth', value: 'Distance from the root agent session.' }],
       }
     case 'delegation':
@@ -1012,7 +1012,7 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
         meaning: 'Delegation tracks authority passed from one session to another.',
         when: 'Use this to trace, traverse, or revoke delegated authority.',
         impact: 'Revoking a delegation can interrupt downstream authority paths.',
-        example: 'session A delegates resource://payments-api to session B',
+        example: 'Son of Anton session delegates resource://pipernet to Fiona',
         terms: [{ label: 'Edge', value: 'A directed authority link between two sessions.' }],
       }
     case 'diagnostics':
@@ -1020,7 +1020,7 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
         meaning: 'Diagnostics check local service readiness, selected-zone visibility, and operational preflight state.',
         when: 'Use this when the Console or local stack appears unhealthy.',
         impact: 'Diagnostics are read-only and report failures or warnings for operator action.',
-        example: 'strict readiness before a demo or CI smoke run',
+        example: 'strict readiness before a PiperNet launch smoke run',
         terms: [{ label: 'Preflight', value: 'A readiness check before running a workflow.' }],
       }
     case 'credential':
@@ -1028,7 +1028,7 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
         meaning: 'Credential tools read or inspect protected-resource tokens for local operational debugging.',
         when: 'Use this when validating a runtime profile, app secret, or protected resource access.',
         impact: 'Read returns live token material and masks it in the terminal; inspect decodes supplied tokens locally.',
-        example: 'read token for resource://payments-api',
+        example: 'read token for resource://pipernet',
         terms: [{ label: 'Access token', value: 'Bearer credential presented to a protected resource.' }],
         notes: ['Treat copied tokens as secrets.'],
       }

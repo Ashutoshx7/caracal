@@ -572,7 +572,7 @@ export class ConfirmView implements View {
       meaning: 'This prompt protects a change that can alter or remove a Console object.',
       when: 'Use yes only after checking the target name and revealing the ID if needed.',
       impact: 'Confirming sends the state-changing request; canceling leaves backend state unchanged.',
-      example: 'delete resource payments-api',
+        example: 'delete resource PiperNet',
       valid: 'Press y to continue, n or esc to cancel.',
       after: 'Console sends the request and shows an API error if the operation is rejected.',
       notes: ['For destructive changes, open the detail page first and use copy-page if you need a raw JSON record.'],
@@ -838,7 +838,7 @@ function fileInfo(): InfoPage {
     meaning: 'Choose a local file for policy content or provider JSON.',
     when: 'Use it when the source is maintained outside the Console.',
     impact: 'The selected file is read at submit time and its contents are sent to the current workflow.',
-    example: '/home/team/policies/payments.rego',
+    example: '/home/richard/pied-piper/policies/pipernet.rego',
     valid: 'Pick a file under the current directory, or press : and enter an absolute path.',
     after: 'The selected path is placed into the form; submit reads the file content once.',
     terms: [
