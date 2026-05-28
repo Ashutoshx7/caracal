@@ -103,6 +103,7 @@ function bool(v: string | undefined): boolean | undefined {
 }
 
 const CREDENTIAL_TYPES: CredentialType[] = ['token', 'password', 'public-key', 'url', 'public']
+const APPLICATION_REGISTRATION_METHODS = ['managed', 'dcr'] as const
 const PROVIDER_KINDS: ProviderKind[] = ['oauth2', 'oidc', 'apikey', 'workload']
 const RESOURCE_MODES = ['direct', 'gateway'] as const
 const CONTENT_SOURCES = ['paste', 'file'] as const
@@ -781,11 +782,44 @@ export function applicationsView(ctx: Ctx): View {
           title: 'create application',
           fields: [
             { key: 'name', label: 'name', kind: 'text', required: true },
+            {
+              key: 'registration_method',
+              label: 'registration method',
+              kind: 'select',
+              options: [...APPLICATION_REGISTRATION_METHODS],
+              default: 'managed',
+              info: infoPage({
+                title: 'Application registration method',
+                meaning: 'Choose how this application identity should be created and owned.',
+                when: 'Use managed for known durable agents, services, workers, gateways, CI jobs, and integrations that an operator intentionally provisions. Use DCR for dynamic, self-service, high-churn, or ephemeral agents and clients when the selected zone enables dynamic clients.',
+                impact: 'Managed creation writes the application directly through the admin API. DCR calls the Dynamic Client Registration path and is blocked when the zone has dynamic clients disabled.',
+                example: 'managed for payments-worker; dcr for a short-lived self-registering task agent',
+                valid: 'Choose managed or dcr.',
+                after: 'Console shows only the fields relevant to the selected registration path before submitting.',
+                terms: [
+                  { label: 'Managed', value: 'Operator-provisioned application with an intentional lifecycle and stable identity.' },
+                  { label: 'DCR', value: 'Dynamic Client Registration; API-driven app registration for self-service or ephemeral clients.' },
+                ],
+                notes: ['Permanent known agents normally use managed.', 'Ephemeral or self-registering agents normally use DCR, with zone-level limits and cleanup.'],
+              }),
+            },
             { key: 'credential_type', label: 'credential', kind: 'select', options: CREDENTIAL_TYPES, default: 'token' },
-            { key: 'consent', label: 'require consent', kind: 'bool', default: 'false' },
+            { key: 'consent', label: 'require consent', kind: 'bool', default: 'false', dependsOn: { registration_method: 'managed' } },
+            { key: 'traits', label: 'traits', kind: 'list', hint: 'comma-separated', dependsOn: { registration_method: 'dcr' } },
+            { key: 'expires_in', label: 'expires in', kind: 'text', dependsOn: { registration_method: 'dcr' }, validate: (v) => v && !Number.isFinite(Number.parseInt(v, 10)) ? 'expires in must be an integer' : undefined },
           ],
           onSubmit: async (v, app) => {
             const credentialType = (v.credential_type as CredentialType) || 'token'
+            if (v.registration_method === 'dcr') {
+              await ctx.client.applications.dcr(ctx.zoneId, {
+                name: v.name!,
+                credential_type: credentialType,
+                traits: v.traits ? splitList(v.traits) : undefined,
+                expires_in: int(v.expires_in),
+              })
+              await popAndReload(app, list as unknown as ListView<unknown>)
+              return
+            }
             const clientSecret = credentialType === 'public' ? undefined : generateClientSecret()
             const application = await ctx.client.applications.create(ctx.zoneId, {
               name: v.name!,
@@ -860,28 +894,6 @@ export function applicationsView(ctx: Ctx): View {
             message: `delete application ${row.name}?`,
             onConfirm: async (app) => {
               await ctx.client.applications.delete(ctx.zoneId, row.id)
-              await popAndReload(app, list as unknown as ListView<unknown>)
-            },
-          })
-        },
-      },
-      {
-        key: 'D', label: 'dcr', build: (row) => {
-          return new FormView({
-            title: 'dynamic client registration',
-            fields: [
-              { key: 'name', label: 'name', kind: 'text', required: true, default: row?.name ?? '' },
-              { key: 'credential_type', label: 'credential', kind: 'select', options: CREDENTIAL_TYPES, default: row?.credential_type ?? 'token' },
-              { key: 'traits', label: 'traits', kind: 'list', default: (row?.traits ?? []).join(','), hint: 'comma-separated' },
-              { key: 'expires_in', label: 'expires in', kind: 'text', validate: (v) => v && !Number.isFinite(Number.parseInt(v, 10)) ? 'expires in must be an integer' : undefined },
-            ],
-            onSubmit: async (v, app) => {
-              await ctx.client.applications.dcr(ctx.zoneId, {
-                name: v.name!,
-                credential_type: (v.credential_type as ApplicationInput['credential_type']) || undefined,
-                traits: v.traits ? splitList(v.traits) : undefined,
-                expires_in: int(v.expires_in),
-              })
               await popAndReload(app, list as unknown as ListView<unknown>)
             },
           })

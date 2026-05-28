@@ -310,7 +310,7 @@ export class ListView<T> implements View {
 
 function listActionNeedsSelection<T>(listAction: ListAction<T>): boolean {
   const label = listAction.label.toLowerCase()
-  if (label === 'new' || label === 'filter' || label === 'validate' || label === 'dcr') return false
+  if (label === 'new' || label === 'filter' || label === 'validate') return false
   return true
 }
 

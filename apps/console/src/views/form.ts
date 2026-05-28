@@ -123,6 +123,7 @@ export class FormView implements View {
     lines.push(' ' + ui.title(this.title))
     lines.push(' ' + ui.muted('Type or paste into fields. Required fields are marked *.'))
     lines.push('')
+    const labelWidth = this.labelWidth(rows)
     let section = ''
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]!
@@ -140,7 +141,7 @@ export class FormView implements View {
       }
       const focused = i === this.focus
       const display = this.displayValue(f)
-      const label = pad(this.isRequired(f) ? `${f.label} *` : f.label, 18)
+      const label = pad(this.isRequired(f) ? `${f.label} *` : f.label, labelWidth)
       const cursorMark = focused ? (this.multilineMode ? '* ' : '> ') : '  '
       const text = focused
         ? ` ${ui.accent(cursorMark)}${ui.muted(label)}${display}`
@@ -174,6 +175,16 @@ export class FormView implements View {
       ? sanitizeAnsi(raw.replace(/\n/g, ' ⏎ '))
       : sanitizeAnsi(raw)
     return ui.input(`[ ${shown || `<${f.label}>`} ]`)
+  }
+
+  private labelWidth(rows: FormRow[]): number {
+    let width = 18
+    for (const row of rows) {
+      if (row.kind !== 'field') continue
+      const label = this.isRequired(row.field) ? `${row.field.label} *` : row.field.label
+      width = Math.max(width, label.length + 2)
+    }
+    return width
   }
 
   async onKey(key: Key, ctx: ViewContext): Promise<void> {

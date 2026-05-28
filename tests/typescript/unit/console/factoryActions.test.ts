@@ -199,8 +199,36 @@ describe('applications actions', () => {
     const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>
     const pushed = await pressKey(list, 'n', fakeApp()) as FormView
     const keys = (pushed as unknown as { fields: { key: string }[] }).fields.map((f) => f.key)
-    expect(keys).toEqual(['name', 'credential_type', 'consent'])
+    expect(keys).toEqual(['name', 'registration_method', 'credential_type', 'consent', 'traits', 'expires_in'])
+    expect(pushed.values_().registration_method).toBe('managed')
     expect(pushed.values_().credential_type).toBe('token')
+    const app = fakeApp()
+    let body = pushed.render({ app, size: { rows: 20, cols: 100 }, status: '' }).join('\n')
+    expect(body).toContain('require consent')
+    expect(body).not.toContain('expires in')
+
+    ;(pushed as unknown as { values: Record<string, string> }).values.registration_method = 'dcr'
+    body = pushed.render({ app, size: { rows: 20, cols: 100 }, status: '' }).join('\n')
+    expect(body).toContain('traits')
+    expect(body).toContain('expires in')
+    expect(body).not.toContain('require consent')
+  })
+
+  it('application registration method help explains managed vs DCR use cases', async () => {
+    const { ctx } = newCtx()
+    const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>
+    const app = fakeApp()
+    const form = await pressKey(list, 'n', app) as FormView
+    ;(form as unknown as { focus: number }).focus = 1
+
+    await form.onKey('?', { app, size: { rows: 25, cols: 100 }, status: '' })
+
+    const pushed = (app as unknown as { _pushed: unknown[] })._pushed
+    const info = pushed[pushed.length - 1] as { render: FormView['render'] }
+    const help = info.render({ app, size: { rows: 25, cols: 100 }, status: '' }).join('\n')
+    expect(help).toContain('known durable agents')
+    expect(help).toContain('ephemeral agents')
+    expect(help).toContain('Dynamic Client Registration')
   })
 
   it('creates managed applications with a generated confidential client secret', async () => {
@@ -220,10 +248,11 @@ describe('applications actions', () => {
     const form = await pressKey(list, 'n', app) as FormView
     ;(form as unknown as { values: Record<string, string> }).values = {
       name: 'runner',
+      registration_method: 'managed',
       credential_type: 'token',
       consent: 'false',
     }
-    ;(form as unknown as { focus: number }).focus = 3
+    ;(form as unknown as { focus: number }).focus = 4
 
     await form.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
 
@@ -275,22 +304,20 @@ describe('applications actions', () => {
     expect(out).toContain('••••')
   })
 
-  it('D opens DCR FormView with Console fields and calls applications.dcr', async () => {
+  it('creates DCR applications from the unified application form', async () => {
     const { client, ctx } = newCtx()
     const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>
-    setRows(list, [{ id: 'a1', name: 'app', registration_method: 'managed', credential_type: 'token', traits: [] }])
     const app = fakeApp()
-    const pushed = await pressKey(list, 'D', app) as FormView
+    const pushed = await pressKey(list, 'n', app) as FormView
     expect(pushed).toBeInstanceOf(FormView)
-    const keys = (pushed as unknown as { fields: { key: string }[] }).fields.map((f) => f.key)
-    expect(keys).toEqual(['name', 'credential_type', 'traits', 'expires_in'])
     ;(pushed as unknown as { values: Record<string, string> }).values = {
       name: 'app',
+      registration_method: 'dcr',
       credential_type: 'password',
       traits: 'a,b',
       expires_in: '60',
     }
-    ;(pushed as unknown as { focus: number }).focus = 4
+    ;(pushed as unknown as { focus: number }).focus = 5
     await pushed.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
     expect(client.applications.dcr).toHaveBeenCalledWith('z1', {
       name: 'app',
@@ -298,6 +325,16 @@ describe('applications actions', () => {
       traits: ['a', 'b'],
       expires_in: 60,
     })
+    expect(client.applications.create).not.toHaveBeenCalled()
+  })
+
+  it('does not expose DCR as a separate applications footer action', () => {
+    const { ctx } = newCtx()
+    const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>
+    setRows(list, [])
+    const actions = list.footerActions().map((action) => action.label)
+    expect(actions).toContain('new')
+    expect(actions).not.toContain('dcr')
   })
 })
 
