@@ -1042,11 +1042,10 @@ export function resourcesView(ctx: Ctx): View {
           fields: [
             { key: 'name', label: 'resource name', kind: 'text', required: true, hint: 'human-readable name; identifier is generated when blank' },
             { key: 'scopes', label: 'Caracal scopes', kind: 'list', required: true, hint: 'comma-separated authorization scopes for this resource' },
-            { key: 'mode', label: 'integration mode', kind: 'select', options: [...RESOURCE_MODES], default: 'direct', hint: 'direct protects an audience only; gateway adds upstream routing fields' },
+            { key: 'mode', label: 'integration mode', kind: 'select', options: [...RESOURCE_MODES], default: 'direct', hint: 'direct creates an authority target; gateway forwards to an upstream URL' },
             { key: 'upstream_url', label: 'upstream URL', kind: 'text', required: true, dependsOn: { mode: 'gateway' }, hint: 'Gateway target for REST APIs, gRPC gateways, MCP servers, or SDK-backed services' },
+            { key: 'gateway_application_id', label: 'gateway app', kind: 'text', required: true, dependsOn: { mode: 'gateway' }, pick: applicationPicker(ctx), resolve: applicationResolver(ctx), hint: 'application identity the Gateway uses for upstream exchanges' },
             { key: 'identifier', label: 'identifier', kind: 'text', advanced: true, hint: 'optional; generated as resource://pipernet when blank' },
-            { key: 'gateway_application_id', label: 'gateway app', kind: 'text', dependsOn: { mode: 'gateway' }, advanced: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx), hint: 'only when Gateway should exchange as a specific app' },
-            { key: 'prefix', label: 'prefix match', kind: 'bool', default: 'true', dependsOn: { mode: 'gateway' }, advanced: true, hint: 'enabled by default for Gateway-routed API, gRPC, and MCP paths' },
             { key: 'credential_provider_id', label: 'credential provider', kind: 'text', dependsOn: { mode: 'gateway' }, advanced: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'only when the upstream service needs provider-side credentials' },
           ],
           onSubmit: async (v, app) => {
@@ -1054,10 +1053,9 @@ export function resourcesView(ctx: Ctx): View {
               identifier: v.identifier || resourceIdentifierFromName(v.name!),
               scopes: splitList(v.scopes ?? ''),
               name: v.name,
-              upstream_url: v.upstream_url || undefined,
-              gateway_application_id: v.gateway_application_id || undefined,
-              prefix: v.upstream_url ? bool(v.prefix) : undefined,
-              credential_provider_id: v.credential_provider_id || undefined,
+              upstream_url: v.mode === 'gateway' ? v.upstream_url : undefined,
+              gateway_application_id: v.mode === 'gateway' ? v.gateway_application_id : undefined,
+              credential_provider_id: v.mode === 'gateway' ? v.credential_provider_id || undefined : undefined,
             })
             await popAndReload(app, list as unknown as ListView<unknown>)
           },
@@ -1070,22 +1068,20 @@ export function resourcesView(ctx: Ctx): View {
             title: `edit ${row.identifier}`,
             fields: [
               { key: 'name', label: 'name', kind: 'text', default: row.name ?? '' },
-              { key: 'identifier', label: 'identifier', kind: 'text', default: row.identifier },
+              { key: 'identifier', label: 'identifier', kind: 'text', default: row.identifier, advanced: true },
               { key: 'mode', label: 'integration mode', kind: 'select', options: [...RESOURCE_MODES], default: row.upstream_url ? 'gateway' : 'direct' },
               { key: 'upstream_url', label: 'upstream URL', kind: 'text', default: row.upstream_url ?? '', required: true, dependsOn: { mode: 'gateway' } },
-              { key: 'gateway_application_id', label: 'gateway app', kind: 'text', default: row.gateway_application_id ?? '', dependsOn: { mode: 'gateway' }, pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
-              { key: 'credential_provider_id', label: 'credential provider', kind: 'text', default: row.credential_provider_id ?? '', dependsOn: { mode: 'gateway' }, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'only when the upstream service needs provider-side credentials' },
-              { key: 'prefix', label: 'prefix match', kind: 'bool', default: String(row.prefix), dependsOn: { mode: 'gateway' } },
+              { key: 'gateway_application_id', label: 'gateway app', kind: 'text', default: row.gateway_application_id ?? '', required: true, dependsOn: { mode: 'gateway' }, pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
+              { key: 'credential_provider_id', label: 'credential provider', kind: 'text', default: row.credential_provider_id ?? '', dependsOn: { mode: 'gateway' }, advanced: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'only when the upstream service needs provider-side credentials' },
               { key: 'scopes', label: 'Caracal scopes', kind: 'list', default: (row.scopes ?? []).join(','), hint: 'comma-separated authorization scopes for this resource' },
             ],
             onSubmit: async (v, app) => {
               await ctx.client.resources.patch(ctx.zoneId, row.id, {
                 name: v.name || undefined,
                 identifier: v.identifier || undefined,
-                upstream_url: v.upstream_url || undefined,
-                gateway_application_id: v.gateway_application_id || undefined,
-                credential_provider_id: v.credential_provider_id || undefined,
-                prefix: bool(v.prefix),
+                upstream_url: v.mode === 'gateway' ? v.upstream_url : null,
+                gateway_application_id: v.mode === 'gateway' ? v.gateway_application_id : null,
+                credential_provider_id: v.mode === 'gateway' ? v.credential_provider_id || null : null,
                 scopes: v.scopes ? splitList(v.scopes) : undefined,
               } as Partial<ResourceInput>)
               await popAndReload(app, list as unknown as ListView<unknown>)

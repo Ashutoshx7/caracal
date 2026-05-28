@@ -763,7 +763,6 @@ async function ensureResource(
         upstream_url: upstreamUrl,
         gateway_application_id: upstreamUrl ? applicationId : undefined,
         credential_provider_id: providerId,
-        prefix: upstreamUrl ? true : undefined,
       }),
       created: true,
       updated: false,
@@ -775,7 +774,6 @@ async function ensureResource(
   if (!sameList(current.scopes ?? [], scopes)) patch.scopes = scopes
   if (upstreamUrl && current.upstream_url !== upstreamUrl) patch.upstream_url = upstreamUrl
   if (upstreamUrl && current.gateway_application_id !== applicationId) patch.gateway_application_id = applicationId
-  if (upstreamUrl && current.prefix !== true) patch.prefix = true
   if (providerId && current.credential_provider_id !== providerId) patch.credential_provider_id = providerId
   const updated = Object.keys(patch).length > 0
   return {
