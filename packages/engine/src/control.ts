@@ -33,7 +33,8 @@ export interface ControlKeyCreateInput {
 }
 
 export interface ControlKeyCreateResult {
-  application: Application
+  name: string
+  clientId: string
   clientSecret: string
   resource: Resource
   allowedScopes: string[]
@@ -42,15 +43,13 @@ export interface ControlKeyCreateResult {
 }
 
 export interface ControlKeyRotateResult {
-  application: Application
+  clientId: string
   clientSecret: string
 }
 
 export interface ControlKeyRecord {
   name: string
   client_id: string
-  credential_type: Application['credential_type']
-  traits: string[]
   allowed_scopes: string[]
   max_ttl_seconds?: number
   expires_at?: string
@@ -82,8 +81,6 @@ export function controlKeyRecord(app: Application): ControlKeyRecord {
   return {
     name: app.name,
     client_id: app.id,
-    credential_type: app.credential_type,
-    traits,
     allowed_scopes: controlScopeTraits(traits),
     max_ttl_seconds: controlMaxTtlTrait(traits),
     expires_at: controlExpiresTrait(traits),
@@ -115,12 +112,12 @@ export async function ensureControlResource(
 }
 
 export async function controlKeyList(client: AdminClient, zoneId: string): Promise<ControlKeyRecord[]> {
-  const apps = await client.applications.list(zoneId)
+  const apps = await client.applications.list(zoneId, { applicationInternals: true })
   return apps.filter(hasControlTrait).map(controlKeyRecord)
 }
 
 async function requireControlApplication(client: AdminClient, zoneId: string, id: string): Promise<Application> {
-  const app = await client.applications.get(zoneId, id)
+  const app = await client.applications.get(zoneId, id, { applicationInternals: true })
   if (!hasControlTrait(app)) {
     throw new Error(`application ${id} is not a control API key (missing trait ${CONTROL_INVOKE_TRAIT})`)
   }
@@ -140,12 +137,9 @@ export async function controlKeyCreate(
   const maxTtlSeconds = validateMaxTtl(input.maxTtlSeconds)
   const expiresAt = validateExpiresAt(input.expiresAt)
   const resource = await ensureControlResource(client, zoneId, input.audience)
-  const clientSecret = generateClientSecret()
   const application = await client.applications.create(zoneId, {
     name: input.name,
     registration_method: 'managed',
-    credential_type: 'token',
-    client_secret: clientSecret,
     traits: [
       CONTROL_INVOKE_TRAIT,
       ...allowedScopes.map((scope) => `${CONTROL_SCOPE_TRAIT_PREFIX}${scope}`),
@@ -153,7 +147,9 @@ export async function controlKeyCreate(
       ...(expiresAt ? [`${CONTROL_EXPIRES_TRAIT_PREFIX}${expiresAt}`] : []),
     ],
   })
-  return { application, clientSecret, resource, allowedScopes, maxTtlSeconds, expiresAt }
+  const clientSecret = application.client_secret
+  if (!clientSecret) throw new Error('application response did not include the one-time client secret')
+  return { name: application.name, clientId: application.id, clientSecret, resource, allowedScopes, maxTtlSeconds, expiresAt }
 }
 
 export async function controlKeyRotate(
@@ -165,7 +161,7 @@ export async function controlKeyRotate(
   await ensureControlResource(client, zoneId)
   const clientSecret = generateClientSecret()
   const application = await client.applications.patch(zoneId, id, { client_secret: clientSecret })
-  return { application, clientSecret }
+  return { clientId: application.id, clientSecret }
 }
 
 export async function controlKeyRevoke(client: AdminClient, zoneId: string, id: string): Promise<void> {

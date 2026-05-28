@@ -168,8 +168,6 @@ const appHandler = bySubcommand({
   create: ({ principal, flags, ctx }) => ctx.admin.applications.create(requireZone(principal), {
     name: mustStr(flags, 'name'),
     registration_method: 'managed',
-    credential_type: 'token',
-    client_secret: mustStr(flags, 'client-secret'),
   }),
   patch: ({ principal, flags, ctx }) => ctx.admin.applications.patch(requireZone(principal), mustStr(flags, 'id'), {
     name: getStr(flags, 'name'),
@@ -178,8 +176,6 @@ const appHandler = bySubcommand({
   delete: ({ principal, flags, ctx }) => ctx.admin.applications.delete(requireZone(principal), mustStr(flags, 'id')),
   dcr: ({ principal, flags, ctx }) => ctx.admin.applications.dcr(requireZone(principal), {
     name: mustStr(flags, 'name'),
-    credential_type: 'token',
-    client_secret: mustStr(flags, 'client-secret'),
     expires_in: getNum(flags, 'expires-in'),
   }),
 })

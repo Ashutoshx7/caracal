@@ -170,7 +170,6 @@ function controlKeyPicker(client: AdminClient, zoneId: string): Field['pick'] {
     () => controlKeyList(client, zoneId),
     [
       { header: 'name', width: 24, value: (row) => row.name },
-      { header: 'credential', width: 12, value: (row) => row.credential_type },
       { header: 'client_id', value: (row) => row.client_id },
     ],
     (row) => row.client_id,
@@ -181,10 +180,9 @@ function controlKeyPicker(client: AdminClient, zoneId: string): Field['pick'] {
 function confidentialApplicationPicker(ctx: Ctx): Field['pick'] {
   return pickFromList<Application>(
     'pick confidential application',
-    async () => (await ctx.client.applications.list(ctx.zoneId)).filter((row) => row.credential_type !== 'public'),
+    () => ctx.client.applications.list(ctx.zoneId),
     [
       { header: 'name', width: 24, value: (row) => row.name },
-      { header: 'credential', width: 12, value: (row) => row.credential_type },
     ],
     (row) => row.id,
     (row) => row.name,
@@ -459,17 +457,16 @@ class ControlMenuView implements View {
         })
         app.pop()
         app.push(new DetailView({
-          title: `control / ${result.application.id}`,
+          title: `control / ${result.clientId}`,
           load: async () => ({
-            name: result.application.name,
-            client_id: result.application.id,
+            name: result.name,
+            client_id: result.clientId,
             client_secret: result.clientSecret,
             resource: result.resource.identifier,
             allowed_scopes: result.allowedScopes,
             max_ttl_seconds: result.maxTtlSeconds,
             expires_at: result.expiresAt,
             restrictions: ['zone-bound', 'application-only', 'no-subject-token', 'no-delegation'],
-            traits: result.application.traits,
             note: 'store client_secret now - it cannot be retrieved later',
           }),
           mask: maskSecretField,
@@ -556,9 +553,9 @@ class ControlMenuView implements View {
         const result = await controlKeyRotate(client, zoneId, v.id!)
         app.pop()
         app.push(new DetailView({
-          title: `control / ${result.application.id}`,
+          title: `control / ${result.clientId}`,
           load: async () => ({
-            client_id: result.application.id,
+            client_id: result.clientId,
             client_secret: result.clientSecret,
             note: 'store client_secret now - it cannot be retrieved later',
           }),
