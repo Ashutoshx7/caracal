@@ -35,6 +35,7 @@ function client(resources: Resource[] = []): AdminClient {
         id: 'app-1',
         zone_id: 'z1',
         created_at: 'now',
+        client_secret: 'cs_generated',
         ...input,
       })),
     },
@@ -59,7 +60,6 @@ describe('control credentials', () => {
     }), { controlResource: true })
     expect(c.applications.create).toHaveBeenCalledWith('z1', expect.objectContaining({
       name: 'robot',
-      client_secret: expect.stringMatching(/^cs_[A-Za-z0-9_-]+$/),
       traits: expect.arrayContaining([
         'control:invoke',
         'control:scope:control:zone:read',
@@ -68,7 +68,7 @@ describe('control credentials', () => {
       ]),
     }))
     expect(result.resource.identifier).toBe('caracal-control')
-    expect(result.clientSecret).toMatch(/^cs_[A-Za-z0-9_-]+$/)
+    expect(result.clientSecret).toBe('cs_generated')
     expect(result.allowedScopes).toEqual(['control:zone:read'])
     expect(result.maxTtlSeconds).toBe(300)
     expect(result.expiresAt).toBe('2999-01-01T00:00:00.000Z')

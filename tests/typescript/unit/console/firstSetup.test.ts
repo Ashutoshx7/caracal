@@ -36,7 +36,7 @@ function makeClient() {
     zone_id: 'zone-1',
     name: 'agent-app-name',
     registration_method: 'managed',
-    credential_type: 'token',
+    client_secret: 'cs_generated',
     traits: [],
     created_at: '2026-01-01T00:00:00.000Z',
   }
@@ -217,8 +217,6 @@ describe('first setup workflow', () => {
     expect(client.applications.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
       name: 'agent-app-name',
       registration_method: 'managed',
-      credential_type: 'token',
-      client_secret: expect.stringMatching(/^cs_[A-Za-z0-9_-]+$/),
     }))
     expect(client.resources.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
       identifier: 'resource://resource-name',

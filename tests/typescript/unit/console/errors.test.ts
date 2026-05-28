@@ -17,6 +17,12 @@ describe('explainError', () => {
     expect(explainError(new AdminApiError(403, 'insufficient_scope', {}))).toMatch(/forbidden.*insufficient_scope/)
   })
 
+  it('explains DCR disabled as a zone capability issue', () => {
+    expect(explainError(new AdminApiError(403, 'dcr_disabled', {}))).toBe(
+      'this zone does not support DCR: enable dynamic clients on the zone, or choose managed registration',
+    )
+  })
+
   it('formats AdminApiError 404', () => {
     expect(explainError(new AdminApiError(404, 'not_found', {}))).toMatch(/not found/)
   })

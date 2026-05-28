@@ -6,6 +6,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { FormView } from '../../../../apps/console/src/views/form.ts'
 import type { App } from '../../../../apps/console/src/screen.ts'
+import { AdminApiError } from '../../../../packages/admin/ts/src/errors.ts'
 
 function fakeApp(): App {
   const status: { text: string; kind: string }[] = []
@@ -119,7 +120,7 @@ describe('FormView input UX', () => {
   it('keeps select fields bounded to options and opens an option picker with right arrow', async () => {
     const view = new FormView({
       title: 't',
-      fields: [{ key: 'credential_type', label: 'credential', kind: 'select', options: ['token', 'public'], default: 'token' }],
+      fields: [{ key: 'registration_method', label: 'registration method', kind: 'select', options: ['managed', 'dcr'], default: 'managed' }],
       onSubmit: async () => {},
     })
     const app = fakeApp()
@@ -127,14 +128,14 @@ describe('FormView input UX', () => {
 
     await view.onKey('p', ctx)
     await view.onKey('u', ctx)
-    expect(view.values_().credential_type).toBe('token')
+    expect(view.values_().registration_method).toBe('managed')
     await view.onKey('right', ctx)
 
     const picker = vi.mocked(app.push).mock.calls[0]![0] as { onKey: FormView['onKey']; render: FormView['render'] }
-    await picker.onKey('p', ctx)
-    expect(picker.render(ctx).join('\n')).toContain('public')
+    await picker.onKey('down', ctx)
+    expect(picker.render(ctx).join('\n')).toContain('dcr')
     await picker.onKey('enter', ctx)
-    expect(view.values_().credential_type).toBe('public')
+    expect(view.values_().registration_method).toBe('dcr')
   })
 
   it('submits only fields relevant to the current dynamic selection', async () => {
@@ -273,6 +274,21 @@ describe('FormView validation', () => {
     await view.onKey('enter', { app, size: { rows: 10, cols: 80 }, status: '' })
     const status = (app as unknown as { _status: { text: string; kind: string }[] })._status
     expect(status[0]!.text).toBe('no good')
+  })
+
+  it('shows explained API errors from submit handlers', async () => {
+    const view = new FormView({
+      title: 't',
+      fields: [{ key: 'name', label: 'name', kind: 'text', default: 'Fiona' }],
+      onSubmit: async () => { throw new AdminApiError(403, 'dcr_disabled', {}) },
+    })
+    const app = fakeApp()
+
+    await view.onKey('enter', { app, size: { rows: 10, cols: 80 }, status: '' })
+
+    const status = (app as unknown as { _status: { text: string; kind: string }[] })._status
+    expect(status[0]!.text).toContain('this zone does not support DCR')
+    expect(status[0]!.text).not.toContain('HTTP 403')
   })
 
   it('skips hidden fields during rendering, navigation, and validation', async () => {

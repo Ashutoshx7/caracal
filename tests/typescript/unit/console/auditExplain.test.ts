@@ -105,7 +105,6 @@ describe('audit explain entry', () => {
       name: 'control',
       traits: ['control:invoke'],
       registration_method: 'managed',
-      credential_type: 'token',
     }))
     const client = {
       audit: { byRequest: vi.fn() },
@@ -126,7 +125,7 @@ describe('audit explain entry', () => {
     const detail = pushed[pushed.length - 1] as DetailView
     expect(detail).toBeInstanceOf(DetailView)
     await detail.init(app)
-    expect(get).toHaveBeenCalledWith('z1', 'app-1')
+    expect(get).toHaveBeenCalledWith('z1', 'app-1', { applicationInternals: true })
   })
 
   it('creates control keys with explicit permissions and restrictions', async () => {
@@ -140,6 +139,7 @@ describe('audit explain entry', () => {
       id: 'app-1',
       zone_id: 'z1',
       created_at: 'now',
+      client_secret: 'cs_generated',
       ...input,
     }))
     const client = {
@@ -331,7 +331,6 @@ describe('audit explain entry', () => {
         get: vi.fn(async () => ({
           id: 'control-app',
           name: 'robot',
-          credential_type: 'token',
           traits: ['control:invoke', 'control:scope:control:zone:read'],
           created_at: 'now',
         })),
@@ -375,7 +374,6 @@ describe('audit explain entry', () => {
         get: vi.fn(async () => ({
           id: 'control-app',
           name: 'robot',
-          credential_type: 'token',
           traits: ['control:invoke', 'control:scope:control:zone:read'],
           created_at: 'now',
         })),

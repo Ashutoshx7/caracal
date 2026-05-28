@@ -178,10 +178,13 @@ describe('applications actions', () => {
     client.applications.get.mockResolvedValueOnce({
       id: 'a1',
       name: 'app',
+      credential_type: 'token',
+      consent: 'required',
+      traits: [],
       client_secret: 'secret-value',
     })
     const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>
-    setRows(list, [{ id: 'a1', name: 'app', registration_method: 'managed', credential_type: 'token', traits: [] }])
+    setRows(list, [{ id: 'a1', name: 'app', registration_method: 'managed', traits: [] }])
     const app = fakeApp()
 
     await list.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
@@ -192,6 +195,22 @@ describe('applications actions', () => {
 
     expect(out).toContain('••••')
     expect(out).not.toContain('secret-value')
+    expect(out).not.toContain('Credential Type')
+    expect(out).not.toContain('Consent')
+    expect(out).not.toContain('Traits')
+    expect(out).not.toContain('token')
+  })
+
+  it('does not render fixed application credential type in the list', () => {
+    const { ctx } = newCtx()
+    const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>
+    setRows(list, [{ id: 'a1', name: 'Son of Anton', registration_method: 'managed', traits: [] }])
+
+    const out = list.render({ app: fakeApp(), size: { rows: 20, cols: 100 }, status: '' }).join('\n')
+
+    expect(out).toContain('method')
+    expect(out).not.toContain('cred')
+    expect(out).not.toContain('token')
   })
 
   it('n opens a low-friction application form with generated managed defaults', async () => {
@@ -258,7 +277,7 @@ describe('applications actions', () => {
       zone_id: 'z1',
       name: 'runner',
       registration_method: 'managed',
-      credential_type: 'token',
+      client_secret: 'cs_generated',
       traits: [],
       created_at: '2026-01-01T00:00:00.000Z',
     })
@@ -276,8 +295,6 @@ describe('applications actions', () => {
     expect(client.applications.create).toHaveBeenCalledWith('z1', expect.objectContaining({
       name: 'runner',
       registration_method: 'managed',
-      credential_type: 'token',
-      client_secret: expect.stringMatching(/^cs_[A-Za-z0-9_-]+$/),
     }))
     const pushed = (app as unknown as { _pushed: unknown[] })._pushed
     const detail = pushed[pushed.length - 1] as DetailView
@@ -295,7 +312,7 @@ describe('applications actions', () => {
       name: 'agent',
     })
     const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>
-    setRows(list, [{ id: 'app-1', name: 'agent', registration_method: 'managed', credential_type: 'token', traits: [] }])
+    setRows(list, [{ id: 'app-1', name: 'agent', registration_method: 'managed', traits: [] }])
     const app = fakeApp()
     const form = await pressKey(list, 'e', app) as FormView
     const keys = (form as unknown as { fields: { key: string }[] }).fields.map((f) => f.key)
@@ -319,7 +336,7 @@ describe('applications actions', () => {
       zone_id: 'z1',
       name: 'app',
       registration_method: 'dcr',
-      credential_type: 'token',
+      client_secret: 'cs_generated',
       expires_at: '2026-01-01T00:00:00.000Z',
       created_at: '2026-01-01T00:00:00.000Z',
     })
@@ -336,8 +353,6 @@ describe('applications actions', () => {
     await pushed.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
     expect(client.applications.dcr).toHaveBeenCalledWith('z1', expect.objectContaining({
       name: 'app',
-      credential_type: 'token',
-      client_secret: expect.stringMatching(/^cs_[A-Za-z0-9_-]+$/),
       expires_in: 60,
     }))
     expect(client.applications.create).not.toHaveBeenCalled()
@@ -666,7 +681,7 @@ describe('grants actions', () => {
       { id: 'g1', application_id: 'app-1', user_id: 'u', resource_id: 'res-1', scopes: ['read'], status: 'active' },
     ])
     client.applications.list.mockResolvedValueOnce([
-      { id: 'app-1', name: 'GitHub OAuth Client', registration_method: 'managed', credential_type: 'token', traits: [] },
+      { id: 'app-1', name: 'GitHub OAuth Client', registration_method: 'managed', traits: [] },
     ])
     client.resources.list.mockResolvedValueOnce([
       { id: 'res-1', identifier: 'payments', name: 'Payments API', scopes: ['read'] },
