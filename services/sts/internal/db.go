@@ -76,7 +76,6 @@ type DBQuerier interface {
 // Zone holds the fields STS needs from the zones table.
 type Zone struct {
 	ID            string
-	OrgID         string
 	DEKCiphertext []byte
 	KEKArn        *string
 }
@@ -84,9 +83,9 @@ type Zone struct {
 func (d *DB) GetZone(ctx context.Context, id string) (*Zone, error) {
 	var z Zone
 	err := d.pool.QueryRow(ctx,
-		`SELECT id, org_id, dek_ciphertext, kek_arn
+		`SELECT id, dek_ciphertext, kek_arn
 		 FROM zones WHERE id = $1`, id,
-	).Scan(&z.ID, &z.OrgID, &z.DEKCiphertext, &z.KEKArn)
+	).Scan(&z.ID, &z.DEKCiphertext, &z.KEKArn)
 	if err != nil {
 		return nil, err
 	}
