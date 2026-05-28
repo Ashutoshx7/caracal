@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Resource CRUD routes for direct authority targets and Gateway-routed upstreams.
+// Resource CRUD routes for Gateway-routed protected upstreams.
 
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
 import type { PoolClient } from 'pg'
@@ -61,13 +61,15 @@ async function resourceQuotaExceeded(fastify: FastifyInstance, zoneId: string): 
 }
 
 function validateGatewayBinding(
+  identifier: string,
   upstreamURL: string | null | undefined,
   gatewayApplicationID: string | null | undefined,
   credentialProviderID: string | null | undefined,
 ): string | null {
-  if (upstreamURL && !gatewayApplicationID) return 'gateway_application_required'
-  if (!upstreamURL && gatewayApplicationID) return 'gateway_application_requires_upstream'
-  if (!upstreamURL && credentialProviderID) return 'provider_requires_gateway_upstream'
+  if (isControlResource(identifier)) return null
+  if (!upstreamURL) return 'upstream_url_required'
+  if (!gatewayApplicationID) return 'gateway_application_required'
+  if (credentialProviderID && !gatewayApplicationID) return 'provider_requires_gateway_upstream'
   return null
 }
 
@@ -186,7 +188,7 @@ export const resourcesRoutes: FastifyPluginAsync = async (fastify) => {
     if (body.credential_provider_id && !(await providerExists(fastify, params.zoneId, body.credential_provider_id))) {
       return reply.code(404).send({ error: 'provider_not_found' })
     }
-    const gatewayError = validateGatewayBinding(body.upstream_url, body.gateway_application_id, body.credential_provider_id)
+    const gatewayError = validateGatewayBinding(body.identifier, body.upstream_url, body.gateway_application_id, body.credential_provider_id)
     if (gatewayError) return reply.code(400).send({ error: gatewayError })
     if (body.gateway_application_id && !(await applicationExists(fastify, params.zoneId, body.gateway_application_id))) {
       return reply.code(404).send({ error: 'gateway_application_not_found' })
@@ -280,7 +282,7 @@ export const resourcesRoutes: FastifyPluginAsync = async (fastify) => {
       const nextCredentialProviderID = body.credential_provider_id !== undefined
         ? body.credential_provider_id
         : current.credential_provider_id
-      const gatewayError = validateGatewayBinding(nextUpstreamURL, nextGatewayApplicationID, nextCredentialProviderID)
+      const gatewayError = validateGatewayBinding(nextIdentifier, nextUpstreamURL, nextGatewayApplicationID, nextCredentialProviderID)
       if (gatewayError) {
         await client.query('ROLLBACK')
         return reply.code(400).send({ error: gatewayError })
@@ -305,9 +307,9 @@ export const resourcesRoutes: FastifyPluginAsync = async (fastify) => {
       if (current.identifier !== nextIdentifier) {
         await syncGatewayBinding(client, params.zoneId, current.identifier, null)
       }
-      await syncGatewayBinding(client, params.zoneId, nextIdentifier, nextUpstreamURL ? nextGatewayApplicationID : null)
+      await syncGatewayBinding(client, params.zoneId, nextIdentifier, isControlResource(nextIdentifier) ? null : nextGatewayApplicationID)
       await client.query('COMMIT')
-      return { ...(row as Record<string, unknown>), gateway_application_id: nextUpstreamURL ? nextGatewayApplicationID : null }
+      return { ...(row as Record<string, unknown>), gateway_application_id: isControlResource(nextIdentifier) ? null : nextGatewayApplicationID }
     } catch (err) {
       await client.query('ROLLBACK')
       throw err

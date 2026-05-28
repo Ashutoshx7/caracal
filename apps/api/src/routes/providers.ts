@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Provider CRUD routes for upstream provider-native credential sources.
+// Provider CRUD routes for upstream credential and mandate forwarding sources.
 
 import type { FastifyPluginAsync } from 'fastify'
 import { loadZoneKek, seal } from '@caracalai/core'
@@ -12,7 +12,7 @@ import { ZoneIdParams, ZoneParams, parseParams } from './params.js'
 import { zoneExists } from '../zone-guard.js'
 import { appendKeysetCondition, parseListPagination, setNextLink } from './list-pagination.js'
 
-const ProviderKind = z.enum(['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token'])
+const ProviderKind = z.enum(['caracal_mandate', 'oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token'])
 type ProviderKind = z.infer<typeof ProviderKind>
 const OAuthClientAuthMethod = z.enum(['client_secret_basic', 'client_secret_post', 'none'])
 type OAuthClientAuthMethod = z.infer<typeof OAuthClientAuthMethod>
@@ -27,6 +27,7 @@ const ProviderCreateBody = z.object({
 const ProviderPatchBody = ProviderCreateBody.partial()
 
 const PUBLIC_PROVIDER_CONFIG_KEYS: Record<ProviderKind, ReadonlySet<string>> = {
+  caracal_mandate: new Set(),
   oauth2_authorization_code: new Set([
     'authorization_endpoint',
     'token_endpoint',
@@ -54,6 +55,7 @@ const PUBLIC_PROVIDER_CONFIG_KEYS: Record<ProviderKind, ReadonlySet<string>> = {
 }
 
 const SECRET_PROVIDER_CONFIG_KEYS: Record<ProviderKind, ReadonlySet<string>> = {
+  caracal_mandate: new Set(),
   oauth2_authorization_code: new Set(['client_secret']),
   oauth2_client_credentials: new Set(['client_secret']),
   api_key: new Set(['api_key']),
@@ -114,6 +116,9 @@ function splitProviderConfig(kind: ProviderKind, input: Record<string, unknown> 
     }
   }
 
+  if (kind === 'caracal_mandate') {
+    return { publicConfig, secretConfig, secretKeys: [] }
+  }
   if (kind === 'api_key') {
     requireString(publicConfig, 'header_name', 'api_key provider config requires header_name')
     if (requireSecrets && !secretConfig.api_key) throw new Error('api_key provider config requires api_key')

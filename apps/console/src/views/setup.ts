@@ -24,8 +24,9 @@ import { EntityPickerView } from './picker.ts'
 import type { Ctx } from './factory.ts'
 
 const DEFAULT_GATEWAY_URL = 'http://localhost:8081'
-const PROVIDER_KINDS: ProviderKind[] = ['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token']
+const PROVIDER_KINDS: ProviderKind[] = ['caracal_mandate', 'oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token']
 const PROVIDER_KIND_LABELS: Record<ProviderKind, string> = {
+  caracal_mandate: 'Caracal mandate',
   oauth2_authorization_code: 'OAuth2 auth code',
   oauth2_client_credentials: 'OAuth2 client creds',
   api_key: 'API key',
@@ -148,7 +149,7 @@ class FirstSetupWizardView implements View {
     write_files: 'false',
     overwrite_files: 'false',
     profile_path: defaultRuntimeConfigPath(),
-    provider_kind: 'oauth2_authorization_code',
+    provider_kind: 'caracal_mandate',
     provider_forward_caracal_identity: 'false',
   }
   private selectedZone: Zone | undefined
@@ -247,7 +248,7 @@ class FirstSetupWizardView implements View {
       provider: {
         key: 'provider',
         title: 'Provider',
-        explanation: 'Create or select the external credential source before defining the resource that will use it.',
+        explanation: 'Choose how the Gateway authenticates to the upstream before defining the resource that will use it.',
       },
       resource: {
         key: 'resource',
@@ -343,7 +344,7 @@ class FirstSetupWizardView implements View {
 
   private clearProviderCreateValues(): void {
     this.values.provider_identifier = ''
-    this.values.provider_kind = 'oauth2_authorization_code'
+    this.values.provider_kind = 'caracal_mandate'
     this.clearProviderTypeValues()
   }
 
@@ -366,10 +367,6 @@ class FirstSetupWizardView implements View {
 
   private currentZoneId(): string | undefined {
     return this.selectedZone?.id ?? trimmed(this.values.selected_zone_id) ?? this.ctx.zoneId
-  }
-
-  private hasProviderSelection(): boolean {
-    return this.values.provider_mode !== 'none' && Boolean(trimmed(this.values.selected_provider_id) ?? trimmed(this.values.provider_name))
   }
 
   private openStepPage(app: App): void {
@@ -447,12 +444,12 @@ class FirstSetupWizardView implements View {
     app.push(new FormView({
       title: 'guided setup / provider',
       submitLabel: 'save provider',
-      info: guidedInfo('Provider setup', 'A provider describes the upstream credential source Caracal will use for an external service.', 'Hooli OAuth2 provider for PiperNet', 'Create, select, or choose none for direct Caracal resources.', 'Setup creates or links the provider before the resource page so the resource can attach it cleanly.'),
+      info: guidedInfo('Provider setup', 'A provider describes how Gateway authenticates to the upstream service.', 'Caracal mandate for PiperNet, or Hooli OAuth2 for external APIs', 'Create or select a provider when the route should record an explicit auth mode; choose none to forward a Caracal mandate without an external provider record.', 'Setup creates or links the provider before the resource page so the resource can attach it cleanly.'),
       fields: [
-        { key: 'provider_mode', label: 'provider action', kind: 'select', options: ['create', 'select', 'none'], default: this.values.provider_mode ?? 'create', info: guidedInfo('Provider action', 'Most external resources need a provider; direct resources can choose none.', 'create for Hooli OAuth2', 'create, select, or none', 'Console either creates a provider, links an existing provider, or leaves the resource direct.') },
+        { key: 'provider_mode', label: 'provider action', kind: 'select', options: ['create', 'select', 'none'], default: this.values.provider_mode ?? 'create', info: guidedInfo('Provider action', 'Choose whether this route should use an explicit provider record or only the Gateway-forwarded Caracal mandate.', 'create for Caracal mandate or Hooli OAuth2', 'create, select, or none', 'Console either creates a provider, links an existing provider, or leaves the route on the default Caracal mandate flow.') },
         { key: 'selected_provider_id', label: 'existing provider', kind: 'text', required: true, default: this.values.selected_provider_id ?? '', dependsOn: { provider_mode: 'select' }, pick: providerPicker(this.ctx, () => this.currentZoneId()), resolve: providerResolver(this.ctx, () => this.currentZoneId()), info: guidedInfo('Existing provider', 'Pick the provider that supplies upstream credentials.', 'Hooli OAuth2', 'Use the picker instead of typing an ID.', 'The resource page can attach this provider to the Gateway route.') },
         { key: 'provider_name', label: 'provider name', kind: 'text', required: true, default: this.values.provider_name ?? '', dependsOn: { provider_mode: 'create' }, info: guidedInfo('Provider name', 'Human-readable name for the upstream credential source.', 'Hooli PiperNet OAuth2', 'Short text, not an internal ID.', 'Console creates this provider before creating the resource.') },
-        { key: 'provider_kind', label: 'provider type', kind: 'select', options: PROVIDER_KINDS, optionLabels: PROVIDER_KIND_LABELS, default: this.values.provider_kind ?? 'oauth2_authorization_code', dependsOn: { provider_mode: 'create' }, info: providerTypeInfo() },
+        { key: 'provider_kind', label: 'provider type', kind: 'select', options: PROVIDER_KINDS, optionLabels: PROVIDER_KIND_LABELS, default: this.values.provider_kind ?? 'caracal_mandate', dependsOn: { provider_mode: 'create' }, info: providerTypeInfo() },
         { key: 'provider_authorization_endpoint', label: 'authorization endpoint', kind: 'text', required: true, default: this.values.provider_authorization_endpoint ?? '', dependsOn: { provider_mode: 'create', provider_kind: 'oauth2_authorization_code' }, info: guidedInfo('Authorization endpoint', 'Endpoint where users approve delegated provider access.', 'https://login.hooli.example/oauth/authorize', 'Absolute HTTPS URL.', 'Authorization-code providers use this with a callback URI.') },
         { key: 'provider_token_endpoint', label: 'token endpoint', kind: 'text', required: true, default: this.values.provider_token_endpoint ?? '', dependsOn: { provider_mode: 'create', provider_kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, info: guidedInfo('Token endpoint', 'Endpoint where Gateway obtains or refreshes upstream OAuth tokens.', 'https://login.hooli.example/oauth/token', 'Absolute HTTPS URL.', 'Console infers allowed token hosts from this URL unless Advanced overrides them.') },
         { key: 'provider_redirect_uri', label: 'redirect URI', kind: 'text', required: true, default: this.values.provider_redirect_uri ?? '', dependsOn: { provider_mode: 'create', provider_kind: 'oauth2_authorization_code' }, info: guidedInfo('Redirect URI', 'Callback URI registered with the provider.', 'http://localhost:3000/oauth/callback', 'Absolute callback URI.', 'The provider sends authorization results to this URI.') },
@@ -503,7 +500,7 @@ class FirstSetupWizardView implements View {
         { key: 'selected_resource_id', label: 'existing resource', kind: 'text', required: true, default: this.values.selected_resource_id ?? '', dependsOn: { resource_mode: 'select' }, pick: resourcePicker(this.ctx, () => this.currentZoneId()), resolve: resourceResolver(this.ctx, () => this.currentZoneId()), info: guidedInfo('Existing resource', 'Pick the protected target that already exists.', 'PiperNet', 'Use the picker instead of typing an ID.', 'Console can update scopes, Gateway URL, and provider link when needed.') },
         { key: 'resource_name', label: 'resource name', kind: 'text', required: true, default: this.values.resource_name ?? '', dependsOn: { resource_mode: 'create' }, info: guidedInfo('Resource name', 'Human-readable target name for the API, service, MCP server, or SDK capability.', 'PiperNet', 'Short text, not an internal ID.', 'Console creates a resource identifier from this name unless Advanced overrides it.') },
         { key: 'resource_scopes', label: 'Caracal scopes', kind: 'list', required: (current) => current.resource_mode === 'create', default: this.values.resource_scopes ?? '', info: guidedInfo('Caracal scopes', 'Permissions that Caracal policy evaluates for this resource.', 'pipernet.read,pipernet.write', 'Comma-separated Caracal scope names.', 'Console writes these scopes to the resource and generated allow-list policy.') },
-        { key: 'upstream_url', label: 'external upstream URL', kind: 'text', required: () => this.hasProviderSelection(), default: this.values.upstream_url ?? '', info: guidedInfo('External upstream URL', 'Gateway target for the protected external service.', 'https://api.pipernet.example', 'Absolute URL; leave blank only for direct Caracal resources.', 'Console enables Gateway routing and attaches the selected provider when present.') },
+        { key: 'upstream_url', label: 'upstream URL', kind: 'text', required: (current) => current.resource_mode === 'create', default: this.values.upstream_url ?? '', dependsOn: { resource_mode: 'create' }, info: guidedInfo('Upstream URL', 'Gateway target for the protected internal or external service.', 'https://api.pipernet.example', 'Absolute HTTP or HTTPS URL.', 'Console enables Gateway routing and Gateway forwards either a Caracal mandate or the selected provider credential.') },
         { key: 'resource_identifier', label: 'resource identifier', kind: 'text', default: this.values.resource_identifier ?? '', dependsOn: { resource_mode: 'create' }, advanced: true, info: guidedInfo('Resource identifier', 'Stable identifier used in tokens, policy input, SDK config, and audit.', 'resource://pipernet', 'Leave blank to generate from resource name.', 'Console stores this as the policy resource target.') },
         { key: 'request_path', label: 'first request path', kind: 'text', default: this.values.request_path ?? '', dependsOn: 'upstream_url', advanced: true, info: guidedInfo('First request path', 'Optional path used only to show an exact first Gateway curl command.', '/v1/not-hotdog', 'Path starting with /, or blank.', 'The result page includes a ready-to-copy request example.') },
       ],
@@ -624,7 +621,7 @@ class FirstSetupWizardView implements View {
   private providerReviewLabel(): string {
     if (this.selectedResource?.credential_provider_id) return this.selectedResource.credential_provider_id
     if (this.selectedProvider) return `${providerLabel(this.selectedProvider)} (selected)`
-    if (this.values.provider_mode === 'none') return 'none; direct resource'
+    if (this.values.provider_mode === 'none') return 'none; Gateway forwards Caracal mandate'
     if (trimmed(this.values.provider_name)) return `${this.values.provider_name} (${providerKindLabel(this.values.provider_kind)} create)`
     const selectedProviderId = trimmed(this.values.selected_provider_id)
     if (selectedProviderId) return selectedProviderId
@@ -645,7 +642,7 @@ class FirstSetupWizardView implements View {
     }
     if (!this.selectedResource && !trimmed(this.values.selected_resource_id) && !trimmed(this.values.resource_name)) return 'resource is required'
     if (splitList(this.values.resource_scopes).length === 0) return 'at least one Caracal scope is required'
-    if (this.hasProviderSelection() && !trimmed(this.values.upstream_url)) return 'external upstream URL is required when a provider is selected'
+    if (!trimmed(this.values.upstream_url)) return 'upstream URL is required'
     return undefined
   }
 }
@@ -764,7 +761,6 @@ async function ensureProvider(
   values: SetupValues,
   upstreamUrl: string | undefined,
 ): Promise<string | undefined> {
-  if (!upstreamUrl) return undefined
   if (values.provider_mode === 'none') return undefined
   const selectedProviderId = trimmed(values.selected_provider_id)
   if (selectedProviderId) return selectedProviderId
@@ -795,7 +791,7 @@ async function ensureResource(
         name: trimmed(values.resource_name),
         scopes,
         upstream_url: upstreamUrl,
-        gateway_application_id: upstreamUrl ? applicationId : undefined,
+        gateway_application_id: applicationId,
         credential_provider_id: providerId,
       }),
       created: true,
@@ -806,8 +802,8 @@ async function ensureResource(
   const current = await ctx.client.resources.get(zoneId, selectedResourceId)
   const patch: Partial<ResourceInput> = {}
   if (!sameList(current.scopes ?? [], scopes)) patch.scopes = scopes
-  if (upstreamUrl && current.upstream_url !== upstreamUrl) patch.upstream_url = upstreamUrl
-  if (upstreamUrl && current.gateway_application_id !== applicationId) patch.gateway_application_id = applicationId
+  if (current.upstream_url !== upstreamUrl) patch.upstream_url = upstreamUrl
+  if (current.gateway_application_id !== applicationId) patch.gateway_application_id = applicationId
   if (providerId && current.credential_provider_id !== providerId) patch.credential_provider_id = providerId
   const updated = Object.keys(patch).length > 0
   return {
@@ -912,7 +908,7 @@ function providerIdentifierFor(values: SetupValues): string {
 }
 
 function providerKind(value: string | undefined): ProviderKind {
-  return PROVIDER_KINDS.includes(value as ProviderKind) ? value as ProviderKind : 'oauth2_authorization_code'
+  return PROVIDER_KINDS.includes(value as ProviderKind) ? value as ProviderKind : 'caracal_mandate'
 }
 
 function providerConfigFromValues(values: SetupValues): JsonObject {
@@ -961,6 +957,7 @@ function inferredTokenHosts(endpoint: string | undefined): string {
 }
 
 function validateProviderConfig(kind: ProviderKind, config: JsonObject): void {
+  if (kind === 'caracal_mandate') return
   if (kind === 'api_key') {
     requireString(config, 'header_name', 'api_key provider config requires header_name')
     requireString(config, 'api_key', 'api_key provider config requires api_key')
@@ -981,6 +978,7 @@ function validateProviderConfig(kind: ProviderKind, config: JsonObject): void {
 }
 
 function providerConfigKeys(kind: ProviderKind): Set<string> {
+  if (kind === 'caracal_mandate') return new Set()
   if (kind === 'api_key') return new Set(['header_name', 'api_key', 'auth_scheme', 'forward_caracal_identity'])
   if (kind === 'bearer_token') return new Set(['bearer_token', 'auth_header', 'auth_scheme', 'forward_caracal_identity'])
   const keys = ['token_endpoint', 'client_id', 'client_secret', 'client_auth_method', 'scopes', 'allowed_token_hosts', 'auth_header', 'auth_scheme', 'forward_caracal_identity']
@@ -1143,7 +1141,7 @@ function setupSummary(result: SetupResult): Record<string, unknown> {
         sdk: `Set CARACAL_CONFIG=${profile.path} before connecting from a Caracal SDK.`,
         gateway: result.resource.gateway_application_id
           ? `Use ${profile.credentialEnv} as the bearer token for Gateway requests.`
-          : 'Gateway routing was not configured.',
+          : 'Gateway forwards the Caracal mandate to the configured upstream.',
       },
       next_steps: [
         result.fileWrite?.status === 'written'

@@ -72,10 +72,11 @@ export function actionInfo(label: string, after = 'After confirmation, Console s
 export function providerTypeInfo(): InfoPage {
   return infoPage({
     title: 'Provider type',
-    meaning: 'The provider type tells Caracal how the upstream service expects to receive provider-native credentials.',
-    when: 'Choose the type that matches the upstream provider contract, not the Caracal app authentication method.',
-    impact: 'Console shows only the fields needed for the selected type, and STS/Gateway use that type to obtain or forward the upstream credential.',
+    meaning: 'The provider type tells Caracal what credential shape the Gateway should send to the upstream service.',
+    when: 'Choose Caracal mandate for internal services that verify Caracal tokens; choose an external credential type only when the upstream provider requires its own auth.',
+    impact: 'Console shows only the fields needed for the selected type, and STS/Gateway use that type to forward the Caracal mandate or obtain the upstream credential.',
     context: [
+      { label: 'Caracal mandate', value: 'Use for internal services that already verify Caracal issuer, audience, scopes, targets, expiry, and revocation.' },
       { label: 'OAuth2 auth code', value: 'Use for user-approved integrations with a consent screen, callback URI, and refreshable delegated access.' },
       { label: 'OAuth2 client creds', value: 'Use for server-to-server OAuth where no end user signs in and the provider issues tokens to the application itself.' },
       { label: 'API key', value: 'Use when the provider gives a long-lived key that must be sent in a specific request header.' },
@@ -86,8 +87,8 @@ export function providerTypeInfo(): InfoPage {
       { label: 'Service token', value: 'The provider issues tokens to a backend application instead of a signed-in user.' },
       { label: 'Static secret', value: 'The provider credential is provisioned out-of-band and stored sealed for Gateway use.' },
     ],
-    example: 'Use OAuth2 auth code for a user-connected Hooli workspace; use OAuth2 client creds for Hooli service administration; use API key for a provider-issued key.',
-    valid: 'Pick exactly one supported provider type. If the upstream docs mention an authorization URL and redirect URI, use OAuth2 auth code. If they mention client credentials, use OAuth2 client creds. If they give one header key, use API key. If they give a ready bearer token, use Bearer token.',
+    example: 'Use Caracal mandate for an internal PiperNet service; use OAuth2 auth code for a user-connected Hooli workspace; use OAuth2 client creds for Hooli service administration.',
+    valid: 'Pick exactly one supported provider type. Use Caracal mandate for internal Caracal-aware services. If the upstream docs mention an authorization URL and redirect URI, use OAuth2 auth code. If they mention client credentials, use OAuth2 client creds. If they give one header key, use API key. If they give a ready bearer token, use Bearer token.',
     after: 'After choosing a type, Console shows the required fields for that upstream auth mode and hides fields that do not apply.',
     notes: [
       'Caracal app secrets are not provider credentials; they only authenticate the agent to Caracal.',

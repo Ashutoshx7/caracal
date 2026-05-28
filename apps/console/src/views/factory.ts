@@ -179,14 +179,14 @@ function bool(v: string | undefined): boolean | undefined {
 }
 
 const APPLICATION_REGISTRATION_METHODS = ['managed', 'dcr'] as const
-const PROVIDER_KINDS: ProviderKind[] = ['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token']
+const PROVIDER_KINDS: ProviderKind[] = ['caracal_mandate', 'oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token']
 const PROVIDER_KIND_LABELS: Record<ProviderKind, string> = {
+  caracal_mandate: 'Caracal mandate',
   oauth2_authorization_code: 'OAuth2 auth code',
   oauth2_client_credentials: 'OAuth2 client creds',
   api_key: 'API key',
   bearer_token: 'Bearer token',
 }
-const RESOURCE_MODES = ['direct', 'gateway'] as const
 const CONTENT_SOURCES = ['paste', 'file'] as const
 
 type PolicyVersionRow = PolicyVersion & { policy_name: string }
@@ -290,13 +290,13 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
         when: 'Use resources to define what can be accessed and which Caracal scopes exist for that target.',
         impact: 'Resource identifiers and scopes become the vocabulary used by grants, policies, tokens, and Gateway bindings.',
         example: 'resource://pipernet',
-        valid: 'Gateway resources include upstream routing fields; direct resources define an audience and scopes only.',
+        valid: 'Resources include an upstream route and Gateway application; internal resources use the Gateway-forwarded Caracal mandate.',
         after: 'Open details to inspect routing, scopes, provider binding, and raw API identifiers.',
         terms: [
           { label: 'Scope', value: 'A named permission on a resource, such as read, write, or admin.' },
           { label: 'Gateway', value: 'The proxy path where Caracal can enforce policy and forward requests upstream.' },
         ],
-        notes: ['Changing identifiers can break clients that request the old audience.', 'Gateway fields only matter for resources configured with an upstream route.'],
+        notes: ['Changing identifiers can break clients that request the old audience.', 'Gateway routes can forward the Caracal mandate directly or substitute provider credentials when configured.'],
       }
     case 'provider':
       return {
@@ -436,6 +436,7 @@ function providerConfigFromValues(values: Record<string, string>, requireConfig:
     if (!allowed.has(key)) delete config[key]
   }
   if (Object.keys(config).length === 0) {
+    if (kind === 'caracal_mandate') return {}
     if (requireConfig) throw new Error(`${kind} provider config is required`)
     return undefined
   }
@@ -444,7 +445,7 @@ function providerConfigFromValues(values: Record<string, string>, requireConfig:
 }
 
 function providerKind(value: string | undefined): ProviderKind {
-  return PROVIDER_KINDS.includes(value as ProviderKind) ? value as ProviderKind : 'oauth2_authorization_code'
+  return PROVIDER_KINDS.includes(value as ProviderKind) ? value as ProviderKind : 'caracal_mandate'
 }
 
 function providerKindLabel(value: string): string {
@@ -465,6 +466,7 @@ function validateProviderConfig(kind: ProviderKind, config: JsonObject): void {
   const allowed = providerConfigKeys(kind)
   const unknown = Object.keys(config).filter((key) => !allowed.has(key))
   if (unknown.length > 0) throw new Error(`${kind} provider config has unsupported keys: ${unknown.join(', ')}`)
+  if (kind === 'caracal_mandate') return
   if (kind === 'api_key') {
     requireString(config, 'header_name', 'api_key provider config requires header_name')
     return
@@ -480,6 +482,7 @@ function validateProviderConfig(kind: ProviderKind, config: JsonObject): void {
 }
 
 function providerConfigKeys(kind: ProviderKind): Set<string> {
+  if (kind === 'caracal_mandate') return new Set()
   if (kind === 'api_key') return new Set(['header_name', 'api_key', 'auth_scheme', 'forward_caracal_identity'])
   if (kind === 'bearer_token') return new Set(['bearer_token', 'auth_header', 'auth_scheme', 'forward_caracal_identity'])
   const keys = ['token_endpoint', 'client_id', 'client_secret', 'client_auth_method', 'provider_scopes', 'scopes', 'allowed_token_hosts', 'auth_header', 'auth_scheme', 'forward_caracal_identity']
@@ -1073,20 +1076,19 @@ export function resourcesView(ctx: Ctx): View {
           fields: [
             { key: 'name', label: 'resource name', kind: 'text', required: true, hint: 'human-readable name; identifier is generated when blank' },
             { key: 'scopes', label: 'Caracal scopes', kind: 'list', required: true, hint: 'comma-separated authorization scopes for this resource' },
-            { key: 'mode', label: 'integration mode', kind: 'select', options: [...RESOURCE_MODES], default: 'direct', hint: 'direct creates an authority target; gateway forwards to an upstream URL' },
-            { key: 'upstream_url', label: 'upstream URL', kind: 'text', required: true, dependsOn: { mode: 'gateway' }, hint: 'Gateway target for REST APIs, gRPC gateways, MCP servers, or SDK-backed services' },
-            { key: 'gateway_application_id', label: 'gateway app', kind: 'text', required: true, dependsOn: { mode: 'gateway' }, pick: applicationPicker(ctx), resolve: applicationResolver(ctx), hint: 'application identity the Gateway uses for upstream exchanges' },
+            { key: 'upstream_url', label: 'upstream URL', kind: 'text', required: true, hint: 'Gateway target for REST APIs, gRPC gateways, MCP servers, or SDK-backed services' },
+            { key: 'gateway_application_id', label: 'gateway app', kind: 'text', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx), hint: 'application identity the Gateway uses for upstream exchanges' },
             { key: 'identifier', label: 'identifier', kind: 'text', advanced: true, hint: 'optional; generated as resource://pipernet when blank' },
-            { key: 'credential_provider_id', label: 'credential provider', kind: 'text', dependsOn: { mode: 'gateway' }, advanced: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'only when the upstream service needs provider-side credentials' },
+            { key: 'credential_provider_id', label: 'credential provider', kind: 'text', advanced: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'optional; use Caracal mandate for internal services or provider credentials for external services' },
           ],
           onSubmit: async (v, app) => {
             await ctx.client.resources.create(ctx.zoneId, {
               identifier: v.identifier || resourceIdentifierFromName(v.name!),
               scopes: splitList(v.scopes ?? ''),
               name: v.name,
-              upstream_url: v.mode === 'gateway' ? v.upstream_url : undefined,
-              gateway_application_id: v.mode === 'gateway' ? v.gateway_application_id : undefined,
-              credential_provider_id: v.mode === 'gateway' ? v.credential_provider_id || undefined : undefined,
+              upstream_url: v.upstream_url,
+              gateway_application_id: v.gateway_application_id,
+              credential_provider_id: v.credential_provider_id || undefined,
             })
             await popAndReload(app, list as unknown as ListView<unknown>)
           },
@@ -1100,19 +1102,18 @@ export function resourcesView(ctx: Ctx): View {
             fields: [
               { key: 'name', label: 'name', kind: 'text', default: row.name ?? '' },
               { key: 'identifier', label: 'identifier', kind: 'text', default: row.identifier, advanced: true },
-              { key: 'mode', label: 'integration mode', kind: 'select', options: [...RESOURCE_MODES], default: row.upstream_url ? 'gateway' : 'direct' },
-              { key: 'upstream_url', label: 'upstream URL', kind: 'text', default: row.upstream_url ?? '', required: true, dependsOn: { mode: 'gateway' } },
-              { key: 'gateway_application_id', label: 'gateway app', kind: 'text', default: row.gateway_application_id ?? '', required: true, dependsOn: { mode: 'gateway' }, pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
-              { key: 'credential_provider_id', label: 'credential provider', kind: 'text', default: row.credential_provider_id ?? '', dependsOn: { mode: 'gateway' }, advanced: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'only when the upstream service needs provider-side credentials' },
+              { key: 'upstream_url', label: 'upstream URL', kind: 'text', default: row.upstream_url ?? '', required: true },
+              { key: 'gateway_application_id', label: 'gateway app', kind: 'text', default: row.gateway_application_id ?? '', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
+              { key: 'credential_provider_id', label: 'credential provider', kind: 'text', default: row.credential_provider_id ?? '', advanced: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'optional; use Caracal mandate for internal services or provider credentials for external services' },
               { key: 'scopes', label: 'Caracal scopes', kind: 'list', default: (row.scopes ?? []).join(','), hint: 'comma-separated authorization scopes for this resource' },
             ],
             onSubmit: async (v, app) => {
               await ctx.client.resources.patch(ctx.zoneId, row.id, {
                 name: v.name || undefined,
                 identifier: v.identifier || undefined,
-                upstream_url: v.mode === 'gateway' ? v.upstream_url : null,
-                gateway_application_id: v.mode === 'gateway' ? v.gateway_application_id : null,
-                credential_provider_id: v.mode === 'gateway' ? v.credential_provider_id || null : null,
+                upstream_url: v.upstream_url,
+                gateway_application_id: v.gateway_application_id,
+                credential_provider_id: v.credential_provider_id || null,
                 scopes: v.scopes ? splitList(v.scopes) : undefined,
               } as Partial<ResourceInput>)
               await popAndReload(app, list as unknown as ListView<unknown>)
@@ -1161,7 +1162,7 @@ export function providersView(ctx: Ctx): View {
           submitLabel: 'create provider',
           fields: [
             { key: 'name', label: 'provider name', kind: 'text', required: true, hint: 'human-readable name; identifier is generated when blank' },
-            { key: 'kind', label: 'provider type', kind: 'select', options: PROVIDER_KINDS, optionLabels: PROVIDER_KIND_LABELS, default: 'oauth2_authorization_code', info: providerTypeInfo() },
+            { key: 'kind', label: 'provider type', kind: 'select', options: PROVIDER_KINDS, optionLabels: PROVIDER_KIND_LABELS, default: 'caracal_mandate', info: providerTypeInfo() },
             { key: 'authorization_endpoint', label: 'authorization endpoint', kind: 'text', dependsOn: { kind: 'oauth2_authorization_code' }, required: true, hint: 'HTTPS endpoint where users approve delegated access' },
             { key: 'token_endpoint', label: 'token endpoint', kind: 'text', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, required: true, hint: 'HTTPS endpoint where provider tokens are issued or refreshed' },
             { key: 'redirect_uri', label: 'redirect URI', kind: 'text', dependsOn: { kind: 'oauth2_authorization_code' }, required: true, hint: 'callback URI registered with the provider' },
