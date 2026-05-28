@@ -224,6 +224,23 @@ describe('FormView input UX', () => {
     expect(help).not.toContain('Son of Anton')
   })
 
+  it('uses entity-appropriate examples for provider fields', async () => {
+    const view = new FormView({
+      title: 'create provider',
+      fields: [{ key: 'name', label: 'provider name', kind: 'text', required: true }],
+      onSubmit: async () => {},
+    })
+    const app = fakeApp()
+    const ctx = { app, size: { rows: 12, cols: 100 }, status: '' }
+
+    await view.onKey('?', ctx)
+
+    const info = vi.mocked(app.push).mock.calls.at(-1)![0] as { render: FormView['render'] }
+    const help = info.render(ctx).join('\n')
+    expect(help).toContain('Hooli OAuth2')
+    expect(help).not.toContain('Son of Anton')
+  })
+
   it('marks fields that control conditional fields and explains affected fields', async () => {
     const view = new FormView({
       title: 'conditional',

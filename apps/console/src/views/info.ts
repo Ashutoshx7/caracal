@@ -250,7 +250,7 @@ function termsFor(title: string): InfoPair[] | undefined {
   if (label.includes('dcr') || label.includes('dynamic client')) terms.push({ label: 'DCR', value: 'Dynamic Client Registration; lets an app be registered through the API when the zone enables it.' })
   if (label.includes('scope')) terms.push({ label: 'Scope', value: 'A named permission string requested in a token and evaluated by grants and policies.' })
   if (label.includes('resource')) terms.push({ label: 'Resource', value: 'The protected API, service, audience, or Gateway target being accessed.' })
-  if (label.includes('provider')) terms.push({ label: 'Provider', value: 'An upstream identity or credential source Caracal can use for protected calls.' })
+  if (label.includes('provider')) terms.push({ label: 'Provider', value: 'An upstream credential source Caracal can use for protected calls.' })
   if (label.includes('policy')) terms.push({ label: 'Policy', value: 'Authorization logic that evaluates requests and returns allow, deny, or partial decisions.' })
   if (label.includes('grant')) terms.push({ label: 'Grant', value: 'A binding that lets one subject use one application against selected resource scopes.' })
   if (label.includes('session')) terms.push({ label: 'Session', value: 'A tracked authority context used for token exchange, delegation, or agent activity.' })
@@ -301,10 +301,17 @@ function exampleFor(kind: string, label: string, options?: readonly string[]): s
   if (kind === 'file') return '/home/richard/pied-piper/policies/pipernet.rego'
   if (kind === 'select') return options?.find((option) => option.length > 0) ?? 'Choose one of the listed options.'
   if (isNumericLabel(label.toLowerCase())) return numericExampleFor(label.toLowerCase())
-  if (label.toLowerCase().includes('token endpoint')) return 'https://login.hooli.example/oauth/token'
-  if (label.toLowerCase().includes('url')) return 'https://api.pipernet.example'
-  if (label.toLowerCase().includes('identifier')) return 'resource://pipernet'
-  if (label.toLowerCase().includes('subject')) return 'user:richard.hendricks@piedpiper.example'
+  const normalized = label.toLowerCase()
+  if (normalized.includes('token endpoint')) return 'https://login.hooli.example/oauth/token'
+  if (normalized.includes('url')) return 'https://api.pipernet.example'
+  if (normalized.includes('provider') && normalized.includes('identifier')) return 'provider://hooli-pipernet'
+  if (normalized.includes('resource') && normalized.includes('identifier')) return 'resource://pipernet'
+  if (normalized.includes('identifier')) return 'resource://pipernet'
+  if (normalized.includes('provider') && normalized.includes('name')) return 'Hooli OAuth2'
+  if (normalized.includes('resource') && normalized.includes('name')) return 'PiperNet'
+  if (normalized.includes('zone') && normalized.includes('name')) return 'Pied Piper Production'
+  if (normalized.includes('app') && normalized.includes('name')) return 'Son of Anton'
+  if (normalized.includes('subject')) return 'user:richard.hendricks@piedpiper.example'
   return 'Son of Anton'
 }
 
