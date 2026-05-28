@@ -7,6 +7,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { grantsRoutes } from '../../../../../apps/api/src/routes/grants.js'
 import { buildRouteApp } from '../../../../shared/test-utils/typescript/fastify.js'
 
+process.env.ZONE_KEK = '1111111111111111111111111111111111111111111111111111111111111111'
+
 const grantBody = {
   application_id: 'app-1',
   user_id: 'user-1',
@@ -70,6 +72,44 @@ describe('POST /v1/zones/:zoneId/grants', () => {
 
     expect(res.statusCode).toBe(201)
     expect(JSON.parse(res.body)).toMatchObject({ id: 'grant-1', scopes: ['read'] })
+  })
+})
+
+describe('POST /v1/zones/:zoneId/provider-grants', () => {
+  it('stores delegated provider tokens only for matching authorization-code resources', async () => {
+    const { app, db } = buildRouteApp(grantsRoutes)
+    db.query
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({
+        rows: [{
+          provider_kind: 'oauth2_authorization_code',
+          resource_scopes: ['read', 'write'],
+          resource_provider_id: 'provider-1',
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'provider-grant-1', zone_id: 'z1', provider_id: 'provider-1', scopes: ['read'] }],
+      })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/provider-grants',
+      payload: {
+        user_id: 'user-1',
+        resource_id: 'res-1',
+        provider_id: 'provider-1',
+        scopes: ['read'],
+        access_token: 'provider-access',
+        refresh_token: 'provider-refresh',
+      },
+    })
+
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body)).toMatchObject({ id: 'provider-grant-1', provider_id: 'provider-1' })
+    const values = db.query.mock.calls[2][1] as unknown[]
+    expect(values[6]).toBeInstanceOf(Buffer)
+    expect(values[7]).toBeInstanceOf(Buffer)
   })
 })
 

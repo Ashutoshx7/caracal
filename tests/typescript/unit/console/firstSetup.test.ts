@@ -57,11 +57,13 @@ function makeClient() {
     zone_id: 'zone-1',
     name: 'provider-name',
     identifier: 'provider://provider-name',
-    kind: 'oauth2',
+    kind: 'oauth2_client_credentials',
     config_json: {
       token_endpoint: 'https://issuer.example.com/oauth/token',
+      client_id: 'hooli-client',
       allowed_token_hosts: ['issuer.example.com'],
     },
+    secret_config_keys: ['client_secret'],
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
   }
@@ -264,8 +266,10 @@ describe('first setup workflow', () => {
     await openAndSubmit(view, app, { agent_app_name: 'agent-app-name' })
     await openAndSubmit(view, app, {
       provider_name: 'provider-name',
-      provider_kind: 'oauth2',
+      provider_kind: 'oauth2_client_credentials',
       provider_token_endpoint: 'https://issuer.example.com/oauth/token',
+      provider_client_id: 'hooli-client',
+      provider_client_secret: 'hooli-secret',
     })
     await openAndSubmit(view, app, {
       resource_name: 'resource-name',
@@ -278,9 +282,11 @@ describe('first setup workflow', () => {
     expect(client.providers.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
       identifier: 'provider://provider-name',
       name: 'provider-name',
-      kind: 'oauth2',
+      kind: 'oauth2_client_credentials',
       config_json: expect.objectContaining({
         token_endpoint: 'https://issuer.example.com/oauth/token',
+        client_id: 'hooli-client',
+        client_secret: 'hooli-secret',
         allowed_token_hosts: ['issuer.example.com'],
       }),
     }))

@@ -572,10 +572,18 @@ describe('providers actions', () => {
     expect(keys).toEqual([
       'name',
       'kind',
+      'authorization_endpoint',
       'token_endpoint',
+      'redirect_uri',
+      'client_id',
+      'client_secret',
       'api_key_header',
+      'api_key',
+      'bearer_token',
       'identifier',
+      'provider_scopes',
       'allowed_token_hosts',
+      'client_auth_method',
       'auth_header',
       'auth_scheme',
       'forward_caracal_identity',
@@ -589,15 +597,17 @@ describe('providers actions', () => {
     const ctxView = { app: fakeApp(), size: { rows: 30, cols: 100 }, status: '' }
 
     let body = form.render(ctxView).join('\n')
+    expect(body).toContain('authorization endpoint *')
     expect(body).toContain('token endpoint *')
+    expect(body).toContain('client ID *')
     expect(body).not.toContain('API key header')
     expect(body).not.toContain('issuer')
-    expect(body).not.toContain('authorization endpoint')
     expect(body).not.toContain('audience')
 
-    ;(form as unknown as { values: Record<string, string> }).values.kind = 'apikey'
+    ;(form as unknown as { values: Record<string, string> }).values.kind = 'api_key'
     body = form.render(ctxView).join('\n')
     expect(body).toContain('API key header *')
+    expect(body).toContain('API key *')
     expect(body).not.toContain('token endpoint *')
     expect(body).not.toContain('issuer')
     expect(body).not.toContain('authorization endpoint')
@@ -612,9 +622,12 @@ describe('providers actions', () => {
     ;(pushed as unknown as { values: Record<string, string> }).values = {
       identifier: 'provider-id',
       name: 'GitHub OAuth',
-      kind: 'oauth2',
+      kind: 'oauth2_client_credentials',
       token_endpoint: 'https://provider.example/token',
+      client_id: 'provider-client',
+      client_secret: 'provider-secret',
       allowed_token_hosts: 'provider.example',
+      client_auth_method: 'client_secret_basic',
       api_key_header: '',
       auth_header: '',
       auth_scheme: '',
@@ -626,9 +639,12 @@ describe('providers actions', () => {
 
     expect(client.providers.create).toHaveBeenCalledWith('z1', expect.objectContaining({
       identifier: 'provider-id',
-      kind: 'oauth2',
+      kind: 'oauth2_client_credentials',
       config_json: {
         token_endpoint: 'https://provider.example/token',
+        client_id: 'provider-client',
+        client_secret: 'provider-secret',
+        client_auth_method: 'client_secret_basic',
         allowed_token_hosts: ['provider.example'],
       },
     }))
@@ -642,10 +658,11 @@ describe('providers actions', () => {
     ;(pushed as unknown as { values: Record<string, string> }).values = {
       identifier: 'provider-id',
       name: 'API key provider',
-      kind: 'apikey',
+      kind: 'api_key',
       token_endpoint: 'https://provider.example/token',
       allowed_token_hosts: 'provider.example',
       api_key_header: 'X-Api-Key',
+      api_key: 'provider-key',
       auth_header: 'X-Provider-Token',
       auth_scheme: '',
       forward_caracal_identity: 'false',
@@ -656,9 +673,10 @@ describe('providers actions', () => {
 
     expect(client.providers.create).toHaveBeenCalledWith('z1', expect.objectContaining({
       identifier: 'provider-id',
-      kind: 'apikey',
+      kind: 'api_key',
       config_json: {
         header_name: 'X-Api-Key',
+        api_key: 'provider-key',
       },
     }))
   })
