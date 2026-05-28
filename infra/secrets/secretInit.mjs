@@ -21,8 +21,9 @@ if (!existsSync(engineDist)) {
   if (r.status !== 0) process.exit(r.status ?? 1)
 }
 
-const { bootstrapSecrets, devBootstrapPaths } = await import(pathToFileURL(engineDist).href)
-const report = bootstrapSecrets(devBootstrapPaths(repoRoot))
+const { bootstrapSecrets, prepareDevSecrets } = await import(pathToFileURL(engineDist).href)
+const paths = prepareDevSecrets(repoRoot)
+const report = bootstrapSecrets(paths)
 
 if (report.envCreated) console.log('created infra/docker/.env from .env.example')
 for (const name of report.filesCreated) console.log(`wrote ${name}`)
@@ -32,4 +33,4 @@ if (!report.envCreated && !report.envUpdated && report.filesCreated.length === 0
 }
 
 console.log('')
-console.log(`secret files under infra/secrets/files (gitignored; never commit)`)
+console.log(`operator secret files under ${paths.secretsDir}`)

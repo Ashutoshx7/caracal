@@ -8,7 +8,7 @@ import { execSync, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { bootstrapSecrets, devBootstrapPaths } from '@caracalai/engine'
+import { bootstrapSecrets, prepareDevSecrets } from '@caracalai/engine'
 
 if (process.env.CARACAL_RELEASE_VERSION) {
   process.stdout.write('buildLocalImages: CARACAL_RELEASE_VERSION set; skipping local image build\n')
@@ -19,8 +19,9 @@ const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..', '..', '..')
 const composeFile = resolve(repoRoot, 'infra', 'docker', 'docker-compose.yml')
 const envFile = resolve(repoRoot, 'infra', 'docker', '.env')
+const secrets = prepareDevSecrets(repoRoot)
 
-bootstrapSecrets(devBootstrapPaths(repoRoot))
+bootstrapSecrets(secrets)
 
 function shortSha() {
   if (process.env.CARACAL_DEV_SHA) return process.env.CARACAL_DEV_SHA
@@ -47,7 +48,7 @@ args.push('-f', composeFile, 'build', ...services)
 const res = spawnSync('docker', args, {
   stdio: 'inherit',
   cwd: repoRoot,
-  env: { ...process.env, CARACAL_DEV_SHA: sha, CARACAL_DEV_VERSION: devVersion, CARACAL_MODE: 'dev' },
+  env: { ...process.env, CARACAL_DEV_SHA: sha, CARACAL_DEV_VERSION: devVersion, CARACAL_MODE: 'dev', CARACAL_SECRETS_DIR: secrets.secretsDir },
 })
 if (res.status !== 0) {
   process.stderr.write(`buildLocalImages: docker compose build exited ${res.status}\n`)

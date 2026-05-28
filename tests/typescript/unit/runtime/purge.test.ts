@@ -70,6 +70,7 @@ describe('purgeCommand', () => {
       return {
         home: root,
         composeFile: join(root, 'compose.yml'),
+        secretsDir: join(root, 'secrets'),
         overrideEnvFile: join(root, 'caracal.env'),
       }
     })
@@ -157,5 +158,28 @@ describe('purgeCommand', () => {
       'stack unavailable: docker compose is not available; install Docker with the Compose plugin or add docker to PATH',
     )
     expect(engineMocks.composeRun).not.toHaveBeenCalled()
+  })
+
+  it('removes resolved dev secret directories including explicit and legacy locations', async () => {
+    const explicitSecrets = mkdtempSync(join(tmpdir(), 'caracal-purge-secrets-'))
+    const devSecrets = mkdtempSync(join(tmpdir(), 'caracal-purge-dev-secrets-'))
+    const legacySecrets = join(repoRoot, 'infra', 'secrets', 'files')
+    try {
+      process.env.CARACAL_SECRETS_DIR = explicitSecrets
+      process.env.CARACAL_DEV_SECRETS_DIR = devSecrets
+      mkdirSync(legacySecrets, { recursive: true })
+      writeFileSync(join(repoRoot, 'infra', 'docker', 'local.env'), 'LOG_LEVEL=debug\n')
+
+      await purgeCommand(['secrets', '--yes'])
+
+      const removed = engineMocks.removeFsPath.mock.calls.map((call) => call[0])
+      expect(removed).toContain(join(repoRoot, 'infra', 'docker', 'local.env'))
+      expect(removed).toContain(explicitSecrets)
+      expect(removed).toContain(devSecrets)
+      expect(removed).toContain(legacySecrets)
+    } finally {
+      rmSync(explicitSecrets, { recursive: true, force: true })
+      rmSync(devSecrets, { recursive: true, force: true })
+    }
   })
 })

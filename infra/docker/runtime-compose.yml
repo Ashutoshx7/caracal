@@ -36,25 +36,25 @@ networks:
 
 secrets:
   postgresPassword:
-    file: ./secrets/postgresPassword
+    file: ${CARACAL_SECRETS_DIR:-./secrets}/postgresPassword
   redisPassword:
-    file: ./secrets/redisPassword
+    file: ${CARACAL_SECRETS_DIR:-./secrets}/redisPassword
   caracalAdminToken:
-    file: ./secrets/caracalAdminToken
+    file: ${CARACAL_SECRETS_DIR:-./secrets}/caracalAdminToken
   caracalCoordinatorToken:
-    file: ./secrets/caracalCoordinatorToken
+    file: ${CARACAL_SECRETS_DIR:-./secrets}/caracalCoordinatorToken
   zoneKek:
-    file: ./secrets/zoneKek
+    file: ${CARACAL_SECRETS_DIR:-./secrets}/zoneKek
   auditHmacKey:
-    file: ./secrets/auditHmacKey
+    file: ${CARACAL_SECRETS_DIR:-./secrets}/auditHmacKey
   streamsHmacKey:
-    file: ./secrets/streamsHmacKey
+    file: ${CARACAL_SECRETS_DIR:-./secrets}/streamsHmacKey
   gatewayStsHmacKey:
-    file: ./secrets/gatewayStsHmacKey
+    file: ${CARACAL_SECRETS_DIR:-./secrets}/gatewayStsHmacKey
   databaseUrl:
-    file: ./secrets/databaseUrl
+    file: ${CARACAL_SECRETS_DIR:-./secrets}/databaseUrl
   redisUrl:
-    file: ./secrets/redisUrl
+    file: ${CARACAL_SECRETS_DIR:-./secrets}/redisUrl
 
 services:
   replayVolumeInit:
@@ -105,6 +105,7 @@ services:
     secrets:
       - source: postgresPassword
         target: postgresPassword
+        mode: 0444
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-caracal}
       POSTGRES_PASSWORD_FILE: /run/secrets/postgresPassword
@@ -136,6 +137,7 @@ services:
     secrets:
       - source: redisPassword
         target: redisPassword
+        mode: 0444
     environment:
       REDIS_PASSWORD_FILE: /run/secrets/redisPassword
       REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-512mb}
@@ -174,6 +176,7 @@ services:
     secrets:
       - source: postgresPassword
         target: postgresPassword
+        mode: 0444
     environment:
       PGHOST: postgres
       PGPORT: "5432"
@@ -198,16 +201,22 @@ services:
     secrets:
       - source: databaseUrl
         target: databaseUrl
+        mode: 0444
       - source: redisUrl
         target: redisUrl
+        mode: 0444
       - source: zoneKek
         target: zoneKek
+        mode: 0444
       - source: auditHmacKey
         target: auditHmacKey
+        mode: 0444
       - source: streamsHmacKey
         target: streamsHmacKey
+        mode: 0444
       - source: gatewayStsHmacKey
         target: gatewayStsHmacKey
+        mode: 0444
     environment:
       CARACAL_MODE: ${CARACAL_MODE:-stable}
       DATABASE_URL_FILE: /run/secrets/databaseUrl
@@ -243,16 +252,22 @@ services:
     secrets:
       - source: databaseUrl
         target: databaseUrl
+        mode: 0444
       - source: redisUrl
         target: redisUrl
+        mode: 0444
       - source: zoneKek
         target: zoneKek
+        mode: 0444
       - source: streamsHmacKey
         target: streamsHmacKey
+        mode: 0444
       - source: gatewayStsHmacKey
         target: gatewayStsHmacKey
+        mode: 0444
       - source: caracalAdminToken
         target: caracalAdminToken
+        mode: 0444
     environment:
       CARACAL_MODE: ${CARACAL_MODE:-stable}
       DATABASE_URL_FILE: /run/secrets/databaseUrl
@@ -288,16 +303,22 @@ services:
     secrets:
       - source: databaseUrl
         target: databaseUrl
+        mode: 0444
       - source: redisUrl
         target: redisUrl
+        mode: 0444
       - source: streamsHmacKey
         target: streamsHmacKey
+        mode: 0444
       - source: auditHmacKey
         target: auditHmacKey
+        mode: 0444
       - source: gatewayStsHmacKey
         target: gatewayStsHmacKey
+        mode: 0444
       - source: caracalAdminToken
         target: caracalAdminToken
+        mode: 0444
     environment:
       CARACAL_MODE: ${CARACAL_MODE:-stable}
       DATABASE_URL_FILE: /run/secrets/databaseUrl
@@ -333,10 +354,13 @@ services:
     secrets:
       - source: databaseUrl
         target: databaseUrl
+        mode: 0444
       - source: redisUrl
         target: redisUrl
+        mode: 0444
       - source: auditHmacKey
         target: auditHmacKey
+        mode: 0444
     environment:
       CARACAL_MODE: ${CARACAL_MODE:-stable}
       DATABASE_URL_FILE: /run/secrets/databaseUrl
@@ -367,12 +391,16 @@ services:
     secrets:
       - source: databaseUrl
         target: databaseUrl
+        mode: 0444
       - source: redisUrl
         target: redisUrl
+        mode: 0444
       - source: streamsHmacKey
         target: streamsHmacKey
+        mode: 0444
       - source: caracalCoordinatorToken
         target: caracalCoordinatorToken
+        mode: 0444
     environment:
       CARACAL_MODE: ${CARACAL_MODE:-stable}
       DATABASE_URL_FILE: /run/secrets/databaseUrl
@@ -409,10 +437,13 @@ services:
     secrets:
       - source: redisUrl
         target: redisUrl
+        mode: 0444
       - source: auditHmacKey
         target: auditHmacKey
+        mode: 0444
       - source: caracalAdminToken
         target: caracalAdminToken
+        mode: 0444
     environment:
       CARACAL_MODE: ${CARACAL_MODE:-stable}
       CARACAL_CONTROL_ENABLED: "${CARACAL_ENGINE_CONTROL_ENABLED:-false}"
