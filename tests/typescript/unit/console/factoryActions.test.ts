@@ -614,6 +614,26 @@ describe('providers actions', () => {
     expect(body).not.toContain('audience')
   })
 
+  it('explains when each provider type should be used', async () => {
+    const { ctx } = newCtx()
+    const list = providersView(ctx as unknown as Parameters<typeof providersView>[0]) as ListView<unknown>
+    const form = await pressKey(list, 'n', fakeApp()) as FormView
+    const app = fakeApp()
+    const ctxView = { app, size: { rows: 30, cols: 100 }, status: '' }
+    ;(form as unknown as { focus: number }).focus = 1
+
+    await form.onKey('?', ctxView)
+
+    const info = vi.mocked(app.push).mock.calls[0]![0] as { render: FormView['render'] }
+    const body = info.render(ctxView).join('\n')
+    expect(body).toContain('OAuth2 auth code')
+    expect(body).toContain('consent screen')
+    expect(body).toContain('OAuth2 client creds')
+    expect(body).toContain('server-to-server')
+    expect(body).toContain('Bearer token')
+    expect(body).toContain('already issued')
+  })
+
   it('creates oauth providers from real structured fields only', async () => {
     const { client, ctx } = newCtx()
     const list = providersView(ctx as unknown as Parameters<typeof providersView>[0]) as ListView<unknown>

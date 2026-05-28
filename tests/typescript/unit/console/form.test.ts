@@ -138,6 +138,36 @@ describe('FormView input UX', () => {
     expect(view.values_().registration_method).toBe('dcr')
   })
 
+  it('shows readable labels for select options while submitting stored values', async () => {
+    const view = new FormView({
+      title: 't',
+      fields: [{
+        key: 'provider_type',
+        label: 'provider type',
+        kind: 'select',
+        options: ['oauth2_authorization_code', 'oauth2_client_credentials'],
+        optionLabels: {
+          oauth2_authorization_code: 'OAuth2 auth code',
+          oauth2_client_credentials: 'OAuth2 client creds',
+        },
+        default: 'oauth2_authorization_code',
+      }],
+      onSubmit: async () => {},
+    })
+    const app = fakeApp()
+    const ctx = { app, size: { rows: 10, cols: 80 }, status: '' }
+
+    expect(view.render(ctx).join('\n')).toContain('OAuth2 auth code')
+    expect(view.render(ctx).join('\n')).not.toContain('oauth2_authorization_code')
+    await view.onKey('right', ctx)
+
+    const picker = vi.mocked(app.push).mock.calls[0]![0] as { onKey: FormView['onKey']; render: FormView['render'] }
+    expect(picker.render(ctx).join('\n')).toContain('OAuth2 client creds')
+    await picker.onKey('down', ctx)
+    await picker.onKey('enter', ctx)
+    expect(view.values_().provider_type).toBe('oauth2_client_credentials')
+  })
+
   it('submits only fields relevant to the current dynamic selection', async () => {
     const submit = vi.fn(async () => {})
     const view = new FormView({
