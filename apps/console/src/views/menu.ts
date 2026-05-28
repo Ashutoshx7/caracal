@@ -95,7 +95,10 @@ function resolveControlStackMode(): StackMode {
 }
 
 function controlComposeEnv(paths: StackPaths): Record<string, string | undefined> {
-  const env: Record<string, string | undefined> = { CARACAL_MODE: paths.mode }
+  const env: Record<string, string | undefined> = {
+    CARACAL_MODE: paths.mode,
+    CARACAL_SECRETS_DIR: paths.secretsDir,
+  }
   if (paths.mode !== 'dev') {
     env.CARACAL_VERSION = CARACAL_CONSOLE_VERSION
     env.CARACAL_REGISTRY = process.env.CARACAL_REGISTRY

@@ -8,6 +8,7 @@ import { homedir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { join } from 'node:path'
+import { devSecretsHome } from '@caracalai/core'
 import { resolveRuntimeConfigPath } from '@caracalai/engine/runtime-config'
 import {
   caracalBinaries as caracalBinariesCore,
@@ -46,6 +47,7 @@ interface ComposeStack {
   composeFile: string
   envFiles: string[]
   cwd: string
+  secretsDir: string
 }
 
 interface PurgeContext {
@@ -61,6 +63,29 @@ interface PurgeContext {
   dryRun: boolean
 }
 
+interface SecretCleanupTarget {
+  label: string
+  path: string
+}
+
+function uniqueSecretTargets(ctx: PurgeContext): SecretCleanupTarget[] {
+  const targets: SecretCleanupTarget[] = []
+  const seen = new Set<string>()
+  const add = (label: string, path: string | undefined) => {
+    if (!path || seen.has(path)) return
+    seen.add(path)
+    targets.push({ label, path })
+  }
+  for (const stack of ctx.stacks) {
+    add(`${stack.label} operator secrets`, stack.secretsDir)
+  }
+  if (ctx.repoRoot) {
+    add('dev operator secrets', devSecretsHome())
+    add('legacy workspace secrets', join(ctx.repoRoot, 'infra/secrets/files'))
+  }
+  return targets
+}
+
 function purgeHelp(): never {
   return showHelp(
     [
@@ -74,7 +99,7 @@ function purgeHelp(): never {
       '  logs        Truncate container log files via `compose down` + recreate',
       '  config      Remove caracal.toml (zone client secret and config)',
       '  runtime     Remove runtime assets at $CARACAL_HOME (.env, compose.yml)',
-      '  secrets     Remove dev .env and generated secret files (infra/docker/.env, infra/secrets/files/): dev only',
+      '  secrets     Remove operator overrides and generated secret files',
       '  cache       Remove build artifacts: apps/*/dist, coverage/, node_modules/.cache (dev only)',
       '  images      Remove cached Caracal docker images (caracal/*, ghcr.io/garudex-labs/caracal-*)',
       '  binary      Uninstall Caracal runtime and Console binaries from $CARACAL_INSTALL_DIR (default ~/.local/bin)',
@@ -96,7 +121,7 @@ function buildContext(dryRun: boolean): PurgeContext {
   const configPath = resolveRuntimeConfigPath()
   const repoRoot = paths.mode === 'dev' ? paths.cwd : undefined
   const stacks: ComposeStack[] = [
-    { label: paths.mode, composeFile: paths.composeFile, envFiles: paths.envFiles, cwd: paths.cwd },
+    { label: paths.mode, composeFile: paths.composeFile, envFiles: paths.envFiles, cwd: paths.cwd, secretsDir: paths.secretsDir },
   ]
   if (paths.mode === 'dev' && existsSync(runtime.composeFile)) {
     stacks.push({
@@ -104,6 +129,7 @@ function buildContext(dryRun: boolean): PurgeContext {
       composeFile: runtime.composeFile,
       envFiles: existsSync(runtime.overrideEnvFile) ? [runtime.overrideEnvFile] : paths.envFiles,
       cwd: runtime.home,
+      secretsDir: runtime.secretsDir,
     })
   }
   return {
@@ -130,7 +156,7 @@ async function runCompose(args: string[], ctx: PurgeContext, stack?: ComposeStac
   if (!process.env.CARACAL_VERSION) env.CARACAL_VERSION = CARACAL_VERSION
   if (!process.env.CARACAL_REGISTRY) env.CARACAL_REGISTRY = CARACAL_REGISTRY
   const handle = composeRun({
-    paths: { composeFile: s.composeFile, envFiles: s.envFiles, cwd: s.cwd, mode: ctx.mode },
+    paths: { composeFile: s.composeFile, envFiles: s.envFiles, cwd: s.cwd, mode: ctx.mode, secretsDir: s.secretsDir },
     args,
     env,
   })
@@ -239,15 +265,17 @@ const TARGETS: Target[] = [
   {
     id: 'secrets',
     label: 'Remove operator overrides and secret files (DESTRUCTIVE)',
-    describe: (ctx) =>
-      ctx.repoRoot
-        ? `${join(ctx.repoRoot, 'infra/docker/local.env')}, ${join(ctx.repoRoot, 'infra/secrets/files')}`
-        : '(dev mode only)',
-    available: (ctx) => ctx.repoRoot !== undefined,
+    describe: (ctx) => {
+      const paths = uniqueSecretTargets(ctx).map((target) => target.path)
+      if (ctx.repoRoot) paths.unshift(join(ctx.repoRoot, 'infra/docker/local.env'))
+      return paths.length > 0 ? paths.join(', ') : '(no operator secret paths resolved)'
+    },
+    available: (ctx) => uniqueSecretTargets(ctx).length > 0 || ctx.repoRoot !== undefined,
     run: async (ctx) => {
-      if (!ctx.repoRoot) return
-      removePath(join(ctx.repoRoot, 'infra/docker/local.env'), ctx, 'infra/docker/local.env')
-      removePath(join(ctx.repoRoot, 'infra/secrets/files'), ctx, 'infra/secrets/files')
+      if (ctx.repoRoot) removePath(join(ctx.repoRoot, 'infra/docker/local.env'), ctx, 'infra/docker/local.env')
+      for (const target of uniqueSecretTargets(ctx)) {
+        removePath(target.path, ctx, target.label)
+      }
     },
   },
   {

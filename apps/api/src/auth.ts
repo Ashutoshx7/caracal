@@ -130,13 +130,17 @@ export async function seedBootstrapAdminToken(db: DB, opts: SeedOptions): Promis
     [digest],
   )
   const row = rows[0]
-  if (row?.token_hash) return
+  if (row?.token_hash) {
+    await revokeStaleBootstrapTokens(db, digest)
+    return
+  }
   const tokenHash = await hashAdminToken(opts.envToken)
   if (row) {
     await db.query(
       `UPDATE admin_tokens SET token_hash = $1 WHERE id = $2 AND token_hash IS NULL`,
       [tokenHash, row.id],
     )
+    await revokeStaleBootstrapTokens(db, digest)
     opts.log(`seeded bootstrap admin token verifier id=${row.id}`)
     return
   }
@@ -146,7 +150,19 @@ export async function seedBootstrapAdminToken(db: DB, opts: SeedOptions): Promis
      VALUES ($1, 'bootstrap', $2, $3, 'global', NULL, 'env-bootstrap')`,
     [id, digest, tokenHash],
   )
+  await revokeStaleBootstrapTokens(db, digest)
   opts.log(`seeded bootstrap admin token id=${id}`)
+}
+
+async function revokeStaleBootstrapTokens(db: DB, activeDigest: Buffer): Promise<void> {
+  await db.query(
+    `UPDATE admin_tokens
+     SET revoked_at = now()
+     WHERE created_by = 'env-bootstrap'
+       AND revoked_at IS NULL
+       AND token_sha256 <> $1`,
+    [activeDigest],
+  )
 }
 
 export interface AuthPluginOptions {
