@@ -62,6 +62,9 @@ function rawExplain(err: unknown): string {
       return 'unauthorized: check CARACAL_COORDINATOR_TOKEN matches the Coordinator; unset stale env vars to use generated local secrets'
     }
     if (err.status === 401) return `unauthorized: check CARACAL_ADMIN_TOKEN matches the API`
+    if (err.status === 403 && err.code === 'dcr_disabled') {
+      return 'this zone does not support DCR: enable dynamic clients on the zone, or choose managed registration'
+    }
     if (err.status === 403) return `forbidden (${err.code}): token lacks required scope`
     if (err.status === 404) return `not found: resource may have been deleted`
     return `${err.status} ${err.code}${detail ? ': ' + detail : ''}`

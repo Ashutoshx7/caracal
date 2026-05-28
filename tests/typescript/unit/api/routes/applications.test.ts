@@ -32,20 +32,21 @@ function buildApp() {
 }
 
 describe('POST /v1/zones/:zoneId/applications', () => {
-  it('rejects confidential managed applications without a client secret', async () => {
+  it('creates managed applications with a generated one-time client secret', async () => {
     const { app, db } = buildApp()
     db.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'app-1', zone_id: 'z1', name: 'Runner', registration_method: 'managed' }] })
 
     await app.ready()
     const res = await app.inject({
       method: 'POST',
       url: '/v1/zones/z1/applications',
-      payload: { name: 'Runner', registration_method: 'managed', credential_type: 'token' },
+      payload: { name: 'Runner', registration_method: 'managed' },
     })
 
-    expect(res.statusCode).toBe(400)
-    expect(JSON.parse(res.body)).toMatchObject({ error: 'client_secret_required' })
-    expect(db.query).toHaveBeenCalledTimes(1)
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body)).toMatchObject({ id: 'app-1', client_secret: expect.stringMatching(/^cs_[A-Za-z0-9_-]+$/) })
+    expect(db.query).toHaveBeenCalledTimes(2)
   })
 
   it('rejects unsupported credential types', async () => {
@@ -60,7 +61,6 @@ describe('POST /v1/zones/:zoneId/applications', () => {
         name: 'Browser',
         registration_method: 'managed',
         credential_type: 'public',
-        client_secret: 'secret',
       },
     })
 
@@ -98,8 +98,6 @@ describe('POST /v1/zones/:zoneId/applications', () => {
       payload: {
         name: 'Runner',
         registration_method: 'managed',
-        credential_type: 'token',
-        client_secret: 'secret',
         consent: true,
       },
     })
@@ -110,22 +108,6 @@ describe('POST /v1/zones/:zoneId/applications', () => {
 })
 
 describe('POST /v1/zones/:zoneId/applications/dcr', () => {
-  it('rejects confidential DCR applications without a client secret', async () => {
-    const { app, db, redis } = buildApp()
-
-    await app.ready()
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/zones/z1/applications/dcr',
-      payload: { name: 'Dynamic App', credential_type: 'token' },
-    })
-
-    expect(res.statusCode).toBe(400)
-    expect(JSON.parse(res.body)).toMatchObject({ error: 'client_secret_required' })
-    expect(redis.incr).not.toHaveBeenCalled()
-    expect(db.connect).not.toHaveBeenCalled()
-  })
-
   it('rejects DCR when the zone has disabled it', async () => {
     const { app, clientQuery, redis } = buildApp()
     redis.incr.mockResolvedValueOnce(1)
@@ -138,7 +120,7 @@ describe('POST /v1/zones/:zoneId/applications/dcr', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/zones/z1/applications/dcr',
-      payload: { name: 'Dynamic App', credential_type: 'token', client_secret: 'secret' },
+      payload: { name: 'Dynamic App' },
     })
 
     expect(res.statusCode).toBe(403)
@@ -159,11 +141,11 @@ describe('POST /v1/zones/:zoneId/applications/dcr', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/zones/z1/applications/dcr',
-      payload: { name: 'Dynamic App', credential_type: 'token', client_secret: 'secret' },
+      payload: { name: 'Dynamic App' },
     })
 
     expect(res.statusCode).toBe(201)
-    expect(JSON.parse(res.body)).toMatchObject({ id: 'app-1', registration_method: 'dcr' })
+    expect(JSON.parse(res.body)).toMatchObject({ id: 'app-1', registration_method: 'dcr', client_secret: expect.stringMatching(/^cs_[A-Za-z0-9_-]+$/) })
   })
 
   it('returns 429 when the DCR rate limit is exceeded', async () => {
@@ -174,7 +156,7 @@ describe('POST /v1/zones/:zoneId/applications/dcr', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/zones/z1/applications/dcr',
-      payload: { name: 'Dynamic App', credential_type: 'token', client_secret: 'secret' },
+      payload: { name: 'Dynamic App' },
     })
 
     expect(res.statusCode).toBe(429)
@@ -195,7 +177,7 @@ describe('POST /v1/zones/:zoneId/applications/dcr', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/zones/z1/applications/dcr',
-      payload: { name: 'Dynamic App', credential_type: 'token', client_secret: 'secret' },
+      payload: { name: 'Dynamic App' },
     })
 
     expect(res.statusCode).toBe(429)

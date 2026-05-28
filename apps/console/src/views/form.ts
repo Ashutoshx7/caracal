@@ -6,7 +6,7 @@
 import { readdirSync, statSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { ansi, copyToClipboard, pad, sanitizeAnsi, truncate, ui } from '../ansi.ts'
-import { scrubTokens } from '../errors.ts'
+import { explainError, scrubTokens } from '../errors.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
 import { actionInfo, fieldInfo, infoPage, openInfo, type InfoPage } from './info.ts'
@@ -371,8 +371,7 @@ export class FormView implements View {
     try {
       await this.submit(this.submitValues(), app)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      app.setStatus(scrubTokens(msg), 'error')
+      app.setStatus(explainError(err), 'error')
       this.submitting = false
       app.invalidate()
     }
