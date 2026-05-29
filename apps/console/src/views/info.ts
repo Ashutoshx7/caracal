@@ -359,7 +359,7 @@ function exampleFor(kind: string, label: string, options?: readonly string[]): s
   if (normalized.includes('forward') && normalized.includes('caracal identity')) return 'no'
   if (normalized.includes('authorization endpoint')) return 'https://login.hooli.example/oauth/authorize'
   if (normalized.includes('token endpoint')) return 'https://login.hooli.example/oauth/token'
-  if (normalized.includes('redirect uri')) return 'http://localhost:3000/oauth/callback'
+  if (normalized.includes('redirect uri')) return 'http://localhost:3000/v1/zones/z1/provider-grants/oauth/callback'
   if (normalized.includes('url')) return 'https://api.pipernet.example'
   if (normalized.includes('provider') && normalized.includes('identifier')) return 'provider://hooli-pipernet'
   if (normalized.includes('resource') && normalized.includes('identifier')) return 'resource://pipernet'

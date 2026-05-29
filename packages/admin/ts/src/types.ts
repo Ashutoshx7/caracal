@@ -213,6 +213,19 @@ export interface GrantInput {
   scopes: string[]
 }
 
+export interface ProviderGrantOAuthAuthorizeInput {
+  user_id: string
+  resource_id: string
+  provider_id: string
+  scopes: string[]
+}
+
+export interface ProviderGrantOAuthAuthorize {
+  authorization_url: string
+  state: string
+  expires_at: string
+}
+
 export interface Session {
   id: string
   zone_id: string

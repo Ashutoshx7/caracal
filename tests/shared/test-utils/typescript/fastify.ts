@@ -20,6 +20,10 @@ export function buildRouteApp(route: FastifyPluginAsync, options: RouteOptions =
   const redis = {
     incr: vi.fn(),
     expire: vi.fn(),
+    set: vi.fn(),
+    get: vi.fn(),
+    del: vi.fn(),
+    call: vi.fn(),
     xadd: vi.fn(),
   }
   app.decorate('db', db as never)
