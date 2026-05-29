@@ -47,9 +47,7 @@ export function fieldInfo(label: string, kind: string, hint?: string, opts: Fiel
     impact: impactFor(kind, title),
     example: exampleFor(kind, title, opts.options),
     valid: `${required} ${validFor(kind, title, opts.options)}`,
-    after: opts.advanced
-      ? 'After saving advanced options, Console keeps this value on the parent form and sends it only when you submit.'
-      : 'After submit, Console sends this value to the Control API and shows the result or validation error.',
+    after: afterFor(kind, title, opts),
     context: opts.dependency ? [{ label: 'Visibility', value: opts.dependency }] : undefined,
     terms: termsFor(title),
   }
@@ -73,9 +71,10 @@ export function providerTypeInfo(): InfoPage {
   return infoPage({
     title: 'Provider type',
     meaning: 'The provider type tells Caracal what credential shape the Gateway should send to the upstream service.',
-    when: 'Choose Caracal mandate for any Caracal-aware upstream that verifies mandates directly; choose a provider-native credential only when the upstream requires its own auth.',
-    impact: 'Console shows only the fields needed for the selected type, and STS/Gateway either forward the mandate as the credential or obtain the upstream provider credential.',
+    when: 'Choose none only when Gateway should enforce Caracal access but the upstream needs no credential. Choose Caracal mandate for any Caracal-aware upstream that verifies mandates directly; choose a provider-native credential only when the upstream requires its own auth.',
+    impact: 'Console shows only the fields needed for the selected type, and STS/Gateway either send no upstream credential, forward the mandate as the credential, or obtain the upstream provider credential.',
     context: [
+      { label: 'None', value: 'Use only for Gateway-enforced routes where the upstream expects no auth credential from Caracal.' },
       { label: 'Caracal mandate', value: 'Use for internal, partner, external, or network-level resources that accept Caracal mandates and verify issuer, audience, scopes, targets, expiry, and revocation.' },
       { label: 'OAuth2 auth code', value: 'Use for user-approved integrations with a consent screen, callback URI, and refreshable delegated access.' },
       { label: 'OAuth2 client creds', value: 'Use for server-to-server OAuth where no end user signs in and the provider issues tokens to the application itself.' },
@@ -87,8 +86,8 @@ export function providerTypeInfo(): InfoPage {
       { label: 'Service token', value: 'The provider issues tokens to a backend application instead of a signed-in user.' },
       { label: 'Static secret', value: 'The provider credential is provisioned out-of-band and stored sealed for Gateway use.' },
     ],
-    example: 'Use Caracal mandate for a PiperNet service with a verifier; use OAuth2 auth code for a user-connected Hooli workspace; use OAuth2 client creds for Hooli service administration.',
-    valid: 'Pick exactly one supported provider type. Use Caracal mandate when the upstream accepts Caracal mandates as its auth credential. If the upstream docs mention an authorization URL and redirect URI, use OAuth2 auth code. If they mention client credentials, use OAuth2 client creds. If they give one header key, use API key. If they give a ready bearer token, use Bearer token.',
+    example: 'Use Caracal mandate for a PiperNet service with a verifier; use none for a Gateway-only enforcement route; use OAuth2 auth code for a user-connected Hooli workspace.',
+    valid: 'Pick exactly one supported provider type. Use none only when the upstream expects no credential. Use Caracal mandate when the upstream accepts Caracal mandates as its auth credential. If the upstream docs mention an authorization URL and redirect URI, use OAuth2 auth code. If they mention client credentials, use OAuth2 client creds. If they give one header key, use API key. If they give a ready bearer token, use Bearer token.',
     after: 'After choosing a type, Console shows the required fields for that upstream auth mode and hides fields that do not apply.',
     notes: [
       'Caracal app secrets are not provider credentials; they only authenticate the agent to Caracal.',
@@ -280,10 +279,22 @@ function impactFor(kind: string, title: string): string {
   if (label.includes('upstream auth scheme')) return 'Gateway prefixes the provider credential with this scheme when building the upstream request.'
   if (label.includes('secret') || kind === 'secret') return 'Secrets are copied into requests exactly as pasted and are hidden in the terminal by default.'
   if (label.includes('token endpoint')) return 'Token endpoints are contacted when Caracal exchanges or refreshes upstream credentials.'
+  if (label.includes('authorization endpoint')) return 'Authorization endpoints are stored on the provider and used to start OAuth browser authorization redirects.'
+  if (label.includes('redirect uri')) return 'The provider redirects users back to this URI after authorization approval or denial.'
   if (label.includes('upstream')) return 'Upstream values affect where Gateway sends protected traffic.'
   if (kind === 'bool') return 'This toggles behavior in the API request; leave unchanged unless you intend that behavior change.'
   if (kind === 'file') return 'Console reads the file once at submit time; later file edits do not change the saved object.'
   return 'Console sends this value in the API request for the selected object.'
+}
+
+function afterFor(kind: string, title: string, opts: FieldInfoOpts): string {
+  const label = title.toLowerCase()
+  if (label.includes('authorization endpoint')) return 'After submit, Console saves this in provider config so OAuth authorization-code flows can redirect users to the provider consent page.'
+  if (label.includes('token endpoint')) return 'After submit, Console saves this in provider config so STS can exchange or refresh provider tokens.'
+  if (label.includes('redirect uri')) return 'After submit, Console saves this in provider config and the OAuth provider must have the same callback URI registered.'
+  return opts.advanced
+    ? 'After saving advanced options, Console keeps this value on the parent form and sends it only when you submit.'
+    : 'After submit, Console sends this value to the Control API and shows the result or validation error.'
 }
 
 function termsFor(title: string): InfoPair[] | undefined {
@@ -346,7 +357,9 @@ function exampleFor(kind: string, label: string, options?: readonly string[]): s
   if (isNumericLabel(label.toLowerCase())) return numericExampleFor(label.toLowerCase())
   const normalized = label.toLowerCase()
   if (normalized.includes('forward') && normalized.includes('caracal identity')) return 'no'
+  if (normalized.includes('authorization endpoint')) return 'https://login.hooli.example/oauth/authorize'
   if (normalized.includes('token endpoint')) return 'https://login.hooli.example/oauth/token'
+  if (normalized.includes('redirect uri')) return 'http://localhost:3000/oauth/callback'
   if (normalized.includes('url')) return 'https://api.pipernet.example'
   if (normalized.includes('provider') && normalized.includes('identifier')) return 'provider://hooli-pipernet'
   if (normalized.includes('resource') && normalized.includes('identifier')) return 'resource://pipernet'
@@ -367,6 +380,10 @@ function validFor(kind: string, title: string, options?: readonly string[]): str
   if (kind === 'file') return 'Pick a readable file or enter an absolute path.'
   if (kind === 'select') return `One of: ${(options ?? []).map((option) => option || '<empty>').join(', ')}.`
   if (kind === 'multiline') return 'Plain text content; pasted newlines are preserved.'
+  const label = title.toLowerCase()
+  if (label.includes('authorization endpoint')) return 'Absolute HTTPS URL for the provider authorization endpoint.'
+  if (label.includes('token endpoint')) return 'Absolute HTTPS URL for the provider token endpoint.'
+  if (label.includes('redirect uri')) return 'Absolute callback URI registered with the OAuth provider.'
   return 'Non-empty text when the field is marked required.'
 }
 

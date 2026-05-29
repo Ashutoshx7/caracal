@@ -28,6 +28,12 @@ const ResourceBody = z.object({
 
 const DEFAULT_CONTROL_AUDIENCE = 'caracal-control'
 const CONTROL_RESOURCE_HEADER = 'x-caracal-control-resource'
+const NONE_PROVIDER_ID_PREFIX = 'provider-none-'
+const NONE_PROVIDER_IDENTIFIER = 'provider://none'
+
+interface ResourceQueryClient {
+  query<T = unknown>(text: string, values?: unknown[]): Promise<{ rows: T[] }>
+}
 
 async function providerExists(fastify: FastifyInstance, zoneId: string, providerId: string): Promise<boolean> {
   const { rows } = await fastify.db.query(
@@ -45,6 +51,18 @@ async function applicationExists(fastify: FastifyInstance, zoneId: string, appli
     [applicationId, zoneId],
   )
   return rows.length > 0
+}
+
+async function ensureNoneProvider(client: ResourceQueryClient, zoneId: string): Promise<string> {
+  const id = `${NONE_PROVIDER_ID_PREFIX}${zoneId}`
+  const { rows } = await client.query<{ id: string }>(
+    `INSERT INTO providers (id, zone_id, name, identifier, provider_kind, config_json, secret_config_keys)
+     VALUES ($1, $2, 'No credential', $3, 'none', '{}'::jsonb, '{}')
+     ON CONFLICT (id) DO UPDATE SET updated_at = providers.updated_at
+     RETURNING id`,
+    [id, zoneId, NONE_PROVIDER_IDENTIFIER],
+  )
+  return rows[0]?.id ?? id
 }
 
 async function resourceQuotaExceeded(fastify: FastifyInstance, zoneId: string): Promise<boolean> {
@@ -67,9 +85,9 @@ function validateGatewayBinding(
   credentialProviderID: string | null | undefined,
 ): string | null {
   if (isControlResource(identifier)) return null
+  if (!credentialProviderID) return 'credential_provider_required'
   if (!upstreamURL) return 'upstream_url_required'
   if (!gatewayApplicationID) return 'gateway_application_required'
-  if (credentialProviderID && !gatewayApplicationID) return 'provider_requires_gateway_upstream'
   return null
 }
 
@@ -185,10 +203,15 @@ export const resourcesRoutes: FastifyPluginAsync = async (fastify) => {
     if (isControlResource(body.identifier) && !isControlResourceOperation(req)) {
       return reply.code(409).send({ error: 'protected_resource', detail: 'control API resource is managed only through the Control console path' })
     }
-    if (body.credential_provider_id && !(await providerExists(fastify, params.zoneId, body.credential_provider_id))) {
+    const credentialProviderID = body.credential_provider_id ?? (
+      isControlResource(body.identifier) && isControlResourceOperation(req)
+        ? await ensureNoneProvider(fastify.db, params.zoneId)
+        : null
+    )
+    if (credentialProviderID && !(await providerExists(fastify, params.zoneId, credentialProviderID))) {
       return reply.code(404).send({ error: 'provider_not_found' })
     }
-    const gatewayError = validateGatewayBinding(body.identifier, body.upstream_url, body.gateway_application_id, body.credential_provider_id)
+    const gatewayError = validateGatewayBinding(body.identifier, body.upstream_url, body.gateway_application_id, credentialProviderID)
     if (gatewayError) return reply.code(400).send({ error: gatewayError })
     if (body.gateway_application_id && !(await applicationExists(fastify, params.zoneId, body.gateway_application_id))) {
       return reply.code(404).send({ error: 'gateway_application_not_found' })
@@ -202,7 +225,7 @@ export const resourcesRoutes: FastifyPluginAsync = async (fastify) => {
         `INSERT INTO resources (id, zone_id, name, identifier, upstream_url, scopes, credential_provider_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id, zone_id, name, identifier, upstream_url, scopes, credential_provider_id, created_at, updated_at`,
-        [id, params.zoneId, body.name ?? body.identifier, body.identifier, body.upstream_url ?? null, body.scopes, body.credential_provider_id ?? null],
+        [id, params.zoneId, body.name ?? body.identifier, body.identifier, body.upstream_url ?? null, body.scopes, credentialProviderID],
       )
       return reply.code(201).send({ ...rows[0], gateway_application_id: null })
     }
@@ -213,7 +236,7 @@ export const resourcesRoutes: FastifyPluginAsync = async (fastify) => {
         `INSERT INTO resources (id, zone_id, name, identifier, upstream_url, scopes, credential_provider_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id, zone_id, name, identifier, upstream_url, scopes, credential_provider_id, created_at, updated_at`,
-        [id, params.zoneId, body.name ?? body.identifier, body.identifier, body.upstream_url, body.scopes, body.credential_provider_id ?? null],
+        [id, params.zoneId, body.name ?? body.identifier, body.identifier, body.upstream_url, body.scopes, credentialProviderID],
       )
       await syncGatewayBinding(client, params.zoneId, body.identifier, body.gateway_application_id)
       await client.query('COMMIT')
@@ -240,14 +263,6 @@ export const resourcesRoutes: FastifyPluginAsync = async (fastify) => {
     if (body.gateway_application_id && !(await applicationExists(fastify, params.zoneId, body.gateway_application_id))) {
       return reply.code(404).send({ error: 'gateway_application_not_found' })
     }
-    const update = buildPatchUpdate([params.id, params.zoneId], [
-      patchColumn('name', body.name),
-      patchColumn('identifier', body.identifier),
-      patchColumn('upstream_url', body.upstream_url),
-      patchColumn('scopes', body.scopes),
-      patchColumn('credential_provider_id', body.credential_provider_id),
-    ])
-    if (!update && body.gateway_application_id === undefined) return reply.code(400).send({ error: 'no_fields' })
     const client = await fastify.db.connect()
     try {
       await client.query('BEGIN')
@@ -279,13 +294,28 @@ export const resourcesRoutes: FastifyPluginAsync = async (fastify) => {
       const nextGatewayApplicationID = body.gateway_application_id !== undefined
         ? body.gateway_application_id
         : current.gateway_application_id
-      const nextCredentialProviderID = body.credential_provider_id !== undefined
+      let nextCredentialProviderID = body.credential_provider_id !== undefined
         ? body.credential_provider_id
         : current.credential_provider_id
+      if (isControlResource(nextIdentifier) && isControlResourceOperation(req) && !nextCredentialProviderID) {
+        nextCredentialProviderID = await ensureNoneProvider(client, params.zoneId)
+        body.credential_provider_id = nextCredentialProviderID
+      }
       const gatewayError = validateGatewayBinding(nextIdentifier, nextUpstreamURL, nextGatewayApplicationID, nextCredentialProviderID)
       if (gatewayError) {
         await client.query('ROLLBACK')
         return reply.code(400).send({ error: gatewayError })
+      }
+      const update = buildPatchUpdate([params.id, params.zoneId], [
+        patchColumn('name', body.name),
+        patchColumn('identifier', body.identifier),
+        patchColumn('upstream_url', body.upstream_url),
+        patchColumn('scopes', body.scopes),
+        patchColumn('credential_provider_id', body.credential_provider_id),
+      ])
+      if (!update && body.gateway_application_id === undefined) {
+        await client.query('ROLLBACK')
+        return reply.code(400).send({ error: 'no_fields' })
       }
       let row: unknown
       if (update) {

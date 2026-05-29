@@ -12,7 +12,7 @@ import { ZoneIdParams, ZoneParams, parseParams } from './params.js'
 import { zoneExists } from '../zone-guard.js'
 import { appendKeysetCondition, parseListPagination, setNextLink } from './list-pagination.js'
 
-const ProviderKind = z.enum(['caracal_mandate', 'oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token'])
+const ProviderKind = z.enum(['none', 'caracal_mandate', 'oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token'])
 type ProviderKind = z.infer<typeof ProviderKind>
 const OAuthClientAuthMethod = z.enum(['client_secret_basic', 'client_secret_post', 'none'])
 type OAuthClientAuthMethod = z.infer<typeof OAuthClientAuthMethod>
@@ -55,6 +55,7 @@ function providerIdentifierError(identifier: string | undefined): string | undef
 }
 
 const PUBLIC_PROVIDER_CONFIG_KEYS: Record<ProviderKind, ReadonlySet<string>> = {
+  none: new Set(),
   caracal_mandate: new Set(),
   oauth2_authorization_code: new Set([
     'authorization_endpoint',
@@ -85,6 +86,7 @@ const PUBLIC_PROVIDER_CONFIG_KEYS: Record<ProviderKind, ReadonlySet<string>> = {
 }
 
 const SECRET_PROVIDER_CONFIG_KEYS: Record<ProviderKind, ReadonlySet<string>> = {
+  none: new Set(),
   caracal_mandate: new Set(),
   oauth2_authorization_code: new Set(['client_secret']),
   oauth2_client_credentials: new Set(['client_secret']),
@@ -186,7 +188,7 @@ function splitProviderConfig(kind: ProviderKind, input: Record<string, unknown> 
     }
   }
 
-  if (kind === 'caracal_mandate') {
+  if (kind === 'none' || kind === 'caracal_mandate') {
     return { publicConfig, secretConfig, secretKeys: [] }
   }
   if (kind === 'api_key') {

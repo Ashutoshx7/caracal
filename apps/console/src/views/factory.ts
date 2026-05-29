@@ -226,9 +226,10 @@ function bool(v: string | undefined): boolean | undefined {
 }
 
 const APPLICATION_REGISTRATION_METHODS = ['managed', 'dcr'] as const
-const PROVIDER_KINDS: ProviderKind[] = ['caracal_mandate', 'oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token']
+const PROVIDER_KINDS: ProviderKind[] = ['none', 'caracal_mandate', 'oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token']
 const PROVIDER_CREDENTIAL_KINDS: ProviderKind[] = ['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token']
 const PROVIDER_KIND_LABELS: Record<ProviderKind, string> = {
+  none: 'None',
   caracal_mandate: 'Caracal mandate',
   oauth2_authorization_code: 'OAuth2 auth code',
   oauth2_client_credentials: 'OAuth2 client creds',
@@ -487,7 +488,7 @@ function providerConfigFromValues(values: Record<string, string>, requireConfig:
     if (!allowed.has(key)) delete config[key]
   }
   if (Object.keys(config).length === 0) {
-    if (kind === 'caracal_mandate') return {}
+    if (kind === 'none' || kind === 'caracal_mandate') return {}
     if (requireConfig) throw new Error(`${kind} provider config is required`)
     return undefined
   }
@@ -517,7 +518,7 @@ function validateProviderConfig(kind: ProviderKind, config: JsonObject): void {
   const allowed = providerConfigKeys(kind)
   const unknown = Object.keys(config).filter((key) => !allowed.has(key))
   if (unknown.length > 0) throw new Error(`${kind} provider config has unsupported keys: ${unknown.join(', ')}`)
-  if (kind === 'caracal_mandate') return
+  if (kind === 'none' || kind === 'caracal_mandate') return
   if (kind === 'api_key') {
     requireString(config, 'header_name', 'api_key provider config requires header_name')
     requireOptionalHeaderName(config, 'header_name', 'api_key provider config header_name must be an HTTP header name')
@@ -545,7 +546,7 @@ function validateProviderConfig(kind: ProviderKind, config: JsonObject): void {
 }
 
 function providerConfigKeys(kind: ProviderKind): Set<string> {
-  if (kind === 'caracal_mandate') return new Set()
+  if (kind === 'none' || kind === 'caracal_mandate') return new Set()
   if (kind === 'api_key') return new Set(['header_name', 'api_key', 'auth_scheme', 'forward_caracal_identity'])
   if (kind === 'bearer_token') return new Set(['bearer_token', 'auth_header', 'auth_scheme', 'forward_caracal_identity'])
   const keys = ['token_endpoint', 'client_id', 'client_secret', 'client_auth_method', 'provider_scopes', 'scopes', 'allowed_token_hosts', 'auth_header', 'auth_scheme', 'forward_caracal_identity']
@@ -1152,7 +1153,7 @@ export function resourcesView(ctx: Ctx): View {
             { key: 'upstream_url', label: 'upstream URL', kind: 'text', required: true, hint: 'Gateway target for REST APIs, gRPC gateways, MCP servers, or SDK-backed services' },
             { key: 'gateway_application_id', label: 'gateway app', kind: 'text', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx), hint: 'application identity the Gateway uses for upstream exchanges' },
             { key: 'identifier', label: 'identifier', kind: 'text', advanced: true, hint: 'optional; generated as resource://pipernet when blank' },
-            { key: 'credential_provider_id', label: 'credential provider', kind: 'text', advanced: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'optional; use Caracal mandate for verifier-backed services or provider credentials for external auth' },
+            { key: 'credential_provider_id', label: 'credential provider', kind: 'text', required: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'required; use None for Gateway-only enforcement, Caracal mandate for verifier-backed services, or provider credentials for external auth' },
           ],
           onSubmit: async (v, app) => {
             await ctx.client.resources.create(ctx.zoneId, {
@@ -1161,7 +1162,7 @@ export function resourcesView(ctx: Ctx): View {
               name: v.name,
               upstream_url: v.upstream_url,
               gateway_application_id: v.gateway_application_id,
-              credential_provider_id: v.credential_provider_id || undefined,
+              credential_provider_id: v.credential_provider_id,
             })
             await popAndReload(app, list as unknown as ListView<unknown>)
           },
@@ -1177,7 +1178,7 @@ export function resourcesView(ctx: Ctx): View {
               { key: 'identifier', label: 'identifier', kind: 'text', default: row.identifier, advanced: true },
               { key: 'upstream_url', label: 'upstream URL', kind: 'text', default: row.upstream_url ?? '', required: true },
               { key: 'gateway_application_id', label: 'gateway app', kind: 'text', default: row.gateway_application_id ?? '', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
-              { key: 'credential_provider_id', label: 'credential provider', kind: 'text', default: row.credential_provider_id ?? '', advanced: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'optional; use Caracal mandate for verifier-backed services or provider credentials for external auth' },
+              { key: 'credential_provider_id', label: 'credential provider', kind: 'text', default: row.credential_provider_id ?? '', required: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'required; use None for Gateway-only enforcement, Caracal mandate for verifier-backed services, or provider credentials for external auth' },
               { key: 'scopes', label: 'Caracal scopes', kind: 'list', default: (row.scopes ?? []).join(','), hint: 'comma-separated authorization scopes for this resource' },
             ],
             onSubmit: async (v, app) => {
@@ -1186,7 +1187,7 @@ export function resourcesView(ctx: Ctx): View {
                 identifier: v.identifier || undefined,
                 upstream_url: v.upstream_url,
                 gateway_application_id: v.gateway_application_id,
-                credential_provider_id: v.credential_provider_id || null,
+                credential_provider_id: v.credential_provider_id,
                 scopes: v.scopes ? splitList(v.scopes) : undefined,
               } as Partial<ResourceInput>)
               await popAndReload(app, list as unknown as ListView<unknown>)
