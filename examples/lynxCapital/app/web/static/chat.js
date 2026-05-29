@@ -406,70 +406,70 @@ function runtimeEventSummary(event) {
   const agent = eventAgentLabel(payload.agent_id);
   switch (event.kind) {
     case "run_start":
-      return { kind: "system", kicker: "⚡ Run", title: "Execution started", body: payload.prompt };
+      return { kind: "system", kicker: "Run", title: "Execution started", body: payload.prompt };
     case "run_end":
-      return { kind: payload.status === "failed" ? "error" : "system", kicker: "⚡ Run", title: "Execution finished", pill: titleCase(payload.status || "completed") };
+      return { kind: payload.status === "failed" ? "error" : "system", kicker: "Run", title: "Execution finished", pill: titleCase(payload.status || "completed") };
     case "run_cancelled":
-      return { kind: "system", kicker: "⚡ Run", title: "Cancellation requested" };
+      return { kind: "system", kicker: "Run", title: "Cancellation requested" };
     case "agent_spawn":
       return {
         kind: "spawn",
-        kicker: "🚀 Spawn",
+        kicker: "Spawn",
         title: `${payload.region ? `${titleCase(payload.layer)} ${payload.region}` : titleCase(payload.layer)} spawned`,
         body: payload.scope,
       };
     case "agent_start":
-      return { kind: "spawn", kicker: "🤖 Agent", title: `${agent} started` };
+      return { kind: "spawn", kicker: "Agent", title: `${agent} started` };
     case "agent_end":
-      return { kind: "result", kicker: "🤖 Agent", title: `${agent} completed`, body: renderJson(payload.result) };
+      return { kind: "result", kicker: "Agent", title: `${agent} completed`, body: renderJson(payload.result) };
     case "agent_terminate":
-      return { kind: payload.status === "failed" || payload.status === "denied" ? "error" : "system", kicker: "🤖 Agent", title: `${agent} terminated`, pill: titleCase(payload.status || "completed") };
+      return { kind: payload.status === "failed" || payload.status === "denied" ? "error" : "system", kicker: "Agent", title: `${agent} terminated`, pill: titleCase(payload.status || "completed") };
     case "delegation":
-      return { kind: "spawn", kicker: "⛓️ Delegation", title: `${agentLabel(state.agents[payload.parent_id])} delegated work`, body: payload.scope };
+      return { kind: "spawn", kicker: "Delegation", title: `${agentLabel(state.agents[payload.parent_id])} delegated work`, body: payload.scope };
     case "llm_call":
-      return { kind: "system", kicker: "☁️ Provider", title: payload.model, body: `${payload.latency_ms}ms | ${payload.input_tokens}->${payload.output_tokens} tokens | ${payload.tool_calls} tool calls` };
+      return { kind: "system", kicker: "Provider", title: payload.model, body: `${payload.latency_ms}ms | ${payload.input_tokens}->${payload.output_tokens} tokens | ${payload.tool_calls} tool calls` };
     case "tool_call":
-      return { kind: "tool", kicker: "🛠️ Tool call", title: payload.tool_name, body: renderJson(payload.args) };
+      return { kind: "tool", kicker: "Tool call", title: payload.tool_name, body: renderJson(payload.args) };
     case "tool_result":
-      return { kind: "result", kicker: "✅ Tool result", title: payload.tool_name, body: renderJson(payload.result) };
+      return { kind: "result", kicker: "Tool result", title: payload.tool_name, body: renderJson(payload.result) };
     case "service_call":
-      return { kind: "tool", kicker: "🔌 Provider call", title: `${payload.service_id} - ${payload.action}`, body: renderJson(payload.payload) };
+      return { kind: "tool", kicker: "Provider call", title: `${payload.service_id} - ${payload.action}`, body: renderJson(payload.payload) };
     case "service_result":
-      return { kind: "result", kicker: "📥 Provider result", title: `${payload.service_id} returned`, body: renderJson(payload.result) };
+      return { kind: "result", kicker: "Provider result", title: `${payload.service_id} returned`, body: renderJson(payload.result) };
     case "memory_update":
-      return { kind: "memory", kicker: "🧠 Memory", title: `${agent} context updated`, body: `${fmtTok(payload.tokens_used)} / ${fmtTok(payload.tokens_limit)} across ${payload.message_count} messages` };
+      return { kind: "memory", kicker: "Memory", title: `${agent} context updated`, body: `${fmtTok(payload.tokens_used)} / ${fmtTok(payload.tokens_limit)} across ${payload.message_count} messages` };
     case "memory_compaction":
-      return { kind: "memory", kicker: "🧠 Memory", title: `${agent} compacted context`, body: `${fmtTok(payload.tokens_before)} -> ${fmtTok(payload.tokens_after)} tokens` };
+      return { kind: "memory", kicker: "Memory", title: `${agent} compacted context`, body: `${fmtTok(payload.tokens_before)} -> ${fmtTok(payload.tokens_after)} tokens` };
     case "plan_update":
-      return { kind: "plan", kicker: "📋 Plan", title: `${agent} revised execution`, body: `${(payload.todos || []).length} checklist items | revision ${payload.revision}` };
+      return { kind: "plan", kicker: "Plan", title: `${agent} revised execution`, body: `${(payload.todos || []).length} checklist items | revision ${payload.revision}` };
     case "replan":
-      return { kind: "plan", kicker: "🔄 Replan", title: `${agent} adjusted course`, body: payload.reason, pill: `rev ${payload.revision}` };
+      return { kind: "plan", kicker: "Replan", title: `${agent} adjusted course`, body: payload.reason, pill: `rev ${payload.revision}` };
     case "stage_start":
-      return { kind: "plan", kicker: "🎯 Stage", title: `${titleCase(payload.stage)} started`, body: payload.intent };
+      return { kind: "plan", kicker: "Stage", title: `${titleCase(payload.stage)} started`, body: payload.intent };
     case "stage_end":
-      return { kind: "result", kicker: "🎯 Stage", title: `${titleCase(payload.stage)} completed`, body: payload.summary };
+      return { kind: "result", kicker: "Stage", title: `${titleCase(payload.stage)} completed`, body: payload.summary };
     case "worker_acquire":
-      return { kind: "spawn", kicker: "⚙️ Worker", title: `${payload.role} acquired`, body: payload.scope };
+      return { kind: "spawn", kicker: "Worker", title: `${payload.role} acquired`, body: payload.scope };
     case "worker_release":
-      return { kind: "result", kicker: "⚙️ Worker", title: `Worker ${shortId(payload.worker_id)} released`, body: renderJson(payload.result) };
+      return { kind: "result", kicker: "Worker", title: `Worker ${shortId(payload.worker_id)} released`, body: renderJson(payload.result) };
     case "job_started":
-      return { kind: "spawn", kicker: "💼 Job", title: `${payload.job_kind || "job"} started`, body: `${payload.target} | ${shortId(payload.job_id)}` };
+      return { kind: "spawn", kicker: "Job", title: `${payload.job_kind || "job"} started`, body: `${payload.target} | ${shortId(payload.job_id)}` };
     case "job_completed":
-      return { kind: payload.status === "failed" ? "error" : "result", kicker: "💼 Job", title: `${payload.job_kind || "job"} ${payload.status || "completed"}`, body: renderJson(payload.result), pill: payload.target };
+      return { kind: payload.status === "failed" ? "error" : "result", kicker: "Job", title: `${payload.job_kind || "job"} ${payload.status || "completed"}`, body: renderJson(payload.result), pill: payload.target };
     case "blackboard_post":
-      return { kind: "system", kicker: "📌 Blackboard", title: `${agent} posted ${payload.kind}`, body: payload.content };
+      return { kind: "system", kicker: "Blackboard", title: `${agent} posted ${payload.kind}`, body: payload.content };
     case "file_write":
-      return { kind: "file", kicker: "💾 File write", title: payload.path, body: `${payload.size}B | ${agent}` };
+      return { kind: "file", kicker: "File write", title: payload.path, body: `${payload.size}B | ${agent}` };
     case "file_read":
-      return { kind: "file", kicker: "📖 File read", title: payload.path, body: `${payload.size}B | ${agent}` };
+      return { kind: "file", kicker: "File read", title: payload.path, body: `${payload.size}B | ${agent}` };
     case "audit_record":
-      return { kind: "audit", kicker: "🛡️ Audit", title: "Audit record created", body: renderJson(payload.record), open: true };
+      return { kind: "audit", kicker: "Audit", title: "Audit record created", body: renderJson(payload.record), open: true };
     case "tool_retry":
-      return { kind: "audit", kicker: "⚠️ Retry", title: `${payload.tool_name} attempt ${payload.attempt}`, body: payload.error, open: true };
+      return { kind: "audit", kicker: "Retry", title: `${payload.tool_name} attempt ${payload.attempt}`, body: payload.error, open: true };
     case "model_change":
-      return { kind: "system", kicker: "🤖 Model", title: `${payload.prior} -> ${payload.model}` };
+      return { kind: "system", kicker: "Model", title: `${payload.prior} -> ${payload.model}` };
     case "error":
-      return { kind: "error", kicker: "❌ Error", title: payload.message || "Unknown error", open: true };
+      return { kind: "error", kicker: "Error", title: payload.message || "Unknown error", open: true };
     default:
       if (event.kind === "chat_token" || event.kind === "chat_message" || event.kind === "chat_user") return null;
       return { kind: "system", kicker: titleCase(event.category), title: titleCase(event.kind), body: renderJson(payload) };
@@ -819,7 +819,7 @@ function handleEvent(event) {
         }
       } else {
         addInline("system", {
-          kicker: "🤖 Model",
+          kicker: "Model",
           title: "LLM completed a response",
           body: summary,
         });
@@ -833,7 +833,7 @@ function handleEvent(event) {
       if (!turn) break;
       setTurnStatus(turn, "Executing", "executing");
       appendExecutionEvent(turn, "tool", {
-        kicker: "🛠️ Tool call",
+        kicker: "Tool call",
         title: payload.tool_name,
         body: summarizeArgs(payload.args),
       });
@@ -844,7 +844,7 @@ function handleEvent(event) {
       const turn = findActiveTurn(payload.agent_id);
       if (!turn) break;
       appendExecutionEvent(turn, "tool", {
-        kicker: "🔌 Service",
+        kicker: "Service",
         title: `${payload.service_id} - ${payload.action}`,
         body: summarizeArgs(payload.payload),
       });
@@ -855,7 +855,7 @@ function handleEvent(event) {
       const turn = findActiveTurn(payload.agent_id);
       if (!turn) break;
       appendExecutionEvent(turn, "result", {
-        kicker: "📥 Service result",
+        kicker: "Service result",
         title: `${payload.service_id} completed`,
         body: summarizeObject(payload.result),
       });
@@ -867,7 +867,7 @@ function handleEvent(event) {
       const turn = findActiveTurn(payload.agent_id);
       if (!turn) break;
       appendExecutionEvent(turn, "result", {
-        kicker: "✅ Tool result",
+        kicker: "Tool result",
         title: payload.tool_name,
         body: describeToolResult(payload.tool_name, payload.result),
       });
@@ -886,7 +886,7 @@ function handleEvent(event) {
       const agent = state.agents[payload.agent_id];
       const done = (payload.todos || []).filter((item) => item.status === "completed").length;
       addInline("plan", {
-        kicker: "📋 Plan",
+        kicker: "Plan",
         title: `${agentLabel(agent)} updated the checklist`,
         body: `${done}/${(payload.todos || []).length} complete - rev ${payload.revision}`,
       });
@@ -897,7 +897,7 @@ function handleEvent(event) {
       state.files.add(payload.path);
       refreshMemoryBar();
       addInline("file", {
-        kicker: "💾 File write",
+        kicker: "File write",
         title: payload.path,
         body: `${payload.size}B - ${agentLabel(state.agents[payload.agent_id])}`,
       });
@@ -906,7 +906,7 @@ function handleEvent(event) {
 
     case "file_read":
       addInline("file", {
-        kicker: "📖 File read",
+        kicker: "File read",
         title: payload.path,
         body: `${payload.size}B - ${agentLabel(state.agents[payload.agent_id])}`,
       });
@@ -933,7 +933,7 @@ function handleEvent(event) {
       refreshMemoryBar();
       if (memToggle?.getAttribute("aria-expanded") === "true") refreshMemDetail();
       addInline("memory", {
-        kicker: "🧠 Memory",
+        kicker: "Memory",
         title: `${agentLabel(state.agents[payload.agent_id])} compacted context`,
         body: `${fmtTok(payload.tokens_before)} -> ${fmtTok(payload.tokens_after)} tokens`,
       });
@@ -942,7 +942,7 @@ function handleEvent(event) {
 
     case "audit_record":
       addInline("audit", {
-        kicker: "🛡️ Audit",
+        kicker: "Audit",
         title: "Audit record created",
         body: summarizeObject(payload.record),
       });
@@ -950,21 +950,21 @@ function handleEvent(event) {
 
     case "model_change":
       addInline("system", {
-        kicker: "🤖 Model",
+        kicker: "Model",
         title: `Switched from ${payload.prior} to ${payload.model}`,
       });
       break;
 
     case "run_cancelled":
       addInline("system", {
-        kicker: "⚡ Run",
+        kicker: "Run",
         title: "Run cancelled by user",
       });
       break;
 
     case "run_end":
       addInline(payload.status === "failed" ? "error" : "system", {
-        kicker: "⚡ Run",
+        kicker: "Run",
         title: "Execution finished",
         pill: titleCase(payload.status || "completed"),
       });
@@ -974,7 +974,7 @@ function handleEvent(event) {
 
     case "error":
       addInline("error", {
-        kicker: "❌ Error",
+        kicker: "Error",
         title: payload.message || "Unknown error",
       });
       break;
