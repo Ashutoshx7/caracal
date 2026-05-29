@@ -135,6 +135,73 @@ describe('POST /v1/zones/:zoneId/providers', () => {
     expect(values[8]).toEqual([])
   })
 
+  it('stores API key provider headers, schemes, and sealed secrets', async () => {
+    const { app, db } = buildRouteApp(providersRoutes)
+    db.query
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'provider-1', zone_id: 'z1', identifier: 'provider://hooli-api-key', kind: 'api_key' }],
+      })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/providers',
+      payload: {
+        identifier: 'provider://hooli-api-key',
+        kind: 'api_key',
+        config_json: {
+          header_name: 'Authorization',
+          auth_scheme: 'Bearer',
+          forward_caracal_identity: true,
+          api_key: 'hooli-api-key',
+        },
+      },
+    })
+
+    const values = db.query.mock.calls[1][1] as unknown[]
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body)).toMatchObject({ id: 'provider-1', kind: 'api_key' })
+    expect(JSON.parse(values[5] as string)).toEqual({
+      header_name: 'Authorization',
+      auth_scheme: 'Bearer',
+      forward_caracal_identity: true,
+    })
+    expect(values[8]).toEqual(['api_key'])
+  })
+
+  it('rejects API key providers with unsupported or malformed header configuration', async () => {
+    const { app, db } = buildRouteApp(providersRoutes)
+    db.query.mockResolvedValue({ rows: [{ '?column?': 1 }] })
+
+    await app.ready()
+    const invalidConfigs: Array<Record<string, unknown>> = [
+      {
+        header_name: 'Authorization',
+        auth_header: 'X-Api-Key',
+        api_key: 'hooli-api-key',
+      },
+      {
+        header_name: 'Authorization Header',
+        api_key: 'hooli-api-key',
+      },
+      {
+        header_name: 'Authorization',
+        auth_scheme: 'Bearer Token',
+        api_key: 'hooli-api-key',
+      },
+    ]
+    for (const config of invalidConfigs) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/zones/z1/providers',
+        payload: { identifier: 'provider://hooli-api-key', kind: 'api_key', config_json: config },
+      })
+      expect(res.statusCode).toBe(400)
+      expect(JSON.parse(res.body)).toMatchObject({ error: 'invalid_provider_config' })
+    }
+  })
+
   it('generates provider identifiers from provider names when omitted', async () => {
     const { app, db } = buildRouteApp(providersRoutes)
     db.query
