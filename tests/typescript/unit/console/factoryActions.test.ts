@@ -631,7 +631,7 @@ describe('providers actions', () => {
     const info = vi.mocked(app.push).mock.calls[0]![0] as { render: FormView['render'] }
     const body = info.render(ctxView).join('\n')
     expect(body).toContain('Caracal mandate')
-    expect(body).toContain('internal services')
+    expect(body).toContain('Caracal-aware upstream')
     expect(body).toContain('OAuth2 auth code')
     expect(body).toContain('consent screen')
     expect(body).toContain('OAuth2 client creds')
@@ -847,6 +847,37 @@ describe('providers actions', () => {
 
     expect(client.providers.create).toHaveBeenCalledWith('z1', expect.objectContaining({
       identifier: 'provider://hooli-oauth2',
+      kind: 'caracal_mandate',
+      config_json: {},
+    }))
+  })
+
+  it('drops provider-native fields from Caracal mandate submissions', async () => {
+    const { client, ctx } = newCtx()
+    const list = providersView(ctx as unknown as Parameters<typeof providersView>[0]) as ListView<unknown>
+    const app = fakeApp()
+    const pushed = await pressKey(list, 'n', app) as FormView
+    ;(pushed as unknown as { values: Record<string, string> }).values = {
+      identifier: '',
+      name: 'PiperNet verifier',
+      kind: 'caracal_mandate',
+      token_endpoint: 'https://issuer.example/token',
+      client_id: 'client-1',
+      client_secret: 'secret',
+      allowed_token_hosts: 'issuer.example',
+      api_key_header: 'X-API-Key',
+      api_key: 'api-key',
+      bearer_token: 'provider-token',
+      auth_header: 'X-Provider-Authorization',
+      auth_scheme: 'Bearer',
+      forward_caracal_identity: 'true',
+    }
+    ;(pushed as unknown as { focus: number }).focus = 99
+
+    await pushed.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
+
+    expect(client.providers.create).toHaveBeenCalledWith('z1', expect.objectContaining({
+      identifier: 'provider://pipernet-verifier',
       kind: 'caracal_mandate',
       config_json: {},
     }))

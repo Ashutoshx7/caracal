@@ -338,7 +338,7 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
         when: 'Use resources to define what can be accessed and which Caracal scopes exist for that target.',
         impact: 'Resource identifiers and scopes become the vocabulary used by grants, policies, tokens, and Gateway bindings.',
         example: 'resource://pipernet',
-        valid: 'Resources include an upstream route and Gateway application; internal resources use the Gateway-forwarded Caracal mandate.',
+        valid: 'Resources include an upstream route and Gateway application; Caracal-aware resources use the Gateway-forwarded mandate.',
         after: 'Open details to inspect routing, scopes, provider binding, and raw API identifiers.',
         terms: [
           { label: 'Scope', value: 'A named permission on a resource, such as read, write, or admin.' },
@@ -349,15 +349,16 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
     case 'provider':
       return {
         title: 'Provider',
-        meaning: 'A provider describes an upstream credential source Caracal can use when calling protected services.',
-        when: 'Use providers when Gateway workflows must exchange or attach upstream credentials.',
-        impact: 'Provider kind and config decide which provider-native credential flow STS and Gateway use at runtime.',
+        meaning: 'A provider describes the upstream auth mode Gateway uses when calling protected services.',
+        when: 'Use providers when Gateway workflows must forward a Caracal mandate or exchange or attach upstream credentials.',
+        impact: 'Provider kind and config decide whether STS/Gateway forward the Caracal mandate directly or use a provider-native credential flow at runtime.',
         example: 'Hooli OAuth2',
         valid: 'Only configured provider kinds and their implemented fields are sent to the API.',
         after: 'Open details to inspect the provider type and credential routing fields.',
         terms: [
           { label: 'OAuth2', value: 'Token refresh or exchange through a configured upstream token endpoint.' },
           { label: 'API key', value: 'Header-based upstream credential forwarding at the Gateway boundary.' },
+          { label: 'Caracal mandate', value: 'The Gateway forwards the mandate as the upstream auth credential; the resource verifies it with a Caracal verifier.' },
         ],
         notes: ['Secrets are masked in the terminal when present.', 'Use allowed token hosts to constrain outbound token endpoint calls.'],
       }
@@ -1151,7 +1152,7 @@ export function resourcesView(ctx: Ctx): View {
             { key: 'upstream_url', label: 'upstream URL', kind: 'text', required: true, hint: 'Gateway target for REST APIs, gRPC gateways, MCP servers, or SDK-backed services' },
             { key: 'gateway_application_id', label: 'gateway app', kind: 'text', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx), hint: 'application identity the Gateway uses for upstream exchanges' },
             { key: 'identifier', label: 'identifier', kind: 'text', advanced: true, hint: 'optional; generated as resource://pipernet when blank' },
-            { key: 'credential_provider_id', label: 'credential provider', kind: 'text', advanced: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'optional; use Caracal mandate for internal services or provider credentials for external services' },
+            { key: 'credential_provider_id', label: 'credential provider', kind: 'text', advanced: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'optional; use Caracal mandate for verifier-backed services or provider credentials for external auth' },
           ],
           onSubmit: async (v, app) => {
             await ctx.client.resources.create(ctx.zoneId, {
@@ -1176,7 +1177,7 @@ export function resourcesView(ctx: Ctx): View {
               { key: 'identifier', label: 'identifier', kind: 'text', default: row.identifier, advanced: true },
               { key: 'upstream_url', label: 'upstream URL', kind: 'text', default: row.upstream_url ?? '', required: true },
               { key: 'gateway_application_id', label: 'gateway app', kind: 'text', default: row.gateway_application_id ?? '', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
-              { key: 'credential_provider_id', label: 'credential provider', kind: 'text', default: row.credential_provider_id ?? '', advanced: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'optional; use Caracal mandate for internal services or provider credentials for external services' },
+              { key: 'credential_provider_id', label: 'credential provider', kind: 'text', default: row.credential_provider_id ?? '', advanced: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'optional; use Caracal mandate for verifier-backed services or provider credentials for external auth' },
               { key: 'scopes', label: 'Caracal scopes', kind: 'list', default: (row.scopes ?? []).join(','), hint: 'comma-separated authorization scopes for this resource' },
             ],
             onSubmit: async (v, app) => {

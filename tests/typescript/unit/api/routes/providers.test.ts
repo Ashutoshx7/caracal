@@ -135,6 +135,30 @@ describe('POST /v1/zones/:zoneId/providers', () => {
     expect(values[8]).toEqual([])
   })
 
+  it('rejects provider-native config on Caracal mandate providers', async () => {
+    const { app, db } = buildRouteApp(providersRoutes)
+    db.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/providers',
+      payload: {
+        identifier: 'provider://mandate-only',
+        kind: 'caracal_mandate',
+        config_json: {
+          auth_header: 'Authorization',
+          auth_scheme: 'Bearer',
+          forward_caracal_identity: true,
+          bearer_token: 'provider-token',
+        },
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'invalid_provider_config' })
+  })
+
   it('stores API key provider headers, schemes, and sealed secrets', async () => {
     const { app, db } = buildRouteApp(providersRoutes)
     db.query
