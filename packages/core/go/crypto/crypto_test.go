@@ -35,6 +35,18 @@ func TestOpenRejectsWrongKey(t *testing.T) {
 	}
 }
 
+func TestSealRejectsInvalidKeySize(t *testing.T) {
+	if _, _, err := Seal(make([]byte, 16), []byte("payload")); err == nil {
+		t.Fatal("expected an error sealing with an undersized key")
+	}
+}
+
+func TestOpenRejectsInvalidKeySize(t *testing.T) {
+	if _, err := Open(make([]byte, 16), make([]byte, 12), []byte("ciphertext")); err == nil {
+		t.Fatal("expected an error opening with an undersized key")
+	}
+}
+
 func TestGenerateP256Key(t *testing.T) {
 	key, err := GenerateP256Key()
 	if err != nil {
