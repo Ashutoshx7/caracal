@@ -6,6 +6,8 @@
 ignore:
   - "examples/**"
   - "docs/**"
+  - "**/*.gen.ts"
+  - "apps/*/src/main.ts"
 
 coverage:
   status:

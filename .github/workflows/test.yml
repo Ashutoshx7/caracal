@@ -272,9 +272,14 @@ jobs:
           run_pkg apps/coordinator coordinator tests/typescript/unit/orchestration/coordinator
           run_pkg apps/runtime runtime tests/typescript/unit/runtime
           run_pkg apps/console Console tests/typescript/unit/console
-          run_pkg packages/core/ts core tests/typescript/unit/shared
+          run_pkg packages/core/ts core tests/typescript/unit/shared tests/typescript/contract/interoperability
+          run_pkg packages/engine engine tests/typescript/unit/engine
           run_pkg packages/admin/ts admin tests/typescript/unit/admin
-          run_pkg packages/sdk/ts sdk tests/typescript/unit/sdk/client.test.ts
+          run_pkg packages/sdk/ts sdk \
+            tests/typescript/unit/sdk/client.test.ts \
+            tests/typescript/unit/sdk/context.test.ts \
+            tests/typescript/unit/sdk/http.test.ts \
+            tests/typescript/unit/sdk/primitives.test.ts
           run_pkg packages/transport/a2a/ts transport-a2a tests/typescript/unit/transport-a2a
           run_pkg packages/oauth/ts oauth tests/typescript/unit/sdk/oauth
           run_pkg packages/revocation/ts revocation tests/typescript/unit/revocation
