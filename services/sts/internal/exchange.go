@@ -585,9 +585,16 @@ func applyProviderDirective(provider *ProviderConfig, directive *UpstreamDirecti
 		}
 		directive.AuthMode = UpstreamAuthProviderAPIKey
 		directive.AuthHeader = header
-		directive.AuthScheme = strings.TrimSpace(cfg.AuthScheme)
+		directive.AuthScheme = ""
+		if scheme := strings.TrimSpace(cfg.AuthScheme); scheme != "" {
+			if !validProviderAuthScheme(scheme) {
+				return fmt.Errorf("provider auth scheme invalid")
+			}
+			directive.AuthScheme = scheme
+		}
 	case "bearer_token":
 		directive.AuthMode = UpstreamAuthProviderOAuth
+		directive.AuthScheme = "Bearer"
 		if header := strings.TrimSpace(cfg.AuthHeader); header != "" {
 			if !validProviderHeaderName(header) {
 				return fmt.Errorf("provider auth header invalid")
@@ -595,10 +602,14 @@ func applyProviderDirective(provider *ProviderConfig, directive *UpstreamDirecti
 			directive.AuthHeader = header
 		}
 		if scheme := strings.TrimSpace(cfg.AuthScheme); scheme != "" {
+			if !validProviderAuthScheme(scheme) {
+				return fmt.Errorf("provider auth scheme invalid")
+			}
 			directive.AuthScheme = scheme
 		}
 	case "oauth2_authorization_code", "oauth2_client_credentials":
 		directive.AuthMode = UpstreamAuthProviderOAuth
+		directive.AuthScheme = "Bearer"
 		if header := strings.TrimSpace(cfg.AuthHeader); header != "" {
 			if !validProviderHeaderName(header) {
 				return fmt.Errorf("provider auth header invalid")
@@ -606,6 +617,9 @@ func applyProviderDirective(provider *ProviderConfig, directive *UpstreamDirecti
 			directive.AuthHeader = header
 		}
 		if scheme := strings.TrimSpace(cfg.AuthScheme); scheme != "" {
+			if !validProviderAuthScheme(scheme) {
+				return fmt.Errorf("provider auth scheme invalid")
+			}
 			directive.AuthScheme = scheme
 		}
 	default:
@@ -696,6 +710,27 @@ func validProviderHeaderName(name string) bool {
 	}
 	for _, r := range name {
 		if r > 127 || !strings.ContainsRune("!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", r) {
+			return false
+		}
+	}
+	return true
+}
+
+func validProviderAuthScheme(scheme string) bool {
+	if scheme == "" {
+		return false
+	}
+	for i, r := range scheme {
+		if r > 127 {
+			return false
+		}
+		if i == 0 {
+			if (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') {
+				return false
+			}
+			continue
+		}
+		if (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
 			return false
 		}
 	}

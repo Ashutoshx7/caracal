@@ -442,7 +442,7 @@ func TestBuildUpstreamDirectiveIncludesProviderTokenOnlyForGateway(t *testing.T)
 	if err != nil {
 		t.Fatalf("gateway directive should decrypt provider token: %v", err)
 	}
-	if directive.ProviderToken != "provider-access-token" || directive.AuthMode != UpstreamAuthProviderOAuth {
+	if directive.ProviderToken != "provider-access-token" || directive.AuthMode != UpstreamAuthProviderOAuth || directive.AuthScheme != "Bearer" {
 		t.Fatalf("gateway exchange must receive brokered provider token, got %#v", directive)
 	}
 }
@@ -617,6 +617,36 @@ func TestBuildUpstreamDirectiveRejectsMalformedProviderConfig(t *testing.T) {
 	}
 	if _, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true); err == nil {
 		t.Fatal("provider directive must reject malformed provider config")
+	}
+}
+
+func TestBuildUpstreamDirectiveRejectsMalformedProviderAuthScheme(t *testing.T) {
+	providerID := "provider1"
+	upstreamURL := "https://upstream.example"
+	resource := &Resource{
+		ID:                   "res1",
+		Identifier:           "resource://api",
+		UpstreamURL:          &upstreamURL,
+		CredentialProviderID: &providerID,
+	}
+	zek := []byte("12345678901234567890123456789012")
+	token, err := sealZEK(zek, []byte("provider-access-token"))
+	if err != nil {
+		t.Fatalf("seal provider token: %v", err)
+	}
+	srv := &Server{
+		db: &stubDB{
+			grant: &ProviderGrant{ProviderID: &providerID, AccessTokenCt: token},
+			provider: &ProviderConfig{
+				ID:           providerID,
+				ProviderKind: strPtr("oauth2_authorization_code"),
+				ConfigJSON:   []byte(`{"auth_scheme":"Bearer Token"}`),
+			},
+		},
+		keys: &KeyCache{zek: zek},
+	}
+	if _, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true); err == nil {
+		t.Fatal("provider directive must reject malformed auth schemes")
 	}
 }
 
