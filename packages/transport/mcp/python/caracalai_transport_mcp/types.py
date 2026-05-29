@@ -5,10 +5,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from caracalai_identity import Claims
+from caracalai_revocation import RevocationStore
 
 Principal = Claims
 
@@ -29,6 +30,7 @@ ErrorCode = Literal[
 class AuthError:
     code: ErrorCode
     description: str
+    hint: str | None = None
 
 
 @dataclass(frozen=True)
@@ -39,3 +41,18 @@ class AuthResult:
     @property
     def ok(self) -> bool:
         return self.error is None
+
+
+@dataclass(frozen=True)
+class AuthOptions:
+    issuer: str
+    audience: str
+    revocations: RevocationStore
+    required_scopes: list[str] = field(default_factory=list)
+    expected_zone_id: str | None = None
+    require_agent: bool = False
+    require_delegation: bool = False
+    require_chain_contains: list[str] = field(default_factory=list)
+    max_hop_count: int | None = None
+    required_targets: list[str] = field(default_factory=list)
+    required_use: str | None = "resource"

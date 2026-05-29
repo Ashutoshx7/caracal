@@ -16,7 +16,7 @@ sys.path.append(str(Path(__file__).parents[3] / "shared" / "test-utils" / "pytho
 from caracal_test_tokens import mint_es256_token
 from caracalai_identity import verify
 from caracalai_revocation import InMemoryRevocationStore
-from caracalai_transport_mcp import authenticate, check_active_authority, extract_bearer
+from caracalai_transport_mcp import AuthOptions, authenticate, check_active_authority, create_mandate_verifier, extract_bearer
 
 
 class StubCache:
@@ -54,6 +54,29 @@ class TransportMcpAuthenticateTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.error.code if result.error else None, "missing_token")
+        self.assertEqual(result.error.hint if result.error else None, "Send Authorization: Bearer <Caracal mandate>.")
+
+    async def test_reusable_verifier_authorization_and_route_overrides(self) -> None:
+        token, jwk = mint_es256_token(scopes=("read",), claims={"target": ["resource://api/tickets"]})
+        self.cache.keys = [jwk]
+        verifier = create_mandate_verifier(
+            AuthOptions(
+                issuer="https://sts.example.com",
+                audience="resource://api",
+                expected_zone_id="zone1",
+                revocations=InMemoryRevocationStore(),
+            )
+        )
+
+        await verifier.warmup()
+        result = await verifier.authorization(
+            f"Bearer {token}",
+            required_scopes=["read"],
+            required_targets=["resource://api/tickets"],
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.principal.sub if result.principal else None, "user1")
 
     async def test_rejects_revoked_session_after_verification(self) -> None:
         token, jwk = mint_es256_token(claims={"sid": "sid-1"})
