@@ -135,6 +135,53 @@ describe('POST /v1/zones/:zoneId/providers', () => {
     expect(values[8]).toEqual([])
   })
 
+  it('creates none providers without credential config', async () => {
+    const { app, db } = buildRouteApp(providersRoutes)
+    db.query
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'provider-1', zone_id: 'z1', identifier: 'provider://none', kind: 'none' }],
+      })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/providers',
+      payload: {
+        identifier: 'provider://none',
+        kind: 'none',
+      },
+    })
+
+    const values = db.query.mock.calls[1][1] as unknown[]
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body)).toMatchObject({ id: 'provider-1', kind: 'none' })
+    expect(values[4]).toBe('none')
+    expect(JSON.parse(values[5] as string)).toEqual({})
+    expect(values[6]).toBeNull()
+    expect(values[7]).toBeNull()
+    expect(values[8]).toEqual([])
+  })
+
+  it('rejects provider-native config on none providers', async () => {
+    const { app, db } = buildRouteApp(providersRoutes)
+    db.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/providers',
+      payload: {
+        identifier: 'provider://none',
+        kind: 'none',
+        config_json: { auth_header: 'Authorization' },
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'invalid_provider_config' })
+  })
+
   it('rejects provider-native config on Caracal mandate providers', async () => {
     const { app, db } = buildRouteApp(providersRoutes)
     db.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })

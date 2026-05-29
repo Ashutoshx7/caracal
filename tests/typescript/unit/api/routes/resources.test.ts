@@ -111,7 +111,7 @@ describe('POST /v1/zones/:zoneId/resources', () => {
     expect(db.connect).not.toHaveBeenCalled()
   })
 
-  it('requires a gateway application for gateway-routed resources', async () => {
+  it('requires a provider for gateway-routed resources', async () => {
     const { app, db } = buildRouteApp(resourcesRoutes)
     db.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
 
@@ -122,7 +122,31 @@ describe('POST /v1/zones/:zoneId/resources', () => {
       payload: {
         identifier: 'resource://api',
         upstream_url: 'https://api.example.com',
+        gateway_application_id: 'app-1',
         scopes: ['read'],
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'credential_provider_required' })
+    expect(db.connect).not.toHaveBeenCalled()
+  })
+
+  it('requires a gateway application for gateway-routed resources', async () => {
+    const { app, db } = buildRouteApp(resourcesRoutes)
+    db.query
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/resources',
+      payload: {
+        identifier: 'resource://api',
+        upstream_url: 'https://api.example.com',
+        scopes: ['read'],
+        credential_provider_id: 'provider-1',
       },
     })
 
@@ -153,6 +177,7 @@ describe('POST /v1/zones/:zoneId/resources', () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
       .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
     db.connect.mockResolvedValueOnce(client)
 
     await app.ready()
@@ -164,6 +189,7 @@ describe('POST /v1/zones/:zoneId/resources', () => {
         upstream_url: 'https://api.example.com',
         scopes: ['read'],
         gateway_application_id: 'app-1',
+        credential_provider_id: 'provider-1',
       },
     })
 
@@ -186,6 +212,7 @@ describe('POST /v1/zones/:zoneId/resources', () => {
     db.query
       .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
       .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
       .mockResolvedValueOnce({ rows: [{ resource_count: '1' }] })
 
     await app.ready()
@@ -197,6 +224,7 @@ describe('POST /v1/zones/:zoneId/resources', () => {
         upstream_url: 'https://api.example.com',
         gateway_application_id: 'app-1',
         scopes: ['read'],
+        credential_provider_id: 'provider-1',
       },
     })
 
@@ -227,6 +255,8 @@ describe('POST /v1/zones/:zoneId/resources', () => {
   it('allows the Control path to create the Control API resource', async () => {
     const { app, db } = buildRouteApp(resourcesRoutes)
     db.query
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'provider-none-z1' }] })
       .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
       .mockResolvedValueOnce({ rows: [{ id: 'res-control', identifier: 'caracal-control', scopes: ['control:agent:write'] }] })
 
@@ -272,7 +302,7 @@ describe('PATCH /v1/zones/:zoneId/resources/:id', () => {
           rows: [{
             identifier: 'resource://api',
             upstream_url: 'https://api.example.com',
-            credential_provider_id: null,
+            credential_provider_id: 'provider-1',
             gateway_application_id: 'app-1',
           }],
         })

@@ -48,7 +48,7 @@ function makeClient() {
     upstream_url: 'https://upstream-url',
     gateway_application_id: 'app-1',
     scopes: ['scope-name'],
-    credential_provider_id: null,
+    credential_provider_id: 'provider-1',
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
   }
@@ -157,7 +157,7 @@ async function openAndSubmit(view: View, app: App, values: Record<string, string
 async function completeMainPath(view: View, app: App): Promise<void> {
   await openAndSubmit(view, app, { zone_name: 'zone-name' })
   await openAndSubmit(view, app, { agent_app_name: 'agent-app-name' })
-  await openAndSubmit(view, app, { provider_mode: 'none' })
+  await openAndSubmit(view, app, { provider_name: 'no credential', provider_kind: 'none' })
   await openAndSubmit(view, app, { resource_name: 'resource-name', resource_scopes: 'scope-name', upstream_url: 'https://upstream-url' })
   await openAndSubmit(view, app, { policy_mode: 'create' })
   await view.onKey('enter', ctx(app))
@@ -223,6 +223,7 @@ describe('first setup workflow', () => {
       upstream_url: 'https://upstream-url',
       gateway_application_id: 'app-1',
       scopes: ['scope-name'],
+      credential_provider_id: 'provider-1',
     }))
     expect(client.policies.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
       name: 'Guided setup access policy',
@@ -309,7 +310,7 @@ describe('first setup workflow', () => {
     await view.init?.(app)
 
     await openAndSubmit(view, app, { application_mode: 'select', selected_agent_app_id: 'app-1' })
-    await openAndSubmit(view, app, { provider_mode: 'none' })
+    await openAndSubmit(view, app, { provider_mode: 'select', selected_provider_id: 'provider-1' })
     await openAndSubmit(view, app, { resource_mode: 'select', selected_resource_id: 'res-1', resource_scopes: 'scope-name' })
     await openAndSubmit(view, app, { policy_mode: 'create' })
     await view.onKey('enter', ctx(app))
@@ -339,7 +340,7 @@ describe('first setup workflow', () => {
     Object.assign((view as unknown as { values: Record<string, string> }).values, { generate_profile: 'false' })
 
     await openAndSubmit(view, app, { agent_app_name: 'agent-app-name' })
-    await openAndSubmit(view, app, { provider_mode: 'none' })
+    await openAndSubmit(view, app, { provider_name: 'no credential', provider_kind: 'none' })
     await openAndSubmit(view, app, { resource_name: 'resource-name', resource_scopes: 'scope-name', upstream_url: 'https://upstream-url' })
     await openAndSubmit(view, app, { policy_mode: 'skip' })
     await view.onKey('enter', ctx(app))
@@ -350,6 +351,7 @@ describe('first setup workflow', () => {
       upstream_url: 'https://upstream-url',
       gateway_application_id: 'app-1',
       scopes: ['scope-name'],
+      credential_provider_id: 'provider-1',
     }))
     expect(client.policies.create).not.toHaveBeenCalled()
     expect(client.policySets.create).not.toHaveBeenCalled()
@@ -375,7 +377,7 @@ describe('first setup workflow', () => {
     })
 
     await openAndSubmit(view, app, { agent_app_name: 'agent-app-name' })
-    await openAndSubmit(view, app, { provider_mode: 'none' })
+    await openAndSubmit(view, app, { provider_name: 'no credential', provider_kind: 'none' })
     await openAndSubmit(view, app, { resource_name: 'resource-name', resource_scopes: 'scope-name', upstream_url: 'https://upstream-url' })
     await openAndSubmit(view, app, { policy_mode: 'create' })
     await view.onKey('enter', ctx(app))
@@ -418,7 +420,7 @@ describe('first setup workflow', () => {
     })
 
     await openAndSubmit(view, app, { agent_app_name: 'agent-app-name' })
-    await openAndSubmit(view, app, { provider_mode: 'none' })
+    await openAndSubmit(view, app, { provider_name: 'no credential', provider_kind: 'none' })
     await openAndSubmit(view, app, { resource_name: 'resource-name', resource_scopes: 'scope-name', upstream_url: 'https://upstream-url' })
     await openAndSubmit(view, app, { policy_mode: 'create' })
     await view.onKey('enter', ctx(app))

@@ -543,24 +543,18 @@ describe('resources actions', () => {
     expect(typeof fields.find((f) => f.key === 'credential_provider_id')?.pick).toBe('function')
   })
 
-  it('keeps resource routing Gateway-based with provider options advanced', async () => {
+  it('keeps resource routing Gateway-based with a required provider', async () => {
     const { ctx } = newCtx()
     const list = resourcesView(ctx as unknown as Parameters<typeof resourcesView>[0]) as ListView<unknown>
     const app = fakeApp()
     const form = await pressKey(list, 'n', app) as FormView
     const ctxView = { app, size: { rows: 30, cols: 100 }, status: '' }
 
-    let body = form.render(ctxView).join('\n')
+    const body = form.render(ctxView).join('\n')
     expect(body).toContain('upstream URL *')
     expect(body).toContain('gateway app *')
+    expect(body).toContain('credential provider *')
     expect(body).toContain('Advanced options')
-
-    ;(form as unknown as { focus: number }).focus = 4
-    await form.onKey('right', ctxView)
-    const advanced = (app as unknown as { _pushed: unknown[] })._pushed.at(-1) as FormView
-    body = advanced.render(ctxView).join('\n')
-    expect(body).toContain('credential provider')
-    expect(body).not.toContain('prefix match')
   })
 })
 
@@ -630,6 +624,8 @@ describe('providers actions', () => {
 
     const info = vi.mocked(app.push).mock.calls[0]![0] as { render: FormView['render'] }
     const body = info.render(ctxView).join('\n')
+    expect(body).toContain('None')
+    expect(body).toContain('no auth credential')
     expect(body).toContain('Caracal mandate')
     expect(body).toContain('Caracal-aware upstream')
     expect(body).toContain('OAuth2 auth code')
@@ -638,6 +634,36 @@ describe('providers actions', () => {
     expect(body).toContain('server-to-server')
     expect(body).toContain('Bearer token')
     expect(body).toContain('already issued')
+  })
+
+  it('creates none providers without credential fields', async () => {
+    const { client, ctx } = newCtx()
+    const list = providersView(ctx as unknown as Parameters<typeof providersView>[0]) as ListView<unknown>
+    const app = fakeApp()
+    const pushed = await pressKey(list, 'n', app) as FormView
+    ;(pushed as unknown as { values: Record<string, string> }).values = {
+      identifier: '',
+      name: 'No upstream credential',
+      kind: 'none',
+      token_endpoint: 'https://issuer.example/token',
+      client_id: 'client-1',
+      client_secret: 'secret',
+      api_key_header: 'X-API-Key',
+      api_key: 'api-key',
+      bearer_token: 'provider-token',
+      auth_header: 'X-Provider-Authorization',
+      auth_scheme: 'Bearer',
+      forward_caracal_identity: 'true',
+    }
+    ;(pushed as unknown as { focus: number }).focus = 99
+
+    await pushed.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
+
+    expect(client.providers.create).toHaveBeenCalledWith('z1', expect.objectContaining({
+      identifier: 'provider://no-upstream-credential',
+      kind: 'none',
+      config_json: {},
+    }))
   })
 
   it('creates oauth providers from real structured fields only', async () => {
