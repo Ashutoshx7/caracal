@@ -583,6 +583,8 @@ describe('providers actions', () => {
       'bearer_token',
       'identifier',
       'provider_scopes',
+      'token_audience',
+      'token_resource',
       'allowed_token_hosts',
       'client_auth_method',
       'auth_header',
@@ -650,6 +652,9 @@ describe('providers actions', () => {
       token_endpoint: 'https://provider.example/token',
       client_id: 'provider-client',
       client_secret: 'provider-secret',
+      provider_scopes: 'pipernet.read',
+      token_audience: 'https://api.hooli.example',
+      token_resource: 'https://resource.hooli.example',
       allowed_token_hosts: 'provider.example',
       client_auth_method: 'client_secret_basic',
       api_key_header: '',
@@ -669,7 +674,47 @@ describe('providers actions', () => {
         client_id: 'provider-client',
         client_secret: 'provider-secret',
         client_auth_method: 'client_secret_basic',
+        scopes: ['pipernet.read'],
+        audience: 'https://api.hooli.example',
+        resource: 'https://resource.hooli.example',
         allowed_token_hosts: ['provider.example'],
+      },
+    }))
+  })
+
+  it('requires OAuth client secrets unless client auth method is none', async () => {
+    const { client, ctx } = newCtx()
+    const list = providersView(ctx as unknown as Parameters<typeof providersView>[0]) as ListView<unknown>
+    const app = fakeApp()
+    const pushed = await pressKey(list, 'n', app) as FormView
+    ;(pushed as unknown as { values: Record<string, string> }).values = {
+      identifier: 'provider://public-oauth',
+      name: 'Public OAuth',
+      kind: 'oauth2_client_credentials',
+      token_endpoint: 'https://issuer.example/oauth/token',
+      client_id: 'public-client',
+      client_secret: '',
+      allowed_token_hosts: '',
+      client_auth_method: 'client_secret_basic',
+    }
+    ;(pushed as unknown as { focus: number }).focus = 99
+
+    await pushed.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
+
+    expect(client.providers.create).not.toHaveBeenCalled()
+    expect(app.setStatus).toHaveBeenCalledWith('client secret is required', 'error')
+
+    ;(pushed as unknown as { values: Record<string, string> }).values.client_auth_method = 'none'
+    ;(pushed as unknown as { focus: number }).focus = 99
+    await pushed.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
+
+    expect(client.providers.create).toHaveBeenCalledWith('z1', expect.objectContaining({
+      kind: 'oauth2_client_credentials',
+      config_json: {
+        token_endpoint: 'https://issuer.example/oauth/token',
+        client_id: 'public-client',
+        client_auth_method: 'none',
+        allowed_token_hosts: ['issuer.example'],
       },
     }))
   })

@@ -46,6 +46,9 @@ describe('POST /v1/zones/:zoneId/providers', () => {
           token_endpoint: 'https://issuer.example/oauth/token',
           client_id: 'hooli-client',
           client_secret: 'hooli-secret',
+          scopes: ['pipernet.read'],
+          audience: 'https://api.hooli.example',
+          resource: 'https://resource.hooli.example',
           allowed_token_hosts: ['issuer.example'],
         },
       },
@@ -59,9 +62,49 @@ describe('POST /v1/zones/:zoneId/providers', () => {
       token_endpoint: 'https://issuer.example/oauth/token',
       client_id: 'hooli-client',
       client_auth_method: 'client_secret_basic',
+      scopes: ['pipernet.read'],
+      audience: 'https://api.hooli.example',
+      resource: 'https://resource.hooli.example',
       allowed_token_hosts: ['issuer.example'],
     })
     expect(values[8]).toEqual(['client_secret'])
+  })
+
+  it('rejects OAuth2 client-credentials providers with invalid endpoint or token parameter config', async () => {
+    const { app, db } = buildRouteApp(providersRoutes)
+    db.query.mockResolvedValue({ rows: [{ '?column?': 1 }] })
+
+    await app.ready()
+    for (const config of [
+      {
+        token_endpoint: 'http://issuer.example/oauth/token',
+        client_id: 'hooli-client',
+        client_secret: 'hooli-secret',
+        allowed_token_hosts: ['issuer.example'],
+      },
+      {
+        token_endpoint: 'https://issuer.example/oauth/token',
+        client_id: 'hooli-client',
+        client_secret: 'hooli-secret',
+        allowed_token_hosts: ['issuer.example'],
+        audience: '',
+      },
+      {
+        token_endpoint: 'https://issuer.example/oauth/token',
+        client_id: 'hooli-client',
+        client_secret: 'hooli-secret',
+        allowed_token_hosts: ['issuer.example'],
+        auth_header: 'Authorization Header',
+      },
+    ]) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/zones/z1/providers',
+        payload: { identifier: 'provider://hooli-client-creds', kind: 'oauth2_client_credentials', config_json: config },
+      })
+      expect(res.statusCode).toBe(400)
+      expect(JSON.parse(res.body)).toMatchObject({ error: 'invalid_provider_config' })
+    }
   })
 
   it('creates Caracal mandate providers without secret config', async () => {

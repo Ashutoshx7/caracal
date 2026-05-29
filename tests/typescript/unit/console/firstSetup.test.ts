@@ -270,6 +270,7 @@ describe('first setup workflow', () => {
       provider_token_endpoint: 'https://issuer.example.com/oauth/token',
       provider_client_id: 'hooli-client',
       provider_client_secret: 'hooli-secret',
+      provider_token_audience: 'https://api.example.com',
     })
     await openAndSubmit(view, app, {
       resource_name: 'resource-name',
@@ -287,6 +288,7 @@ describe('first setup workflow', () => {
         token_endpoint: 'https://issuer.example.com/oauth/token',
         client_id: 'hooli-client',
         client_secret: 'hooli-secret',
+        audience: 'https://api.example.com',
         allowed_token_hosts: ['issuer.example.com'],
       }),
     }))
