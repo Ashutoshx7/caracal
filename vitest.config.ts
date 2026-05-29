@@ -9,6 +9,34 @@ import { defineConfig } from 'vitest/config'
 const src = (path: string): string => fileURLToPath(new URL(path, import.meta.url))
 
 export default defineConfig({
+  test: {
+    coverage: {
+      provider: 'v8',
+      exclude: [
+        'packages/core/ts/src/index.ts',
+        'packages/identity/ts/src/index.ts',
+        'packages/oauth/ts/src/index.ts',
+        'packages/revocation/ts/src/index.ts',
+        'packages/sdk/ts/src/index.ts',
+        'packages/admin/ts/src/index.ts',
+        'packages/engine/src/index.ts',
+        'packages/transport/mcp/ts/src/index.ts',
+        'packages/transport/a2a/ts/src/index.ts',
+        'packages/connectors/redis/ts/src/index.ts',
+        'packages/connectors/postgres/ts/src/index.ts',
+        'packages/connectors/fastmcp/ts/src/index.ts',
+        'packages/connectors/express/ts/src/index.ts',
+        'packages/core/ts/src/json.ts',
+        'packages/sdk/ts/src/json.ts',
+        'packages/transport/mcp/ts/src/types.ts',
+        'packages/transport/a2a/ts/src/types.ts',
+        'packages/admin/ts/src/types.ts',
+        'packages/identity/ts/src/scope.ts',
+        'packages/revocation/ts/src/iface.ts',
+        'apps/*/src/main.ts',
+      ],
+    },
+  },
   resolve: {
     alias: [
       { find: /^@caracalai\/engine\/runtime-config$/, replacement: src('./packages/engine/src/runtimeConfig.ts') },
