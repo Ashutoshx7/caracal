@@ -2,9 +2,9 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Workspace entry: locates the repo root, stamps a dev Console identity, then delegates to the workspace Console.
+// Workspace entry: locates the repo root, rebuilds stale TypeScript packages, then delegates to the Console launcher which handles dev stamping.
 
-import { execFileSync, execSync } from 'child_process'
+import { execSync } from 'child_process'
 import { existsSync, readdirSync, statSync } from 'fs'
 import { dirname, join } from 'path'
 import { pathToFileURL } from 'url'
@@ -74,18 +74,6 @@ if (tsBuilds.some((path) => !existsSync(join(root, path))) || staleBuilds.some((
     process.stderr.write(`caracal-console: failed to build TypeScript workspace packages: ${err?.message ?? err}\n`)
     process.exit(1)
   }
-}
-
-try {
-  const sha = execFileSync('node', [join(root, 'apps/console/scripts/stampDev.mjs')], {
-    stdio: ['ignore', 'pipe', 'inherit'],
-  })
-    .toString()
-    .trim()
-  process.env.CARACAL_DEV_SHA = sha
-} catch (err) {
-  process.stderr.write(`caracal-console: failed to stamp dev version: ${err?.message ?? err}\n`)
-  process.exit(1)
 }
 
 import(pathToFileURL(join(root, 'apps/console/bin/caracal-console.mjs')).href).catch((err) => {
