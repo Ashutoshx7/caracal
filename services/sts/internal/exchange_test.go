@@ -621,6 +621,36 @@ func TestBuildUpstreamDirectiveSupportsCaracalMandateProviderShape(t *testing.T)
 	}
 }
 
+func TestBuildUpstreamDirectiveSupportsNoneProviderShape(t *testing.T) {
+	providerID := "provider-none"
+	upstreamURL := "https://upstream.example"
+	resource := &Resource{
+		ID:                   "res1",
+		Identifier:           "resource://api",
+		UpstreamURL:          &upstreamURL,
+		CredentialProviderID: &providerID,
+	}
+	srv := &Server{
+		db: &stubDB{
+			provider: &ProviderConfig{
+				ID:           providerID,
+				ProviderKind: strPtr("none"),
+				ConfigJSON:   []byte(`{}`),
+			},
+		},
+	}
+	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true)
+	if err != nil {
+		t.Fatalf("gateway directive should support none provider shape: %v", err)
+	}
+	if directive.AuthMode != UpstreamAuthNone || directive.AuthHeader != "" || directive.AuthScheme != "" || directive.ProviderToken != "" {
+		t.Fatalf("unexpected none directive: %#v", directive)
+	}
+	if directive.ProviderID != providerID {
+		t.Fatalf("provider id missing from none directive: %#v", directive)
+	}
+}
+
 func TestBuildUpstreamDirectiveReadsIdentityForwardingOptIn(t *testing.T) {
 	providerID := "provider1"
 	upstreamURL := "https://upstream.example"

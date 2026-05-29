@@ -455,6 +455,49 @@ func TestProxyHappyPathForwardsAndStripsHeaders(t *testing.T) {
 	}
 }
 
+func TestProxyNoneAuthModeForwardsNoCredential(t *testing.T) {
+	var seen *http.Request
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Clone(context.Background())
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	sts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		resource := r.Form.Get("resource")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(stsResponseFixture{
+			AccessToken: "sts-issued-token",
+			ExpiresIn:   300,
+			Upstreams: map[string]corests.UpstreamDirective{
+				resource: {URL: upstream.URL, AuthMode: "none", ProviderID: "provider-none"},
+			},
+		})
+	}))
+	defer sts.Close()
+	p := newProxyForTest(t, sts, true)
+
+	tok := makeJWT(t, time.Hour)
+	resp := doProxiedRequest(t, p, "GET", "/none", nil, http.Header{
+		"Authorization":       {"Bearer " + tok},
+		"X-Caracal-Resource":  {"r1"},
+		"X-Caracal-Identity":  {"caller-identity"},
+	})
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 204, got %d: %s", resp.StatusCode, body)
+	}
+	if seen == nil {
+		t.Fatal("upstream never received request")
+	}
+	for _, header := range []string{"Authorization", "X-Caracal-Identity"} {
+		if got := seen.Header.Get(header); got != "" {
+			t.Fatalf("%s leaked upstream: %q", header, got)
+		}
+	}
+}
+
 func TestProxyProviderAPIKeyDoesNotLeakInboundAuthorizationOrIdentity(t *testing.T) {
 	var seen *http.Request
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

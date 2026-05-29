@@ -413,10 +413,11 @@ func (p *proxy) recordSTSFailure(out exchangeOutcome) {
 
 // buildUpstreamRequest constructs the outbound request with safe headers, joined path,
 // merged query string, and the credential class STS chose for the resource. For
-// caracal_jwt mode the Caracal STS-issued bearer is forwarded; for provider_oauth /
-// provider_apikey the provider-native credential is substituted into the header the
-// upstream expects. The Caracal JWT is forwarded as X-Caracal-Identity only when
-// the resource/provider directive explicitly opts in for a trusted upstream.
+// none mode forwards no credential; caracal_jwt mode forwards the Caracal
+// STS-issued bearer; provider_oauth / provider_apikey substitute the
+// provider-native credential into the header the upstream expects. The Caracal
+// JWT is forwarded as X-Caracal-Identity only when the resource/provider
+// directive explicitly opts in for a trusted upstream.
 func buildUpstreamRequest(r *http.Request, upstreamURL *url.URL, caracalToken string, directive corests.UpstreamDirective, body io.ReadCloser, requestID string) (*http.Request, error) {
 	joinedPath := joinURLPath(upstreamURL.Path, r.URL.Path)
 	mergedQuery, err := mergeQuery(upstreamURL.RawQuery, r.URL.RawQuery)
@@ -448,6 +449,7 @@ func buildUpstreamRequest(r *http.Request, upstreamURL *url.URL, caracalToken st
 	req.Header.Del("Authorization")
 	req.Header.Del(authHeader)
 	switch directive.AuthMode {
+	case "none":
 	case "provider_oauth", "provider_apikey":
 		scheme := directive.AuthScheme
 		value := directive.ProviderToken

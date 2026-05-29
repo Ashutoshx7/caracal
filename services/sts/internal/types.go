@@ -47,6 +47,7 @@ type TokenExchangeRequest struct {
 
 // UpstreamAuthMode classifies how the gateway must authenticate to a resource.
 const (
+	UpstreamAuthNone           = "none"
 	UpstreamAuthCaracalJWT     = "caracal_jwt"
 	UpstreamAuthProviderOAuth  = "provider_oauth"
 	UpstreamAuthProviderAPIKey = "provider_apikey"

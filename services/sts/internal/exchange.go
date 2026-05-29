@@ -532,7 +532,7 @@ func (s *Server) buildUpstreamDirective(ctx context.Context, zoneID string, subj
 		return directive, err
 	}
 	directive.ProviderID = provider.ID
-	if derefStr(provider.ProviderKind) == "caracal_mandate" {
+	if kind := derefStr(provider.ProviderKind); kind == "none" || kind == "caracal_mandate" {
 		return directive, nil
 	}
 	if providerRequiresUserGrant(provider) {
@@ -573,6 +573,10 @@ func applyProviderDirective(provider *ProviderConfig, directive *UpstreamDirecti
 	}
 	directive.ForwardCaracalIdentity = cfg.ForwardCaracalIdentity
 	switch derefStr(provider.ProviderKind) {
+	case "none":
+		directive.AuthMode = UpstreamAuthNone
+		directive.AuthHeader = ""
+		directive.AuthScheme = ""
 	case "caracal_mandate":
 		directive.AuthMode = UpstreamAuthCaracalJWT
 		directive.AuthHeader = "Authorization"
