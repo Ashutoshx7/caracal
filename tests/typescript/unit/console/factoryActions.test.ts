@@ -674,6 +674,47 @@ describe('providers actions', () => {
     }))
   })
 
+  it('creates OAuth2 auth-code providers with standard endpoints and upstream forwarding fields', async () => {
+    const { client, ctx } = newCtx()
+    const list = providersView(ctx as unknown as Parameters<typeof providersView>[0]) as ListView<unknown>
+    const app = fakeApp()
+    const pushed = await pressKey(list, 'n', app) as FormView
+    ;(pushed as unknown as { values: Record<string, string> }).values = {
+      identifier: 'provider://hooli-oidc',
+      name: 'Hooli OIDC',
+      kind: 'oauth2_authorization_code',
+      authorization_endpoint: 'https://login.hooli.example/oauth/authorize',
+      token_endpoint: 'https://login.hooli.example/oauth/token',
+      redirect_uri: 'http://localhost:3000/oauth/callback',
+      client_id: 'hooli-client',
+      client_secret: 'hooli-secret',
+      allowed_token_hosts: '',
+      client_auth_method: 'client_secret_basic',
+      auth_header: 'Authorization',
+      auth_scheme: 'Bearer',
+      forward_caracal_identity: 'false',
+    }
+    ;(pushed as unknown as { focus: number }).focus = 99
+
+    await pushed.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
+
+    expect(client.providers.create).toHaveBeenCalledWith('z1', expect.objectContaining({
+      identifier: 'provider://hooli-oidc',
+      kind: 'oauth2_authorization_code',
+      config_json: {
+        authorization_endpoint: 'https://login.hooli.example/oauth/authorize',
+        token_endpoint: 'https://login.hooli.example/oauth/token',
+        redirect_uri: 'http://localhost:3000/oauth/callback',
+        client_id: 'hooli-client',
+        client_secret: 'hooli-secret',
+        client_auth_method: 'client_secret_basic',
+        allowed_token_hosts: ['login.hooli.example'],
+        auth_header: 'Authorization',
+        auth_scheme: 'Bearer',
+      },
+    }))
+  })
+
   it('generates provider identifiers from provider names when identifier is blank', async () => {
     const { client, ctx } = newCtx()
     const list = providersView(ctx as unknown as Parameters<typeof providersView>[0]) as ListView<unknown>
@@ -727,6 +768,30 @@ describe('providers actions', () => {
 
     expect(client.providers.patch).not.toHaveBeenCalled()
     expect(app.setStatus).toHaveBeenCalledWith(expect.stringContaining('provider://'), 'error')
+  })
+
+  it('blocks malformed upstream auth schemes before provider submission', async () => {
+    const { client, ctx } = newCtx()
+    const list = providersView(ctx as unknown as Parameters<typeof providersView>[0]) as ListView<unknown>
+    const app = fakeApp()
+    const pushed = await pressKey(list, 'n', app) as FormView
+    ;(pushed as unknown as { values: Record<string, string> }).values = {
+      identifier: 'provider://hooli-oauth',
+      name: 'Hooli OAuth',
+      kind: 'oauth2_client_credentials',
+      token_endpoint: 'https://login.hooli.example/oauth/token',
+      client_id: 'hooli-client',
+      client_secret: 'hooli-secret',
+      client_auth_method: 'client_secret_basic',
+      allowed_token_hosts: '',
+      auth_scheme: 'Bearer Token',
+    }
+    ;(pushed as unknown as { focus: number }).focus = 99
+
+    await pushed.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
+
+    expect(client.providers.create).not.toHaveBeenCalled()
+    expect(app.setStatus).toHaveBeenCalledWith(expect.stringContaining('auth_scheme'), 'error')
   })
 
   it('drops stale hidden provider fields when the provider kind changes', async () => {

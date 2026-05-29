@@ -133,6 +133,91 @@ describe('POST /v1/zones/:zoneId/providers', () => {
     expect(JSON.parse(res.body)).toMatchObject({ error: 'invalid_provider_config' })
   })
 
+  it('stores OAuth2 auth-code provider config with validated callback and forwarding settings', async () => {
+    const { app, db } = buildRouteApp(providersRoutes)
+    db.query
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({
+        rows: [{ id: 'provider-1', zone_id: 'z1', identifier: 'provider://hooli-oidc', kind: 'oauth2_authorization_code' }],
+      })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/providers',
+      payload: {
+        identifier: 'provider://hooli-oidc',
+        kind: 'oauth2_authorization_code',
+        config_json: {
+          authorization_endpoint: 'https://login.hooli.example/oauth/authorize',
+          token_endpoint: 'https://login.hooli.example/oauth/token',
+          redirect_uri: 'http://localhost:3000/oauth/callback',
+          client_id: 'hooli-client',
+          client_secret: 'hooli-secret',
+          allowed_token_hosts: ['login.hooli.example'],
+          auth_header: 'Authorization',
+          auth_scheme: 'Bearer',
+        },
+      },
+    })
+
+    const values = db.query.mock.calls[1][1] as unknown[]
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(values[5] as string)).toEqual({
+      authorization_endpoint: 'https://login.hooli.example/oauth/authorize',
+      token_endpoint: 'https://login.hooli.example/oauth/token',
+      redirect_uri: 'http://localhost:3000/oauth/callback',
+      client_id: 'hooli-client',
+      client_auth_method: 'client_secret_basic',
+      allowed_token_hosts: ['login.hooli.example'],
+      auth_header: 'Authorization',
+      auth_scheme: 'Bearer',
+    })
+    expect(values[8]).toEqual(['client_secret'])
+  })
+
+  it('rejects OAuth2 auth-code providers with invalid URLs or malformed forwarding schemes', async () => {
+    const { app, db } = buildRouteApp(providersRoutes)
+    db.query.mockResolvedValue({ rows: [{ '?column?': 1 }] })
+
+    await app.ready()
+    for (const config of [
+      {
+        authorization_endpoint: 'http://login.hooli.example/oauth/authorize',
+        token_endpoint: 'https://login.hooli.example/oauth/token',
+        redirect_uri: 'http://localhost:3000/oauth/callback',
+        client_id: 'hooli-client',
+        client_secret: 'hooli-secret',
+        allowed_token_hosts: ['login.hooli.example'],
+      },
+      {
+        authorization_endpoint: 'https://login.hooli.example/oauth/authorize',
+        token_endpoint: 'https://login.hooli.example/oauth/token',
+        redirect_uri: '/oauth/callback',
+        client_id: 'hooli-client',
+        client_secret: 'hooli-secret',
+        allowed_token_hosts: ['login.hooli.example'],
+      },
+      {
+        authorization_endpoint: 'https://login.hooli.example/oauth/authorize',
+        token_endpoint: 'https://login.hooli.example/oauth/token',
+        redirect_uri: 'http://localhost:3000/oauth/callback',
+        client_id: 'hooli-client',
+        client_secret: 'hooli-secret',
+        allowed_token_hosts: ['login.hooli.example'],
+        auth_scheme: 'Bearer Token',
+      },
+    ]) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/zones/z1/providers',
+        payload: { identifier: 'provider://hooli-oidc', kind: 'oauth2_authorization_code', config_json: config },
+      })
+      expect(res.statusCode).toBe(400)
+      expect(JSON.parse(res.body)).toMatchObject({ error: 'invalid_provider_config' })
+    }
+  })
+
   it('rejects provider identifiers outside the provider namespace', async () => {
     const { app, db } = buildRouteApp(providersRoutes)
     db.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
