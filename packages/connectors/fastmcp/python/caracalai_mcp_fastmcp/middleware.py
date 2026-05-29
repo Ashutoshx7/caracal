@@ -7,14 +7,15 @@ from __future__ import annotations
 
 from caracalai_identity import Claims
 from caracalai_revocation import RevocationStore
-from caracalai_transport_mcp import authenticate
+from caracalai_transport_mcp import AuthOptions, MandateVerifier, create_mandate_verifier
 
 
 class CaracalAuthError(Exception):
-    def __init__(self, code: str, description: str) -> None:
+    def __init__(self, code: str, description: str, hint: str | None = None) -> None:
         super().__init__(description)
         self.code = code
         self.description = description
+        self.hint = hint
 
 
 class CaracalAuth:
@@ -32,34 +33,28 @@ class CaracalAuth:
         require_chain_contains: list[str] | None = None,
         max_hop_count: int | None = None,
     ) -> None:
-        self.issuer = issuer
-        self.audience = audience
-        self.expected_zone_id = expected_zone_id
-        self.required_scopes = required_scopes or []
-        self.required_targets = required_targets or []
-        self.required_use = required_use
-        self.revocations = revocations
-        self.require_agent = require_agent
-        self.require_delegation = require_delegation
-        self.require_chain_contains = require_chain_contains or []
-        self.max_hop_count = max_hop_count
+        self.verifier: MandateVerifier = create_mandate_verifier(
+            AuthOptions(
+                issuer=issuer,
+                audience=audience,
+                expected_zone_id=expected_zone_id,
+                required_scopes=required_scopes or [],
+                required_targets=required_targets or [],
+                required_use=required_use,
+                revocations=revocations,
+                require_agent=require_agent,
+                require_delegation=require_delegation,
+                require_chain_contains=require_chain_contains or [],
+                max_hop_count=max_hop_count,
+            )
+        )
 
     async def __call__(self, token: str) -> Claims:
-        result = await authenticate(
-            token,
-            self.issuer,
-            self.audience,
-            self.required_scopes,
-            self.expected_zone_id,
-            self.revocations,
-            require_agent=self.require_agent,
-            require_delegation=self.require_delegation,
-            require_chain_contains=self.require_chain_contains,
-            max_hop_count=self.max_hop_count,
-            required_targets=self.required_targets,
-            required_use=self.required_use,
-        )
+        result = await self.verifier.authenticate(token)
         if result.error is not None:
-            raise CaracalAuthError(result.error.code, result.error.description)
+            raise CaracalAuthError(result.error.code, result.error.description, result.error.hint)
         assert result.principal is not None
         return result.principal
+
+    async def warmup(self) -> None:
+        await self.verifier.warmup()

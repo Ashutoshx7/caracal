@@ -207,6 +207,10 @@ async def verify_token(
     return decoded
 
 
+async def warm_jwks(issuer: str) -> None:
+    await _cache.get_keys(issuer)
+
+
 async def verify_config(token: str, config: JwtConfig) -> Claims:
     decoded = await verify_token(
         token,

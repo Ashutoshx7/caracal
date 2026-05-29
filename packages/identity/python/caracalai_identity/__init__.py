@@ -25,6 +25,7 @@ from .verify import (
     verify_chain_contains,
     verify_config,
     verify_token,
+    warm_jwks,
 )
 
 __all__ = [
@@ -47,4 +48,5 @@ __all__ = [
     "verify_chain_contains",
     "verify_config",
     "verify_token",
+    "warm_jwks",
 ]
