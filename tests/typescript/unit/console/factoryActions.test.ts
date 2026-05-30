@@ -673,8 +673,9 @@ describe('providers actions', () => {
 
     await pushed.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
 
+    const input = client.providers.create.mock.calls[0]![1]
+    expect(input).not.toHaveProperty('identifier')
     expect(client.providers.create).toHaveBeenCalledWith('z1', expect.objectContaining({
-      identifier: 'provider://no-upstream-credential',
       kind: 'none',
       config_json: {},
     }))
@@ -899,7 +900,7 @@ describe('providers actions', () => {
     }))
   })
 
-  it('generates provider identifiers from provider names when identifier is blank', async () => {
+  it('delegates blank provider identifiers to the API for collision-safe generation', async () => {
     const { client, ctx } = newCtx()
     const list = providersView(ctx as unknown as Parameters<typeof providersView>[0]) as ListView<unknown>
     const app = fakeApp()
@@ -923,8 +924,9 @@ describe('providers actions', () => {
 
     await pushed.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
 
+    const input = client.providers.create.mock.calls[0]![1]
+    expect(input).not.toHaveProperty('identifier')
     expect(client.providers.create).toHaveBeenCalledWith('z1', expect.objectContaining({
-      identifier: 'provider://hooli-oauth2',
       kind: 'caracal_mandate',
       config_json: {},
     }))
@@ -955,8 +957,9 @@ describe('providers actions', () => {
 
     await pushed.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
 
+    const input = client.providers.create.mock.calls[0]![1]
+    expect(input).not.toHaveProperty('identifier')
     expect(client.providers.create).toHaveBeenCalledWith('z1', expect.objectContaining({
-      identifier: 'provider://pipernet-verifier',
       kind: 'caracal_mandate',
       config_json: {},
     }))

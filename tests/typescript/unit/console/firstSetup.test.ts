@@ -217,8 +217,9 @@ describe('first setup workflow', () => {
       name: 'agent-app-name',
       registration_method: 'managed',
     }))
+    const resourceCreateInput = client.resources.create.mock.calls[0]![1]
+    expect(resourceCreateInput).not.toHaveProperty('identifier')
     expect(client.resources.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
-      identifier: 'resource://resource-name',
       name: 'resource-name',
       upstream_url: 'https://upstream-url',
       gateway_application_id: 'app-1',
@@ -281,8 +282,9 @@ describe('first setup workflow', () => {
     await openAndSubmit(view, app, { policy_mode: 'create' })
     await view.onKey('enter', ctx(app))
 
+    const providerCreateInput = client.providers.create.mock.calls[0]![1]
+    expect(providerCreateInput).not.toHaveProperty('identifier')
     expect(client.providers.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
-      identifier: 'provider://provider-name',
       name: 'provider-name',
       kind: 'oauth2_client_credentials',
       config_json: expect.objectContaining({
@@ -325,8 +327,9 @@ describe('first setup workflow', () => {
     await openAndSubmit(view, app, { policy_mode: 'skip' })
     await view.onKey('enter', ctx(app))
 
+    const providerCreateInput = client.providers.create.mock.calls[0]![1]
+    expect(providerCreateInput).not.toHaveProperty('identifier')
     expect(client.providers.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
-      identifier: 'provider://hooli-weather',
       name: 'Hooli Weather',
       kind: 'api_key',
       config_json: {
@@ -383,8 +386,9 @@ describe('first setup workflow', () => {
     await view.onKey('enter', ctx(app))
 
     expect(client.zones.create).not.toHaveBeenCalled()
+    const resourceCreateInput = client.resources.create.mock.calls[0]![1]
+    expect(resourceCreateInput).not.toHaveProperty('identifier')
     expect(client.resources.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
-      identifier: 'resource://resource-name',
       upstream_url: 'https://upstream-url',
       gateway_application_id: 'app-1',
       scopes: ['scope-name'],

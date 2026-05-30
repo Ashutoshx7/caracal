@@ -96,6 +96,41 @@ describe('POST /v1/zones', () => {
     expect(JSON.parse(res.body)).toMatchObject({ id: 'z2', slug: 'my-zone' })
   })
 
+  it('suffixes generated slugs when the zone name already exists', async () => {
+    const { app, db } = buildRouteApp(zonesRoutes)
+    const created = { id: 'z2', name: 'My Zone', slug: 'my-zone-2', dcr_enabled: false }
+    db.query
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [created] })
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones',
+      payload: { name: 'My Zone' },
+    })
+    const insertValues = db.query.mock.calls[2]![1] as unknown[]
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body)).toMatchObject({ id: 'z2', slug: 'my-zone-2' })
+    expect(insertValues[2]).toBe('my-zone-2')
+  })
+
+  it('returns conflict for explicit duplicate zone slugs', async () => {
+    const { app, db } = buildRouteApp(zonesRoutes)
+    db.query.mockRejectedValueOnce(Object.assign(new Error('duplicate zone slug'), {
+      code: '23505',
+      constraint: 'zones_slug_key',
+    }))
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones',
+      payload: { name: 'My Zone', slug: 'my-zone' },
+    })
+    expect(res.statusCode).toBe(409)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'zone_slug_conflict' })
+  })
+
   it('rejects unsupported zone configuration fields', async () => {
     const { app, db } = buildRouteApp(zonesRoutes)
     db.query.mockResolvedValue({ rows: [] })

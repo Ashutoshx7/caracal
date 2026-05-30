@@ -33,6 +33,7 @@ describe('Zone lifecycle: create → read', () => {
   it('creates a zone then reads it back', async () => {
     const { app, db } = buildApp()
     db.query
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [mockZone] })
       .mockResolvedValueOnce({ rows: [mockZone] })
     await app.ready()
@@ -59,6 +60,7 @@ describe('Zone lifecycle: create → list includes zone', () => {
   it('newly created zone appears in list', async () => {
     const { app, db } = buildApp()
     db.query
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [mockZone] })
       .mockResolvedValueOnce({ rows: [mockZone, { ...mockZone, id: 'z-2', slug: 'other' }] })
     await app.ready()

@@ -206,6 +206,93 @@ describe('POST /v1/zones/:zoneId/resources', () => {
     expect(client.release).toHaveBeenCalled()
   })
 
+  it('suffixes generated resource identifiers when the resource name already exists in the zone', async () => {
+    const { app, db } = buildRouteApp(resourcesRoutes)
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 'res-2',
+            zone_id: 'z1',
+            identifier: 'resource://api-2',
+            upstream_url: 'https://api.example.com',
+            scopes: ['read'],
+          }],
+        })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] }),
+      release: vi.fn(),
+    }
+    db.query
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+    db.connect.mockResolvedValueOnce(client)
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/resources',
+      payload: {
+        name: 'API',
+        upstream_url: 'https://api.example.com',
+        scopes: ['read'],
+        gateway_application_id: 'app-1',
+        credential_provider_id: 'provider-1',
+      },
+    })
+
+    const insertValues = client.query.mock.calls[1]![1] as unknown[]
+    expect(res.statusCode).toBe(201)
+    expect(insertValues[3]).toBe('resource://api-2')
+    expect(client.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO gateway_resource_bindings'),
+      ['resource://api-2', 'z1', 'app-1'],
+    )
+  })
+
+  it('returns conflict for explicit duplicate resource identifiers', async () => {
+    const { app, db } = buildRouteApp(resourcesRoutes)
+    const conflict = Object.assign(new Error('duplicate resource identifier'), {
+      code: '23505',
+      constraint: 'resources_zone_id_identifier_key',
+    })
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockRejectedValueOnce(conflict)
+        .mockResolvedValueOnce({ rows: [] }),
+      release: vi.fn(),
+    }
+    db.query
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({ rows: [{ resource_count: '0' }] })
+    db.connect.mockResolvedValueOnce(client)
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/resources',
+      payload: {
+        identifier: 'resource://api',
+        upstream_url: 'https://api.example.com',
+        scopes: ['read'],
+        gateway_application_id: 'app-1',
+        credential_provider_id: 'provider-1',
+      },
+    })
+
+    expect(res.statusCode).toBe(409)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'resource_identifier_conflict' })
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK')
+    expect(client.release).toHaveBeenCalled()
+  })
+
   it('rejects resource creation when the zone resource quota is exhausted', async () => {
     const { app, db } = buildRouteApp(resourcesRoutes)
     app.decorate('cfg', { maxResourcesPerZone: 1 })
