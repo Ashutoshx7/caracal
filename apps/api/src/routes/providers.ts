@@ -16,7 +16,7 @@ const ProviderKind = z.enum(['none', 'caracal_mandate', 'oauth2_authorization_co
 type ProviderKind = z.infer<typeof ProviderKind>
 const APIKeyAuthLocation = z.enum(['header', 'query'])
 type APIKeyAuthLocation = z.infer<typeof APIKeyAuthLocation>
-const OAuthClientAuthMethod = z.enum(['client_secret_basic', 'client_secret_post', 'none'])
+const OAuthClientAuthMethod = z.enum(['client_secret_basic', 'client_secret_post', 'private_key_jwt', 'none'])
 type OAuthClientAuthMethod = z.infer<typeof OAuthClientAuthMethod>
 const PROVIDER_IDENTIFIER_PREFIX = 'provider://'
 const PROVIDER_IDENTIFIER_PATTERN = /^provider:\/\/[a-z0-9]+(?:-[a-z0-9]+)*$/
@@ -34,6 +34,8 @@ const RESERVED_OAUTH_AUTHORIZATION_PARAMS = new Set([
   'state',
 ])
 const RESERVED_OAUTH_TOKEN_PARAMS = new Set([
+  'client_assertion',
+  'client_assertion_type',
   'client_id',
   'client_secret',
   'code',
@@ -135,6 +137,7 @@ const PUBLIC_PROVIDER_CONFIG_KEYS: Record<ProviderKind, ReadonlySet<string>> = {
     'resource',
     'allowed_token_hosts',
     'token_params',
+    'key_id',
     'auth_header',
     'auth_scheme',
     'forward_caracal_identity',
@@ -147,7 +150,7 @@ const SECRET_PROVIDER_CONFIG_KEYS: Record<ProviderKind, ReadonlySet<string>> = {
   none: new Set(),
   caracal_mandate: new Set(),
   oauth2_authorization_code: new Set(['client_secret']),
-  oauth2_client_credentials: new Set(['client_secret']),
+  oauth2_client_credentials: new Set(['client_secret', 'private_key']),
   api_key: new Set(['api_key']),
   bearer_token: new Set(['bearer_token']),
 }
@@ -307,15 +310,30 @@ function splitProviderConfig(kind: ProviderKind, input: Record<string, unknown> 
     if (kind === 'oauth2_client_credentials') {
       requireOptionalText(publicConfig, 'audience', 'oauth2_client_credentials provider config audience must be a non-empty string')
       requireOptionalText(publicConfig, 'resource', 'oauth2_client_credentials provider config resource must be a non-empty string')
+      requireOptionalText(publicConfig, 'key_id', 'oauth2_client_credentials provider config key_id must be a non-empty string')
     }
     const clientAuthMethod = requireOptionalOAuthClientAuthMethod(publicConfig)
     publicConfig.client_auth_method = clientAuthMethod
+    if (kind === 'oauth2_authorization_code' && clientAuthMethod === 'private_key_jwt') {
+      throw new Error('oauth2_authorization_code provider config client_auth_method is not supported')
+    }
     if (kind === 'oauth2_authorization_code') {
       requireHttpsUrl(publicConfig, 'authorization_endpoint', 'oauth2_authorization_code provider config authorization_endpoint must be an HTTPS URL')
       requireAbsoluteUri(publicConfig, 'redirect_uri', 'oauth2_authorization_code provider config redirect_uri must be an absolute URI')
       requireOptionalStringRecord(publicConfig, 'authorization_params', RESERVED_OAUTH_AUTHORIZATION_PARAMS, 'oauth2_authorization_code provider config authorization_params must be non-reserved string key/value pairs')
     }
-    if (requireSecrets && clientAuthMethod !== 'none' && !secretConfig.client_secret) {
+    if (clientAuthMethod === 'private_key_jwt') {
+      if (secretConfig.client_secret) {
+        throw new Error(`${kind} provider config client_secret is not used with private_key_jwt`)
+      }
+      if (requireSecrets && !secretConfig.private_key) {
+        throw new Error(`${kind} provider config requires private_key`)
+      }
+    } else if (secretConfig.private_key) {
+      throw new Error(`${kind} provider config private_key requires private_key_jwt`)
+    } else if (publicConfig.key_id !== undefined) {
+      throw new Error(`${kind} provider config key_id requires private_key_jwt`)
+    } else if (requireSecrets && clientAuthMethod !== 'none' && !secretConfig.client_secret) {
       throw new Error(`${kind} provider config requires client_secret`)
     }
   }
@@ -339,6 +357,25 @@ interface ProviderRow {
   secret_config_keys: string[]
   created_at: string
   updated_at: string
+}
+
+interface ProviderKindRow {
+  kind: ProviderKind
+  secret_config_keys: string[]
+}
+
+function requireExistingOAuthSecret(kind: ProviderKind, publicConfig: Record<string, unknown>, secretConfig: Record<string, string>, secretKeys: readonly string[]): void {
+  if (kind !== 'oauth2_authorization_code' && kind !== 'oauth2_client_credentials') return
+  const method = publicConfig.client_auth_method
+  if (method === 'private_key_jwt') {
+    if (!secretConfig.private_key && !secretKeys.includes('private_key')) {
+      throw new Error(`${kind} provider config requires private_key`)
+    }
+    return
+  }
+  if (method !== 'none' && !secretConfig.client_secret && !secretKeys.includes('client_secret')) {
+    throw new Error(`${kind} provider config requires client_secret`)
+  }
 }
 
 const RETURNING = `id, zone_id, name, identifier, provider_kind AS kind,
@@ -447,16 +484,21 @@ export const providersRoutes: FastifyPluginAsync = async (fastify) => {
     let sealed: { ciphertext: Buffer, nonce: Buffer } | null = null
     if (body.config_json !== undefined) {
       let kind = body.kind
+      let secretKeys: string[] = []
       if (!kind) {
-        const { rows } = await fastify.db.query<{ kind: ProviderKind }>(
-          `SELECT provider_kind AS kind FROM providers WHERE id = $1 AND zone_id = $2 AND archived_at IS NULL`,
+        const { rows } = await fastify.db.query<ProviderKindRow>(
+          `SELECT provider_kind AS kind, secret_config_keys FROM providers WHERE id = $1 AND zone_id = $2 AND archived_at IS NULL`,
           [params.id, params.zoneId],
         )
         if (!rows[0]) return reply.code(404).send({ error: 'provider_not_found' })
         kind = rows[0].kind
+        secretKeys = rows[0].secret_config_keys ?? []
       }
       try {
         config = splitProviderConfig(kind, body.config_json, body.kind !== undefined)
+        if (body.kind === undefined) {
+          requireExistingOAuthSecret(kind, config.publicConfig, config.secretConfig, secretKeys)
+        }
         sealed = sealSecretConfig(config.secretConfig)
       } catch (err) {
         return reply.code(400).send({ error: 'invalid_provider_config', message: err instanceof Error ? err.message : String(err) })

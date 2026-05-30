@@ -11,7 +11,7 @@ import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
 import { actionInfo, fieldInfo, infoPage, openInfo, type InfoPage } from './info.ts'
 
-type FieldKind = 'text' | 'multiline' | 'secret' | 'bool' | 'list' | 'file' | 'select'
+type FieldKind = 'text' | 'multiline' | 'secret' | 'secret-multiline' | 'bool' | 'list' | 'file' | 'select'
 type RequiredValue = boolean | ((values: Readonly<Record<string, string>>) => boolean)
 type FieldDependency = string | string[] | Record<string, string | string[] | boolean>
 type FormRow =
@@ -106,7 +106,7 @@ export class FormView implements View {
     if (field?.pick) base.push('→:pick')
     else if (field?.kind === 'select') base.push('→:options')
     else if (field?.kind === 'file') base.push('→:file')
-    else if (field?.kind === 'secret') base.push('→:reveal')
+    else if (field?.kind === 'secret' || field?.kind === 'secret-multiline') base.push('→:reveal')
     return base
   }
 
@@ -169,8 +169,9 @@ export class FormView implements View {
       if (this.revealedIds.has(f.key)) return ui.input(`[ ${sanitizeAnsi(label)} ]`) + ui.muted(` id:${sanitizeAnsi(raw)}`)
       return ui.input(`[ ${sanitizeAnsi(label)} ]`) + ui.muted(' id:hidden')
     }
-    if (f.kind === 'secret') {
-      const shown = this.revealed.has(f.key) ? sanitizeAnsi(raw) : raw.length === 0 ? '' : '••••'
+    if (f.kind === 'secret' || f.kind === 'secret-multiline') {
+      const value = f.kind === 'secret-multiline' ? raw.replace(/\n/g, ' ⏎ ') : raw
+      const shown = this.revealed.has(f.key) ? sanitizeAnsi(value) : raw.length === 0 ? '' : '••••'
       return ui.input(`[ ${shown || `<${f.label}>`} ]`)
     }
     const shown = f.kind === 'multiline'
@@ -267,7 +268,7 @@ export class FormView implements View {
       })))
       return
     }
-    if (key === 'right' && f?.kind === 'secret') {
+    if (key === 'right' && (f?.kind === 'secret' || f?.kind === 'secret-multiline')) {
       if (this.revealed.has(f.key)) this.revealed.delete(f.key)
       else this.revealed.add(f.key)
       return
@@ -307,7 +308,7 @@ export class FormView implements View {
     }
     if (!f) return
     if (f.kind === 'bool' || f.kind === 'select') return
-    if (f.kind === 'multiline') {
+    if (f.kind === 'multiline' || f.kind === 'secret-multiline') {
       const text = textInput(key, true)
       if (text !== undefined) {
         this.multilineMode = true
