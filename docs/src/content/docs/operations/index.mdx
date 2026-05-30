@@ -44,7 +44,7 @@ flowchart LR
 - Redis Streams move audit, policy invalidation, session revocation, key invalidation, agent, invocation, and delegation events.
 - STS and Gateway keep audit replay directories so audit emission can drain after Redis/Audit recovery.
 - Published modes are `rc` and `stable`; they require production-grade HMAC keys and reject unsafe fallbacks.
-- Product-management operations happen through Console, Admin SDK, or Control API; the top-level runtime shell only manages local lifecycle and `caracal run`.
+- Product-management operations happen through Console, Admin SDK, or Control API; the top-level runtime CLI only manages local lifecycle and `caracal run`.
 
 ## Section map
 

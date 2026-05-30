@@ -1,6 +1,6 @@
 ---
 title: Trust Boundaries
-description: Security boundaries between users, runtime shell, Console, Control API, services, storage, and upstreams.
+description: Security boundaries between users, runtime CLI, Console, Control API, services, storage, and upstreams.
 pageType: architecture
 ---
 
@@ -10,7 +10,7 @@ Caracal’s trust model depends on clear boundaries. Do not blur runtime lifecyc
 
 | Boundary | Trusted side | Untrusted or constrained side |
 | --- | --- | --- |
-| Runtime shell | Local lifecycle and `caracal run` config | Product-management state and admin actions. |
+| Runtime CLI | Local lifecycle and `caracal run` config | Product-management state and admin actions. |
 | Console/Admin API | Authenticated operators and Control/Admin clients | Anonymous clients and expired/insufficient tokens. |
 | STS | Valid application credentials, policy/grant/session state | Malformed subject tokens, invalid client secrets, unsatisfied step-up. |
 | Gateway | Verified inbound mandate, configured binding, revocation-fresh state | Arbitrary upstream URLs, path traversal, replayed/expiring tokens. |
@@ -32,7 +32,7 @@ Gateway denies before upstream dispatch when:
 
 ## Control boundary
 
-Control is optional. It requires a gate file, JWKS-backed JWT verification, replay protection, rate limits, and an API token for dispatch. It must not be exposed as a top-level runtime shell command.
+Control is optional. It requires a gate file, JWKS-backed JWT verification, replay protection, rate limits, and an API token for dispatch. It must not be exposed as a top-level runtime CLI command.
 
 ## Related pages
 

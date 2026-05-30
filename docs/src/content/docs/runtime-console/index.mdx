@@ -1,6 +1,6 @@
 ---
 title: Runtime and Console
-description: Complete reference for the Caracal runtime shell and Console.
+description: Complete reference for the Caracal runtime CLI and Console.
 pageType: landing
 ---
 
@@ -11,7 +11,7 @@ Caracal has two local operator surfaces with a deliberate boundary:
 | `caracal` | Local stack lifecycle, readiness, local reset, token-injected process execution, and Console launch. | Product-management workflows. |
 | `caracal console` / `caracal-console` | Human management for zones, applications, providers, resources, policies, policy sets, grants, sessions, Control, audit, explanations, agent runs, delegation, diagnostics, and credentials. | Starting/stopping the stack or running workloads. |
 
-The runtime shell stays small so local lifecycle and workload execution do not depend on admin tokens, zone selection, or Control credentials. Product management belongs to the Console or to the authenticated Control/Admin APIs.
+The runtime CLI stays small so local lifecycle and workload execution do not depend on admin tokens, zone selection, or Control credentials. Product management belongs to the Console or to the authenticated Control/Admin APIs.
 
 ## Runtime map
 
@@ -25,7 +25,7 @@ The runtime shell stays small so local lifecycle and workload execution do not d
 | `caracal run -- <command>` | Run a subprocess with scoped resource tokens injected. |
 | `caracal console` | Launch the Console when the Console binary or workspace shim is available. |
 
-No other top-level `caracal` product-management commands are part of the runtime shell.
+No other top-level `caracal` product-management commands are part of the runtime CLI.
 
 ## Console map
 

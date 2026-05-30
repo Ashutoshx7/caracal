@@ -1,10 +1,10 @@
 ---
 title: CLI and Console
-description: Side-by-side reference for runtime shell commands and Console-owned workflows.
+description: Side-by-side reference for runtime CLI commands and Console-owned workflows.
 pageType: reference
 ---
 
-Use this page when you need to decide whether an action belongs in the runtime shell, the Console, or an API client.
+Use this page when you need to decide whether an action belongs in the runtime CLI, the Console, or an API client.
 
 ## Ownership rule
 
@@ -14,9 +14,9 @@ human product management              -> caracal console / caracal-console
 scripted product management           -> Control API or Admin SDK
 ```
 
-The top-level shell intentionally contains only `up`, `down`, `status`, `purge`, `run`, and `console`.
+The top-level runtime CLI intentionally contains only `up`, `down`, `status`, `purge`, `run`, and `console`.
 
-## Runtime shell
+## Runtime CLI
 
 | Outcome | Command |
 | --- | --- |
@@ -30,7 +30,7 @@ The top-level shell intentionally contains only `up`, `down`, `status`, `purge`,
 | Run a process with resource tokens | `caracal run -- <command>` |
 | Open the Console | `caracal console` |
 
-Runtime shell commands must not require admin tokens, selected zones, product credentials, or Control credentials.
+Runtime CLI commands must not require admin tokens, selected zones, product credentials, or Control credentials.
 
 ## Console workflows
 
@@ -52,7 +52,7 @@ Runtime shell commands must not require admin tokens, selected zones, product cr
 | Run health, readiness, zone, and preflight checks | `diagnostics` |
 | Read or inspect protected-resource tokens | `credential` |
 
-Product-management workflows are not mirrored as top-level shell commands. Keeping them in the Console prevents command drift and keeps interactive operations tied to the same engine/admin helpers.
+Product-management workflows are not mirrored as top-level runtime CLI commands. Keeping them in the Console prevents command drift and keeps interactive operations tied to the same engine/admin helpers.
 
 ## Automation
 
