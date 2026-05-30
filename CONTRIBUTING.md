@@ -60,20 +60,19 @@ pnpm caracal console          # Human-facing product management
 
 #### Standalone execution
 
-`pnpm caracal run -- <command>` reads validated runtime config from platform environment variables or an explicit runtime profile, exchanges the configured application credentials with STS, injects only the configured scoped resource-token environment variables into the child process, and executes without a shell. The stack does not create zones, applications, client secrets, or runtime profiles. Create a managed application with credential type `token`, copy the one-time client secret from the create result, and store local files under the OS Caracal config directory.
+`pnpm caracal run -- <command>` reads validated runtime config from platform environment variables or an explicit runtime profile, exchanges the configured application credentials with STS, injects only the configured scoped resource-token environment variables into the child process, and executes without a shell. The stack does not create zones, applications, client secrets, or runtime profiles. Create a managed application with credential type `token`, copy the one-time client secret from the create result, and store the local secret and credential manifest under the OS Caracal config directory.
+
+Run example workloads from their example directory:
 
 ```bash
-export CARACAL_ZONE_ID="<zone-id>"
-export CARACAL_APPLICATION_ID="<application-id>"
-CARACAL_RUNTIME_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/caracal/runtime/$CARACAL_ZONE_ID/$CARACAL_APPLICATION_ID"
-mkdir -p "$CARACAL_RUNTIME_DIR"
-printf '%s\n' '<client-secret>' > "$CARACAL_RUNTIME_DIR/client-secret"
-chmod 600 "$CARACAL_RUNTIME_DIR/client-secret"
-cat > "$CARACAL_RUNTIME_DIR/credentials.json" <<'JSON'
-[{ "env": "RESOURCE_TOKEN", "resource": "resource://local-http" }]
-JSON
-pnpm caracal run -- node -e "if (!process.env.RESOURCE_TOKEN) process.exit(1)"
+cd examples/ResearchAgent
+cp env.example .env
+$EDITOR .env
+. .env
+pnpm caracal run -- node agent.mjs
 ```
+
+The `.env` file contains only the zone and application identifiers. Local authentication still comes from the auto-detected app client secret at `${XDG_CONFIG_HOME:-$HOME/.config}/caracal/runtime/<zone-id>/<application-id>/client-secret`, and resource injection comes from the sibling `credentials.json` manifest.
 
 #### Control API (optional)
 

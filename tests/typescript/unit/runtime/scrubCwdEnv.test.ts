@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { scrubCwdEnv } from '../../../../packages/engine/dist/scrubCwdEnv.js'
+import { scrubCwdEnv } from '@caracalai/engine/scrubCwdEnv'
 
 let dir: string
 let env: NodeJS.ProcessEnv

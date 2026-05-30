@@ -7,7 +7,7 @@ import { mkdtempSync, readFileSync, statSync, writeFileSync, chmodSync, mkdirSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { installRuntimeAssets, runtimePaths } from '../../../../packages/engine/dist/index.js'
+import { installRuntimeAssets, runtimePaths } from '@caracalai/engine'
 
 describe('runtime installer', () => {
   it('runtimePaths honours CARACAL_HOME for end-user package installs', () => {
