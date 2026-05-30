@@ -16,7 +16,7 @@ function makeOpts(run: Executor) {
 
 const exitSpy = () => vi.spyOn(process, 'exit').mockImplementation(((code?: number) => { throw new Error(`exit:${code ?? 0}`) }) as never)
 
-afterEach(() => { vi.restoreAllMocks() })
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
 
 describe('dispatch', () => {
   it('routes a valid command to its executor', async () => {
@@ -111,22 +111,33 @@ describe('dispatch', () => {
     expect(out).not.toContain('--json')
   })
 
-  it('prints command help for a help request without loading config or running the executor', async () => {
-    const exit = exitSpy()
+  it('skips config loading and forwards a help request to the command executor', async () => {
     const run = vi.fn() as Executor
-    const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
-    for (const token of ['help', '--help', '-h']) {
-      stdout.mockClear()
-      await expect(dispatch({ ...makeOpts(run), loadConfig: true }, ['run', token])).rejects.toThrow('exit:0')
-      const out = stdout.mock.calls.map((c) => String(c[0])).join('')
-      expect(out).toContain('Usage: caracal run [options]')
-      expect(out).toContain('Run a command with injected resource tokens')
+    await dispatch({ ...makeOpts(run), loadConfig: true }, ['run', 'help'])
+    expect(run).toHaveBeenCalledWith(['help'], undefined)
+  })
+
+  it('skips config loading when a required-args command is invoked with no operands', async () => {
+    const run = vi.fn() as Executor
+    await dispatch({ ...makeOpts(run), loadConfig: true }, ['run'])
+    expect(run).toHaveBeenCalledWith([], undefined)
+  })
+
+  it('still requires config for a normal run invocation', async () => {
+    vi.stubEnv('CARACAL_CONFIG', undefined)
+    vi.stubEnv('XDG_CONFIG_HOME', '/nonexistent-caracal-config')
+    for (const key of ['CARACAL_APPLICATION_ID', 'CARACAL_APP_CLIENT_SECRET', 'CARACAL_APP_CLIENT_SECRET_FILE', 'CARACAL_RUN_CREDENTIALS', 'CARACAL_RUN_CREDENTIALS_FILE']) {
+      vi.stubEnv(key, undefined)
     }
-    expect(exit).toHaveBeenCalledWith(0)
+    const exit = exitSpy()
+    vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+    const run = vi.fn() as Executor
+    await expect(dispatch({ ...makeOpts(run), loadConfig: true }, ['run', 'node', 'tool.js'])).rejects.toThrow('exit:1')
+    expect(exit).toHaveBeenCalledWith(1)
     expect(run).not.toHaveBeenCalled()
   })
 
-  it('only treats a help token as command help when it leads the arguments', async () => {
+  it('only treats a help token as command input when it leads the arguments', async () => {
     const run = vi.fn() as Executor
     await dispatch(makeOpts(run), ['run', 'mytool', '--help'])
     expect(run).toHaveBeenCalledWith(['mytool', '--help'], undefined)

@@ -916,6 +916,7 @@ describe('providers actions', () => {
       name: 'Hooli Bearer',
       kind: 'bearer_token',
       bearer_token: 'provider-token',
+      allowed_token_hosts: 'api.hooli.example',
       auth_header: 'X-Provider-Authorization',
       auth_scheme: 'Token',
       forward_caracal_identity: 'true',
@@ -931,6 +932,7 @@ describe('providers actions', () => {
       kind: 'bearer_token',
       config_json: {
         bearer_token: 'provider-token',
+        allowed_token_hosts: ['api.hooli.example'],
         auth_header: 'X-Provider-Authorization',
         auth_scheme: 'Token',
         forward_caracal_identity: true,

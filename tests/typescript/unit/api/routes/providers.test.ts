@@ -402,6 +402,7 @@ describe('POST /v1/zones/:zoneId/providers', () => {
         kind: 'bearer_token',
         config_json: {
           bearer_token: 'hooli-provider-token',
+          allowed_token_hosts: ['api.hooli.example'],
           auth_header: 'Authorization',
           auth_scheme: 'Bearer',
           forward_caracal_identity: true,
@@ -413,6 +414,7 @@ describe('POST /v1/zones/:zoneId/providers', () => {
     expect(res.statusCode).toBe(201)
     expect(JSON.parse(res.body)).toMatchObject({ id: 'provider-1', kind: 'bearer_token' })
     expect(JSON.parse(values[5] as string)).toEqual({
+      allowed_token_hosts: ['api.hooli.example'],
       auth_header: 'Authorization',
       auth_scheme: 'Bearer',
       forward_caracal_identity: true,
@@ -437,6 +439,10 @@ describe('POST /v1/zones/:zoneId/providers', () => {
       {
         bearer_token: 'hooli-provider-token',
         auth_scheme: 'Bearer Token',
+      },
+      {
+        bearer_token: 'hooli-provider-token',
+        allowed_token_hosts: ['https://api.hooli.example'],
       },
     ]
     for (const config of invalidConfigs) {

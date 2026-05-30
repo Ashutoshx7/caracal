@@ -381,6 +381,39 @@ describe('first setup workflow', () => {
     }))
   })
 
+  it('creates guided bearer token providers with an inferred host allow-list', async () => {
+    const client = makeClient()
+    const app = fakeApp()
+    const view = firstSetupView({
+      client: client as never,
+      zoneId: 'zone-1',
+    })
+    await view.init?.(app)
+
+    await openAndSubmit(view, app, { agent_app_name: 'agent-app-name' })
+    await openAndSubmit(view, app, {
+      provider_name: 'Hooli Bot',
+      provider_kind: 'bearer_token',
+      provider_bearer_token: 'provider-token',
+    })
+    await openAndSubmit(view, app, {
+      resource_name: 'resource-name',
+      resource_scopes: 'scope-name',
+      upstream_url: 'https://api.hooli.example/v1',
+    })
+    await openAndSubmit(view, app, { policy_mode: 'skip' })
+    await view.onKey('enter', ctx(app))
+
+    expect(client.providers.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
+      name: 'Hooli Bot',
+      kind: 'bearer_token',
+      config_json: {
+        bearer_token: 'provider-token',
+        allowed_token_hosts: ['api.hooli.example'],
+      },
+    }))
+  })
+
   it('selects existing objects without asking for their IDs in the main flow', async () => {
     const client = makeClient()
     const app = fakeApp()

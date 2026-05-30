@@ -179,8 +179,7 @@ describe('runCommand', () => {
     expect(spawnMock).not.toHaveBeenCalled()
   })
 
-  it('blocks workloads when legacy workspace operator secrets are present', async () => {
-    const cwd = process.cwd()
+  it('blocks workloads when legacy workspace operator secrets are present', async () => {    const cwd = process.cwd()
     const repo = mkdtempSync(join(tmpdir(), 'caracal-run-repo-'))
     try {
       delete process.env.CARACAL_RUN_ALLOW_WORKSPACE_SECRETS
@@ -199,6 +198,39 @@ describe('runCommand', () => {
       process.chdir(cwd)
       rmSync(repo, { recursive: true, force: true })
     }
+  })
+
+  it('prints help and exits 0 for a help request without spawning a child', async () => {
+    for (const token of ['help', '--help', '-h']) {
+      stdout = ''
+      await expect(runCommand([token])).rejects.toThrow('exit:0')
+      expect(stdout).toContain('Usage: caracal run')
+      expect(stdout).toContain('Examples:')
+    }
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('prints usage and exits 1 when no command is given', async () => {
+    await expect(runCommand([])).rejects.toThrow('exit:1')
+    expect(stderr).toContain('Usage: caracal run')
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('exits 1 with a clear message when config is missing for a real command', async () => {
+    await expect(runCommand(['node', 'tool.js'], undefined)).rejects.toThrow('exit:1')
+    expect(stderr).toContain('runtime config is required to run a command')
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('runs a literal command after the -- separator instead of treating it as help', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ access_token: 'resource-token', expires_in: 3600 }),
+    }))
+
+    await expect(runCommand(['--', 'help'], cfg)).rejects.toThrow('exit:0')
+
+    expect(spawnMock).toHaveBeenCalledWith('help', [], expect.objectContaining({ stdio: 'inherit' }))
   })
 
 })
