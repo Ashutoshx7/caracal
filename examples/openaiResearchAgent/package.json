@@ -1,0 +1,13 @@
+{
+  "name": "caracal-example-openai-research-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Realistic external OpenAI agent launched with caracal run using runtime-only key injection.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.mjs\""
+  }
+}
