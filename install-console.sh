@@ -24,7 +24,7 @@ caracal-install: download the Caracal Console binaries from GitHub Releases.
 Usage:
   install-console.sh [--version vYYYY.MM.DD[.N][-rc.N]] [--install-dir PATH] [--verify-provenance] [--require-provenance]
 
-Installs the thin 'caracal' shell and the 'caracal-console' Console binary.
+Installs the thin 'caracal' runtime CLI and the 'caracal-console' Console binary.
 
 Environment overrides:
   CARACAL_VERSION       same as --version
@@ -175,10 +175,10 @@ hasArchive() {
 }
 
 mkdir -p "${INSTALL_DIR}"
-installedShell=0
-if hasArchive shell; then
-    installedShell=1
-    stageArchive shell caracal
+installedRuntime=0
+if hasArchive runtime; then
+    installedRuntime=1
+    stageArchive runtime caracal
 fi
 stageArchive console caracal-console
 
@@ -196,7 +196,7 @@ installStaged() {
     printf 'caracal-install: installed %s\n' "${dest}"
 }
 
-[ "${installedShell}" = "1" ] && installStaged "$([ "${os}" = windows ] && printf 'caracal.exe' || printf 'caracal')"
+[ "${installedRuntime}" = "1" ] && installStaged "$([ "${os}" = windows ] && printf 'caracal.exe' || printf 'caracal')"
 installStaged "$([ "${os}" = windows ] && printf 'caracal-console.exe' || printf 'caracal-console')"
 committed=1
 
@@ -224,7 +224,7 @@ checkShadow() {
     fi
 }
 
-[ "${installedShell}" = "1" ] && checkShadow caracal
+[ "${installedRuntime}" = "1" ] && checkShadow caracal
 checkShadow caracal-console
 
 printf 'caracal-install: done. Next steps:\n'
@@ -234,8 +234,8 @@ case "${tag}" in
 esac
 printf '  installed release %s (mode: %s)\n' "${tag}" "${mode}"
 printf '  hash -r            # refresh your shell command cache\n'
-[ "${installedShell}" = "1" ] && printf '  caracal console        # launch the Console through the shell\n'
+[ "${installedRuntime}" = "1" ] && printf '  caracal console        # launch the Console through the runtime CLI\n'
 printf '  caracal-console        # launch the Console directly\n'
 printf 'caracal-install: to uninstall, remove'
-[ "${installedShell}" = "1" ] && printf ' %s/caracal' "${INSTALL_DIR}"
+[ "${installedRuntime}" = "1" ] && printf ' %s/caracal' "${INSTALL_DIR}"
 printf ' %s/caracal-console\n' "${INSTALL_DIR}"

@@ -93,10 +93,10 @@ try {
     $stage = New-Item -ItemType Directory -Force -Path (Join-Path $tmp.FullName 'stage')
     $backup = New-Item -ItemType Directory -Force -Path (Join-Path $tmp.FullName 'backup')
     $staged = @{}
-    $installedShell = $false
-    if (Test-Archive -Kind 'shell') {
-        $installedShell = $true
-        $staged['caracal.exe'] = Stage-Archive -Kind 'shell' -BinName 'caracal'
+    $installedRuntime = $false
+    if (Test-Archive -Kind 'runtime') {
+        $installedRuntime = $true
+        $staged['caracal.exe'] = Stage-Archive -Kind 'runtime' -BinName 'caracal'
     }
     $staged['caracal-console.exe'] = Stage-Archive -Kind 'console' -BinName 'caracal-console'
 
@@ -139,11 +139,11 @@ if (-not ($userPath -split ';' | Where-Object { $_ -ieq $InstallDir })) {
 }
 
 Write-Host 'caracal-install: done. Next steps:'
-if ($installedShell) {
-    Write-Host '  caracal console        # launch the Console through the shell'
+if ($installedRuntime) {
+    Write-Host '  caracal console        # launch the Console through the runtime CLI'
 }
 Write-Host '  caracal-console        # launch the Console directly'
-if ($installedShell) {
+if ($installedRuntime) {
     Write-Host "caracal-install: to uninstall, remove caracal.exe and caracal-console.exe from $InstallDir and the user PATH entry."
 } else {
     Write-Host "caracal-install: to uninstall, remove caracal-console.exe from $InstallDir and the user PATH entry."

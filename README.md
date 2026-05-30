@@ -74,7 +74,7 @@ More coming soon
 
 ### Install
 
-The installer provides the thin `caracal` runtime shell and the `caracal-console` management interface.
+The installer provides the thin `caracal` runtime CLI and the `caracal-console` management interface.
 
 > Version examples below pin `v2026.05.27-rc.1`. Check [GitHub Releases](https://github.com/Garudex-Labs/caracal/releases) for the latest available tag. Unpinned installs follow GitHub's latest stable release.
 > Pin a version: `--version vYYYY.MM.DD` on Unix or `-Version vYYYY.MM.DD` in PowerShell.  
