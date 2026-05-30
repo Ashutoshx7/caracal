@@ -11,6 +11,7 @@ import { firstSetupView } from '../../../../apps/console/src/views/setup.ts'
 import { DetailView } from '../../../../apps/console/src/views/detail.ts'
 import { FormView } from '../../../../apps/console/src/views/form.ts'
 import type { App, View, ViewContext } from '../../../../apps/console/src/screen.ts'
+import { defaultAppClientSecretFilePath } from '../../../../packages/engine/src/runtimeConfig.ts'
 
 function fakeApp(): App {
   const pushed: unknown[] = []
@@ -501,6 +502,9 @@ describe('first setup workflow', () => {
     const secret = await readFile(secretPath, 'utf8')
     expect(profile).toContain('application_id = "app-1"')
     expect(profile).toContain(`app_client_secret_file = ${JSON.stringify(secretPath)}`)
+    expect(profile).not.toContain('sts_url')
+    expect(profile).not.toContain('coordinator_url')
+    expect(profile).not.toContain('gateway_url')
     expect(secret).toMatch(/^cs_[A-Za-z0-9_-]+\n$/)
     expect((await stat(profilePath)).mode & 0o777).toBe(0o600)
     expect((await stat(secretPath)).mode & 0o777).toBe(0o600)
@@ -515,6 +519,44 @@ describe('first setup workflow', () => {
     expect(body).not.toContain('Local Profile Setup')
     expect(body).not.toContain('cat >')
     expect(body).not.toContain(secret.trim())
+  })
+
+  it('omits default local secret paths from generated profiles', async () => {
+    const client = makeClient()
+    const app = fakeApp()
+    const dir = await tempDir()
+    const previousConfigHome = process.env.XDG_CONFIG_HOME
+    process.env.XDG_CONFIG_HOME = dir
+    try {
+      const profilePath = join(dir, 'caracal', 'caracal.toml')
+      const secretPath = defaultAppClientSecretFilePath('zone-1', 'app-1')
+      const view = firstSetupView({
+        client: client as never,
+        zoneId: 'zone-1',
+      })
+      await view.init?.(app)
+      Object.assign((view as unknown as { values: Record<string, string> }).values, {
+        profile_path: profilePath,
+        upstream_url: 'https://upstream-url',
+        request_path: '/request-path',
+        write_files: 'true',
+      })
+
+      await openAndSubmit(view, app, { agent_app_name: 'agent-app-name' })
+      await openAndSubmit(view, app, { provider_name: 'no credential', provider_kind: 'none' })
+      await openAndSubmit(view, app, { resource_name: 'resource-name', resource_scopes: 'scope-name', upstream_url: 'https://upstream-url' })
+      await openAndSubmit(view, app, { policy_mode: 'create' })
+      await view.onKey('enter', ctx(app))
+
+      const profile = await readFile(profilePath, 'utf8')
+      const secret = await readFile(secretPath, 'utf8')
+      expect(profile).toContain('application_id = "app-1"')
+      expect(profile).not.toContain('app_client_secret_file')
+      expect(secret).toMatch(/^cs_[A-Za-z0-9_-]+\n$/)
+    } finally {
+      if (previousConfigHome === undefined) delete process.env.XDG_CONFIG_HOME
+      else process.env.XDG_CONFIG_HOME = previousConfigHome
+    }
   })
 
   it('refuses to overwrite existing setup files before creating resources', async () => {

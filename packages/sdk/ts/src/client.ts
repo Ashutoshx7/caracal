@@ -7,7 +7,7 @@
 
 import { bind, fromEnvelope, toEnvelope, current, type CaracalContext } from "./context.js";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { parse } from "smol-toml";
 import {
@@ -28,6 +28,10 @@ import {
 import { AgentKind, type DelegationConstraints } from "./coordinator.js";
 import type { JsonObject } from "./json.js";
 import { OAuthClient } from "@caracalai/oauth";
+
+const DEFAULT_STS_URL = "http://localhost:8080";
+const DEFAULT_COORDINATOR_URL = "http://localhost:4000";
+const DEFAULT_GATEWAY_URL = "http://localhost:8081";
 
 export interface ResourceBinding {
   resourceId: string;
@@ -145,27 +149,25 @@ export class Caracal {
   }
 
   static fromEnv(env: NodeJS.ProcessEnv = process.env): Caracal {
-    const url = env.CARACAL_COORDINATOR_URL;
+    const url = serviceUrl(env, "CARACAL_COORDINATOR_URL", DEFAULT_COORDINATOR_URL);
     const zoneId = env.CARACAL_ZONE_ID;
     const applicationId = env.CARACAL_APPLICATION_ID;
     const subjectToken = env.CARACAL_SUBJECT_TOKEN;
-    const clientSecret = clientSecretFromEnv(env);
-    const stsUrl = env.CARACAL_STS_URL;
-    const gatewayUrl = env.CARACAL_GATEWAY_URL;
+    const stsUrl = stsUrlFromEnv(env);
+    const gatewayUrl = serviceUrl(env, "CARACAL_GATEWAY_URL", DEFAULT_GATEWAY_URL);
     const missing = [
-      ["CARACAL_COORDINATOR_URL", url],
       ["CARACAL_ZONE_ID", zoneId],
       ["CARACAL_APPLICATION_ID", applicationId],
     ].filter(([, v]) => !v).map(([k]) => k);
     if (missing.length) {
       throw new Error(`Caracal.fromEnv: missing ${missing.join(", ")}`);
     }
-    const profileResources = resourcesFromEnv(env);
+    const clientSecret = clientSecretFromEnv(env, zoneId!, applicationId!);
+    const profileResources = resourcesFromEnv(env, zoneId!, applicationId!);
     const resources = profileResources.bindings;
     if (clientSecret) {
-      if (!stsUrl) throw new Error("Caracal.fromEnv: CARACAL_APP_CLIENT_SECRET requires CARACAL_STS_URL");
       return Caracal.fromClientSecret({
-        coordinatorUrl: url!,
+        coordinatorUrl: url,
         stsUrl,
         zoneId: zoneId!,
         applicationId: applicationId!,
@@ -175,11 +177,11 @@ export class Caracal {
       });
     }
     if (!subjectToken) {
-      throw new Error("Caracal.fromEnv: provide CARACAL_APP_CLIENT_SECRET (+ CARACAL_STS_URL) or CARACAL_SUBJECT_TOKEN");
+      throw new Error("Caracal.fromEnv: provide CARACAL_APP_CLIENT_SECRET or CARACAL_SUBJECT_TOKEN");
     }
     validateSubjectToken(subjectToken!);
     return new Caracal({
-      coordinator: { baseUrl: url! },
+      coordinator: { baseUrl: url },
       zoneId: zoneId!,
       applicationId: applicationId!,
       subjectToken: subjectToken!,
@@ -209,19 +211,21 @@ export class Caracal {
     if (!isRecord(value)) throw new Error("Caracal.fromConfig: profile must be a TOML table");
     const zoneId = requiredString(value, "zone_id", path);
     const applicationId = requiredString(value, "application_id", path);
-    const stsUrl = stringValue(value, "sts_url") ?? stringValue(value, "zone_url") ?? env.CARACAL_STS_URL;
-    if (!stsUrl) throw new Error("Caracal.fromConfig: sts_url or zone_url is required");
-    const coordinatorUrl = stringValue(value, "coordinator_url") ?? env.CARACAL_COORDINATOR_URL;
-    if (!coordinatorUrl) throw new Error("Caracal.fromConfig: coordinator_url is required");
-    const resources = resourcesFromProfile(value, path);
+    const stsUrl = stringValue(value, "sts_url")
+      ?? stringValue(value, "zone_url")
+      ?? env.CARACAL_STS_URL
+      ?? env.CARACAL_ZONE_URL
+      ?? serviceUrl(env, "CARACAL_STS_URL", DEFAULT_STS_URL);
+    const coordinatorUrl = stringValue(value, "coordinator_url") ?? serviceUrl(env, "CARACAL_COORDINATOR_URL", DEFAULT_COORDINATOR_URL);
+    const resources = resourcesFromProfile(value, path, env, zoneId, applicationId);
     return Caracal.fromClientSecret({
       coordinatorUrl,
       stsUrl,
       zoneId,
       applicationId,
-      clientSecret: clientSecretFromProfile(value, path),
+      clientSecret: clientSecretFromProfile(value, path, env, zoneId, applicationId),
       resources: resources.resources,
-      gatewayUrl: stringValue(value, "gateway_url") ?? env.CARACAL_GATEWAY_URL,
+      gatewayUrl: stringValue(value, "gateway_url") ?? serviceUrl(env, "CARACAL_GATEWAY_URL", DEFAULT_GATEWAY_URL),
     });
   }
 
@@ -470,6 +474,17 @@ export class Caracal {
   }
 }
 
+function serviceUrl(env: NodeJS.ProcessEnv, key: string, fallback: string): string {
+  const value = env[key];
+  if (value) return value;
+  if (env.NODE_ENV === "production") throw new Error(`Caracal SDK: ${key} is required when NODE_ENV=production`);
+  return fallback;
+}
+
+function stsUrlFromEnv(env: NodeJS.ProcessEnv): string {
+  return env.CARACAL_STS_URL ?? env.CARACAL_ZONE_URL ?? serviceUrl(env, "CARACAL_STS_URL", DEFAULT_STS_URL);
+}
+
 interface ProfileResources {
   resources: Array<string | ResourceBinding>;
   bindings?: ResourceBinding[];
@@ -481,10 +496,36 @@ interface CredentialEntry {
 }
 
 function defaultProfilePath(env: NodeJS.ProcessEnv = process.env): string {
-  const xdg = env.XDG_CONFIG_HOME && env.XDG_CONFIG_HOME.length > 0
-    ? env.XDG_CONFIG_HOME
-    : join(homedir(), ".config");
-  return join(xdg, "caracal", "caracal.toml");
+  return join(defaultConfigDir(env), "caracal.toml");
+}
+
+function defaultConfigDir(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.CARACAL_CONFIG_HOME) return env.CARACAL_CONFIG_HOME;
+  if (env.XDG_CONFIG_HOME) return join(env.XDG_CONFIG_HOME, "caracal");
+  if (platform() === "win32") return join(env.APPDATA || env.LOCALAPPDATA || join(homedir(), "AppData", "Roaming"), "Caracal");
+  if (platform() === "darwin") return join(homedir(), "Library", "Application Support", "Caracal");
+  return join(homedir(), ".config", "caracal");
+}
+
+function defaultCredentialDir(env: NodeJS.ProcessEnv, zoneId: string, applicationId: string): string {
+  return join(defaultConfigDir(env), "runtime", safePathSegment(zoneId), safePathSegment(applicationId));
+}
+
+function defaultClientSecretPath(env: NodeJS.ProcessEnv, zoneId: string, applicationId: string): string {
+  return join(defaultCredentialDir(env, zoneId, applicationId), "client-secret");
+}
+
+function defaultRunCredentialsPath(env: NodeJS.ProcessEnv, zoneId: string, applicationId: string): string {
+  return join(defaultCredentialDir(env, zoneId, applicationId), "credentials.json");
+}
+
+function safePathSegment(value: string): string {
+  return value.trim().replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "default";
+}
+
+function existingLocalFile(path: string, env: NodeJS.ProcessEnv): string | undefined {
+  if (env.NODE_ENV === "production") return undefined;
+  return existsSync(path) ? path : undefined;
 }
 
 function resolveProfilePath(env: NodeJS.ProcessEnv): string | undefined {
@@ -525,20 +566,23 @@ function requiredString(record: Record<string, unknown>, key: string, source: st
   return value;
 }
 
-function clientSecretFromProfile(record: Record<string, unknown>, source: string): string {
+function clientSecretFromProfile(record: Record<string, unknown>, source: string, env: NodeJS.ProcessEnv, zoneId: string, applicationId: string): string {
   const inline = stringValue(record, "app_client_secret");
   const file = stringValue(record, "app_client_secret_file");
   if (inline && file) throw new Error(`${source}: set only one of app_client_secret or app_client_secret_file`);
   if (inline) return inline;
-  if (!file) throw new Error(`${source}: app_client_secret_file is required`);
-  return readSecretFile(file);
+  const localFile = file ?? existingLocalFile(defaultClientSecretPath(env, zoneId, applicationId), env);
+  if (!localFile) throw new Error(`${source}: client secret is required; local dev/stable auto-detects ${defaultClientSecretPath(env, zoneId, applicationId)} when it exists`);
+  return readSecretFile(localFile);
 }
 
-function clientSecretFromEnv(env: NodeJS.ProcessEnv): string | undefined {
+function clientSecretFromEnv(env: NodeJS.ProcessEnv, zoneId: string, applicationId: string): string | undefined {
   if (env.CARACAL_APP_CLIENT_SECRET && env.CARACAL_APP_CLIENT_SECRET_FILE) {
     throw new Error("Caracal.fromEnv: set only one of CARACAL_APP_CLIENT_SECRET or CARACAL_APP_CLIENT_SECRET_FILE");
   }
   if (env.CARACAL_APP_CLIENT_SECRET_FILE) return readSecretFile(env.CARACAL_APP_CLIENT_SECRET_FILE);
+  const localFile = existingLocalFile(defaultClientSecretPath(env, zoneId, applicationId), env);
+  if (localFile) return readSecretFile(localFile);
   return env.CARACAL_APP_CLIENT_SECRET;
 }
 
@@ -550,18 +594,19 @@ function readSecretFile(path: string): string {
   return secret;
 }
 
-function resourcesFromProfile(record: Record<string, unknown>, source: string): ProfileResources {
+function resourcesFromProfile(record: Record<string, unknown>, source: string, env: NodeJS.ProcessEnv, zoneId: string, applicationId: string): ProfileResources {
   const credentials = [
     ...credentialEntries(record.credentials, `${source}.credentials`),
     ...credentialEntries(record.optional_credentials, `${source}.optional_credentials`),
+    ...credentialManifestFromEnv(env, zoneId, applicationId),
   ];
   const resources = resourcesFromCredentials(credentials);
   if (!resources.resources.length) throw new Error(`${source}: at least one credentials or optional_credentials entry is required`);
   return resources;
 }
 
-function resourcesFromEnv(env: NodeJS.ProcessEnv): ProfileResources {
-  const credentials = credentialManifestFromEnv(env);
+function resourcesFromEnv(env: NodeJS.ProcessEnv, zoneId: string, applicationId: string): ProfileResources {
+  const credentials = credentialManifestFromEnv(env, zoneId, applicationId);
   const envBindings = [
     ...resourceBindingsFromFile(env.CARACAL_RESOURCES_FILE),
     ...(parseResourceBindings(env.CARACAL_RESOURCES) ?? []),
@@ -597,12 +642,13 @@ function resourceBindingsFromFile(path: string | undefined): ResourceBinding[] {
   throw new Error("CARACAL_RESOURCES_FILE must contain an object or array");
 }
 
-function credentialManifestFromEnv(env: NodeJS.ProcessEnv): CredentialEntry[] {
+function credentialManifestFromEnv(env: NodeJS.ProcessEnv, zoneId: string, applicationId: string): CredentialEntry[] {
   const file = env.CARACAL_RUN_CREDENTIALS_FILE;
   const inline = env.CARACAL_RUN_CREDENTIALS;
   if (file && inline) throw new Error("Caracal.fromEnv: set only one of CARACAL_RUN_CREDENTIALS or CARACAL_RUN_CREDENTIALS_FILE");
-  if (!file && !inline) return [];
-  const raw = file ? readSecretFile(file) : inline!;
+  const localFile = !file && !inline ? existingLocalFile(defaultRunCredentialsPath(env, zoneId, applicationId), env) : undefined;
+  if (!file && !inline && !localFile) return [];
+  const raw = file || localFile ? readSecretFile(file ?? localFile!) : inline!;
   const parsed = JSON.parse(raw) as unknown;
   const manifest = Array.isArray(parsed) ? { credentials: parsed } : parsed;
   if (!isRecord(manifest)) throw new Error("Caracal.fromEnv: credential manifest must be an array or object");

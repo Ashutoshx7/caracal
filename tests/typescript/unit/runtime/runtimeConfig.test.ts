@@ -9,9 +9,12 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   DEFAULT_API_URL,
+  DEFAULT_STS_URL,
   RuntimeConfigPermissionError,
   RuntimeConfigValidationError,
   assertRuntimeConfigFileSecure,
+  defaultAppClientSecretFilePath,
+  defaultRunCredentialsFilePath,
   defaultRuntimeConfigPath,
   loadRuntimeConfig,
   ServiceUrlMissingError,
@@ -233,6 +236,78 @@ describe('resolveRuntimeConfigPath', () => {
       optional_credentials: [{ env: 'OPTIONAL_TOKEN', resource: 'resource://optional', on_failure: 'warn' }],
       mcp_governance: { mode: 'block' },
     })
+  })
+
+  it('uses local service defaults when runtime URL fields are omitted', () => {
+    process.env.CARACAL_ZONE_ID = 'zone1'
+    process.env.CARACAL_APPLICATION_ID = 'app1'
+    process.env.CARACAL_APP_CLIENT_SECRET = 'secret-value'
+    process.env.CARACAL_RUN_CREDENTIALS = JSON.stringify([{ env: 'RESOURCE_TOKEN', resource: 'resource://api' }])
+
+    expect(loadRuntimeConfig(true)).toMatchObject({
+      zone_url: DEFAULT_STS_URL,
+      zone_id: 'zone1',
+      application_id: 'app1',
+      app_client_secret: 'secret-value',
+    })
+  })
+
+  it('auto-detects local secret and credential files from zone and application', () => {
+    process.env.CARACAL_ZONE_ID = 'zone1'
+    process.env.CARACAL_APPLICATION_ID = 'app1'
+    const secret = defaultAppClientSecretFilePath('zone1', 'app1')
+    const credentials = defaultRunCredentialsFilePath('zone1', 'app1')
+    mkdirSync(join(root, 'xdg-default', 'caracal', 'runtime', 'zone1', 'app1'), { recursive: true })
+    writeFileSync(secret, 'secret-value\n')
+    writeFileSync(credentials, JSON.stringify([{ env: 'RESOURCE_TOKEN', resource: 'resource://api' }]))
+    if (process.platform !== 'win32') {
+      chmodSync(secret, 0o600)
+      chmodSync(credentials, 0o600)
+    }
+
+    expect(loadRuntimeConfig(true)).toMatchObject({
+      zone_url: DEFAULT_STS_URL,
+      zone_id: 'zone1',
+      application_id: 'app1',
+      app_client_secret: 'secret-value',
+      credentials: [{ env: 'RESOURCE_TOKEN', resource: 'resource://api' }],
+    })
+  })
+
+  it('auto-detects local secret files for generated profiles', () => {
+    const cfg = join(root, 'caracal.toml')
+    const secret = defaultAppClientSecretFilePath('zone1', 'app1')
+    mkdirSync(join(root, 'xdg-default', 'caracal', 'runtime', 'zone1', 'app1'), { recursive: true })
+    writeFileSync(secret, 'secret-value\n')
+    writeFileSync(cfg, [
+      'zone_id = "zone1"',
+      'application_id = "app1"',
+      '[[credentials]]',
+      'env = "RESOURCE_TOKEN"',
+      'resource = "resource://api"',
+      '',
+    ].join('\n'))
+    if (process.platform !== 'win32') {
+      chmodSync(secret, 0o600)
+      chmodSync(cfg, 0o600)
+    }
+    process.env.CARACAL_CONFIG = cfg
+
+    expect(loadRuntimeConfig(true)).toMatchObject({
+      zone_url: DEFAULT_STS_URL,
+      app_client_secret: 'secret-value',
+      credentials: [{ env: 'RESOURCE_TOKEN', resource: 'resource://api' }],
+    })
+  })
+
+  it('requires explicit runtime service URLs in production', () => {
+    process.env.NODE_ENV = 'production'
+    process.env.CARACAL_ZONE_ID = 'zone1'
+    process.env.CARACAL_APPLICATION_ID = 'app1'
+    process.env.CARACAL_APP_CLIENT_SECRET = 'secret-value'
+    process.env.CARACAL_RUN_CREDENTIALS = JSON.stringify([{ env: 'RESOURCE_TOKEN', resource: 'resource://api' }])
+
+    expect(() => loadRuntimeConfig(true)).toThrow(ServiceUrlMissingError)
   })
 
   it('prefers platform env config over a default XDG runtime profile', () => {

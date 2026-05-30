@@ -39,13 +39,14 @@ describe("Caracal.fromEnv", () => {
 
   it("constructs from env", () => {
     const c = Caracal.fromEnv({
-      CARACAL_COORDINATOR_URL: "http://x",
       CARACAL_ZONE_ID: "z1",
       CARACAL_APPLICATION_ID: "a1",
       CARACAL_SUBJECT_TOKEN: "t1",
     });
     expect(c.config.zoneId).toBe("z1");
     expect(c.config.subjectToken).toBe("t1");
+    expect(c.config.coordinator.baseUrl).toBe("http://localhost:4000");
+    expect(c.config.gatewayUrl).toBe("http://localhost:8081");
   });
 
   it("constructs a client-secret token source from env", async () => {
@@ -69,6 +70,32 @@ describe("Caracal.fromEnv", () => {
     const body = fetchMock.mock.calls[0][1].body as URLSearchParams;
     expect(body.get("client_secret")).toBe("secret");
     expect(body.getAll("resource").sort()).toEqual(["billing", "calendar"]);
+  });
+
+  it("auto-detects local client secret and credential files", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "caracal-sdk-"));
+    const credentialDir = join(dir, "caracal", "runtime", "z", "app");
+    mkdirSync(credentialDir, { recursive: true });
+    writeFileSync(join(credentialDir, "client-secret"), "secret\n", { mode: 0o600 });
+    writeFileSync(join(credentialDir, "credentials.json"), JSON.stringify([{ resource: "calendar" }]), { mode: 0o600 });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ access_token: "fresh-root", expires_in: 900 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const c = Caracal.fromEnv({
+      XDG_CONFIG_HOME: dir,
+      CARACAL_ZONE_ID: "z",
+      CARACAL_APPLICATION_ID: "app",
+      CARACAL_STS_URL: "http://sts",
+    } as NodeJS.ProcessEnv);
+    await c.headersAsync({ allowRoot: true });
+
+    const body = fetchMock.mock.calls[0][1].body as URLSearchParams;
+    expect(body.get("client_secret")).toBe("secret");
+    expect(body.getAll("resource")).toEqual(["calendar"]);
   });
 });
 
@@ -184,8 +211,6 @@ upstream_prefix = "https://billing.example.com"
     const secretPath = join(dir, "secret");
     writeFileSync(secretPath, "secret\n", { mode: 0o600 });
     writeFileSync(join(configDir, "caracal.toml"), `
-sts_url = "http://sts"
-coordinator_url = "http://coord"
 zone_id = "z"
 application_id = "app"
 app_client_secret_file = "${secretPath}"

@@ -4,14 +4,16 @@
 // Shared runtime helpers: runtime config loading, validation, and service URL resolution.
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 import { CaracalError } from '@caracalai/core';
 import { parse } from 'smol-toml';
 
 export const DEFAULT_API_URL = 'http://localhost:3000';
 export const DEFAULT_COORDINATOR_URL = 'http://localhost:4000';
-export const DEFAULT_ZONE_URL = 'http://localhost:8080';
+export const DEFAULT_STS_URL = 'http://localhost:8080';
+export const DEFAULT_GATEWAY_URL = 'http://localhost:8081';
+export const DEFAULT_ZONE_URL = DEFAULT_STS_URL;
 export const DEFAULT_RUN_TTL_SECONDS = 900;
 export const MAX_RUN_TTL_SECONDS = 900;
 
@@ -57,7 +59,7 @@ const BLOCKED_CREDENTIAL_ENV = new Set([
   'DYLD_LIBRARY_PATH',
 ]);
 
-const CONFIG_MISSING_MESSAGE = 'runtime config not found; caracal run needs workload identity from env/secret files. Create or select a zone, application, resource, and policy in caracal console; store the one-time client secret in a 0600 secret file; set CARACAL_STS_URL, CARACAL_ZONE_ID, CARACAL_APPLICATION_ID, CARACAL_APP_CLIENT_SECRET_FILE, and CARACAL_RUN_CREDENTIALS_FILE. Use CARACAL_CONFIG only for an explicit runtime profile.';
+const CONFIG_MISSING_MESSAGE = 'runtime config not found; caracal run needs workload identity from env/secret files. Create or select a zone, application, resource, and policy in caracal console; store local credentials under the OS Caracal config directory, set CARACAL_ZONE_ID and CARACAL_APPLICATION_ID, and set CARACAL_STS_URL only when STS is not the local default. Use deployment docs for explicit custom or cloud paths.';
 
 const RUNTIME_CONFIG_KEYS = new Set([
   'zone_url',
@@ -112,10 +114,38 @@ export class RuntimeConfigMissingError extends CaracalError {
 }
 
 export function defaultRuntimeConfigPath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(defaultCaracalConfigDir(env), 'caracal.toml');
+}
+
+export function defaultCaracalConfigDir(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.CARACAL_CONFIG_HOME && env.CARACAL_CONFIG_HOME.length > 0) return env.CARACAL_CONFIG_HOME;
   const xdg = env.XDG_CONFIG_HOME && env.XDG_CONFIG_HOME.length > 0
     ? env.XDG_CONFIG_HOME
-    : join(homedir(), '.config');
-  return join(xdg, 'caracal', 'caracal.toml');
+    : undefined;
+  if (xdg) return join(xdg, 'caracal');
+  if (platform() === 'win32') {
+    const base = env.APPDATA || env.LOCALAPPDATA || join(homedir(), 'AppData', 'Roaming');
+    return join(base, 'Caracal');
+  }
+  if (platform() === 'darwin') return join(homedir(), 'Library', 'Application Support', 'Caracal');
+  return join(homedir(), '.config', 'caracal');
+}
+
+export function defaultRuntimeCredentialDir(zoneId: string, applicationId: string, env: NodeJS.ProcessEnv = process.env): string {
+  return join(defaultCaracalConfigDir(env), 'runtime', safePathSegment(zoneId), safePathSegment(applicationId));
+}
+
+export function defaultAppClientSecretFilePath(zoneId: string, applicationId: string, env: NodeJS.ProcessEnv = process.env): string {
+  return join(defaultRuntimeCredentialDir(zoneId, applicationId, env), 'client-secret');
+}
+
+export function defaultRunCredentialsFilePath(zoneId: string, applicationId: string, env: NodeJS.ProcessEnv = process.env): string {
+  return join(defaultRuntimeCredentialDir(zoneId, applicationId, env), 'credentials.json');
+}
+
+function safePathSegment(value: string): string {
+  const safe = value.trim().replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '');
+  return safe || 'default';
 }
 
 // Resolves the path to caracal.toml using the documented precedence:
@@ -256,7 +286,7 @@ function isLocalHostname(hostname: string): boolean {
 
 function readSecretFile(path: string, source: string): string {
   if (path.startsWith('cs_')) {
-    failConfig(source, `secret file path looks like a client secret; write the secret to a 0600 file and set CARACAL_APP_CLIENT_SECRET_FILE to that path, or use CARACAL_APP_CLIENT_SECRET for inline local development`);
+    failConfig(source, `secret file path looks like a client secret; write the secret to the local auto-detected owner-only file or configure an explicit secret-file path for cloud/custom deployments`);
   }
   if (!existsSync(path)) failConfig(source, `secret file does not exist: ${path}`);
   assertSecretFileSecure(path, source);
@@ -273,13 +303,24 @@ function assertSecretFileSecure(path: string, source: string): void {
   }
 }
 
-function clientSecret(record: UnknownRecord, source: string): string {
+function isProductionRuntime(env: NodeJS.ProcessEnv): boolean {
+  return env.NODE_ENV === 'production';
+}
+
+function existingLocalFile(path: string | undefined, env: NodeJS.ProcessEnv): string | undefined {
+  if (!path || isProductionRuntime(env)) return undefined;
+  return existsSync(path) ? path : undefined;
+}
+
+function clientSecret(record: UnknownRecord, source: string, env: NodeJS.ProcessEnv, zoneId: string, applicationId: string): string {
   const value = stringField(record, 'app_client_secret', source);
   const file = stringField(record, 'app_client_secret_file', source);
   if (value && file) failConfig(source, 'set only one of app_client_secret or app_client_secret_file');
   if (file) return readSecretFile(file, source);
   if (value) return value;
-  failConfig(source, 'app_client_secret or app_client_secret_file is required');
+  const localFile = existingLocalFile(defaultAppClientSecretFilePath(zoneId, applicationId, env), env);
+  if (localFile) return readSecretFile(localFile, source);
+  failConfig(source, `client secret is required; local dev/stable auto-detects ${defaultAppClientSecretFilePath(zoneId, applicationId, env)} when it exists, while cloud/custom deployments must configure an explicit secret-file path`);
 }
 
 function normalizeCredential(value: unknown, source: string, index: number, optional: false): Credential;
@@ -350,13 +391,14 @@ function normalizeMcpGovernance(record: UnknownRecord, source: string, env: Node
 function normalizeRuntimeConfig(value: unknown, source: string, env: NodeJS.ProcessEnv): RuntimeConfig {
   if (!isRecord(value)) failConfig(source, 'runtime config must be a table');
   assertNoUnknownKeys(value, RUNTIME_CONFIG_KEYS, source, 'runtime config');
-  const zoneUrl = stringField(value, 'zone_url', source) ?? stringField(value, 'sts_url', source);
-  if (!zoneUrl) failConfig(source, 'zone_url or sts_url is required');
+  const zoneUrl = stringField(value, 'zone_url', source) ?? stringField(value, 'sts_url', source) ?? resolveStsUrl(env);
+  const zoneId = requiredStringField(value, 'zone_id', source);
+  const applicationId = requiredStringField(value, 'application_id', source);
   const cfg: RuntimeConfig = {
     zone_url: validateEndpointUrl(zoneUrl, 'zone_url', source, env),
-    zone_id: requiredStringField(value, 'zone_id', source),
-    application_id: requiredStringField(value, 'application_id', source),
-    app_client_secret: clientSecret(value, source),
+    zone_id: zoneId,
+    application_id: applicationId,
+    app_client_secret: clientSecret(value, source, env, zoneId, applicationId),
   };
   const ttlSeconds = ttlSecondsField(value, source);
   if (ttlSeconds !== undefined) cfg.ttl_seconds = ttlSeconds;
@@ -405,7 +447,9 @@ function assertUniqueCredentialEnv(credentials: readonly Credential[] | undefine
 
 function runtimeConfigFromEnv(env: NodeJS.ProcessEnv): UnknownRecord | undefined {
   if (!hasEnvRuntimeConfig(env)) return undefined;
-  const manifest = credentialManifestFromEnv(env);
+  const zoneId = env.CARACAL_ZONE_ID;
+  const applicationId = env.CARACAL_APPLICATION_ID;
+  const manifest = credentialManifestFromEnv(env, zoneId, applicationId);
   const cfg: UnknownRecord = {
     ...manifest,
     zone_url: env.CARACAL_STS_URL ?? env.CARACAL_ZONE_URL,
@@ -414,7 +458,9 @@ function runtimeConfigFromEnv(env: NodeJS.ProcessEnv): UnknownRecord | undefined
     zone_id: env.CARACAL_ZONE_ID,
     application_id: env.CARACAL_APPLICATION_ID,
     app_client_secret: env.CARACAL_APP_CLIENT_SECRET,
-    app_client_secret_file: env.CARACAL_APP_CLIENT_SECRET_FILE,
+    app_client_secret_file: env.CARACAL_APP_CLIENT_SECRET_FILE || (zoneId && applicationId && !env.CARACAL_APP_CLIENT_SECRET
+      ? existingLocalFile(defaultAppClientSecretFilePath(zoneId, applicationId, env), env)
+      : undefined),
   };
   const continueOnFailure = parseBooleanEnv(env.CARACAL_RUN_CONTINUE_ON_FAILURE, 'CARACAL_RUN_CONTINUE_ON_FAILURE');
   if (continueOnFailure !== undefined) cfg.continue_on_failure = continueOnFailure;
@@ -445,11 +491,14 @@ function parseBooleanEnv(value: string | undefined, key: string): boolean | unde
   failConfig('environment', `${key} must be true or false`);
 }
 
-function credentialManifestFromEnv(env: NodeJS.ProcessEnv): UnknownRecord {
+function credentialManifestFromEnv(env: NodeJS.ProcessEnv, zoneId: string | undefined, applicationId: string | undefined): UnknownRecord {
   const file = env.CARACAL_RUN_CREDENTIALS_FILE;
   const inline = env.CARACAL_RUN_CREDENTIALS;
   if (file && inline) failConfig('environment', 'set only one of CARACAL_RUN_CREDENTIALS or CARACAL_RUN_CREDENTIALS_FILE');
-  const raw = file ? readSecretFile(file, 'environment') : inline;
+  const localFile = !file && !inline && zoneId && applicationId
+    ? existingLocalFile(defaultRunCredentialsFilePath(zoneId, applicationId, env), env)
+    : undefined;
+  const raw = file || localFile ? readSecretFile(file ?? localFile!, 'environment') : inline;
   if (!raw) return {};
   let parsed: unknown;
   try {
@@ -479,12 +528,16 @@ export class ServiceUrlMissingError extends CaracalError {
 
 // Returns the env-var override or the dev default. Throws ServiceUrlMissingError
 // in non-development so misconfigured production management never silently hits localhost.
-export function resolveServiceUrl(envKey: string, devDefault: string): string {
-  const v = process.env[envKey];
+export function resolveServiceUrl(envKey: string, devDefault: string, env: NodeJS.ProcessEnv = process.env): string {
+  const v = env[envKey];
   if (v) return v;
-  const env = process.env.NODE_ENV ?? 'development';
-  if (env !== 'development') {
-    throw new ServiceUrlMissingError(envKey, env);
+  const nodeEnv = env.NODE_ENV ?? 'development';
+  if (nodeEnv !== 'development') {
+    throw new ServiceUrlMissingError(envKey, nodeEnv);
   }
   return devDefault;
+}
+
+export function resolveStsUrl(env: NodeJS.ProcessEnv = process.env): string {
+  return env.CARACAL_STS_URL ?? env.CARACAL_ZONE_URL ?? resolveServiceUrl('CARACAL_STS_URL', DEFAULT_STS_URL, env);
 }

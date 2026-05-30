@@ -5,7 +5,7 @@
 
 import type { Zone } from '@caracalai/admin'
 import { discoverCoordinatorToken } from '@caracalai/core'
-import { DEFAULT_API_URL, DEFAULT_COORDINATOR_URL, DEFAULT_ZONE_URL, resolveServiceUrl } from './runtimeConfig.js'
+import { DEFAULT_API_URL, DEFAULT_COORDINATOR_URL, DEFAULT_GATEWAY_URL, DEFAULT_ZONE_URL, resolveServiceUrl } from './runtimeConfig.js'
 import { scrubTokens } from './crash.js'
 import { buildAdminClient as buildAdminClientCore, type AdminContext } from './shared.js'
 import { runPreflightChecks, type PreflightCheck } from './preflight.js'
@@ -253,7 +253,7 @@ async function runServiceChecks(checks: DoctorCheck[], apiUrl: string): Promise<
   const targets = [
     { name: 'api', baseUrl: apiUrl },
     serviceTarget(checks, 'sts', ['CARACAL_STS_URL', 'CARACAL_ZONE_URL'], DEFAULT_ZONE_URL, '/metrics.json', summarizeSTS),
-    serviceTarget(checks, 'gateway', ['CARACAL_GATEWAY_URL'], 'http://localhost:8081', '/metrics.json', summarizeGateway),
+    serviceTarget(checks, 'gateway', ['CARACAL_GATEWAY_URL'], DEFAULT_GATEWAY_URL, '/metrics.json', summarizeGateway),
     serviceTarget(checks, 'audit', ['CARACAL_AUDIT_URL'], 'http://localhost:9090', '/metrics.json', summarizeAudit),
     serviceTarget(checks, 'coordinator', ['CARACAL_COORDINATOR_URL'], DEFAULT_COORDINATOR_URL, '/stats', summarizeCoordinator),
   ].filter((target): target is ServiceTarget => target !== undefined)
