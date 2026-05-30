@@ -385,6 +385,26 @@ func TestAuthenticateAppAllowsSignedGatewayExchangeWithoutClientSecret(t *testin
 	}
 }
 
+func TestAuthenticateAppRejectsApplicationIdentityWithoutSecret(t *testing.T) {
+	hash, err := hashClientSecret("test-secret")
+	if err != nil {
+		t.Fatalf("hash client secret: %v", err)
+	}
+	srv := &Server{db: &stubDB{app: &Application{
+		ID:                 "app1",
+		ZoneID:             "zone1",
+		Name:               "Test App",
+		RegistrationMethod: "managed",
+		ClientSecretHash:   &hash,
+	}}}
+	if _, _, err := srv.authenticateApp(context.Background(), TokenExchangeRequest{
+		ZoneID:        "zone1",
+		ApplicationID: "app1",
+	}); !errors.Is(err, errSecretMismatch) {
+		t.Fatalf("application identity without secret must fail, got %v", err)
+	}
+}
+
 func TestAuthenticateAppRejectsGatewayBootstrapWithoutSubjectToken(t *testing.T) {
 	srv := &Server{db: &stubDB{app: &Application{
 		ID:                 "app1",

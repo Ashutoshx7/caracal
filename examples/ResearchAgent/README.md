@@ -24,15 +24,13 @@ The command is intentionally simple:
 caracal run -- node agent.mjs
 ```
 
-If you want an env-file style setup, copy `env.example`, replace the Console
-values, source it, and run the agent:
+From `examples/ResearchAgent`, copy `env.example` to `.env`, replace the
+Console values, source it, and run the agent:
 
 ```bash
-mkdir -p ~/.config/caracal/research-agent
-cp env.example ~/.config/caracal/research-agent/env
-chmod 600 ~/.config/caracal/research-agent/env
-$EDITOR ~/.config/caracal/research-agent/env
-. ~/.config/caracal/research-agent/env
+cp env.example .env
+$EDITOR .env
+. .env
 caracal run -- node agent.mjs
 ```
 
@@ -254,20 +252,17 @@ export CARACAL_APPLICATION_ID="app_support_research_agent"
 export CARACAL_RUN_TTL_SECONDS="900"
 ```
 
-Recommended profile-based launch:
+Recommended profile-based launch from `examples/ResearchAgent`:
 
 ```bash
 export CARACAL_CONFIG="$HOME/.config/caracal/research-agent/caracal.toml"
 caracal run -- node agent.mjs
 ```
 
-Environment-only launch:
+Environment-only launch from `examples/ResearchAgent`:
 
 ```bash
-export CARACAL_ZONE_ID="zone_prod"
-export CARACAL_APPLICATION_ID="app_support_research_agent"
-export CARACAL_RUN_TTL_SECONDS="900"
-
+. .env
 caracal run -- node agent.mjs
 ```
 

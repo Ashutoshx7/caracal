@@ -274,6 +274,28 @@ describe('resolveRuntimeConfigPath', () => {
     })
   })
 
+  it('rejects zone and application identity without a client secret', () => {
+    process.env.CARACAL_ZONE_ID = 'zone1'
+    process.env.CARACAL_APPLICATION_ID = 'app1'
+    process.env.CARACAL_RUN_CREDENTIALS = JSON.stringify([{ env: 'RESOURCE_TOKEN', resource: 'resource://api' }])
+
+    expect(() => loadRuntimeConfig(true)).toThrow(/client secret is required/)
+  })
+
+  it('does not auto-detect local client secrets in production', () => {
+    process.env.NODE_ENV = 'production'
+    process.env.CARACAL_STS_URL = 'https://sts.example.com'
+    process.env.CARACAL_ZONE_ID = 'zone1'
+    process.env.CARACAL_APPLICATION_ID = 'app1'
+    process.env.CARACAL_RUN_CREDENTIALS = JSON.stringify([{ env: 'RESOURCE_TOKEN', resource: 'resource://api' }])
+    const secret = defaultAppClientSecretFilePath('zone1', 'app1')
+    mkdirSync(join(root, 'xdg-default', 'caracal', 'runtime', 'zone1', 'app1'), { recursive: true })
+    writeFileSync(secret, 'secret-value\n')
+    if (process.platform !== 'win32') chmodSync(secret, 0o600)
+
+    expect(() => loadRuntimeConfig(true)).toThrow(/client secret is required/)
+  })
+
   it('auto-detects local secret files for generated profiles', () => {
     const cfg = join(root, 'caracal.toml')
     const secret = defaultAppClientSecretFilePath('zone1', 'app1')
