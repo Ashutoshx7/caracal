@@ -582,18 +582,39 @@ func applyProviderDirective(provider *ProviderConfig, directive *UpstreamDirecti
 		directive.AuthHeader = "Authorization"
 		directive.AuthScheme = "Bearer"
 	case "api_key":
-		header := strings.TrimSpace(cfg.HeaderName)
-		if !validProviderHeaderName(header) {
-			return fmt.Errorf("provider api key header invalid")
-		}
 		directive.AuthMode = UpstreamAuthProviderAPIKey
-		directive.AuthHeader = header
-		directive.AuthScheme = ""
-		if scheme := strings.TrimSpace(cfg.AuthScheme); scheme != "" {
-			if !validProviderAuthScheme(scheme) {
+		location := strings.TrimSpace(cfg.AuthLocation)
+		if location == "" {
+			location = "header"
+		}
+		directive.AuthLocation = location
+		switch location {
+		case "header":
+			header := strings.TrimSpace(cfg.HeaderName)
+			if !validProviderHeaderName(header) {
+				return fmt.Errorf("provider api key header invalid")
+			}
+			directive.AuthHeader = header
+			directive.AuthScheme = ""
+			if scheme := strings.TrimSpace(cfg.AuthScheme); scheme != "" {
+				if !validProviderAuthScheme(scheme) {
+					return fmt.Errorf("provider auth scheme invalid")
+				}
+				directive.AuthScheme = scheme
+			}
+		case "query":
+			name := strings.TrimSpace(cfg.QueryParamName)
+			if !validProviderQueryParamName(name) {
+				return fmt.Errorf("provider api key query parameter invalid")
+			}
+			if strings.TrimSpace(cfg.AuthScheme) != "" {
 				return fmt.Errorf("provider auth scheme invalid")
 			}
-			directive.AuthScheme = scheme
+			directive.AuthHeader = ""
+			directive.AuthScheme = ""
+			directive.QueryParamName = name
+		default:
+			return fmt.Errorf("provider api key auth location invalid")
 		}
 	case "bearer_token":
 		directive.AuthMode = UpstreamAuthProviderOAuth
@@ -785,8 +806,10 @@ func (s *Server) storeProviderServiceToken(providerID, fingerprint, token string
 }
 
 type providerForwardingConfig struct {
+	AuthLocation           string `json:"auth_location"`
 	AuthHeader             string `json:"auth_header"`
 	HeaderName             string `json:"header_name"`
+	QueryParamName         string `json:"query_param_name"`
 	AuthScheme             string `json:"auth_scheme"`
 	ForwardCaracalIdentity bool   `json:"forward_caracal_identity"`
 }
@@ -829,6 +852,21 @@ func validProviderAuthScheme(scheme string) bool {
 			continue
 		}
 		if (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func validProviderQueryParamName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		if r > 127 {
+			return false
+		}
+		if (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '.' && r != '_' && r != '~' && r != '-' {
 			return false
 		}
 	}

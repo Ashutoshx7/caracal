@@ -502,7 +502,7 @@ func TestBuildUpstreamDirectiveSupportsAPIKeyProviderShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gateway directive should support API key provider shape: %v", err)
 	}
-	if directive.AuthMode != UpstreamAuthProviderAPIKey || directive.AuthHeader != "X-Api-Key" || directive.AuthScheme != "" || directive.ProviderToken != "api-key-value" {
+	if directive.AuthMode != UpstreamAuthProviderAPIKey || directive.AuthLocation != "header" || directive.AuthHeader != "X-Api-Key" || directive.AuthScheme != "" || directive.ProviderToken != "api-key-value" {
 		t.Fatalf("unexpected apikey directive: %#v", directive)
 	}
 }
@@ -534,8 +534,40 @@ func TestBuildUpstreamDirectiveSupportsAPIKeyAuthorizationScheme(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gateway directive should support API key auth scheme: %v", err)
 	}
-	if directive.AuthMode != UpstreamAuthProviderAPIKey || directive.AuthHeader != "Authorization" || directive.AuthScheme != "Bearer" || directive.ProviderToken != "api-key-value" {
+	if directive.AuthMode != UpstreamAuthProviderAPIKey || directive.AuthLocation != "header" || directive.AuthHeader != "Authorization" || directive.AuthScheme != "Bearer" || directive.ProviderToken != "api-key-value" {
 		t.Fatalf("unexpected apikey directive: %#v", directive)
+	}
+}
+
+func TestBuildUpstreamDirectiveSupportsAPIKeyQueryParameter(t *testing.T) {
+	providerID := "provider1"
+	upstreamURL := "https://upstream.example"
+	resource := &Resource{
+		ID:                   "res1",
+		Identifier:           "resource://api",
+		UpstreamURL:          &upstreamURL,
+		CredentialProviderID: &providerID,
+	}
+	zek := []byte("12345678901234567890123456789012")
+	secretCt, secretNonce := testProviderSecret(t, zek, `{"api_key":"api-key-value"}`)
+	srv := &Server{
+		db: &stubDB{
+			provider: &ProviderConfig{
+				ID:                providerID,
+				ProviderKind:      strPtr("api_key"),
+				ConfigJSON:        []byte(`{"auth_location":"query","query_param_name":"api_key"}`),
+				SecretConfigCt:    secretCt,
+				SecretConfigNonce: secretNonce,
+			},
+		},
+		keys: &KeyCache{zek: zek},
+	}
+	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true)
+	if err != nil {
+		t.Fatalf("gateway directive should support API key query parameter: %v", err)
+	}
+	if directive.AuthMode != UpstreamAuthProviderAPIKey || directive.AuthLocation != "query" || directive.QueryParamName != "api_key" || directive.AuthHeader != "" || directive.AuthScheme != "" || directive.ProviderToken != "api-key-value" {
+		t.Fatalf("unexpected apikey query directive: %#v", directive)
 	}
 }
 
@@ -736,6 +768,59 @@ func TestBuildUpstreamDirectiveRejectsLegacyAPIKeyAuthHeader(t *testing.T) {
 	}
 	if _, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true); err == nil {
 		t.Fatal("apikey provider directive must use header_name, not auth_header")
+	}
+}
+
+func TestBuildUpstreamDirectiveRejectsInvalidAPIKeyQueryConfig(t *testing.T) {
+	cases := []struct {
+		name       string
+		configJSON string
+	}{
+		{
+			name:       "missing query parameter",
+			configJSON: `{"auth_location":"query"}`,
+		},
+		{
+			name:       "malformed query parameter",
+			configJSON: `{"auth_location":"query","query_param_name":"api key"}`,
+		},
+		{
+			name:       "query parameter with auth scheme",
+			configJSON: `{"auth_location":"query","query_param_name":"api_key","auth_scheme":"Bearer"}`,
+		},
+		{
+			name:       "unsupported location",
+			configJSON: `{"auth_location":"cookie","query_param_name":"api_key"}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			providerID := "provider1"
+			upstreamURL := "https://upstream.example"
+			resource := &Resource{
+				ID:                   "res1",
+				Identifier:           "resource://api",
+				UpstreamURL:          &upstreamURL,
+				CredentialProviderID: &providerID,
+			}
+			zek := []byte("12345678901234567890123456789012")
+			secretCt, secretNonce := testProviderSecret(t, zek, `{"api_key":"api-key-value"}`)
+			srv := &Server{
+				db: &stubDB{
+					provider: &ProviderConfig{
+						ID:                providerID,
+						ProviderKind:      strPtr("api_key"),
+						ConfigJSON:        []byte(tc.configJSON),
+						SecretConfigCt:    secretCt,
+						SecretConfigNonce: secretNonce,
+					},
+				},
+				keys: &KeyCache{zek: zek},
+			}
+			if _, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true); err == nil {
+				t.Fatal("apikey provider directive must reject invalid query config")
+			}
+		})
 	}
 }
 

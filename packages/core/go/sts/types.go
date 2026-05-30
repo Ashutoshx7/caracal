@@ -12,7 +12,9 @@ package sts
 type UpstreamDirective struct {
 	URL                    string `json:"url"`
 	AuthMode               string `json:"auth_mode"`
+	AuthLocation           string `json:"auth_location,omitempty"`
 	AuthHeader             string `json:"auth_header,omitempty"`
+	QueryParamName         string `json:"query_param_name,omitempty"`
 	AuthScheme             string `json:"auth_scheme,omitempty"`
 	ProviderToken          string `json:"provider_token,omitempty"`
 	ProviderID             string `json:"provider_id,omitempty"`

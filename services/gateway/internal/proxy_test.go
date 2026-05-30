@@ -634,6 +634,58 @@ func TestProxyProviderAPIKeySupportsAuthorizationAndSchemes(t *testing.T) {
 	}
 }
 
+func TestProxyProviderAPIKeySupportsQueryParameterPlacement(t *testing.T) {
+	var seen *http.Request
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Clone(context.Background())
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	sts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		resource := r.Form.Get("resource")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(stsResponseFixture{
+			AccessToken: "caracal-identity-token",
+			ExpiresIn:   300,
+			Upstreams: map[string]corests.UpstreamDirective{resource: {
+				URL:            upstream.URL + "?key=upstream-default&lang=en",
+				AuthMode:       "provider_apikey",
+				AuthLocation:   "query",
+				QueryParamName: "key",
+				ProviderToken:  "provider-secret",
+			}},
+		})
+	}))
+	defer sts.Close()
+	p := newProxyForTest(t, sts, true)
+
+	resp := doProxiedRequest(t, p, "GET", "/x?key=caller-supplied&q=search", nil, http.Header{
+		"Authorization":      {"Bearer " + makeJWT(t, time.Hour)},
+		"X-Caracal-Resource": {"r1"},
+	})
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 204, got %d: %s", resp.StatusCode, body)
+	}
+	if seen == nil {
+		t.Fatal("upstream never received request")
+	}
+	if got := seen.URL.Query().Get("key"); got != "provider-secret" {
+		t.Fatalf("provider API key query parameter = %q", got)
+	}
+	if got := seen.URL.Query().Get("lang"); got != "en" {
+		t.Fatalf("upstream query parameter lost: %q", got)
+	}
+	if got := seen.URL.Query().Get("q"); got != "search" {
+		t.Fatalf("caller query parameter lost: %q", got)
+	}
+	if got := seen.Header.Get("Authorization"); got != "" {
+		t.Fatalf("inbound Authorization leaked upstream: %q", got)
+	}
+}
+
 func TestProxyProviderBearerTokenSupportsHeadersSchemesAndIdentity(t *testing.T) {
 	cases := []struct {
 		name            string

@@ -414,9 +414,9 @@ func (p *proxy) recordSTSFailure(out exchangeOutcome) {
 // buildUpstreamRequest constructs the outbound request with safe headers, joined path,
 // merged query string, and the credential class STS chose for the resource. For
 // none mode forwards no credential; caracal_jwt mode forwards the Caracal
-// STS-issued bearer; provider_oauth / provider_apikey substitute the
-// provider-native credential into the header the upstream expects. The Caracal
-// JWT is forwarded as X-Caracal-Identity only when the resource/provider
+// STS-issued bearer; provider_oauth substitutes provider credentials into
+// headers; provider_apikey supports header and query-parameter placement. The
+// Caracal JWT is forwarded as X-Caracal-Identity only when the resource/provider
 // directive explicitly opts in for a trusted upstream.
 func buildUpstreamRequest(r *http.Request, upstreamURL *url.URL, caracalToken string, directive corests.UpstreamDirective, body io.ReadCloser, requestID string) (*http.Request, error) {
 	joinedPath := joinURLPath(upstreamURL.Path, r.URL.Path)
@@ -450,13 +450,32 @@ func buildUpstreamRequest(r *http.Request, upstreamURL *url.URL, caracalToken st
 	req.Header.Del(authHeader)
 	switch directive.AuthMode {
 	case "none":
-	case "provider_oauth", "provider_apikey":
+	case "provider_oauth":
 		scheme := directive.AuthScheme
 		value := directive.ProviderToken
 		if scheme != "" {
 			value = scheme + " " + value
 		}
 		req.Header.Set(authHeader, value)
+		if directive.ForwardCaracalIdentity {
+			req.Header.Set("X-Caracal-Identity", caracalToken)
+		}
+	case "provider_apikey":
+		if directive.AuthLocation == "query" {
+			if strings.TrimSpace(directive.QueryParamName) == "" {
+				return nil, errors.New("provider api key query parameter missing")
+			}
+			query := req.URL.Query()
+			query.Set(directive.QueryParamName, directive.ProviderToken)
+			req.URL.RawQuery = query.Encode()
+		} else {
+			scheme := directive.AuthScheme
+			value := directive.ProviderToken
+			if scheme != "" {
+				value = scheme + " " + value
+			}
+			req.Header.Set(authHeader, value)
+		}
 		if directive.ForwardCaracalIdentity {
 			req.Header.Set("X-Caracal-Identity", caracalToken)
 		}
