@@ -382,7 +382,7 @@ func TestBuildUpstreamDirectiveHidesProviderTokenFromPublicExchange(t *testing.T
 		CredentialProviderID: &providerID,
 	}
 	srv := &Server{db: &stubDB{}}
-	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, false)
+	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, false, false)
 	if err != nil {
 		t.Fatalf("public directive should not require provider token: %v", err)
 	}
@@ -413,7 +413,7 @@ func TestBuildUpstreamDirectiveIncludesProviderTokenOnlyForGateway(t *testing.T)
 		},
 		keys: &KeyCache{zek: zek},
 	}
-	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true)
+	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true, false)
 	if err != nil {
 		t.Fatalf("gateway directive should decrypt provider token: %v", err)
 	}
@@ -441,7 +441,7 @@ func TestBuildUpstreamDirectiveBindsGrantToConfiguredProvider(t *testing.T) {
 		db:   &stubDB{grant: &ProviderGrant{ProviderID: &otherProviderID, AccessTokenCt: token}},
 		keys: &KeyCache{zek: zek},
 	}
-	if _, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true); err == nil {
+	if _, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true, false); err == nil {
 		t.Fatal("gateway directive must reject grants from a different provider")
 	}
 }
@@ -469,7 +469,7 @@ func TestBuildUpstreamDirectiveSupportsAPIKeyProviderShape(t *testing.T) {
 		},
 		keys: &KeyCache{zek: zek},
 	}
-	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true)
+	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true, false)
 	if err != nil {
 		t.Fatalf("gateway directive should support API key provider shape: %v", err)
 	}
@@ -496,7 +496,7 @@ func TestBuildUpstreamDirectiveSupportsCaracalMandateProviderShape(t *testing.T)
 			},
 		},
 	}
-	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true)
+	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true, false)
 	if err != nil {
 		t.Fatalf("gateway directive should support Caracal mandate provider shape: %v", err)
 	}
@@ -528,7 +528,7 @@ func TestBuildUpstreamDirectiveReadsIdentityForwardingOptIn(t *testing.T) {
 		},
 		keys: &KeyCache{zek: zek},
 	}
-	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true)
+	directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true, false)
 	if err != nil {
 		t.Fatalf("gateway directive should support identity forwarding opt-in: %v", err)
 	}
@@ -560,7 +560,7 @@ func TestBuildUpstreamDirectiveRejectsAPIKeyWithoutHeader(t *testing.T) {
 		},
 		keys: &KeyCache{zek: zek},
 	}
-	if _, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true); err == nil {
+	if _, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true, false); err == nil {
 		t.Fatal("apikey provider directive must require an explicit auth header")
 	}
 }
@@ -590,7 +590,7 @@ func TestBuildUpstreamDirectiveRejectsMalformedProviderConfig(t *testing.T) {
 		},
 		keys: &KeyCache{zek: zek},
 	}
-	if _, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true); err == nil {
+	if _, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true, false); err == nil {
 		t.Fatal("provider directive must reject malformed provider config")
 	}
 }

@@ -77,6 +77,14 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 		}
 		ttlSeconds = parsedTTL
 	}
+	runtimeCredentialInjection := false
+	if rawRuntimeInjection := r.FormValue("runtime_credential_injection"); rawRuntimeInjection != "" {
+		if rawRuntimeInjection != "true" && rawRuntimeInjection != "false" {
+			writeError(w, http.StatusBadRequest, sharederr.New(sharederr.InvalidToken, "invalid runtime_credential_injection"))
+			return
+		}
+		runtimeCredentialInjection = rawRuntimeInjection == "true"
+	}
 
 	requestID := r.Header.Get("X-Request-Id")
 	if requestID == "" {
@@ -95,24 +103,25 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := TokenExchangeRequest{
-		GrantType:            r.FormValue("grant_type"),
-		SubjectToken:         r.FormValue("subject_token"),
-		SubjectTokenType:     r.FormValue("subject_token_type"),
-		ActorToken:           r.FormValue("actor_token"),
-		Resources:            r.Form["resource"],
-		Scope:                r.FormValue("scope"),
-		ZoneID:               r.FormValue("zone_id"),
-		ApplicationID:        r.FormValue("application_id"),
-		ClientSecret:         r.FormValue("client_secret"),
-		ClientAssertion:      r.FormValue("client_assertion"),
-		ClientAssertionType:  r.FormValue("client_assertion_type"),
-		ChallengeID:          r.FormValue("challenge_id"),
-		ChallengeResponse:    r.FormValue("challenge_response"),
-		SessionID:            r.FormValue("session_id"),
-		AgentSessionID:       r.FormValue("agent_session_id"),
-		DelegationEdgeID:     r.FormValue("delegation_edge_id"),
-		TTLSeconds:           ttlSeconds,
-		GatewayAuthenticated: gatewayAuthenticated,
+		GrantType:                  r.FormValue("grant_type"),
+		SubjectToken:               r.FormValue("subject_token"),
+		SubjectTokenType:           r.FormValue("subject_token_type"),
+		ActorToken:                 r.FormValue("actor_token"),
+		Resources:                  r.Form["resource"],
+		Scope:                      r.FormValue("scope"),
+		ZoneID:                     r.FormValue("zone_id"),
+		ApplicationID:              r.FormValue("application_id"),
+		ClientSecret:               r.FormValue("client_secret"),
+		ClientAssertion:            r.FormValue("client_assertion"),
+		ClientAssertionType:        r.FormValue("client_assertion_type"),
+		ChallengeID:                r.FormValue("challenge_id"),
+		ChallengeResponse:          r.FormValue("challenge_response"),
+		SessionID:                  r.FormValue("session_id"),
+		AgentSessionID:             r.FormValue("agent_session_id"),
+		DelegationEdgeID:           r.FormValue("delegation_edge_id"),
+		TTLSeconds:                 ttlSeconds,
+		GatewayAuthenticated:       gatewayAuthenticated,
+		RuntimeCredentialInjection: runtimeCredentialInjection,
 	}
 
 	resp, challenge, code, apiErr := s.exchange(r.Context(), req, requestID)
@@ -283,7 +292,15 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 			continue
 		}
 
-		if req.GatewayAuthenticated && resource.CredentialProviderID != nil {
+		providerCredentialAccess := req.GatewayAuthenticated || req.RuntimeCredentialInjection
+		if req.RuntimeCredentialInjection && resource.CredentialProviderID == nil {
+			if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "credential_not_provisioned", &OPAResult{},
+				mergeAuditMeta(appMeta, map[string]any{"resource": resource.Identifier, "reason": "no_provider"})); auditErr != nil {
+				return nil, nil, http.StatusInternalServerError, auditErr
+			}
+			continue
+		}
+		if providerCredentialAccess && resource.CredentialProviderID != nil {
 			provider, perr := s.db.GetProvider(ctx, *resource.CredentialProviderID)
 			if perr != nil {
 				if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "provider_unavailable", &OPAResult{},
@@ -291,6 +308,24 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 					return nil, nil, http.StatusInternalServerError, auditErr
 				}
 				continue
+			}
+			if req.RuntimeCredentialInjection {
+				providerCfg, cfgErr := providerDirectiveConfig(provider.ConfigJSON)
+				if cfgErr != nil {
+					if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "provider_unavailable", &OPAResult{},
+						mergeAuditMeta(appMeta, map[string]any{"resource": resource.Identifier, "reason": "provider_config_invalid"})); auditErr != nil {
+						return nil, nil, http.StatusInternalServerError, auditErr
+					}
+					continue
+				}
+				kind := derefStr(provider.ProviderKind)
+				if !providerCfg.AllowRuntimeInjection || kind == "none" || kind == "caracal_mandate" {
+					if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "credential_injection_denied", &OPAResult{},
+						mergeAuditMeta(appMeta, map[string]any{"resource": resource.Identifier, "reason": "runtime_injection_not_allowed"})); auditErr != nil {
+						return nil, nil, http.StatusInternalServerError, auditErr
+					}
+					continue
+				}
 			}
 			if providerRequiresUserGrant(provider) {
 				userID, _ := subjectClaims["sub"].(string)
@@ -363,11 +398,12 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 
 		if auditErr := s.emitAuditEventWithBundle(requestID, zoneID, result.Decision, result.EvaluationStatus, result,
 			mergeAuditMeta(mergeAuditMeta(mergeAuditMeta(appMeta, map[string]any{
-				"resource":           resource.Identifier,
-				"requested_scopes":   scopes,
-				"session_id":         req.SessionID,
-				"agent_session_id":   req.AgentSessionID,
-				"delegation_edge_id": req.DelegationEdgeID,
+				"resource":                     resource.Identifier,
+				"requested_scopes":             scopes,
+				"session_id":                   req.SessionID,
+				"agent_session_id":             req.AgentSessionID,
+				"delegation_edge_id":           req.DelegationEdgeID,
+				"runtime_credential_injection": req.RuntimeCredentialInjection,
 			}), agentAuditMeta(agentSession)), delegationMeta), bundle); auditErr != nil {
 			return nil, nil, http.StatusInternalServerError, auditErr
 		}
@@ -491,9 +527,9 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 		return nil, nil, http.StatusInternalServerError, sharederr.New(sharederr.Internal, "token issuance failed")
 	}
 
-	if req.GatewayAuthenticated {
+	if req.GatewayAuthenticated || req.RuntimeCredentialInjection {
 		for _, identifier := range grantedResources {
-			directive, err := s.buildUpstreamDirective(ctx, zoneID, subjectClaims, grantedResourceRows[identifier], req.GatewayAuthenticated)
+			directive, err := s.buildUpstreamDirective(ctx, zoneID, subjectClaims, grantedResourceRows[identifier], req.GatewayAuthenticated || req.RuntimeCredentialInjection, req.RuntimeCredentialInjection)
 			if err != nil {
 				return nil, nil, http.StatusInternalServerError, sharederr.New(sharederr.Internal, "upstream directive build failed")
 			}
@@ -512,7 +548,7 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 	}, nil, http.StatusOK, nil
 }
 
-func (s *Server) buildUpstreamDirective(ctx context.Context, zoneID string, subjectClaims map[string]any, resource *Resource, gatewayAuthenticated bool) (UpstreamDirective, error) {
+func (s *Server) buildUpstreamDirective(ctx context.Context, zoneID string, subjectClaims map[string]any, resource *Resource, providerCredentialAccess bool, runtimeCredentialInjection bool) (UpstreamDirective, error) {
 	directive := UpstreamDirective{
 		AuthMode:   UpstreamAuthCaracalJWT,
 		AuthHeader: "Authorization",
@@ -521,14 +557,24 @@ func (s *Server) buildUpstreamDirective(ctx context.Context, zoneID string, subj
 	if resource.UpstreamURL != nil {
 		directive.URL = *resource.UpstreamURL
 	}
-	if !gatewayAuthenticated || resource.CredentialProviderID == nil {
+	if !providerCredentialAccess || resource.CredentialProviderID == nil {
 		return directive, nil
 	}
 	provider, err := s.db.GetProvider(ctx, *resource.CredentialProviderID)
 	if err != nil {
 		return directive, fmt.Errorf("provider unavailable")
 	}
-	if err := applyProviderDirective(provider, &directive); err != nil {
+	cfg, err := providerDirectiveConfig(provider.ConfigJSON)
+	if err != nil {
+		return directive, err
+	}
+	if runtimeCredentialInjection {
+		kind := derefStr(provider.ProviderKind)
+		if !cfg.AllowRuntimeInjection || kind == "none" || kind == "caracal_mandate" {
+			return directive, fmt.Errorf("provider runtime injection not allowed")
+		}
+	}
+	if err := applyProviderDirective(provider, &directive, cfg); err != nil {
 		return directive, err
 	}
 	directive.ProviderID = provider.ID
@@ -566,11 +612,7 @@ func (s *Server) buildUpstreamDirective(ctx context.Context, zoneID string, subj
 	return directive, nil
 }
 
-func applyProviderDirective(provider *ProviderConfig, directive *UpstreamDirective) error {
-	cfg, err := providerDirectiveConfig(provider.ConfigJSON)
-	if err != nil {
-		return err
-	}
+func applyProviderDirective(provider *ProviderConfig, directive *UpstreamDirective, cfg providerForwardingConfig) error {
 	directive.ForwardCaracalIdentity = cfg.ForwardCaracalIdentity
 	switch derefStr(provider.ProviderKind) {
 	case "none":
@@ -819,6 +861,7 @@ type providerForwardingConfig struct {
 	AuthScheme             string   `json:"auth_scheme"`
 	AllowedTokenHosts      []string `json:"allowed_token_hosts"`
 	ForwardCaracalIdentity bool     `json:"forward_caracal_identity"`
+	AllowRuntimeInjection  bool     `json:"allow_runtime_injection"`
 }
 
 func providerDirectiveConfig(raw json.RawMessage) (providerForwardingConfig, error) {
