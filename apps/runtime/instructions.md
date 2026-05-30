@@ -1,7 +1,7 @@
 # apps/runtime
 
 ## Scope
-- Covers the `@caracalai/runtime` runtime shell under `apps/runtime/`.
+- Covers the `@caracalai/runtime` runtime CLI under `apps/runtime/`.
 
 ## Architecture Design
 - `bin/` owns executable entrypoints.

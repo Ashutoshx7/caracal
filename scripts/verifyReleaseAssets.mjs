@@ -21,11 +21,11 @@ if (!releaseTag || !/^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}(\.[0-9]+)?(-rc\.(sha[0-9A-Za
 
 const root = resolve(dir)
 const assets = [
-  `caracal-shell-linux-amd64-${releaseTag}.tar.gz`,
-  `caracal-shell-linux-arm64-${releaseTag}.tar.gz`,
-  `caracal-shell-darwin-amd64-${releaseTag}.tar.gz`,
-  `caracal-shell-darwin-arm64-${releaseTag}.tar.gz`,
-  `caracal-shell-windows-amd64-${releaseTag}.zip`,
+  `caracal-runtime-linux-amd64-${releaseTag}.tar.gz`,
+  `caracal-runtime-linux-arm64-${releaseTag}.tar.gz`,
+  `caracal-runtime-darwin-amd64-${releaseTag}.tar.gz`,
+  `caracal-runtime-darwin-arm64-${releaseTag}.tar.gz`,
+  `caracal-runtime-windows-amd64-${releaseTag}.zip`,
   `caracal-console-linux-amd64-${releaseTag}.tar.gz`,
   `caracal-console-linux-arm64-${releaseTag}.tar.gz`,
   `caracal-console-darwin-amd64-${releaseTag}.tar.gz`,

@@ -19,7 +19,7 @@ const pyPaths = inventory.packages.pypi.map((pkg) => pkg.dir)
 const productImages = productContainers(inventory.config)
 const containers = productImages.filter((image) => image.name !== 'runtime').map((image) => image.name)
 const archiveTargets = productArchiveTargets(inventory.config).flatMap((target) => [
-  `caracal-shell-${target.os}-${target.arch}`,
+  `caracal-runtime-${target.os}-${target.arch}`,
   `caracal-console-${target.os}-${target.arch}`,
 ])
 const imageBuilds = productImages.map((image) => [image.name, image.context, image.dockerfile])
@@ -189,7 +189,7 @@ function makeManifest(options = {}) {
       dirty: Boolean(dirtyTree()),
     },
     registries: reg,
-    binaries: { shell: version, console: version },
+    binaries: { runtime: version, console: version },
     runtimeImage: version,
     containers: Object.fromEntries(containers.map((name) => [name, version])),
     helm: { chartVersion: helmChartVersion(version), appVersion: version, imageTag: version },
@@ -225,7 +225,7 @@ function makeStableManifest(version, tag) {
     release: tag,
     mode: 'stable',
     publishedAt: currentDate(),
-    binaries: { shell: version, console: version },
+    binaries: { runtime: version, console: version },
     runtimeImage: version,
     containers: Object.fromEntries(containers.map((name) => [name, version])),
     helm: { chartVersion, appVersion: version, imageTag: version },
@@ -573,7 +573,7 @@ function promote(options) {
     generatedAt: new Date().toISOString(),
     promotedFrom: fromTag,
     registries: reg,
-    binaries: { shell: stableVersion, console: stableVersion },
+    binaries: { runtime: stableVersion, console: stableVersion },
     runtimeImage: stableVersion,
     containers: Object.fromEntries(Object.keys(rcManifest.containers ?? {}).map((name) => [name, stableVersion])),
     helm: { chartVersion: helmChartVersion(stableVersion), appVersion: stableVersion, imageTag: stableVersion },
