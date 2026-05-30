@@ -14,6 +14,8 @@ import { appendKeysetCondition, parseListPagination, setNextLink } from './list-
 
 const ProviderKind = z.enum(['none', 'caracal_mandate', 'oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token'])
 type ProviderKind = z.infer<typeof ProviderKind>
+const APIKeyAuthLocation = z.enum(['header', 'query'])
+type APIKeyAuthLocation = z.infer<typeof APIKeyAuthLocation>
 const OAuthClientAuthMethod = z.enum(['client_secret_basic', 'client_secret_post', 'none'])
 type OAuthClientAuthMethod = z.infer<typeof OAuthClientAuthMethod>
 const PROVIDER_IDENTIFIER_PREFIX = 'provider://'
@@ -137,7 +139,7 @@ const PUBLIC_PROVIDER_CONFIG_KEYS: Record<ProviderKind, ReadonlySet<string>> = {
     'auth_scheme',
     'forward_caracal_identity',
   ]),
-  api_key: new Set(['header_name', 'auth_scheme', 'forward_caracal_identity']),
+  api_key: new Set(['auth_location', 'header_name', 'query_param_name', 'auth_scheme', 'forward_caracal_identity']),
   bearer_token: new Set(['auth_header', 'auth_scheme', 'forward_caracal_identity']),
 }
 
@@ -239,6 +241,17 @@ function requireOptionalOAuthClientAuthMethod(config: Record<string, unknown>): 
   return parsed.data
 }
 
+function requireAPIKeyAuthLocation(config: Record<string, unknown>): APIKeyAuthLocation {
+  const location = config.auth_location
+  if (location === undefined) {
+    config.auth_location = 'header'
+    return 'header'
+  }
+  const parsed = APIKeyAuthLocation.safeParse(location)
+  if (!parsed.success) throw new Error('api_key provider config auth_location must be header or query')
+  return parsed.data
+}
+
 function splitProviderConfig(kind: ProviderKind, input: Record<string, unknown> | undefined, requireSecrets: boolean): {
   publicConfig: Record<string, unknown>
   secretConfig: Record<string, string>
@@ -266,8 +279,20 @@ function splitProviderConfig(kind: ProviderKind, input: Record<string, unknown> 
     return { publicConfig, secretConfig, secretKeys: [] }
   }
   if (kind === 'api_key') {
-    requireString(publicConfig, 'header_name', 'api_key provider config requires header_name')
-    requireOptionalHeaderName(publicConfig, 'header_name', 'api_key provider config header_name must be an HTTP header name')
+    const location = requireAPIKeyAuthLocation(publicConfig)
+    if (location === 'header') {
+      requireString(publicConfig, 'header_name', 'api_key provider config requires header_name')
+      requireOptionalHeaderName(publicConfig, 'header_name', 'api_key provider config header_name must be an HTTP header name')
+    } else {
+      requireString(publicConfig, 'query_param_name', 'api_key provider config requires query_param_name')
+      requireOptionalText(publicConfig, 'query_param_name', 'api_key provider config query_param_name must be a query parameter name')
+      if (!OAUTH_PARAM_PATTERN.test(publicConfig.query_param_name as string)) {
+        throw new Error('api_key provider config query_param_name must be a query parameter name')
+      }
+      if (publicConfig.auth_scheme !== undefined) {
+        throw new Error('api_key provider config auth_scheme applies only to header auth')
+      }
+    }
     if (requireSecrets && !secretConfig.api_key) throw new Error('api_key provider config requires api_key')
   } else if (kind === 'bearer_token') {
     if (requireSecrets && !secretConfig.bearer_token) throw new Error('bearer_token provider config requires bearer_token')

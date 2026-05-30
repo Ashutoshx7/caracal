@@ -152,6 +152,7 @@ function slugValue(value: string): string {
 
 const PROVIDER_IDENTIFIER_PREFIX = 'provider://'
 const PROVIDER_IDENTIFIER_PATTERN = /^provider:\/\/[a-z0-9]+(?:-[a-z0-9]+)*$/
+const API_KEY_AUTH_LOCATIONS = ['header', 'query']
 const HEADER_TOKEN_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 const AUTH_SCHEME_PATTERN = /^[A-Za-z][A-Za-z0-9-]*$/
 const OAUTH_PARAM_PATTERN = /^[A-Za-z0-9._~-]+$/
@@ -210,6 +211,23 @@ function requireOptionalAuthScheme(config: JsonObject, key: string, message: str
   if (value === undefined) return
   if (typeof value !== 'string' || !AUTH_SCHEME_PATTERN.test(value.trim())) throw new Error(message)
   config[key] = value.trim()
+}
+
+function requireOptionalQueryParamName(config: JsonObject, key: string, message: string): void {
+  const value = config[key]
+  if (value === undefined) return
+  if (typeof value !== 'string' || !OAUTH_PARAM_PATTERN.test(value.trim())) throw new Error(message)
+  config[key] = value.trim()
+}
+
+function apiKeyAuthLocation(config: JsonObject): 'header' | 'query' {
+  const value = config.auth_location
+  if (value === undefined) {
+    config.auth_location = 'header'
+    return 'header'
+  }
+  if (value === 'header' || value === 'query') return value
+  throw new Error('api_key provider config auth_location must be header or query')
 }
 
 function requireOptionalStringRecord(config: JsonObject, key: string, reserved: ReadonlySet<string>, message: string): void {
@@ -495,7 +513,9 @@ function providerConfigFromValues(values: Record<string, string>, requireConfig:
   mergeConfigText(config, 'audience', values.token_audience)
   mergeConfigText(config, 'resource', values.token_resource)
   mergeConfigList(config, 'allowed_token_hosts', values.allowed_token_hosts || inferredTokenHosts(values.token_endpoint))
+  mergeConfigText(config, 'auth_location', values.api_key_auth_location)
   mergeConfigText(config, 'header_name', values.api_key_header)
+  mergeConfigText(config, 'query_param_name', values.api_key_query_param)
   mergeConfigText(config, 'auth_header', values.auth_header)
   mergeConfigText(config, 'auth_scheme', values.auth_scheme)
   if (values.forward_caracal_identity === 'true') config.forward_caracal_identity = true
@@ -551,9 +571,16 @@ function validateProviderConfig(kind: ProviderKind, config: JsonObject): void {
   if (unknown.length > 0) throw new Error(`${kind} provider config has unsupported keys: ${unknown.join(', ')}`)
   if (kind === 'none' || kind === 'caracal_mandate') return
   if (kind === 'api_key') {
-    requireString(config, 'header_name', 'api_key provider config requires header_name')
-    requireOptionalHeaderName(config, 'header_name', 'api_key provider config header_name must be an HTTP header name')
-    requireOptionalAuthScheme(config, 'auth_scheme', 'api_key provider config auth_scheme must be an auth scheme token')
+    const location = apiKeyAuthLocation(config)
+    if (location === 'header') {
+      requireString(config, 'header_name', 'api_key provider config requires header_name')
+      requireOptionalHeaderName(config, 'header_name', 'api_key provider config header_name must be an HTTP header name')
+      requireOptionalAuthScheme(config, 'auth_scheme', 'api_key provider config auth_scheme must be an auth scheme token')
+    } else {
+      requireString(config, 'query_param_name', 'api_key provider config requires query_param_name')
+      requireOptionalQueryParamName(config, 'query_param_name', 'api_key provider config query_param_name must be a query parameter name')
+      if (config.auth_scheme !== undefined) throw new Error('api_key provider config auth_scheme applies only to header auth')
+    }
     return
   }
   if (kind === 'bearer_token') {
@@ -580,7 +607,7 @@ function validateProviderConfig(kind: ProviderKind, config: JsonObject): void {
 
 function providerConfigKeys(kind: ProviderKind): Set<string> {
   if (kind === 'none' || kind === 'caracal_mandate') return new Set()
-  if (kind === 'api_key') return new Set(['header_name', 'api_key', 'auth_scheme', 'forward_caracal_identity'])
+  if (kind === 'api_key') return new Set(['auth_location', 'header_name', 'query_param_name', 'api_key', 'auth_scheme', 'forward_caracal_identity'])
   if (kind === 'bearer_token') return new Set(['bearer_token', 'auth_header', 'auth_scheme', 'forward_caracal_identity'])
   const keys = ['token_endpoint', 'client_id', 'client_secret', 'client_auth_method', 'provider_scopes', 'scopes', 'allowed_token_hosts', 'token_params', 'auth_header', 'auth_scheme', 'forward_caracal_identity']
   if (kind === 'oauth2_client_credentials') keys.push('audience', 'resource')
@@ -1284,7 +1311,9 @@ export function providersView(ctx: Ctx): View {
             { key: 'redirect_uri', label: 'redirect URI', kind: 'text', dependsOn: { kind: 'oauth2_authorization_code' }, required: true, hint: 'callback URI registered with the provider' },
             { key: 'client_id', label: 'client ID', kind: 'text', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, required: true },
             { key: 'client_secret', label: 'client secret', kind: 'secret', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, required: (current) => current.client_auth_method !== 'none', hint: 'required unless client auth method is none' },
-            { key: 'api_key_header', label: 'API key header', kind: 'text', dependsOn: { kind: 'api_key' }, required: true, hint: 'header where the upstream expects the key, such as X-API-Key or Authorization' },
+            { key: 'api_key_auth_location', label: 'API key location', kind: 'select', options: API_KEY_AUTH_LOCATIONS, default: 'header', dependsOn: { kind: 'api_key' }, hint: 'where the upstream expects the key' },
+            { key: 'api_key_header', label: 'API key header', kind: 'text', dependsOn: { kind: 'api_key', api_key_auth_location: 'header' }, required: true, hint: 'header where the upstream expects the key, such as X-API-Key or Authorization' },
+            { key: 'api_key_query_param', label: 'API key query parameter', kind: 'text', dependsOn: { kind: 'api_key', api_key_auth_location: 'query' }, required: true, hint: 'query parameter where the upstream expects the key, such as key, appid, or api_key' },
             { key: 'api_key', label: 'API key', kind: 'secret', dependsOn: { kind: 'api_key' }, required: true },
             { key: 'bearer_token', label: 'bearer token', kind: 'secret', dependsOn: { kind: 'bearer_token' }, required: true },
             { key: 'identifier', label: 'provider identifier', kind: 'text', advanced: true, hint: 'optional; generated from provider name when blank', validate: validateProviderIdentifier },
@@ -1296,7 +1325,7 @@ export function providersView(ctx: Ctx): View {
             { key: 'allowed_token_hosts', label: 'allowed token hosts', kind: 'list', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true, hint: 'optional; inferred from token endpoint when blank' },
             { key: 'client_auth_method', label: 'client auth method', kind: 'select', options: ['client_secret_basic', 'client_secret_post', 'none'], default: 'client_secret_basic', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true },
             { key: 'auth_header', label: 'upstream auth header', kind: 'text', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'bearer_token'] }, advanced: true, hint: 'optional; leave blank for Authorization' },
-            { key: 'auth_scheme', label: 'upstream auth scheme', kind: 'text', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token'] }, advanced: true, hint: 'optional prefix such as Bearer or Token; OAuth and bearer token providers default to Bearer' },
+            { key: 'auth_scheme', label: 'upstream auth scheme', kind: 'text', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token'] }, visible: (current) => current.kind !== 'api_key' || current.api_key_auth_location === 'header', advanced: true, hint: 'optional prefix such as Bearer, Token, or ApiKey; API-key query auth does not use a scheme' },
             { key: 'forward_caracal_identity', label: 'forward Caracal identity', kind: 'bool', default: 'false', dependsOn: { kind: PROVIDER_CREDENTIAL_KINDS }, advanced: true, hint: 'also send X-Caracal-Identity to trusted upstreams' },
           ],
           onSubmit: async (v, app) => {
@@ -1324,7 +1353,9 @@ export function providersView(ctx: Ctx): View {
               { key: 'redirect_uri', label: 'redirect URI', kind: 'text', default: configString(row.config_json, 'redirect_uri'), dependsOn: { kind: 'oauth2_authorization_code' }, required: true },
               { key: 'client_id', label: 'client ID', kind: 'text', default: configString(row.config_json, 'client_id'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, required: true },
               { key: 'client_secret', label: 'client secret', kind: 'secret', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, required: (current) => current.client_auth_method !== 'none' && !row.secret_config_keys.includes('client_secret'), hint: 'leave blank to keep the current secret' },
-              { key: 'api_key_header', label: 'API key header', kind: 'text', default: configString(row.config_json, 'header_name'), dependsOn: { kind: 'api_key' }, required: true, hint: 'header where the upstream expects the key, such as X-API-Key or Authorization' },
+              { key: 'api_key_auth_location', label: 'API key location', kind: 'select', options: API_KEY_AUTH_LOCATIONS, default: configString(row.config_json, 'auth_location') || 'header', dependsOn: { kind: 'api_key' }, hint: 'where the upstream expects the key' },
+              { key: 'api_key_header', label: 'API key header', kind: 'text', default: configString(row.config_json, 'header_name'), dependsOn: { kind: 'api_key', api_key_auth_location: 'header' }, required: true, hint: 'header where the upstream expects the key, such as X-API-Key or Authorization' },
+              { key: 'api_key_query_param', label: 'API key query parameter', kind: 'text', default: configString(row.config_json, 'query_param_name'), dependsOn: { kind: 'api_key', api_key_auth_location: 'query' }, required: true, hint: 'query parameter where the upstream expects the key, such as key, appid, or api_key' },
               { key: 'api_key', label: 'API key', kind: 'secret', dependsOn: { kind: 'api_key' }, hint: 'leave blank to keep the current API key' },
               { key: 'bearer_token', label: 'bearer token', kind: 'secret', dependsOn: { kind: 'bearer_token' }, hint: 'leave blank to keep the current bearer token' },
               { key: 'provider_scopes', label: 'provider scopes', kind: 'list', default: configList(row.config_json, 'scopes'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true },
@@ -1335,7 +1366,7 @@ export function providersView(ctx: Ctx): View {
               { key: 'allowed_token_hosts', label: 'allowed token hosts', kind: 'list', default: configList(row.config_json, 'allowed_token_hosts'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true },
               { key: 'client_auth_method', label: 'client auth method', kind: 'select', options: ['client_secret_basic', 'client_secret_post', 'none'], default: configString(row.config_json, 'client_auth_method') || 'client_secret_basic', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true },
               { key: 'auth_header', label: 'upstream auth header', kind: 'text', default: configString(row.config_json, 'auth_header'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'bearer_token'] }, advanced: true, hint: 'optional; leave blank for Authorization' },
-              { key: 'auth_scheme', label: 'upstream auth scheme', kind: 'text', default: configString(row.config_json, 'auth_scheme'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token'] }, advanced: true, hint: 'optional prefix such as Bearer or Token; OAuth and bearer token providers default to Bearer' },
+              { key: 'auth_scheme', label: 'upstream auth scheme', kind: 'text', default: configString(row.config_json, 'auth_scheme'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token'] }, visible: (current) => current.kind !== 'api_key' || current.api_key_auth_location === 'header', advanced: true, hint: 'optional prefix such as Bearer, Token, or ApiKey; API-key query auth does not use a scheme' },
               { key: 'forward_caracal_identity', label: 'forward Caracal identity', kind: 'bool', default: configBool(row.config_json, 'forward_caracal_identity'), dependsOn: { kind: PROVIDER_CREDENTIAL_KINDS }, advanced: true, hint: 'also send X-Caracal-Identity to trusted upstreams' },
             ],
             onSubmit: async (v, app) => {

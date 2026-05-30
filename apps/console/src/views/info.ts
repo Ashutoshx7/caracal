@@ -204,7 +204,9 @@ function meaningFor(kind: string, title: string, opts: FieldInfoOpts): string {
   const label = title.toLowerCase()
   const key = opts.key ?? ''
   if (isNumericLabel(label)) return `${title} is a numeric value that controls a count, limit, lifetime, or time window.`
+  if (key === 'api_key_auth_location' || key === 'provider_api_key_auth_location') return `${title} selects whether Gateway sends the upstream API key in a header or query parameter.`
   if (key === 'api_key_header' || label.includes('api key header')) return `${title} is the exact HTTP request header where Gateway sends the upstream API key.`
+  if (key === 'api_key_query_param' || key === 'provider_api_key_query_param') return `${title} is the exact query parameter where Gateway sends the upstream API key.`
   if (key === 'auth_header' || label.includes('upstream auth header')) return `${title} is the HTTP request header where Gateway sends the provider credential to the upstream.`
   if (key === 'auth_scheme' || label.includes('upstream auth scheme')) return `${title} is the credential prefix Gateway writes before the provider token or key value.`
   if (key === 'api_key') return `${title} is the static upstream API key sealed by Caracal and injected by Gateway.`
@@ -266,7 +268,9 @@ function whenFor(kind: string, title: string, opts: FieldInfoOpts): string {
   const key = opts.key ?? ''
   if (opts.picker) return `Pick an existing ${entityName(label)} when reusing configured state; type only when the flow accepts a new value.`
   if (isNumericLabel(label)) return 'Use this when you need to bound a lifetime, result count, retry budget, or other numeric operational limit.'
+  if (key === 'api_key_auth_location' || key === 'provider_api_key_auth_location') return 'Choose query only when the provider documentation requires API keys in the URL query string.'
   if (key === 'api_key_header' || label.includes('api key header')) return 'Use the header named in the provider documentation for API-key authentication.'
+  if (key === 'api_key_query_param' || key === 'provider_api_key_query_param') return 'Use the query parameter name documented by providers such as Google Maps, OpenWeatherMap, or Alpha Vantage.'
   if (key === 'auth_header' || label.includes('upstream auth header')) return 'Set this only when the upstream expects credentials outside the standard Authorization header.'
   if (key === 'auth_scheme' || label.includes('upstream auth scheme')) return 'Set this only when the upstream expects a non-default credential prefix such as Token, ApiKey, or Key.'
   if (key === 'client_auth_method' || label.includes('client auth method')) return 'Use the method required by the OAuth provider token endpoint; basic is the common default for confidential clients.'
@@ -327,7 +331,9 @@ function impactFor(kind: string, title: string, opts: FieldInfoOpts): string {
   const label = title.toLowerCase()
   const key = opts.key ?? ''
   if (isNumericLabel(label)) return 'Changing this value changes how long something remains valid, how much data is returned, or which numeric limit the API applies.'
+  if (key === 'api_key_auth_location' || key === 'provider_api_key_auth_location') return 'Gateway changes where the sealed API key is injected and removes caller-supplied credentials at that location.'
   if (key === 'api_key_header' || label.includes('api key header')) return 'Gateway writes the sealed API key into this header and strips caller-supplied values for protected credential headers.'
+  if (key === 'api_key_query_param' || key === 'provider_api_key_query_param') return 'Gateway writes the sealed API key into this query parameter and replaces caller-supplied values for that parameter.'
   if (key === 'auth_header' || label.includes('upstream auth header')) return 'Gateway writes OAuth or bearer credentials into this header after removing caller-supplied credential headers.'
   if (key === 'auth_scheme' || label.includes('upstream auth scheme')) return 'Gateway formats the upstream auth value as "<scheme> <credential>" when a scheme is configured.'
   if (key === 'api_key' || key === 'bearer_token' || key === 'client_secret') return 'The value is sealed for storage and is never shown back in Console after submit.'
@@ -368,7 +374,7 @@ function afterFor(kind: string, title: string, opts: FieldInfoOpts): string {
   if (label.includes('token endpoint')) return 'After submit, Console saves this in provider config so STS can exchange or refresh provider tokens.'
   if (label.includes('redirect uri')) return 'After submit, Console saves this in provider config and the OAuth provider must have the same callback URI registered.'
   if (key === 'api_key' || key === 'bearer_token' || key === 'client_secret') return 'After submit, Console sends the secret once for sealed storage; future detail views show only metadata.'
-  if (key === 'api_key_header' || key === 'auth_header' || key === 'auth_scheme' || label.includes('api key header') || label.includes('upstream auth header') || label.includes('upstream auth scheme')) return 'After submit, Gateway uses this formatting when injecting provider credentials into upstream requests.'
+  if (key === 'api_key_auth_location' || key === 'provider_api_key_auth_location' || key === 'api_key_query_param' || key === 'provider_api_key_query_param' || key === 'api_key_header' || key === 'auth_header' || key === 'auth_scheme' || label.includes('api key header') || label.includes('upstream auth header') || label.includes('upstream auth scheme')) return 'After submit, Gateway uses this formatting when injecting provider credentials into upstream requests.'
   if (key === 'authorization_params' || label.includes('authorization params')) return 'After submit, Console includes these parameters when creating the OAuth authorization URL.'
   if (key === 'token_params' || label.includes('token params')) return 'After submit, STS includes these parameters in OAuth token exchange or refresh requests.'
   if (key === 'allowed_token_hosts' || label.includes('allowed token hosts')) return 'After submit, STS enforces this host allowlist before contacting token endpoints.'
@@ -434,7 +440,9 @@ function exampleFor(kind: string, label: string, options?: readonly string[], op
   const key = opts.key ?? ''
   if (normalized.includes('forward') && normalized.includes('caracal identity')) return 'no'
   if (kind === 'bool') return 'yes'
+  if (key === 'api_key_auth_location' || key === 'provider_api_key_auth_location') return 'query'
   if (key === 'api_key_header' || normalized.includes('api key header')) return 'X-API-Key'
+  if (key === 'api_key_query_param' || key === 'provider_api_key_query_param') return 'key'
   if (key === 'auth_header' || normalized.includes('upstream auth header')) return 'Authorization'
   if (key === 'auth_scheme' || normalized.includes('upstream auth scheme')) return 'Bearer'
   if (key === 'api_key') return '••••'
@@ -508,7 +516,9 @@ function validFor(kind: string, title: string, options?: readonly string[], opts
   const key = opts.key ?? ''
   if (isNumericLabel(label)) return 'Positive integer only; no units, commas, decimals, or text.'
   if (kind === 'bool') return 'Toggle on or off.'
+  if (key === 'api_key_auth_location' || key === 'provider_api_key_auth_location') return 'One of: header, query.'
   if (key === 'api_key_header' || key === 'auth_header' || label.includes('api key header') || label.includes('upstream auth header')) return 'HTTP header name only, without a colon or value.'
+  if (key === 'api_key_query_param' || key === 'provider_api_key_query_param') return 'Query parameter name only, without = or the secret value.'
   if (key === 'auth_scheme' || label.includes('upstream auth scheme')) return 'Credential scheme only, without the secret value; leave blank only when the upstream expects the raw credential.'
   if (key === 'api_key' || key === 'bearer_token' || key === 'client_secret' || key === 'token') return 'Paste the exact secret value; it is masked by default and not echoed after submit.'
   if (key === 'client_id' || label.includes('client id')) return 'Provider-issued client identifier exactly as shown in the upstream OAuth application.'

@@ -26,6 +26,7 @@ import type { Ctx } from './factory.ts'
 const DEFAULT_GATEWAY_URL = 'http://localhost:8081'
 const PROVIDER_KINDS: ProviderKind[] = ['none', 'caracal_mandate', 'oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token']
 const PROVIDER_CREDENTIAL_KINDS: ProviderKind[] = ['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token']
+const API_KEY_AUTH_LOCATIONS = ['header', 'query']
 const PROVIDER_IDENTIFIER_PATTERN = /^provider:\/\/[a-z0-9]+(?:-[a-z0-9]+)*$/
 const HEADER_TOKEN_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 const AUTH_SCHEME_PATTERN = /^[A-Za-z][A-Za-z0-9-]*$/
@@ -72,6 +73,7 @@ interface SetupValues {
   provider_client_id?: string
   provider_client_secret?: string
   provider_api_key?: string
+  provider_api_key_auth_location?: string
   provider_bearer_token?: string
   provider_client_auth_method?: string
   provider_scopes?: string
@@ -80,6 +82,7 @@ interface SetupValues {
   provider_token_audience?: string
   provider_token_resource?: string
   provider_api_key_header?: string
+  provider_api_key_query_param?: string
   provider_allowed_token_hosts?: string
   provider_auth_header?: string
   provider_auth_scheme?: string
@@ -162,6 +165,7 @@ class FirstSetupWizardView implements View {
     overwrite_files: 'false',
     profile_path: defaultRuntimeConfigPath(),
     provider_kind: 'caracal_mandate',
+    provider_api_key_auth_location: 'header',
     provider_forward_caracal_identity: 'false',
   }
   private selectedZone: Zone | undefined
@@ -367,12 +371,14 @@ class FirstSetupWizardView implements View {
     this.values.provider_client_id = ''
     this.values.provider_client_secret = ''
     this.values.provider_api_key = ''
+    this.values.provider_api_key_auth_location = 'header'
     this.values.provider_bearer_token = ''
     this.values.provider_client_auth_method = 'client_secret_basic'
     this.values.provider_scopes = ''
     this.values.provider_authorization_params = ''
     this.values.provider_token_params = ''
     this.values.provider_api_key_header = ''
+    this.values.provider_api_key_query_param = ''
     this.values.provider_allowed_token_hosts = ''
     this.values.provider_auth_header = ''
     this.values.provider_auth_scheme = ''
@@ -469,7 +475,9 @@ class FirstSetupWizardView implements View {
         { key: 'provider_redirect_uri', label: 'redirect URI', kind: 'text', required: true, default: this.values.provider_redirect_uri ?? '', dependsOn: { provider_mode: 'create', provider_kind: 'oauth2_authorization_code' }, info: guidedInfo('Redirect URI', 'Callback URI registered with the provider.', 'http://localhost:3000/v1/zones/z1/provider-grants/oauth/callback', 'Absolute callback URI.', 'The provider sends authorization results to this URI.') },
         { key: 'provider_client_id', label: 'client ID', kind: 'text', required: true, default: this.values.provider_client_id ?? '', dependsOn: { provider_mode: 'create', provider_kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, info: guidedInfo('Client ID', 'OAuth client identifier issued by the provider.', 'hooli-pipernet-client', 'Provider-issued client ID.', 'STS uses this when exchanging or refreshing provider tokens.') },
         { key: 'provider_client_secret', label: 'client secret', kind: 'secret', required: (current) => current.provider_client_auth_method !== 'none', default: this.values.provider_client_secret ?? '', dependsOn: { provider_mode: 'create', provider_kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, info: guidedInfo('Client secret', 'OAuth client secret issued by the provider.', 'Paste the provider secret', 'Secret text, or blank only when client auth method is none.', 'STS requires this secret for client_secret_basic and client_secret_post token endpoint authentication.') },
-        { key: 'provider_api_key_header', label: 'API key header', kind: 'text', required: true, default: this.values.provider_api_key_header ?? '', dependsOn: { provider_mode: 'create', provider_kind: 'api_key' }, info: guidedInfo('API key header', 'Header where the upstream API expects its key, such as X-API-Key, Authorization, or a vendor-specific key header.', 'X-API-Key', 'HTTP header name.', 'Gateway replaces any caller-supplied value for this header before forwarding upstream.') },
+        { key: 'provider_api_key_auth_location', label: 'API key location', kind: 'select', options: API_KEY_AUTH_LOCATIONS, default: this.values.provider_api_key_auth_location ?? 'header', dependsOn: { provider_mode: 'create', provider_kind: 'api_key' }, info: guidedInfo('API key location', 'Where the upstream API expects the API key credential.', 'header for Stripe, query for Google Maps', 'header or query.', 'Gateway sends the sealed API key in that request location.') },
+        { key: 'provider_api_key_header', label: 'API key header', kind: 'text', required: true, default: this.values.provider_api_key_header ?? '', dependsOn: { provider_mode: 'create', provider_kind: 'api_key', provider_api_key_auth_location: 'header' }, info: guidedInfo('API key header', 'Header where the upstream API expects its key, such as X-API-Key, Authorization, or a vendor-specific key header.', 'X-API-Key', 'HTTP header name.', 'Gateway replaces any caller-supplied value for this header before forwarding upstream.') },
+        { key: 'provider_api_key_query_param', label: 'API key query parameter', kind: 'text', required: true, default: this.values.provider_api_key_query_param ?? '', dependsOn: { provider_mode: 'create', provider_kind: 'api_key', provider_api_key_auth_location: 'query' }, info: guidedInfo('API key query parameter', 'Query parameter where the upstream API expects its key.', 'key', 'Parameter name such as key, appid, api_key, or token.', 'Gateway replaces caller-supplied values for this parameter before forwarding upstream.') },
         { key: 'provider_api_key', label: 'API key', kind: 'secret', required: true, default: this.values.provider_api_key ?? '', dependsOn: { provider_mode: 'create', provider_kind: 'api_key' }, info: guidedInfo('API key', 'Provider-native API key for the upstream service.', 'Paste the Hooli API key', 'Secret text.', 'Console seals this value before storing it.') },
         { key: 'provider_bearer_token', label: 'bearer token', kind: 'secret', required: true, default: this.values.provider_bearer_token ?? '', dependsOn: { provider_mode: 'create', provider_kind: 'bearer_token' }, info: guidedInfo('Bearer token', 'Pre-issued provider-native token for the upstream service.', 'Paste the Hooli bearer token', 'Secret text.', 'Console seals this value and Gateway sends it as Authorization: Bearer unless Advanced routing changes the header or scheme.') },
         { key: 'provider_identifier', label: 'provider identifier', kind: 'text', default: this.values.provider_identifier ?? '', dependsOn: { provider_mode: 'create' }, advanced: true, validate: validateProviderIdentifier, info: guidedInfo('Provider identifier', 'Stable provider identifier used by APIs and audit output.', 'provider://hooli-pipernet', 'Leave blank to generate from provider name.', 'Console sends this identifier when creating the provider.') },
@@ -481,7 +489,7 @@ class FirstSetupWizardView implements View {
         { key: 'provider_allowed_token_hosts', label: 'allowed token hosts', kind: 'list', default: this.values.provider_allowed_token_hosts ?? '', dependsOn: { provider_mode: 'create', provider_kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true, info: guidedInfo('Allowed token hosts', 'Host allow-list for token refresh endpoints.', 'login.hooli.example', 'Comma-separated host names.', 'Blank uses the host inferred from token endpoint.') },
         { key: 'provider_client_auth_method', label: 'client auth method', kind: 'select', options: ['client_secret_basic', 'client_secret_post', 'none'], default: this.values.provider_client_auth_method ?? 'client_secret_basic', dependsOn: { provider_mode: 'create', provider_kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true, info: guidedInfo('Client auth method', 'How STS authenticates to the OAuth token endpoint.', 'client_secret_basic', 'OAuth client authentication method.', 'Use the method registered with the provider.') },
         { key: 'provider_auth_header', label: 'upstream auth header', kind: 'text', default: this.values.provider_auth_header ?? '', dependsOn: { provider_mode: 'create', provider_kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'bearer_token'] }, advanced: true, info: guidedInfo('Upstream auth header', 'Header where Gateway forwards provider tokens.', 'Authorization', 'HTTP header name, or blank for the default.', 'Gateway uses this header when calling the upstream API.') },
-        { key: 'provider_auth_scheme', label: 'upstream auth scheme', kind: 'text', default: this.values.provider_auth_scheme ?? '', dependsOn: { provider_mode: 'create', provider_kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token'] }, advanced: true, info: guidedInfo('Upstream auth scheme', 'Optional prefix for upstream credential values.', 'Bearer', 'Short scheme name such as Bearer or Token; OAuth and bearer token providers default to Bearer, while API keys use a raw value unless a scheme is set.', 'Gateway formats provider credentials using this scheme when the upstream API expects one.') },
+        { key: 'provider_auth_scheme', label: 'upstream auth scheme', kind: 'text', default: this.values.provider_auth_scheme ?? '', dependsOn: { provider_mode: 'create', provider_kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token'] }, visible: (current) => current.provider_kind !== 'api_key' || current.provider_api_key_auth_location === 'header', advanced: true, info: guidedInfo('Upstream auth scheme', 'Optional prefix for upstream credential values.', 'Bearer', 'Short scheme name such as Bearer, Token, or ApiKey; API-key query auth does not use a scheme.', 'Gateway formats provider credentials using this scheme when the upstream API expects one.') },
         { key: 'provider_forward_caracal_identity', label: 'forward Caracal identity', kind: 'bool', default: this.values.provider_forward_caracal_identity ?? 'false', dependsOn: { provider_mode: 'create', provider_kind: PROVIDER_CREDENTIAL_KINDS }, advanced: true, info: guidedInfo('Forward Caracal identity', 'Forward selected Caracal identity context to the upstream provider.', 'Enable for a Hooli broker that trusts Caracal identity.', 'Boolean toggle.', 'Gateway sends X-Caracal-Identity only for provider-native credential routes that opt in.') },
       ],
       onSubmit: async (raw, formApp) => {
@@ -947,7 +955,9 @@ function providerConfigFromValues(values: SetupValues): JsonObject {
   mergeConfigText(config, 'audience', values.provider_token_audience)
   mergeConfigText(config, 'resource', values.provider_token_resource)
   mergeConfigList(config, 'allowed_token_hosts', values.provider_allowed_token_hosts || inferredTokenHosts(values.provider_token_endpoint))
+  mergeConfigText(config, 'auth_location', values.provider_api_key_auth_location)
   mergeConfigText(config, 'header_name', values.provider_api_key_header)
+  mergeConfigText(config, 'query_param_name', values.provider_api_key_query_param)
   mergeConfigText(config, 'auth_header', values.provider_auth_header)
   mergeConfigText(config, 'auth_scheme', values.provider_auth_scheme)
   if (values.provider_forward_caracal_identity === 'true') config.forward_caracal_identity = true
@@ -997,9 +1007,16 @@ function inferredTokenHosts(endpoint: string | undefined): string {
 function validateProviderConfig(kind: ProviderKind, config: JsonObject): void {
   if (kind === 'none' || kind === 'caracal_mandate') return
   if (kind === 'api_key') {
-    requireString(config, 'header_name', 'api_key provider config requires header_name')
-    requireOptionalHeaderName(config, 'header_name', 'api_key provider config header_name must be an HTTP header name')
-    requireOptionalAuthScheme(config, 'auth_scheme', 'api_key provider config auth_scheme must be an auth scheme token')
+    const location = apiKeyAuthLocation(config)
+    if (location === 'header') {
+      requireString(config, 'header_name', 'api_key provider config requires header_name')
+      requireOptionalHeaderName(config, 'header_name', 'api_key provider config header_name must be an HTTP header name')
+      requireOptionalAuthScheme(config, 'auth_scheme', 'api_key provider config auth_scheme must be an auth scheme token')
+    } else {
+      requireString(config, 'query_param_name', 'api_key provider config requires query_param_name')
+      requireOptionalQueryParamName(config, 'query_param_name', 'api_key provider config query_param_name must be a query parameter name')
+      if (config.auth_scheme !== undefined) throw new Error('api_key provider config auth_scheme applies only to header auth')
+    }
     requireString(config, 'api_key', 'api_key provider config requires api_key')
     return
   }
@@ -1063,6 +1080,23 @@ function requireOptionalAuthScheme(config: JsonObject, key: string, message: str
   config[key] = value.trim()
 }
 
+function requireOptionalQueryParamName(config: JsonObject, key: string, message: string): void {
+  const value = config[key]
+  if (value === undefined) return
+  if (typeof value !== 'string' || !OAUTH_PARAM_PATTERN.test(value.trim())) throw new Error(message)
+  config[key] = value.trim()
+}
+
+function apiKeyAuthLocation(config: JsonObject): 'header' | 'query' {
+  const value = config.auth_location
+  if (value === undefined) {
+    config.auth_location = 'header'
+    return 'header'
+  }
+  if (value === 'header' || value === 'query') return value
+  throw new Error('api_key provider config auth_location must be header or query')
+}
+
 function requireOptionalStringRecord(config: JsonObject, key: string, reserved: ReadonlySet<string>, message: string): void {
   const value = config[key]
   if (value === undefined) return
@@ -1076,7 +1110,7 @@ function requireOptionalStringRecord(config: JsonObject, key: string, reserved: 
 
 function providerConfigKeys(kind: ProviderKind): Set<string> {
   if (kind === 'none' || kind === 'caracal_mandate') return new Set()
-  if (kind === 'api_key') return new Set(['header_name', 'api_key', 'auth_scheme', 'forward_caracal_identity'])
+  if (kind === 'api_key') return new Set(['auth_location', 'header_name', 'query_param_name', 'api_key', 'auth_scheme', 'forward_caracal_identity'])
   if (kind === 'bearer_token') return new Set(['bearer_token', 'auth_header', 'auth_scheme', 'forward_caracal_identity'])
   const keys = ['token_endpoint', 'client_id', 'client_secret', 'client_auth_method', 'scopes', 'allowed_token_hosts', 'token_params', 'auth_header', 'auth_scheme', 'forward_caracal_identity']
   if (kind === 'oauth2_client_credentials') keys.push('audience', 'resource')
