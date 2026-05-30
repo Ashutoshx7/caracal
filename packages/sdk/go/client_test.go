@@ -31,7 +31,6 @@ func TestFromEnvMissing(t *testing.T) {
 }
 
 func TestFromEnvOK(t *testing.T) {
-	t.Setenv("CARACAL_COORDINATOR_URL", "http://coord")
 	t.Setenv("CARACAL_ZONE_ID", "z1")
 	t.Setenv("CARACAL_APPLICATION_ID", "app1")
 	t.Setenv("CARACAL_SUBJECT_TOKEN", "tok1")
@@ -41,6 +40,9 @@ func TestFromEnvOK(t *testing.T) {
 	}
 	if c.ZoneID != "z1" || c.ApplicationID != "app1" || c.SubjectToken != "tok1" {
 		t.Fatalf("bad config: %+v", c)
+	}
+	if c.Coordinator.BaseURL != "http://localhost:4000" || c.GatewayURL != "http://localhost:8081" {
+		t.Fatalf("unexpected default URLs: %+v", c)
 	}
 }
 
@@ -80,6 +82,51 @@ func TestFromEnvClientSecretTokenSource(t *testing.T) {
 		t.Fatalf("expected client secret, got %q", gotSecret)
 	}
 	if strings.Join(compactSorted(gotResources), ",") != "billing,calendar" {
+		t.Fatalf("unexpected resources: %#v", gotResources)
+	}
+}
+
+func TestFromEnvAutoDetectsCredentialFiles(t *testing.T) {
+	var gotResources []string
+	var gotSecret string
+	sts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		gotResources = r.Form["resource"]
+		gotSecret = r.Form.Get("client_secret")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"fresh-root","token_type":"Bearer","expires_in":3600}`))
+	}))
+	defer sts.Close()
+
+	dir := t.TempDir()
+	credentialDir := filepath.Join(dir, "caracal", "runtime", "z", "app")
+	if err := os.MkdirAll(credentialDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(credentialDir, "client-secret"), []byte("secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(credentialDir, "credentials.json"), []byte(`[{"resource":"calendar"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("CARACAL_ZONE_ID", "z")
+	t.Setenv("CARACAL_APPLICATION_ID", "app")
+	t.Setenv("CARACAL_STS_URL", sts.URL)
+
+	c, err := sdk.FromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Headers(context.Background(), sdk.RootOptions{AllowRoot: true}); err != nil {
+		t.Fatal(err)
+	}
+	if gotSecret != "secret" {
+		t.Fatalf("expected auto-detected client secret, got %q", gotSecret)
+	}
+	if strings.Join(compactSorted(gotResources), ",") != "calendar" {
 		t.Fatalf("unexpected resources: %#v", gotResources)
 	}
 }

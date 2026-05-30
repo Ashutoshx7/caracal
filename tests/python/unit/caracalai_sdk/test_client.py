@@ -7,7 +7,10 @@ Caracal drop-in client tests for env loading, header projection, and ASGI middle
 
 import base64
 import json
+import os
+import tempfile
 import unittest
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -41,7 +44,6 @@ class FromEnvTests(unittest.TestCase):
     def test_loads_full_env(self) -> None:
         c = Caracal.from_env(
             {
-                "CARACAL_COORDINATOR_URL": "http://x",
                 "CARACAL_ZONE_ID": "z1",
                 "CARACAL_APPLICATION_ID": "a1",
                 "CARACAL_SUBJECT_TOKEN": "t1",
@@ -49,6 +51,47 @@ class FromEnvTests(unittest.TestCase):
         )
         self.assertEqual(c.config.zone_id, "z1")
         self.assertEqual(c.config.subject_token, "t1")
+        self.assertEqual(c.config.coordinator.base_url, "http://localhost:4000")
+        self.assertEqual(c.config.gateway_url, "http://localhost:8081")
+
+    def test_auto_detects_local_credential_files(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            credential_dir = Path(root) / "caracal" / "runtime" / "z" / "app"
+            credential_dir.mkdir(parents=True)
+            secret = credential_dir / "client-secret"
+            credentials = credential_dir / "credentials.json"
+            secret.write_text("secret\n")
+            credentials.write_text(json.dumps([{"resource": "calendar"}]))
+            if os.name != "nt":
+                secret.chmod(0o600)
+                credentials.chmod(0o600)
+
+            c = Caracal.from_env(
+                {
+                    "XDG_CONFIG_HOME": root,
+                    "CARACAL_ZONE_ID": "z",
+                    "CARACAL_APPLICATION_ID": "app",
+                    "CARACAL_STS_URL": "http://sts",
+                }
+            )
+
+        exchanger = getattr(c.config._token_source, "__self__")
+        self.assertEqual(exchanger._client_secret, "secret")
+        self.assertEqual(exchanger._resources, ["calendar"])
+
+    def test_env_manifest_keeps_explicit_resource_ids(self) -> None:
+        c = Caracal.from_env(
+            {
+                "CARACAL_ZONE_ID": "z",
+                "CARACAL_APPLICATION_ID": "app",
+                "CARACAL_APP_CLIENT_SECRET": "secret",
+                "CARACAL_RUN_CREDENTIALS": json.dumps([{"resource": "calendar"}]),
+                "CARACAL_APP_RESOURCES": "drive,calendar",
+            }
+        )
+
+        exchanger = getattr(c.config._token_source, "__self__")
+        self.assertEqual(exchanger._resources, ["calendar", "drive"])
 
     def test_rejects_expired_jwt_subject_token(self) -> None:
         header = base64.urlsafe_b64encode(b'{"alg":"ES256"}').rstrip(b"=").decode()

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -29,6 +30,10 @@ from .coordinator import AgentKind, CoordinatorClient, DelegationConstraints
 from .envelope import decode_envelope, to_headers
 from .json_types import JsonObject
 from .primitives import LifecycleHook, delegate, delegate_to_spawn, spawn
+
+DEFAULT_STS_URL = "http://localhost:8080"
+DEFAULT_COORDINATOR_URL = "http://localhost:4000"
+DEFAULT_GATEWAY_URL = "http://localhost:8081"
 
 if TYPE_CHECKING:
     from .http import ASGIApp, CaracalContextASGIMiddleware
@@ -246,10 +251,7 @@ def _resource_ids_from_env(env: Mapping[str, str], bindings: list[ResourceBindin
             return ids
     if bindings:
         return [b.resource_id for b in bindings]
-    raise RuntimeError(
-        "Caracal.from_env: client-secret mode requires resources via "
-        "CARACAL_APP_RESOURCES, CARACAL_RESOURCES, or CARACAL_RESOURCES_FILE"
-    )
+    return []
 
 
 def _default_config_path():
@@ -258,8 +260,7 @@ def _default_config_path():
     explicit = os.environ.get("CARACAL_CONFIG")
     if explicit:
         return Path(explicit)
-    xdg = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(xdg) / "caracal" / "caracal.toml"
+    return _default_config_dir(os.environ) / "caracal.toml"
 
 
 def _default_config_path_for(env: Mapping[str, str]):
@@ -268,8 +269,57 @@ def _default_config_path_for(env: Mapping[str, str]):
     explicit = env.get("CARACAL_CONFIG")
     if explicit:
         return Path(explicit)
-    xdg = env.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(xdg) / "caracal" / "caracal.toml"
+    return _default_config_dir(env) / "caracal.toml"
+
+
+def _default_config_dir(env: Mapping[str, str]):
+    from pathlib import Path
+
+    if env.get("CARACAL_CONFIG_HOME"):
+        return Path(env["CARACAL_CONFIG_HOME"])
+    if env.get("XDG_CONFIG_HOME"):
+        return Path(env["XDG_CONFIG_HOME"]) / "caracal"
+    if os.name == "nt":
+        return Path(env.get("APPDATA") or env.get("LOCALAPPDATA") or Path.home() / "AppData" / "Roaming") / "Caracal"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Caracal"
+    return Path.home() / ".config" / "caracal"
+
+
+def _safe_path_segment(value: str) -> str:
+    import re
+
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip()).strip("_")
+    return safe or "default"
+
+
+def _default_credential_dir(env: Mapping[str, str], zone_id: str, application_id: str):
+    return _default_config_dir(env) / "runtime" / _safe_path_segment(zone_id) / _safe_path_segment(application_id)
+
+
+def _default_client_secret_path(env: Mapping[str, str], zone_id: str, application_id: str):
+    return _default_credential_dir(env, zone_id, application_id) / "client-secret"
+
+
+def _default_run_credentials_path(env: Mapping[str, str], zone_id: str, application_id: str):
+    return _default_credential_dir(env, zone_id, application_id) / "credentials.json"
+
+
+def _existing_local_file(path, env: Mapping[str, str]):
+    if env.get("NODE_ENV") == "production":
+        return None
+    return path if path.exists() else None
+
+
+def _read_secret_path(path, source: str) -> str:
+    if not path.exists():
+        raise RuntimeError(f"{source} secret file does not exist: {path}")
+    if os.name != "nt" and path.stat().st_mode & 0o022:
+        raise RuntimeError(f"{source} secret file is group/world writable: {path}")
+    secret = path.read_text().strip()
+    if not secret:
+        raise RuntimeError(f"{source} secret file is empty: {path}")
+    return secret
 
 
 def _required_str(cfg: dict, key: str) -> str:
@@ -279,7 +329,24 @@ def _required_str(cfg: dict, key: str) -> str:
     return v
 
 
-def _client_secret_from_config(cfg: dict) -> str:
+def _service_url(env: Mapping[str, str], key: str, default: str) -> str:
+    value = env.get(key)
+    if value:
+        return value
+    if env.get("NODE_ENV") == "production":
+        raise RuntimeError(f"Caracal SDK: {key} is required when NODE_ENV=production")
+    return default
+
+
+def _sts_url(env: Mapping[str, str]) -> str:
+    return (
+        env.get("CARACAL_STS_URL")
+        or env.get("CARACAL_ZONE_URL")
+        or _service_url(env, "CARACAL_STS_URL", DEFAULT_STS_URL)
+    )
+
+
+def _client_secret_from_config(cfg: dict, zone_id: str, application_id: str) -> str:
     from pathlib import Path
 
     value = cfg.get("app_client_secret")
@@ -289,22 +356,23 @@ def _client_secret_from_config(cfg: dict) -> str:
             "caracal.toml must set only one of 'app_client_secret' or "
             "'app_client_secret_file'"
         )
+    if isinstance(value, str) and value:
+        return value
     if isinstance(file_value, str) and file_value:
-        path = Path(file_value)
-        if not path.exists():
-            raise RuntimeError(f"caracal.toml secret file does not exist: {path}")
-        if os.name != "nt" and path.stat().st_mode & 0o022:
-            raise RuntimeError(
-                f"caracal.toml secret file is group/world writable: {path}"
-            )
-        secret = path.read_text().strip()
-        if not secret:
-            raise RuntimeError(f"caracal.toml secret file is empty: {path}")
-        return secret
-    return _required_str(cfg, "app_client_secret")
+        return _read_secret_path(Path(file_value), "caracal.toml")
+    local_path = _existing_local_file(
+        _default_client_secret_path(os.environ, zone_id, application_id),
+        os.environ,
+    )
+    if local_path is None:
+        raise RuntimeError(
+            "caracal.toml missing client secret; local dev/stable auto-detects "
+            f"{_default_client_secret_path(os.environ, zone_id, application_id)} when it exists"
+        )
+    return _read_secret_path(local_path, "caracal.toml")
 
 
-def _client_secret_from_env(env: Mapping[str, str]) -> str | None:
+def _client_secret_from_env(env: Mapping[str, str], zone_id: str, application_id: str) -> str | None:
     from pathlib import Path
 
     value = env.get("CARACAL_APP_CLIENT_SECRET")
@@ -315,17 +383,10 @@ def _client_secret_from_env(env: Mapping[str, str]) -> str | None:
             "CARACAL_APP_CLIENT_SECRET_FILE"
         )
     if file_value:
-        path = Path(file_value)
-        if not path.exists():
-            raise RuntimeError(f"Caracal.from_env secret file does not exist: {path}")
-        if os.name != "nt" and path.stat().st_mode & 0o022:
-            raise RuntimeError(
-                f"Caracal.from_env secret file is group/world writable: {path}"
-            )
-        secret = path.read_text().strip()
-        if not secret:
-            raise RuntimeError(f"Caracal.from_env secret file is empty: {path}")
-        return secret
+        return _read_secret_path(Path(file_value), "Caracal.from_env")
+    local_path = _existing_local_file(_default_client_secret_path(env, zone_id, application_id), env)
+    if local_path is not None:
+        return _read_secret_path(local_path, "Caracal.from_env")
     return value
 
 
@@ -365,7 +426,7 @@ def _resource_bindings_from_credentials(credentials: list[dict[str, str]]) -> tu
     return ids, bindings
 
 
-def _credential_manifest_from_env(env: Mapping[str, str]) -> list[dict[str, str]]:
+def _credential_manifest_from_env(env: Mapping[str, str], zone_id: str, application_id: str) -> list[dict[str, str]]:
     file_value = env.get("CARACAL_RUN_CREDENTIALS_FILE")
     inline = env.get("CARACAL_RUN_CREDENTIALS")
     if file_value and inline:
@@ -374,7 +435,10 @@ def _credential_manifest_from_env(env: Mapping[str, str]) -> list[dict[str, str]
             "CARACAL_RUN_CREDENTIALS_FILE"
         )
     if not file_value and not inline:
-        return []
+        local_path = _existing_local_file(_default_run_credentials_path(env, zone_id, application_id), env)
+        if local_path is None:
+            return []
+        file_value = str(local_path)
     if file_value:
         with open(file_value, encoding="utf-8") as fh:
             data = json.load(fh)
@@ -440,20 +504,18 @@ class Caracal:
         Two authentication shapes are supported:
 
         * **Static subject token**: set `CARACAL_SUBJECT_TOKEN` directly.
-        * **Application client secret**: set `CARACAL_APP_CLIENT_SECRET` and
-          `CARACAL_STS_URL`; the SDK exchanges the secret for a fresh access
-          token on demand and refreshes it before expiry.
+        * **Application client secret**: set `CARACAL_APP_CLIENT_SECRET`; the SDK
+          exchanges the secret for a fresh access token on demand and refreshes
+          it before expiry.
 
-        Required in both modes: `CARACAL_COORDINATOR_URL`, `CARACAL_ZONE_ID`,
-        `CARACAL_APPLICATION_ID`.
+        Required in both modes: `CARACAL_ZONE_ID`, `CARACAL_APPLICATION_ID`.
         """
         e = env if env is not None else os.environ
-        coordinator_url = e.get("CARACAL_COORDINATOR_URL")
+        coordinator_url = _service_url(e, "CARACAL_COORDINATOR_URL", DEFAULT_COORDINATOR_URL)
         zone_id = e.get("CARACAL_ZONE_ID")
         application_id = e.get("CARACAL_APPLICATION_ID")
         missing = [
             k for k, v in {
-                "CARACAL_COORDINATOR_URL": coordinator_url,
                 "CARACAL_ZONE_ID": zone_id,
                 "CARACAL_APPLICATION_ID": application_id,
             }.items() if not v
@@ -462,25 +524,26 @@ class Caracal:
             raise RuntimeError(f"Caracal.from_env: missing {', '.join(missing)}")
 
         credential_ids, credential_bindings = _resource_bindings_from_credentials(
-            _credential_manifest_from_env(e)
+            _credential_manifest_from_env(e, zone_id, application_id)
         )
         bindings = sort_bindings_longest_first(
             credential_bindings + _resolve_bindings(None, e, cfg_source="env")
         )
-        gateway_url = e.get("CARACAL_GATEWAY_URL") or None
+        gateway_url = _service_url(e, "CARACAL_GATEWAY_URL", DEFAULT_GATEWAY_URL)
 
-        client_secret = _client_secret_from_env(e)
-        sts_url = e.get("CARACAL_STS_URL")
+        client_secret = _client_secret_from_env(e, zone_id, application_id)
+        sts_url = _sts_url(e)
         subject_token = e.get("CARACAL_SUBJECT_TOKEN")
 
         if client_secret:
-            if not sts_url:
-                raise RuntimeError(
-                    "Caracal.from_env: CARACAL_APP_CLIENT_SECRET requires CARACAL_STS_URL"
-                )
             resources = _resource_ids_from_env(e, bindings)
             if credential_ids:
                 resources = list(dict.fromkeys(credential_ids + resources))
+            if not resources:
+                raise RuntimeError(
+                    "Caracal.from_env: client-secret mode requires resources via "
+                    "CARACAL_APP_RESOURCES, CARACAL_RESOURCES, or CARACAL_RESOURCES_FILE"
+                )
             exchanger = ClientSecretExchanger(
                 sts_url=sts_url,
                 zone_id=zone_id,
@@ -501,8 +564,7 @@ class Caracal:
 
         if not subject_token:
             raise RuntimeError(
-                "Caracal.from_env: provide CARACAL_APP_CLIENT_SECRET (+CARACAL_STS_URL) "
-                "or CARACAL_SUBJECT_TOKEN"
+                "Caracal.from_env: provide CARACAL_APP_CLIENT_SECRET or CARACAL_SUBJECT_TOKEN"
             )
         _validate_subject_token(subject_token)
         return cls(
@@ -569,9 +631,8 @@ class Caracal:
     @classmethod
     def from_config(cls, path: str | os.PathLike[str] | None = None) -> Caracal:
         """Build a Caracal client from a `caracal.toml` authored from
-        Console values. The config supplies zone,
-        application, STS URL, client_secret, and resource bindings; tokens
-        are exchanged on demand."""
+        Console values. The config supplies zone, application, client_secret,
+        and resource bindings; tokens are exchanged on demand."""
         import tomllib
         from pathlib import Path
 
@@ -586,29 +647,29 @@ class Caracal:
 
         zone_id = _required_str(cfg, "zone_id")
         application_id = _required_str(cfg, "application_id")
-        client_secret = _client_secret_from_config(cfg)
+        client_secret = _client_secret_from_config(cfg, zone_id, application_id)
         sts_url = (
             cfg.get("sts_url")
             or cfg.get("zone_url")
             or os.environ.get("CARACAL_STS_URL")
+            or os.environ.get("CARACAL_ZONE_URL")
+            or _service_url(os.environ, "CARACAL_STS_URL", DEFAULT_STS_URL)
         )
-        if not sts_url:
-            raise RuntimeError(
-                "caracal.toml missing sts_url and CARACAL_STS_URL is unset"
-            )
         coordinator_url = (
             cfg.get("coordinator_url")
             or os.environ.get("CARACAL_COORDINATOR_URL")
+            or _service_url(os.environ, "CARACAL_COORDINATOR_URL", DEFAULT_COORDINATOR_URL)
         )
-        if not coordinator_url:
-            raise RuntimeError(
-                "caracal.toml missing coordinator_url and CARACAL_COORDINATOR_URL is unset"
-            )
-        gateway_url = cfg.get("gateway_url") or os.environ.get("CARACAL_GATEWAY_URL")
+        gateway_url = (
+            cfg.get("gateway_url")
+            or os.environ.get("CARACAL_GATEWAY_URL")
+            or _service_url(os.environ, "CARACAL_GATEWAY_URL", DEFAULT_GATEWAY_URL)
+        )
 
         credential_ids, credential_bindings = _resource_bindings_from_credentials(
             _credential_entries(cfg.get("credentials"), source=f"{cfg_path}.credentials")
             + _credential_entries(cfg.get("optional_credentials"), source=f"{cfg_path}.optional_credentials")
+            + _credential_manifest_from_env(os.environ, zone_id, application_id)
         )
         bindings = sort_bindings_longest_first(
             credential_bindings + _resolve_bindings([], os.environ, cfg_source=str(cfg_path))

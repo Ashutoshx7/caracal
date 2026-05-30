@@ -14,12 +14,17 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
 
 	oauth "github.com/garudex-labs/caracal/packages/oauth/go"
 )
+
+const defaultSTSURL = "http://localhost:8080"
+const defaultCoordinatorURL = "http://localhost:4000"
+const defaultGatewayURL = "http://localhost:8081"
 
 // Caracal binds the four config values needed to integrate with Caracal.
 type Caracal struct {
@@ -70,23 +75,28 @@ func Connect(opts ...ClientSecretOptions) (*Caracal, error) {
 	return FromEnv()
 }
 
-// FromEnv constructs a Caracal client from CARACAL_COORDINATOR_URL,
-// CARACAL_ZONE_ID, CARACAL_APPLICATION_ID, CARACAL_SUBJECT_TOKEN.
+// FromEnv constructs a Caracal client from CARACAL_ZONE_ID,
+// CARACAL_APPLICATION_ID, and CARACAL_SUBJECT_TOKEN or CARACAL_APP_CLIENT_SECRET.
 func FromEnv() (*Caracal, error) {
-	url := os.Getenv("CARACAL_COORDINATOR_URL")
-	zone := os.Getenv("CARACAL_ZONE_ID")
-	app := os.Getenv("CARACAL_APPLICATION_ID")
-	tok := os.Getenv("CARACAL_SUBJECT_TOKEN")
-	clientSecret, err := clientSecretFromEnv()
+	coordinatorURL, err := serviceURL("CARACAL_COORDINATOR_URL", defaultCoordinatorURL)
 	if err != nil {
 		return nil, err
 	}
-	stsURL := os.Getenv("CARACAL_STS_URL")
+	zone := os.Getenv("CARACAL_ZONE_ID")
+	app := os.Getenv("CARACAL_APPLICATION_ID")
+	tok := os.Getenv("CARACAL_SUBJECT_TOKEN")
+	stsURL, err := stsURLFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	gatewayURL, err := serviceURL("CARACAL_GATEWAY_URL", defaultGatewayURL)
+	if err != nil {
+		return nil, err
+	}
 	missing := []string{}
 	for k, v := range map[string]string{
-		"CARACAL_COORDINATOR_URL": url,
-		"CARACAL_ZONE_ID":         zone,
-		"CARACAL_APPLICATION_ID":  app,
+		"CARACAL_ZONE_ID":        zone,
+		"CARACAL_APPLICATION_ID": app,
 	} {
 		if v == "" {
 			missing = append(missing, k)
@@ -94,6 +104,10 @@ func FromEnv() (*Caracal, error) {
 	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("caracal: FromEnv missing %v", missing)
+	}
+	clientSecret, err := clientSecretFromEnv(zone, app)
+	if err != nil {
+		return nil, err
 	}
 	bindings, err := parseResourceBindings(os.Getenv("CARACAL_RESOURCES"))
 	if err != nil {
@@ -104,38 +118,35 @@ func FromEnv() (*Caracal, error) {
 		return nil, err
 	}
 	bindings = append(fileBindings, bindings...)
-	credentialIDs, credentialBindings, err := credentialManifestFromEnv()
+	credentialIDs, credentialBindings, err := credentialManifestFromEnv(zone, app)
 	if err != nil {
 		return nil, err
 	}
 	bindings = sortBindingsLongestFirst(append(credentialBindings, bindings...))
 	if clientSecret != "" {
-		if stsURL == "" {
-			return nil, fmt.Errorf("caracal: client-secret env mode requires CARACAL_STS_URL")
-		}
 		return FromClientSecret(ClientSecretOptions{
-			CoordinatorURL:   url,
+			CoordinatorURL:   coordinatorURL,
 			STSURL:           stsURL,
 			ZoneID:           zone,
 			ApplicationID:    app,
 			ClientSecret:     clientSecret,
 			Resources:        resourceIDsFromEnv(os.Getenv("CARACAL_APP_RESOURCES"), credentialIDs, bindings),
 			ResourceBindings: bindings,
-			GatewayURL:       os.Getenv("CARACAL_GATEWAY_URL"),
+			GatewayURL:       gatewayURL,
 		})
 	}
 	if tok == "" {
-		return nil, fmt.Errorf("caracal: FromEnv requires CARACAL_SUBJECT_TOKEN or CARACAL_APP_CLIENT_SECRET with CARACAL_STS_URL")
+		return nil, fmt.Errorf("caracal: FromEnv requires CARACAL_SUBJECT_TOKEN or CARACAL_APP_CLIENT_SECRET")
 	}
 	if err := validateSubjectToken(tok); err != nil {
 		return nil, err
 	}
 	return &Caracal{
-		Coordinator:   &CoordinatorClient{BaseURL: url},
+		Coordinator:   &CoordinatorClient{BaseURL: coordinatorURL},
 		ZoneID:        zone,
 		ApplicationID: app,
 		SubjectToken:  tok,
-		GatewayURL:    os.Getenv("CARACAL_GATEWAY_URL"),
+		GatewayURL:    gatewayURL,
 		Resources:     sortBindingsLongestFirst(bindings),
 	}, nil
 }
@@ -179,19 +190,38 @@ func FromConfig(path string) (*Caracal, error) {
 		stsURL = cfg["zone_url"]
 	}
 	if stsURL == "" {
-		return nil, fmt.Errorf("caracal: %s requires sts_url or zone_url", path)
+		stsURL, err = stsURLFromEnv()
+		if err != nil {
+			return nil, err
+		}
 	}
 	coordinatorURL := cfg["coordinator_url"]
 	if coordinatorURL == "" {
-		return nil, fmt.Errorf("caracal: %s requires coordinator_url", path)
+		coordinatorURL, err = serviceURL("CARACAL_COORDINATOR_URL", defaultCoordinatorURL)
+		if err != nil {
+			return nil, err
+		}
 	}
-	secret, err := clientSecretFromProfile(path, cfg)
+	secret, err := clientSecretFromProfile(path, cfg, cfg["zone_id"], cfg["application_id"])
 	if err != nil {
 		return nil, err
 	}
 	resourceIDs, bindings := resourceIDsFromProfile(cfg)
+	credentialIDs, credentialBindings, err := credentialManifestFromEnv(cfg["zone_id"], cfg["application_id"])
+	if err != nil {
+		return nil, err
+	}
+	resourceIDs = compactStrings(append(resourceIDs, credentialIDs...))
+	bindings = sortBindingsLongestFirst(append(credentialBindings, bindings...))
 	if len(resourceIDs) == 0 {
 		return nil, fmt.Errorf("caracal: %s requires at least one credentials entry", path)
+	}
+	gatewayURL := cfg["gateway_url"]
+	if gatewayURL == "" {
+		gatewayURL, err = serviceURL("CARACAL_GATEWAY_URL", defaultGatewayURL)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return FromClientSecret(ClientSecretOptions{
 		CoordinatorURL:   coordinatorURL,
@@ -201,8 +231,28 @@ func FromConfig(path string) (*Caracal, error) {
 		ClientSecret:     secret,
 		Resources:        resourceIDs,
 		ResourceBindings: bindings,
-		GatewayURL:       cfg["gateway_url"],
+		GatewayURL:       gatewayURL,
 	})
+}
+
+func serviceURL(key string, fallback string) (string, error) {
+	if value := os.Getenv(key); value != "" {
+		return value, nil
+	}
+	if os.Getenv("NODE_ENV") == "production" {
+		return "", fmt.Errorf("caracal: %s is required when NODE_ENV=production", key)
+	}
+	return fallback, nil
+}
+
+func stsURLFromEnv() (string, error) {
+	if value := os.Getenv("CARACAL_STS_URL"); value != "" {
+		return value, nil
+	}
+	if value := os.Getenv("CARACAL_ZONE_URL"); value != "" {
+		return value, nil
+	}
+	return serviceURL("CARACAL_STS_URL", defaultSTSURL)
 }
 
 func clientSecretTokenSource(opts ClientSecretOptions) TokenSource {
@@ -369,15 +419,82 @@ func resourceIDsFromEnv(raw string, first []string, bindings []ResourceBinding) 
 }
 
 func defaultProfilePath() string {
-	xdg := os.Getenv("XDG_CONFIG_HOME")
-	if xdg == "" {
-		home, err := os.UserHomeDir()
-		if err != nil || home == "" {
-			return ""
-		}
-		xdg = filepath.Join(home, ".config")
+	dir := defaultConfigDir()
+	if dir == "" {
+		return ""
 	}
-	return filepath.Join(xdg, "caracal", "caracal.toml")
+	return filepath.Join(dir, "caracal.toml")
+}
+
+func defaultConfigDir() string {
+	if value := os.Getenv("CARACAL_CONFIG_HOME"); value != "" {
+		return value
+	}
+	if value := os.Getenv("XDG_CONFIG_HOME"); value != "" {
+		return filepath.Join(value, "caracal")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	if runtime.GOOS == "windows" {
+		if value := os.Getenv("APPDATA"); value != "" {
+			return filepath.Join(value, "Caracal")
+		}
+		if value := os.Getenv("LOCALAPPDATA"); value != "" {
+			return filepath.Join(value, "Caracal")
+		}
+		return filepath.Join(home, "AppData", "Roaming", "Caracal")
+	}
+	if runtime.GOOS == "darwin" {
+		return filepath.Join(home, "Library", "Application Support", "Caracal")
+	}
+	return filepath.Join(home, ".config", "caracal")
+}
+
+func defaultCredentialDir(zoneID string, applicationID string) string {
+	return filepath.Join(defaultConfigDir(), "runtime", safePathSegment(zoneID), safePathSegment(applicationID))
+}
+
+func defaultClientSecretPath(zoneID string, applicationID string) string {
+	return filepath.Join(defaultCredentialDir(zoneID, applicationID), "client-secret")
+}
+
+func defaultRunCredentialsPath(zoneID string, applicationID string) string {
+	return filepath.Join(defaultCredentialDir(zoneID, applicationID), "credentials.json")
+}
+
+func safePathSegment(value string) string {
+	value = strings.TrimSpace(value)
+	var b strings.Builder
+	lastUnderscore := false
+	for _, r := range value {
+		ok := r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '.' || r == '-' || r == '_'
+		if ok {
+			b.WriteRune(r)
+			lastUnderscore = false
+			continue
+		}
+		if !lastUnderscore {
+			b.WriteByte('_')
+			lastUnderscore = true
+		}
+	}
+	out := strings.Trim(b.String(), "_")
+	if out == "" {
+		return "default"
+	}
+	return out
+}
+
+func existingLocalFile(path string) string {
+	if path == "" || os.Getenv("NODE_ENV") == "production" {
+		return ""
+	}
+	if _, err := os.Stat(path); err == nil {
+		return path
+	}
+	return ""
 }
 
 func readSecretFile(path string) (string, error) {
@@ -399,7 +516,7 @@ func readSecretFile(path string) (string, error) {
 	return secret, nil
 }
 
-func clientSecretFromEnv() (string, error) {
+func clientSecretFromEnv(zoneID string, applicationID string) (string, error) {
 	value := os.Getenv("CARACAL_APP_CLIENT_SECRET")
 	fileValue := os.Getenv("CARACAL_APP_CLIENT_SECRET_FILE")
 	if value != "" && fileValue != "" {
@@ -408,10 +525,13 @@ func clientSecretFromEnv() (string, error) {
 	if fileValue != "" {
 		return readSecretFile(fileValue)
 	}
+	if localFile := existingLocalFile(defaultClientSecretPath(zoneID, applicationID)); localFile != "" {
+		return readSecretFile(localFile)
+	}
 	return value, nil
 }
 
-func clientSecretFromProfile(path string, cfg map[string]string) (string, error) {
+func clientSecretFromProfile(path string, cfg map[string]string, zoneID string, applicationID string) (string, error) {
 	value := cfg["app_client_secret"]
 	fileValue := cfg["app_client_secret_file"]
 	if value != "" && fileValue != "" {
@@ -421,7 +541,10 @@ func clientSecretFromProfile(path string, cfg map[string]string) (string, error)
 		return value, nil
 	}
 	if fileValue == "" {
-		return "", fmt.Errorf("caracal: %s requires app_client_secret_file", path)
+		fileValue = existingLocalFile(defaultClientSecretPath(zoneID, applicationID))
+	}
+	if fileValue == "" {
+		return "", fmt.Errorf("caracal: %s requires a client secret; local dev/stable auto-detects %s when it exists", path, defaultClientSecretPath(zoneID, applicationID))
 	}
 	return readSecretFile(fileValue)
 }
@@ -553,14 +676,17 @@ func credentialCounts(cfg map[string]string) map[string]int {
 	return counts
 }
 
-func credentialManifestFromEnv() ([]string, []ResourceBinding, error) {
+func credentialManifestFromEnv(zoneID string, applicationID string) ([]string, []ResourceBinding, error) {
 	fileValue := os.Getenv("CARACAL_RUN_CREDENTIALS_FILE")
 	inline := os.Getenv("CARACAL_RUN_CREDENTIALS")
 	if fileValue != "" && inline != "" {
 		return nil, nil, fmt.Errorf("caracal: set only one of CARACAL_RUN_CREDENTIALS or CARACAL_RUN_CREDENTIALS_FILE")
 	}
 	if fileValue == "" && inline == "" {
-		return nil, nil, nil
+		fileValue = existingLocalFile(defaultRunCredentialsPath(zoneID, applicationID))
+		if fileValue == "" {
+			return nil, nil, nil
+		}
 	}
 	raw := []byte(inline)
 	if fileValue != "" {
