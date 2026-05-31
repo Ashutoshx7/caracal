@@ -43,10 +43,10 @@ Runtime CLI commands must not require admin tokens, selected zones, product cred
 | Author access policies | `policy` |
 | Simulate and activate policy sets | `policy set` |
 | Issue or revoke grants | `grant` |
-| Inspect authority sessions | `session` |
+| Inspect authority sessions | `authority session` |
 | Enable and manage Control API access | `control` |
-| Search audit records | `audit` |
-| Explain an audit decision | `explain` |
+| Search audit records and trace selected requests | `audit` |
+| Trace one known request ID | `request trace` |
 | Inspect or manage agent sessions | `agent session` |
 | Inspect or revoke delegation edges | `delegation` |
 | Run health, readiness, zone, and preflight checks | `diagnostics` |
@@ -55,7 +55,7 @@ Product-management workflows are not mirrored as top-level runtime CLI commands.
 
 ## Automation
 
-Use the Control API or Admin SDK when scripts need to create zones, applications, resources, policies, grants, sessions, agents, delegation edges, audit queries, or Control credentials. Enable Control from the Console `control` menu, then call the authenticated HTTP surface from CI or automation.
+Use the Control API or Admin SDK when scripts need to create zones, applications, resources, policies, grants, authority sessions, agents, delegation edges, audit queries, or Control credentials. Enable Control from the Console `control` menu, then call the authenticated HTTP surface from CI or automation.
 
 Automation must run with operator credentials only in trusted control-plane environments. Agent workloads should use `caracal run` or application credentials and must not receive `CARACAL_ADMIN_TOKEN`, `CARACAL_COORDINATOR_TOKEN`, `CARACAL_SECRETS_DIR`, or mounted operator secret files.
 

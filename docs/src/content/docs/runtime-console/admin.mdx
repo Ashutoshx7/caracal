@@ -1,6 +1,6 @@
 ---
 title: Management Workflows
-description: Manage zones, applications, providers, resources, policies, grants, sessions, and Control through the Console.
+description: Manage zones, applications, providers, resources, policies, grants, authority sessions, and Control through the Console.
 pageType: reference
 ---
 
@@ -19,7 +19,7 @@ caracal-console
 ## Management flow
 
 ```text
-zone -> application -> provider -> resource -> policy -> policy set -> grant -> session/audit
+zone -> application -> provider -> resource -> policy -> policy set -> grant -> authority session/audit
 ```
 
 Console `guided setup` walks the first version of that flow and can write a runtime profile for `caracal run` and SDKs.
@@ -35,7 +35,7 @@ Console `guided setup` walks the first version of that flow and can write a runt
 | `policy` | Policy content and versions. |
 | `policy set` | Policy-set composition, simulation, activation, and shadow evaluation. |
 | `grant` | Application/subject access grants. |
-| `session` | Active authority-session records. |
+| `authority session` | Active authority-session records. |
 | `control` | Control API exposure and Control credentials. |
 
 ## Secrets and credentials

@@ -4,7 +4,7 @@ description: Wire an agent app through the SDK so protected calls carry Caracal 
 pageType: workflow
 ---
 
-This tutorial connects application code to Caracal. The examples use a generated runtime profile, open one agent run, and call a Gateway-protected resource.
+This tutorial connects application code to Caracal. The examples use a generated runtime profile, open one agent session, and call a Gateway-protected resource.
 
 ## 1. Confirm the app and profile
 
@@ -127,11 +127,11 @@ if err != nil {
 | SDK call | What happens |
 | --- | --- |
 | `connect()` / `Connect()` | Loads configuration and prepares app-secret token exchange. |
-| `spawn()` / `Spawn()` | Creates an agent run, binds context, and tears it down after the block returns. |
+| `spawn()` / `Spawn()` | Creates an agent session, binds context, and tears it down after the block returns. |
 | `gatewayRequest()` / `GatewayRequest()` | Builds the Gateway URL and `X-Caracal-Resource` header. |
 | `transport()` / `Transport()` | Injects Authorization, trace, baggage, and Gateway routing behavior. |
 
-`spawn()` is the run boundary. If the function exits or raises, the SDK terminates the agent run and active authority for that run is revoked.
+`spawn()` is the session boundary. If the function exits or raises, the SDK terminates the agent session and active authority for that session is revoked.
 
 ## 4. Optional delegation
 
