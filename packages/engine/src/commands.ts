@@ -161,7 +161,7 @@ export const MANAGEMENT_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
     flags: {
       create: [
         { name: '--name', summary: 'Resource name' },
-        { name: '--identifier', summary: 'Resource identifier' },
+        { name: '--identifier', summary: 'Resource identifier; generated from name when omitted' },
         { name: '--scopes', summary: 'Comma-separated resource scopes' },
         { name: '--upstream-url', summary: 'Upstream URL' },
         { name: '--gateway-application-id', summary: 'Gateway application for upstream routing' },

@@ -3,7 +3,7 @@
 //
 // Exercises every dispatch handler arm against a mock AdminClient to validate routing.
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   describeRemoteSurface,
   dispatch,
@@ -72,5 +72,31 @@ describe('dispatch handler surface', () => {
       expect(entry.scope).toMatch(/:/)
       expect(typeof entry.command).toBe('string')
     }
+  })
+
+  it('lets resource creation rely on API-generated identifiers from names', async () => {
+    const create = vi.fn(async () => ({}))
+    const admin = { resources: { create } } as unknown as AdminClient
+
+    await dispatch({
+      command: 'resource',
+      subcommand: 'create',
+      flags: {
+        name: 'PiperNet',
+        scopes: 'pipernet:read',
+        'upstream-url': 'https://api.pipernet.example',
+        'gateway-application-id': 'app-1',
+        'credential-provider-id': 'provider-1',
+      },
+    }, localPrincipal(), { admin })
+
+    expect(create).toHaveBeenCalledWith('z1', {
+      name: 'PiperNet',
+      identifier: undefined,
+      scopes: ['pipernet:read'],
+      upstream_url: 'https://api.pipernet.example',
+      gateway_application_id: 'app-1',
+      credential_provider_id: 'provider-1',
+    })
   })
 })

@@ -213,7 +213,7 @@ const resourceHandler = bySubcommand({
   get: ({ principal, flags, ctx }) => ctx.admin.resources.get(requireZone(principal), mustStr(flags, 'id')),
   create: ({ principal, flags, ctx }) => ctx.admin.resources.create(requireZone(principal), {
     name: getStr(flags, 'name'),
-    identifier: mustStr(flags, 'identifier'),
+    identifier: getStr(flags, 'identifier'),
     scopes: getList(flags, 'scopes') ?? [],
     upstream_url: getStr(flags, 'upstream-url'),
     gateway_application_id: getStr(flags, 'gateway-application-id'),
