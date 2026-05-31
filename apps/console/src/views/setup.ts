@@ -1382,7 +1382,7 @@ function setupSummary(result: SetupResult): Record<string, unknown> {
     summary.runtime_profile = runtimeProfile
   }
   summary.audit_explanation = {
-    first_success: 'After the first protected call, open Audit, select the request, and use Explain to view the policy decision and Gateway result.',
+    first_success: 'After the first protected call, open Audit, select the request, and trace it to view the policy decision and Gateway result.',
     if_no_event: 'Re-check the active policy, resource identifier, Gateway route, and runtime profile before retrying.',
   }
   return summary

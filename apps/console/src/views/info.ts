@@ -399,7 +399,8 @@ function termsFor(title: string): InfoPair[] | undefined {
   if (label.includes('provider')) terms.push({ label: 'Provider', value: 'An upstream credential source Caracal can use for protected calls.' })
   if (label.includes('policy')) terms.push({ label: 'Policy', value: 'Authorization logic that evaluates requests and returns allow, deny, or partial decisions.' })
   if (label.includes('grant')) terms.push({ label: 'Grant', value: 'A binding that lets one subject use one application against selected resource scopes.' })
-  if (label.includes('session')) terms.push({ label: 'Session', value: 'A tracked authority context used for token exchange, delegation, or agent activity.' })
+  if (label.includes('agent session')) terms.push({ label: 'Agent session', value: 'A Coordinator record for one agent execution and child activity.' })
+  else if (label.includes('session')) terms.push({ label: 'Authority session', value: 'A tracked authority context used for token exchange, delegation, or agent activity.' })
   return terms.length > 0 ? terms : undefined
 }
 

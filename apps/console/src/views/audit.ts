@@ -10,6 +10,7 @@ import { formatDateTimeOrValue } from '../format.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
 import { DetailView } from './detail.ts'
+import { FormView } from './form.ts'
 import { infoPage, openInfo } from './info.ts'
 
 const POLL_MS = 2_000
@@ -45,7 +46,9 @@ export class AuditTailView implements View {
       this.filterLabel(),
       this.paused ? 'p:resume' : 'p:pause',
       'd:cycle-decision',
-      'enter:explain',
+      'enter:details',
+      'x:trace',
+      'f:filters',
       'r:reload',
       '?:info',
       'esc:back',
@@ -170,29 +173,74 @@ export class AuditTailView implements View {
         title: 'Audit event',
         meaning: 'Audit rows show authorization and Gateway decisions with their request IDs, status, and timestamps.',
         when: 'Use this view during debugging, incident response, policy rollout checks, or when tracing one request through Caracal.',
-        impact: 'Audit is read-only evidence; changing filters or opening explanations does not alter authorization state.',
+        impact: 'Audit is read-only evidence; changing filters or opening request traces does not alter authorization state.',
         example: 'deny token_exchange req_123',
-        valid: 'Move to an event, cycle the decision filter, reload, pause streaming, or press enter on a row with a request ID.',
-        after: 'Opening an event loads the backend explanation for that request so you can inspect policies, grants, and evaluation status.',
+        valid: 'Move to an event, cycle the decision filter, reload, pause streaming, filter, or open details/request trace for a row with a request ID.',
+        after: 'Opening details shows the audit event group for the request; tracing shows the decision path for policies, grants, and evaluation status.',
         terms: [
           { label: 'Decision', value: 'The authorization result: allow, deny, partial, or absent when evaluation did not reach a decision.' },
           { label: 'Request ID', value: 'Correlation value used to fetch the complete event group for one request.' },
         ],
-        notes: ['Timestamps are compact in the table; detail/explain pages preserve raw backend values through copy-page.'],
+        notes: ['Timestamps are compact in the table; detail and request trace pages preserve raw backend values through copy-page.'],
       }))
       return
     }
+    if (key === 'f') {
+      ctx.app.push(this.filterForm())
+      return
+    }
     if (key === 'enter') {
-      const ev = this.events[this.cursor]
-      if (ev?.request_id) {
-        ctx.app.push(new DetailView({
-          title: `audit / ${ev.request_id}`,
-          load: () => this.client.audit.byRequest(this.zoneId, ev.request_id!),
-        }))
-      }
+      this.openSelected(ctx.app, false)
+      return
+    }
+    if (key === 'x') {
+      this.openSelected(ctx.app, true)
       return
     }
     if (key === 'left' || key === 'esc') { ctx.app.pop() }
+  }
+
+  private openSelected(app: App, trace: boolean): void {
+    const ev = this.events[this.cursor]
+    const requestId = ev?.request_id
+    if (!requestId) {
+      app.setStatus('selected audit event has no request ID', 'error')
+      return
+    }
+    app.push(new DetailView({
+      title: trace ? `request trace / ${requestId}` : `audit / ${requestId}`,
+      load: () => trace
+        ? this.client.audit.explain(this.zoneId, requestId)
+        : this.client.audit.byRequest(this.zoneId, requestId),
+    }))
+  }
+
+  private filterForm(): View {
+    return new FormView({
+      title: 'audit filters',
+      submitLabel: 'apply filters',
+      fields: [
+        { key: 'request_id', label: 'request ID', kind: 'text', default: this.filters.request_id ?? '', hint: 'paste one request ID or leave blank for recent events' },
+        { key: 'decision', label: 'decision', kind: 'select', options: ['', 'allow', 'deny', 'partial'], default: this.decision === 'all' ? '' : this.decision, advanced: true },
+        { key: 'event_type', label: 'event type', kind: 'text', default: this.filters.event_type ?? '', advanced: true },
+        { key: 'since', label: 'since', kind: 'text', default: this.filters.since ?? '', advanced: true },
+        { key: 'until', label: 'until', kind: 'text', default: this.filters.until ?? '', advanced: true },
+        { key: 'limit', label: 'limit', kind: 'text', default: this.filters.limit === undefined ? '100' : String(this.filters.limit), advanced: true, validate: (v) => v && !/^[1-9]\d*$/.test(v.trim()) ? 'limit must be a positive integer' : undefined },
+      ],
+      onSubmit: async (v, app) => {
+        const decision = (v.decision as AuditQuery['decision'] | '') || undefined
+        this.filters.request_id = v.request_id || undefined
+        this.filters.decision = decision
+        this.filters.event_type = v.event_type || undefined
+        this.filters.since = v.since || undefined
+        this.filters.until = v.until || undefined
+        this.filters.limit = parseLimit(v.limit)
+        this.decision = decision ?? 'all'
+        this.onFiltersChange?.({ ...this.filters })
+        app.pop()
+        await this.fetchInitial()
+      },
+    })
   }
 
   private filterLabel(): string {
@@ -208,6 +256,13 @@ export class AuditTailView implements View {
 
 function compact(parts: readonly (string | undefined)[]): string {
   return parts.filter((part): part is string => Boolean(part)).join(' ')
+}
+
+function parseLimit(value: string | undefined): number | undefined {
+  if (!value || value.trim() === '') return undefined
+  if (!/^[1-9]\d*$/.test(value.trim())) throw new Error('limit must be a positive integer')
+  const parsed = Number.parseInt(value, 10)
+  return parsed
 }
 
 function colorDecision(d: string | null | undefined): string {

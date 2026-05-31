@@ -29,9 +29,7 @@
 
 **Caracal** is an authority plane for operating AI agents safely in real environments. It solves a concrete platform problem: agents need access to tools, APIs, and providers, but platform teams need that access to be scoped, short-lived, revocable, and auditable without placing provider secrets inside agent code.
 
-The default product path is intentionally small: register an **agent app**, run an **agent run**, request a short-lived **mandate**, call a **resource** through the **Gateway**, and inspect the resulting **audit** trail. The STS evaluates policy and issues Caracal access tokens, the Gateway enforces token validity and provider routing, the Coordinator tracks runtime and delegation state, and Audit records why access was allowed or denied and what happened upstream.
-
-Read the full documentation at [docs.caracal.run](https://docs.caracal.run). Start with [What Caracal Does](https://docs.caracal.run/get-started/what-caracal-does/) or jump to [Runtime and Console](https://docs.caracal.run/runtime-console/) for setup and management workflows.
+Read the full documentation at [docs.caracal.run](https://docs.caracal.run).
 
 -----
 

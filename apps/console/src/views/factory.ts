@@ -304,7 +304,7 @@ interface GrantPlan {
   resources: GrantPlanResource[]
 }
 
-type ResourceHelpKind = 'zone' | 'application' | 'resource' | 'provider' | 'policy' | 'policy set' | 'grant' | 'session' | 'delegation' | 'agent session'
+type ResourceHelpKind = 'zone' | 'application' | 'resource' | 'provider' | 'policy' | 'policy set' | 'grant' | 'authority session' | 'session' | 'delegation' | 'agent session'
 
 function readFileOrInline(filePath: string, inline: string): string {
   if (filePath && filePath.length > 0) return readFileSync(filePath, 'utf8')
@@ -354,6 +354,8 @@ function resourceKindFromTitle(title: string): ResourceHelpKind {
   if (head === 'app') return 'application'
   if (head === 'policy set') return 'policy set'
   if (head === 'delegation-node') return 'delegation'
+  if (head === 'authority session') return 'authority session'
+  if (head === 'session') return 'authority session'
   if (head === 'agent session') return 'agent session'
   if (head === 'zone' || head === 'resource' || head === 'provider' || head === 'policy' || head === 'grant' || head === 'delegation') return head
   return 'resource'
@@ -470,11 +472,12 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
         ],
         notes: ['Use filters to review an app, subject, resource, or provider before changing access.', 'Use the scope picker after selecting a resource to avoid invalid scope strings.'],
       }
+    case 'authority session':
     case 'session':
       return {
-        title: 'Session',
-        meaning: 'A session is a tracked authority context created by token exchange, delegation, or agent activity.',
-        when: 'Use sessions to inspect active, expired, or revoked authority for a subject.',
+        title: 'Authority session',
+        meaning: 'An authority session is a tracked authority context created by token exchange, delegation, or agent activity.',
+        when: 'Use authority sessions to inspect active, expired, or revoked authority for a subject.',
         impact: 'Session status affects whether related authority can continue to be used.',
         example: 'Richard Hendricks active until 28 May, 04:48 UTC',
         valid: 'Filters narrow by status, subject, and result limit.',
@@ -503,7 +506,7 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
     case 'agent session':
       return {
         title: 'Agent session',
-        meaning: 'An agent session records one agent run and its child activity.',
+        meaning: 'An agent session records one agent execution and its child activity.',
         when: 'Use agent session views to inspect status, parent/child trees, suspension, resume, and termination.',
         impact: 'Suspend and terminate affect live agent execution; tree inspection is read-only.',
         example: 'Son of Anton running depth 1',
@@ -2046,12 +2049,13 @@ export function grantsView(ctx: Ctx): View {
 export function sessionsView(ctx: Ctx): View {
   const filters: SessionQuery = { ...ctx.state?.sessionFilters(ctx.zoneId) }
   const list: ListView<Session> = new ListView<Session>({
-    title: 'sessions',
-    info: resourceListInfo('session'),
+    title: 'authority sessions',
+    info: resourceListInfo('authority session'),
     columns: [
-      { header: 'subject', width: 36, value: (r) => r.subject_id },
+      { header: 'subject', width: 32, value: (r) => r.subject_id },
       { header: 'type', width: 10, value: (r) => r.session_type },
       { header: 'status', width: 10, value: (r) => r.status },
+      { header: 'parent', width: 20, value: (r) => r.parent_id ?? '-' },
       { header: 'expires_at', width: 24, value: (r) => formatDateTimeOrValue(r.expires_at, { compact: true }) },
     ],
     load: () => ctx.client.sessions.list(ctx.zoneId, filters),
@@ -2061,11 +2065,12 @@ export function sessionsView(ctx: Ctx): View {
     rowKey: (row) => row.id,
     rowId: (row) => row.id,
     rowName: (row) => row.subject_id,
+    onEnter: (app, row) => open(app, entityDetail(`authority session / ${row.id}`, async () => row)),
     actions: [
       {
         key: 'f', label: 'filter', build: () => {
           return new FormView({
-            title: 'filter sessions',
+            title: 'filter authority sessions',
             fields: [
               { key: 'status', label: 'status', kind: 'select', options: ['', 'active', 'revoked', 'expired'], default: filters.status ?? '' },
               { key: 'subject_id', label: 'subject', kind: 'text', default: filters.subject_id ?? '' },
@@ -2079,6 +2084,18 @@ export function sessionsView(ctx: Ctx): View {
               await popAndReload(app, list as unknown as ListView<unknown>)
             },
           })
+        },
+      },
+      {
+        key: 'i', label: 'inbound', build: (row) => {
+          if (!row) throw new Error('no row selected')
+          return delegationEdgesView(ctx, 'inbound', row.id)
+        },
+      },
+      {
+        key: 'o', label: 'outbound', build: (row) => {
+          if (!row) throw new Error('no row selected')
+          return delegationEdgesView(ctx, 'outbound', row.id)
         },
       },
     ],
@@ -2318,6 +2335,18 @@ export function agentsView(ctx: Ctx): View {
           return detail(`agent session tree / ${row.agent_session_id}`, () => ctx.client.agents.children(ctx.zoneId, row.agent_session_id))
         },
       },
+      {
+        key: 'i', label: 'inbound', build: (row) => {
+          if (!row) throw new Error('no row selected')
+          return delegationEdgesView(ctx, 'inbound', row.subject_session_id)
+        },
+      },
+      {
+        key: 'o', label: 'outbound', build: (row) => {
+          if (!row) throw new Error('no row selected')
+          return delegationEdgesView(ctx, 'outbound', row.subject_session_id)
+        },
+      },
     ],
   })
   return list
@@ -2325,27 +2354,5 @@ export function agentsView(ctx: Ctx): View {
 
 export function auditView(ctx: Ctx): View {
   const filters: AuditQuery = { ...ctx.state?.auditFilters(ctx.zoneId) }
-  return new FormView({
-    title: 'audit filters',
-    submitLabel: 'tail',
-    fields: [
-      { key: 'decision', label: 'decision', kind: 'select', options: ['', 'allow', 'deny', 'partial'], default: filters.decision ?? '' },
-      { key: 'since', label: 'since', kind: 'text', default: filters.since ?? '' },
-      { key: 'until', label: 'until', kind: 'text', default: filters.until ?? '' },
-      { key: 'request_id', label: 'request ID', kind: 'text', default: filters.request_id ?? '' },
-      { key: 'event_type', label: 'event type', kind: 'text', default: filters.event_type ?? '' },
-      { key: 'limit', label: 'limit', kind: 'text', default: filters.limit === undefined ? '100' : String(filters.limit), validate: (v) => v ? (Number.isFinite(Number.parseInt(v, 10)) ? undefined : 'limit must be an integer') : undefined },
-    ],
-    onSubmit: async (v, app) => {
-      filters.decision = (v.decision as AuditQuery['decision']) || undefined
-      filters.since = v.since || undefined
-      filters.until = v.until || undefined
-      filters.request_id = v.request_id || undefined
-      filters.event_type = v.event_type || undefined
-      filters.limit = int(v.limit)
-      ctx.state?.setAuditFilters(ctx.zoneId, filters)
-      app.pop()
-      app.push(new AuditTailView(ctx.client, ctx.zoneId, filters, (next) => ctx.state?.setAuditFilters(ctx.zoneId, next)))
-    },
-  })
+  return new AuditTailView(ctx.client, ctx.zoneId, filters, (next) => ctx.state?.setAuditFilters(ctx.zoneId, next))
 }

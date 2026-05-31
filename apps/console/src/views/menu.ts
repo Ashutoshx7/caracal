@@ -96,7 +96,7 @@ function splitList(list: string): string[] {
 }
 
 const BASE_ENTRIES: Entry[] = [
-  { key: 's', label: 'guided setup', group: 'start', description: 'Create the first agent app, protected resource, access policy, and runtime profile', needsZone: false, open: firstSetupView },
+  { key: 's', label: 'guided setup', group: 'start', description: 'Golden Setup Path', needsZone: false, open: firstSetupView },
   { key: '1', label: 'zone',       group: 'manage', description: 'Manage zones', needsZone: false, open: zonesView },
   { key: '2', label: 'application', group: 'manage', description: 'Manage agent applications', needsZone: true, open: applicationsView },
   { key: '3', label: 'provider',   group: 'manage', description: 'Manage provider credential sources', needsZone: true, open: providersView },
@@ -104,10 +104,10 @@ const BASE_ENTRIES: Entry[] = [
   { key: '5', label: 'policy',     group: 'manage', description: 'Manage access policies', needsZone: true, open: policiesView },
   { key: '6', label: 'policy set', group: 'manage', description: 'Manage active policy sets', needsZone: true, open: policySetsView },
   { key: '7', label: 'grant',      group: 'manage', description: 'Manage access grants', needsZone: true, open: grantsView },
-  { key: '8', label: 'session',    group: 'manage', description: 'List active authority sessions', needsZone: true, open: sessionsView },
+  { key: '8', label: 'authority session', group: 'manage', description: 'Inspect active authority sessions', needsZone: true, open: sessionsView },
   { key: '9', label: 'control',    group: 'manage', description: 'Manage the Control automation service', needsZone: true, open: controlEntry },
-  { key: 'a', label: 'audit',      group: 'observe', description: 'Search audit events', needsZone: true, open: auditView },
-  { key: 'e', label: 'explain',    group: 'observe', description: 'Explain an audit decision', needsZone: true, open: auditExplainEntry },
+  { key: 'a', label: 'audit',      group: 'observe', description: 'Search audit events and trace requests', needsZone: true, open: auditView },
+  { key: 'e', label: 'request trace', group: 'observe', description: 'Trace one audit request ID', needsZone: true, open: requestTraceEntry },
   { key: 'r', label: 'agent session', group: 'agents', description: 'Manage agent sessions', needsZone: true, open: agentsView },
   { key: 'g', label: 'delegation', group: 'agents', description: 'Manage delegated permissions', needsZone: true, open: delegationsView },
   { key: 'd', label: 'diagnostics', group: 'runtime', description: 'Run operator diagnostics', needsZone: false, open: doctorEntry },
@@ -117,14 +117,14 @@ function menuEntries(): Entry[] {
   return BASE_ENTRIES
 }
 
-function auditExplainEntry(ctx: Ctx): View {
+function requestTraceEntry(ctx: Ctx): View {
   return new FormView({
-    title: 'audit explain',
+    title: 'request trace',
     fields: [{ key: 'request_id', label: 'request ID', kind: 'text', required: true }],
     onSubmit: async (v, app) => {
       app.pop()
       app.push(new DetailView({
-        title: `audit / ${v.request_id}`,
+        title: `request trace / ${v.request_id}`,
         load: () => ctx.client.audit.explain(ctx.zoneId, v.request_id!),
       }))
     },
@@ -846,9 +846,9 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
         example: 'Richard Hendricks can read resource://pipernet through Son of Anton',
         terms: [{ label: 'Subject', value: 'The user, workload, or actor receiving authority.' }],
       }
-    case 'session':
+    case 'authority session':
       return {
-        meaning: 'Sessions show tracked authority contexts created by token exchange, delegation, or agents.',
+        meaning: 'Authority sessions show tracked authority contexts created by token exchange, delegation, or agents.',
         when: 'Use this to inspect active, expired, or revoked authority.',
         impact: 'Session status explains whether related tokens or authority paths can continue.',
         example: 'Richard Hendricks active until 28 May, 04:48 UTC',
@@ -865,15 +865,15 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
       }
     case 'audit':
       return {
-        meaning: 'Audit records explain what happened, when it happened, and how authorization evaluated.',
-        when: 'Use this during incident response, policy debugging, and operational verification.',
+        meaning: 'Audit records show what happened, when it happened, and how authorization evaluated.',
+        when: 'Use this during incident response, policy debugging, operational verification, or request tracing.',
         impact: 'Audit is read-only evidence; it does not change authorization state.',
         example: 'deny token_exchange req_123',
         terms: [{ label: 'Decision', value: 'Authorization result such as allow, deny, or partial.' }],
       }
-    case 'explain':
+    case 'request trace':
       return {
-        meaning: 'Explain loads a focused decision explanation for one audit request ID.',
+        meaning: 'Request trace loads a focused decision trace for one audit request ID.',
         when: 'Use it when you already have a request ID from logs, audit tail, or an error report.',
         impact: 'The result helps identify the determining policies, missing grants, or evaluation status.',
         example: 'req_01HX...',
@@ -881,7 +881,7 @@ function menuHelp(label: string): Pick<InfoPage, 'meaning' | 'when' | 'impact' |
       }
     case 'agent session':
       return {
-        meaning: 'Agent sessions are Coordinator records for agent runs and their child work.',
+        meaning: 'Agent sessions are Coordinator records for agent execution and child work.',
         when: 'Use this to inspect status, tree shape, suspend, resume, or terminate agent sessions.',
         impact: 'Suspend and terminate can affect live work; tree/detail views are read-only.',
         example: 'Son of Anton running depth 1',
