@@ -150,6 +150,8 @@ const PROVIDER_IDENTIFIER_PREFIX = 'provider://'
 const PROVIDER_IDENTIFIER_PATTERN = /^provider:\/\/[a-z0-9]+(?:-[a-z0-9]+)*$/
 const API_KEY_AUTH_LOCATIONS = ['header', 'query']
 const OAUTH_CLIENT_AUTH_METHODS = ['client_secret_basic', 'client_secret_post', 'private_key_jwt', 'none']
+const OAUTH_AUTH_CODE_CLIENT_AUTH_METHODS = ['client_secret_basic', 'client_secret_post', 'none']
+const OAUTH_CLIENT_CREDENTIALS_AUTH_METHODS = ['client_secret_basic', 'client_secret_post', 'private_key_jwt', 'none']
 const HEADER_TOKEN_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 const AUTH_SCHEME_PATTERN = /^[A-Za-z][A-Za-z0-9-]*$/
 const OAUTH_PARAM_PATTERN = /^[A-Za-z0-9._~-]+$/
@@ -243,14 +245,19 @@ function bool(v: string | undefined): boolean | undefined {
   return v === 'true'
 }
 
+function submittedOAuthClientAuthMethod(values: Record<string, string>): string {
+  if (providerKind(values.kind) === 'oauth2_authorization_code') return values.auth_code_client_auth_method || 'client_secret_basic'
+  return values.client_credentials_auth_method || 'client_secret_basic'
+}
+
 const APPLICATION_REGISTRATION_METHODS = ['managed', 'dcr'] as const
 const PROVIDER_KINDS: ProviderKind[] = ['none', 'caracal_mandate', 'oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token']
 const PROVIDER_CREDENTIAL_KINDS: ProviderKind[] = ['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token']
 const PROVIDER_KIND_LABELS: Record<ProviderKind, string> = {
   none: 'None',
   caracal_mandate: 'Caracal mandate',
-  oauth2_authorization_code: 'OAuth2 auth code',
-  oauth2_client_credentials: 'OAuth2 client creds',
+  oauth2_authorization_code: 'OAuth 2.0 authorization code',
+  oauth2_client_credentials: 'OAuth 2.0 client credentials',
   api_key: 'API key',
   bearer_token: 'Bearer token',
 }
@@ -354,7 +361,7 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
       return {
         title: 'Resource',
         meaning: 'A resource is a protected API, service, audience, or Gateway route that applications request access to.',
-        when: 'Use resources to define what can be accessed and which Caracal scopes exist for that target.',
+        when: 'Use resources to define what can be accessed and which Caracal resource scopes exist for that target.',
         impact: 'Resource identifiers and scopes become the vocabulary used by grants, policies, tokens, and Gateway bindings.',
         example: 'resource://pipernet',
         valid: 'Resources include an upstream route and Gateway application; Caracal-aware resources use the Gateway-forwarded mandate.',
@@ -371,15 +378,15 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
         meaning: 'A provider describes the upstream auth mode Gateway uses when calling protected services.',
         when: 'Use providers when Gateway workflows must forward a Caracal mandate or exchange or attach upstream credentials.',
         impact: 'Provider kind and config decide whether STS/Gateway forward the Caracal mandate directly or use a provider-native credential flow at runtime.',
-        example: 'Hooli OAuth2',
+        example: 'Hooli OAuth',
         valid: 'Only configured provider kinds and their implemented fields are sent to the API.',
         after: 'Open details to inspect the provider type and credential routing fields.',
         terms: [
-          { label: 'OAuth2', value: 'Token refresh or exchange through a configured upstream token endpoint.' },
+          { label: 'OAuth 2.0', value: 'Token refresh or exchange through a configured upstream token endpoint.' },
           { label: 'API key', value: 'Header-based upstream credential forwarding at the Gateway boundary.' },
           { label: 'Caracal mandate', value: 'The Gateway forwards the mandate as the upstream auth credential; the resource verifies it with a Caracal verifier.' },
         ],
-        notes: ['Secrets are masked in the terminal when present.', 'Use allowed token hosts to constrain outbound token endpoint calls.'],
+        notes: ['Secrets are masked in the terminal when present.', 'Use OAuth token endpoint hosts to constrain outbound token endpoint calls.'],
       }
     case 'policy':
       return {
@@ -493,7 +500,9 @@ function providerConfigFromValues(values: Record<string, string>, requireConfig:
   mergeConfigText(config, 'private_key', values.private_key)
   mergeConfigText(config, 'api_key', values.api_key)
   mergeConfigText(config, 'bearer_token', values.bearer_token)
-  mergeConfigText(config, 'client_auth_method', values.client_auth_method)
+  if (kind === 'oauth2_authorization_code' || kind === 'oauth2_client_credentials') {
+    mergeConfigText(config, 'client_auth_method', submittedOAuthClientAuthMethod(values))
+  }
   mergeConfigText(config, 'key_id', values.key_id)
   mergeConfigList(config, 'scopes', values.provider_scopes)
   mergeConfigMap(config, 'authorization_params', values.authorization_params)
@@ -501,7 +510,9 @@ function providerConfigFromValues(values: Record<string, string>, requireConfig:
   mergeConfigText(config, 'audience', values.token_audience)
   mergeConfigText(config, 'resource', values.token_resource)
   const oauthKind = kind === 'oauth2_authorization_code' || kind === 'oauth2_client_credentials'
-  const tokenHosts = values.allowed_token_hosts || (oauthKind ? inferredTokenHosts(values.token_endpoint) : '')
+  const tokenHosts = kind === 'bearer_token'
+    ? values.bearer_upstream_hosts
+    : values.oauth_token_hosts || (oauthKind ? inferredTokenHosts(values.token_endpoint) : '')
   mergeConfigList(config, 'allowed_token_hosts', tokenHosts)
   mergeConfigText(config, 'auth_location', values.api_key_auth_location)
   mergeConfigText(config, 'header_name', values.api_key_header)
@@ -615,7 +626,7 @@ function providerConfigKeys(kind: ProviderKind): Set<string> {
   if (kind === 'none' || kind === 'caracal_mandate') return new Set()
   if (kind === 'api_key') return new Set(['auth_location', 'header_name', 'query_param_name', 'api_key', 'auth_scheme', 'forward_caracal_identity', 'allow_runtime_injection'])
   if (kind === 'bearer_token') return new Set(['bearer_token', 'allowed_token_hosts', 'auth_header', 'auth_scheme', 'forward_caracal_identity', 'allow_runtime_injection'])
-  const keys = ['token_endpoint', 'client_id', 'client_secret', 'client_auth_method', 'provider_scopes', 'scopes', 'allowed_token_hosts', 'token_params', 'auth_header', 'auth_scheme', 'forward_caracal_identity', 'allow_runtime_injection']
+  const keys = ['token_endpoint', 'client_id', 'client_secret', 'client_auth_method', 'scopes', 'allowed_token_hosts', 'token_params', 'auth_header', 'auth_scheme', 'forward_caracal_identity', 'allow_runtime_injection']
   if (kind === 'oauth2_client_credentials') keys.push('audience', 'resource', 'key_id', 'private_key')
   if (kind === 'oauth2_authorization_code') keys.push('authorization_endpoint', 'redirect_uri', 'authorization_params')
   return new Set(keys)
@@ -823,7 +834,7 @@ function resourcePicker(ctx: Ctx): Field['pick'] {
     [
       { header: 'name', width: 24, value: named },
       { header: 'identifier', width: 30, value: (row) => row.identifier },
-      { header: 'Caracal scopes', width: 28, value: (row) => (row.scopes ?? []).join(',') || '-' },
+      { header: 'Caracal resource scopes', width: 28, value: (row) => (row.scopes ?? []).join(',') || '-' },
     ],
     (row) => row.id,
     named,
@@ -837,7 +848,7 @@ export function resourceIdentifierPicker(ctx: Ctx): Field['pick'] {
     [
       { header: 'name', width: 24, value: named },
       { header: 'identifier', width: 30, value: (row) => row.identifier },
-      { header: 'Caracal scopes', value: (row) => (row.scopes ?? []).join(',') || '-' },
+      { header: 'Caracal resource scopes', value: (row) => (row.scopes ?? []).join(',') || '-' },
     ],
     (row) => row.identifier,
     named,
@@ -1218,7 +1229,7 @@ export function resourcesView(ctx: Ctx): View {
       { header: 'name', width: 24, value: named },
       { header: 'identifier', width: 30, value: (r) => r.identifier },
       { header: 'upstream', width: 32, value: (r) => r.upstream_url ?? '-' },
-      { header: 'Caracal scopes', value: (r) => (r.scopes ?? []).join(' ') || '-' },
+      { header: 'Caracal resource scopes', value: (r) => (r.scopes ?? []).join(' ') || '-' },
     ],
     load: async () => userResources(await ctx.client.resources.list(ctx.zoneId)),
     state: ctx.state,
@@ -1235,11 +1246,11 @@ export function resourcesView(ctx: Ctx): View {
           submitLabel: 'create resource',
           fields: [
             { key: 'name', label: 'resource name', kind: 'text', required: true, hint: 'human-readable name; identifier is generated when blank' },
-            { key: 'scopes', label: 'Caracal scopes', kind: 'list', required: true, hint: 'comma-separated authorization scopes for this resource' },
+            { key: 'scopes', label: 'Caracal resource scopes', kind: 'list', required: true, hint: 'comma-separated authorization scopes for this resource' },
             { key: 'upstream_url', label: 'upstream URL', kind: 'text', required: true, hint: 'Gateway target for REST APIs, gRPC gateways, MCP servers, or SDK-backed services' },
-            { key: 'gateway_application_id', label: 'gateway app', kind: 'text', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx), hint: 'application identity the Gateway uses for upstream exchanges' },
+            { key: 'gateway_application_id', label: 'gateway application', kind: 'text', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx), hint: 'application identity the Gateway uses for upstream exchanges' },
             { key: 'identifier', label: 'identifier', kind: 'text', advanced: true, hint: 'optional; generated as resource://pipernet when blank' },
-            { key: 'credential_provider_id', label: 'credential provider', kind: 'text', required: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'required; use None for Gateway-only enforcement, Caracal mandate for verifier-backed services, or provider credentials for external auth' },
+            { key: 'credential_provider_id', label: 'upstream credential provider', kind: 'text', required: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'required; use None for Gateway-only enforcement, Caracal mandate for verifier-backed services, or provider credentials for external auth' },
           ],
           onSubmit: async (v, app) => {
             await ctx.client.resources.create(ctx.zoneId, {
@@ -1263,9 +1274,9 @@ export function resourcesView(ctx: Ctx): View {
               { key: 'name', label: 'name', kind: 'text', default: row.name ?? '' },
               { key: 'identifier', label: 'identifier', kind: 'text', default: row.identifier, advanced: true },
               { key: 'upstream_url', label: 'upstream URL', kind: 'text', default: row.upstream_url ?? '', required: true },
-              { key: 'gateway_application_id', label: 'gateway app', kind: 'text', default: row.gateway_application_id ?? '', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
-              { key: 'credential_provider_id', label: 'credential provider', kind: 'text', default: row.credential_provider_id ?? '', required: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'required; use None for Gateway-only enforcement, Caracal mandate for verifier-backed services, or provider credentials for external auth' },
-              { key: 'scopes', label: 'Caracal scopes', kind: 'list', default: (row.scopes ?? []).join(','), hint: 'comma-separated authorization scopes for this resource' },
+              { key: 'gateway_application_id', label: 'gateway application', kind: 'text', default: row.gateway_application_id ?? '', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
+              { key: 'credential_provider_id', label: 'upstream credential provider', kind: 'text', default: row.credential_provider_id ?? '', required: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'required; use None for Gateway-only enforcement, Caracal mandate for verifier-backed services, or provider credentials for external auth' },
+              { key: 'scopes', label: 'Caracal resource scopes', kind: 'list', default: (row.scopes ?? []).join(','), hint: 'comma-separated authorization scopes for this resource' },
             ],
             onSubmit: async (v, app) => {
               await ctx.client.resources.patch(ctx.zoneId, row.id, {
@@ -1327,24 +1338,26 @@ export function providersView(ctx: Ctx): View {
             { key: 'token_endpoint', label: 'token endpoint', kind: 'text', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, required: true, hint: 'HTTPS endpoint where provider tokens are issued or refreshed' },
             { key: 'redirect_uri', label: 'redirect URI', kind: 'text', dependsOn: { kind: 'oauth2_authorization_code' }, required: true, hint: 'callback URI registered with the provider' },
             { key: 'client_id', label: 'client ID', kind: 'text', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, required: true },
-            { key: 'client_secret', label: 'client secret', kind: 'secret', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, required: (current) => current.client_auth_method !== 'none' && current.client_auth_method !== 'private_key_jwt', hint: 'required for client_secret_basic and client_secret_post' },
+            { key: 'client_secret', label: 'client secret', kind: 'secret', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, required: (current) => !['none', 'private_key_jwt'].includes(submittedOAuthClientAuthMethod(current)), hint: 'required for client_secret_basic and client_secret_post' },
+            { key: 'provider_scopes', label: 'upstream OAuth scopes', kind: 'list', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, hint: 'optional OAuth scopes requested from the upstream provider' },
             { key: 'api_key_auth_location', label: 'API key location', kind: 'select', options: API_KEY_AUTH_LOCATIONS, default: 'header', dependsOn: { kind: 'api_key' }, hint: 'where the upstream expects the key' },
-            { key: 'api_key_header', label: 'API key header', kind: 'text', dependsOn: { kind: 'api_key', api_key_auth_location: 'header' }, required: true, hint: 'header where the upstream expects the key, such as X-API-Key or Authorization' },
+            { key: 'api_key_header', label: 'API key header name', kind: 'text', dependsOn: { kind: 'api_key', api_key_auth_location: 'header' }, required: true, hint: 'header where the upstream expects the key, such as X-API-Key or Authorization' },
             { key: 'api_key_query_param', label: 'API key query parameter', kind: 'text', dependsOn: { kind: 'api_key', api_key_auth_location: 'query' }, required: true, hint: 'query parameter where the upstream expects the key, such as key, appid, or api_key' },
             { key: 'api_key', label: 'API key', kind: 'secret', dependsOn: { kind: 'api_key' }, required: true },
             { key: 'bearer_token', label: 'bearer token', kind: 'secret', dependsOn: { kind: 'bearer_token' }, required: true },
             { key: 'identifier', label: 'provider identifier', kind: 'text', advanced: true, hint: 'optional; generated from provider name when blank', validate: validateProviderIdentifier },
-            { key: 'provider_scopes', label: 'provider scopes', kind: 'list', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true, hint: 'optional upstream OAuth scopes for provider-native grants' },
-            { key: 'authorization_params', label: 'authorization params', kind: 'list', dependsOn: { kind: 'oauth2_authorization_code' }, advanced: true, hint: 'optional key=value authorization parameters such as access_type=offline,prompt=consent' },
-            { key: 'token_params', label: 'token params', kind: 'list', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true, hint: 'optional key=value token endpoint parameters not managed by Caracal' },
-            { key: 'token_audience', label: 'token audience', kind: 'text', dependsOn: { kind: 'oauth2_client_credentials' }, advanced: true, hint: 'optional audience parameter for token endpoints such as Auth0' },
-            { key: 'token_resource', label: 'token resource', kind: 'text', dependsOn: { kind: 'oauth2_client_credentials' }, advanced: true, hint: 'optional resource parameter for token endpoints that use RFC 8707 or Azure-style resource values' },
-            { key: 'allowed_token_hosts', label: 'allowed token hosts', kind: 'list', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'bearer_token'] }, advanced: true, hint: 'optional; OAuth infers from token endpoint when blank, bearer tokens use this as an upstream send allow-list' },
-            { key: 'client_auth_method', label: 'client auth method', kind: 'select', options: OAUTH_CLIENT_AUTH_METHODS, default: 'client_secret_basic', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true },
-            { key: 'key_id', label: 'key ID', kind: 'text', dependsOn: { kind: 'oauth2_client_credentials', client_auth_method: 'private_key_jwt' }, advanced: true, hint: 'optional kid header for private_key_jwt client assertions' },
-            { key: 'private_key', label: 'private key', kind: 'secret-multiline', dependsOn: { kind: 'oauth2_client_credentials', client_auth_method: 'private_key_jwt' }, advanced: true, hint: 'PEM private key used to sign private_key_jwt client assertions' },
-            { key: 'auth_header', label: 'upstream auth header', kind: 'text', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'bearer_token'] }, advanced: true, hint: 'optional; leave blank for Authorization' },
-            { key: 'auth_scheme', label: 'upstream auth scheme', kind: 'text', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token'] }, visible: (current) => current.kind !== 'api_key' || current.api_key_auth_location === 'header', advanced: true, hint: 'optional prefix such as Bearer, Token, or ApiKey; API-key query auth does not use a scheme' },
+            { key: 'authorization_params', label: 'OAuth authorization parameters', kind: 'list', dependsOn: { kind: 'oauth2_authorization_code' }, advanced: true, hint: 'optional key=value authorization parameters such as access_type=offline,prompt=consent' },
+            { key: 'token_params', label: 'OAuth token parameters', kind: 'list', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true, hint: 'optional key=value token endpoint parameters not managed by Caracal' },
+            { key: 'token_audience', label: 'OAuth token audience', kind: 'text', dependsOn: { kind: 'oauth2_client_credentials' }, advanced: true, hint: 'optional audience parameter for token endpoints that require one' },
+            { key: 'token_resource', label: 'OAuth resource indicator', kind: 'text', dependsOn: { kind: 'oauth2_client_credentials' }, advanced: true, hint: 'optional resource parameter for token endpoints that use RFC 8707 or Azure-style resource values' },
+            { key: 'oauth_token_hosts', label: 'OAuth token endpoint hosts', kind: 'list', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true, hint: 'optional; inferred from token endpoint when blank' },
+            { key: 'bearer_upstream_hosts', label: 'allowed upstream hosts', kind: 'list', dependsOn: { kind: 'bearer_token' }, advanced: true, hint: 'optional host allow-list for static bearer-token forwarding' },
+            { key: 'auth_code_client_auth_method', label: 'OAuth client authentication', kind: 'select', options: OAUTH_AUTH_CODE_CLIENT_AUTH_METHODS, default: 'client_secret_basic', dependsOn: { kind: 'oauth2_authorization_code' }, advanced: true },
+            { key: 'client_credentials_auth_method', label: 'OAuth client authentication', kind: 'select', options: OAUTH_CLIENT_CREDENTIALS_AUTH_METHODS, default: 'client_secret_basic', dependsOn: { kind: 'oauth2_client_credentials' }, advanced: true },
+            { key: 'key_id', label: 'key ID', kind: 'text', dependsOn: { kind: 'oauth2_client_credentials', client_credentials_auth_method: 'private_key_jwt' }, advanced: true, hint: 'optional kid header for private_key_jwt client assertions' },
+            { key: 'private_key', label: 'private key', kind: 'secret-multiline', dependsOn: { kind: 'oauth2_client_credentials', client_credentials_auth_method: 'private_key_jwt' }, advanced: true, hint: 'PEM private key used to sign private_key_jwt client assertions' },
+            { key: 'auth_header', label: 'upstream authorization header', kind: 'text', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'bearer_token'] }, advanced: true, hint: 'optional; leave blank for Authorization' },
+            { key: 'auth_scheme', label: 'upstream authorization scheme', kind: 'text', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token'] }, visible: (current) => current.kind !== 'api_key' || current.api_key_auth_location === 'header', advanced: true, hint: 'optional prefix such as Bearer, Token, or ApiKey; API-key query auth does not use a scheme' },
             { key: 'forward_caracal_identity', label: 'forward Caracal identity', kind: 'bool', default: 'false', dependsOn: { kind: PROVIDER_CREDENTIAL_KINDS }, advanced: true, hint: 'also send X-Caracal-Identity to trusted upstreams' },
             { key: 'allow_runtime_injection', label: 'allow runtime injection', kind: 'bool', default: 'false', dependsOn: { kind: PROVIDER_CREDENTIAL_KINDS }, advanced: true, hint: 'allow caracal run to inject this provider credential into a child process environment' },
           ],
@@ -1372,23 +1385,25 @@ export function providersView(ctx: Ctx): View {
               { key: 'token_endpoint', label: 'token endpoint', kind: 'text', default: configString(row.config_json, 'token_endpoint'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, required: true },
               { key: 'redirect_uri', label: 'redirect URI', kind: 'text', default: configString(row.config_json, 'redirect_uri'), dependsOn: { kind: 'oauth2_authorization_code' }, required: true },
               { key: 'client_id', label: 'client ID', kind: 'text', default: configString(row.config_json, 'client_id'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, required: true },
-              { key: 'client_secret', label: 'client secret', kind: 'secret', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, required: (current) => current.client_auth_method !== 'none' && current.client_auth_method !== 'private_key_jwt' && !row.secret_config_keys.includes('client_secret'), hint: 'leave blank to keep the current secret' },
+              { key: 'client_secret', label: 'client secret', kind: 'secret', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, required: (current) => !['none', 'private_key_jwt'].includes(submittedOAuthClientAuthMethod(current)) && !row.secret_config_keys.includes('client_secret'), hint: 'leave blank to keep the current secret' },
+              { key: 'provider_scopes', label: 'upstream OAuth scopes', kind: 'list', default: configList(row.config_json, 'scopes'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] } },
               { key: 'api_key_auth_location', label: 'API key location', kind: 'select', options: API_KEY_AUTH_LOCATIONS, default: configString(row.config_json, 'auth_location') || 'header', dependsOn: { kind: 'api_key' }, hint: 'where the upstream expects the key' },
-              { key: 'api_key_header', label: 'API key header', kind: 'text', default: configString(row.config_json, 'header_name'), dependsOn: { kind: 'api_key', api_key_auth_location: 'header' }, required: true, hint: 'header where the upstream expects the key, such as X-API-Key or Authorization' },
+              { key: 'api_key_header', label: 'API key header name', kind: 'text', default: configString(row.config_json, 'header_name'), dependsOn: { kind: 'api_key', api_key_auth_location: 'header' }, required: true, hint: 'header where the upstream expects the key, such as X-API-Key or Authorization' },
               { key: 'api_key_query_param', label: 'API key query parameter', kind: 'text', default: configString(row.config_json, 'query_param_name'), dependsOn: { kind: 'api_key', api_key_auth_location: 'query' }, required: true, hint: 'query parameter where the upstream expects the key, such as key, appid, or api_key' },
               { key: 'api_key', label: 'API key', kind: 'secret', dependsOn: { kind: 'api_key' }, hint: 'leave blank to keep the current API key' },
               { key: 'bearer_token', label: 'bearer token', kind: 'secret', dependsOn: { kind: 'bearer_token' }, hint: 'leave blank to keep the current bearer token' },
-              { key: 'provider_scopes', label: 'provider scopes', kind: 'list', default: configList(row.config_json, 'scopes'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true },
-              { key: 'authorization_params', label: 'authorization params', kind: 'list', default: configMap(row.config_json, 'authorization_params'), dependsOn: { kind: 'oauth2_authorization_code' }, advanced: true, hint: 'optional key=value authorization parameters such as access_type=offline,prompt=consent' },
-              { key: 'token_params', label: 'token params', kind: 'list', default: configMap(row.config_json, 'token_params'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true, hint: 'optional key=value token endpoint parameters not managed by Caracal' },
-              { key: 'token_audience', label: 'token audience', kind: 'text', default: configString(row.config_json, 'audience'), dependsOn: { kind: 'oauth2_client_credentials' }, advanced: true },
-              { key: 'token_resource', label: 'token resource', kind: 'text', default: configString(row.config_json, 'resource'), dependsOn: { kind: 'oauth2_client_credentials' }, advanced: true },
-              { key: 'allowed_token_hosts', label: 'allowed token hosts', kind: 'list', default: configList(row.config_json, 'allowed_token_hosts'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'bearer_token'] }, advanced: true },
-              { key: 'client_auth_method', label: 'client auth method', kind: 'select', options: OAUTH_CLIENT_AUTH_METHODS, default: configString(row.config_json, 'client_auth_method') || 'client_secret_basic', dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true },
-              { key: 'key_id', label: 'key ID', kind: 'text', default: configString(row.config_json, 'key_id'), dependsOn: { kind: 'oauth2_client_credentials', client_auth_method: 'private_key_jwt' }, advanced: true, hint: 'optional kid header for private_key_jwt client assertions' },
-              { key: 'private_key', label: 'private key', kind: 'secret-multiline', dependsOn: { kind: 'oauth2_client_credentials', client_auth_method: 'private_key_jwt' }, advanced: true, hint: row.secret_config_keys.includes('private_key') ? 'leave blank to keep the current private key' : 'PEM private key used to sign private_key_jwt client assertions' },
-              { key: 'auth_header', label: 'upstream auth header', kind: 'text', default: configString(row.config_json, 'auth_header'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'bearer_token'] }, advanced: true, hint: 'optional; leave blank for Authorization' },
-              { key: 'auth_scheme', label: 'upstream auth scheme', kind: 'text', default: configString(row.config_json, 'auth_scheme'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token'] }, visible: (current) => current.kind !== 'api_key' || current.api_key_auth_location === 'header', advanced: true, hint: 'optional prefix such as Bearer, Token, or ApiKey; API-key query auth does not use a scheme' },
+              { key: 'authorization_params', label: 'OAuth authorization parameters', kind: 'list', default: configMap(row.config_json, 'authorization_params'), dependsOn: { kind: 'oauth2_authorization_code' }, advanced: true, hint: 'optional key=value authorization parameters such as access_type=offline,prompt=consent' },
+              { key: 'token_params', label: 'OAuth token parameters', kind: 'list', default: configMap(row.config_json, 'token_params'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true, hint: 'optional key=value token endpoint parameters not managed by Caracal' },
+              { key: 'token_audience', label: 'OAuth token audience', kind: 'text', default: configString(row.config_json, 'audience'), dependsOn: { kind: 'oauth2_client_credentials' }, advanced: true },
+              { key: 'token_resource', label: 'OAuth resource indicator', kind: 'text', default: configString(row.config_json, 'resource'), dependsOn: { kind: 'oauth2_client_credentials' }, advanced: true },
+              { key: 'oauth_token_hosts', label: 'OAuth token endpoint hosts', kind: 'list', default: configList(row.config_json, 'allowed_token_hosts'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, advanced: true },
+              { key: 'bearer_upstream_hosts', label: 'allowed upstream hosts', kind: 'list', default: configList(row.config_json, 'allowed_token_hosts'), dependsOn: { kind: 'bearer_token' }, advanced: true },
+              { key: 'auth_code_client_auth_method', label: 'OAuth client authentication', kind: 'select', options: OAUTH_AUTH_CODE_CLIENT_AUTH_METHODS, default: configString(row.config_json, 'client_auth_method') || 'client_secret_basic', dependsOn: { kind: 'oauth2_authorization_code' }, advanced: true },
+              { key: 'client_credentials_auth_method', label: 'OAuth client authentication', kind: 'select', options: OAUTH_CLIENT_CREDENTIALS_AUTH_METHODS, default: configString(row.config_json, 'client_auth_method') || 'client_secret_basic', dependsOn: { kind: 'oauth2_client_credentials' }, advanced: true },
+              { key: 'key_id', label: 'key ID', kind: 'text', default: configString(row.config_json, 'key_id'), dependsOn: { kind: 'oauth2_client_credentials', client_credentials_auth_method: 'private_key_jwt' }, advanced: true, hint: 'optional kid header for private_key_jwt client assertions' },
+              { key: 'private_key', label: 'private key', kind: 'secret-multiline', dependsOn: { kind: 'oauth2_client_credentials', client_credentials_auth_method: 'private_key_jwt' }, advanced: true, hint: row.secret_config_keys.includes('private_key') ? 'leave blank to keep the current private key' : 'PEM private key used to sign private_key_jwt client assertions' },
+              { key: 'auth_header', label: 'upstream authorization header', kind: 'text', default: configString(row.config_json, 'auth_header'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'bearer_token'] }, advanced: true, hint: 'optional; leave blank for Authorization' },
+              { key: 'auth_scheme', label: 'upstream authorization scheme', kind: 'text', default: configString(row.config_json, 'auth_scheme'), dependsOn: { kind: ['oauth2_authorization_code', 'oauth2_client_credentials', 'api_key', 'bearer_token'] }, visible: (current) => current.kind !== 'api_key' || current.api_key_auth_location === 'header', advanced: true, hint: 'optional prefix such as Bearer, Token, or ApiKey; API-key query auth does not use a scheme' },
               { key: 'forward_caracal_identity', label: 'forward Caracal identity', kind: 'bool', default: configBool(row.config_json, 'forward_caracal_identity'), dependsOn: { kind: PROVIDER_CREDENTIAL_KINDS }, advanced: true, hint: 'also send X-Caracal-Identity to trusted upstreams' },
               { key: 'allow_runtime_injection', label: 'allow runtime injection', kind: 'bool', default: configBool(row.config_json, 'allow_runtime_injection'), dependsOn: { kind: PROVIDER_CREDENTIAL_KINDS }, advanced: true, hint: 'allow caracal run to inject this provider credential into a child process environment' },
             ],
@@ -1414,7 +1429,7 @@ export function providersView(ctx: Ctx): View {
             fields: [
               { key: 'user_id', label: 'user ID', kind: 'text', required: true, hint: 'subject that will use this delegated provider grant' },
               { key: 'resource_id', label: 'resource', kind: 'text', required: true, pick: resourcePicker(ctx), resolve: resourceResolver(ctx), hint: 'Gateway resource bound to this OAuth provider' },
-              { key: 'scopes', label: 'Caracal scopes', kind: 'list', required: true, hint: 'resource scopes this provider grant should cover' },
+              { key: 'scopes', label: 'Caracal resource scopes', kind: 'list', required: true, hint: 'resource scopes this provider grant should cover' },
             ],
             onSubmit: async (v, app) => {
               const result = await ctx.client.grants.authorizeProviderOAuth(ctx.zoneId, {
@@ -1693,7 +1708,7 @@ export function grantsView(ctx: Ctx): View {
       { header: 'subject', width: 36, value: (r) => r.user_id },
       { header: 'resource', width: 28, value: (r) => r.resource_name },
       { header: 'status', width: 10, value: (r) => r.status },
-      { header: 'Caracal scopes', value: (r) => (r.scopes ?? []).join(' ') || '-' },
+      { header: 'Caracal resource scopes', value: (r) => (r.scopes ?? []).join(' ') || '-' },
     ],
     load: () => loadGrants(ctx),
     state: ctx.state,
@@ -1712,7 +1727,7 @@ export function grantsView(ctx: Ctx): View {
             { key: 'resource_id', label: 'resource', kind: 'text', required: true, pick: resourcePicker(ctx), resolve: resourceResolver(ctx) },
             { key: 'application_id', label: 'application', kind: 'text', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
             { key: 'user_id', label: 'subject ID', kind: 'text', required: true, hint: 'opaque subject such as user:richard.hendricks@piedpiper.example or service:son-of-anton' },
-            { key: 'scopes', label: 'Caracal scopes', kind: 'list', required: true, dependsOn: 'resource_id', pick: grantScopePicker(ctx), hint: 'choose from the selected resource scopes or enter comma-separated scopes' },
+            { key: 'scopes', label: 'Caracal resource scopes', kind: 'list', required: true, dependsOn: 'resource_id', pick: grantScopePicker(ctx), hint: 'choose from the selected resource scopes or enter comma-separated scopes' },
           ],
           onSubmit: async (v, app) => {
             await ctx.client.grants.create(ctx.zoneId, {

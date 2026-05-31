@@ -77,9 +77,9 @@ export function providerTypeInfo(): InfoPage {
     context: [
       { label: 'None', value: 'Use only for Gateway-enforced routes where the upstream expects no auth credential from Caracal.' },
       { label: 'Caracal mandate', value: 'Use for internal, partner, external, or network-level resources that accept Caracal mandates and verify issuer, audience, scopes, targets, expiry, and revocation.' },
-      { label: 'OAuth2 auth code', value: 'Use for user-approved integrations with a consent screen, callback URI, and refreshable delegated access.' },
-      { label: 'OAuth2 client creds', value: 'Use for server-to-server OAuth where no end user signs in and the provider issues tokens to the application itself.' },
-      { label: 'API key', value: 'Use when the provider gives a long-lived key that must be sent in a specific request header.' },
+      { label: 'OAuth 2.0 authorization code', value: 'Use for user-approved integrations with a consent screen, callback URI, and refreshable delegated access.' },
+      { label: 'OAuth 2.0 client credentials', value: 'Use for server-to-server OAuth where no end user signs in and the provider issues tokens to the application itself.' },
+      { label: 'API key', value: 'Use when the provider gives a long-lived key that must be sent in a specific request header or query parameter.' },
       { label: 'Bearer token', value: 'Use when a provider access token is already issued outside Caracal and should be forwarded as-is.' },
     ],
     terms: [
@@ -87,13 +87,13 @@ export function providerTypeInfo(): InfoPage {
       { label: 'Service token', value: 'The provider issues tokens to a backend application instead of a signed-in user.' },
       { label: 'Static secret', value: 'The provider credential is provisioned out-of-band and stored sealed for Gateway use.' },
     ],
-    example: 'Use Caracal mandate for a PiperNet service with a verifier; use none for a Gateway-only enforcement route; use OAuth2 auth code for a user-connected Hooli workspace.',
-    valid: 'Pick exactly one supported provider type. Use none only when the upstream expects no credential. Use Caracal mandate when the upstream accepts Caracal mandates as its auth credential. If the upstream docs mention an authorization URL and redirect URI, use OAuth2 auth code. If they mention client credentials, use OAuth2 client creds. If they give one header key, use API key. If they give a ready bearer token, use Bearer token.',
+    example: 'Use Caracal mandate for a PiperNet service with a verifier; use none for a Gateway-only enforcement route; use OAuth 2.0 authorization code for a user-connected Hooli workspace.',
+    valid: 'Pick exactly one supported provider type. Use none only when the upstream expects no credential. Use Caracal mandate when the upstream accepts Caracal mandates as its auth credential. If the upstream docs mention an authorization URL and redirect URI, use OAuth 2.0 authorization code. If they mention client credentials, use OAuth 2.0 client credentials. If they give a header key or query parameter key, use API key. If they give a ready bearer token, use Bearer token.',
     after: 'After choosing a type, Console shows the required fields for that upstream auth mode and hides fields that do not apply.',
     notes: [
       'Caracal app secrets are not provider credentials; they only authenticate the agent to Caracal.',
       'Provider credentials stay behind STS/Gateway and should not be copied into agent code.',
-      'Prefer OAuth2 flows over static tokens when the upstream provider supports rotation and revocation.',
+      'Prefer OAuth 2.0 flows over static tokens when the upstream provider supports rotation and revocation.',
     ],
   })
 }
@@ -207,18 +207,19 @@ function meaningFor(kind: string, title: string, opts: FieldInfoOpts): string {
   if (key === 'api_key_auth_location' || key === 'provider_api_key_auth_location') return `${title} selects whether Gateway sends the upstream API key in a header or query parameter.`
   if (key === 'api_key_header' || label.includes('api key header')) return `${title} is the exact HTTP request header where Gateway sends the upstream API key.`
   if (key === 'api_key_query_param' || key === 'provider_api_key_query_param') return `${title} is the exact query parameter where Gateway sends the upstream API key.`
-  if (key === 'auth_header' || label.includes('upstream auth header')) return `${title} is the HTTP request header where Gateway sends the provider credential to the upstream.`
-  if (key === 'auth_scheme' || label.includes('upstream auth scheme')) return `${title} is the credential prefix Gateway writes before the provider token or key value.`
+  if (key === 'auth_header' || label.includes('upstream authorization header')) return `${title} is the HTTP request header where Gateway sends the provider credential to the upstream.`
+  if (key === 'auth_scheme' || label.includes('upstream authorization scheme')) return `${title} is the credential prefix Gateway writes before the provider token or key value.`
   if (key === 'api_key') return `${title} is the static upstream API key sealed by Caracal and injected by Gateway.`
   if (key === 'bearer_token') return `${title} is the static upstream bearer token sealed by Caracal and injected by Gateway.`
   if (key === 'client_id' || label.includes('client id')) return `${title} is the OAuth client identifier issued by the upstream provider.`
   if (key === 'client_secret' || label.includes('client secret')) return `${title} is the OAuth client secret issued by the upstream provider and sealed by Caracal.`
-  if (key === 'client_auth_method' || label.includes('client auth method')) return `${title} tells STS how the OAuth client authenticates to the token endpoint.`
-  if (key === 'authorization_params' || label.includes('authorization params')) return `${title} are extra OAuth authorization request parameters sent when Console starts browser consent.`
-  if (key === 'token_params' || label.includes('token params')) return `${title} are extra OAuth token endpoint parameters sent during exchange or refresh.`
-  if (key === 'allowed_token_hosts' || label.includes('allowed token hosts')) return `${title} limits which token endpoint hosts STS may contact for OAuth providers or which upstream hosts Gateway may receive static bearer tokens.`
+  if (key === 'auth_code_client_auth_method' || key === 'client_credentials_auth_method' || key === 'provider_auth_code_client_auth_method' || key === 'provider_client_credentials_auth_method' || label.includes('oauth client authentication')) return `${title} tells STS how the OAuth client authenticates to the token endpoint.`
+  if (key === 'authorization_params' || label.includes('authorization parameters')) return `${title} are extra OAuth authorization request parameters sent when Console starts browser consent.`
+  if (key === 'token_params' || label.includes('token parameters')) return `${title} are extra OAuth token endpoint parameters sent during exchange or refresh.`
+  if (key === 'oauth_token_hosts' || key === 'provider_oauth_token_hosts' || label.includes('oauth token endpoint hosts')) return `${title} limits which OAuth token endpoint hosts STS may contact during token exchange and refresh.`
+  if (key === 'bearer_upstream_hosts' || key === 'provider_allowed_upstream_hosts' || label.includes('allowed upstream hosts')) return `${title} limits which upstream hosts Gateway may receive a static bearer token.`
   if (key === 'token_audience' || label.includes('token audience')) return `${title} is the OAuth audience parameter requested for client-credentials tokens.`
-  if (key === 'token_resource' || label.includes('token resource')) return `${title} is the OAuth resource parameter requested for providers that require resource indicators.`
+  if (key === 'token_resource' || label.includes('resource indicator')) return `${title} is the OAuth resource parameter requested for providers that require resource indicators.`
   if (key === 'credential_provider_id') return `${title} is the provider whose credential Gateway should use for this resource.`
   if (key === 'gateway_application_id') return `${title} is the application allowed to represent Gateway calls for this resource.`
   if (key === 'selected_agent_app_id') return `${title} identifies the existing application to reuse in guided setup.`
@@ -245,6 +246,7 @@ function meaningFor(kind: string, title: string, opts: FieldInfoOpts): string {
   if (label.includes('provider') && label.includes('identifier')) return `${title} is the stable API-facing name for a configured upstream credential or mandate source.`
   if (label.includes('resource') && label.includes('identifier')) return `${title} is the stable audience value that grants, policies, tokens, and Gateway bindings use.`
   if (label.includes('identifier')) return `${title} is a stable API-facing value used by clients, policy input, tokens, and audit records.`
+  if (label.includes('upstream oauth scope')) return `${title} defines provider-native OAuth scopes requested during authorization-code consent or client-credentials token acquisition.`
   if (label.includes('scope')) return `${title} defines named permissions that requests, grants, and policies evaluate.`
   if (label.includes('subject')) return `${title} identifies the user, workload, or actor receiving authority.`
   if (label.includes('secret') || kind === 'secret') return `${title} is sensitive credential material used to authenticate an application or upstream integration.`
@@ -270,15 +272,16 @@ function whenFor(kind: string, title: string, opts: FieldInfoOpts): string {
   if (isNumericLabel(label)) return 'Use this when you need to bound a lifetime, result count, retry budget, or other numeric operational limit.'
   if (key === 'api_key_auth_location' || key === 'provider_api_key_auth_location') return 'Choose query only when the provider documentation requires API keys in the URL query string.'
   if (key === 'api_key_header' || label.includes('api key header')) return 'Use the header named in the provider documentation for API-key authentication.'
-  if (key === 'api_key_query_param' || key === 'provider_api_key_query_param') return 'Use the query parameter name documented by providers such as Google Maps, OpenWeatherMap, or Alpha Vantage.'
-  if (key === 'auth_header' || label.includes('upstream auth header')) return 'Set this only when the upstream expects credentials outside the standard Authorization header.'
-  if (key === 'auth_scheme' || label.includes('upstream auth scheme')) return 'Set this only when the upstream expects a non-default credential prefix such as Token, ApiKey, or Key.'
-  if (key === 'client_auth_method' || label.includes('client auth method')) return 'Use the method required by the OAuth provider token endpoint; basic is the common default for confidential clients.'
-  if (key === 'authorization_params' || label.includes('authorization params')) return 'Use this for provider-specific consent options such as offline access, prompt behavior, tenant, or organization.'
-  if (key === 'token_params' || label.includes('token params')) return 'Use this only for provider-specific token endpoint parameters that Caracal does not manage itself.'
-  if (key === 'allowed_token_hosts' || label.includes('allowed token hosts')) return 'Use this to pin OAuth token exchange hosts or static bearer-token forwarding hosts.'
+  if (key === 'api_key_query_param' || key === 'provider_api_key_query_param') return 'Use the query parameter name documented by the upstream provider.'
+  if (key === 'auth_header' || label.includes('upstream authorization header')) return 'Set this only when the upstream expects credentials outside the standard Authorization header.'
+  if (key === 'auth_scheme' || label.includes('upstream authorization scheme')) return 'Set this only when the upstream expects a non-default credential prefix such as Token, ApiKey, or Key.'
+  if (key === 'auth_code_client_auth_method' || key === 'client_credentials_auth_method' || key === 'provider_auth_code_client_auth_method' || key === 'provider_client_credentials_auth_method' || label.includes('oauth client authentication')) return 'Use the method required by the OAuth provider token endpoint; basic is the common default for confidential clients.'
+  if (key === 'authorization_params' || label.includes('authorization parameters')) return 'Use this for provider-specific consent options such as offline access, prompt behavior, tenant, or organization.'
+  if (key === 'token_params' || label.includes('token parameters')) return 'Use this only for provider-specific token endpoint parameters that Caracal does not manage itself.'
+  if (key === 'oauth_token_hosts' || key === 'provider_oauth_token_hosts' || label.includes('oauth token endpoint hosts')) return 'Use this to pin OAuth exchange and refresh to documented token endpoint hosts when inference from the token endpoint is not enough.'
+  if (key === 'bearer_upstream_hosts' || key === 'provider_allowed_upstream_hosts' || label.includes('allowed upstream hosts')) return 'Use this to pin static bearer-token forwarding to the upstream hosts that are allowed to receive the token.'
   if (key === 'token_audience' || label.includes('token audience')) return 'Use this when the OAuth provider requires an audience value for client-credentials tokens.'
-  if (key === 'token_resource' || label.includes('token resource')) return 'Use this when the OAuth provider requires an RFC 8707 resource indicator or equivalent token resource.'
+  if (key === 'token_resource' || label.includes('resource indicator')) return 'Use this when the OAuth provider requires an RFC 8707 resource indicator or equivalent resource value.'
   if (key === 'credential_provider_id') return 'Use this to bind a Gateway resource to exactly one provider credential source.'
   if (key === 'gateway_application_id') return 'Use this when Gateway calls should be associated with a specific Caracal application.'
   if (key === 'selected_agent_app_id' || key === 'selected_provider_id' || key === 'selected_resource_id' || key === 'selected_zone_id') return 'Use this when setup should reuse an existing object instead of creating another one.'
@@ -294,8 +297,8 @@ function whenFor(kind: string, title: string, opts: FieldInfoOpts): string {
   if (label.includes('provider') && label.includes('identifier')) return 'Leave blank to let Console generate one from the provider name; set it only when automation needs a specific stable name.'
   if (label.includes('resource') && label.includes('identifier')) return 'Set this only when clients, policies, or automation need a stable resource audience that differs from the generated default.'
   if (label.includes('identifier')) return 'Set this only when clients, policies, or automation need a stable identifier that differs from the generated default.'
-  if (label.includes('upstream auth header')) return 'Use this only when the upstream API expects provider credentials in a non-standard HTTP header.'
-  if (label.includes('upstream auth scheme')) return 'Use this only when the upstream API expects a provider credential prefix such as Bearer or ApiKey.'
+  if (label.includes('upstream authorization header')) return 'Use this only when the upstream API expects provider credentials in a non-standard HTTP header.'
+  if (label.includes('upstream authorization scheme')) return 'Use this only when the upstream API expects a provider credential prefix such as Bearer or ApiKey.'
   if (opts.advanced) return 'Use this only when the inferred default or standard picker does not match an enterprise or non-standard setup.'
   if (label.includes('scope')) return 'Use the scopes that the application will request and that grants or policies should be able to authorize.'
   if (label.includes('subject')) return 'Use the subject identity that should receive or be inspected for authority in this zone.'
@@ -334,14 +337,15 @@ function impactFor(kind: string, title: string, opts: FieldInfoOpts): string {
   if (key === 'api_key_auth_location' || key === 'provider_api_key_auth_location') return 'Gateway changes where the sealed API key is injected and removes caller-supplied credentials at that location.'
   if (key === 'api_key_header' || label.includes('api key header')) return 'Gateway writes the sealed API key into this header and strips caller-supplied values for protected credential headers.'
   if (key === 'api_key_query_param' || key === 'provider_api_key_query_param') return 'Gateway writes the sealed API key into this query parameter and replaces caller-supplied values for that parameter.'
-  if (key === 'auth_header' || label.includes('upstream auth header')) return 'Gateway writes OAuth or bearer credentials into this header after removing caller-supplied credential headers.'
-  if (key === 'auth_scheme' || label.includes('upstream auth scheme')) return 'Gateway formats the upstream auth value as "<scheme> <credential>" when a scheme is configured.'
+  if (key === 'auth_header' || label.includes('upstream authorization header')) return 'Gateway writes OAuth or bearer credentials into this header after removing caller-supplied credential headers.'
+  if (key === 'auth_scheme' || label.includes('upstream authorization scheme')) return 'Gateway formats the upstream auth value as "<scheme> <credential>" when a scheme is configured.'
   if (key === 'api_key' || key === 'bearer_token' || key === 'client_secret') return 'The value is sealed for storage and is never shown back in Console after submit.'
   if (key === 'client_id' || label.includes('client id')) return 'STS sends this identifier to the OAuth token endpoint during authorization-code, refresh, or client-credentials flows.'
-  if (key === 'client_auth_method' || label.includes('client auth method')) return 'A wrong method can make provider token exchange or refresh fail even when the endpoint and secret are correct.'
-  if (key === 'authorization_params' || label.includes('authorization params')) return 'These parameters are appended to the OAuth authorization URL after Caracal-managed safety parameters.'
-  if (key === 'token_params' || label.includes('token params')) return 'These parameters are included in token exchange or refresh after Caracal-managed OAuth parameters.'
-  if (key === 'allowed_token_hosts' || label.includes('allowed token hosts')) return 'STS rejects OAuth token endpoints outside this allowlist, and Gateway rejects static bearer-token forwarding to non-listed upstream hosts.'
+  if (key === 'auth_code_client_auth_method' || key === 'client_credentials_auth_method' || key === 'provider_auth_code_client_auth_method' || key === 'provider_client_credentials_auth_method' || label.includes('oauth client authentication')) return 'A wrong method can make provider token exchange or refresh fail even when the endpoint and secret are correct.'
+  if (key === 'authorization_params' || label.includes('authorization parameters')) return 'These parameters are appended to the OAuth authorization URL after Caracal-managed safety parameters.'
+  if (key === 'token_params' || label.includes('token parameters')) return 'These parameters are included in token exchange or refresh after Caracal-managed OAuth parameters.'
+  if (key === 'oauth_token_hosts' || key === 'provider_oauth_token_hosts' || label.includes('oauth token endpoint hosts')) return 'STS rejects OAuth token endpoints outside this allowlist during exchange, client-credentials acquisition, and refresh.'
+  if (key === 'bearer_upstream_hosts' || key === 'provider_allowed_upstream_hosts' || label.includes('allowed upstream hosts')) return 'Gateway rejects static bearer-token forwarding when the resource upstream host is not in this allowlist.'
   if (key === 'credential_provider_id') return 'STS/Gateway use the bound provider to build the upstream credential directive for this resource.'
   if (key === 'gateway_application_id') return 'Tokens and audit records can tie Gateway-originated upstream access to this application.'
   if (key === 'selected_agent_app_id' || key === 'selected_provider_id' || key === 'selected_resource_id' || key === 'selected_zone_id') return 'Setup links the generated output to the selected existing object instead of creating a replacement.'
@@ -351,12 +355,12 @@ function impactFor(kind: string, title: string, opts: FieldInfoOpts): string {
   if (key === 'profile_path' || key === 'secret_file_path') return 'Setup writes generated local output to this path when file writing is enabled.'
   if (key === 'credential_env') return 'Generated runtime commands read the minted token from this environment variable.'
   if (label.includes('scope')) return 'Scopes bound here constrain what tokens, grants, or policies may authorize later.'
-  if (label.includes('forward') && label.includes('caracal identity')) return 'Gateway keeps the provider credential in the upstream auth header and sends the Caracal mandate separately as X-Caracal-Identity.'
+  if (label.includes('forward') && label.includes('caracal identity')) return 'Gateway keeps the provider credential in the upstream authorization header and sends the Caracal mandate separately as X-Caracal-Identity.'
   if (label.includes('provider') && label.includes('identifier')) return 'Resources, grants, setup output, and automation can reference the provider by this stable name.'
   if (label.includes('resource') && label.includes('identifier')) return 'Changing a resource audience can break clients and grants that request the old value.'
   if (label.includes('identifier')) return 'Identifiers are stable API-facing names; changing them can affect clients and automation.'
-  if (label.includes('upstream auth header')) return 'Gateway writes the provider credential to this header after removing caller-supplied credential headers.'
-  if (label.includes('upstream auth scheme')) return 'Gateway prefixes the provider credential with this scheme when building the upstream request.'
+  if (label.includes('upstream authorization header')) return 'Gateway writes the provider credential to this header after removing caller-supplied credential headers.'
+  if (label.includes('upstream authorization scheme')) return 'Gateway prefixes the provider credential with this scheme when building the upstream request.'
   if (label.includes('secret') || kind === 'secret') return 'Secrets are copied into requests exactly as pasted and are hidden in the terminal by default.'
   if (label.includes('token endpoint')) return 'Token endpoints are contacted when Caracal exchanges or refreshes upstream credentials.'
   if (label.includes('authorization endpoint')) return 'Authorization endpoints are stored on the provider and used to start OAuth browser authorization redirects.'
@@ -374,10 +378,11 @@ function afterFor(kind: string, title: string, opts: FieldInfoOpts): string {
   if (label.includes('token endpoint')) return 'After submit, Console saves this in provider config so STS can exchange or refresh provider tokens.'
   if (label.includes('redirect uri')) return 'After submit, Console saves this in provider config and the OAuth provider must have the same callback URI registered.'
   if (key === 'api_key' || key === 'bearer_token' || key === 'client_secret') return 'After submit, Console sends the secret once for sealed storage; future detail views show only metadata.'
-  if (key === 'api_key_auth_location' || key === 'provider_api_key_auth_location' || key === 'api_key_query_param' || key === 'provider_api_key_query_param' || key === 'api_key_header' || key === 'auth_header' || key === 'auth_scheme' || label.includes('api key header') || label.includes('upstream auth header') || label.includes('upstream auth scheme')) return 'After submit, Gateway uses this formatting when injecting provider credentials into upstream requests.'
-  if (key === 'authorization_params' || label.includes('authorization params')) return 'After submit, Console includes these parameters when creating the OAuth authorization URL.'
-  if (key === 'token_params' || label.includes('token params')) return 'After submit, STS includes these parameters in OAuth token exchange or refresh requests.'
-  if (key === 'allowed_token_hosts' || label.includes('allowed token hosts')) return 'After submit, STS enforces this allowlist for OAuth token endpoints and Gateway enforces it for static bearer-token upstream forwarding.'
+  if (key === 'api_key_auth_location' || key === 'provider_api_key_auth_location' || key === 'api_key_query_param' || key === 'provider_api_key_query_param' || key === 'api_key_header' || key === 'auth_header' || key === 'auth_scheme' || label.includes('api key header') || label.includes('upstream authorization header') || label.includes('upstream authorization scheme')) return 'After submit, Gateway uses this formatting when injecting provider credentials into upstream requests.'
+  if (key === 'authorization_params' || label.includes('authorization parameters')) return 'After submit, Console includes these parameters when creating the OAuth authorization URL.'
+  if (key === 'token_params' || label.includes('token parameters')) return 'After submit, STS includes these parameters in OAuth token exchange or refresh requests.'
+  if (key === 'oauth_token_hosts' || key === 'provider_oauth_token_hosts' || label.includes('oauth token endpoint hosts')) return 'After submit, STS enforces this allowlist for OAuth token exchange and refresh endpoints.'
+  if (key === 'bearer_upstream_hosts' || key === 'provider_allowed_upstream_hosts' || label.includes('allowed upstream hosts')) return 'After submit, Gateway enforces this allowlist before forwarding static bearer tokens to upstream hosts.'
   if (key === 'credential_provider_id') return 'After submit, the resource cannot issue upstream Gateway credentials unless this provider binding is valid.'
   return opts.advanced
     ? 'After saving advanced options, Console keeps this value on the parent form and sends it only when you submit.'
@@ -443,16 +448,17 @@ function exampleFor(kind: string, label: string, options?: readonly string[], op
   if (key === 'api_key_auth_location' || key === 'provider_api_key_auth_location') return 'query'
   if (key === 'api_key_header' || normalized.includes('api key header')) return 'X-API-Key'
   if (key === 'api_key_query_param' || key === 'provider_api_key_query_param') return 'key'
-  if (key === 'auth_header' || normalized.includes('upstream auth header')) return 'Authorization'
-  if (key === 'auth_scheme' || normalized.includes('upstream auth scheme')) return 'Bearer'
+  if (key === 'auth_header' || normalized.includes('upstream authorization header')) return 'Authorization'
+  if (key === 'auth_scheme' || normalized.includes('upstream authorization scheme')) return 'Bearer'
   if (key === 'api_key') return '••••'
   if (key === 'bearer_token') return '••••'
   if (key === 'client_id' || normalized.includes('client id')) return 'hooli-pipernet-client'
   if (key === 'client_secret' || normalized.includes('client secret')) return '••••'
-  if (key === 'client_auth_method' || normalized.includes('client auth method')) return 'client_secret_basic'
-  if (key === 'allowed_token_hosts' || normalized.includes('allowed token hosts')) return 'login.hooli.example'
+  if (key === 'auth_code_client_auth_method' || key === 'client_credentials_auth_method' || key === 'provider_auth_code_client_auth_method' || key === 'provider_client_credentials_auth_method' || normalized.includes('oauth client authentication')) return 'client_secret_basic'
+  if (key === 'oauth_token_hosts' || key === 'provider_oauth_token_hosts' || normalized.includes('oauth token endpoint hosts')) return 'login.hooli.example'
+  if (key === 'bearer_upstream_hosts' || key === 'provider_allowed_upstream_hosts' || normalized.includes('allowed upstream hosts')) return 'api.pipernet.example'
   if (key === 'token_audience' || normalized.includes('token audience')) return 'https://api.hooli.example'
-  if (key === 'token_resource' || normalized.includes('token resource')) return 'https://api.hooli.example/pipernet'
+  if (key === 'token_resource' || normalized.includes('resource indicator')) return 'https://api.hooli.example/pipernet'
   if (key === 'credential_provider_id') return 'provider://hooli-pipernet'
   if (key === 'gateway_application_id') return 'app://pipernet-agent'
   if (key === 'selected_agent_app_id') return 'app://pipernet-agent'
@@ -486,9 +492,10 @@ function exampleFor(kind: string, label: string, options?: readonly string[], op
   if (key === 'slug') return 'pipernet'
   if (key === 'id') return 'control-key-pipernet-prod'
   if (key === 'token') return '••••'
-  if (kind === 'list' && normalized.includes('authorization params')) return 'access_type=offline,prompt=consent'
-  if (kind === 'list' && normalized.includes('token params')) return 'tenant=hooli'
-  if (kind === 'list' && normalized.includes('allowed token hosts')) return 'login.hooli.example'
+  if (kind === 'list' && normalized.includes('authorization parameters')) return 'access_type=offline,prompt=consent'
+  if (kind === 'list' && normalized.includes('token parameters')) return 'tenant=hooli'
+  if (kind === 'list' && normalized.includes('oauth token endpoint hosts')) return 'login.hooli.example'
+  if (kind === 'list' && normalized.includes('allowed upstream hosts')) return 'api.pipernet.example'
   if (kind === 'list' && normalized.includes('permission')) return 'keys:read,tokens:mint'
   if (kind === 'list' && normalized.includes('policy versions')) return 'polv_01jz8piper9hooli7n4'
   if (kind === 'list') return 'read,write'
@@ -503,7 +510,7 @@ function exampleFor(kind: string, label: string, options?: readonly string[], op
   if (normalized.includes('provider') && normalized.includes('identifier')) return 'provider://hooli-pipernet'
   if (normalized.includes('resource') && normalized.includes('identifier')) return 'resource://pipernet'
   if (normalized.includes('identifier')) return 'resource://pipernet'
-  if (normalized.includes('provider') && normalized.includes('name')) return 'Hooli OAuth2'
+  if (normalized.includes('provider') && normalized.includes('name')) return 'Hooli OAuth'
   if (normalized.includes('resource') && normalized.includes('name')) return 'PiperNet'
   if (normalized.includes('zone') && normalized.includes('name')) return 'Pied Piper Production'
   if (normalized.includes('app') && normalized.includes('name')) return 'Son of Anton'
@@ -517,14 +524,14 @@ function validFor(kind: string, title: string, options?: readonly string[], opts
   if (isNumericLabel(label)) return 'Positive integer only; no units, commas, decimals, or text.'
   if (kind === 'bool') return 'Toggle on or off.'
   if (key === 'api_key_auth_location' || key === 'provider_api_key_auth_location') return 'One of: header, query.'
-  if (key === 'api_key_header' || key === 'auth_header' || label.includes('api key header') || label.includes('upstream auth header')) return 'HTTP header name only, without a colon or value.'
+  if (key === 'api_key_header' || key === 'auth_header' || label.includes('api key header') || label.includes('upstream authorization header')) return 'HTTP header name only, without a colon or value.'
   if (key === 'api_key_query_param' || key === 'provider_api_key_query_param') return 'Query parameter name only, without = or the secret value.'
-  if (key === 'auth_scheme' || label.includes('upstream auth scheme')) return 'Credential scheme only, without the secret value; leave blank only when the upstream expects the raw credential.'
+  if (key === 'auth_scheme' || label.includes('upstream authorization scheme')) return 'Credential scheme only, without the secret value; leave blank only when the upstream expects the raw credential.'
   if (key === 'api_key' || key === 'bearer_token' || key === 'client_secret' || key === 'token') return 'Paste the exact secret value; it is masked by default and not echoed after submit.'
   if (key === 'client_id' || label.includes('client id')) return 'Provider-issued client identifier exactly as shown in the upstream OAuth application.'
-  if (key === 'client_auth_method' || label.includes('client auth method')) return `One of: ${(options ?? []).join(', ')}.`
-  if (key === 'allowed_token_hosts' || label.includes('allowed token hosts')) return 'Comma-separated DNS hostnames only; omit paths, schemes, query strings, and credentials.'
-  if (key === 'authorization_params' || key === 'token_params' || label.includes('authorization params') || label.includes('token params')) return 'Comma-separated key=value pairs; do not include Caracal-managed OAuth parameters.'
+  if (key === 'auth_code_client_auth_method' || key === 'client_credentials_auth_method' || key === 'provider_auth_code_client_auth_method' || key === 'provider_client_credentials_auth_method' || label.includes('oauth client authentication')) return `One of: ${(options ?? []).join(', ')}.`
+  if (key === 'oauth_token_hosts' || key === 'provider_oauth_token_hosts' || key === 'bearer_upstream_hosts' || key === 'provider_allowed_upstream_hosts' || label.includes('oauth token endpoint hosts') || label.includes('allowed upstream hosts')) return 'Comma-separated DNS hostnames only; omit paths, schemes, query strings, and credentials.'
+  if (key === 'authorization_params' || key === 'token_params' || label.includes('authorization parameters') || label.includes('token parameters')) return 'Comma-separated key=value pairs; do not include Caracal-managed OAuth parameters.'
   if (key === 'resource_id' || key === 'credential_provider_id' || key === 'gateway_application_id' || key === 'application_id' || key === 'session_id' || key === 'edge_id' || key === 'version_id' || key === 'shadow_version_id' || key === 'selected_agent_app_id' || key === 'selected_provider_id' || key === 'selected_resource_id' || key === 'selected_zone_id' || key === 'zone_id') return 'Choose an existing object from the picker or enter its stable ID exactly.'
   if (key === 'existing_app_client_secret') return 'Paste the existing application secret exactly as stored; Console cannot recover it from the API.'
   if (key === 'request_path') return 'Path beginning with /, without scheme, host, or credentials.'
