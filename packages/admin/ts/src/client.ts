@@ -19,6 +19,9 @@ import type {
   DelegationImpact,
   Grant,
   GrantInput,
+  GrantQuery,
+  Invitation,
+  InvitationInput,
   Policy,
   PolicyInput,
   PolicySet,
@@ -29,14 +32,22 @@ import type {
   PolicyVersion,
   Provider,
   ProviderGrant,
+  ProviderGrantInput,
   ProviderGrantOAuthAuthorize,
   ProviderGrantOAuthAuthorizeInput,
   ProviderGrantRevokeInput,
   ProviderInput,
+  ProviderPatchInput,
   Resource,
   ResourceInput,
   Session,
   SessionQuery,
+  StepUpChallenge,
+  StepUpChallengeSatisfaction,
+  StepUpChallengeSatisfyInput,
+  Team,
+  TeamInput,
+  TeamPatchInput,
   TraverseNode,
   Zone,
   ZoneDcrStatus,
@@ -80,6 +91,16 @@ const DEFAULT_RETRIES = 3
 const MAX_RETRY_AFTER_MS = 30_000
 const CONTROL_RESOURCE_HEADER = 'x-caracal-control-resource'
 const APPLICATION_INTERNALS_HEADER = 'x-caracal-application-internals'
+
+function grantListQuery(query?: GrantQuery): Record<string, string | number | undefined> | undefined {
+  if (!query) return undefined
+  const { scopes, subject_id, user_id, ...rest } = query
+  return {
+    ...rest,
+    user_id: user_id ?? subject_id,
+    scopes: scopes?.join(','),
+  }
+}
 
 function jitterBackoff(attempt: number): number {
   const base = Math.min(2 ** attempt * 250, 5_000)
@@ -256,7 +277,7 @@ export class AdminClient {
     get: (zoneId: string, id: string) => this.request<Provider>(`/v1/zones/${zoneId}/providers/${id}`),
     create: (zoneId: string, input: ProviderInput) =>
       this.request<Provider>(`/v1/zones/${zoneId}/providers`, { method: 'POST', body: input }),
-    patch: (zoneId: string, id: string, input: Partial<ProviderInput>) =>
+    patch: (zoneId: string, id: string, input: ProviderPatchInput) =>
       this.request<Provider>(`/v1/zones/${zoneId}/providers/${id}`, { method: 'PATCH', body: input }),
     delete: (zoneId: string, id: string) =>
       this.request<void>(`/v1/zones/${zoneId}/providers/${id}`, { method: 'DELETE', expectEmpty: true }),
@@ -323,16 +344,22 @@ export class AdminClient {
 
   // Grants
   grants = {
-    list: (zoneId: string) => this.request<Grant[]>(`/v1/zones/${zoneId}/grants`),
+    list: (zoneId: string, query?: GrantQuery) =>
+      this.request<Grant[]>(`/v1/zones/${zoneId}/grants`, { query: grantListQuery(query) }),
     get: (zoneId: string, id: string) => this.request<Grant>(`/v1/zones/${zoneId}/grants/${id}`),
     create: (zoneId: string, input: GrantInput) =>
       this.request<Grant>(`/v1/zones/${zoneId}/grants`, { method: 'POST', body: input }),
-    authorizeProviderOAuth: (zoneId: string, input: ProviderGrantOAuthAuthorizeInput) =>
-      this.request<ProviderGrantOAuthAuthorize>(`/v1/zones/${zoneId}/provider-grants/oauth/authorize`, { method: 'POST', body: input }),
-    revokeProviderGrant: (zoneId: string, input: ProviderGrantRevokeInput) =>
-      this.request<ProviderGrant>(`/v1/zones/${zoneId}/provider-grants/revoke`, { method: 'POST', body: input }),
     revoke: (zoneId: string, id: string) =>
       this.request<void>(`/v1/zones/${zoneId}/grants/${id}`, { method: 'DELETE', expectEmpty: true }),
+  }
+
+  providerGrants = {
+    create: (zoneId: string, input: ProviderGrantInput) =>
+      this.request<ProviderGrant>(`/v1/zones/${zoneId}/provider-grants`, { method: 'POST', body: input }),
+    authorizeOAuth: (zoneId: string, input: ProviderGrantOAuthAuthorizeInput) =>
+      this.request<ProviderGrantOAuthAuthorize>(`/v1/zones/${zoneId}/provider-grants/oauth/authorize`, { method: 'POST', body: input }),
+    revoke: (zoneId: string, input: ProviderGrantRevokeInput) =>
+      this.request<ProviderGrant>(`/v1/zones/${zoneId}/provider-grants/revoke`, { method: 'POST', body: input }),
   }
 
   // Sessions (read; revocation is a side effect of grant.revoke or agent.terminate)
@@ -355,6 +382,32 @@ export class AdminClient {
       this.request<AuditDetail[]>(`/v1/zones/${zoneId}/audit/by-request/${requestId}`),
     explain: (zoneId: string, requestId: string) =>
       this.request<DecisionTrace>(`/v1/zones/${zoneId}/audit/by-request/${requestId}/explain`),
+  }
+
+  teams = {
+    list: (zoneId: string) => this.request<Team[]>(`/v1/zones/${zoneId}/teams`),
+    get: (zoneId: string, id: string) => this.request<Team>(`/v1/zones/${zoneId}/teams/${id}`),
+    create: (zoneId: string, input: TeamInput) =>
+      this.request<Team>(`/v1/zones/${zoneId}/teams`, { method: 'POST', body: input }),
+    patch: (zoneId: string, id: string, input: TeamPatchInput) =>
+      this.request<Team>(`/v1/zones/${zoneId}/teams/${id}`, { method: 'PATCH', body: input }),
+    delete: (zoneId: string, id: string) =>
+      this.request<void>(`/v1/zones/${zoneId}/teams/${id}`, { method: 'DELETE', expectEmpty: true }),
+  }
+
+  invitations = {
+    list: (zoneId: string) => this.request<Invitation[]>(`/v1/zones/${zoneId}/invitations`),
+    create: (zoneId: string, input: InvitationInput) =>
+      this.request<Invitation>(`/v1/zones/${zoneId}/invitations`, { method: 'POST', body: input }),
+    cancel: (zoneId: string, id: string) =>
+      this.request<void>(`/v1/zones/${zoneId}/invitations/${id}`, { method: 'DELETE', expectEmpty: true }),
+  }
+
+  stepUpChallenges = {
+    list: (zoneId: string) => this.request<StepUpChallenge[]>(`/v1/zones/${zoneId}/step-up-challenges`),
+    get: (zoneId: string, id: string) => this.request<StepUpChallenge>(`/v1/zones/${zoneId}/step-up-challenges/${id}`),
+    satisfy: (zoneId: string, id: string, input: StepUpChallengeSatisfyInput) =>
+      this.request<StepUpChallengeSatisfaction>(`/v1/zones/${zoneId}/step-up-challenges/${id}/satisfy`, { method: 'POST', body: input }),
   }
 
   // Agents (coordinator)

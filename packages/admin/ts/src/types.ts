@@ -75,9 +75,12 @@ export interface Resource {
   updated_at: string
 }
 
+export type ResourceIdentifier = string
+export type ProviderIdentifier = `provider://${string}`
+
 export interface ResourceInput {
   name?: string
-  identifier?: string
+  identifier?: ResourceIdentifier
   upstream_url?: string | null
   gateway_application_id?: string | null
   scopes: string[]
@@ -85,24 +88,100 @@ export interface ResourceInput {
 }
 
 export type ProviderKind = 'none' | 'caracal_mandate' | 'oauth2_authorization_code' | 'oauth2_client_credentials' | 'api_key' | 'bearer_token'
+export type ProviderSecretConfigKey = 'client_secret' | 'private_key' | 'api_key' | 'bearer_token'
+export type OAuthClientAuthMethod = 'client_secret_basic' | 'client_secret_post' | 'private_key_jwt' | 'none'
+export type APIKeyAuthLocation = 'header' | 'query'
+
+export interface ProviderConfigBase {
+  forward_caracal_identity?: boolean
+  allow_runtime_injection?: boolean
+  auth_header?: string
+  auth_scheme?: string
+}
+
+export type EmptyProviderConfig = Record<string, never>
+
+export interface OAuth2AuthorizationCodeProviderConfig extends ProviderConfigBase {
+  authorization_endpoint: string
+  token_endpoint: string
+  redirect_uri: string
+  client_id: string
+  client_auth_method?: Exclude<OAuthClientAuthMethod, 'private_key_jwt'>
+  client_secret?: string
+  scopes?: string[]
+  allowed_token_hosts: string[]
+  authorization_params?: Record<string, string>
+  token_params?: Record<string, string>
+}
+
+export interface OAuth2ClientCredentialsProviderConfig extends ProviderConfigBase {
+  token_endpoint: string
+  client_id: string
+  client_auth_method?: OAuthClientAuthMethod
+  client_secret?: string
+  private_key?: string
+  key_id?: string
+  scopes?: string[]
+  audience?: string
+  resource?: string
+  allowed_token_hosts: string[]
+  token_params?: Record<string, string>
+}
+
+export type APIKeyProviderConfig = ProviderConfigBase & (
+  | {
+      auth_location?: 'header'
+      header_name: string
+      api_key?: string
+    }
+  | {
+      auth_location: 'query'
+      query_param_name: string
+      api_key?: string
+      auth_scheme?: never
+    }
+)
+
+export interface BearerTokenProviderConfig extends ProviderConfigBase {
+  bearer_token?: string
+  allowed_token_hosts?: string[]
+}
+
+export type ProviderConfig =
+  | EmptyProviderConfig
+  | OAuth2AuthorizationCodeProviderConfig
+  | OAuth2ClientCredentialsProviderConfig
+  | APIKeyProviderConfig
+  | BearerTokenProviderConfig
+
+interface ProviderInputBase {
+  name?: string
+  identifier?: ProviderIdentifier
+}
+
+export type ProviderInput =
+  | (ProviderInputBase & { kind: 'none'; config_json?: EmptyProviderConfig })
+  | (ProviderInputBase & { kind: 'caracal_mandate'; config_json?: EmptyProviderConfig })
+  | (ProviderInputBase & { kind: 'oauth2_authorization_code'; config_json: OAuth2AuthorizationCodeProviderConfig })
+  | (ProviderInputBase & { kind: 'oauth2_client_credentials'; config_json: OAuth2ClientCredentialsProviderConfig })
+  | (ProviderInputBase & { kind: 'api_key'; config_json: APIKeyProviderConfig })
+  | (ProviderInputBase & { kind: 'bearer_token'; config_json: BearerTokenProviderConfig })
+
+export interface ProviderPatchInput extends ProviderInputBase {
+  kind?: ProviderKind
+  config_json?: ProviderConfig
+}
 
 export interface Provider {
   id: string
   zone_id: string
   name: string
-  identifier: string
+  identifier: ProviderIdentifier
   kind: ProviderKind
-  config_json: JsonObject
-  secret_config_keys: string[]
+  config_json: ProviderConfig
+  secret_config_keys: ProviderSecretConfigKey[]
   created_at: string
   updated_at: string
-}
-
-export interface ProviderInput {
-  name?: string
-  identifier?: string
-  kind: ProviderKind
-  config_json: JsonObject
 }
 
 export interface Policy {
@@ -201,6 +280,11 @@ export interface Grant {
   application_id: string
   user_id: string
   resource_id: string
+  provider_id?: string | null
+  application_name?: string | null
+  resource_name?: string | null
+  provider_name?: string | null
+  provider_kind?: ProviderKind | null
   scopes: string[]
   status: string
   created_at: string
@@ -211,6 +295,28 @@ export interface GrantInput {
   user_id: string
   resource_id: string
   scopes: string[]
+}
+
+export interface GrantQuery {
+  application_id?: string
+  user_id?: string
+  subject_id?: string
+  resource_id?: string
+  provider_id?: string
+  status?: string
+  scopes?: string[]
+  cursor?: string
+  limit?: number
+}
+
+export interface ProviderGrantInput {
+  user_id: string
+  resource_id: string
+  provider_id: string
+  scopes: string[]
+  access_token: string
+  refresh_token?: string
+  expires_at?: string
 }
 
 export interface ProviderGrantOAuthAuthorizeInput {
@@ -307,6 +413,70 @@ export interface SessionQuery {
   status?: 'active' | 'revoked' | 'expired'
   subject_id?: string
   limit?: number
+}
+
+export interface TeamMember {
+  id: string
+  role: string
+}
+
+export interface Team {
+  id: string
+  zone_id: string
+  name: string
+  members_json: TeamMember[]
+  created_at: string
+  updated_at: string
+}
+
+export interface TeamInput {
+  name: string
+  members?: TeamMember[]
+}
+
+export interface TeamPatchInput {
+  name?: string
+  members?: TeamMember[]
+}
+
+export interface Invitation {
+  id: string
+  zone_id: string
+  email: string
+  role: string
+  invited_by: string
+  accepted_at: string | null
+  expires_at: string
+  created_at: string
+}
+
+export interface InvitationInput {
+  email: string
+  role: string
+  invited_by: string
+  expires_at?: string
+}
+
+export interface StepUpChallenge {
+  id: string
+  zone_id: string
+  session_id: string
+  challenge_type: string
+  metadata_json: JsonObject
+  created_at: string
+  expires_at: string
+  satisfied_at: string | null
+  approver_subject_id: string | null
+}
+
+export interface StepUpChallengeSatisfyInput {
+  approver_subject_id: string
+}
+
+export interface StepUpChallengeSatisfaction {
+  id: string
+  satisfied_at: string
+  approver_subject_id: string
 }
 
 export interface AgentSession {

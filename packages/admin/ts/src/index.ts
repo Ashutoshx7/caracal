@@ -4,5 +4,6 @@
 // @caracalai/admin: typed client for Caracal admin API and agent coordinator.
 
 export * from './errors.js'
+export * from './identifiers.js'
 export * from './types.js'
 export * from './client.js'
