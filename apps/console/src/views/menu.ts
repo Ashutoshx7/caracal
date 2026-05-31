@@ -104,12 +104,12 @@ const BASE_ENTRIES: Entry[] = [
   { key: '5', label: 'policy',     group: 'manage', description: 'Manage access policies', needsZone: true, open: policiesView },
   { key: '6', label: 'policy set', group: 'manage', description: 'Manage active policy sets', needsZone: true, open: policySetsView },
   { key: '7', label: 'grant',      group: 'manage', description: 'Manage access grants', needsZone: true, open: grantsView },
-  { key: '8', label: 'authority session', group: 'manage', description: 'Inspect active authority sessions', needsZone: true, open: sessionsView },
-  { key: '9', label: 'control',    group: 'manage', description: 'Manage the Control automation service', needsZone: true, open: controlEntry },
+  { key: '8', label: 'authority session', group: 'sessions', description: 'Inspect active authority sessions', needsZone: true, open: sessionsView },
+  { key: 'r', label: 'agent session', group: 'sessions', description: 'Manage agent sessions', needsZone: true, open: agentsView },
+  { key: 'g', label: 'delegation', group: 'sessions', description: 'Manage delegated permissions', needsZone: true, open: delegationsView },
   { key: 'a', label: 'audit',      group: 'observe', description: 'Search audit events and trace requests', needsZone: true, open: auditView },
-  { key: 'e', label: 'request trace', group: 'observe', description: 'Trace one audit request ID', needsZone: true, open: requestTraceEntry },
-  { key: 'r', label: 'agent session', group: 'agents', description: 'Manage agent sessions', needsZone: true, open: agentsView },
-  { key: 'g', label: 'delegation', group: 'agents', description: 'Manage delegated permissions', needsZone: true, open: delegationsView },
+  { key: 't', label: 'request trace', group: 'observe', description: 'Trace one audit request ID', needsZone: true, open: requestTraceEntry },
+  { key: 'c', label: 'control',    group: 'runtime', description: 'Manage the Control automation service', needsZone: true, open: controlEntry },
   { key: 'd', label: 'diagnostics', group: 'runtime', description: 'Run operator diagnostics', needsZone: false, open: doctorEntry },
 ]
 
@@ -690,6 +690,7 @@ export class MenuView implements View {
     lines.push('')
     let group = ''
     const entries = menuEntries()
+    const labelWidth = Math.max(...entries.map((entry) => entry.label.length)) + 2
     if (this.cursor >= entries.length) this.cursor = Math.max(0, entries.length - 1)
     for (let i = 0; i < entries.length; i++) {
       const e = entries[i]!
@@ -699,9 +700,9 @@ export class MenuView implements View {
       }
       const disabled = e.needsZone && !this.zoneId
       const mark = i === this.cursor ? ui.accent('>') : ' '
-      const label = pad(e.label, 12)
+      const label = pad(e.label, labelWidth)
       const disabledText = disabled ? '  ' + ui.warn('zone required') : ''
-      lines.push(` ${mark} ${ui.key(e.key)} ${label} ${ui.muted(e.description)}${disabledText}`)
+      lines.push(` ${mark} ${ui.key(e.key)} ${label}${ui.muted(e.description)}${disabledText}`)
     }
     lines.push('')
     return lines

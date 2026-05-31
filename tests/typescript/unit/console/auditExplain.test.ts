@@ -39,7 +39,7 @@ describe('request trace entry', () => {
     const client = { audit: { explain } } as unknown as AdminClient
     const menu = new MenuView(client, 'z1')
     const app = fakeApp()
-    await menu.onKey('e', { app, size: { rows: 25, cols: 80 }, status: '' })
+    await menu.onKey('t', { app, size: { rows: 25, cols: 80 }, status: '' })
     const pushed = (app as unknown as { _pushed: unknown[] })._pushed
     const form = pushed[pushed.length - 1] as FormView
     expect(form).toBeInstanceOf(FormView)
@@ -123,7 +123,7 @@ describe('request trace entry', () => {
     const menu = new MenuView(client, 'z1')
     const app = fakeApp()
 
-    await menu.onKey('9', { app, size: { rows: 25, cols: 80 }, status: '' })
+    await menu.onKey('c', { app, size: { rows: 25, cols: 80 }, status: '' })
     const pushed = (app as unknown as { _pushed: unknown[] })._pushed
     const control = pushed[pushed.length - 1] as { onKey: MenuView['onKey'] }
     await control.onKey('g', { app, size: { rows: 25, cols: 80 }, status: '' })
@@ -160,7 +160,7 @@ describe('request trace entry', () => {
     const menu = new MenuView(client, 'z1')
     const app = fakeApp()
 
-    await menu.onKey('9', { app, size: { rows: 25, cols: 80 }, status: '' })
+    await menu.onKey('c', { app, size: { rows: 25, cols: 80 }, status: '' })
     const pushed = (app as unknown as { _pushed: unknown[] })._pushed
     const control = pushed[pushed.length - 1] as { onKey: MenuView['onKey'] }
     await control.onKey('c', { app, size: { rows: 25, cols: 80 }, status: '' })
@@ -190,14 +190,15 @@ describe('request trace entry', () => {
     expect(detail).toBeInstanceOf(DetailView)
   })
 
-  it('does not expose resource credential tools from the Console menu', async () => {
+  it('uses c for Control and does not expose resource credential tools from the Console menu', async () => {
     const client = { audit: { byRequest: vi.fn() } } as unknown as AdminClient
     const menu = new MenuView(client, 'z1')
     const app = fakeApp()
 
     await menu.onKey('c', { app, size: { rows: 25, cols: 80 }, status: '' })
     const pushed = (app as unknown as { _pushed: unknown[] })._pushed
-    expect(pushed).toHaveLength(0)
+    expect(pushed).toHaveLength(1)
+    expect(pushed[0]).toEqual(expect.objectContaining({ title: 'control' }))
   })
 
   it('issues control invocation tokens only through scoped control keys', async () => {
@@ -222,7 +223,7 @@ describe('request trace entry', () => {
     const menu = new MenuView(client, 'z1')
     const app = fakeApp()
 
-    await menu.onKey('9', { app, size: { rows: 25, cols: 80 }, status: '' })
+    await menu.onKey('c', { app, size: { rows: 25, cols: 80 }, status: '' })
     const pushed = (app as unknown as { _pushed: unknown[] })._pushed
     const control = pushed[pushed.length - 1] as { onKey: MenuView['onKey'] }
     await control.onKey('t', { app, size: { rows: 25, cols: 80 }, status: '' })
@@ -265,7 +266,7 @@ describe('request trace entry', () => {
     const menu = new MenuView(client, 'z1')
     const app = fakeApp()
 
-    await menu.onKey('9', { app, size: { rows: 25, cols: 80 }, status: '' })
+    await menu.onKey('c', { app, size: { rows: 25, cols: 80 }, status: '' })
     const pushed = (app as unknown as { _pushed: unknown[] })._pushed
     const control = pushed[pushed.length - 1] as { onKey: MenuView['onKey'] }
     await control.onKey('t', { app, size: { rows: 25, cols: 80 }, status: '' })

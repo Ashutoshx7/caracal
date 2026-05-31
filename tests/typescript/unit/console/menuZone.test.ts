@@ -62,9 +62,9 @@ describe('menu zone hotkey', () => {
     const lines = menu.render({ app: fakeApp(), size: { rows: 25, cols: 100 }, status: '' }).map(stripAnsi)
     const groups = lines
       .map((line) => line.trim())
-      .filter((line) => ['start', 'manage', 'observe', 'agents', 'runtime'].includes(line))
+      .filter((line) => ['start', 'manage', 'sessions', 'observe', 'runtime'].includes(line))
 
-    expect(groups).toEqual(['start', 'manage', 'observe', 'agents', 'runtime'])
+    expect(groups).toEqual(['start', 'manage', 'sessions', 'observe', 'runtime'])
   })
 
   it('uses ordered management numbers and semantic group hotkeys', () => {
@@ -81,16 +81,25 @@ describe('menu zone hotkey', () => {
       ['6', 'policy set'],
       ['7', 'grant'],
       ['8', 'authority session'],
-      ['9', 'control'],
     ]) {
       expect(rendered).toContain(` ${key}  ${label}`)
     }
     expect(rendered).toContain(' a  audit')
-    expect(rendered).toContain(' e  request trace')
+    expect(rendered).toContain(' t  request trace')
     expect(rendered).toContain(' r  agent session')
     expect(rendered).toContain(' g  delegation')
+    expect(rendered).toContain(' c  control')
     expect(rendered).toContain(' d  diagnostics')
     expect(rendered).not.toContain(' c  credential')
+  })
+
+  it('aligns long labels before descriptions', () => {
+    const menu = new MenuView(clientWithZones([]), 'zone-1')
+    const lines = menu.render({ app: fakeApp(), size: { rows: 25, cols: 100 }, status: '' }).map(stripAnsi)
+
+    expect(lines.find((line) => line.includes('authority session'))).toContain('authority session  Inspect active authority sessions')
+    expect(lines.find((line) => line.includes('request trace'))).toContain('request trace      Trace one audit request ID')
+    expect(lines.find((line) => line.includes('agent session'))).toContain('agent session      Manage agent sessions')
   })
 
   it('opens operationally useful contextual menu help', async () => {
