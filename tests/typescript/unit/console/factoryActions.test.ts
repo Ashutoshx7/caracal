@@ -112,7 +112,7 @@ function makeClient() {
       traverse: vi.fn(async () => []),
       revoke: vi.fn(async () => ({ revoked_edges: 0, affected_sessions: 0 })),
     },
-    audit: { list: vi.fn(async () => []), byRequest: vi.fn(async () => ({})) },
+    audit: { list: vi.fn(async () => []), byRequest: vi.fn(async () => ({})), explain: vi.fn(async () => ({})) },
   }
 }
 

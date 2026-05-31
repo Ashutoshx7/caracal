@@ -562,6 +562,7 @@ describe('AuditTailView lifecycle and interaction', () => {
       audit: {
         list: vi.fn(async () => { if (opts.fail) throw new Error('audit boom'); return events }),
         byRequest: vi.fn(async () => []),
+        explain: vi.fn(async () => ({ request_id: 'req-1', final_decision: 'allow' })),
       },
     } as unknown as Parameters<typeof import('../../../../apps/console/src/views/audit.ts')['AuditTailView']> extends never ? never : import('@caracalai/admin').AdminClient
   }
@@ -613,7 +614,7 @@ describe('AuditTailView lifecycle and interaction', () => {
     view.dispose()
   })
 
-  it('navigates rows and opens an explain detail on enter', async () => {
+  it('navigates rows and opens request detail on enter', async () => {
     const { AuditTailView } = await import('../../../../apps/console/src/views/audit.ts')
     const view = new AuditTailView(auditClient(sample) as never, 'z1')
     await view.init(fakeApp())
@@ -622,6 +623,19 @@ describe('AuditTailView lifecycle and interaction', () => {
     await view.onKey('down', ctx)
     await view.onKey('enter', ctx)
     expect(app.push).toHaveBeenCalled()
+    view.dispose()
+  })
+
+  it('opens request trace with x', async () => {
+    const { AuditTailView } = await import('../../../../apps/console/src/views/audit.ts')
+    const client = auditClient(sample)
+    const view = new AuditTailView(client as never, 'z1')
+    await view.init(fakeApp())
+    const app = fakeApp()
+    await view.onKey('x', { app, size: { rows: 10, cols: 120 }, status: '' })
+    const pushed = (app as unknown as { _pushed: { init: (app: App) => Promise<void> }[] })._pushed
+    await pushed[pushed.length - 1]!.init(app)
+    expect(client.audit.explain).toHaveBeenCalledWith('z1', 'req-1')
     view.dispose()
   })
 

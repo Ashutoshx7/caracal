@@ -80,13 +80,13 @@ describe('menu zone hotkey', () => {
       ['5', 'policy'],
       ['6', 'policy set'],
       ['7', 'grant'],
-      ['8', 'session'],
+      ['8', 'authority session'],
       ['9', 'control'],
     ]) {
       expect(rendered).toContain(` ${key}  ${label}`)
     }
     expect(rendered).toContain(' a  audit')
-    expect(rendered).toContain(' e  explain')
+    expect(rendered).toContain(' e  request trace')
     expect(rendered).toContain(' r  agent session')
     expect(rendered).toContain(' g  delegation')
     expect(rendered).toContain(' d  diagnostics')

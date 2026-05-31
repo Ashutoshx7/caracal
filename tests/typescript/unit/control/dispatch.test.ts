@@ -86,7 +86,7 @@ describe('dispatch', () => {
 
   it('routes explain request with read scope', async () => {
     const admin = {
-      audit: { byRequest: async (zoneId: string, requestId: string) => ({ zoneId, requestId }) },
+      audit: { explain: async (zoneId: string, requestId: string) => ({ zoneId, requestId }) },
     } as unknown as AdminClient
     const result = await dispatch(
       { command: 'explain', subcommand: '', flags: { 'request-id': 'req-1' } },
