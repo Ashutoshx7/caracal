@@ -1,10 +1,10 @@
 ---
 title: Observability Workflows
-description: Inspect diagnostics, audit events, policy explanations, and token claims through the Console.
+description: Inspect diagnostics, audit events, and policy explanations through the Console.
 pageType: reference
 ---
 
-Observability workflows live in the Console because they need operator context, selected zones, credentials, and structured API responses.
+Observability workflows live in the Console because they need operator context, selected zones, and structured API responses.
 
 ## Diagnostics
 
@@ -27,10 +27,6 @@ Open `audit` with `a`. Audit records tie STS, Gateway, Coordinator, policy, and 
 
 Open `explain` with `e` when you have a request ID and need the decision trace. Explanation output connects the request, selected resource, subject, scopes, determining policies, diagnostics, and result.
 
-## Credential inspection
-
-Open `credential` with `c` to read a protected-resource token or inspect a JWT locally. Local inspection helps compare issuer, subject, zone, session, target resources, scopes, expiry, algorithm, key ID, and token ID against the audit trail. Resource servers must still verify signatures and revocation; local decoding is not authorization.
-
 ## Troubleshooting
 
 | Symptom | Check |
@@ -38,4 +34,3 @@ Open `credential` with `c` to read a protected-resource token or inspect a JWT l
 | Diagnostics cannot reach API | Run `caracal status --ready`; custom deployments should confirm the Management API URL override. |
 | Zone diagnostics show no zones | Confirm the admin token has visibility into the expected zone. |
 | Audit records are missing | Confirm the selected zone, time window, and audit service readiness. |
-| Credential inspection succeeds but service rejects the token | Check audience/resource, scopes, token use, revocation state, and identity verifier settings. |
