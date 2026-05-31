@@ -97,6 +97,32 @@ describe("Caracal.fromEnv", () => {
     expect(body.get("client_secret")).toBe("secret");
     expect(body.getAll("resource")).toEqual(["calendar"]);
   });
+
+  it("auto-detects local credential files with sanitized generated directory names", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "caracal-sdk-"));
+    const credentialDir = join(dir, "caracal", "runtime", "zone_id", "app_value");
+    mkdirSync(credentialDir, { recursive: true });
+    writeFileSync(join(credentialDir, "client-secret"), "secret\n", { mode: 0o600 });
+    writeFileSync(join(credentialDir, "credentials.json"), JSON.stringify([{ resource: "calendar" }]), { mode: 0o600 });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ access_token: "fresh-root", expires_in: 900 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const c = Caracal.fromEnv({
+      XDG_CONFIG_HOME: dir,
+      CARACAL_ZONE_ID: "__zone id__",
+      CARACAL_APPLICATION_ID: "  app/value  ",
+      CARACAL_STS_URL: "http://sts",
+    } as NodeJS.ProcessEnv);
+    await c.headersAsync({ allowRoot: true });
+
+    const body = fetchMock.mock.calls[0][1].body as URLSearchParams;
+    expect(body.get("client_secret")).toBe("secret");
+    expect(body.getAll("resource")).toEqual(["calendar"]);
+  });
 });
 
 describe("Caracal.headers", () => {

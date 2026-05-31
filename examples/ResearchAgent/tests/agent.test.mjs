@@ -67,8 +67,8 @@ describe('real-provider example contract', () => {
 
   it('documents real providers and resource mappings', async () => {
     const readme = await readFile(README, 'utf8')
-    assert.match(readme, /https:\/\/www.googleapis.com/)
-    assert.match(readme, /https:\/\/api.openai.com\/v1/)
+    assert.ok(readme.includes('https://www.googleapis.com'))
+    assert.ok(readme.includes('https://api.openai.com/v1'))
     assert.match(readme, /resource:\/\/google-drive/)
     assert.match(readme, /resource:\/\/google-calendar/)
     assert.match(readme, /resource:\/\/openai/)

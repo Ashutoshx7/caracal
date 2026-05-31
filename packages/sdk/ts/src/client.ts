@@ -520,7 +520,12 @@ function defaultRunCredentialsPath(env: NodeJS.ProcessEnv, zoneId: string, appli
 }
 
 function safePathSegment(value: string): string {
-  return value.trim().replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "default";
+  const segment = value.trim().replace(/[^A-Za-z0-9._-]+/g, "_");
+  let start = 0;
+  let end = segment.length;
+  while (start < end && segment[start] === "_") start += 1;
+  while (end > start && segment[end - 1] === "_") end -= 1;
+  return segment.slice(start, end) || "default";
 }
 
 function existingLocalFile(path: string, env: NodeJS.ProcessEnv): string | undefined {
