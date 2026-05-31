@@ -70,6 +70,11 @@ interface AgentListResponse {
   next_cursor: string | null
 }
 
+interface RowListResponse<T> {
+  rows: T[]
+  next_cursor: string | null
+}
+
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_RETRIES = 3
 const MAX_RETRY_AFTER_MS = 30_000
@@ -332,14 +337,20 @@ export class AdminClient {
 
   // Sessions (read; revocation is a side effect of grant.revoke or agent.terminate)
   sessions = {
-    list: (zoneId: string, query?: SessionQuery) =>
-      this.request<Session[]>(`/v1/zones/${zoneId}/sessions`, { query: { ...query } }),
+    list: async (zoneId: string, query?: SessionQuery) => {
+      const response = await this.request<RowListResponse<Session>>(`/v1/zones/${zoneId}/sessions`, { query: { ...query } })
+      if (!Array.isArray(response.rows)) throw new Error('sessions response missing rows')
+      return response.rows
+    },
   }
 
   // Audit
   audit = {
-    list: (zoneId: string, query?: AuditQuery) =>
-      this.request<AuditEvent[]>(`/v1/zones/${zoneId}/audit`, { query: { ...query } }),
+    list: async (zoneId: string, query?: AuditQuery) => {
+      const response = await this.request<RowListResponse<AuditEvent>>(`/v1/zones/${zoneId}/audit`, { query: { ...query } })
+      if (!Array.isArray(response.rows)) throw new Error('audit response missing rows')
+      return response.rows
+    },
     byRequest: (zoneId: string, requestId: string) =>
       this.request<AuditDetail[]>(`/v1/zones/${zoneId}/audit/by-request/${requestId}`),
     explain: (zoneId: string, requestId: string) =>

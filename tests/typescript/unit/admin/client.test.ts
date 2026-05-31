@@ -40,11 +40,26 @@ describe('AdminClient', () => {
   })
 
   it('encodes query parameters and skips empty values', async () => {
-    const f = fetchOk([])
+    const f = fetchOk({ rows: [], next_cursor: null })
     const c = new AdminClient({ apiUrl: 'http://api/', adminToken: 't', fetchImpl: f })
     await c.audit.list('z1', { decision: 'deny', limit: 50, since: undefined })
     const [url] = (f as unknown as { mock: { calls: [string][] } }).mock.calls[0]
     expect(url).toBe('http://api/v1/zones/z1/audit?decision=deny&limit=50')
+  })
+
+  it('unwraps paged audit and session responses', async () => {
+    const f = fetchOk({ rows: [{ id: 'ev1' }], next_cursor: null })
+    const c = new AdminClient({ apiUrl: 'http://api', adminToken: 't', fetchImpl: f })
+
+    await expect(c.audit.list('z1')).resolves.toEqual([{ id: 'ev1' }])
+    await expect(c.sessions.list('z1')).resolves.toEqual([{ id: 'ev1' }])
+  })
+
+  it('rejects paged audit and session responses without rows', async () => {
+    const c = new AdminClient({ apiUrl: 'http://api', adminToken: 't', fetchImpl: fetchOk({ next_cursor: null }) })
+
+    await expect(c.audit.list('z1')).rejects.toThrow(/audit response missing rows/)
+    await expect(c.sessions.list('z1')).rejects.toThrow(/sessions response missing rows/)
   })
 
   it('serializes JSON body with Content-Type', async () => {
@@ -296,9 +311,12 @@ describe('AdminClient', () => {
     const calls: Array<{ url: string; method: string; body?: string }> = []
     const f = vi.fn().mockImplementation((url: string, init: RequestInit) => {
       calls.push({ url, method: init.method ?? 'GET', body: init.body as string | undefined })
+      const body = url.includes('/audit') || url.includes('/sessions')
+        ? { rows: [], next_cursor: null }
+        : {}
       return Promise.resolve({
         ok: true, status: 200, statusText: 'OK', headers: new Headers(),
-        text: async () => '{}', json: async () => ({}),
+        text: async () => JSON.stringify(body), json: async () => body,
       })
     }) as unknown as typeof fetch
     const c = new AdminClient({
