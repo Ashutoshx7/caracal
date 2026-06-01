@@ -1,0 +1,7 @@
+pip==26.1.2
+coverage==7.14.0
+cryptography==48.0.0
+httpx>=0.28.0
+idna>=3.15
+PyJWT>=2.10.0
+redis>=7.4

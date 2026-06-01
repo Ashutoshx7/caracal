@@ -11,6 +11,8 @@ on:
       - main
     paths:
       - '.github/workflows/test.yml'
+      - 'scripts/pythonTestRequirements.in'
+      - 'scripts/pythonTestRequirements.lock'
       - 'apps/**'
       - 'docs/**'
       - 'infra/**'
@@ -25,6 +27,8 @@ on:
   pull_request:
     paths:
       - '.github/workflows/test.yml'
+      - 'scripts/pythonTestRequirements.in'
+      - 'scripts/pythonTestRequirements.lock'
       - 'apps/**'
       - 'docs/**'
       - 'infra/**'
@@ -392,17 +396,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install pip==26.1.1
-          python -m pip install \
-            -e packages/core/python \
-            -e packages/oauth/python \
-            -e packages/identity/python \
-            -e packages/revocation/python \
-            -e packages/sdk/python \
-            -e packages/transport/mcp/python \
-            -e packages/connectors/fastmcp/python \
-            -e packages/connectors/redis/python \
-            coverage==7.14.0 cryptography==48.0.0
+          python -m pip install --require-hashes --requirement scripts/pythonTestRequirements.lock
 
       - name: Run Python tests with coverage
         env:
