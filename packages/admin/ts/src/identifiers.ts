@@ -10,7 +10,18 @@ const RESOURCE_IDENTIFIER_PREFIX = 'resource://'
 const PROVIDER_IDENTIFIER_PREFIX = 'provider://'
 
 function slugValue(value: string, fallback: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || fallback
+  let slug = ''
+  let separator = false
+  for (const character of value.trim().toLowerCase()) {
+    if ((character >= 'a' && character <= 'z') || (character >= '0' && character <= '9')) {
+      if (separator && slug) slug += '-'
+      slug += character
+      separator = false
+    } else {
+      separator = true
+    }
+  }
+  return slug || fallback
 }
 
 export function providerIdentifier(value: string): ProviderIdentifier {

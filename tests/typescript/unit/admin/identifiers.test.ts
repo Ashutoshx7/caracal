@@ -10,6 +10,9 @@ describe('admin identifier helpers', () => {
   it('normalizes provider identifiers into the provider namespace', () => {
     expect(providerIdentifier('Hooli OIDC')).toBe('provider://hooli-oidc')
     expect(providerIdentifier('provider://Hooli OIDC')).toBe('provider://hooli-oidc')
+    expect(providerIdentifier(`---${'---'.repeat(2000)}Hooli---OIDC${'---'.repeat(2000)}---`)).toBe(
+      'provider://hooli-oidc',
+    )
     expect(isProviderIdentifier('provider://hooli-oidc')).toBe(true)
     expect(isProviderIdentifier('resource://hooli-oidc')).toBe(false)
   })

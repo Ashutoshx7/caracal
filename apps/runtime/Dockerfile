@@ -5,9 +5,15 @@
 
 # syntax=docker/dockerfile:1.7
 ARG PNPM_VERSION=11.1.1
+ARG BUN_VERSION=1.3.14
+ARG BUN_LINUX_X64_INTEGRITY=sha512-7OVTAKvwfPmSbIV1HpdOoVVx5VRc427GuPPne93N6vk4eQBPId9nXmZDh9/zGaKPdbVjVtQSZafWQoUjx38Utw==
+ARG BUN_LINUX_AARCH64_INTEGRITY=sha512-X5SsPZHs+iYO8R/efIcRtc7gT2Q2DgPfliCxEkx4cXBumwkw0c/EsHMNwH3EgGpCDaZ7IYVPhpCG/xBOQHEwZw==
 
 FROM node:24-slim@sha256:24dc26ef1e3c3690f27ebc4136c9c186c3133b25563ae4d7f0692e4d1fe5db0e AS builder
 ARG PNPM_VERSION
+ARG BUN_VERSION
+ARG BUN_LINUX_X64_INTEGRITY
+ARG BUN_LINUX_AARCH64_INTEGRITY
 ARG TARGETARCH
 ARG CARACAL_RELEASE_VERSION
 ARG CARACAL_DEV_SHA
@@ -17,6 +23,49 @@ ENV PNPM_HOME=/pnpm \
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+RUN <<'EOF'
+set -eu
+case "${TARGETARCH}" in
+  amd64) bunPackage="bun-linux-x64"; bunIntegrity="${BUN_LINUX_X64_INTEGRITY}" ;;
+  arm64) bunPackage="bun-linux-aarch64"; bunIntegrity="${BUN_LINUX_AARCH64_INTEGRITY}" ;;
+  *) echo "unsupported arch ${TARGETARCH}"; exit 1 ;;
+esac
+bunUrl="https://registry.npmjs.org/@oven/${bunPackage}/-/${bunPackage}-${BUN_VERSION}.tgz"
+node - "${bunUrl}" "${bunIntegrity}" /tmp/bun.tgz <<'NODE'
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const https = require("node:https");
+
+const [url, integrity, target] = process.argv.slice(2);
+https.get(url, (response) => {
+  if (response.statusCode !== 200) {
+    console.error(`download failed: ${response.statusCode}`);
+    process.exit(1);
+  }
+
+  const hash = crypto.createHash("sha512");
+  const file = fs.createWriteStream(target);
+  response.on("data", (chunk) => hash.update(chunk));
+  response.pipe(file);
+  file.on("finish", () => {
+    file.close(() => {
+      const actual = `sha512-${hash.digest("base64")}`;
+      if (actual !== integrity) {
+        console.error(`integrity mismatch: ${actual}`);
+        process.exit(1);
+      }
+    });
+  });
+}).on("error", (error) => {
+  console.error(error);
+  process.exit(1);
+});
+NODE
+tar -xzf /tmp/bun.tgz -C /tmp
+install -m 0755 /tmp/package/bin/bun /usr/local/bin/bun
+rm -rf /tmp/package /tmp/bun.tgz
+bun --version | grep -Fx "${BUN_VERSION}"
+EOF
 WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/runtime/package.json apps/runtime/package.json
@@ -38,7 +87,7 @@ RUN case "${TARGETARCH}" in \
     esac && \
     cd apps/runtime && \
     CARACAL_RELEASE_VERSION="${CARACAL_RELEASE_VERSION}" CARACAL_DEV_SHA="${CARACAL_DEV_SHA}" node scripts/stampRelease.mjs && \
-    pnpm exec bun build --compile --target=${bunTarget} src/shell.ts --outfile dist/caracal && \
+    bun build --compile --target=${bunTarget} src/shell.ts --outfile dist/caracal && \
     chmod +x dist/caracal
 
 FROM debian:12-slim@sha256:1209d8fd77def86ceb6663deef7956481cc6c14a25e1e64daec12c0ceffcc19d
