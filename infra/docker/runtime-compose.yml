@@ -180,7 +180,9 @@ services:
       PGUSER: ${POSTGRES_USER:-caracal}
       PGPASSWORD_FILE: /run/secrets/postgresPassword
       PGDATABASE: ${POSTGRES_DB:-caracal}
-      PGSSLMODE: disable
+      # Internal isolated network with the bundled Postgres (no server TLS).
+      # External/managed databases must set CARACAL_DB_SSLMODE to require or verify-full.
+      PGSSLMODE: ${CARACAL_DB_SSLMODE:-disable}
     entrypoint: ["/bin/sh", "/usr/local/bin/caracal-migrate"]
 
   sts:

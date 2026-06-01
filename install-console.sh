@@ -9,7 +9,7 @@ set -eu
 REPO="Garudex-Labs/caracal"
 INSTALL_DIR="${CARACAL_INSTALL_DIR:-${HOME}/.local/bin}"
 VERSION="${CARACAL_VERSION:-latest}"
-VERIFY_PROVENANCE="${CARACAL_VERIFY_PROVENANCE:-0}"
+VERIFY_PROVENANCE="${CARACAL_VERIFY_PROVENANCE:-1}"
 REQUIRE_PROVENANCE="${CARACAL_REQUIRE_PROVENANCE:-0}"
 
 err() {
@@ -22,14 +22,18 @@ usage() {
 caracal-install: download the Caracal Console binaries from GitHub Releases.
 
 Usage:
-  install-console.sh [--version vYYYY.MM.DD[.N][-rc.N]] [--install-dir PATH] [--verify-provenance] [--require-provenance]
+  install-console.sh [--version vYYYY.MM.DD[.N][-rc.N]] [--install-dir PATH] [--verify-provenance] [--no-verify-provenance] [--require-provenance]
 
 Installs the thin 'caracal' runtime CLI and the 'caracal-console' Console binary.
+
+Provenance attestation is verified by default when the GitHub CLI ('gh') is
+available; pass --no-verify-provenance to skip it or --require-provenance to
+fail the install when it cannot be verified.
 
 Environment overrides:
   CARACAL_VERSION       same as --version
   CARACAL_INSTALL_DIR   same as --install-dir
-  CARACAL_VERIFY_PROVENANCE   same as --verify-provenance
+  CARACAL_VERIFY_PROVENANCE   same as --verify-provenance (set 0 to disable)
   CARACAL_REQUIRE_PROVENANCE  same as --require-provenance
 EOF
 }
@@ -39,6 +43,7 @@ while [ $# -gt 0 ]; do
         --version) [ $# -ge 2 ] || err "--version requires a value"; VERSION="$2"; shift ;;
         --install-dir) [ $# -ge 2 ] || err "--install-dir requires a value"; INSTALL_DIR="$2"; shift ;;
         --verify-provenance) VERIFY_PROVENANCE=1 ;;
+        --no-verify-provenance) VERIFY_PROVENANCE=0; REQUIRE_PROVENANCE=0 ;;
         --require-provenance) VERIFY_PROVENANCE=1; REQUIRE_PROVENANCE=1 ;;
         --help|-h) usage; exit 0 ;;
         *) err "unknown argument: $1 (use --help for usage)" ;;

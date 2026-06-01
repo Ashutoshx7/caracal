@@ -82,9 +82,10 @@ jobs:
       - name: Authorize release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
-          actor="${{ github.actor }}"
+          actor="${RELEASE_ACTOR}"
           maintainers="$(mktemp)"
           gh api "repos/${GITHUB_REPOSITORY}/contents/.github/MAINTAINERS?ref=${{ github.event.repository.default_branch }}" --jq '.content' | base64 -d > "$maintainers"
           if ! grep -Eo '@[[:alnum:]_-]+' "$maintainers" | sed 's/^@//' | grep -qiFx "$actor"; then

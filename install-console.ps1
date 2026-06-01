@@ -8,6 +8,7 @@ param(
     [string]$Version = $env:CARACAL_VERSION,
     [string]$InstallDir = $env:CARACAL_INSTALL_DIR,
     [switch]$VerifyProvenance,
+    [switch]$NoVerifyProvenance,
     [switch]$RequireProvenance
 )
 
@@ -19,7 +20,8 @@ if ([string]::IsNullOrEmpty($Version)) { $Version = 'latest' }
 if ([string]::IsNullOrEmpty($InstallDir)) {
     $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\caracal'
 }
-if ($env:CARACAL_VERIFY_PROVENANCE -eq '1') { $VerifyProvenance = $true }
+$VerifyProvenance = $true
+if ($env:CARACAL_VERIFY_PROVENANCE -eq '0' -or $NoVerifyProvenance) { $VerifyProvenance = $false }
 if ($env:CARACAL_REQUIRE_PROVENANCE -eq '1') {
     $VerifyProvenance = $true
     $RequireProvenance = $true

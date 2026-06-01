@@ -12,9 +12,9 @@ if [ -n "${PGPASSWORD_FILE:-}" ] && [ -r "${PGPASSWORD_FILE}" ]; then
     : "${PGPORT:?PGPORT required when PGPASSWORD_FILE is set}"
     : "${PGUSER:?PGUSER required when PGPASSWORD_FILE is set}"
     : "${PGDATABASE:?PGDATABASE required when PGPASSWORD_FILE is set}"
-    pgpass="${PGPASSFILE:-/tmp/caracal.pgpass}"
-    printf '%s:%s:%s:%s:%s\n' "${PGHOST}" "${PGPORT}" "${PGDATABASE}" "${PGUSER}" "$(cat "${PGPASSWORD_FILE}")" > "${pgpass}"
+    pgpass="$(mktemp "${TMPDIR:-/tmp}/caracal.pgpass.XXXXXX")"
     chmod 0600 "${pgpass}"
+    printf '%s:%s:%s:%s:%s\n' "${PGHOST}" "${PGPORT}" "${PGDATABASE}" "${PGUSER}" "$(cat "${PGPASSWORD_FILE}")" > "${pgpass}"
     export PGPASSFILE="${pgpass}"
     unset PGPASSWORD
 elif [ -z "${PGPASSWORD:-}" ] && [ -z "${PGPASSFILE:-}" ]; then
