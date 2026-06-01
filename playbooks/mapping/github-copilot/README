@@ -1,0 +1,28 @@
+# GitHub Copilot Mapping Playbook
+
+Copy this folder into the root of a project where GitHub Copilot will help configure Caracal Console provider and resource fields.
+
+This setup mirrors the Claude Code mapping playbook. It helps Copilot translate provider dashboard labels into visible Caracal Console fields, verify mappings with docs, and keep secrets masked.
+
+## Use
+
+1. Copy `AGENTS.md`, `.github/`, and `.vscode/` into your project root.
+2. Enable GitHub Copilot custom instructions, prompt files, and agent/skill support in VS Code.
+3. Use prompts such as `/map-provider`, `/map-resource`, `/validate-configuration`, `/review-setup`, or `/onboard-provider`.
+
+## Contents
+
+- `AGENTS.md`: primary operating guide.
+- `.github/copilot-instructions.md`: repository-wide Copilot reinforcement.
+- `.github/console-fields.ground-truth.json`: single Console field ground truth.
+- `.github/instructions/`: focused mapping, docs, secret, and review rules.
+- `.github/agents/`: specialist mapping agents.
+- `.github/skills/`: reusable field mapping and secret handling skills.
+- `.github/prompts/`: reusable mapping workflows.
+- `.vscode/mcp.json`: documentation MCP setup starting with Context7.
+
+## MCP documentation
+
+The included MCP config starts with Context7. Add provider or internal documentation MCP servers when your team has them. Copilot should prefer `docs.caracal.run`, then official provider docs, then MCP-connected docs, then local guidance.
+
+Do not paste raw provider secrets into chat. Use redacted values or environment variable names.
