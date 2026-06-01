@@ -1,0 +1,11 @@
+- Scope: `playbooks/policies/` contains playbooks for authoring and reviewing Caracal policies.
+- Must focus on Rego policy authoring, policy validation, policy versions, policy sets, simulation, and activation.
+- Must use Caracal-compatible Rego examples with `package caracal.authz` and `import rego.v1`.
+- Must use deny-by-default examples with `decision`, `evaluation_status`, `determining_policies`, and `diagnostics`.
+- Must explain that policies decide whether STS can honor a requested resource and scope.
+- Must distinguish policies from grants: grants define available access and policies define runtime conditions.
+- Must keep examples limited to app, resource, scope, subject, session, and delegation checks.
+- Must not claim that a policy creates grants, resources, applications, or tokens by itself.
+- Must not use non-deterministic or side-effecting Rego patterns such as network calls, time, random, or runtime access.
+- Must not include real customer names, credentials, tenant IDs, app IDs, or provider secrets.
+- Must not place SDK integration steps or provider dashboard mapping instructions in this layer.

@@ -1,0 +1,11 @@
+- Scope: `playbooks/sdks/` contains playbooks for integrating Caracal SDKs into user applications.
+- Must focus on application wiring, token exchange, runtime authorization calls, environment variables, and validation steps.
+- Must keep SDK examples framework-neutral unless the guide explicitly names a framework.
+- Must separate Admin API setup from runtime application code.
+- Must tell agents to read the user's existing auth, routing, middleware, and environment patterns before editing code.
+- Must use placeholders for Caracal API URLs, zone IDs, app IDs, resource identifiers, scopes, client IDs, and secrets.
+- Must instruct agents to store secrets in environment variables or the user's existing secret manager.
+- Must not hard-code secrets, tokens, private keys, tenant values, or provider credentials in generated code.
+- Must not ask users to paste secrets into an AI chat.
+- Must not place Rego policy authoring or provider dashboard field mapping as the main content of this layer.
+- Must not invent SDK APIs, package names, or commands that are not documented in Caracal.
