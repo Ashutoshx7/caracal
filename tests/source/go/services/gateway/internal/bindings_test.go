@@ -139,6 +139,23 @@ func TestBindingReloadIfChangedLoadsNewRevision(t *testing.T) {
 	}
 }
 
+func TestNewBindingStoreStartsWithEmptyCache(t *testing.T) {
+	store := newBindingStore(nil, zerolog.Nop())
+	if store.Size() != 0 {
+		t.Fatalf("new store size = %d", store.Size())
+	}
+	if _, ok := store.Get("zone", "resource"); ok {
+		t.Fatal("new store should not contain bindings")
+	}
+}
+
+func TestBindingStartPollingReturnsWhenContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	store := newTestBindingStore(&fakeBindingPool{t: t})
+	store.StartPolling(ctx)
+}
+
 func newTestBindingStore(pool bindingQuerier) *bindingStore {
 	s := &bindingStore{pool: pool, log: zerolog.Nop(), pollInterval: defaultBindingPollInterval}
 	empty := map[string]binding{}

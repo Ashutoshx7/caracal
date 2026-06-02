@@ -156,3 +156,40 @@ func TestIsInternalHost(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadConfigDevSuccessDecodesKeysAndTLS(t *testing.T) {
+	key := strings.Repeat("ab", 32)
+	t.Setenv("CARACAL_MODE", "dev")
+	t.Setenv("PORT", "8081")
+	t.Setenv("STS_URL", "http://sts.example.com")
+	t.Setenv("DATABASE_URL", "postgres://db")
+	t.Setenv("REDIS_URL", "redis://redis")
+	t.Setenv("STREAMS_HMAC_KEY", "stream-key")
+	t.Setenv("GATEWAY_STS_HMAC_KEY", key)
+	t.Setenv("AUDIT_HMAC_KEY", key)
+	t.Setenv("TLS_CERT_FILE", "cert.pem")
+	t.Setenv("TLS_KEY_FILE", "key.pem")
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if len(cfg.STSExchangeHMACKey) != 32 || len(cfg.AuditHMACKey) != 32 {
+		t.Fatalf("expected decoded 32-byte keys, got sts=%d audit=%d", len(cfg.STSExchangeHMACKey), len(cfg.AuditHMACKey))
+	}
+	if !cfg.TLSEnabled() {
+		t.Fatal("TLS should be enabled when cert and key are configured")
+	}
+}
+
+func TestDecodeHexKeyRejectsMalformedValues(t *testing.T) {
+	if key, err := decodeHexKey("TEST_KEY", ""); err != nil || key != nil {
+		t.Fatalf("empty key should be accepted as nil, got key=%v err=%v", key, err)
+	}
+	if _, err := decodeHexKey("TEST_KEY", "not-hex"); err == nil {
+		t.Fatal("malformed hex should fail")
+	}
+	if _, err := decodeHexKey("TEST_KEY", "abcd"); err == nil {
+		t.Fatal("short decoded key should fail")
+	}
+}

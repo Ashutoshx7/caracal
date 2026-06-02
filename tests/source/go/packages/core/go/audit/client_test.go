@@ -211,3 +211,110 @@ func TestReplayStatsForDirReportsFilesBytesAndOldestAge(t *testing.T) {
 		t.Fatalf("expected oldest replay age near two hours, got %d", stats.OldestAgeSeconds)
 	}
 }
+
+func TestClientReadyChecksReplayDirectory(t *testing.T) {
+	if err := (*Client)(nil).Ready(); err == nil {
+		t.Fatal("nil client must fail readiness")
+	}
+
+	c, _, dir := newTestClient(t, nil, false)
+	if err := c.Ready(); err != nil {
+		t.Fatalf("ready directory should pass: %v", err)
+	}
+
+	filePath := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(filePath, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c.cfg.ReplayDir = filePath
+	if err := c.Ready(); err == nil {
+		t.Fatal("file replay path must fail readiness")
+	}
+}
+
+func TestReplayPendingDrainsSignedFilesAndIgnoresInvalidLines(t *testing.T) {
+	key := []byte("12345678901234567890123456789012")
+	c, s, dir := newTestClient(t, key, true)
+	var drained atomic.Uint64
+	c.cfg.Metrics.OnReplayDrained = func(n uint64) { drained.Add(n) }
+	path := filepath.Join(dir, "pending-1.ndjson")
+	if err := os.WriteFile(path, []byte("{bad json}\n{\"id\":\"ev-1\",\"zone_id\":\"z1\",\"event_type\":\"token_exchange\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ignore.txt"), []byte("{\"id\":\"ignored\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	c.ReplayPending(context.Background())
+
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("drained replay file should be removed, got %v", err)
+	}
+	calls := s.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("want one replayed event, got %d", len(calls))
+	}
+	if calls[0]["sig"] == "" {
+		t.Fatalf("replayed event should be signed: %#v", calls[0])
+	}
+	if drained.Load() != 1 || c.Snapshot().Drained != 1 {
+		t.Fatalf("unexpected drained metrics hook=%d snapshot=%d", drained.Load(), c.Snapshot().Drained)
+	}
+}
+
+func TestReplayPendingKeepsFileOnSinkFailure(t *testing.T) {
+	c, s, dir := newTestClient(t, nil, false)
+	s.failN = 1
+	s.failErr = errors.New("sink down")
+	path := filepath.Join(dir, "pending-1.ndjson")
+	if err := os.WriteFile(path, []byte("{\"id\":\"ev-1\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	c.ReplayPending(context.Background())
+
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("failed replay file should remain, got %v", err)
+	}
+	if c.Snapshot().Drained != 0 {
+		t.Fatalf("failed replay should not count as drained: %d", c.Snapshot().Drained)
+	}
+}
+
+func TestReplayFileSurfacesScannerErrors(t *testing.T) {
+	c, _, dir := newTestClient(t, nil, false)
+	path := filepath.Join(dir, "oversized.ndjson")
+	if err := os.WriteFile(path, append(make([]byte, 1024*1024+1), '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.replayFile(context.Background(), path); err == nil {
+		t.Fatal("oversized replay line should surface scanner error")
+	}
+}
+
+func TestPersistBatchInvokesMetricHookAndSnapshot(t *testing.T) {
+	c, _, dir := newTestClient(t, nil, false)
+	var persisted atomic.Uint64
+	c.cfg.Metrics.OnReplayPersisted = func(n uint64) { persisted.Add(n) }
+
+	c.persistBatch([]Event{{ID: "ev-1"}, {ID: "ev-2"}})
+
+	if persisted.Load() != 2 || c.Snapshot().Persisted != 2 {
+		t.Fatalf("unexpected persisted metrics hook=%d snapshot=%d", persisted.Load(), c.Snapshot().Persisted)
+	}
+	stats := ReplayStatsForDir(dir, time.Now())
+	if stats.Files != 1 {
+		t.Fatalf("want one replay file, got %d", stats.Files)
+	}
+}
+
+func TestCloseReturnsContextErrorWhenFlushDoesNotFinish(t *testing.T) {
+	c, _, _ := newTestClient(t, nil, false)
+	c.done = make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := c.Close(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("want context canceled, got %v", err)
+	}
+}

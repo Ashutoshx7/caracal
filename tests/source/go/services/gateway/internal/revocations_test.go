@@ -224,11 +224,13 @@ func redisMessage(id string, values map[string]any) redis.XMessage {
 }
 
 type fakeRevocationRedis struct {
-	verify   bool
-	acked    []string
-	failures int64
-	dead     []map[string]any
-	deleted  []string
+	verify     bool
+	acked      []string
+	failures   int64
+	dead       []map[string]any
+	deleted    []string
+	claims     [][]redis.XMessage
+	claimIndex int
 }
 
 func (f *fakeRevocationRedis) EnsureGroup(_ context.Context, _, _ string) error {
@@ -240,6 +242,11 @@ func (f *fakeRevocationRedis) XReadGroup(_ context.Context, _, _, _ string, _ in
 }
 
 func (f *fakeRevocationRedis) XAutoClaim(_ context.Context, _, _, _, _ string, _ time.Duration, _ int64) ([]redis.XMessage, string, error) {
+	if f.claimIndex < len(f.claims) {
+		msgs := f.claims[f.claimIndex]
+		f.claimIndex++
+		return msgs, "0-0", nil
+	}
 	return nil, "0-0", nil
 }
 
@@ -291,5 +298,73 @@ func TestStartRevocationConsumerEnsureGroupFailureSurfaces(t *testing.T) {
 	}
 	if !errors.Is(err, want) {
 		t.Fatalf("expected wrapped %v, got %v", want, err)
+	}
+}
+
+func TestStartRevocationConsumerRequiresStore(t *testing.T) {
+	err := startRevocationConsumer(context.Background(), &fakeRevocationRedis{}, nil, nil, zerolog.Nop())
+	if err == nil {
+		t.Fatal("expected missing store to fail startup")
+	}
+}
+
+func TestReplayPendingRevocationsProcessesClaimedMessages(t *testing.T) {
+	store := newRevocationStore(zerolog.Nop())
+	metrics := &GatewayMetrics{}
+	redis := &fakeRevocationRedis{
+		verify: true,
+		claims: [][]redis.XMessage{
+			{redisMessage("1-0", map[string]any{"session_id": "sid-1"}), redisMessage("2-0", map[string]any{"agent_session_id": "agent-1"})},
+		},
+	}
+
+	replayPendingRevocations(context.Background(), redis, store, "consumer-1", metrics, zerolog.Nop())
+
+	if !store.IsRevoked("sid-1") || !store.IsAgentRevoked("agent-1") {
+		t.Fatal("claimed revocation messages should update the store")
+	}
+	if metrics.Snapshot().RevocationPendingReplayed != 2 {
+		t.Fatalf("pending replay metric = %d", metrics.Snapshot().RevocationPendingReplayed)
+	}
+	if len(redis.acked) != 2 {
+		t.Fatalf("claimed messages should be acked, got %v", redis.acked)
+	}
+}
+
+func TestProcessRevocationMessagesAppliesEveryMessage(t *testing.T) {
+	store := newRevocationStore(zerolog.Nop())
+	rdb := &fakeRevocationRedis{verify: true}
+
+	processRevocationMessages(context.Background(), rdb, store, []redis.XMessage{
+		redisMessage("1-0", map[string]any{"session_id": "sid-1"}),
+		redisMessage("2-0", map[string]any{"edge_id": "edge-1"}),
+	}, nil, zerolog.Nop())
+
+	if !store.IsRevoked("sid-1") || !store.IsDelegationRevoked("edge-1") {
+		t.Fatal("batch processing should apply session and delegation revocations")
+	}
+}
+
+func TestTrackRevocationFailureIncrementsDeadLetterMetrics(t *testing.T) {
+	redis := &fakeRevocationRedis{}
+	metrics := &GatewayMetrics{}
+	msg := redisMessage("9-0", map[string]any{"bad": "message"})
+
+	for range maxFailures {
+		trackRevocationFailure(context.Background(), redis, msg, errors.New("bad message"), metrics, zerolog.Nop())
+	}
+
+	if metrics.Snapshot().RevocationDeadLetters != 1 {
+		t.Fatalf("dead-letter metric = %d", metrics.Snapshot().RevocationDeadLetters)
+	}
+}
+
+func TestRevocationBackgroundHelpersStopOnCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	runRevocationGC(ctx, newRevocationStore(zerolog.Nop()))
+	runRevocationLoop(ctx, &fakeRevocationRedis{}, newRevocationStore(zerolog.Nop()), "consumer-1", nil, zerolog.Nop())
+	if hostname() == "" {
+		t.Fatal("hostname helper should never return empty")
 	}
 }
