@@ -6,6 +6,7 @@
 package mcpnethttp
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -51,14 +52,20 @@ func TestMiddlewareAcceptsValidScopedToken(t *testing.T) {
 		"scope":   "read write",
 	})
 	called := false
+	var gotClaims identity.Claims
 	handler := Middleware(Options{
 		Issuer:         issuer,
 		Audience:       "resource://api",
 		ZoneID:         "zone1",
 		RequiredScopes: []string{"write"},
 		Revocations:    revocation.NewInMemoryStore(time.Hour),
-	})(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+	})(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		called = true
+		var ok bool
+		gotClaims, ok = ClaimsFromContext(request.Context())
+		if !ok {
+			t.Fatal("claims missing from request context")
+		}
 		response.WriteHeader(http.StatusNoContent)
 	}))
 	recorder := httptest.NewRecorder()
@@ -72,6 +79,12 @@ func TestMiddlewareAcceptsValidScopedToken(t *testing.T) {
 	}
 	if !called {
 		t.Fatal("next handler was not called")
+	}
+	if gotClaims.Sub != "user1" || gotClaims.ZoneID != "zone1" {
+		t.Fatalf("unexpected claims: %+v", gotClaims)
+	}
+	if _, ok := ClaimsFromContext(context.Background()); ok {
+		t.Fatal("fresh context should not contain claims")
 	}
 }
 

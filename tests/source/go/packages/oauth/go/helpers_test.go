@@ -68,6 +68,19 @@ func TestRetryDelayHonorsRetryAfterSeconds(t *testing.T) {
 	}
 }
 
+func TestRetryDelayHonorsRetryAfterHTTPDateAndInvalidValues(t *testing.T) {
+	res := &http.Response{Header: http.Header{}}
+	when := time.Now().Add(2 * time.Second).UTC().Format(http.TimeFormat)
+	res.Header.Set("Retry-After", when)
+	if got := retryDelay(res, 0); got <= 0 || got > 3*time.Second {
+		t.Fatalf("date Retry-After must be near future, got %s", got)
+	}
+	res.Header.Set("Retry-After", "soon")
+	if got := retryDelay(res, 1); got != 500*time.Millisecond {
+		t.Fatalf("invalid Retry-After must fall back to attempt backoff, got %s", got)
+	}
+}
+
 func TestRetryDelayExponentialBackoffWithCap(t *testing.T) {
 	if got := retryDelay(nil, 0); got != 250*time.Millisecond {
 		t.Fatalf("attempt 0 must be 250ms, got %s", got)
@@ -126,6 +139,15 @@ func TestTTLString(t *testing.T) {
 	}
 	if got := ttlString(300); got != "300" {
 		t.Fatalf("positive ttl must stringify, got %q", got)
+	}
+}
+
+func TestHashSecret(t *testing.T) {
+	if hashSecret("") != "" {
+		t.Fatal("empty secret hash must stay empty")
+	}
+	if hashSecret("secret") == "" || hashSecret("secret") == "secret" {
+		t.Fatal("non-empty secret must hash")
 	}
 }
 
