@@ -664,10 +664,13 @@ class ClientSecretCustomHTTPClientTests(unittest.IsolatedAsyncioTestCase):
             http_client=custom_client,
         )
 
-        headers = c.headers(allow_root=True)
-        self.assertEqual(headers[HEADER_AUTHORIZATION], "Bearer abc.def.ghi")
-        self.assertTrue(called)
-        await c.close()
+        try:
+            headers = c.headers(allow_root=True)
+            self.assertEqual(headers[HEADER_AUTHORIZATION], "Bearer abc.def.ghi")
+            self.assertTrue(called)
+        finally:
+            await c.close()
+            custom_client.close()
 
 
 if __name__ == "__main__":

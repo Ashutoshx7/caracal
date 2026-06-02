@@ -886,12 +886,14 @@ class Caracal:
 
     async def close(self) -> None:
         """Release the coordinator's HTTP client. Idempotent."""
-        await self.config.coordinator.close()
-        if self.config._token_source is not None:
-            if hasattr(self.config._token_source, "__self__"):
-                exchanger = self.config._token_source.__self__
-                if hasattr(exchanger, "close"):
-                    exchanger.close()
+        try:
+            await self.config.coordinator.close()
+        finally:
+            if self.config._token_source is not None:
+                if hasattr(self.config._token_source, "__self__"):
+                    exchanger = self.config._token_source.__self__
+                    if hasattr(exchanger, "close"):
+                        exchanger.close()
 
     def context_middleware(self, *, allow_root: bool = False) -> Callable[[ASGIApp], CaracalContextASGIMiddleware]:
         """ASGI context-propagation middleware factory.
