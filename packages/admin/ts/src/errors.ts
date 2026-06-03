@@ -14,7 +14,6 @@ export type AdminApiErrorCode =
   | 'grant_not_found'
   | 'grant_scopes_exceed_resource'
   | 'invalid_cursor'
-  | 'invalid_invitation'
   | 'invalid_provider'
   | 'invalid_provider_config'
   | 'invalid_provider_grant'
@@ -24,7 +23,6 @@ export type AdminApiErrorCode =
   | 'invalid_query'
   | 'invalid_request'
   | 'invalid_token'
-  | 'invitation_not_found'
   | 'oauth_state_expired'
   | 'oauth_state_invalid'
   | 'oauth_state_mismatch'
@@ -40,7 +38,6 @@ export type AdminApiErrorCode =
   | 'provider_token_exchange_failed'
   | 'provider_token_response_invalid'
   | 'resource_not_found'
-  | 'team_not_found'
   | 'zone_not_found'
 
 export class AdminApiError extends CaracalError {

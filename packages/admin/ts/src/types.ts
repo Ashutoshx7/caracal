@@ -415,48 +415,6 @@ export interface SessionQuery {
   limit?: number
 }
 
-export interface TeamMember {
-  id: string
-  role: string
-}
-
-export interface Team {
-  id: string
-  zone_id: string
-  name: string
-  members_json: TeamMember[]
-  created_at: string
-  updated_at: string
-}
-
-export interface TeamInput {
-  name: string
-  members?: TeamMember[]
-}
-
-export interface TeamPatchInput {
-  name?: string
-  members?: TeamMember[]
-}
-
-export interface Invitation {
-  id: string
-  zone_id: string
-  email: string
-  role: string
-  invited_by: string
-  accepted_at: string | null
-  expires_at: string
-  created_at: string
-}
-
-export interface InvitationInput {
-  email: string
-  role: string
-  invited_by: string
-  expires_at?: string
-}
-
 export interface StepUpChallenge {
   id: string
   zone_id: string

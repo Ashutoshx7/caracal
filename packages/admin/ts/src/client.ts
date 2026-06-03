@@ -21,8 +21,6 @@ import type {
   Grant,
   GrantInput,
   GrantQuery,
-  Invitation,
-  InvitationInput,
   Policy,
   PolicyInput,
   PolicySet,
@@ -46,9 +44,6 @@ import type {
   StepUpChallenge,
   StepUpChallengeSatisfaction,
   StepUpChallengeSatisfyInput,
-  Team,
-  TeamInput,
-  TeamPatchInput,
   TraverseNode,
   Zone,
   ZoneDcrStatus,
@@ -383,25 +378,6 @@ export class AdminClient {
       this.request<AuditDetail[]>(`/v1/zones/${zoneId}/audit/by-request/${requestId}`),
     explain: (zoneId: string, requestId: string) =>
       this.request<DecisionTrace>(`/v1/zones/${zoneId}/audit/by-request/${requestId}/explain`),
-  }
-
-  teams = {
-    list: (zoneId: string) => this.request<Team[]>(`/v1/zones/${zoneId}/teams`),
-    get: (zoneId: string, id: string) => this.request<Team>(`/v1/zones/${zoneId}/teams/${id}`),
-    create: (zoneId: string, input: TeamInput) =>
-      this.request<Team>(`/v1/zones/${zoneId}/teams`, { method: 'POST', body: input }),
-    patch: (zoneId: string, id: string, input: TeamPatchInput) =>
-      this.request<Team>(`/v1/zones/${zoneId}/teams/${id}`, { method: 'PATCH', body: input }),
-    delete: (zoneId: string, id: string) =>
-      this.request<void>(`/v1/zones/${zoneId}/teams/${id}`, { method: 'DELETE', expectEmpty: true }),
-  }
-
-  invitations = {
-    list: (zoneId: string) => this.request<Invitation[]>(`/v1/zones/${zoneId}/invitations`),
-    create: (zoneId: string, input: InvitationInput) =>
-      this.request<Invitation>(`/v1/zones/${zoneId}/invitations`, { method: 'POST', body: input }),
-    cancel: (zoneId: string, id: string) =>
-      this.request<void>(`/v1/zones/${zoneId}/invitations/${id}`, { method: 'DELETE', expectEmpty: true }),
   }
 
   stepUpChallenges = {
