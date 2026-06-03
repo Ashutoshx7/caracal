@@ -19,6 +19,10 @@ prod_set=(
 )
 helm template caracal "${ROOT}" -f "${ROOT}/values.production.yaml" "${prod_set[@]}" >/tmp/caracal-helm-production.yaml
 
+helm template caracal "${ROOT}" -f "${ROOT}/examples/values.cloud-managed.yaml" >/tmp/caracal-helm-cloud.yaml
+grep -q "kind: Ingress" /tmp/caracal-helm-cloud.yaml || { echo "cloud overlay must render ingress" >&2; exit 1; }
+grep -q "kind: ServiceMonitor" /tmp/caracal-helm-cloud.yaml || { echo "cloud overlay must render ServiceMonitor" >&2; exit 1; }
+
 if helm template caracal "${ROOT}" -f "${ROOT}/values.production.yaml" >/tmp/caracal-helm-production-negative.yaml 2>/tmp/caracal-helm-production-negative.err; then
     echo "stable render with default Postgres/Redis hosts must fail" >&2
     exit 1
