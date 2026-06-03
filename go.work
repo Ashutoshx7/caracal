@@ -1,7 +1,6 @@
 go 1.26
 
 use (
-	./services/coordinator-relay
 	./packages/connectors/nethttp/go
 	./packages/connectors/redis/go
 	./packages/core/go
@@ -11,7 +10,23 @@ use (
 	./packages/sdk/go
 	./packages/transport/mcp/go
 	./services/audit
+	./services/coordinator-relay
 	./services/gateway
 	./services/sts
 	./tests/go
 )
+
+// Local development resolves intra-repo Go modules to source via these
+// versioned replaces. They are scoped to the exact version the published
+// go.mod files require, so they coexist with the `use` directives above and
+// never ship to consumers (go.work is not published). Consumers resolve the
+// same modules from the git tags `packages/<module>/go/vX.Y.Z`.
+replace github.com/garudex-labs/caracal/packages/oauth/go v0.1.3-rc.1 => ./packages/oauth/go
+
+replace github.com/garudex-labs/caracal/packages/core/go v0.1.3-rc.1 => ./packages/core/go
+
+replace github.com/garudex-labs/caracal/packages/identity/go v0.1.3-rc.1 => ./packages/identity/go
+
+replace github.com/garudex-labs/caracal/packages/revocation/go v0.1.3-rc.1 => ./packages/revocation/go
+
+replace github.com/garudex-labs/caracal/packages/transport/mcp/go v0.1.3-rc.1 => ./packages/transport/mcp/go

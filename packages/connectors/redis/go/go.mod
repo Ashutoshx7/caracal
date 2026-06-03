@@ -8,8 +8,8 @@ module github.com/garudex-labs/caracal/packages/connectors/redis/go
 go 1.26
 
 require (
-	github.com/garudex-labs/caracal/packages/core/go v0.0.0
-	github.com/garudex-labs/caracal/packages/revocation/go v0.0.0
+	github.com/garudex-labs/caracal/packages/core/go v0.1.3-rc.1
+	github.com/garudex-labs/caracal/packages/revocation/go v0.1.3-rc.1
 	github.com/redis/go-redis/v9 v9.19.0
 )
 
@@ -22,7 +22,3 @@ require (
 	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/sys v0.44.0 // indirect
 )
-
-replace github.com/garudex-labs/caracal/packages/core/go => ../../../core/go
-
-replace github.com/garudex-labs/caracal/packages/revocation/go => ../../../revocation/go

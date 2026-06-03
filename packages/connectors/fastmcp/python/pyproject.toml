@@ -14,7 +14,7 @@ description = "FastMCP adapter for Caracal MCP authentication"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
   "caracalai-transport-mcp==0.1.3rc1",
   "caracalai-revocation==0.1.3rc1",
