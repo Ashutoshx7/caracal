@@ -4,7 +4,16 @@ description: Protect one HTTP resource, call it through the Gateway, and explain
 pageType: workflow
 ---
 
-This walkthrough creates one Caracal-protected resource and verifies the first call. Use a real upstream URL reachable from the local Gateway container or process.
+This walkthrough creates one Caracal-protected resource and verifies the first call.
+
+For the upstream, you can either point at a real service reachable from the local Gateway, or start the bundled **demo echo upstream** so the walkthrough is self-contained:
+
+```bash
+cd examples/echoUpstream
+docker compose -f compose.yml up --build -d
+```
+
+It joins the same `caracalData` network as the stack, so the Gateway reaches it at `http://echoUpstream:8088`. Use that as the resource upstream URL below, then stop it with `docker compose -f compose.yml down` when you are done.
 
 ## 1. Start the stack
 

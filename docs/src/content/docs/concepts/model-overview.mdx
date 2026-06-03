@@ -1,6 +1,6 @@
 ---
 title: One-Minute Model
-description: Seven nouns, three verbs, and one decision point that explain Caracal.
+description: Six nouns, three verbs, and one decision point that explain Caracal.
 sidebar:
   order: 2
 ---
@@ -23,7 +23,7 @@ flowchart TD
   Mandate --> Audit
 ```
 
-## Seven nouns
+## Six nouns
 
 | Noun | What it means |
 | --- | --- |
@@ -31,9 +31,10 @@ flowchart TD
 | Application | A registered client, service, or agent workload. |
 | Principal | The acting identity, such as a user, service, or agent. |
 | Resource | The protected target: API, MCP server, tool group, or upstream service. |
-| Grant | A configured permission binding for resource scopes. |
 | Policy | Rego logic that evaluates the requested exchange. |
 | Mandate | The short-lived JWT that proves authority to a Gateway or connector. |
+
+You configure these directly. A *grant* — a permission binding for resource scopes — is an internal input that policy can read during evaluation, not a separate object you manage in the Console.
 
 ## Three verbs
 
