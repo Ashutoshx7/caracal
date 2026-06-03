@@ -146,7 +146,7 @@ export default defineConfig({
             { label: 'Author a Rego Policy', link: '/guides/author-policy/' },
             { label: 'Activate a Policy Set', link: '/guides/activate-policy-set/' },
             { label: 'Define Resources and Providers', link: '/guides/resources-providers/' },
-            { label: 'Authorize Access and Invite Members', link: '/guides/invitations/' },
+            { label: 'Authorize Access', link: '/guides/authorize-access/' },
             { label: 'Implement Multi-Agent Delegation', link: '/guides/delegation/' },
             { label: 'Tail and Query the Audit Stream', link: '/guides/audit-stream/' },
             { label: 'Run an Agent with caracal run', link: '/guides/runtime-run/' },
