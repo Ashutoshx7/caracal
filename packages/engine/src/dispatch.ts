@@ -322,17 +322,6 @@ const policySetHandler = bySubcommand({
   delete: ({ principal, flags, ctx }) => ctx.admin.policySets.delete(requireZone(principal), mustStr(flags, 'id')),
 })
 
-const grantHandler = bySubcommand({
-  list: ({ principal, ctx }) => ctx.admin.grants.list(requireZone(principal)),
-  get: ({ principal, flags, ctx }) => ctx.admin.grants.get(requireZone(principal), mustStr(flags, 'id')),
-  create: ({ principal, flags, ctx }) => ctx.admin.grants.create(requireZone(principal), {
-    application_id: mustStr(flags, 'app'),
-    resource_id: mustStr(flags, 'resource'),
-    subject_id: getStr(flags, 'user'),
-  } as never),
-  revoke: ({ principal, flags, ctx }) => ctx.admin.grants.revoke(requireZone(principal), mustStr(flags, 'id')),
-})
-
 const sessionHandler = bySubcommand({
   list: ({ principal, flags, ctx }) => ctx.admin.sessions.list(requireZone(principal), {
     subject: getStr(flags, 'subject'),
@@ -384,7 +373,6 @@ function commandHandler(command: string): Handler | undefined {
     case 'identity-provider': return providerHandler
     case 'policy': return policyHandler
     case 'policy-set': return policySetHandler
-    case 'grant': return grantHandler
     case 'session': return sessionHandler
     case 'audit': return auditHandler
     case 'explain': return explainHandler

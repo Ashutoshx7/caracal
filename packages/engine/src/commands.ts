@@ -235,19 +235,6 @@ export const MANAGEMENT_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
   },
 
   {
-    name: 'grant', group: 'admin', summary: 'Manage grants',
-    subcommands: ['list', 'get', 'create', 'revoke'], requiresZone: true,
-    flags: {
-      create: [
-        { name: '--app', summary: 'Application ID' },
-        { name: '--resource', summary: 'Resource ID' },
-        { name: '--user', summary: 'Subject (user) ID' },
-        { name: '--scopes', summary: 'Comma-separated scopes' },
-      ],
-    },
-  },
-
-  {
     name: 'session', group: 'admin', summary: 'List authority sessions',
     subcommands: ['list'], requiresZone: true,
     flags: {

@@ -79,8 +79,7 @@ describe('menu zone hotkey', () => {
       ['4', 'resource'],
       ['5', 'policy'],
       ['6', 'policy set'],
-      ['7', 'grant'],
-      ['8', 'authority session'],
+      ['7', 'authority session'],
     ]) {
       expect(rendered).toContain(` ${key}  ${label}`)
     }

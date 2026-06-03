@@ -363,10 +363,6 @@ async function runZoneChecks(checks: DoctorCheck[], ctx: AdminContext, zoneId: s
     const active = rows.filter((row) => row.active_version_id).length
     return active === 0 ? `${rows.length} registered; none active` : `${active} active`
   }, 'Inspect policy-set activation state for the selected zone.')
-  await runCheck(checks, 'zones', `${zoneId} grants`, async () => {
-    const rows = await ctx.client.grants.list(zoneId)
-    return rows.length === 0 ? 'none active' : `${rows.length} visible`
-  }, 'Inspect grants for the selected zone and confirm admin scope access.')
   await runCheck(checks, 'zones', `${zoneId} audit query`, async () => {
     await ctx.client.audit.list(zoneId, { limit: 1 })
     return 'queryable'

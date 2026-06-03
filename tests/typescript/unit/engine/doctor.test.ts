@@ -57,7 +57,6 @@ function fakeAdminContext(overrides: Record<string, unknown> = {}) {
       },
       resources: { list: vi.fn(async () => [{ id: 'r1' }]) },
       policySets: { list: vi.fn(async () => [{ id: 'p1', active_version_id: 'v1' }]) },
-      grants: { list: vi.fn(async () => [{ id: 'g1' }]) },
       audit: { list: vi.fn(async () => []) },
       ...overrides,
     },
