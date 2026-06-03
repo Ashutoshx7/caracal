@@ -52,36 +52,12 @@ func VerifierMiddleware(verifier *transportmcp.Verifier) func(http.Handler) http
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			claims, authErr := verifier.Authorization(r.Header.Get("Authorization"))
 			if authErr != nil {
-				status, code := mapError(authErr.Code)
-				writeErr(w, status, code, authErr.Description, authErr.Hint)
+				writeErr(w, transportmcp.HTTPStatus(authErr.Code), string(authErr.Code), authErr.Description, authErr.Hint)
 				return
 			}
 			ctx := context.WithValue(r.Context(), claimsKey, claims)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
-	}
-}
-
-func mapError(code transportmcp.ErrorCode) (int, string) {
-	switch code {
-	case transportmcp.ErrInsufficientScope:
-		return http.StatusForbidden, "insufficient_scope"
-	case transportmcp.ErrAgentRequired:
-		return http.StatusUnauthorized, "agent_required"
-	case transportmcp.ErrDelegationRequired:
-		return http.StatusUnauthorized, "delegation_required"
-	case transportmcp.ErrChainMismatch:
-		return http.StatusUnauthorized, "chain_mismatch"
-	case transportmcp.ErrHopCountExceeded:
-		return http.StatusUnauthorized, "hop_count_exceeded"
-	case transportmcp.ErrSessionRevoked:
-		return http.StatusUnauthorized, "session_revoked"
-	case transportmcp.ErrInvalidZone:
-		return http.StatusUnauthorized, "invalid_zone"
-	case transportmcp.ErrMissingToken:
-		return http.StatusUnauthorized, "missing_token"
-	default:
-		return http.StatusUnauthorized, "invalid_token"
 	}
 }
 

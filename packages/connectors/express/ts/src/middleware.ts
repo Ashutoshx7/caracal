@@ -8,6 +8,7 @@ import type { Claims } from '@caracalai/identity'
 import {
   authenticate,
   extractBearer,
+  httpStatusForAuthError,
   type AuthDeps,
   type AuthError,
   type AuthOverrides,
@@ -81,13 +82,7 @@ export function caracalAuth(opts: MiddlewareOptions | VerifierMiddlewareOptions,
 }
 
 function mapError(err: AuthError): { status: number; body: { error: string; error_description: string; error_hint?: string } } {
-  if (err.code === 'insufficient_scope') {
-    return { status: 403, body: errorBody(err) }
-  }
-  if (err.code === 'agent_required' || err.code === 'delegation_required') {
-    return { status: 403, body: errorBody(err) }
-  }
-  return { status: 401, body: errorBody(err) }
+  return { status: httpStatusForAuthError(err.code), body: errorBody(err) }
 }
 
 function errorBody(err: AuthError): { error: string; error_description: string; error_hint?: string } {

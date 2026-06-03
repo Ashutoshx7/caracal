@@ -18,7 +18,7 @@ import {
   type JwksCache,
 } from '@caracalai/identity'
 import type { RevocationStore } from '@caracalai/revocation'
-import type { AuthError, AuthResult, Principal } from './types.js'
+import type { AuthError, AuthErrorCode, AuthResult, Principal } from './types.js'
 
 export type AuthDeps = JwtConfig & { revocations: RevocationStore; jwksCache?: JwksCache }
 export type AuthOverrides = Partial<Omit<AuthDeps, 'issuer' | 'audience' | 'revocations' | 'jwksCache'>>
@@ -138,6 +138,29 @@ async function graphEpochError(claims: Principal, revocations: RevocationStore):
 
 function authError(code: AuthError['code'], description = defaultDescription(code)): AuthError {
   return { code, description, hint: defaultHint(code) }
+}
+
+/**
+ * Canonical HTTP status for an authentication failure code. This is the single
+ * source of truth for every HTTP adapter so the boundary semantics stay
+ * identical across frameworks and languages.
+ *
+ * 401 means the credential itself was not accepted (missing, malformed, wrong
+ * zone, revoked, or stale). 403 means the mandate verified but the authority it
+ * carries is insufficient for the route (missing scope, wrong principal kind, or
+ * an unmet delegation requirement).
+ */
+export function httpStatusForAuthError(code: AuthErrorCode): number {
+  switch (code) {
+    case 'insufficient_scope':
+    case 'agent_required':
+    case 'delegation_required':
+    case 'chain_mismatch':
+    case 'hop_count_exceeded':
+      return 403
+    default:
+      return 401
+  }
 }
 
 function defaultDescription(code: AuthError['code']): string {

@@ -53,6 +53,23 @@ type AuthError struct {
 
 func (e *AuthError) Error() string { return e.Description }
 
+// HTTPStatus returns the canonical HTTP status for an authentication failure
+// code. It is the single source of truth for every HTTP adapter so boundary
+// semantics stay identical across frameworks and languages.
+//
+// 401 means the credential itself was not accepted (missing, malformed, wrong
+// zone, revoked, or stale). 403 means the mandate verified but the authority it
+// carries is insufficient for the route (missing scope, wrong principal kind, or
+// an unmet delegation requirement).
+func HTTPStatus(code ErrorCode) int {
+	switch code {
+	case ErrInsufficientScope, ErrAgentRequired, ErrDelegationRequired, ErrChainMismatch, ErrHopCountExceeded:
+		return 403
+	default:
+		return 401
+	}
+}
+
 // Verifier reuses secure defaults across requests and accepts per-route requirements.
 type Verifier struct {
 	defaults Options

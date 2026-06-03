@@ -120,17 +120,17 @@ func TestMiddlewareRejectsMissingRequiredScope(t *testing.T) {
 	}
 }
 
-func TestMapErrorCoversTransportCodes(t *testing.T) {
+func TestHTTPStatusCoversTransportCodes(t *testing.T) {
 	tests := []struct {
 		code      transportmcp.ErrorCode
 		status    int
 		bodyError string
 	}{
 		{transportmcp.ErrInsufficientScope, http.StatusForbidden, "insufficient_scope"},
-		{transportmcp.ErrAgentRequired, http.StatusUnauthorized, "agent_required"},
-		{transportmcp.ErrDelegationRequired, http.StatusUnauthorized, "delegation_required"},
-		{transportmcp.ErrChainMismatch, http.StatusUnauthorized, "chain_mismatch"},
-		{transportmcp.ErrHopCountExceeded, http.StatusUnauthorized, "hop_count_exceeded"},
+		{transportmcp.ErrAgentRequired, http.StatusForbidden, "agent_required"},
+		{transportmcp.ErrDelegationRequired, http.StatusForbidden, "delegation_required"},
+		{transportmcp.ErrChainMismatch, http.StatusForbidden, "chain_mismatch"},
+		{transportmcp.ErrHopCountExceeded, http.StatusForbidden, "hop_count_exceeded"},
 		{transportmcp.ErrSessionRevoked, http.StatusUnauthorized, "session_revoked"},
 		{transportmcp.ErrInvalidZone, http.StatusUnauthorized, "invalid_zone"},
 		{transportmcp.ErrMissingToken, http.StatusUnauthorized, "missing_token"},
@@ -138,9 +138,9 @@ func TestMapErrorCoversTransportCodes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.code), func(t *testing.T) {
-			status, bodyError := mapError(tt.code)
-			if status != tt.status || bodyError != tt.bodyError {
-				t.Fatalf("want %d %q, got %d %q", tt.status, tt.bodyError, status, bodyError)
+			status := transportmcp.HTTPStatus(tt.code)
+			if status != tt.status || string(tt.code) != tt.bodyError {
+				t.Fatalf("want %d %q, got %d %q", tt.status, tt.bodyError, status, string(tt.code))
 			}
 		})
 	}
