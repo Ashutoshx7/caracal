@@ -113,7 +113,8 @@ const BASE_ENTRIES: Entry[] = [
   { key: 'd', label: 'diagnostics', group: 'runtime', description: 'Run operator diagnostics', needsZone: false, open: doctorEntry },
 ]
 
-function menuEntries(): Entry[] {
+function menuEntries(setupCompleted = false): Entry[] {
+  if (setupCompleted) return BASE_ENTRIES.filter((entry) => entry.label !== 'guided setup')
   return BASE_ENTRIES
 }
 
@@ -689,7 +690,7 @@ export class MenuView implements View {
     lines.push(' ' + ui.muted('zone') + '  ' + zone)
     lines.push('')
     let group = ''
-    const entries = menuEntries()
+    const entries = menuEntries(this.state?.setupCompleted())
     const labelWidth = Math.max(...entries.map((entry) => entry.label.length)) + 2
     if (this.cursor >= entries.length) this.cursor = Math.max(0, entries.length - 1)
     for (let i = 0; i < entries.length; i++) {
@@ -709,7 +710,7 @@ export class MenuView implements View {
   }
 
   async onKey(key: Key, ctx: ViewContext): Promise<void> {
-    const entries = menuEntries()
+    const entries = menuEntries(this.state?.setupCompleted())
     if (key === 'up' || key === 'k') { this.cursor = Math.max(0, this.cursor - 1); this.state?.setMenuCursor(this.cursor); return }
     if (key === 'down' || key === 'j') { this.cursor = Math.min(entries.length - 1, this.cursor + 1); this.state?.setMenuCursor(this.cursor); return }
     if (key === 'z' || key === 'Z') return this.promptZone(ctx.app)
@@ -724,7 +725,7 @@ export class MenuView implements View {
   }
 
   private open(app: App): void {
-    const entries = menuEntries()
+    const entries = menuEntries(this.state?.setupCompleted())
     const e = entries[this.cursor]!
     if (e.needsZone && !this.zoneId) {
       app.setStatus('zone required: press z to set one or pick Zones first', 'error')

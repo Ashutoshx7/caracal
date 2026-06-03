@@ -35,9 +35,10 @@ import { truncate, ui } from '../ansi.ts'
 import type { Key } from '../keys.ts'
 import { maskSecretField, scrubTokens } from '../errors.ts'
 import type { App, View, ViewContext } from '../screen.ts'
+import { DraftPipeline, type DraftResolver } from '../draft.ts'
 import { DetailView } from './detail.ts'
 import { FormView, type Field } from './form.ts'
-import { infoPage, openInfo, providerTypeInfo } from './info.ts'
+import { infoPage, openInfo, presetInfo, providerTypeInfo } from './info.ts'
 import { EntityPickerView } from './picker.ts'
 import type { Ctx } from './factory.ts'
 
@@ -67,7 +68,34 @@ function providerKindLabel(value: string | undefined): string {
   return PROVIDER_KIND_LABELS[providerKind(value)] ?? providerKind(value)
 }
 
+type SetupPresetKey = 'internal_http' | 'mandate_service' | 'api_key' | 'oauth_client' | 'oauth_user' | 'custom'
+
+interface SetupPreset {
+  key: SetupPresetKey
+  label: string
+  summary: string
+  providerKind: ProviderKind | 'choose'
+  hidesProvider: boolean
+}
+
+const SETUP_PRESETS: readonly SetupPreset[] = [
+  { key: 'internal_http', label: 'Internal HTTP API (no upstream secret)', summary: 'Gateway enforces Caracal access and forwards no upstream credential. Best first run for a protected internal service like Not Hotdog.', providerKind: 'none', hidesProvider: true },
+  { key: 'mandate_service', label: 'Caracal-aware service (mandate)', summary: 'Gateway forwards a Caracal mandate the upstream verifies directly. Use for a PiperNet service or SDK that accepts Caracal mandates.', providerKind: 'caracal_mandate', hidesProvider: true },
+  { key: 'api_key', label: 'Upstream API key', summary: 'Broker a static upstream API key that the Gateway injects into a header or query parameter.', providerKind: 'api_key', hidesProvider: false },
+  { key: 'oauth_client', label: 'Upstream OAuth (client credentials)', summary: 'Server-to-server OAuth where the provider issues tokens to the application itself.', providerKind: 'oauth2_client_credentials', hidesProvider: false },
+  { key: 'oauth_user', label: 'Upstream OAuth (user consent)', summary: 'User-approved OAuth with a consent screen, callback URI, and refreshable delegated access.', providerKind: 'oauth2_authorization_code', hidesProvider: false },
+  { key: 'custom', label: 'Custom provider', summary: 'Choose any provider type and configure every upstream authentication field yourself.', providerKind: 'choose', hidesProvider: false },
+]
+
+const SETUP_PRESET_KEYS: SetupPresetKey[] = SETUP_PRESETS.map((preset) => preset.key)
+const SETUP_PRESET_LABELS: Record<string, string> = Object.fromEntries(SETUP_PRESETS.map((preset) => [preset.key, preset.label]))
+
+function setupPreset(value: string | undefined): SetupPreset {
+  return SETUP_PRESETS.find((preset) => preset.key === value) ?? SETUP_PRESETS[0]
+}
+
 interface SetupValues {
+  preset?: string
   zone_mode?: string
   selected_zone_id?: string
   zone_name?: string
@@ -166,7 +194,7 @@ export function firstSetupView(ctx: Ctx): View {
   return new FirstSetupWizardView(ctx)
 }
 
-type SetupStepKey = 'zone' | 'application' | 'provider' | 'resource' | 'policy' | 'review'
+type SetupStepKey = 'preset' | 'zone' | 'application' | 'provider' | 'resource' | 'policy' | 'review'
 
 interface SetupStep {
   key: SetupStepKey
@@ -178,8 +206,9 @@ class FirstSetupWizardView implements View {
   readonly title = 'guided setup'
   readonly isTextEntry = false
   private readonly ctx: Ctx
-  private step: SetupStepKey = 'zone'
+  private step: SetupStepKey = 'preset'
   private values: SetupValues = {
+    preset: 'internal_http',
     zone_mode: 'create',
     application_mode: 'create',
     provider_mode: 'create',
@@ -278,6 +307,11 @@ class FirstSetupWizardView implements View {
 
   private currentStep(): SetupStep {
     const steps: Record<SetupStepKey, SetupStep> = {
+      preset: {
+        key: 'preset',
+        title: 'Scenario',
+        explanation: 'Pick what you are protecting and how the upstream is authenticated. The wizard then shows only the fields that scenario needs.',
+      },
       zone: {
         key: 'zone',
         title: 'Zone',
@@ -291,7 +325,7 @@ class FirstSetupWizardView implements View {
       provider: {
         key: 'provider',
         title: 'Provider',
-        explanation: 'Choose how the Gateway authenticates to the upstream before defining the resource that will use it.',
+        explanation: 'Choose how the Gateway authenticates to the upstream for the resource you just defined.',
       },
       resource: {
         key: 'resource',
@@ -313,11 +347,23 @@ class FirstSetupWizardView implements View {
   }
 
   private steps(): SetupStepKey[] {
-    const steps: SetupStepKey[] = []
+    const steps: SetupStepKey[] = ['preset']
     if (!this.selectedZone) steps.push('zone')
-    steps.push('application', 'provider', 'resource', 'policy')
+    steps.push('application', 'resource')
+    if (this.providerStepVisible()) steps.push('provider')
+    steps.push('policy')
     steps.push('review')
     return steps
+  }
+
+  private providerStepVisible(): boolean {
+    return !setupPreset(this.values.preset).hidesProvider
+  }
+
+  private stepAfter(step: SetupStepKey): SetupStepKey {
+    const steps = this.steps()
+    const index = steps.indexOf(step)
+    return steps[index + 1] ?? 'review'
   }
 
   private normalizeStep(): void {
@@ -338,6 +384,7 @@ class FirstSetupWizardView implements View {
   }
 
   private stepStatus(step: SetupStepKey): string {
+    if (step === 'preset') return setupPreset(this.values.preset).label
     if (step === 'zone') return this.selectedZone ? `${zoneLabel(this.selectedZone)} selected` : trimmed(this.values.zone_name) ? `${this.values.zone_name} will be created` : ui.muted('open page')
     if (step === 'application') return this.selectedApplication ? `${this.selectedApplication.name} selected` : trimmed(this.values.agent_app_name) ? `${this.values.agent_app_name} will be created` : ui.muted('open page')
     if (step === 'provider') return this.providerReviewLabel()
@@ -421,11 +468,50 @@ class FirstSetupWizardView implements View {
   }
 
   private openStepPage(app: App): void {
-    if (this.step === 'zone') this.openZonePage(app)
+    if (this.step === 'preset') this.openPresetPage(app)
+    else if (this.step === 'zone') this.openZonePage(app)
     else if (this.step === 'application') this.openApplicationPage(app)
     else if (this.step === 'provider') this.openProviderPage(app)
     else if (this.step === 'resource') this.openResourcePage(app)
     else if (this.step === 'policy') this.openPolicyPage(app)
+  }
+
+  private openPresetPage(app: App): void {
+    app.push(new FormView({
+      title: 'guided setup / scenario',
+      submitLabel: 'save scenario',
+      info: presetInfo(),
+      fields: [
+        { key: 'preset', label: 'scenario', kind: 'select', options: SETUP_PRESET_KEYS, optionLabels: SETUP_PRESET_LABELS, default: this.values.preset ?? 'internal_http', info: presetInfo() },
+      ],
+      onSubmit: async (raw, formApp) => {
+        this.applyPreset(raw.preset)
+        formApp.pop()
+        this.step = this.stepAfter('preset')
+      },
+    }))
+  }
+
+  private applyPreset(value: string | undefined): void {
+    const preset = setupPreset(value)
+    this.values.preset = preset.key
+    if (preset.providerKind !== 'choose') {
+      this.clearProviderSelection()
+      this.values.provider_mode = 'create'
+      this.values.provider_kind = preset.providerKind
+    }
+  }
+
+  private applyHiddenProvider(): void {
+    const preset = setupPreset(this.values.preset)
+    if (!preset.hidesProvider) return
+    if (this.selectedProvider || trimmed(this.values.selected_provider_id)) return
+    this.values.provider_mode = 'create'
+    this.values.provider_kind = preset.providerKind
+    if (!trimmed(this.values.provider_name)) {
+      const resourceName = this.selectedResource?.name || trimmed(this.values.resource_name) || 'gateway'
+      this.values.provider_name = `${resourceName} upstream`
+    }
   }
 
   private openZonePage(app: App): void {
@@ -481,7 +567,7 @@ class FirstSetupWizardView implements View {
           this.values.agent_app_name = raw.agent_app_name
         }
         formApp.pop()
-        this.step = 'provider'
+        this.step = this.stepAfter('application')
       },
     }))
   }
@@ -492,15 +578,19 @@ class FirstSetupWizardView implements View {
       app.setStatus('complete the zone page before the provider page', 'error')
       return
     }
+    const preset = setupPreset(this.values.preset)
+    const lockKind = preset.providerKind !== 'choose'
+    const seededKind = lockKind ? preset.providerKind : this.values.provider_kind ?? 'caracal_mandate'
     app.push(new FormView({
       title: 'guided setup / provider',
       submitLabel: 'save provider',
-      info: guidedInfo('Provider setup', 'A provider describes how Gateway authenticates to the upstream service.', 'None for Gateway-only enforcement, Caracal mandate for PiperNet, or Hooli OAuth for external APIs', 'Create or select a provider for every resource. Use the None provider type only when the upstream expects no credential.', 'Setup creates or links the provider before the resource page so the resource can attach it cleanly.'),
+      initialValues: { provider_kind: seededKind },
+      info: guidedInfo('Provider setup', 'A provider describes how Gateway authenticates to the upstream service for the resource you defined.', 'None for Gateway-only enforcement, Caracal mandate for PiperNet, or Hooli OAuth for external APIs', 'Create or select a provider for the resource. The chosen scenario fixes the provider type unless you picked the custom scenario.', 'Setup creates or links the provider and attaches it to the resource.'),
       fields: [
         { key: 'provider_mode', label: 'provider action', kind: 'select', options: ['create', 'select'], default: this.values.provider_mode === 'none' ? 'create' : this.values.provider_mode ?? 'create', info: guidedInfo('Provider action', 'Choose whether this route should create a provider record or reuse one.', 'create for None, Caracal mandate, or Hooli OAuth', 'create or select', 'Console creates or links a provider so the resource always records its upstream auth mode.') },
         { key: 'selected_provider_id', label: 'existing provider', kind: 'text', required: true, default: this.values.selected_provider_id ?? '', dependsOn: { provider_mode: 'select' }, pick: providerPicker(this.ctx, () => this.currentZoneId()), resolve: providerResolver(this.ctx, () => this.currentZoneId()), info: guidedInfo('Existing provider', 'Pick the provider that supplies upstream credentials.', 'Hooli OAuth', 'Use the picker instead of typing an ID.', 'The resource page can attach this provider to the Gateway route.') },
         { key: 'provider_name', label: 'provider name', kind: 'text', required: true, default: this.values.provider_name ?? '', dependsOn: { provider_mode: 'create' }, info: guidedInfo('Provider name', 'Human-readable name for the upstream credential source.', 'Hooli PiperNet OAuth', 'Short text, not an internal ID.', 'Console creates this provider before creating the resource.') },
-        { key: 'provider_kind', label: 'provider type', kind: 'select', options: PROVIDER_KINDS, optionLabels: PROVIDER_KIND_LABELS, default: this.values.provider_kind ?? 'caracal_mandate', dependsOn: { provider_mode: 'create' }, info: providerTypeInfo() },
+        ...(lockKind ? [] : [{ key: 'provider_kind', label: 'provider type', kind: 'select' as const, options: PROVIDER_KINDS, optionLabels: PROVIDER_KIND_LABELS, default: seededKind, dependsOn: { provider_mode: 'create' }, info: providerTypeInfo() }]),
         { key: 'provider_authorization_endpoint', label: 'authorization endpoint', kind: 'text', required: true, default: this.values.provider_authorization_endpoint ?? '', dependsOn: { provider_mode: 'create', provider_kind: 'oauth2_authorization_code' }, info: guidedInfo('Authorization endpoint', 'Endpoint where users approve delegated provider access.', 'https://login.hooli.example/oauth/authorize', 'Absolute HTTPS URL.', 'Authorization-code providers use this with a callback URI.') },
         { key: 'provider_token_endpoint', label: 'token endpoint', kind: 'text', required: true, default: this.values.provider_token_endpoint ?? '', dependsOn: { provider_mode: 'create', provider_kind: ['oauth2_authorization_code', 'oauth2_client_credentials'] }, info: guidedInfo('Token endpoint', 'Endpoint where Gateway obtains or refreshes upstream OAuth tokens.', 'https://login.hooli.example/oauth/token', 'Absolute HTTPS URL.', 'Console infers OAuth token endpoint hosts from this URL unless Advanced overrides them.') },
         { key: 'provider_redirect_uri', label: 'redirect URI', kind: 'text', required: true, default: this.values.provider_redirect_uri ?? '', dependsOn: { provider_mode: 'create', provider_kind: 'oauth2_authorization_code' }, info: guidedInfo('Redirect URI', 'Callback URI registered with the provider.', 'http://localhost:3000/v1/zones/z1/provider-grants/oauth/callback', 'Absolute callback URI.', 'The provider sends authorization results to this URI.') },
@@ -530,6 +620,7 @@ class FirstSetupWizardView implements View {
       ],
       onSubmit: async (raw, formApp) => {
         Object.assign(this.values, raw)
+        if (lockKind) this.values.provider_kind = preset.providerKind
         if (raw.provider_mode === 'select') {
           const id = requiredText(raw.selected_provider_id, 'provider is required')
           this.selectedProvider = zoneId ? await this.ctx.client.providers.get(zoneId, id) : undefined
@@ -539,7 +630,7 @@ class FirstSetupWizardView implements View {
           this.values.selected_provider_id = ''
         }
         formApp.pop()
-        this.step = 'resource'
+        this.step = this.stepAfter('provider')
       },
     }))
   }
@@ -578,8 +669,9 @@ class FirstSetupWizardView implements View {
           this.selectedResource = undefined
           this.values.selected_resource_id = ''
         }
+        this.applyHiddenProvider()
         formApp.pop()
-        this.step = 'policy'
+        this.step = this.stepAfter('resource')
       },
     }))
   }
@@ -629,13 +721,14 @@ class FirstSetupWizardView implements View {
       title: step.title,
       meaning: step.explanation,
       when: step.key === 'review' ? 'Use this after completing the object pages and advanced settings.' : 'Open this page to fill the real fields for that object with picker and field-level help.',
-      example: step.key === 'provider' ? 'Create Hooli OAuth before creating the PiperNet resource.' : 'Use the page fields and press ? on any field for examples.',
+      example: step.key === 'provider' ? 'Pick the upstream credential type that matches the resource you just defined.' : 'Use the page fields and press ? on any field for examples.',
       valid: 'Press enter to open the page. Use pickers for existing objects and normal field validation for new objects.',
       after: step.key === 'review' ? 'Console creates only missing objects, activates the selected policy path, and shows setup output.' : 'Saving the page returns here and moves to the next guided step.',
     }))
   }
 
   private async create(app: App): Promise<void> {
+    this.applyHiddenProvider()
     const message = this.validateAll()
     if (message) {
       app.setStatus(message, 'error')
@@ -645,6 +738,7 @@ class FirstSetupWizardView implements View {
     app.invalidate()
     try {
       const result = await runFirstSetup(this.ctx, this.buildValues(), app)
+      this.ctx.state?.markSetupCompleted()
       app.pop()
       app.push(new DetailView({
         title: 'first setup result',
@@ -689,20 +783,32 @@ class FirstSetupWizardView implements View {
   private validateReady(): string | undefined {
     if (!this.selectedZone && !trimmed(this.values.selected_zone_id) && !trimmed(this.values.zone_name) && !this.ctx.zoneId) return 'zone is required'
     if (!this.selectedApplication && !trimmed(this.values.selected_agent_app_id) && !trimmed(this.values.agent_app_name)) return 'agent app is required'
-    if (this.values.provider_mode === 'select' && !trimmed(this.values.selected_provider_id)) return 'provider is required'
-    if (this.values.provider_mode === 'create') {
-      if (!trimmed(this.values.provider_name)) return 'provider is required'
-      try {
-        providerConfigFromValues(this.values)
-      } catch (err) {
-        return err instanceof Error ? err.message : String(err)
-      }
-    }
     if (!this.selectedResource && !trimmed(this.values.selected_resource_id) && !trimmed(this.values.resource_name)) return 'resource is required'
     if (splitList(this.values.resource_scopes).length === 0) return 'at least one Caracal scope is required'
     if (!trimmed(this.values.upstream_url)) return 'upstream URL is required'
+    if (!setupPreset(this.values.preset).hidesProvider) {
+      if (this.values.provider_mode === 'select' && !trimmed(this.values.selected_provider_id)) return 'provider is required'
+      if (this.values.provider_mode === 'create') {
+        if (!trimmed(this.values.provider_name)) return 'provider is required'
+        try {
+          providerConfigFromValues(this.values)
+        } catch (err) {
+          return err instanceof Error ? err.message : String(err)
+        }
+      }
+    }
     return undefined
   }
+}
+
+type ZoneResult = Awaited<ReturnType<typeof ensureZone>>
+type ApplicationResult = Awaited<ReturnType<typeof ensureApplication>>
+type ProviderResult = Awaited<ReturnType<typeof ensureProvider>>
+type ResourceResult = Awaited<ReturnType<typeof ensureResource>>
+type PolicyResult = Awaited<ReturnType<typeof createFirstPolicy>>
+
+function zoneIdOf(resolved: DraftResolver): string {
+  return resolved.get<ZoneResult>('zone').zone.id
 }
 
 async function runFirstSetup(ctx: Ctx, values: SetupValues, app: App): Promise<SetupResult> {
@@ -723,15 +829,48 @@ async function runFirstSetup(ctx: Ctx, values: SetupValues, app: App): Promise<S
     : undefined
   if (writeFiles && target) await assertWritableTarget(target, overwriteFiles)
 
-  const zoneResult = await ensureZone(ctx, values, app)
-  const applicationResult = await ensureApplication(ctx, zoneResult.zone.id, values)
   const upstreamUrl = trimmed(values.upstream_url)
-  const providerResult = await ensureProvider(ctx, zoneResult.zone.id, values, upstreamUrl)
-  const resourceResult = await ensureResource(ctx, zoneResult.zone.id, applicationResult.application.id, values, scopes, upstreamUrl, providerResult.provider.id)
+  const pipeline = new DraftPipeline()
+  pipeline.stage('zone', { commit: () => ensureZone(ctx, values, app) })
+  pipeline.stage('application', {
+    dependsOn: ['zone'],
+    commit: (r) => ensureApplication(ctx, zoneIdOf(r), values),
+  })
+  pipeline.stage('provider', {
+    dependsOn: ['zone'],
+    commit: (r) => ensureProvider(ctx, zoneIdOf(r), values, upstreamUrl),
+  })
+  pipeline.stage('resource', {
+    dependsOn: ['zone', 'application', 'provider'],
+    commit: (r) => ensureResource(
+      ctx,
+      zoneIdOf(r),
+      r.get<ApplicationResult>('application').application.id,
+      values,
+      scopes,
+      upstreamUrl,
+      r.get<ProviderResult>('provider').provider.id,
+    ),
+  })
+  pipeline.stage('policy', {
+    dependsOn: ['zone', 'application', 'resource'],
+    skip: () => !bool(values.activate_policy),
+    commit: (r) => createFirstPolicy(
+      ctx,
+      zoneIdOf(r),
+      r.get<ApplicationResult>('application').application.id,
+      r.get<ResourceResult>('resource').resource.identifier,
+      scopes,
+    ),
+  })
 
-  const policy = bool(values.activate_policy)
-    ? await createFirstPolicy(ctx, zoneResult.zone.id, applicationResult.application.id, resourceResult.resource.identifier, scopes)
-    : undefined
+  const committed = await pipeline.commit()
+  const zoneResult = committed.get<ZoneResult>('zone')
+  const applicationResult = committed.get<ApplicationResult>('application')
+  const providerResult = committed.get<ProviderResult>('provider')
+  const resourceResult = committed.get<ResourceResult>('resource')
+  const policy = committed.has('policy') ? committed.get<PolicyResult>('policy') : undefined
+
   const finalTarget = shouldGenerateProfile
     ? profileTarget(values, zoneResult.zone.id, applicationResult.application.id, resourceResult.resource.identifier)
     : undefined
@@ -1423,6 +1562,13 @@ function setupSummary(result: SetupResult): Record<string, unknown> {
       }
     }
     summary.runtime_profile = runtimeProfile
+  }
+  summary.what_just_happened = {
+    authority: 'The agent exchanges its app client secret for a short-lived, resource-scoped Caracal token (15 minute TTL) instead of holding the upstream credential.',
+    enforcement: result.resource.gateway_application_id
+      ? 'The Gateway authorizes every call against the active policy before any upstream credential is applied.'
+      : 'Attach a Gateway route to this resource so the Gateway can enforce policy and broker the upstream credential.',
+    audit_and_revoke: 'Every decision is recorded in the audit ledger. Trace the first call in Audit, and revoke the app session to cut access immediately.',
   }
   summary.audit_explanation = {
     first_success: 'After the first protected call, open Audit, select the request, and trace it to view the policy decision and Gateway result.',

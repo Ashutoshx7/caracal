@@ -98,8 +98,28 @@ export function providerTypeInfo(): InfoPage {
   })
 }
 
-export function openInfo(app: App, page: InfoPage | undefined): void {
-  if (!page) {
+export function presetInfo(): InfoPage {
+  return infoPage({
+    title: 'Scenario',
+    meaning: 'The scenario sets what you are protecting and how the Gateway authenticates to the upstream, then limits the wizard to the fields that scenario needs.',
+    when: 'Pick the scenario that matches your upstream. The simple scenarios skip the provider page entirely; the credential scenarios fix the provider type so you only fill its fields.',
+    impact: 'A no-secret or mandate scenario auto-creates the matching provider and hides the credential matrix. A credential scenario locks the provider type. The custom scenario exposes every provider type and field.',
+    context: [
+      { label: 'Internal HTTP API (no upstream secret)', value: 'Gateway enforces Caracal access and forwards no upstream credential. Best first run.' },
+      { label: 'Caracal-aware service (mandate)', value: 'Gateway forwards a Caracal mandate the upstream verifies directly.' },
+      { label: 'Upstream API key', value: 'Broker a static upstream API key injected into a header or query parameter.' },
+      { label: 'Upstream OAuth (client credentials)', value: 'Server-to-server OAuth where the provider issues tokens to the application itself.' },
+      { label: 'Upstream OAuth (user consent)', value: 'User-approved OAuth with a consent screen, callback URI, and refreshable access.' },
+      { label: 'Custom provider', value: 'Choose any provider type and configure every upstream authentication field yourself.' },
+    ],
+    example: 'Protect Not Hotdog with no upstream secret, or broker a Hooli API key for PiperNet.',
+    valid: 'Pick exactly one scenario. Change it any time before review to reshape the remaining pages.',
+    after: 'Saving applies the scenario and continues to the agent app and resource pages.',
+    notes: ['The scenario only changes which fields appear; every object is still created through the real Control API.'],
+  })
+}
+
+export function openInfo(app: App, page: InfoPage | undefined): void {  if (!page) {
     app.setStatus('no contextual help is available for this item', 'error')
     return
   }
