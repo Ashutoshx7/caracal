@@ -26,6 +26,7 @@ interface PersistedState {
   version: 1
   selectedZone?: { id: string; slug?: string | undefined } | undefined
   navigation?: { menuCursor?: number | undefined } | undefined
+  setupCompleted?: boolean | undefined
   lists?: Record<string, { selectedId?: string | undefined }> | undefined
   filters?: {
     audit?: Record<string, AuditFilterState> | undefined
@@ -79,6 +80,16 @@ export class ConsoleStateStore {
 
   setMenuCursor(cursor: number): void {
     this.state.navigation = { ...this.state.navigation, menuCursor: nonNegativeInt(cursor) }
+    this.save()
+  }
+
+  setupCompleted(): boolean {
+    return this.state.setupCompleted === true
+  }
+
+  markSetupCompleted(): void {
+    if (this.state.setupCompleted === true) return
+    this.state.setupCompleted = true
     this.save()
   }
 
@@ -136,6 +147,7 @@ function normalizeState(value: unknown): PersistedState {
     version: STATE_VERSION,
     selectedZone: raw.selectedZone?.id ? { id: cleanText(raw.selectedZone.id), slug: cleanOptional(raw.selectedZone.slug) } : undefined,
     navigation: raw.navigation?.menuCursor !== undefined ? { menuCursor: nonNegativeInt(raw.navigation.menuCursor) } : undefined,
+    setupCompleted: raw.setupCompleted === true ? true : undefined,
     lists: cleanLists(raw.lists),
     filters: {
       audit: cleanFilterMap(raw.filters?.audit, cleanAuditFilters),

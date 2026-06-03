@@ -1511,7 +1511,7 @@ export function resourcesView(ctx: Ctx): View {
             { key: 'upstream_url', label: 'upstream URL', kind: 'text', required: true, hint: 'Gateway target for REST APIs, gRPC gateways, MCP servers, or SDK-backed services' },
             { key: 'gateway_application_id', label: 'gateway application', kind: 'text', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx), hint: 'application identity the Gateway uses for upstream exchanges' },
             { key: 'identifier', label: 'resource identifier', kind: 'text', advanced: true, hint: 'optional; generated as resource://pipernet when blank', validate: validateResourceIdentifier },
-            { key: 'credential_provider_id', label: 'upstream credential provider', kind: 'text', required: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'required; use None for Gateway-only enforcement, Caracal mandate for verifier-backed services, or provider credentials for external auth' },
+            { key: 'credential_provider_id', label: 'upstream credential provider', kind: 'text', required: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'required; pick a provider for external auth, Caracal mandate for verifier-backed services, or a None provider for Gateway-only enforcement' },
           ],
           onSubmit: async (v, app) => {
             await ctx.client.resources.create(ctx.zoneId, {
@@ -1536,7 +1536,7 @@ export function resourcesView(ctx: Ctx): View {
               { key: 'identifier', label: 'resource identifier', kind: 'text', default: row.identifier, advanced: true, validate: validateResourceIdentifier },
               { key: 'upstream_url', label: 'upstream URL', kind: 'text', default: row.upstream_url ?? '', required: true },
               { key: 'gateway_application_id', label: 'gateway application', kind: 'text', default: row.gateway_application_id ?? '', required: true, pick: applicationPicker(ctx), resolve: applicationResolver(ctx) },
-              { key: 'credential_provider_id', label: 'upstream credential provider', kind: 'text', default: row.credential_provider_id ?? '', required: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'required; use None for Gateway-only enforcement, Caracal mandate for verifier-backed services, or provider credentials for external auth' },
+              { key: 'credential_provider_id', label: 'upstream credential provider', kind: 'text', default: row.credential_provider_id ?? '', required: true, pick: providerPicker(ctx), resolve: providerResolver(ctx), hint: 'required; pick a provider for external auth, Caracal mandate for verifier-backed services, or a None provider for Gateway-only enforcement' },
               { key: 'scopes', label: 'Caracal resource scopes', kind: 'list', default: (row.scopes ?? []).join(','), hint: 'comma-separated authorization scopes for this resource' },
             ],
             onSubmit: async (v, app) => {
