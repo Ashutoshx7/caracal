@@ -1,22 +1,22 @@
 ---
-title: API Reference
-description: Current HTTP APIs, Gateway behavior, STS exchange, Coordinator endpoints, and event topics.
+title: Use API Reference
+description: Current HTTP APIs, Gateway proxy behavior, STS exchange, Coordinator endpoints, and stream topics.
 pageType: landing
 ---
 
 Use this section when you need wire-level behavior. For task workflows, start in [Guides](/guides/). For service ownership and operations, use [Understand Services](/services/) and [Operations](/operations/).
 
-## API surfaces
+## API Surfaces
 
 | Surface | Base | Purpose |
 | --- | --- | --- |
-| [Control-Plane REST](/api/control-plane/) | API service `/v1` | Zones, applications, providers, resources, policies, policy sets, grants, sessions, audit, step-up, and templates. |
-| [Coordinator REST](/api/coordinator/) | Coordinator service | Agent sessions, agent services, invocations, delegation edges, and SDK lifecycle endpoints. |
-| [STS Token Endpoint](/api/sts/) | STS service | OAuth token exchange, JWKS, step-up status, and internal policy operations. |
-| [Gateway Behavior](/api/gateway/) | Gateway service | Protected reverse-proxy behavior rather than CRUD endpoints. |
-| [Event Topics](/api/event-topics/) | Redis Streams | Audit, invalidation, revocation, agent, invocation, and delegation topics. |
+| [Use Management API](/api/control-plane/) | API service `/v1` | Zones, applications, providers, resources, policies, policy sets, grants, sessions, audit, step-up, and templates. |
+| [Use Coordinator API](/api/coordinator/) | Coordinator service | Agent sessions, agent services, invocations, delegation edges, and SDK lifecycle endpoints. |
+| [Use STS Endpoint](/api/sts/) | STS service | OAuth token exchange, JWKS, step-up status, and internal policy operations. |
+| [Proxy Through Gateway](/api/gateway/) | Gateway service | Protected reverse-proxy behavior rather than CRUD endpoints. |
+| [Use Event Topics](/api/event-topics/) | Redis Streams | Audit, invalidation, revocation, agent, invocation, and delegation topics. |
 
-## Service ports
+## Service Ports
 
 | Service | Local port |
 | --- | --- |
@@ -27,7 +27,7 @@ Use this section when you need wire-level behavior. For task workflows, start in
 | Audit | `9090` |
 | Control | `8087` when enabled |
 
-## Error shape
+## Error Shape
 
 Caracal service errors use the shared OAuth-compatible shape:
 
@@ -40,3 +40,17 @@ Caracal service errors use the shared OAuth-compatible shape:
 ```
 
 See [Error Codes](/reference/errors/) for canonical codes.
+
+## Reading Path
+
+| Need | Page |
+| --- | --- |
+| Manage product objects over HTTP | [Use Management API](/api/control-plane/) |
+| Manage agent and delegation runtime state | [Use Coordinator API](/api/coordinator/) |
+| Exchange authority for mandates | [Use STS Endpoint](/api/sts/) |
+| Understand Gateway proxy requirements | [Proxy Through Gateway](/api/gateway/) |
+| Consume or verify stream contracts | [Use Event Topics](/api/event-topics/) |
+
+## Next Step
+
+Start with [Use Management API](/api/control-plane/) when automating product setup.

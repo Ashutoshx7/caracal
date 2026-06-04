@@ -505,12 +505,24 @@ export default defineConfig({
           label: 'API Reference',
           collapsed: true,
           items: [
-            { label: 'Overview', link: '/api/' },
-            { label: 'Control-Plane REST', link: '/api/control-plane/' },
-            { label: 'Coordinator REST', link: '/api/coordinator/' },
-            { label: 'STS Token Endpoint', link: '/api/sts/' },
-            { label: 'Gateway Behavior', link: '/api/gateway/' },
-            { label: 'Event Topics', link: '/api/event-topics/' },
+            { label: 'Use API Reference', link: '/api/' },
+            {
+              label: 'Management APIs',
+              collapsed: true,
+              items: [
+                { label: 'Use Management API', link: '/api/control-plane/' },
+                { label: 'Use Coordinator API', link: '/api/coordinator/' },
+              ],
+            },
+            {
+              label: 'Authority APIs',
+              collapsed: true,
+              items: [
+                { label: 'Use STS Endpoint', link: '/api/sts/' },
+                { label: 'Proxy Through Gateway', link: '/api/gateway/' },
+              ],
+            },
+            { label: 'Use Event Topics', link: '/api/event-topics/' },
           ],
         },
       ],

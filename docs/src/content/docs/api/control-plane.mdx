@@ -1,12 +1,12 @@
 ---
-title: Control-Plane REST
+title: Use Management API
 description: Management API endpoints served by the Caracal API service.
 pageType: api
 ---
 
 The Control-Plane REST API is served by the API service on port `3000`. Management routes are registered under `/v1` and are protected by admin authentication.
 
-## Health and diagnostics
+## Health and Diagnostics
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -15,7 +15,7 @@ The Control-Plane REST API is served by the API service on port `3000`. Manageme
 | `GET` | `/metrics` | Service metrics. |
 | `GET` | `/docs` | Optional API docs when enabled. |
 
-## Core resources
+## Core Resources
 
 | Resource | Collection | Item | Extra |
 | --- | --- | --- | --- |
@@ -24,7 +24,7 @@ The Control-Plane REST API is served by the API service on port `3000`. Manageme
 | Providers | `GET`, `POST /v1/zones/:zoneId/providers` | `GET`, `PATCH`, `DELETE /v1/zones/:zoneId/providers/:id` | — |
 | Resources | `GET`, `POST /v1/zones/:zoneId/resources` | `GET`, `PATCH`, `DELETE /v1/zones/:zoneId/resources/:id` | — |
 
-## Policy and access
+## Policy and Access
 
 | Area | Read | Write |
 | --- | --- | --- |
@@ -36,7 +36,7 @@ The Control-Plane REST API is served by the API service on port `3000`. Manageme
 
 Use Console when you are performing these operations interactively. Use the Admin SDK or Control API when automation needs the same management behavior.
 
-## Audit, sessions, and step-up
+## Audit, Sessions, and Step-Up
 
 | Resource | Methods and paths |
 | --- | --- |
@@ -45,14 +45,18 @@ Use Console when you are performing these operations interactively. Use the Admi
 | Step-up challenges | `GET /v1/zones/:zoneId/step-up-challenges`, `GET /v1/zones/:zoneId/step-up-challenges/:id`, `POST /v1/zones/:zoneId/step-up-challenges/:id/satisfy` |
 | Zone events | Zone-scoped event routes under `/v1/zones/:zoneId/...` |
 
-## Usage notes
+## Usage Notes
 
 - Use Console for human workflows and Admin SDK or Control API for automation.
 - For scoped, non-interactive provisioning, drive the Control API with a control key. See [Automate Management](/services/control/#non-interactive-automation) and the `controlBootstrap` example.
 - Policy activation and simulation are API operations, but top-level `caracal` runtime commands do not expose them.
 - Writes that produce downstream state changes enqueue signed Redis stream events through the API outbox.
 
-## Related pages
+## Next Step
+
+Continue to [Use Coordinator API](/api/coordinator/) when automation needs agent session, invocation, or delegation endpoints.
+
+## Related Pages
 
 - [Admin Package](/sdks/admin/)
 - [Manage Product Objects](/runtime-console/admin/)

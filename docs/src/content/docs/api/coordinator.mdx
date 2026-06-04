@@ -1,12 +1,12 @@
 ---
-title: Coordinator REST
+title: Use Coordinator API
 description: Agent-session, service-agent, invocation, and delegation endpoints served by Coordinator.
 pageType: api
 ---
 
 Coordinator is served on port `4000`. It owns agent runtime state and delegation graph state.
 
-## Health and metrics
+## Health and Metrics
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -14,7 +14,7 @@ Coordinator is served on port `4000`. It owns agent runtime state and delegation
 | `GET` | `/ready` | Dependency and job readiness. |
 | `GET` | `/metrics` | Service metrics. |
 
-## Agent management
+## Agent Management
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -26,7 +26,7 @@ Coordinator is served on port `4000`. It owns agent runtime state and delegation
 | `PATCH` | `/zones/:zoneId/agents/:id/resume` | Resume a suspended session subtree. |
 | `DELETE` | `/zones/:zoneId/agents/:id` | Terminate a session. |
 
-## Service agents and invocations
+## Service Agents and Invocations
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -52,7 +52,7 @@ Coordinator is served on port `4000`. It owns agent runtime state and delegation
 | `GET` | `/zones/:zoneId/agents/:sessionId/effective-authority` | Compute effective authority for a session. |
 | `PATCH` | `/zones/:zoneId/delegations/:id/revoke` | Revoke delegated authority. |
 
-## SDK lifecycle endpoints
+## SDK Lifecycle Endpoints
 
 | Method | Path |
 | --- | --- |
@@ -66,7 +66,11 @@ Coordinator is served on port `4000`. It owns agent runtime state and delegation
 
 SDKs usually call these endpoints through the language-specific Caracal client rather than direct HTTP.
 
-## Related pages
+## Next Step
+
+Continue to [Use STS Endpoint](/api/sts/) to see how agent sessions and delegation anchors participate in token exchange.
+
+## Related Pages
 
 - [Coordinate Agent State](/services/coordinator/)
 - [Coordinate Agents](/architecture/delegation-flow/)

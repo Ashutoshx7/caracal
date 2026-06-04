@@ -1,12 +1,12 @@
 ---
-title: Gateway Behavior
+title: Proxy Through Gateway
 description: Protected reverse-proxy behavior, routing headers, denial checks, and upstream forwarding.
 pageType: api
 ---
 
 Gateway is served on port `8081`. It is not a CRUD API; it is a protected reverse proxy for configured resources.
 
-## Operator endpoints
+## Operator Endpoints
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -16,7 +16,7 @@ Gateway is served on port `8081`. It is not a CRUD API; it is a protected revers
 | `GET` | `/metrics.json` | JSON metrics. |
 | `POST` | `/internal/revocations/reload` | Reload revocation snapshot. |
 
-## Request requirements
+## Request Requirements
 
 | Input | Required | Purpose |
 | --- | --- | --- |
@@ -26,7 +26,7 @@ Gateway is served on port `8081`. It is not a CRUD API; it is a protected revers
 
 Gateway ignores client attempts to set `X-Caracal-Client-ID`; the client ID is bound by Gateway configuration.
 
-## Denial checks
+## Denial Checks
 
 Gateway rejects before upstream dispatch. Treat these checks as the safety gate in front of every protected upstream.
 
@@ -37,11 +37,15 @@ Gateway rejects before upstream dispatch. Treat these checks as the safety gate 
 | Binding resolution | `(zone_id, resource)` has a Gateway binding and the bound upstream passes host safety checks. |
 | STS exchange | Gateway’s STS circuit is closed and the signed exchange succeeds. |
 
-## Forwarding behavior
+## Forwarding Behavior
 
 After checks pass, Gateway performs a signed STS exchange, receives a resource mandate, forwards the request to the bound upstream, and emits audit evidence. Request and upstream timeouts are controlled by Gateway service config.
 
-## Related pages
+## Next Step
+
+Continue to [Use Event Topics](/api/event-topics/) to understand the Redis Stream topics that carry audit, invalidation, revocation, and agent lifecycle events.
+
+## Related Pages
 
 - [Protect Upstreams](/services/gateway/)
 - [Enforce Boundaries](/architecture/trust-boundaries/)

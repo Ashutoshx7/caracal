@@ -1,12 +1,12 @@
 ---
-title: STS Token Endpoint
+title: Use STS Endpoint
 description: OAuth token exchange, JWKS, step-up, and internal policy endpoints served by STS.
 pageType: api
 ---
 
 STS is served on port `8080` and issues scoped Caracal mandate JWTs.
 
-## Public endpoints
+## Public Endpoints
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -18,7 +18,7 @@ STS is served on port `8080` and issues scoped Caracal mandate JWTs.
 | `GET` | `/metrics` | Prometheus metrics. |
 | `GET` | `/metrics.json` | JSON metrics. |
 
-## Token exchange request
+## Token Exchange Request
 
 `POST /oauth/2/token` accepts form-encoded parameters.
 
@@ -40,7 +40,7 @@ STS is served on port `8080` and issues scoped Caracal mandate JWTs.
 
 Successful exchanges return an OAuth-style token response with `access_token`, `token_type`, `expires_in`, and related fields. Step-up returns `interaction_required` with challenge data. Errors use the shared `error` and `error_description` shape.
 
-## Internal endpoints
+## Internal Endpoints
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -50,7 +50,11 @@ Successful exchanges return an OAuth-style token response with `access_token`, `
 
 Internal endpoints are for service/admin integration, not normal application traffic.
 
-## Related pages
+## Next Step
+
+Use [Proxy Through Gateway](/api/gateway/) to understand how Gateway validates inbound authority and exchanges with STS per request.
+
+## Related Pages
 
 - [Exchange Tokens](/architecture/token-exchange-flow/)
 - [OAuth Package](/sdks/oauth/)
