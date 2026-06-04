@@ -137,7 +137,7 @@ export default defineConfig({
         },
         {
           label: 'Tutorials',
-          collapsed: false,
+          collapsed: true,
           items: [
             { label: 'Overview', link: '/tutorials/' },
             { label: 'Protect Your First Real API', link: '/tutorials/protect-an-api/' },
@@ -148,7 +148,7 @@ export default defineConfig({
         },
         {
           label: 'Guides',
-          collapsed: false,
+          collapsed: true,
           items: [
             { label: 'Overview', link: '/guides/' },
             {
