@@ -6,6 +6,7 @@
  */
 
 import { defineConfig } from 'astro/config'
+import react from '@astrojs/react'
 import starlight from '@astrojs/starlight'
 import sitemap from '@astrojs/sitemap'
 import { remarkMermaid } from './src/plugins/remarkMermaid.mjs'
@@ -26,6 +27,7 @@ export default defineConfig({
     inlineStylesheets: 'auto',
   },
   integrations: [
+    react(),
     sitemap(),
     starlight({
       title: 'Caracal',

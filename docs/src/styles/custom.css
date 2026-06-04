@@ -1740,20 +1740,72 @@ footer .meta a {
 
 /* Documentation landing page */
 .landing-hero {
+  position: relative;
   align-items: flex-start;
   justify-content: center;
-  min-height: min(42rem, calc(100vh - 6rem));
+  min-height: 100svh;
   padding: calc(var(--sl-nav-height) + 4rem) clamp(1rem, 5vw, 4rem) 5rem;
   text-align: left;
   border-bottom: 1px solid var(--sl-color-hairline);
-  background: var(--sl-color-bg);
+  background: #050507;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.landing-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 46%, rgba(5, 5, 7, 0.2) 0%, rgba(5, 5, 7, 0.08) 38%, transparent 68%),
+    linear-gradient(180deg, transparent 0%, rgba(5, 5, 7, 0.12) 100%);
+}
+
+:root[data-theme="light"] .landing-hero::after {
+  background:
+    radial-gradient(circle at 18% 46%, rgba(5, 5, 7, 0.16) 0%, rgba(5, 5, 7, 0.06) 38%, transparent 68%),
+    linear-gradient(180deg, transparent 0%, rgba(5, 5, 7, 0.08) 100%);
+}
+
+.landing-hero__layout {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: min(100%, 76rem);
+  margin-inline: auto;
 }
 
 .landing-hero__content {
+  position: relative;
+  z-index: 2;
   align-items: flex-start;
-  width: min(100%, 76rem);
-  margin-inline: auto;
+  max-width: 52rem;
   gap: 1rem;
+}
+
+.landing-hero__visual {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #050507;
+}
+
+.landing-hero__visual::before {
+  content: none;
+}
+
+.landing-hero__wave,
+.reveal-wave-image {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 .landing-hero__eyebrow,
@@ -1768,7 +1820,7 @@ footer .meta a {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--sl-color-gray-3);
+  color: color-mix(in srgb, white 72%, transparent);
   background: none;
   -webkit-text-fill-color: currentColor;
   animation: none;
@@ -1780,14 +1832,17 @@ footer .meta a {
   font-size: clamp(2.4rem, 7vw, 5.25rem);
   line-height: 0.98;
   letter-spacing: -0.045em;
+  color: white;
+  text-shadow: 0 2px 28px rgba(0, 0, 0, 0.55);
 }
 
 .landing-hero__tagline {
   max-width: 46rem;
   margin: 0;
-  color: var(--sl-color-gray-3);
+  color: color-mix(in srgb, white 74%, transparent);
   font-size: clamp(1rem, 1.5vw, 1.16rem);
   line-height: 1.65;
+  text-shadow: 0 1px 18px rgba(0, 0, 0, 0.5);
 }
 
 .landing-hero__actions {
@@ -1969,4 +2024,16 @@ footer .meta a {
 .landing-footer__inner,
 .landing-footer__bar {
   max-width: 76rem;
+}
+
+@media (max-width: 58rem) {
+  .landing-hero {
+    min-height: 100svh;
+    padding-block: calc(var(--sl-nav-height) + 3rem) 3rem;
+  }
+
+  .landing-hero__visual {
+    inset: 0;
+    height: 100%;
+  }
 }
