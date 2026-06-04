@@ -35,6 +35,10 @@ const fragmentShader = `
   uniform float uWaveFrequency;
   uniform float uWaveAmplitude;
   uniform float uMouseRadius;
+  uniform vec2 uResolution;
+  uniform vec4 uRevealBounds;
+  uniform float uRevealTargetFeather;
+  uniform float uRevealTargetActive;
 
   varying vec2 vUv;
 
@@ -100,6 +104,14 @@ const fragmentShader = `
     float revealAmount = 1.0 - smoothstep(innerRadius, outerRadius, revealDist);
     revealAmount *= uMouseActive;
 
+    vec2 screenUv = gl_FragCoord.xy / uResolution;
+    float revealLeft = smoothstep(uRevealBounds.x, uRevealBounds.x + uRevealTargetFeather, screenUv.x);
+    float revealRight = 1.0 - smoothstep(uRevealBounds.z - uRevealTargetFeather, uRevealBounds.z, screenUv.x);
+    float revealBottom = smoothstep(uRevealBounds.y, uRevealBounds.y + uRevealTargetFeather, screenUv.y);
+    float revealTop = 1.0 - smoothstep(uRevealBounds.w - uRevealTargetFeather, uRevealBounds.w, screenUv.y);
+    float targetReveal = revealLeft * revealRight * revealBottom * revealTop * uRevealTargetActive;
+    revealAmount = max(revealAmount, targetReveal);
+
     vec3 finalColor = mix(bwColor, color.rgb, revealAmount);
     gl_FragColor = vec4(finalColor, color.a);
   }
@@ -116,6 +128,8 @@ interface ImagePlaneProps {
   waveAmplitude: number;
   mouseRadius: number;
   isMouseInCanvas: boolean;
+  revealBounds: [number, number, number, number] | null;
+  revealTargetFeather: number;
 }
 
 function ImagePlane({
@@ -129,10 +143,12 @@ function ImagePlane({
   waveAmplitude,
   mouseRadius,
   isMouseInCanvas,
+  revealBounds,
+  revealTargetFeather,
 }: ImagePlaneProps) {
   const texture = useTexture(src);
   const meshRef = useRef<THREE.Mesh>(null);
-  const { pointer, viewport } = useThree();
+  const { pointer, size, viewport } = useThree();
   const mouseActiveRef = useRef(0);
   const hasEnteredRef = useRef(false);
 
@@ -149,6 +165,10 @@ function ImagePlane({
       uWaveFrequency: { value: waveFrequency },
       uWaveAmplitude: { value: waveAmplitude },
       uMouseRadius: { value: mouseRadius },
+      uResolution: { value: new THREE.Vector2(1, 1) },
+      uRevealBounds: { value: new THREE.Vector4(0, 0, 0, 0) },
+      uRevealTargetFeather: { value: revealTargetFeather },
+      uRevealTargetActive: { value: 0 },
     }),
     [
       texture,
@@ -159,6 +179,7 @@ function ImagePlane({
       waveFrequency,
       waveAmplitude,
       mouseRadius,
+      revealTargetFeather,
     ],
   );
 
@@ -177,6 +198,20 @@ function ImagePlane({
 
     const material = meshRef.current.material as THREE.ShaderMaterial;
     material.uniforms.uTime.value = state.clock.elapsedTime;
+    material.uniforms.uResolution.value.set(size.width, size.height);
+    material.uniforms.uRevealTargetFeather.value = revealTargetFeather;
+
+    if (revealBounds) {
+      material.uniforms.uRevealBounds.value.set(
+        revealBounds[0],
+        revealBounds[1],
+        revealBounds[2],
+        revealBounds[3],
+      );
+      material.uniforms.uRevealTargetActive.value = 1;
+    } else {
+      material.uniforms.uRevealTargetActive.value = 0;
+    }
 
     if (isMouseInCanvas) {
       hasEnteredRef.current = true;
@@ -212,6 +247,9 @@ interface RevealWaveImageProps {
   waveFrequency?: number;
   waveAmplitude?: number;
   mouseRadius?: number;
+  revealTargetFeather?: number;
+  revealTargetPadding?: number;
+  revealTargetSelector?: string;
   className?: string;
 }
 
@@ -224,10 +262,15 @@ export function RevealWaveImage({
   waveFrequency = 3.0,
   waveAmplitude = 0.2,
   mouseRadius = 0.2,
+  revealTargetFeather = 0.01,
+  revealTargetPadding = 0,
+  revealTargetSelector,
   className = "",
 }: RevealWaveImageProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const [isMouseInCanvas, setIsMouseInCanvas] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
+  const [revealBounds, setRevealBounds] = useState<[number, number, number, number] | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -245,8 +288,72 @@ export function RevealWaveImage({
     };
   }, [src]);
 
+  useEffect(() => {
+    if (!revealTargetSelector) {
+      setRevealBounds(null);
+      return;
+    }
+
+    const root = rootRef.current;
+    const target = document.querySelector<HTMLElement>(revealTargetSelector);
+    if (!root || !target) {
+      setRevealBounds(null);
+      return;
+    }
+
+    let frame = 0;
+    const clamp = (value: number) => Math.min(1, Math.max(0, value));
+    const setNextBounds = (next: [number, number, number, number] | null) => {
+      setRevealBounds((current) => {
+        if (!current || !next) return next;
+        const changed = current.some((value, index) => Math.abs(value - next[index]) > 0.001);
+        return changed ? next : current;
+      });
+    };
+
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const rootRect = root.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+
+        if (rootRect.width === 0 || rootRect.height === 0 || targetRect.width === 0 || targetRect.height === 0) {
+          setNextBounds(null);
+          return;
+        }
+
+        const left = targetRect.left - revealTargetPadding;
+        const right = targetRect.right + revealTargetPadding;
+        const top = targetRect.top - revealTargetPadding;
+        const bottom = targetRect.bottom + revealTargetPadding;
+
+        setNextBounds([
+          clamp((left - rootRect.left) / rootRect.width),
+          clamp((rootRect.bottom - bottom) / rootRect.height),
+          clamp((right - rootRect.left) / rootRect.width),
+          clamp((rootRect.bottom - top) / rootRect.height),
+        ]);
+      });
+    };
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    observer.observe(target);
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, { passive: true });
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure);
+    };
+  }, [revealTargetPadding, revealTargetSelector]);
+
   return (
     <div
+      ref={rootRef}
       className={["reveal-wave-image", className].filter(Boolean).join(" ")}
       onMouseEnter={() => setIsMouseInCanvas(true)}
       onMouseLeave={() => setIsMouseInCanvas(false)}
@@ -264,8 +371,10 @@ export function RevealWaveImage({
               isMouseInCanvas={isMouseInCanvas}
               mouseRadius={mouseRadius}
               pixelSize={pixelSize}
+              revealBounds={revealBounds}
               revealRadius={revealRadius}
               revealSoftness={revealSoftness}
+              revealTargetFeather={revealTargetFeather}
               src={src}
               waveAmplitude={waveAmplitude}
               waveFrequency={waveFrequency}

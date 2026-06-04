@@ -38,6 +38,9 @@ const heroImageSrc = '/img/background.jpeg'
           pixelSize={2.4}
           revealRadius={0.46}
           revealSoftness={0.85}
+          revealTargetFeather={0.025}
+          revealTargetPadding={48}
+          revealTargetSelector=".landing-hero__content"
           src={heroImageSrc}
           waveAmplitude={0.18}
           waveFrequency={0.9}
@@ -47,7 +50,7 @@ const heroImageSrc = '/img/background.jpeg'
       <div class="landing-hero__layout">
         <div class="landing-hero__content">
           <p class="landing-hero__eyebrow">{eyebrow}</p>
-          <h1 class="landing-hero__title" set:html={title} />
+          <h1 class="landing-hero__title" data-text={title} set:html={title} />
           <p class="landing-hero__tagline">{tagline}</p>
           {actions.length > 0 && (
             <div class="landing-hero__actions">

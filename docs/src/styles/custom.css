@@ -1783,6 +1783,11 @@ footer .meta a {
   align-items: flex-start;
   max-width: 52rem;
   gap: 1rem;
+  padding: clamp(1rem, 2.6vw, 1.8rem);
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: none;
 }
 
 .landing-hero__visual {
@@ -1808,6 +1813,18 @@ footer .meta a {
   overflow: hidden;
 }
 
+@keyframes landingTextGradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
 .landing-hero__eyebrow,
 .what-is__eyebrow,
 .audience__lede,
@@ -1826,23 +1843,65 @@ footer .meta a {
   animation: none;
 }
 
+.landing-hero__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.34rem 0.58rem;
+  border: 0;
+  border-radius: 5px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04)),
+    rgba(255, 255, 255, 0.06);
+  color: color-mix(in srgb, white 84%, transparent);
+  -webkit-text-fill-color: currentColor;
+  animation: none;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  filter: drop-shadow(0 1px 10px rgba(0, 0, 0, 0.45));
+}
+
 .landing-hero__title {
+  position: relative;
+  isolation: isolate;
   max-width: 48rem;
   white-space: normal;
   font-size: clamp(2.4rem, 7vw, 5.25rem);
   line-height: 0.98;
   letter-spacing: -0.045em;
   color: white;
-  text-shadow: 0 2px 28px rgba(0, 0, 0, 0.55);
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  animation: none;
+  filter: drop-shadow(0 2px 24px rgba(0, 0, 0, 0.62));
+}
+
+.landing-hero__title::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  max-width: inherit;
+  color: transparent;
+  background: linear-gradient(90deg, #4b0f34 0%, #7a1d56 22%, #243f7e 45%, #0c172f 62%, #8f245f 82%, #3b102d 100%);
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: clamp(1.25px, 0.035em, 3px) transparent;
+  animation: landingTextGradient 8s ease-in-out infinite;
+  pointer-events: none;
 }
 
 .landing-hero__tagline {
   max-width: 46rem;
   margin: 0;
-  color: color-mix(in srgb, white 74%, transparent);
+  color: #f8ead1;
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  animation: none;
   font-size: clamp(1rem, 1.5vw, 1.16rem);
   line-height: 1.65;
-  text-shadow: 0 1px 18px rgba(0, 0, 0, 0.5);
+  filter: drop-shadow(0 1px 18px rgba(0, 0, 0, 0.72));
 }
 
 .landing-hero__actions {

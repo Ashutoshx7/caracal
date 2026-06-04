@@ -3,20 +3,13 @@
  * Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
  * Caracal, a product of Garudex Labs
  *
- * Site header with logo, centered top navigation, and theme toggle.
+ * Site header with logo and theme toggle.
  */
 import Default from '@astrojs/starlight/components/Header.astro'
 import ThemeSelect from './ThemeSelect.astro'
 
 const route = (Astro.locals as any)?.starlightRoute
 const isLanding = route?.entry?.data?.template === 'splash'
-const links = [
-  { label: 'Start', href: '/#start' },
-  { label: 'Workflows', href: '/#workflows' },
-  { label: 'Model', href: '/#model' },
-  { label: 'Operations', href: '/#operations' },
-  { label: 'Reference', href: '/#reference' },
-]
 ---
 
 {
@@ -26,23 +19,25 @@ const links = [
         <img class="site-nav__logo" src="/img/caracal.png" alt="" width="28" height="28" />
         <span>Caracal</span>
       </a>
-      <button
-        type="button"
-        class="site-nav__toggle"
-        aria-label="Toggle navigation"
-        aria-expanded="false"
-        aria-controls="site-nav-links"
-      >
-        <span class="site-nav__toggle-bars" aria-hidden="true">
-          <span /><span /><span />
-        </span>
-      </button>
-      <nav id="site-nav-links" class="site-nav__links" aria-label="Primary">
-        {links.map((l) => (
-          <a class="site-nav__link" href={l.href}>{l.label}</a>
-        ))}
-      </nav>
       <div class="site-nav__end">
+        <details class="edition-menu">
+          <summary class="edition-menu__button">
+            <span>Open Source</span>
+            <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none">
+              <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" />
+            </svg>
+          </summary>
+          <div class="edition-menu__panel">
+            <a class="edition-menu__item" href="/">
+              <span>Open Source</span>
+              <span class="edition-menu__current">Current</span>
+            </a>
+            <span class="edition-menu__item edition-menu__item--disabled" aria-disabled="true">
+              <span>Enterprise</span>
+              <span class="edition-menu__soon">Coming soon</span>
+            </span>
+          </div>
+        </details>
         <ThemeSelect />
       </div>
     </header>
@@ -111,24 +106,6 @@ const links = [
   })();
 </script>
 
-<script>
-  const toggle = document.querySelector<HTMLButtonElement>('.site-nav__toggle')
-  const nav = document.querySelector<HTMLElement>('#site-nav-links')
-  if (toggle && nav) {
-    toggle.addEventListener('click', () => {
-      const open = toggle.getAttribute('aria-expanded') === 'true'
-      toggle.setAttribute('aria-expanded', String(!open))
-      nav.dataset.open = String(!open)
-    })
-    nav.querySelectorAll('a').forEach((a) => {
-      a.addEventListener('click', () => {
-        toggle.setAttribute('aria-expanded', 'false')
-        nav.dataset.open = 'false'
-      })
-    })
-  }
-</script>
-
 <style is:global>
   body:has(.landing-hero) > .page > header.header {
     position: absolute !important;
@@ -143,13 +120,26 @@ const links = [
   }
 
   body:has(.landing-hero) .site-nav[data-over-hero='true'] .theme-toggle {
-    border-color: rgba(255, 255, 255, 0.22);
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.86);
+    border-color: #2a2f45;
+    background: #0d1020;
+    color: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
   }
 
   body:has(.landing-hero) .site-nav[data-over-hero='true'] .theme-toggle:hover {
-    border-color: rgba(255, 255, 255, 0.5);
+    border-color: #eca8d6;
+    color: #fff;
+  }
+
+  body:has(.landing-hero) .site-nav[data-over-hero='true'] .edition-menu__button {
+    border-color: #2a2f45;
+    background: #0d1020;
+    color: rgba(255, 255, 255, 0.88);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
+  }
+
+  body:has(.landing-hero) .site-nav[data-over-hero='true'] .edition-menu__button:hover {
+    border-color: #eca8d6;
     color: #fff;
   }
 </style>
@@ -161,9 +151,9 @@ const links = [
     left: 0;
     right: 0;
     z-index: 100;
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 1rem;
     padding: 0.75rem clamp(1rem, 4vw, 2rem);
     background: transparent;
@@ -179,16 +169,14 @@ const links = [
   }
 
   .site-nav .site-nav__brand,
-  .site-nav .site-nav__link,
-  .site-nav[data-over-hero='true'] .site-nav__brand,
-  .site-nav[data-over-hero='true'] .site-nav__link {
+  .site-nav[data-over-hero='true'] .site-nav__brand {
     color: rgba(255, 255, 255, 0.9);
+    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.42);
   }
 
-  .site-nav .site-nav__link:hover,
-  .site-nav[data-over-hero='true'] .site-nav__link:hover {
+  .site-nav .site-nav__brand:hover,
+  .site-nav[data-over-hero='true'] .site-nav__brand:hover {
     color: #fff;
-    border-bottom-color: rgba(255, 255, 255, 0.5);
   }
 
   .site-nav .site-nav__logo,
@@ -196,14 +184,13 @@ const links = [
     filter: invert(1) grayscale(1) brightness(1.8);
   }
 
-  .site-nav[data-over-hero='false'] .site-nav__brand,
-  .site-nav[data-over-hero='false'] .site-nav__link {
+  .site-nav[data-over-hero='false'] .site-nav__brand {
     color: var(--caracal-text-muted, var(--sl-color-text));
+    text-shadow: none;
   }
 
-  .site-nav[data-over-hero='false'] .site-nav__link:hover {
+  .site-nav[data-over-hero='false'] .site-nav__brand:hover {
     color: var(--sl-color-text);
-    border-bottom-color: var(--caracal-link);
   }
 
   :root[data-theme='light'] .site-nav[data-over-hero='false'] .site-nav__logo {
@@ -234,102 +221,106 @@ const links = [
     filter: invert(1);
   }
 
-  .site-nav__links {
+  .site-nav__end {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .edition-menu {
+    position: relative;
+  }
+
+  .edition-menu__button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 2rem;
+    padding: 0 0.72rem;
+    border: 1px solid var(--caracal-border-strong);
+    border-radius: 6px;
+    background: var(--caracal-panel-strong);
+    color: var(--sl-color-text);
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1;
+    list-style: none;
+    cursor: pointer;
+    box-shadow: 0 2px 8px color-mix(in srgb, black 16%, transparent);
+    transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+  }
+
+  .edition-menu__button::-webkit-details-marker {
+    display: none;
+  }
+
+  .edition-menu__button:hover {
+    transform: translateY(-1px);
+    border-color: var(--caracal-link);
+    box-shadow: 0 4px 12px color-mix(in srgb, black 18%, transparent);
+  }
+
+  .edition-menu__button svg {
+    opacity: 0.68;
+    transition: transform 0.16s ease;
+  }
+
+  .edition-menu[open] .edition-menu__button svg {
+    transform: rotate(180deg);
+  }
+
+  .edition-menu__panel {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    min-width: 13rem;
+    padding: 0.35rem;
+    border: 1px solid var(--caracal-border-strong);
+    border-radius: 8px;
+    background: var(--caracal-panel-strong);
+    box-shadow: 0 14px 32px color-mix(in srgb, black 28%, transparent);
+  }
+
+  .edition-menu__item {
     display: flex;
     align-items: center;
-    gap: clamp(1rem, 3vw, 2rem);
-    justify-self: center;
-  }
-
-  .site-nav__link {
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: var(--caracal-text-muted, var(--sl-color-text));
+    justify-content: space-between;
+    gap: 0.9rem;
+    padding: 0.62rem 0.7rem;
+    border-radius: 5px;
+    color: var(--sl-color-text);
+    font-size: 0.84rem;
+    font-weight: 600;
     text-decoration: none;
-    padding: 0.35rem 0.25rem;
-    border-bottom: 1px solid transparent;
-    transition: color 0.15s ease, border-color 0.15s ease;
   }
 
-  .site-nav__link:hover {
-    color: var(--sl-color-text);
-    border-bottom-color: var(--caracal-link);
+  .edition-menu__item:hover {
+    background: color-mix(in srgb, var(--caracal-link) 12%, transparent);
   }
 
-  .site-nav__end {
-    justify-self: end;
-    display: inline-flex;
-    align-items: center;
+  .edition-menu__item--disabled {
+    color: var(--caracal-text-subtle);
+    cursor: not-allowed;
   }
 
-  .site-nav__toggle {
-    display: none;
-    align-items: center;
-    justify-content: center;
-    width: 2.25rem;
-    height: 2.25rem;
-    padding: 0;
-    border: 1px solid var(--sl-color-hairline);
-    border-radius: 6px;
-    background: var(--caracal-panel, transparent);
-    color: var(--sl-color-text);
-    cursor: pointer;
+  .edition-menu__item--disabled:hover {
+    background: transparent;
   }
 
-  .site-nav__toggle-bars {
-    display: inline-flex;
-    flex-direction: column;
-    gap: 4px;
+  .edition-menu__current,
+  .edition-menu__soon {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
   }
 
-  .site-nav__toggle-bars span {
-    display: block;
-    width: 18px;
-    height: 2px;
-    background: currentColor;
-    border-radius: 2px;
+  .edition-menu__current {
+    color: var(--caracal-link);
   }
 
-  @media (max-width: 50rem) {
-    .site-nav {
-      grid-template-columns: auto 1fr auto;
-    }
-    .site-nav__toggle {
-      display: inline-flex;
-      justify-self: end;
-    }
-    .site-nav__end {
-      display: none;
-    }
-    .site-nav__links {
-      position: absolute;
-      top: 100%;
-      left: 0;
-      right: 0;
-      flex-direction: column;
-      align-items: stretch;
-      gap: 0;
-      padding: 0.5rem 1rem 1rem;
-      background: var(--sl-color-bg);
-      border-bottom: 1px solid var(--sl-color-hairline);
-      display: none;
-    }
-    .site-nav:not([data-over-hero='false']) .site-nav__links {
-      background: rgba(5, 5, 7, 0.42);
-      border-bottom-color: rgba(255, 255, 255, 0.12);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-    }
-    .site-nav__links[data-open='true'] {
-      display: flex;
-    }
-    .site-nav__link {
-      padding: 0.75rem 0.25rem;
-      border-bottom: 1px solid var(--sl-color-hairline);
-    }
-    .site-nav__link:last-child {
-      border-bottom: none;
-    }
+  .edition-menu__soon {
+    color: color-mix(in srgb, var(--caracal-text-subtle) 80%, transparent);
   }
 </style>
 
