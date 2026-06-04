@@ -33,10 +33,44 @@ result := {
 } if {
   input.resource.identifier == "resource://pipernet"
   every scope in input.context.requested_scopes {
-    scope == "pipernet:read"
+    scope in {"pipernet:read", "pipernet:write"}
   }
 }
 ```
+
+This is the canonical "application A may call resource B with scopes C" pattern: a
+stable resource identifier and a scope allowlist. The set-membership check allows
+the request only when **every** requested scope is in the allowlist, which is the
+correct shape for multi-scope requests.
+
+## Start from a template
+
+You do not have to write the skeleton by hand. Caracal ships a built-in template
+catalog for common patterns, served at `/v1/policy-templates` and through the
+Admin SDK:
+
+```ts
+import { AdminClient } from "@caracalai/admin";
+
+const admin = new AdminClient({
+  apiUrl: process.env.CARACAL_API_URL!,
+  adminToken: process.env.CARACAL_ADMIN_TOKEN!,
+});
+
+const templates = await admin.policyTemplates.list();
+const starter = await admin.policyTemplates.get("baseline-scope-allowlist");
+```
+
+| Template | Use it for |
+| --- | --- |
+| `baseline-scope-allowlist` | One resource with an inline scope allowlist. The simplest standardized start. |
+| `baseline-resource-constraints` | Resources listed per principal with required resource attributes. |
+| `baseline-delegation-constraints` | Delegated exchange gated by graph proof, hop count, and budget. |
+| `baseline-session-state` | Session-bound requests for active, principal-bound sessions. |
+| `baseline-step-up-triggers` | Step-up diagnostics for sensitive resources. |
+| `role-based` / `attribute-based` | Role or attribute checks driven by policy `data`. |
+
+For agent-assisted authoring, use the [policy authoring playbook](https://github.com/Garudex-Labs/caracal/tree/main/playbooks/policies). It guides a coding agent to understand the use case before writing Rego, and to stay inside the documented policy input contract.
 
 ## Use the important inputs
 
@@ -65,6 +99,23 @@ if (!validation.valid) {
   throw new Error(validation.warnings.join("\n"));
 }
 ```
+
+## Iterate from a denied request
+
+When a real request is denied, you do not have to guess the input. The audit
+explain endpoint reconstructs a redaction-safe policy input for every denied
+decision:
+
+```ts
+const trace = await admin.audit.explain(zoneId, requestId);
+const input = trace.denied[0]?.policy_input;
+```
+
+Feed that `input` straight into [simulation](/guides/activate-policy-set/) against
+a candidate policy-set version to confirm your fix before activating it. The
+[`policyIterate` example](/examples/) automates this denial-to-simulation loop.
+Actor and subject claims are never written to audit, so add any claim-dependent
+fields to the input before simulating.
 
 ## Keep policies reviewable
 

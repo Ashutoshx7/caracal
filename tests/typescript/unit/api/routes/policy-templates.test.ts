@@ -17,6 +17,7 @@ describe('GET /v1/policy-templates', () => {
 
     expect(res.statusCode).toBe(200)
     expect(templates.map((template) => template.id)).toEqual(expect.arrayContaining([
+      'baseline-scope-allowlist',
       'role-based',
       'attribute-based',
       'delegation',

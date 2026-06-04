@@ -144,6 +144,39 @@ describe('GET /v1/zones/:zoneId/audit/by-request/:requestId/explain', () => {
     expect(body.denied[0].metadata.token).toBe('[redacted]')
   })
 
+  it('reconstructs a redaction-safe policy_input for denied requests', async () => {
+    const { app, db } = buildRouteApp(zoneEventsRoutes)
+    db.query.mockResolvedValueOnce({
+      rows: [{
+        id: 'a1',
+        event_type: 'token_exchange',
+        request_id: 'r1',
+        decision: 'deny',
+        evaluation_status: 'complete',
+        determining_policies_json: [{ policy: 'baseline-scope-allowlist' }],
+        diagnostics_json: [{ reason: 'no_matching_policy' }],
+        metadata_json: {
+          application_id: 'app-1',
+          resource: 'resource://pipernet',
+          requested_scopes: ['pipernet:read', 'pipernet:write'],
+          delegation_edge_id: 'edge-9',
+        },
+      }],
+    })
+
+    await app.ready()
+    const res = await app.inject({ method: 'GET', url: '/v1/zones/z1/audit/by-request/r1/explain' })
+
+    expect(res.statusCode).toBe(200)
+    const input = JSON.parse(res.body).denied[0].policy_input
+    expect(input.principal).toMatchObject({ type: 'Application', id: 'app-1', zone_id: 'z1' })
+    expect(input.resource).toMatchObject({ identifier: 'resource://pipernet' })
+    expect(input.context.requested_scopes).toEqual(['pipernet:read', 'pipernet:write'])
+    expect(input.action).toEqual({ id: 'TokenExchange' })
+    expect(input.delegation_edge).toEqual({ id: 'edge-9' })
+    expect(input.schema_version).toBe('2026-05-20')
+  })
+
   it('returns 404 for missing explanations and reports allow when no deny events exist', async () => {
     const missing = buildRouteApp(zoneEventsRoutes)
     missing.db.query.mockResolvedValueOnce({ rows: [] })

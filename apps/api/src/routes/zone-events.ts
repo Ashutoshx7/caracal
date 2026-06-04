@@ -7,6 +7,54 @@ import type { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { ZoneParams, parseParams } from './params.js'
 import { redactSensitive } from '../redact.js'
+import { OPA_INPUT_SCHEMA_VERSION } from '../rego.js'
+
+// reconstructPolicyInput rebuilds a canonical OPA simulation input from the
+// redaction-safe audit metadata of a denied decision, so a denied request can
+// be replayed through policy-set simulation without hand-translation. Actor and
+// subject claims are never stored in audit metadata; authors add them when they
+// reproduce a claim-dependent denial.
+function reconstructPolicyInput(zoneId: string, metadata: unknown): Record<string, unknown> {
+  const meta = (metadata && typeof metadata === 'object' ? metadata : {}) as Record<string, unknown>
+  const scopes = Array.isArray(meta.requested_scopes) ? (meta.requested_scopes as unknown[]) : []
+  const principal: Record<string, unknown> = {
+    type: 'Application',
+    id: typeof meta.application_id === 'string' ? meta.application_id : '',
+    zone_id: zoneId,
+  }
+  if (typeof meta.application_registration_method === 'string') {
+    principal.registration_method = meta.application_registration_method
+  }
+  if (typeof meta.agent_session_id === 'string') principal.agent_session_id = meta.agent_session_id
+  if (typeof meta.agent_kind === 'string') principal.agent_kind = meta.agent_kind
+  if (Array.isArray(meta.agent_capabilities)) principal.capabilities = meta.agent_capabilities
+
+  const context: Record<string, unknown> = {
+    actor_claims: {},
+    requested_scopes: scopes,
+    challenge_resolved: false,
+  }
+  if (typeof meta.session_id === 'string') context.session_id = meta.session_id
+  if (typeof meta.agent_session_id === 'string') context.agent_session_id = meta.agent_session_id
+  if (typeof meta.delegation_edge_id === 'string') context.delegation_edge_id = meta.delegation_edge_id
+
+  const input: Record<string, unknown> = {
+    schema_version: OPA_INPUT_SCHEMA_VERSION,
+    principal,
+    resource: {
+      type: 'Resource',
+      identifier: typeof meta.resource === 'string' ? meta.resource : '',
+      scopes,
+    },
+    action: { id: 'TokenExchange' },
+    context,
+  }
+  if (typeof meta.session_id === 'string') input.session = { id: meta.session_id }
+  if (typeof meta.delegation_edge_id === 'string') {
+    input.delegation_edge = { id: meta.delegation_edge_id }
+  }
+  return input
+}
 
 const Cursor = z.object({ ts: z.string().min(1), id: z.string().min(1) })
 
@@ -129,6 +177,7 @@ export const zoneEventsRoutes: FastifyPluginAsync = async (fastify) => {
         determining_policies: event.determining_policies_json ?? [],
         diagnostics: event.diagnostics_json ?? [],
         metadata: event.metadata_json ?? {},
+        policy_input: reconstructPolicyInput(params.zoneId, event.metadata_json),
       })),
       events,
     }

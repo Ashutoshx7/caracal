@@ -390,6 +390,7 @@ export interface DeniedDecisionEvent {
   determining_policies: JsonValue[]
   diagnostics: JsonValue[]
   metadata: JsonObject
+  policy_input: JsonObject
 }
 
 export interface DecisionTrace {

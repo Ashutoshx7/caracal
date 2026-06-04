@@ -5,6 +5,21 @@ description: Version policies, bundle them into a policy set, simulate the resul
 
 The STS evaluates the active policy-set version for a zone. Activation is explicit so policy changes can be reviewed, simulated, and rolled out without mutating old versions.
 
+## The mental model
+
+Four immutable layers separate authoring from what runs:
+
+| Layer | What it is | Mutable? |
+| --- | --- | --- |
+| Policy | A named Rego document. | The name; content is versioned. |
+| Policy version | One immutable snapshot of policy content. | No. |
+| Policy-set version | An immutable bundle of policy versions. | No. |
+| Active policy-set version | The one bundle the STS evaluates for a zone. | The pointer moves on activation. |
+
+You edit by creating a **new** version and moving the active pointer to it.
+Nothing already evaluated is ever rewritten, so every audit decision ties back to
+the exact policy-set version and manifest hash that produced it.
+
 ## Activation flow
 
 ```mermaid
@@ -64,3 +79,21 @@ await admin.policySets.activate(process.env.CARACAL_ZONE_ID!, set.id, version.id
 | First exchange | Audit shows the new policy as a determining policy. |
 
 If activation changes expected access, keep the old policy-set version ID in the rollout notes so you can promote it again if needed.
+
+## Iterate from real denials
+
+Every denied decision links to the policy-set version that produced it, and the
+audit explain endpoint reconstructs the policy input for that denial. Stage the
+fix as a new policy-set version, then simulate the denied input against it:
+
+```ts
+const trace = await admin.audit.explain(zoneId, requestId);
+const input = trace.denied[0]?.policy_input;
+const candidate = await admin.policySets.addVersion(zoneId, set.id, manifest);
+const check = await admin.policySets.simulate(zoneId, set.id, candidate.id, input);
+if (check.result?.decision === "allow") {
+  await admin.policySets.activate(zoneId, set.id, candidate.id);
+}
+```
+
+The [`policyIterate` example](/examples/) wraps this loop as a runnable script.

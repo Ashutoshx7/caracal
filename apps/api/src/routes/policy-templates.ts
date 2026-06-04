@@ -7,6 +7,24 @@ import type { FastifyPluginAsync } from 'fastify'
 
 const TEMPLATES = [
   {
+    id: 'baseline-scope-allowlist',
+    name: 'Baseline Scope Allowlist',
+    description: 'Allow one resource when every requested scope is in an inline allowlist. The simplest standardized pattern, with no external policy data.',
+    content: `package caracal.authz
+
+import rego.v1
+
+default result := {"decision": "deny", "evaluation_status": "complete", "determining_policies": [], "diagnostics": [{"reason": "no_matching_policy"}]}
+
+result := {"decision": "allow", "evaluation_status": "complete", "determining_policies": [{"policy": "baseline-scope-allowlist"}], "diagnostics": []} if {
+  input.resource.identifier == "resource://example"
+  every scope in input.context.requested_scopes {
+    scope in {"example:read", "example:write"}
+  }
+}
+`,
+  },
+  {
     id: 'role-based',
     name: 'Role-Based Access Control',
     description: 'Allow access based on principal roles defined in policy data.',
