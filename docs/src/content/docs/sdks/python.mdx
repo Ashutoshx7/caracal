@@ -13,7 +13,7 @@ pip install caracalai-sdk
 
 The package requires Python `>=3.12`.
 
-## Configuration entry points
+## Connect and Configure
 
 | API | Use it when |
 | --- | --- |
@@ -43,7 +43,7 @@ caracal = Caracal.connect()
 | `caracal.context_middleware(verifier=None)` | ASGI middleware factory: propagates context, and enforces at the boundary when a `verifier` is passed. |
 | `caracal.gateway_request(resource_id, path="/")` | Build a Gateway URL and `X-Caracal-Resource` header. |
 
-## Delegation constraints
+## Context Propagation
 
 ```python
 from caracalai_sdk import DelegationConstraints
@@ -57,7 +57,7 @@ constraints = DelegationConstraints(
 
 `DelegationConstraints` uses Python field names: `resources`, `max_depth`, `max_hops`, `ttl_seconds`, `budget`, `policy_approved`, `expires_at`, and `broad_reason`.
 
-## ASGI propagation boundary
+## Protect Inbound Requests
 
 `context_middleware()` is framework-agnostic and runs on any ASGI app (FastAPI, Starlette, Quart, Django ASGI).
 
@@ -84,4 +84,5 @@ See [Enforce, propagate, or attribute](/concepts/authority-model/#enforce-propag
 
 - [Integrate the Python SDK](/guides/sdk-python/)
 - [Protect a FastMCP App](/guides/protect-fastmcp/)
-- [MCP Transport](/sdks/transport-mcp/)
+- [Verification Layer Overview](/sdks/verification-layer/)
+- [MCP Auth Transport](/sdks/transport-mcp/)

@@ -1,11 +1,24 @@
 ---
-title: SDKs and Packages
-description: Reference map for Caracal SDKs, token exchange packages, verification packages, transports, and connectors.
+title: Choose an SDK or Package
+description: Choose the Caracal SDK, verification package, transport, connector, admin client, or state backend for your integration.
 ---
 
-Use this section when you need package-level details after following a guide. The Guides section shows task workflows; this section explains package names, install commands, public APIs, runtime requirements, and where each package fits.
+Use SDKs when you need package-level details after a guide. The [Guides](/guides/) section shows task workflows; this section explains package names, install commands, public APIs, runtime requirements, and where each package fits.
 
-## Package map
+## Choose by What You Are Building
+
+| I am building... | Start here | Then read |
+| --- | --- | --- |
+| TypeScript app or agent workflow | [TypeScript SDK](./typescript/) | [OAuth Package](./oauth/), [A2A Transport](./transport-a2a/) |
+| Python app, agent, or ASGI service | [Python SDK](./python/) | [FastMCP Connector](./connectors/fastmcp/), [MCP Auth Transport](./transport-mcp/) |
+| Go service or agent workflow | [Go SDK](./go/) | [Go net/http Connector](./connectors/nethttp/) |
+| Express resource server | [Express Connector](./connectors/express/) | [MCP Auth Transport](./transport-mcp/), [Redis Revocation Store](./connectors/redis/) |
+| FastMCP server | [FastMCP Connector](./connectors/fastmcp/) | [MCP Auth Transport](./transport-mcp/) |
+| Custom verification boundary | [Verification Layer Overview](./verification-layer/) | [Identity Package](./identity/), [Revocation Package](./revocation/) |
+| Admin or provisioning automation | [Admin Package](./admin/) | [Control Plane API](/api/control-plane/) |
+| Durable token-state storage | [Postgres Token State Backend](./connectors/postgres/) | [Redis Revocation Store](./connectors/redis/) |
+
+## Package Map
 
 | Area | TypeScript / Node | Python | Go |
 | --- | --- | --- | --- |
@@ -13,15 +26,15 @@ Use this section when you need package-level details after following a guide. Th
 | Identity verification | `@caracalai/identity` | `caracalai-identity` | `github.com/garudex-labs/caracal/packages/identity/go` |
 | OAuth token exchange | `@caracalai/oauth` | `caracalai-oauth` | `github.com/garudex-labs/caracal/packages/oauth/go` |
 | Revocation store | `@caracalai/revocation` | `caracalai-revocation` | `github.com/garudex-labs/caracal/packages/revocation/go` |
-| MCP transport | `@caracalai/transport-mcp` | `caracalai-transport-mcp` | `github.com/garudex-labs/caracal/packages/transport/mcp/go` |
+| MCP auth transport | `@caracalai/transport-mcp` | `caracalai-transport-mcp` | `github.com/garudex-labs/caracal/packages/transport/mcp/go` |
 | A2A transport | `@caracalai/transport-a2a` | Not published in this repository | Not published in this repository |
 | Express connector | `@caracalai/mcp-express` | Not applicable | Not applicable |
 | FastMCP connector | `@caracalai/mcp-fastmcp` | `caracalai-mcp-fastmcp` | Not applicable |
 | net/http connector | Not applicable | Not applicable | `github.com/garudex-labs/caracal/packages/connectors/nethttp/go` |
-| Redis revocation connector | `@caracalai/revocation-redis` | `caracalai-revocation-redis` | `github.com/garudex-labs/caracal/packages/connectors/redis/go` |
-| Postgres token state | `@caracalai/tokenstate-postgres` | Not published in this repository | Not published in this repository |
+| Redis revocation store | `@caracalai/revocation-redis` | `caracalai-revocation-redis` | `github.com/garudex-labs/caracal/packages/connectors/redis/go` |
+| Postgres token state backend | `@caracalai/tokenstate-postgres` | Not published in this repository | Not published in this repository |
 
-## Runtime requirements
+## Runtime Requirements
 
 | Ecosystem | Current package target |
 | --- | --- |
@@ -29,21 +42,9 @@ Use this section when you need package-level details after following a guide. Th
 | Python | Python `>=3.12` for published Python packages. |
 | Go | Module paths under `github.com/garudex-labs/caracal/packages/...`; current modules declare Go `1.26` where specified. |
 
-## How to choose
+## Related Guides
 
-| Need | Start with |
-| --- | --- |
-| Spawn agents, delegate, inject headers, or route through Gateway | [TypeScript SDK](/sdks/typescript/), [Python SDK](/sdks/python/), or [Go SDK](/sdks/go/) |
-| Verify mandates inside a resource server | [Identity Package](/sdks/identity/) or [MCP Transport](/sdks/transport-mcp/) |
-| Exchange tokens directly against STS | [OAuth Package](/sdks/oauth/) |
-| Track revoked sessions and delegation edges | [Revocation Package](/sdks/revocation/) and [Redis Token State](/sdks/connectors/redis/) |
-| Automate zones, resources, policies, audit, agents, or delegation | [Admin Package](/sdks/admin/) |
-| Protect framework-specific servers | [Connectors](/sdks/connectors/) |
-
-## Related guides
-
-- [Integrate the TypeScript SDK](/guides/sdk-typescript/)
-- [Integrate the Python SDK](/guides/sdk-python/)
-- [Integrate the Go SDK](/guides/sdk-go/)
-- [Protect an MCP Server](/guides/protect-mcp/)
+- [Add SDK to Your App](/get-started/add-sdk-to-your-app/)
+- [Connect Your App with the SDK](/tutorials/connect-an-agent/)
+- [Protect a Gateway-Routed HTTP API](/guides/protect-gateway-http/)
 - [Implement Multi-Agent Delegation](/guides/delegation/)

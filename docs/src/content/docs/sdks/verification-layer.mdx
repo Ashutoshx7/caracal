@@ -1,0 +1,54 @@
+---
+title: Verification Layer Overview
+description: Choose between framework connectors, MCP auth transport, identity verification, revocation stores, and state backends.
+---
+
+Use this page when you are protecting an inbound resource-server boundary and need to choose the right package layer. Start with the highest-level connector that fits your framework; use lower-level packages only when you are building a custom boundary.
+
+## Which Layer Should I Use?
+
+| Need | Use |
+| --- | --- |
+| Express route middleware | [Express Connector](./connectors/express/) |
+| FastMCP server or tool authentication | [FastMCP Connector](./connectors/fastmcp/) |
+| Go `net/http` middleware | [Go net/http Connector](./connectors/nethttp/) |
+| Framework-neutral bearer parsing and mandate verification | [MCP Auth Transport](./transport-mcp/) |
+| Custom JWT claim verification | [Identity Package](./identity/) |
+| Shared revocation checks | [Revocation Package](./revocation/) plus [Redis Revocation Store](./connectors/redis/) |
+| Durable TypeScript token state | [Postgres Token State Backend](./connectors/postgres/) |
+
+## Framework Connectors
+
+Connectors adapt the shared transport and identity packages to common server frameworks. They should reject failed requests before your handler or tool runs, attach verified claims to framework context, and preserve the same 401/403 behavior across languages.
+
+Use connectors first when your framework is supported. They reduce boilerplate and keep error mapping consistent with the rest of Caracal.
+
+## MCP Auth Transport
+
+[MCP Auth Transport](./transport-mcp/) is the reusable verification layer under the connectors. Use it when your framework is unsupported or when you need direct control over bearer parsing, verifier defaults, route-level scopes, targets, agent requirements, delegation requirements, hop limits, and safe error hints.
+
+## Identity Package
+
+[Identity Package](./identity/) verifies mandate JWT claims directly. Use it when you are composing a custom verifier or connector. It does not provide the full transport error mapping or revocation-store integration by itself.
+
+## Revocation and Shared State
+
+Resource servers must reject mandates anchored to revoked sessions, root sessions, agent sessions, or delegation edges. Use in-memory revocation stores for local development only. Use [Redis Revocation Store](./connectors/redis/) for multi-instance resource servers that consume `caracal.sessions.revoke`.
+
+Use [Postgres Token State Backend](./connectors/postgres/) only when a TypeScript service needs durable token-state rows. It is not the revocation stream consumer.
+
+## Failure Behavior
+
+All HTTP verification layers should preserve the shared status mapping:
+
+| Status | Meaning |
+| --- | --- |
+| `401` | The credential was missing, invalid, expired, revoked, or from the wrong zone. |
+| `403` | The mandate verified but lacks required scope, target, agent, delegation, chain, or hop authority. |
+
+## Related Pages
+
+- [Protect an MCP Server](/guides/protect-mcp/)
+- [Protect an Express App](/guides/protect-express/)
+- [Protect a FastMCP App](/guides/protect-fastmcp/)
+- [Protect a Go net/http Service](/guides/protect-nethttp/)

@@ -13,7 +13,7 @@ npm install @caracalai/sdk
 
 The package is ESM-only and targets Node `>=22`. To consume it from a CommonJS project, use a dynamic `await import('@caracalai/sdk')` or set `"type": "module"` in your `package.json`.
 
-## Configuration entry points
+## Connect and Configure
 
 | API | Use it when |
 | --- | --- |
@@ -42,7 +42,7 @@ const caracal = Caracal.connect();
 | `gatewayRequest(resourceId, path?)` | Build a Gateway URL and `X-Caracal-Resource` header. |
 | `current()` | Return the currently bound `CaracalContext`, if present. |
 
-## Delegation options
+## Context Propagation
 
 ```ts
 await caracal.delegateToSpawn({
@@ -63,13 +63,16 @@ await caracal.delegateToSpawn({
 
 `DelegationConstraints` uses camelCase fields: `resources`, `maxDepth`, `maxHops`, `ttlSeconds`, `budget`, `policyApproved`, `expiresAt`, and `broadReason`.
 
-## Root identity safety
+## Protect Inbound Requests
+
+Use `bindFromHeaders()` to propagate a Caracal context after an upstream Gateway, connector, or transport verifier has accepted the inbound mandate. Use [Verification Layer Overview](/sdks/verification-layer/) when the TypeScript service must enforce mandate signatures, scopes, targets, agent identity, delegation, or revocation at its own boundary.
 
 Header and transport helpers refuse to fall back to the application root token unless you pass `{ allowRoot: true }`. Use that option only for trusted service-root ingress or setup calls. Normal agent work should run inside `spawn()`, `delegate()`, `delegateToSpawn()`, or `bindFromHeaders()`.
 
 ## Related pages
 
 - [Integrate the TypeScript SDK](/guides/sdk-typescript/)
+- [Verification Layer Overview](/sdks/verification-layer/)
 - [Enforce, propagate, or attribute](/concepts/authority-model/#enforce-propagate-or-attribute)
 - [Delegation Graph](/concepts/delegation/)
 - [A2A Transport](/sdks/transport-a2a/)

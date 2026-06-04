@@ -11,7 +11,7 @@ The Go SDK provides agent lifecycle, delegation, Gateway routing, and context pr
 go get github.com/garudex-labs/caracal/packages/sdk/go
 ```
 
-## Connect
+## Connect and Configure
 
 ```go
 import caracal "github.com/garudex-labs/caracal/packages/sdk/go"
@@ -41,7 +41,7 @@ if err != nil {
 | `client.GatewayRequest(resourceID, path)` | Build explicit Gateway routing metadata. |
 | `client.Current(ctx)` | Inspect the current Caracal context. |
 
-## Delegation constraints
+## Context Propagation
 
 ```go
 constraints := &caracal.DelegationConstraints{
@@ -53,13 +53,16 @@ constraints := &caracal.DelegationConstraints{
 
 Available fields are `Resources`, `MaxDepth`, `MaxHops`, `TTLSeconds`, `Budget`, `PolicyApproved`, `ExpiresAt`, and `BroadReason`.
 
-## Root identity safety
+## Protect Inbound Requests
+
+Use `BindFromRequest()` to propagate a Caracal context after an upstream Gateway, connector, or transport verifier has accepted the inbound mandate. Use [Verification Layer Overview](/sdks/verification-layer/) when the Go service must enforce mandate signatures, scopes, targets, agent identity, delegation, or revocation at its own boundary.
 
 `Headers` and `Transport` require a bound Caracal context by default. Pass `caracal.RootOptions{AllowRoot: true}` only when the call should intentionally use the application subject token.
 
 ## Related pages
 
 - [Integrate the Go SDK](/guides/sdk-go/)
+- [Verification Layer Overview](/sdks/verification-layer/)
 - [Enforce, propagate, or attribute](/concepts/authority-model/#enforce-propagate-or-attribute)
 - [Protect a Go net/http Service](/guides/protect-nethttp/)
 - [Delegation Graph](/concepts/delegation/)

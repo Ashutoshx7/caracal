@@ -1,5 +1,5 @@
 ---
-title: Postgres Token State
+title: Postgres Token State Backend
 description: TypeScript Postgres backend for persisted token state.
 ---
 
@@ -52,4 +52,4 @@ await backend.set({
 
 ## Boundary
 
-This package is a token-state backend. It is not the revocation stream consumer. Use [Redis Token State](/sdks/connectors/redis/) when you need to consume `caracal.sessions.revoke`.
+This package is a token-state backend. It is not the revocation stream consumer. Use [Redis Revocation Store](/sdks/connectors/redis/) when you need to consume `caracal.sessions.revoke`.
