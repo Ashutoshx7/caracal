@@ -1,0 +1,86 @@
+---
+/*
+ * Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+ * Caracal, a product of Garudex Labs
+ *
+ * Compact documentation directory that routes readers by task in one responsive grid.
+ */
+
+const groups = [
+  {
+    id: "start",
+    label: "Start here",
+    items: [
+      { title: "Choose your path", body: "Decide whether Caracal fits before learning the model.", href: "/get-started/choose-your-path/" },
+      { title: "Quickstart", body: "Install the released tools and start the local runtime.", href: "/get-started/quickstart/" },
+      { title: "First integration", body: "Connect an agent or service to scoped access.", href: "/get-started/first-integration/" },
+    ],
+  },
+  {
+    id: "build",
+    label: "Build",
+    items: [
+      { title: "Protect an HTTP API", body: "Require a mandate before any upstream call.", href: "/tutorials/protect-an-api/" },
+      { title: "Resources & providers", body: "Separate protected targets from credential modes.", href: "/guides/resources-providers/" },
+      { title: "Author policy", body: "Write Rego decisions and activate them safely.", href: "/guides/author-policy/" },
+    ],
+  },
+  {
+    id: "model",
+    label: "Core model",
+    items: [
+      { title: "One-Minute Model", body: "Zones, applications, resources, policy, mandates.", href: "/concepts/model-overview/" },
+      { title: "Modeling Recipes", body: "Map environments, customers, and agents onto objects.", href: "/guides/modeling-recipes/" },
+      { title: "Delegation Graph", body: "Bounded authority transfer between agent sessions.", href: "/concepts/delegation/" },
+    ],
+  },
+  {
+    id: "operate",
+    label: "Operate",
+    items: [
+      { title: "CLI and Console", body: "What belongs in runtime, Console, Admin API, SDKs.", href: "/runtime-console/cli-and-console/" },
+      { title: "Diagnostics & traces", body: "Doctor checks, audit records, and request traces.", href: "/runtime-console/observability/" },
+      { title: "Troubleshooting", body: "Start from a failing call and find the surface.", href: "/operations/troubleshooting/" },
+    ],
+  },
+  {
+    id: "reference",
+    label: "Reference",
+    items: [
+      { title: "FAQ", body: "Direct answers with stable anchors.", href: "/reference/faq/" },
+      { title: "Error Reference", body: "Codes, likely source, and first check.", href: "/reference/errors/" },
+      { title: "Threat Model", body: "Boundaries, invariants, and security assumptions.", href: "/security/threat-model/" },
+    ],
+  },
+];
+---
+
+<section id="explore" class="docs-dir" aria-labelledby="docs-dir-heading">
+  <div class="docs-dir__inner">
+    <header class="docs-dir__head">
+      <p class="docs-dir__eyebrow">Documentation map</p>
+      <h2 id="docs-dir-heading" class="docs-dir__heading">Explore the documentation</h2>
+      <p class="docs-dir__lede">
+        The homepage is a routing surface. Pick the column that matches what you are doing now.
+      </p>
+    </header>
+
+    <div class="docs-dir__grid">
+      {groups.map((group) => (
+        <section id={group.id} class="docs-dir__group" aria-label={group.label}>
+          <h3 class="docs-dir__group-title">{group.label}</h3>
+          <ul class="docs-dir__list">
+            {group.items.map((item) => (
+              <li>
+                <a class="docs-dir__item" href={item.href}>
+                  <span class="docs-dir__item-title">{item.title}</span>
+                  <span class="docs-dir__item-body">{item.body}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  </div>
+</section>
