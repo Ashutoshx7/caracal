@@ -12,13 +12,10 @@ const site = 'https://docs.caracal.run'
 const sections: Record<string, string[]> = {
   'Get Started': [
     'get-started',
-    'get-started/welcome',
-    'get-started/installation',
-    'get-started/quickstart',
-    'get-started/five-minute-setup',
-    'get-started/first-integration',
-    'get-started/key-ideas',
-    'get-started/what-caracal-does',
+    'get-started/install-caracal',
+    'get-started/first-protected-call',
+    'get-started/add-sdk-to-your-app',
+    'get-started/first-run-troubleshooting',
   ],
   'Core Concepts': [
     'concepts',

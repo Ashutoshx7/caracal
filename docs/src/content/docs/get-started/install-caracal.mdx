@@ -1,0 +1,91 @@
+---
+title: Install Caracal
+description: Install the released Caracal CLI and Console, then verify Docker for the local stack.
+pageType: workflow
+---
+
+Install the released tools when you want to run Caracal as a product. The `caracal` CLI owns local runtime lifecycle and workload execution. The Console owns product management: zones, applications, resources, providers, policies, sessions, audit, diagnostics, and Control workflows.
+
+## Install CLI and Console
+
+The installer downloads release archives from GitHub, verifies each archive against `SHA256SUMS`, and installs:
+
+- `caracal`: local runtime CLI for `up`, `down`, `status`, `purge`, `run`, and `console`.
+- `caracal-console`: interactive Console for product-management workflows.
+
+### Linux and macOS
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
+```
+
+Optional hardening and pinning:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | \
+  sh -s -- --version vYYYY.MM.DD --require-provenance
+```
+
+By default the installer writes to `~/.local/bin`. Override with `--install-dir /path/to/bin` or `CARACAL_INSTALL_DIR=/path/to/bin`.
+
+### Windows
+
+```powershell
+$installer = "$env:TEMP\install-console.ps1"
+iwr -UseBasicParsing https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.ps1 -OutFile $installer
+powershell -ExecutionPolicy Bypass -File $installer
+```
+
+Optional hardening and pinning:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File $installer -Version vYYYY.MM.DD -RequireProvenance
+```
+
+The Windows installer writes to `%LOCALAPPDATA%\Programs\caracal` by default and adds that directory to the user `Path`. Open a new shell after installation.
+
+## Verify Installation
+
+```sh
+caracal --version
+caracal-console --version
+caracal status --help
+```
+
+On Windows PowerShell:
+
+```powershell
+caracal --version
+caracal-console --version
+caracal status --help
+```
+
+Use `caracal` for local lifecycle and workload execution only. Use `caracal console` or `caracal-console` for product management.
+
+## Verify Docker
+
+Running the open-source stack locally requires Docker 24+ with the Compose v2 plugin:
+
+```sh
+docker compose version
+```
+
+On Windows PowerShell:
+
+```powershell
+docker compose version
+```
+
+The local stack includes PostgreSQL and Redis containers. You do not need to install those databases separately for Get Started.
+
+## Platform Notes
+
+| Platform | Architectures | Notes |
+| --- | --- | --- |
+| Linux | `amd64`, `arm64` | Requires `curl` or `wget`, `tar`, and `sha256sum` or `shasum`. |
+| macOS | `amd64`, `arm64` | If Gatekeeper quarantines the binary, remove quarantine from the installed file. |
+| Windows | `amd64` | Use the PowerShell installer and open a new shell after installation. |
+
+## Next Step
+
+Continue with [First Protected Call](./first-protected-call/).

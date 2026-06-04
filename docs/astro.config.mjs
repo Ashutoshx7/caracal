@@ -18,6 +18,17 @@ const description =
 
 export default defineConfig({
   output: 'static',
+  redirects: {
+    '/get-started/choose-your-path/': '/get-started/',
+    '/get-started/welcome/': '/get-started/',
+    '/get-started/installation/': '/get-started/install-caracal/',
+    '/get-started/quickstart/': '/get-started/first-protected-call/',
+    '/get-started/five-minute-setup/': '/get-started/first-protected-call/',
+    '/get-started/first-integration/': '/get-started/add-sdk-to-your-app/',
+    '/get-started/key-ideas/': '/concepts/model-overview/',
+    '/get-started/what-caracal-does/': '/concepts/authority-model/',
+    '/get-started/contributor-quickstart/': '/contributing/setup/',
+  },
   markdown: {
     remarkPlugins: [remarkMermaid],
   },
@@ -112,15 +123,10 @@ export default defineConfig({
           label: 'Get Started',
           items: [
             { label: 'Overview', link: '/get-started/' },
-            { label: 'Choose Your Path', link: '/get-started/choose-your-path/' },
-            { label: 'Welcome', link: '/get-started/welcome/' },
-            { label: 'Installation', link: '/get-started/installation/' },
-            { label: 'Quickstart: Released Product', link: '/get-started/quickstart/' },
-            { label: 'Five-Minute Setup', link: '/get-started/five-minute-setup/' },
-            { label: 'First Integration', link: '/get-started/first-integration/' },
-            { label: 'Key Ideas at a Glance', link: '/get-started/key-ideas/' },
-            { label: 'What Caracal Does', link: '/get-started/what-caracal-does/' },
-            { label: 'Contributor Quickstart', link: '/get-started/contributor-quickstart/' },
+            { label: 'Install Caracal', link: '/get-started/install-caracal/' },
+            { label: 'First Protected Call', link: '/get-started/first-protected-call/' },
+            { label: 'Add SDK to Your App', link: '/get-started/add-sdk-to-your-app/' },
+            { label: 'First-Run Troubleshooting', link: '/get-started/first-run-troubleshooting/' },
           ],
         },
         {
