@@ -1,23 +1,23 @@
 ---
-title: Services
-description: Service-by-service reference for the current Caracal runtime.
+title: Understand Services
+description: Service-by-service map for the current Caracal runtime, authority path, management plane, evidence pipeline, and automation surface.
 pageType: landing
 ---
 
 Caracal services are small, explicit runtime components. Each service owns a bounded part of the authority lifecycle and exposes health/readiness endpoints for operations.
 
-## Service map
+## Service Map
 
 | Service | Port | Owns |
 | --- | --- | --- |
-| [Control-Plane API](/services/api/) | `3000` | Product state, management routes, policy/grant resources, admin audit, API outbox. |
-| [Coordinator](/services/coordinator/) | `4000` | Agent sessions, service leases, delegation edges, invocations, Coordinator outbox. |
-| [STS](/services/sts/) | `8080` | Token exchange, mandate issuance, JWKS, policy evaluation, step-up status. |
-| [Gateway](/services/gateway/) | `8081` | Protected reverse proxy, per-request exchange, revocation checks, upstream safety. |
-| [Audit](/services/audit/) | `9090` | Audit ingestion, DLQ, tamper checks, retention, search. |
-| [Control](/services/control/) | `8087` | Optional remote management invocation through shared engine dispatch. |
+| [Manage Product State](/services/api/) | `3000` | Product state, management routes, policy/grant resources, admin audit, API outbox. |
+| [Coordinate Agent State](/services/coordinator/) | `4000` | Agent sessions, service leases, delegation edges, invocations, Coordinator outbox. |
+| [Issue Mandates](/services/sts/) | `8080` | Token exchange, mandate issuance, JWKS, policy evaluation, step-up status. |
+| [Protect Upstreams](/services/gateway/) | `8081` | Protected reverse proxy, per-request exchange, revocation checks, upstream safety. |
+| [Ingest Audit Evidence](/services/audit/) | `9090` | Audit ingestion, DLQ, tamper checks, retention, search. |
+| [Automate Management](/services/control/) | `8087` | Optional remote management invocation through shared engine dispatch. |
 
-## Dependency map
+## Dependency Map
 
 ```mermaid
 flowchart LR
@@ -36,7 +36,19 @@ flowchart LR
   Control --> Redis
 ```
 
-## Related sections
+## Service Reading Path
+
+| Path | Pages |
+| --- | --- |
+| Management plane | [Manage Product State](/services/api/) → [Coordinate Agent State](/services/coordinator/) |
+| Authority path | [Issue Mandates](/services/sts/) → [Protect Upstreams](/services/gateway/) |
+| Evidence and automation | [Ingest Audit Evidence](/services/audit/) → [Automate Management](/services/control/) |
+
+## Next Step
+
+Start with [Manage Product State](/services/api/) to understand where Caracal product objects are owned.
+
+## Related Sections
 
 - [Understand Architecture](/architecture/)
 - [Operations](/operations/)

@@ -1,5 +1,5 @@
 ---
-title: Gateway
+title: Protect Upstreams
 description: Service reference for protected reverse proxying, STS exchange, revocation checks, and upstream safety.
 pageType: reference
 ---
@@ -15,7 +15,7 @@ Gateway is the protected-resource ingress. It validates inbound Caracal authorit
 | Metrics | `/metrics`, `/metrics.json` |
 | Revocation reload | `POST /internal/revocations/reload` |
 
-## Request path
+## Request Path
 
 ```mermaid
 sequenceDiagram
@@ -32,7 +32,7 @@ sequenceDiagram
   Gateway->>Audit: audit event or replay file
 ```
 
-## Deny-before-upstream checks
+## Deny-Before-Upstream Checks
 
 - Missing, malformed, oversized, expiring, replayed, revoked, or signature-invalid bearer token.
 - Missing `X-Caracal-Resource`.
@@ -42,7 +42,7 @@ sequenceDiagram
 - STS exchange failure or open STS circuit.
 - Unsafe upstream destination.
 
-## Configuration highlights
+## Configuration Highlights
 
 | Variable | Purpose |
 | --- | --- |
@@ -53,7 +53,11 @@ sequenceDiagram
 | `JTI_FAIL_OPEN` | Forbidden in published modes. |
 | `AUDIT_REPLAY_DIR` | Replay directory for audit events. |
 
-## Related pages
+## Next Step
+
+Use [Ingest Audit Evidence](/services/audit/) to understand how Gateway, STS, API, Coordinator, and Control evidence becomes searchable audit state.
+
+## Related Pages
 
 - [Gateway Behavior](/api/gateway/)
 - [Enforce Boundaries](/architecture/trust-boundaries/)

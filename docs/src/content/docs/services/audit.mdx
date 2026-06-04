@@ -1,5 +1,5 @@
 ---
-title: Audit
+title: Ingest Audit Evidence
 description: Service reference for audit ingestion, DLQ, tamper checks, retention, search, and metrics.
 pageType: reference
 ---
@@ -16,11 +16,11 @@ Audit consumes signed audit events from Redis, verifies integrity, writes append
 | Search | `GET /api/audit/search` |
 | DLQ | `GET /api/audit/dlq`, `GET /api/audit/dlq/{id}`, `POST /api/audit/dlq/replay` |
 
-## Consumer behavior
+## Consumer Behavior
 
 Audit consumes `caracal.audit.events` with the `audit-ingestor` consumer group. On startup it drains pending entries for its consumer, periodically claims orphaned entries, retries until `AUDIT_MAX_DELIVERIES`, and moves permanent failures to `caracal.audit.events.dlq`.
 
-## Integrity controls
+## Integrity Controls
 
 | Control | Meaning |
 | --- | --- |
@@ -29,7 +29,7 @@ Audit consumes `caracal.audit.events` with the `audit-ingestor` consumer group. 
 | Append-only database role | Audit role cannot update or delete `audit_events`. |
 | Retention | `AUDIT_RETENTION_DAYS`, partitions, and optional export watermarks. |
 
-## Readiness signals
+## Readiness Signals
 
 | Signal | Meaning |
 | --- | --- |
@@ -37,7 +37,11 @@ Audit consumes `caracal.audit.events` with the `audit-ingestor` consumer group. 
 | Consumer lag | `AUDIT_READY_LAG_MAX` controls accepted stream lag. |
 | PEL age | `AUDIT_READY_PEL_OLDEST_SECS_MAX` controls pending-entry staleness. |
 
-## Related pages
+## Next Step
+
+Use [Automate Management](/services/control/) when remote automation needs the same product-management operations available in Console.
+
+## Related Pages
 
 - [Audit and Request Traces](/concepts/audit-ledger/)
 - [Export Audit Evidence](/operations/compliance-audit-integration/)

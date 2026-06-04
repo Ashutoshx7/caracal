@@ -1,5 +1,5 @@
 ---
-title: Coordinator
+title: Coordinate Agent State
 description: Service reference for agent sessions, delegation edges, invocations, and lifecycle events.
 pageType: reference
 ---
@@ -35,11 +35,15 @@ Coordinator owns agent and delegation runtime state. SDKs and Console use it to 
 | Retention cleaner | Removes expired historical coordination records. |
 | Outbox publisher | Publishes Coordinator outbox messages to Redis. |
 
-## Event topics
+## Event Topics
 
 Coordinator publishes `caracal.agents.lifecycle`, `caracal.invocations.lifecycle`, `caracal.delegations.invalidate`, and session revocation events.
 
-## Related pages
+## Next Step
+
+Use [Issue Mandates](/services/sts/) to understand how STS validates sessions and delegation edges during token exchange.
+
+## Related Pages
 
 - [Coordinator REST](/api/coordinator/)
 - [Coordinate Agents](/architecture/delegation-flow/)

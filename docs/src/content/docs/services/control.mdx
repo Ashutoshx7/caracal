@@ -1,5 +1,5 @@
 ---
-title: Control
+title: Automate Management
 description: Service reference for optional remote management invocation.
 pageType: reference
 ---
@@ -17,7 +17,7 @@ Control is an optional automation surface for remote management operations. It d
 | Compose profile | `control` |
 | Helm default | disabled |
 
-## Invoke flow
+## Invoke Flow
 
 ```mermaid
 sequenceDiagram
@@ -33,7 +33,7 @@ sequenceDiagram
   Control->>API: dispatch supported management operation
 ```
 
-## Required config
+## Required Config
 
 | Variable | Purpose |
 | --- | --- |
@@ -45,7 +45,7 @@ sequenceDiagram
 | `CARACAL_API_URL` | API base URL. |
 | `CONTROL_GATE_FILE` | File gate that must exist before invoke is available. |
 
-## Non-interactive automation
+## Non-Interactive Automation
 
 Control is the automation counterpart to Console. A CI job, provisioning script,
 or onboarding tool drives the same management operations a human performs in
@@ -81,15 +81,15 @@ least-privilege automation stays the easy path. The `controlBootstrap` example
 ships a reusable client plus idempotent bootstrap and teardown scripts that
 provision a demo provider, resource, and policy through this flow.
 
-## Safety behavior
+## Safety Behavior
 
 Control returns `503` when the gate is disabled, `401` for authentication or replay failures, `429` for rate limiting, `403` for denied dispatch, `400` for invalid requests, `501` for unsupported commands, and `502` for upstream errors.
 
 Control is a product-management surface. Do not expose it as a top-level `caracal` runtime command.
 
-## Related pages
+## Related Pages
 
 - [Choose the Right Surface](/runtime-console/cli-and-console/)
 - [Enforce Boundaries](/architecture/trust-boundaries/)
-- [Control API Reference](/api/control-plane/)
+- [Control-Plane REST](/api/control-plane/)
 - [Control bootstrap example](https://github.com/Garudex-Labs/caracal/tree/main/examples/controlBootstrap)

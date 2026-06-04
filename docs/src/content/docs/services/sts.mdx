@@ -1,5 +1,5 @@
 ---
-title: STS
+title: Issue Mandates
 description: Service reference for token exchange, mandate issuance, JWKS, policy evaluation, and step-up status.
 pageType: reference
 ---
@@ -28,7 +28,7 @@ STS is the authority issuance boundary. It authenticates applications, validates
 | Gateway HMAC key | Verify Gateway-authenticated exchanges. |
 | Audit replay dir | Persist audit events while Redis/Audit is unavailable. |
 
-## Issuance rules
+## Issuance Rules
 
 | Rule | Behavior |
 | --- | --- |
@@ -38,11 +38,15 @@ STS is the authority issuance boundary. It authenticates applications, validates
 | `OPA_POLL_SECONDS` | Defaults to `60`, capped at `300`. |
 | Published modes | Require `GATEWAY_STS_HMAC_KEY` and audit/stream keys where configured. |
 
-## Failure posture
+## Failure Posture
 
 Invalid client credentials, missing resources, invalid subject tokens, revoked sessions, unsatisfied step-up, policy denial, invalid delegation, and failed Gateway signatures deny exchange.
 
-## Related pages
+## Next Step
+
+Use [Protect Upstreams](/services/gateway/) to understand how Gateway validates inbound authority and performs per-request STS exchange.
+
+## Related Pages
 
 - [Exchange Tokens](/architecture/token-exchange-flow/)
 - [STS Token Endpoint](/api/sts/)

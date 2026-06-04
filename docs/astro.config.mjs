@@ -474,13 +474,31 @@ export default defineConfig({
           label: 'Services',
           collapsed: true,
           items: [
-            { label: 'Overview', link: '/services/' },
-            { label: 'Control-Plane API', link: '/services/api/' },
-            { label: 'Coordinator', link: '/services/coordinator/' },
-            { label: 'STS', link: '/services/sts/' },
-            { label: 'Gateway', link: '/services/gateway/' },
-            { label: 'Audit', link: '/services/audit/' },
-            { label: 'Control', link: '/services/control/' },
+            { label: 'Understand Services', link: '/services/' },
+            {
+              label: 'Management Plane',
+              collapsed: true,
+              items: [
+                { label: 'Manage Product State', link: '/services/api/' },
+                { label: 'Coordinate Agent State', link: '/services/coordinator/' },
+              ],
+            },
+            {
+              label: 'Authority Path',
+              collapsed: true,
+              items: [
+                { label: 'Issue Mandates', link: '/services/sts/' },
+                { label: 'Protect Upstreams', link: '/services/gateway/' },
+              ],
+            },
+            {
+              label: 'Evidence and Automation',
+              collapsed: true,
+              items: [
+                { label: 'Ingest Audit Evidence', link: '/services/audit/' },
+                { label: 'Automate Management', link: '/services/control/' },
+              ],
+            },
           ],
         },
         {
