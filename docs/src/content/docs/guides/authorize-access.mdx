@@ -9,6 +9,10 @@ Applications and subjects are authorized to request resource scopes by the polic
 
 Access is decided by policy at request time. There is no separate access-binding step to maintain: define the protected resource and its scopes, then author and activate a policy that allows the application, subject, and scopes. The Gateway and STS evaluate that active policy on every request.
 
+:::note[FAQ]
+[Do I manage grants directly?](/reference/faq/#faq-do-i-manage-grants-directly)
+:::
+
 1. Define the resource and its scopes. See [Define Resources and Providers](/guides/resources-providers/).
 2. Author a rule that allows the application, subject, and scopes. See [Author a Rego Policy](/guides/author-policy/).
 3. Activate the policy set so the rule takes effect. See [Activate a Policy Set](/guides/activate-policy-set/).

@@ -286,6 +286,7 @@ export default defineConfig({
           collapsed: true,
           items: [
             { label: 'Overview', link: '/reference/' },
+            { label: 'Frequently Asked Questions', link: '/reference/faq/' },
             { label: 'Glossary', link: '/reference/glossary/' },
             { label: 'Error Reference', link: '/reference/errors/' },
             { label: 'Configuration Reference', link: '/reference/configuration/' },

@@ -24,6 +24,10 @@ Resources describe protected targets such as:
 | Gateway application | Application identity used by Gateway-mediated resources. |
 | Upstream credential provider | Resource binding to the provider record used when Gateway attaches no credential, a Caracal mandate, OAuth tokens, API keys, or bearer tokens. |
 
+:::note[FAQ]
+[What is the difference between a resource and a provider?](/reference/faq/#faq-resource-versus-provider) and [why must the resource identifier stay stable?](/reference/faq/#faq-stable-resource-identifier)
+:::
+
 ## Grants
 
 A grant binds:
@@ -59,6 +63,10 @@ Prefer small, action-oriented scopes:
 | `mcp:tool:call` | `tools` |
 
 Use resource identifiers for targets and scopes for actions. Do not encode environment, tenant, or user identity into scope names when those belong in the zone, principal, or policy input.
+
+:::note[FAQ]
+[How should I design scopes?](/reference/faq/#faq-scope-design) and [do I manage grants directly?](/reference/faq/#faq-do-i-manage-grants-directly)
+:::
 
 ## Related pages
 

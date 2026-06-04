@@ -1,0 +1,175 @@
+---
+title: Frequently Asked Questions
+description: Stable answers to recurring Caracal modeling, runtime, provider, troubleshooting, and enterprise questions.
+pageType: reference
+---
+
+This FAQ collects high-friction questions that come up across the docs. Each entry has a stable anchor so other pages can link directly to the answer instead of repeating it.
+
+## Question index
+
+| Area | Question |
+| --- | --- |
+| Fit | [What problem does Caracal solve?](#faq-what-problem-does-caracal-solve) |
+| Fit | [Is Caracal an identity provider, secrets manager, or API gateway?](#faq-is-caracal-an-idp-secrets-manager-or-api-gateway) |
+| Model | [What should a zone represent?](#faq-what-should-a-zone-represent) |
+| Model | [Does the open-source edition include managed multi-tenancy?](#faq-does-open-source-include-managed-multi-tenancy) |
+| Model | [What is the difference between an application, principal, and agent session?](#faq-application-principal-agent-session) |
+| Model | [When should I use a managed application versus DCR?](#faq-managed-application-versus-dcr) |
+| Resources | [What is the difference between a resource and a provider?](#faq-resource-versus-provider) |
+| Resources | [Why must the resource identifier stay stable if the upstream URL can change?](#faq-stable-resource-identifier) |
+| Resources | [How should I design scopes?](#faq-scope-design) |
+| Resources | [Do I manage grants directly?](#faq-do-i-manage-grants-directly) |
+| Providers | [Is an application secret the same as a provider credential?](#faq-app-secret-versus-provider-credential) |
+| Providers | [When should I use per-user OAuth instead of a shared provider credential?](#faq-per-user-oauth-versus-shared-credential) |
+| Runtime | [Why are zone and policy commands in the Console instead of the `caracal` CLI?](#faq-why-console-instead-of-cli) |
+| Troubleshooting | [What is the difference between a 403 from STS and a 403 from Gateway?](#faq-sts-403-versus-gateway-403) |
+| Troubleshooting | [Where is the diagnostic bundle or doctor command?](#faq-diagnostic-bundle) |
+| Troubleshooting | [Why is an audit event missing?](#faq-missing-audit-event) |
+| Enterprise | [Which features are Enterprise Edition only?](#faq-enterprise-only-features) |
+
+## Fit and product boundary
+
+<a id="faq-what-problem-does-caracal-solve"></a>
+
+### What problem does Caracal solve?
+
+Caracal gives agents and automated workflows short-lived, policy-approved authority instead of long-lived credentials. The agent asks for scoped authority at the moment it acts, STS evaluates policy, Gateway or a connector enforces the mandate, and Audit records the decision and result.
+
+See [What Caracal Does](/get-started/what-caracal-does/) and the [One-Minute Model](/concepts/model-overview/).
+
+<a id="faq-is-caracal-an-idp-secrets-manager-or-api-gateway"></a>
+
+### Is Caracal an identity provider, secrets manager, or API gateway?
+
+No. Caracal is an authority broker for agent and workload actions. It can sit in front of HTTP resources like a protected Gateway, and it can broker provider credentials, but it does not replace your IdP, your static config store, or your general API management layer.
+
+Use an IdP for human login, a secret manager for static application configuration, and Caracal when an agent or service needs scoped, auditable authority for a resource.
+
+## Core model
+
+<a id="faq-what-should-a-zone-represent"></a>
+
+### What should a zone represent?
+
+A zone should represent a trust boundary: the set of resources, sessions, policies, signing keys, and audit records that are allowed to share authority state. Use a separate zone when two workloads need independent signing keys, policy activation, or audit trails. Use one zone with separate resources when the same trust boundary protects multiple upstreams.
+
+For examples, see [Modeling Recipes](/guides/modeling-recipes/).
+
+<a id="faq-does-open-source-include-managed-multi-tenancy"></a>
+
+### Does the open-source edition include managed multi-tenancy?
+
+No. The open-source Community Edition gives you zones as a manual isolation primitive. You can model customers, environments, or trust tiers with zones and automate them through the Admin API, but managed tenant, team, SSO, and hosted lifecycle features are Enterprise Edition features.
+
+See [Enterprise Edition](/enterprise/) for the commercial feature boundary.
+
+<a id="faq-application-principal-agent-session"></a>
+
+### What is the difference between an application, principal, and agent session?
+
+An application is registered software that authenticates to Caracal. A principal is the acting identity, such as a user, service, or agent. An agent session is a time-bounded execution context spawned from a subject session or application context.
+
+Policy decisions consider all of them: which application is asking, which principal is acting, which session anchors the request, and which resource scopes are requested.
+
+<a id="faq-managed-application-versus-dcr"></a>
+
+### When should I use a managed application versus DCR?
+
+Use a managed application for durable software you intentionally operate: a backend service, Gateway application, orchestrator, or known agent runtime. Use DCR for spawned, high-churn, short-lived agent identities that need isolated credentials. Do not reuse one DCR application across multiple spawned agents.
+
+See [Principal and Application](/concepts/principal/).
+
+## Resources, scopes, and grants
+
+<a id="faq-resource-versus-provider"></a>
+
+### What is the difference between a resource and a provider?
+
+A resource is the protected target and policy audience: the thing a mandate authorizes access to. A provider describes how Gateway authenticates upstream: no credential, Caracal mandate, OAuth, API key, or bearer token.
+
+Keep target identity, scopes, upstream URL, and Gateway binding on the resource. Keep secrets, token endpoints, OAuth settings, API keys, and bearer tokens on the provider.
+
+<a id="faq-stable-resource-identifier"></a>
+
+### Why must the resource identifier stay stable if the upstream URL can change?
+
+Policies, grants, mandates, and audit records refer to the resource identifier. If you use a mutable deployment hostname as the identifier, changing infrastructure also changes your authority boundary and breaks audit continuity. Use a stable audience URI such as `resource://billing`, then change the upstream URL when routing changes.
+
+<a id="faq-scope-design"></a>
+
+### How should I design scopes?
+
+Use small action-oriented scopes such as `payments:read`, `tickets:comment`, or `mcp:tool:call`. Do not encode environment, tenant, user, or hostname into scope names when that data belongs in the zone, principal, resource, or policy input.
+
+Scopes answer “what action is allowed?” Resource identifiers answer “what target is protected?”
+
+<a id="faq-do-i-manage-grants-directly"></a>
+
+### Do I manage grants directly?
+
+In the current Console flow, you usually define resources, scopes, applications, subjects, and policies rather than managing grants as a separate daily object. Grants are an authorization input that policy can read; the active policy set still makes the final allow, deny, or step-up decision.
+
+If access is denied, inspect the active policy, subject, application, resource, and scopes through [request trace](/operations/troubleshooting/).
+
+## Providers and upstream credentials
+
+<a id="faq-app-secret-versus-provider-credential"></a>
+
+### Is an application secret the same as a provider credential?
+
+No. An application secret authenticates the application to Caracal. A provider credential authenticates Gateway or STS to an upstream provider such as Google, Slack, OpenAI, or an internal API. Agents should authenticate to Caracal and receive short-lived mandates; they should not receive long-lived provider credentials.
+
+See [Define Resources and Providers](/guides/resources-providers/).
+
+<a id="faq-per-user-oauth-versus-shared-credential"></a>
+
+### When should I use per-user OAuth instead of a shared provider credential?
+
+Use per-user OAuth (`oauth2_authorization_code`) when the upstream call must act as a specific user and that user must consent. Use a shared service credential (`oauth2_client_credentials`, `api_key`, or `bearer_token`) when the agent acts as the application or service, not as an individual user.
+
+The concrete setup fields are in [Provider Recipes](/guides/provider-recipes/).
+
+## Runtime, Console, and troubleshooting
+
+<a id="faq-why-console-instead-of-cli"></a>
+
+### Why are zone and policy commands in the Console instead of the `caracal` CLI?
+
+The top-level `caracal` CLI is intentionally limited to local runtime lifecycle and process execution: `up`, `down`, `status`, `purge`, `run`, and `console`. Product-management workflows such as zones, applications, providers, resources, policies, audit, diagnostics, agents, and delegation live in the Console, Admin API, and SDKs so they use one management surface and do not drift into duplicated CLI commands.
+
+See [CLI and Console](/runtime-console/cli-and-console/).
+
+<a id="faq-sts-403-versus-gateway-403"></a>
+
+### What is the difference between a 403 from STS and a 403 from Gateway?
+
+A 403 from STS means the exchange was authenticated but policy did not allow the requested resource scopes, or a step-up/grant/session condition blocked issuance. A 403 from Gateway or a verifier means the request reached a protected boundary but the mandate, resource binding, scope check, revocation state, or route safety check failed.
+
+Use [request trace](/operations/troubleshooting/) with the request ID to identify the surface before changing policy or resource configuration.
+
+<a id="faq-diagnostic-bundle"></a>
+
+### Where is the diagnostic bundle or doctor command?
+
+The diagnostic bundle is exposed through existing surfaces instead of a separate top-level command. Use `caracal status --json` for runtime status, Console `diagnostics` for Doctor checks (`health`, `readiness`, `zones`, `preflight`), `audit` for recent decisions, and `request trace` for a known request ID.
+
+See the [Troubleshooting Decision Tree](/operations/troubleshooting/#the-diagnostic-bundle).
+
+<a id="faq-missing-audit-event"></a>
+
+### Why is an audit event missing?
+
+First confirm the request reached a Caracal-protected boundary. If it did, check the selected zone, time window, request ID, Audit service readiness, Redis stream health, replay backlog, and DLQ. If the request failed before STS, Gateway, Coordinator, or a connector emitted evidence, there may be no action-result event for that boundary.
+
+Start with [Observability Workflows](/runtime-console/observability/) and [Operator Debugging](/operations/debugging/).
+
+## Enterprise
+
+<a id="faq-enterprise-only-features"></a>
+
+### Which features are Enterprise Edition only?
+
+Managed multi-tenancy, hosted management UI, managed Gateway and service operation, SSO, SCIM provisioning, teams, organization-level RBAC, commercial support, and enterprise lifecycle features are Enterprise Edition features. The Community Edition remains self-hosted and uses zones, Admin API automation, Console workflows, SDKs, and connectors.
+
+See [Enterprise Edition](/enterprise/) or [book an enterprise call](https://cal.com/rawx18/caracal-enterprise-sales).
