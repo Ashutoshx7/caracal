@@ -1,0 +1,14 @@
+{
+  "name": "@caracal-examples/provider-preflight",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Automatable provider preflight that validates a resource binding, provider reachability, runtime-injection eligibility, and policy authorization before the first Gateway call.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "preflight": "node run.mjs",
+    "test": "node --test"
+  }
+}

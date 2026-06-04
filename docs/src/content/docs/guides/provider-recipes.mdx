@@ -1,0 +1,115 @@
+---
+title: Provider Recipes
+description: Concrete copy-paste provider setups for OpenAI, Google, GitHub, Slack, and internal APIs, with the enforcement boundary each one uses.
+---
+
+This page turns the abstract [provider auth modes](/guides/resources-providers/) into concrete recipes. Each recipe states the enforcement boundary, the provider kind, the exact fields, and the resource binding so you can reproduce a working setup without guessing.
+
+Provider recipes live in the documentation, not the Console. The Console stays focused on the fields a given setup needs; this page is the reference you keep open beside it.
+
+## Choose the enforcement boundary first
+
+The most common mistake is treating these four boundaries as interchangeable. They are not — they differ in where enforcement happens, who writes the action-result audit, and who holds the upstream credential.
+
+| Boundary | Enforcement point | Credential holder | Action-result audit | Use when |
+| --- | --- | --- | --- | --- |
+| Gateway-mediated | Caracal Gateway | Gateway (sealed provider secret) | Gateway | The upstream is HTTP-routable and you want Caracal to broker the credential and enforce every call. |
+| Connector-verified | Your service process | Your service | Your service after connector verification | You own the service and must enforce mandates in process. |
+| Application-managed call | Your application code | Your application | Your application | You call the provider directly and only attach Caracal context for attribution. Not Caracal-enforced. |
+| Runtime token injection | Your runtime, eligibility gated by Caracal | Your runtime process | Your application | An existing client or CLI must receive a brokered token at runtime, and the provider sets `allow_runtime_injection=true`. |
+
+Prefer **Gateway-mediated** unless you have a specific reason to enforce elsewhere. The recipes below note which boundary they use.
+
+## OpenAI API key (Gateway-mediated)
+
+Broker an OpenAI key so the agent never holds it.
+
+| Field | Value |
+| --- | --- |
+| Provider kind | `api_key` |
+| `header_name` | `Authorization` |
+| `auth_scheme` | `Bearer` |
+| `api_key` | Your OpenAI secret key (sealed at creation). |
+| Resource identifier | `resource://openai` |
+| Resource upstream URL | `https://api.openai.com` |
+| Resource scopes | `openai:chat`, `openai:embeddings` |
+
+The Gateway forwards `Authorization: Bearer <sealed key>` upstream and strips caller auth. The agent calls the Caracal resource, not OpenAI directly.
+
+## Google Workspace (OAuth authorization code)
+
+Delegated user consent for a Google API, refreshed inside STS.
+
+| Field | Value |
+| --- | --- |
+| Provider kind | `oauth2_authorization_code` |
+| `authorization_endpoint` | `https://accounts.google.com/o/oauth2/v2/auth` |
+| `token_endpoint` | `https://oauth2.googleapis.com/token` |
+| `redirect_uri` | Your exact Caracal callback, e.g. `https://api.example.com/v1/zones/<zone>/provider-grants/oauth/callback` |
+| `client_id` / `client_secret` | From the Google Cloud OAuth client. |
+| `scopes` | e.g. `https://www.googleapis.com/auth/drive.readonly` |
+| `allowed_token_hosts` | `oauth2.googleapis.com` |
+| `authorization_params` (Advanced) | `access_type=offline`, `prompt=consent` for refresh tokens. |
+| Resource upstream URL | `https://www.googleapis.com` |
+
+Caracal owns `client_id`, `redirect_uri`, `state`, and PKCE. Use the provider `connect` action to mint the consent URL for a user and resource.
+
+## GitHub (bearer token, with OAuth note)
+
+For automation, the simplest path is a pre-issued token.
+
+| Field | Value |
+| --- | --- |
+| Provider kind | `bearer_token` |
+| `bearer_token` | A GitHub fine-grained personal access token (sealed). |
+| `allowed_token_hosts` | `api.github.com` |
+| Resource identifier | `resource://github` |
+| Resource upstream URL | `https://api.github.com` |
+| Resource scopes | `github:repo-read`, `github:issues-write` |
+
+For delegated per-user consent instead of a shared token, use `oauth2_authorization_code` with `authorization_endpoint=https://github.com/login/oauth/authorize` and `token_endpoint=https://github.com/login/oauth/access_token`.
+
+## Slack (OAuth client credentials or bearer)
+
+For a Slack bot token that does not expire, use a bearer provider.
+
+| Field | Value |
+| --- | --- |
+| Provider kind | `bearer_token` |
+| `bearer_token` | The Slack bot/user OAuth token (sealed). |
+| `allowed_token_hosts` | `slack.com` |
+| Resource identifier | `resource://slack` |
+| Resource upstream URL | `https://slack.com/api` |
+| Resource scopes | `slack:chat-write`, `slack:channels-read` |
+
+For rotating machine tokens, use `oauth2_client_credentials` with Slack's token endpoint and `scopes`.
+
+## Internal API (Caracal mandate or none)
+
+For services you own, you usually do not need an upstream credential.
+
+| Setup | Provider kind | Use when |
+| --- | --- | --- |
+| Mandate-aware | `caracal_mandate` | The internal service verifies Caracal tokens directly (issuer, audience, scopes, expiry, revocation). The Gateway forwards the resource mandate as `Authorization: Bearer ...`. |
+| No upstream credential | `none` | The Gateway is the enforcement point and the upstream expects no credential. |
+
+| Field | Value |
+| --- | --- |
+| Resource identifier | `resource://internal-billing` |
+| Resource upstream URL | `https://billing.internal.example` |
+| Resource scopes | `billing:read`, `billing:submit` |
+
+## Runtime token injection
+
+When an existing CLI or client cannot route through the Gateway but still needs a brokered credential, set `allow_runtime_injection=true` on the provider. This is a distinct security boundary: the token is injected into your runtime, and enforcement of the actual call is your application's responsibility, not the Gateway's. Use it deliberately and confirm eligibility with the preflight below.
+
+## Validate before the first call
+
+After you create the provider, bind it to the resource, and activate a policy, run the [Provider Preflight](/examples/) (`examples/providerPreflight`). It checks the resource-to-provider binding, OAuth token endpoint host, callback reachability, upstream reachability, runtime-injection eligibility, and that the active policy set actually returns `allow` for your application, resource, and scopes.
+
+## Related
+
+- [Define Resources and Providers](/guides/resources-providers/)
+- [Author a Rego Policy](/guides/author-policy/)
+- [Authorize Access](/guides/authorize-access/)
+- [Protect an API](/tutorials/protect-an-api/)
