@@ -1,0 +1,287 @@
+"""
+Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+Caracal, a product of Garudex Labs
+
+FastAPI application factory that builds one external-style provider, its OAuth and MCP surfaces, and its control UI.
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import threading
+from urllib.parse import parse_qsl
+
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+
+from _mock.providerlab import auth, catalog, credentials, mcp, netsim, ui
+
+
+async def _form(request: Request) -> dict[str, str]:
+    """Parse an application/x-www-form-urlencoded body without a multipart dependency."""
+    raw = await request.body()
+    return dict(parse_qsl(raw.decode("utf-8"))) if raw else {}
+
+
+class _Activity:
+    """Tracks authenticated callers seen on this provider port for the API clients page."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._seen: dict[str, dict] = {}
+
+    def record(self, principal: str, auth_type: str, operation: str, status: int) -> None:
+        key = f"{principal}:{auth_type}"
+        with self._lock:
+            entry = self._seen.setdefault(
+                key, {"principal": principal, "auth": auth_type, "calls": 0, "last_op": "", "last_status": 0}
+            )
+            entry["calls"] += 1
+            entry["last_op"] = operation
+            entry["last_status"] = status
+
+    def list(self) -> list[dict]:
+        with self._lock:
+            return list(self._seen.values())
+
+
+def _auth_error_response(exc: auth.AuthError, provider: catalog.Provider) -> JSONResponse:
+    headers = {}
+    if provider.category in ("bearer_token", "oauth2_client_credentials",
+                             "oauth2_authorization_code", "caracal_mandate"):
+        headers["WWW-Authenticate"] = f'{provider.auth_scheme} error="{exc.code}"'
+    return JSONResponse(status_code=exc.status, content={"error": exc.code, "message": exc.message}, headers=headers)
+
+
+def build_app(provider: catalog.Provider) -> FastAPI:
+    app = FastAPI(title=f"providerlab-{provider.id}")
+    activity = _Activity()
+    netsim.install(app, provider)
+
+    # ---------- health ----------
+    @app.get("/healthz")
+    async def healthz():
+        return {"status": "ok", "provider": provider.id, "category": provider.category}
+
+    # ---------- control UI ----------
+    @app.get("/", response_class=HTMLResponse)
+    async def home():
+        return HTMLResponse(ui.overview(provider))
+
+    @app.get("/__lab/credentials", response_class=HTMLResponse)
+    async def page_credentials():
+        return HTMLResponse(ui.credentials_page(provider))
+
+    @app.get("/__lab/clients", response_class=HTMLResponse)
+    async def page_clients():
+        return HTMLResponse(ui.clients_page(provider))
+
+    @app.get("/__lab/api-clients", response_class=HTMLResponse)
+    async def page_api_clients():
+        return HTMLResponse(ui.api_clients_page(provider, activity.list()))
+
+    @app.post("/__lab/api/create-credential")
+    async def create_credential(request: Request):
+        form = await _form(request)
+        store = credentials.load(provider.id)
+        kind, label = form.get("kind"), form.get("label", "unnamed")
+        if kind == "apiKey":
+            store.create_api_key(label)
+        elif kind == "bearer":
+            store.create_bearer(label)
+        return RedirectResponse("/__lab/credentials", status_code=303)
+
+    @app.post("/__lab/api/revoke")
+    async def revoke_credential(request: Request):
+        form = await _form(request)
+        credentials.load(provider.id).revoke(form.get("kind"), form.get("id"))
+        back = "/__lab/clients" if form.get("kind") == "client" else "/__lab/credentials"
+        return RedirectResponse(back, status_code=303)
+
+    @app.post("/__lab/api/register-client")
+    async def register_client(request: Request):
+        form = await _form(request)
+        store = credentials.load(provider.id)
+        redirect_uris = [u.strip() for u in form.get("redirect_uris", "").split(",") if u.strip()]
+        scopes = [s for s in form.get("scopes", "").split() if s]
+        store.create_client(form.get("name", "client"), redirect_uris, scopes)
+        return RedirectResponse("/__lab/clients", status_code=303)
+
+    @app.post("/__lab/api/revoke-anchor")
+    async def revoke_anchor(request: Request):
+        form = await _form(request)
+        credentials.load(provider.id).revoke_mandate_anchor(form.get("anchor"))
+        return RedirectResponse("/__lab/credentials", status_code=303)
+
+    # ---------- OAuth surface ----------
+    if provider.category in ("oauth2_client_credentials", "oauth2_authorization_code"):
+        _install_oauth(app, provider)
+
+    # ---------- MCP surface ----------
+    if provider.category == "mcp":
+        @app.post("/mcp")
+        async def mcp_endpoint(request: Request):
+            try:
+                principal = auth.authenticate(provider, request)
+            except auth.AuthError as exc:
+                return _auth_error_response(exc, provider)
+            message = await request.json()
+            response = mcp.handle(provider, message, principal)
+            activity.record(str(principal.get("principal")), principal.get("auth"),
+                           message.get("method", "mcp"), 200)
+            return JSONResponse(response)
+
+    # ---------- domain operations ----------
+    @app.api_route("/api/{operation}", methods=["GET", "POST"])
+    async def domain(operation: str, request: Request):
+        if operation not in provider.operations:
+            return JSONResponse(status_code=404, content={"error": "unknown_operation", "message": operation})
+        try:
+            principal = auth.authenticate(provider, request)
+        except auth.AuthError as exc:
+            activity.record("anonymous", "rejected", operation, exc.status)
+            return _auth_error_response(exc, provider)
+        payload = {}
+        if request.method == "POST":
+            try:
+                payload = await request.json()
+            except Exception:
+                payload = {}
+        result = {
+            "provider": provider.id,
+            "brand": provider.brand,
+            "operation": operation,
+            "principal": principal.get("principal"),
+            "received": payload,
+            "ok": True,
+        }
+        activity.record(str(principal.get("principal")), principal.get("auth"), operation, 200)
+        return JSONResponse(result)
+
+    return app
+
+
+def _install_oauth(app: FastAPI, provider: catalog.Provider) -> None:
+    @app.get("/.well-known/oauth-authorization-server")
+    async def metadata(request: Request):
+        base = str(request.base_url).rstrip("/")
+        doc = {
+            "issuer": base,
+            "token_endpoint": f"{base}/oauth/token",
+            "scopes_supported": list(provider.scopes),
+            "grant_types_supported": [],
+        }
+        if provider.category == "oauth2_client_credentials":
+            doc["grant_types_supported"] = ["client_credentials"]
+        else:
+            doc["authorization_endpoint"] = f"{base}/oauth/authorize"
+            doc["grant_types_supported"] = ["authorization_code", "refresh_token"]
+            doc["code_challenge_methods_supported"] = ["S256"] if provider.use_pkce else []
+        return JSONResponse(doc)
+
+    if provider.category == "oauth2_authorization_code":
+        @app.get("/oauth/authorize", response_class=HTMLResponse)
+        async def authorize(request: Request):
+            store = credentials.load(provider.id)
+            q = request.query_params
+            client = store.find_client(q.get("client_id", ""))
+            if client is None:
+                return JSONResponse(status_code=400, content={"error": "invalid_client"})
+            redirect_uri = q.get("redirect_uri", client["redirectUris"][0] if client["redirectUris"] else "")
+            consent = f"""<!doctype html><html><body style="font-family:sans-serif;background:#0f1320;color:#e7ecf5;padding:40px">
+<h2>{provider.brand} authorization</h2>
+<p>Application <code>{q.get('client_id','')}</code> requests scope <code>{q.get('scope','')}</code>.</p>
+<form method="post" action="/oauth/authorize">
+  <input type="hidden" name="client_id" value="{q.get('client_id','')}">
+  <input type="hidden" name="redirect_uri" value="{redirect_uri}">
+  <input type="hidden" name="scope" value="{q.get('scope','')}">
+  <input type="hidden" name="state" value="{q.get('state','')}">
+  <input type="hidden" name="code_challenge" value="{q.get('code_challenge','')}">
+  <button style="background:#2f56b5;color:#fff;border:0;padding:8px 16px;border-radius:4px">Approve</button>
+</form></body></html>"""
+            return HTMLResponse(consent)
+
+        @app.post("/oauth/authorize")
+        async def authorize_decision(request: Request):
+            store = credentials.load(provider.id)
+            form = await _form(request)
+            client = store.find_client(form.get("client_id", ""))
+            if client is None:
+                return JSONResponse(status_code=400, content={"error": "invalid_client"})
+            code = store.create_auth_code(
+                form.get("client_id"), form.get("redirect_uri"), form.get("scope", ""),
+                form.get("code_challenge") or None, subject="resource-owner",
+            )
+            sep = "&" if "?" in form.get("redirect_uri", "") else "?"
+            target = f"{form.get('redirect_uri')}{sep}code={code}&state={form.get('state','')}"
+            return RedirectResponse(target, status_code=303)
+
+    @app.post("/oauth/token")
+    async def token(request: Request):
+        store = credentials.load(provider.id)
+        form = await _form(request)
+        grant = form.get("grant_type")
+        client_id, client_secret = _client_auth(request, form)
+        client = store.find_client(client_id) if client_id else None
+
+        if grant == "client_credentials":
+            if client is None or client["clientSecret"] != client_secret:
+                return _oauth_error(401, "invalid_client")
+            scope = form.get("scope", " ".join(provider.scopes))
+            issued = store.issue_token(client_id, scope)
+            return _token_response(issued)
+
+        if grant == "authorization_code":
+            record = store.consume_auth_code(form.get("code", ""))
+            if record is None:
+                return _oauth_error(400, "invalid_grant")
+            if client is None or client["clientSecret"] != client_secret:
+                return _oauth_error(401, "invalid_client")
+            if provider.use_pkce and record.get("codeChallenge"):
+                if not _pkce_ok(form.get("code_verifier", ""), record["codeChallenge"]):
+                    return _oauth_error(400, "invalid_grant")
+            issued = store.issue_token(client_id, record["scope"], subject=record["subject"],
+                                       refresh=provider.offline_access)
+            return _token_response(issued)
+
+        if grant == "refresh_token":
+            issued = store.refresh(form.get("refresh_token", ""))
+            if issued is None:
+                return _oauth_error(400, "invalid_grant")
+            return _token_response(issued)
+
+        return _oauth_error(400, "unsupported_grant_type")
+
+
+def _client_auth(request: Request, form) -> tuple[str, str]:
+    header = request.headers.get("Authorization", "")
+    if header.lower().startswith("basic "):
+        try:
+            decoded = base64.b64decode(header[6:]).decode()
+            cid, _, secret = decoded.partition(":")
+            return cid, secret
+        except Exception:
+            return "", ""
+    return form.get("client_id", ""), form.get("client_secret", "")
+
+
+def _pkce_ok(verifier: str, challenge: str) -> bool:
+    digest = hashlib.sha256(verifier.encode()).digest()
+    computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+    return computed == challenge
+
+
+def _token_response(issued: dict) -> JSONResponse:
+    body = {
+        "access_token": issued["accessToken"],
+        "token_type": "Bearer",
+        "expires_in": 3600,
+        "scope": issued["scope"],
+    }
+    if "refreshToken" in issued:
+        body["refresh_token"] = issued["refreshToken"]
+    return JSONResponse(body)
+
+
+def _oauth_error(status: int, code: str) -> JSONResponse:
+    return JSONResponse(status_code=status, content={"error": code})
