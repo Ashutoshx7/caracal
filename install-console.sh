@@ -10,7 +10,7 @@ REPO="Garudex-Labs/caracal"
 INSTALL_DIR="${CARACAL_INSTALL_DIR:-${HOME}/.local/bin}"
 VERSION="${CARACAL_VERSION:-latest}"
 VERIFY_PROVENANCE="${CARACAL_VERIFY_PROVENANCE:-1}"
-REQUIRE_PROVENANCE="${CARACAL_REQUIRE_PROVENANCE:-0}"
+REQUIRE_PROVENANCE="${CARACAL_REQUIRE_PROVENANCE:-1}"
 COLOR_MODE="${CARACAL_INSTALL_COLOR:-default}"
 PROGRESS_MODE="${CARACAL_INSTALL_PROGRESS:-default}"
 
@@ -108,13 +108,12 @@ usage() {
 caracal-install: download the Caracal Console binaries from GitHub Releases.
 
 Usage:
-  install-console.sh [--version vYYYY.MM.DD[.N][-rc.N]] [--install-dir PATH] [--verify-provenance] [--no-verify-provenance] [--require-provenance]
+  install-console.sh [--version vYYYY.MM.DD[.N][-rc.N]] [--install-dir PATH] [--no-verify-provenance]
 
 Installs the thin 'caracal' runtime CLI and the 'caracal-console' Console binary.
 
-Provenance attestation is verified by default when the GitHub CLI ('gh') is
-available; pass --no-verify-provenance to skip it or --require-provenance to
-fail the install when it cannot be verified.
+Provenance attestation is required by default. Pass --no-verify-provenance only
+when you explicitly need to skip release provenance verification.
 
 Color and download progress are enabled by default for local installs. Set
 NO_COLOR=1, CARACAL_INSTALL_COLOR=never, or CARACAL_INSTALL_PROGRESS=never for
@@ -123,8 +122,8 @@ plain output.
 Environment overrides:
   CARACAL_VERSION       same as --version
   CARACAL_INSTALL_DIR   same as --install-dir
-  CARACAL_VERIFY_PROVENANCE   same as --verify-provenance (set 0 to disable)
-  CARACAL_REQUIRE_PROVENANCE  same as --require-provenance
+  CARACAL_VERIFY_PROVENANCE   set 0 to disable provenance verification
+  CARACAL_REQUIRE_PROVENANCE  set 0 to verify only when gh is available
   CARACAL_INSTALL_COLOR default, auto, always, or never
   CARACAL_INSTALL_PROGRESS default, auto, always, or never
 EOF
@@ -136,9 +135,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --version) [ $# -ge 2 ] || err "--version requires a value"; VERSION="$2"; shift ;;
         --install-dir) [ $# -ge 2 ] || err "--install-dir requires a value"; INSTALL_DIR="$2"; shift ;;
-        --verify-provenance) VERIFY_PROVENANCE=1 ;;
         --no-verify-provenance) VERIFY_PROVENANCE=0; REQUIRE_PROVENANCE=0 ;;
-        --require-provenance) VERIFY_PROVENANCE=1; REQUIRE_PROVENANCE=1 ;;
         --help|-h) usage; exit 0 ;;
         *) err "unknown argument: $1 (use --help for usage)" ;;
     esac
@@ -146,6 +143,9 @@ while [ $# -gt 0 ]; do
 done
 configureColor
 configureProgress
+if [ "${VERIFY_PROVENANCE}" != "1" ]; then
+    REQUIRE_PROVENANCE=0
+fi
 
 require() {
     command -v "$1" >/dev/null 2>&1 || err "missing required command: $1"

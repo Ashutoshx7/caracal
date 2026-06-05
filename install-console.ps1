@@ -9,9 +9,7 @@ param(
     [string]$InstallDir = $env:CARACAL_INSTALL_DIR,
     [string]$Color = $env:CARACAL_INSTALL_COLOR,
     [string]$Progress = $env:CARACAL_INSTALL_PROGRESS,
-    [switch]$VerifyProvenance,
-    [switch]$NoVerifyProvenance,
-    [switch]$RequireProvenance
+    [switch]$NoVerifyProvenance
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,10 +21,13 @@ if ([string]::IsNullOrEmpty($InstallDir)) {
     $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\caracal'
 }
 $VerifyProvenance = $true
-if ($env:CARACAL_VERIFY_PROVENANCE -eq '0' -or $NoVerifyProvenance) { $VerifyProvenance = $false }
-if ($env:CARACAL_REQUIRE_PROVENANCE -eq '1') {
-    $VerifyProvenance = $true
-    $RequireProvenance = $true
+$RequireProvenance = $true
+if ($env:CARACAL_REQUIRE_PROVENANCE -eq '0') {
+    $RequireProvenance = $false
+}
+if ($env:CARACAL_VERIFY_PROVENANCE -eq '0' -or $NoVerifyProvenance) {
+    $VerifyProvenance = $false
+    $RequireProvenance = $false
 }
 
 if ([string]::IsNullOrEmpty($Color)) { $Color = 'default' }
