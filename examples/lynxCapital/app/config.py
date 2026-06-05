@@ -42,6 +42,9 @@ class ProviderEntry(BaseModel):
     id: str
     name: str
     category: str
+    authType: str = ""
+    protocol: str = ""
+    industry: str = ""
 
 
 class PartnerProviderEntry(BaseModel):

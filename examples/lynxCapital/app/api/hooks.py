@@ -24,17 +24,11 @@ router = APIRouter(prefix="/hooks", tags=["webhooks"])
 
 
 _SECRET_ENV = {
-    "mercury-bank":         "LYNX_MERCURY_HOOK_SECRET",
-    "wise-payouts":         "LYNX_WISE_HOOK_SECRET",
-    "stripe-treasury":      "LYNX_STRIPE_HOOK_SECRET",
-    "netsuite":             "LYNX_NETSUITE_HOOK_SECRET",
-    "sap-erp":              "LYNX_SAP_HOOK_SECRET",
-    "ocr-vision":           "LYNX_OCR_HOOK_SECRET",
-    "close-engine":         "LYNX_CLOSE_HOOK_SECRET",
-    "regulatory-filings":   "LYNX_REGULATORY_HOOK_SECRET",
-    "customer-billing":     "LYNX_BILLING_HOOK_SECRET",
-    "compliance-nexus":     "LYNX_COMPLIANCE_HOOK_SECRET",
-    "treasury-ops":         "LYNX_TREASURY_HOOK_SECRET",
+    "halcyon-bank":     "LYNX_HALCYON_HOOK_SECRET",
+    "meridian-pay":     "LYNX_MERIDIAN_HOOK_SECRET",
+    "quetzal-payouts":  "LYNX_QUETZAL_HOOK_SECRET",
+    "inkwell-ocr":      "LYNX_INKWELL_HOOK_SECRET",
+    "beacon-crm":       "LYNX_BEACON_HOOK_SECRET",
 }
 
 

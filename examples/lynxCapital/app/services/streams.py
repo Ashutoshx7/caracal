@@ -2,96 +2,59 @@
 Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 Caracal, a product of Garudex Labs
 
-Long-lived stream consumers that bridge external streaming/event-driven
-providers onto the in-process event bus.
+Long-lived stream consumer that bridges the Pulse Market Data SSE feed onto the in-process event bus.
 """
 from __future__ import annotations
 
+import json
 import os
 import threading
 
+import httpx
+
 from app.events.bus import bus
 from app.events.types import Event
-from app.services.transport.sse import SseConsumer
+
+_stop = threading.Event()
+_threads: list[threading.Thread] = []
 
 
-_consumers: list = []
-_grpc_threads: list[threading.Thread] = []
-_grpc_stop = threading.Event()
+def _publish_tick(data: dict) -> None:
+    bus.publish(Event(run_id="streams", category="service", kind="market.tick", payload=data))
 
 
-def _publish_fx(event: str, data: dict) -> None:
-    bus.publish(Event(run_id="streams", category="service",
-                      kind="fx.tick", payload={"event": event, **data}))
-
-
-def _publish_compliance(delta: dict) -> None:
-    bus.publish(Event(run_id="streams", category="service",
-                      kind="compliance.delta", payload=delta))
-
-
-def _run_compliance_stream() -> None:
-    if os.getenv("LYNX_COMPLIANCE_GRPC") is None:
-        return
-    from app.services.transport.grpc_client import GrpcClient
-    from app.services.transport.proto.compliance_stream import compliance_pb2, compliance_pb2_grpc
-
-    client = GrpcClient(
-        provider="compliance-nexus",
-        target=os.environ["LYNX_COMPLIANCE_GRPC"],
-        auth_header="authorization",
-        auth_env="LYNX_COMPLIANCE_KEY",
-    )
-    cursor = ""
-    while not _grpc_stop.is_set():
+def _consume_pulse(url: str, api_key: str, symbol: str) -> None:
+    headers = {"X-Api-Key": api_key}
+    params = {"symbol": symbol, "ticks": 50}
+    while not _stop.is_set():
         try:
-            request = compliance_pb2.StreamRequest(cursor=cursor)
-            for delta in client.server_stream(
-                compliance_pb2_grpc.ComplianceFeedStub, "StreamWatchlistDeltas", request,
-            ):
-                if _grpc_stop.is_set():
-                    return
-                cursor = delta.cursor
-                _publish_compliance({
-                    "cursor":    delta.cursor,
-                    "list_name": delta.list_name,
-                    "action":    delta.action,
-                    "entity_id": delta.entity_id,
-                    "country":   delta.country,
-                    "reason":    delta.reason,
-                    "ts":        delta.ts,
-                })
+            with httpx.stream("GET", f"{url}/stream", headers=headers, params=params, timeout=None) as resp:
+                for line in resp.iter_lines():
+                    if _stop.is_set():
+                        return
+                    if line.startswith("data:"):
+                        _publish_tick(json.loads(line[5:].strip()))
         except Exception:
-            if _grpc_stop.is_set():
+            if _stop.is_set():
                 return
-            _grpc_stop.wait(2.0)
+            _stop.wait(2.0)
 
 
 def start_streams() -> None:
-    fx_url = os.getenv("LYNX_FX_STREAM_URL")
-    if fx_url:
-        sse = SseConsumer(
-            provider="fx-rates",
-            url=fx_url,
-            auth_header="X-API-Key",
-            auth_env="LYNX_FX_KEY",
-            on_event=_publish_fx,
-        )
-        sse.start()
-        _consumers.append(sse)
-
-    if os.getenv("LYNX_COMPLIANCE_GRPC"):
-        t = threading.Thread(target=_run_compliance_stream, name="grpc-compliance", daemon=True)
-        t.start()
-        _grpc_threads.append(t)
+    url = os.getenv("LYNX_PARTNER_PULSE_MARKET_URL")
+    api_key = os.getenv("LYNX_PARTNER_PULSE_MARKET_API_KEY")
+    if not url or not api_key:
+        return
+    symbol = os.getenv("LYNX_PULSE_SYMBOL", "USD/EUR")
+    t = threading.Thread(target=_consume_pulse, args=(url, api_key, symbol),
+                         name="pulse-market-sse", daemon=True)
+    t.start()
+    _threads.append(t)
 
 
 def stop_streams() -> None:
-    for c in _consumers:
-        c.stop()
-    _consumers.clear()
-    _grpc_stop.set()
-    for t in _grpc_threads:
+    _stop.set()
+    for t in _threads:
         t.join(timeout=2.0)
-    _grpc_threads.clear()
-    _grpc_stop.clear()
+    _threads.clear()
+    _stop.clear()
