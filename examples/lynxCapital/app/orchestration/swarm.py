@@ -349,10 +349,32 @@ def _build_regional_domain_tools(run_id, runner, parent, region):
         finally:
             _finish(w, record)
 
+    @tool
+    def call_partner(provider_id: str, operation: str, payload_json: str = "{}") -> str:
+        """Call an external partner provider over its real auth surface.
+
+        Use for third-party services beyond the core stack: aurum-pay/zephyr-pay (payments,
+        payouts), quill-ocr (document extraction), nimbus-ledger (journals), vela-mail (email),
+        helios-fx (fx convert), orbit-erp (vendors/bills), corvus-bank (open banking),
+        lumen-crm (contacts/deals), core-billing, core-identity, forge-mcp (tools), terra-tax.
+        `payload_json` is a JSON object string of operation arguments. Spawns a partner-integration worker.
+        """
+        try:
+            payload = json.loads(payload_json) if payload_json else {}
+        except json.JSONDecodeError:
+            return json.dumps({"error": "invalid_payload", "message": "payload_json must be a JSON object"})
+        if not isinstance(payload, dict):
+            return json.dumps({"error": "invalid_payload", "message": "payload_json must be a JSON object"})
+        w = _worker("partner-integration", f"partner:{provider_id}:{operation}")
+        try:
+            return json.dumps(tool_fns.partner_operation(run_id, w.id, provider_id, operation, payload))
+        finally:
+            _finish(w, {"provider_id": provider_id, "operation": operation})
+
     return [
         list_pending_invoices, extract_invoice_data, match_invoice_in_ledger,
         check_vendor_compliance, lookup_fx_rate, lookup_withholding_rate,
-        submit_payment, record_audit,
+        submit_payment, record_audit, call_partner,
     ]
 
 

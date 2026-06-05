@@ -6,7 +6,7 @@ Minimal JSON-RPC 2.0 MCP handler exposing each MCP provider's operations as tool
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from _mock.providerlab import catalog
 
@@ -22,7 +22,8 @@ def _tools(provider: catalog.Provider) -> list[dict]:
     ]
 
 
-def handle(provider: catalog.Provider, message: dict, principal: dict) -> dict:
+def handle(provider: catalog.Provider, message: dict, principal: dict,
+           tool_runner: Callable[[str, dict], dict]) -> dict:
     """Dispatch a single JSON-RPC message and return the response envelope."""
     rpc_id = message.get("id")
     method = message.get("method")
@@ -47,12 +48,6 @@ def handle(provider: catalog.Provider, message: dict, principal: dict) -> dict:
         if name not in provider.operations:
             return err(-32601, f"unknown tool: {name}")
         arguments = params.get("arguments") or {}
-        payload = {
-            "ok": True,
-            "tool": name,
-            "principal": principal.get("principal"),
-            "provider": provider.id,
-            "echo": arguments,
-        }
-        return ok({"content": [{"type": "json", "data": payload}]})
+        data = tool_runner(name, arguments)
+        return ok({"content": [{"type": "json", "data": data}]})
     return err(-32601, f"unknown method: {method}")
