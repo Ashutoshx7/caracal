@@ -14,7 +14,7 @@ from urllib.parse import parse_qsl
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from _mock.providerlab import auth, catalog, credentials, mcp, netsim, ui
+from _mock.providerlab import auth, catalog, credentials, domain, mcp, netsim, ui
 
 
 async def _form(request: Request) -> dict[str, str]:
@@ -56,6 +56,7 @@ def _auth_error_response(exc: auth.AuthError, provider: catalog.Provider) -> JSO
 def build_app(provider: catalog.Provider) -> FastAPI:
     app = FastAPI(title=f"providerlab-{provider.id}")
     activity = _Activity()
+    state = domain.State(provider.id)
     netsim.install(app, provider)
 
     # ---------- health ----------
@@ -126,14 +127,22 @@ def build_app(provider: catalog.Provider) -> FastAPI:
             except auth.AuthError as exc:
                 return _auth_error_response(exc, provider)
             message = await request.json()
-            response = mcp.handle(provider, message, principal)
+
+            def run_tool(name: str, arguments: dict) -> dict:
+                return domain.dispatch(provider, state, name, arguments, principal)
+
+            try:
+                response = mcp.handle(provider, message, principal, run_tool)
+            except domain.DomainError as exc:
+                response = {"jsonrpc": "2.0", "id": message.get("id"),
+                            "error": {"code": exc.status, "message": f"{exc.code}: {exc.message}"}}
             activity.record(str(principal.get("principal")), principal.get("auth"),
                            message.get("method", "mcp"), 200)
             return JSONResponse(response)
 
     # ---------- domain operations ----------
     @app.api_route("/api/{operation}", methods=["GET", "POST"])
-    async def domain(operation: str, request: Request):
+    async def domain_operation(operation: str, request: Request):
         if operation not in provider.operations:
             return JSONResponse(status_code=404, content={"error": "unknown_operation", "message": operation})
         try:
@@ -141,22 +150,22 @@ def build_app(provider: catalog.Provider) -> FastAPI:
         except auth.AuthError as exc:
             activity.record("anonymous", "rejected", operation, exc.status)
             return _auth_error_response(exc, provider)
-        payload = {}
+        payload: dict = {}
         if request.method == "POST":
             try:
-                payload = await request.json()
+                body = await request.json()
+                if isinstance(body, dict):
+                    payload = body
             except Exception:
                 payload = {}
-        result = {
-            "provider": provider.id,
-            "brand": provider.brand,
-            "operation": operation,
-            "principal": principal.get("principal"),
-            "received": payload,
-            "ok": True,
-        }
+        try:
+            data = domain.dispatch(provider, state, operation, payload, principal)
+        except domain.DomainError as exc:
+            activity.record(str(principal.get("principal")), principal.get("auth"), operation, exc.status)
+            return JSONResponse(status_code=exc.status,
+                                content={"error": exc.code, "message": exc.message})
         activity.record(str(principal.get("principal")), principal.get("auth"), operation, 200)
-        return JSONResponse(result)
+        return JSONResponse({"provider": provider.id, "operation": operation, "data": data})
 
     return app
 

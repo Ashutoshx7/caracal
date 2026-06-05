@@ -1,0 +1,37 @@
+"""
+Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+Caracal, a product of Garudex Labs
+
+Operator helper that prints shell export lines mapping each lab provider's seed credential to its LYNX_PARTNER_* variable.
+"""
+from __future__ import annotations
+
+from _mock.providerlab import catalog, credentials
+
+
+def _eid(provider_id: str) -> str:
+    return provider_id.upper().replace("-", "_")
+
+
+def lines() -> list[str]:
+    out: list[str] = []
+    for provider in catalog.CATALOG:
+        seed = credentials.load(provider.id).data["seed"]
+        eid = _eid(provider.id)
+        out.append(f"export LYNX_PARTNER_{eid}_URL=http://127.0.0.1:{provider.port}")
+        if provider.category in ("api_key", "sdk"):
+            out.append(f"export LYNX_PARTNER_{eid}_API_KEY={seed['apiKey']}")
+        elif provider.category == "bearer_token" or (provider.category == "mcp" and provider.mcp_auth == "bearer"):
+            out.append(f"export LYNX_PARTNER_{eid}_TOKEN={seed['bearerToken']}")
+        elif provider.category in ("oauth2_client_credentials", "oauth2_authorization_code"):
+            out.append(f"export LYNX_PARTNER_{eid}_CLIENT_ID={seed['clientId']}")
+            out.append(f"export LYNX_PARTNER_{eid}_CLIENT_SECRET={seed['clientSecret']}")
+    return out
+
+
+def main() -> None:
+    print("\n".join(lines()))
+
+
+if __name__ == "__main__":
+    main()

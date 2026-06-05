@@ -136,6 +136,13 @@ outside service.
 | `mcp` | Forge Tools, Relay | 9412, 9413 | bearer-guarded vs. mandate-guarded JSON-RPC |
 | `sdk` | Zephyr Pay, Terra Tax | 9414, 9415 | HTTP provider behind a pip SDK shim |
 
+Every provider runs a stateful domain layer (`_mock/providerlab/domain.py`), so
+operations validate input, enforce OAuth/mandate scope, and return realistic
+third-party responses. The two providers in each category deliberately cover
+distinct cases — idempotent replay vs. async job, `402 insufficient_funds` vs.
+`404 not_found`, scope step-up vs. `409 version_conflict`, pagination, and so on
+— so integration code is exercised against the full range of real behavior.
+
 Run the whole lab in one process, a single provider, or one container each:
 
 ```bash
@@ -150,6 +157,17 @@ where relevant, and `/healthz`. Credentials are seeded on first start and
 persist under `_mock/providerlab/_store/` (git-ignored); a consolidated
 `_store/_seed_index.json` lists every provider's seed for verification flows.
 Set `PROVIDERLAB_FAST=1` to disable injected latency and transient faults.
+
+The application consumes these providers through `app/services/partners.py`,
+which authenticates per category (api key, bearer, OAuth client-credentials,
+OAuth authorization-code with PKCE/refresh, internal, and bearer-guarded MCP)
+and exposes a single `call(provider_id, operation, payload)` surface. The swarm
+reaches it through the `call_partner` agent tool (role `partner-integration`),
+so agents drive real external providers end-to-end. Base URLs and credentials
+come from `LYNX_PARTNER_*` env; print ready-to-source exports with
+`python -m _mock.providerlab.seedenv`. The two `caracal_mandate` providers and
+the mandate-guarded MCP server are intentionally gated (`PartnerPendingCaracal`)
+until the Caracal SDK integration phase.
 
 ## Caracal integration
 
