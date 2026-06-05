@@ -203,9 +203,70 @@ class ProviderStore:
         for rec in self.data[field]:
             if rec[id_key] == identifier:
                 rec["revoked"] = True
+                rec["revokedAt"] = _now()
                 self._save()
                 return True
         return False
+
+    def rotate(self, kind: str, identifier: str) -> dict | None:
+        """Roll a credential the way real platforms do: mint a fresh secret,
+        carry the label, and revoke the superseded one so the old value stops
+        working immediately."""
+        spec = {
+            "apiKey": ("apiKeys", "keyId", self._new_api_key),
+            "bearer": ("bearerTokens", "tokenId", self._new_bearer),
+            "client": ("clients", "clientId", None),
+        }.get(kind)
+        if spec is None:
+            return None
+        field, id_key, maker = spec
+        for rec in self.data[field]:
+            if rec[id_key] == identifier and not rec["revoked"]:
+                if kind == "client":
+                    fresh = self._new_client(rec["name"], list(rec["redirectUris"]), list(rec["scopes"]))
+                else:
+                    fresh = maker(rec["label"])
+                fresh["rotatedFrom"] = identifier
+                rec["revoked"] = True
+                rec["revokedAt"] = _now()
+                rec["rotatedTo"] = fresh[id_key]
+                self._save()
+                return fresh
+        return None
+
+    def touch(self, kind: str, presented: str) -> None:
+        """Record last-use telemetry on the matching credential. Kept in memory
+        (the store is process-cached) so the hot path stays free of disk I/O."""
+        spec = {
+            "apiKey": ("apiKeys", "apiKey"),
+            "bearer": ("bearerTokens", "accessToken"),
+        }.get(kind)
+        if spec is None:
+            return
+        field, value_key = spec
+        for rec in self.data[field]:
+            if rec[value_key] == presented:
+                rec["lastUsedAt"] = _now()
+                rec["useCount"] = rec.get("useCount", 0) + 1
+                return
+
+    def revoked_history(self) -> list[dict]:
+        """Flatten every revoked credential across kinds for an audit history view."""
+        history: list[dict] = []
+        for kind, field, id_key in (("apiKey", "apiKeys", "keyId"),
+                                     ("bearer", "bearerTokens", "tokenId"),
+                                     ("client", "clients", "clientId")):
+            for rec in self.data[field]:
+                if rec.get("revoked"):
+                    history.append({
+                        "kind": kind,
+                        "id": rec[id_key],
+                        "label": rec.get("label") or rec.get("name", ""),
+                        "revokedAt": rec.get("revokedAt"),
+                        "rotatedTo": rec.get("rotatedTo"),
+                    })
+        history.sort(key=lambda r: r.get("revokedAt") or 0, reverse=True)
+        return history
 
     def revoke_mandate_anchor(self, anchor: str) -> None:
         if anchor not in self.data["revoked"]:

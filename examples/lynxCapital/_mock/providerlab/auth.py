@@ -45,6 +45,7 @@ def authenticate(provider: catalog.Provider, request: Request) -> dict:
             raise AuthError(401, "missing_api_key", f"provide {provider.apikey_field}")
         if not store.valid_api_key(presented):
             raise AuthError(401, "invalid_api_key", "unknown or revoked API key")
+        store.touch("apiKey", presented)
         return {"principal": "api_key", "auth": "api_key"}
 
     if cat == "bearer_token":
@@ -53,6 +54,7 @@ def authenticate(provider: catalog.Provider, request: Request) -> dict:
             raise AuthError(401, "missing_token", f"provide {provider.auth_header}")
         if not store.valid_bearer(presented):
             raise AuthError(401, "invalid_token", "unknown or revoked bearer token")
+        store.touch("bearer", presented)
         return {"principal": "bearer", "auth": "bearer_token"}
 
     if cat in ("oauth2_client_credentials", "oauth2_authorization_code"):

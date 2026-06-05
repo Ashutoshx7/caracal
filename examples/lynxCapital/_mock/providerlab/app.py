@@ -104,6 +104,27 @@ def build_app(provider: catalog.Provider) -> FastAPI:
         back = "/__lab/clients" if form.get("kind") == "client" else "/__lab/credentials"
         return RedirectResponse(back, status_code=303)
 
+    @app.post("/__lab/api/rotate")
+    async def rotate_credential(request: Request):
+        form = await _form(request)
+        credentials.load(provider.id).rotate(form.get("kind"), form.get("id"))
+        back = "/__lab/clients" if form.get("kind") == "client" else "/__lab/credentials"
+        return RedirectResponse(back, status_code=303)
+
+    @app.post("/__lab/api/validate")
+    async def validate_credential(request: Request):
+        form = await _form(request)
+        store = credentials.load(provider.id)
+        kind, secret = form.get("kind", ""), form.get("secret", "").strip()
+        valid = False
+        if kind == "apiKey":
+            valid = store.valid_api_key(secret)
+        elif kind == "bearer":
+            valid = store.valid_bearer(secret)
+        elif kind == "access_token":
+            valid = store.valid_access_token(secret) is not None
+        return JSONResponse({"provider": provider.id, "kind": kind, "valid": valid})
+
     @app.post("/__lab/api/register-client")
     async def register_client(request: Request):
         form = await _form(request)

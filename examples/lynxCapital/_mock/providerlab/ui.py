@@ -7,6 +7,7 @@ Server-rendered control panel for each lab provider with credentials, clients, a
 from __future__ import annotations
 
 import html
+import time
 
 from _mock.providerlab import catalog, credentials
 
@@ -24,6 +25,55 @@ _CATEGORY_LABEL = {
 
 def _esc(value) -> str:
     return html.escape(str(value))
+
+
+def _ts(value) -> str:
+    if not value:
+        return "—"
+    try:
+        return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(int(value)))
+    except (ValueError, TypeError):
+        return "—"
+
+
+def _config_rows(provider: catalog.Provider) -> list[tuple[str, str]]:
+    """Real-world connection settings a caller configures to integrate, named
+    with each provider's own wire vocabulary rather than any internal scheme."""
+    base = f"http://localhost:{provider.port}"
+    rows: list[tuple[str, str]] = [
+        ("Base URL", base),
+        ("Protocol", provider.protocol.upper()),
+        ("Authentication", _CATEGORY_LABEL[provider.category]),
+    ]
+    c = provider.category
+    if c in ("api_key", "sdk"):
+        where = "query parameter" if provider.apikey_location == "query" else "request header"
+        rows.append(("API key parameter", f"{provider.apikey_field} ({where})"))
+    if c == "bearer_token" or (c == "mcp" and provider.mcp_auth == "bearer"):
+        rows.append(("Token header", f"{provider.auth_header}: {provider.auth_scheme} <token>"))
+    if c in ("oauth2_client_credentials", "oauth2_authorization_code"):
+        rows.append(("Token endpoint", f"{base}/oauth/token"))
+        rows.append(("Discovery", f"{base}/.well-known/oauth-authorization-server"))
+        rows.append(("Client authentication", provider.client_auth_method))
+        rows.append(("Scopes", " ".join(provider.scopes) or "—"))
+    if c == "oauth2_authorization_code":
+        rows.append(("Authorization endpoint", f"{base}/oauth/authorize"))
+        rows.append(("PKCE", "required (S256)" if provider.use_pkce else "not required"))
+        rows.append(("Refresh tokens", "issued (offline access)" if provider.offline_access else "not issued"))
+    if c == "oauth2_client_credentials" and provider.audience:
+        rows.append(("Resource / audience", provider.audience))
+    if c == "caracal_mandate" or (c == "mcp" and provider.mcp_auth == "mandate"):
+        rows.append(("Mandate header", f"{provider.auth_header}: {provider.auth_scheme} <mandate>"))
+        rows.append(("Required scopes", " ".join(provider.scopes) or "—"))
+        rows.append(("Delegation", "required" if provider.require_delegation else "optional"))
+    if c == "mcp":
+        rows.append(("MCP endpoint", f"{base}/mcp (JSON-RPC)"))
+    if provider.protocol == "sse":
+        rows.append(("Stream endpoint", f"{base}/stream"))
+    if provider.sdk_package:
+        rows.append(("SDK package", provider.sdk_package))
+    rows.append(("Health check", f"{base}/healthz"))
+    return rows
 
 
 def layout(provider: catalog.Provider, active: str, body: str) -> str:
@@ -80,9 +130,20 @@ def overview(provider: catalog.Provider) -> str:
     )
     ops = "".join(f"<li><code>{_esc(o)}</code></li>" for o in provider.operations)
     auth_summary = _auth_summary(provider)
+    config = "".join(
+        f"<tr><td>{_esc(label)}</td><td><code>{_esc(value)}</code></td></tr>"
+        for label, value in _config_rows(provider)
+    )
+    active, revoked = _credential_counts(store)
     body = f"""
 <div class="panel">
-  <h2>How callers authenticate</h2>
+  <h2>Status</h2>
+  <p><span class="pill ok">operational</span>
+     <span class="muted">{active} active credential(s) · {revoked} revoked · {len(provider.resources)} resource type(s)</span></p>
+</div>
+<div class="panel">
+  <h2>Configuration</h2>
+  <table><tr><th>setting</th><th>value</th></tr>{config}</table>
   <p class="muted">{auth_summary}</p>
 </div>
 <div class="panel">
@@ -96,6 +157,17 @@ def overview(provider: catalog.Provider) -> str:
   <p class="muted">Domain calls are served under <code>/api/&lt;operation&gt;</code>.</p>
 </div>"""
     return layout(provider, "home", body)
+
+
+def _credential_counts(store) -> tuple[int, int]:
+    active = revoked = 0
+    for field in ("apiKeys", "bearerTokens", "clients"):
+        for rec in store.data.get(field, []):
+            if rec.get("revoked"):
+                revoked += 1
+            else:
+                active += 1
+    return active, revoked
 
 
 def _auth_summary(provider: catalog.Provider) -> str:
@@ -144,31 +216,40 @@ def credentials_page(provider: catalog.Provider) -> str:
     if cat in ("api_key", "sdk"):
         rows = [
             f"<tr><td><code>{_esc(r['keyId'])}</code></td><td><code>{_esc(r['apiKey'])}</code></td>"
-            f"<td>{_esc(r['label'])}</td><td>{_status_pill(r['revoked'])}</td>"
-            f"<td>{_revoke_btn('apiKey', r['keyId'], r['revoked'])}</td></tr>"
+            f"<td>{_esc(r['label'])}</td><td>{_ts(r.get('createdAt'))}</td>"
+            f"<td>{_usage(r)}</td><td>{_status_pill(r['revoked'])}</td>"
+            f"<td>{_action_btns('apiKey', r['keyId'], r['revoked'])}</td></tr>"
             for r in store.data["apiKeys"]
         ]
-        sections.append(_cred_table("API keys", ["keyId", "apiKey", "label", "status", ""], rows))
+        sections.append(_cred_table(
+            "API keys", ["keyId", "apiKey", "label", "created", "usage", "status", ""], rows))
         sections.append(_create_form("apiKey", "Create API key"))
+        sections.append(_validate_widget("apiKey", "Test an API key"))
 
     if cat == "bearer_token" or (cat == "mcp" and provider.mcp_auth == "bearer"):
         rows = [
             f"<tr><td><code>{_esc(r['tokenId'])}</code></td><td><code>{_esc(r['accessToken'])}</code></td>"
-            f"<td>{_esc(r['label'])}</td><td>{_status_pill(r['revoked'])}</td>"
-            f"<td>{_revoke_btn('bearer', r['tokenId'], r['revoked'])}</td></tr>"
+            f"<td>{_esc(r['label'])}</td><td>{_ts(r.get('createdAt'))}</td>"
+            f"<td>{_usage(r)}</td><td>{_status_pill(r['revoked'])}</td>"
+            f"<td>{_action_btns('bearer', r['tokenId'], r['revoked'])}</td></tr>"
             for r in store.data["bearerTokens"]
         ]
-        sections.append(_cred_table("Bearer tokens", ["tokenId", "accessToken", "label", "status", ""], rows))
+        sections.append(_cred_table(
+            "Bearer tokens", ["tokenId", "accessToken", "label", "created", "usage", "status", ""], rows))
         sections.append(_create_form("bearer", "Issue bearer token"))
+        sections.append(_validate_widget("bearer", "Test a bearer token"))
 
     if cat in ("oauth2_client_credentials", "oauth2_authorization_code"):
         rows = [
             f"<tr><td><code>{_esc(r['clientId'])}</code></td><td><code>{_esc(r['clientSecret'])}</code></td>"
-            f"<td>{_esc(', '.join(r['scopes']))}</td><td>{_status_pill(r['revoked'])}</td></tr>"
+            f"<td>{_esc(', '.join(r['scopes']))}</td><td>{_ts(r.get('createdAt'))}</td>"
+            f"<td>{_status_pill(r['revoked'])}</td></tr>"
             for r in store.data["clients"]
         ]
-        sections.append(_cred_table("OAuth client secrets", ["clientId", "clientSecret", "scopes", "status"], rows))
-        sections.append('<p class="muted">Register and manage clients on the <a href="/__lab/clients">Clients</a> page.</p>')
+        sections.append(_cred_table(
+            "OAuth client secrets", ["clientId", "clientSecret", "scopes", "created", "status"], rows))
+        sections.append('<p class="muted">Register, rotate, and revoke clients on the '
+                        '<a href="/__lab/clients">Clients</a> page.</p>')
 
     if cat == "caracal_mandate" or (cat == "mcp" and provider.mcp_auth == "mandate"):
         seed = store.data["seed"].get("mandate", "")
@@ -191,7 +272,41 @@ def credentials_page(provider: catalog.Provider) -> str:
         sections.append('<div class="panel"><p class="muted">This internal provider holds no credentials. '
                         'Access is enforced at the network boundary only.</p></div>')
 
+    sections.append(_revoked_history(store))
     return layout(provider, "credentials", "".join(sections))
+
+
+def _usage(rec: dict) -> str:
+    count = rec.get("useCount", 0)
+    if not count:
+        return '<span class="muted">unused</span>'
+    return f"{count} call(s), last {_ts(rec.get('lastUsedAt'))}"
+
+
+def _revoked_history(store) -> str:
+    history = store.revoked_history()
+    if not history:
+        return ""
+    rows = "".join(
+        f"<tr><td>{_esc(h['kind'])}</td><td><code>{_esc(h['id'])}</code></td>"
+        f"<td>{_esc(h['label'])}</td><td>{_ts(h['revokedAt'])}</td>"
+        f"<td>{('<code>' + _esc(h['rotatedTo']) + '</code>') if h.get('rotatedTo') else '—'}</td></tr>"
+        for h in history
+    )
+    return ('<h2>Revoked credential history</h2>'
+            '<table><tr><th>kind</th><th>id</th><th>label</th><th>revoked</th><th>rotated to</th></tr>'
+            f'{rows}</table>')
+
+
+def _validate_widget(kind: str, label: str) -> str:
+    return f"""
+<h2>{_esc(label)}</h2>
+<form class="inline" method="post" action="/__lab/api/validate"
+      onsubmit="event.preventDefault();fetch(this.action,{{method:'POST',headers:{{'Content-Type':'application/x-www-form-urlencoded'}},body:new URLSearchParams(new FormData(this))}}).then(r=>r.json()).then(d=>{{this.nextElementSibling.textContent=d.valid?'valid':'invalid';this.nextElementSibling.className=d.valid?'pill ok':'pill gone';}});">
+  <input type="hidden" name="kind" value="{_esc(kind)}">
+  <input name="secret" placeholder="paste credential to validate" size="34" required>
+  <button type="submit">Validate</button>
+</form><span class="pill muted">not tested</span>"""
 
 
 def resource_explorer_page(provider: catalog.Provider, state) -> str:
@@ -233,7 +348,7 @@ def clients_page(provider: catalog.Provider) -> str:
             f"<tr><td><code>{_esc(r['clientId'])}</code></td><td>{_esc(r['name'])}</td>"
             f"<td>{_esc(', '.join(r['redirectUris']))}</td><td>{_esc(', '.join(r['scopes']))}</td>"
             f"<td>{_status_pill(r['revoked'])}</td>"
-            f"<td>{_revoke_btn('client', r['clientId'], r['revoked'])}</td></tr>"
+            f"<td>{_action_btns('client', r['clientId'], r['revoked'])}</td></tr>"
             for r in store.data["clients"]
         ]
         table = _cred_table("Registered OAuth clients", ["clientId", "name", "redirectUris", "scopes", "status", ""], rows)
@@ -282,3 +397,13 @@ def _revoke_btn(kind: str, identifier: str, revoked: bool) -> str:
   <input type="hidden" name="kind" value="{_esc(kind)}">
   <input type="hidden" name="id" value="{_esc(identifier)}">
   <button class="danger" type="submit">Revoke</button></form>"""
+
+
+def _action_btns(kind: str, identifier: str, revoked: bool) -> str:
+    if revoked:
+        return ""
+    rotate = f"""<form method="post" action="/__lab/api/rotate" style="margin:0">
+  <input type="hidden" name="kind" value="{_esc(kind)}">
+  <input type="hidden" name="id" value="{_esc(identifier)}">
+  <button type="submit">Rotate</button></form>"""
+    return f'<div style="display:flex;gap:6px">{rotate}{_revoke_btn(kind, identifier, revoked)}</div>'

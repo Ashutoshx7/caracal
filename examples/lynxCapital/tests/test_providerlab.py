@@ -458,6 +458,58 @@ def test_control_ui_create_credential_via_form():
     assert created and store.valid_api_key(created[0]["apiKey"])
 
 
+def test_api_key_rotate_supersedes_old():
+    store = credentials.load("meridian-pay")
+    original = store.create_api_key("rotate-me")
+    fresh = store.rotate("apiKey", original["keyId"])
+    assert fresh is not None
+    assert fresh["apiKey"] != original["apiKey"]
+    assert fresh["rotatedFrom"] == original["keyId"]
+    assert fresh["label"] == "rotate-me"
+    assert store.valid_api_key(fresh["apiKey"])
+    assert not store.valid_api_key(original["apiKey"])
+    history_ids = {h["id"] for h in store.revoked_history()}
+    assert original["keyId"] in history_ids
+
+
+def test_rotate_via_form_endpoint():
+    c = client("slate-ledger")
+    store = credentials.load("slate-ledger")
+    rec = store.create_bearer("form-rotate")
+    r = c.post("/__lab/api/rotate", data={"kind": "bearer", "id": rec["tokenId"]},
+               follow_redirects=False)
+    assert r.status_code == 303
+    assert not store.valid_bearer(rec["accessToken"])
+
+
+def test_validate_endpoint_reports_validity():
+    c = client("meridian-pay")
+    store = credentials.load("meridian-pay")
+    rec = store.create_api_key("validate-me")
+    good = c.post("/__lab/api/validate", data={"kind": "apiKey", "secret": rec["apiKey"]})
+    assert good.json()["valid"] is True
+    bad = c.post("/__lab/api/validate", data={"kind": "apiKey", "secret": "ak_not_real"})
+    assert bad.json()["valid"] is False
+
+
+def test_usage_telemetry_recorded_on_call():
+    c = client("meridian-pay")
+    seed_key = seed("meridian-pay")["apiKey"]
+    c.post("/api/get_balance", headers={"X-Api-Key": seed_key}, json={})
+    store = credentials.load("meridian-pay")
+    used = [k for k in store.data["apiKeys"] if k["apiKey"] == seed_key]
+    assert used and used[0].get("useCount", 0) >= 1
+
+
+def test_overview_shows_configuration_and_status():
+    c = client("cordoba-fx")
+    body = c.get("/").text
+    assert "Configuration" in body
+    assert "Token endpoint" in body
+    assert "Status" in body
+    assert "operational" in body
+
+
 # --------------------------------------------------------------------------- #
 # UI pages render
 # --------------------------------------------------------------------------- #
