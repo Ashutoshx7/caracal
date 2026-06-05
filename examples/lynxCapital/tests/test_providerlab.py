@@ -257,7 +257,7 @@ def test_oauth_authorization_code_pkce():
 def test_oauth_authorization_code_refresh():
     c = client("tallyhall-books")
     s = seed("tallyhall-books")
-    code = _authorize_code(c, s, "accounting.read")
+    code = _authorize_code(c, s, "com.intuit.quickbooks.accounting")
     tok = c.post("/oauth/token", data={
         "grant_type": "authorization_code", "code": code, "client_id": s["clientId"],
         "client_secret": s["clientSecret"], "redirect_uri": "http://127.0.0.1:8000/callback",
@@ -267,6 +267,11 @@ def test_oauth_authorization_code_refresh():
         "grant_type": "refresh_token", "refresh_token": tok["refresh_token"],
     })
     assert refreshed.status_code == 200 and "access_token" in refreshed.json()
+    # The refresh token is single-use: replaying the consumed one is rejected.
+    replay = c.post("/oauth/token", data={
+        "grant_type": "refresh_token", "refresh_token": tok["refresh_token"],
+    })
+    assert replay.status_code == 400
 
 
 # --------------------------------------------------------------------------- #
