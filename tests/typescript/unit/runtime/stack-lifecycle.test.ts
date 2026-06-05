@@ -704,6 +704,29 @@ describe('stack compose helpers', () => {
     expect(typeof calls[1].onLine).toBe('function')
   })
 
+  it('includes compose output tail when control lifecycle commands fail', async () => {
+    const stable = paths('stable', [])
+    const lines: string[] = []
+    readControlStateMock.mockReturnValue(undefined)
+    runExecMock.mockImplementationOnce((opts: { onLine?: (line: string, stream: 'stdout' | 'stderr') => void }) => {
+      opts.onLine?.('Container caracal-db starting', 'stdout')
+      opts.onLine?.('dependency failed to start', 'stderr')
+      return { dispose: vi.fn(), exitCode: Promise.resolve(1) }
+    })
+
+    await expect(applyControlLifecycleAction({
+      paths: stable,
+      action: 'mount',
+      onLine: (line, stream) => lines.push(`${stream}:${line}`),
+    })).rejects.toThrow('control mount failed with exit code 1: stdout: Container caracal-db starting | stderr: dependency failed to start')
+
+    expect(lines).toEqual([
+      'stdout:Container caracal-db starting',
+      'stderr:dependency failed to start',
+    ])
+    expect(setControlMountedMock).not.toHaveBeenCalled()
+  })
+
   it('does not remount control when runtime is already mounted', async () => {
     const stable = paths('stable', [])
     readControlStateMock.mockReturnValue({

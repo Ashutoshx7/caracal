@@ -177,7 +177,10 @@ describe('Control menu views', () => {
   it('renders lifecycle errors when engine actions fail', async () => {
     const app = fakeApp()
     const control = await openControl(app)
-    engineMocks.applyControlLifecycleAction.mockRejectedValueOnce(new Error('compose failed'))
+    engineMocks.applyControlLifecycleAction.mockImplementationOnce(async ({ onLine }) => {
+      onLine('dependency failed to start', 'stderr')
+      throw new Error('compose failed')
+    })
 
     await control.onKey('e', { app, size: { rows: 25, cols: 120 }, status: '' })
     const confirm = latest<View>(app)
@@ -186,6 +189,8 @@ describe('Control menu views', () => {
     await lifecycle.init?.(app)
 
     expect(text(lifecycle, app)).toContain('compose failed')
+    expect(text(lifecycle, app)).toContain('Recent runtime output')
+    expect(text(lifecycle, app)).toContain('stderr: dependency failed to start')
     expect(app.setStatus).toHaveBeenCalledWith('control disable: compose failed', 'error')
   })
 

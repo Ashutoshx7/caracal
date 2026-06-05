@@ -56,6 +56,13 @@ describe('docker-compose default substitutions', () => {
     expect(yaml).not.toContain('ghcr.io/garudex-labs/}caracal-api')
   })
 
+  it('dev compose uses a network name isolated from the runtime stack', () => {
+    const yaml = readFileSync(resolve(repoRoot, 'infra', 'docker', 'docker-compose.yml'), 'utf8')
+    expect(yaml).toContain('name: caracal-dev')
+    expect(yaml).toContain('name: caracalDevData')
+    expect(yaml).not.toMatch(/\n\s+name: caracalData\n/)
+  })
+
   it('dev control service consumes the admin token as a file-backed secret', () => {
     const yaml = readFileSync(resolve(repoRoot, 'infra', 'docker', 'docker-compose.yml'), 'utf8')
     expect(yaml).toContain('source: caracalAdminToken')
