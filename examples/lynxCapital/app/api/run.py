@@ -12,6 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from app.core.approvals import approvals
 from app.core.cancellation import cancellation
 from app.events.bus import bus
 from app.events.sse import run_stream
@@ -26,6 +27,12 @@ class StartRequest(BaseModel):
 
 class StartResponse(BaseModel):
     runId: str
+
+
+class ApprovalDecision(BaseModel):
+    requestId: str
+    approved: bool
+    note: str = ""
 
 
 @router.post("/start")
@@ -66,6 +73,21 @@ def cancel(run_id: str) -> dict:
     complete first so chat history stays consistent."""
     ok = cancellation.cancel(run_id)
     return {"runId": run_id, "cancelled": ok}
+
+
+@router.get("/{run_id}/approvals")
+def pending_approvals(run_id: str) -> dict:
+    """List approval requests awaiting a decision for this run."""
+    return {"runId": run_id, "pending": approvals.list_pending(run_id)}
+
+
+@router.post("/{run_id}/approve")
+def approve(run_id: str, body: ApprovalDecision) -> dict:
+    """Resolve a pending human-in-the-loop approval request."""
+    ok = approvals.resolve(run_id, body.requestId, body.approved, body.note)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Unknown or already-resolved approval request")
+    return {"runId": run_id, "requestId": body.requestId, "approved": body.approved}
 
 
 @router.get("/{run_id}/lineage")

@@ -9,7 +9,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
+import weakref
 from uuid import uuid4
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -19,6 +21,7 @@ from langchain_openai import ChatOpenAI
 from app.agents import tools as tool_fns
 from app.agents.runner import AgentHandle, create_runner
 from app.config import get_config
+from app.core.approvals import approvals
 from app.core.blackboard import RunBlackboard
 from app.core.cancellation import cancellation
 from app.core.dataset import INVOICES, REGIONS, VENDORS
@@ -44,6 +47,20 @@ REGION_IDS = ("US", "IN", "DE", "SG", "BR")
 STAGE_BUDGET = 12
 TOTAL_BUDGET = 60
 
+# Bound concurrent in-flight LLM streams so a wide swarm cannot open an
+# unbounded number of simultaneous model connections.
+LLM_CONCURRENCY = max(1, int(os.environ.get("LYNX_MAX_CONCURRENT_LLM", "4")))
+_llm_semaphores: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = weakref.WeakKeyDictionary()
+
+
+def _llm_semaphore() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    sem = _llm_semaphores.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(LLM_CONCURRENCY)
+        _llm_semaphores[loop] = sem
+    return sem
+
 
 class RunCancelled(Exception):
     """Raised when a run is cancelled cooperatively."""
@@ -62,6 +79,20 @@ def _make_llm(model: str, temperature: float = 0.1) -> ChatOpenAI:
 def _check_cancel(run_id: str) -> None:
     if cancellation.is_cancelled(run_id):
         raise RunCancelled()
+
+
+async def _require_approval(run_id: str, agent_id: str, action: str, detail: dict) -> dict | None:
+    """Block an irreversible action on a human decision when approvals are
+    enabled. Returns None to proceed, or a denial result to return instead."""
+    if not approvals.required():
+        return None
+    request_id, pending = await approvals.request(run_id, action)
+    bus.publish(ev.approval_required(run_id, agent_id, request_id, action, detail))
+    decision = await approvals.wait(run_id, request_id, pending)
+    bus.publish(ev.approval_resolved(run_id, agent_id, request_id, decision.approved, decision.reason))
+    if decision.approved:
+        return None
+    return {"status": "denied", "action": action, "reason": decision.reason, **detail}
 
 
 def _emit_memory_snapshot(run_id: str, mem: AgentMemory) -> None:
@@ -104,12 +135,13 @@ async def _stream_assistant(run_id, agent_id, model_name, llm, messages) -> AIMe
     full: AIMessage | None = None
     streamed_chars = 0
 
-    async for chunk in llm.astream(messages):
-        if chunk.content:
-            text = str(chunk.content)
-            streamed_chars += len(text)
-            bus.publish(ev.chat_token(run_id, agent_id, message_id, text))
-        full = chunk if full is None else full + chunk
+    async with _llm_semaphore():
+        async for chunk in llm.astream(messages):
+            if chunk.content:
+                text = str(chunk.content)
+                streamed_chars += len(text)
+                bus.publish(ev.chat_token(run_id, agent_id, message_id, text))
+            full = chunk if full is None else full + chunk
 
     latency_ms = int((time.time() - t0) * 1000)
     text = full.content if full and isinstance(full.content, str) else ""
@@ -294,11 +326,13 @@ def _build_regional_domain_tools(run_id, runner, parent, region):
             _finish(w, {"invoice_id": invoice_id})
 
     @tool
-    def match_invoice_in_ledger(invoice_id: str, vendor_id: str, amount: float, currency: str) -> str:
-        """Match an invoice against the ledger. Spawns a ledger-match worker."""
+    def match_invoice_in_ledger(invoice_id: str, vendor_id: str, amount: float, currency: str, erp: str = "auto") -> str:
+        """Match an invoice against the vendor's ledger. `erp` selects the
+        accounting back end ('ironbark', 'tallyhall', or 'auto' to route by the
+        vendor's bookkeeping system). Spawns a ledger-match worker."""
         w = _worker("ledger-match", f"match:{invoice_id}")
         try:
-            return json.dumps(tool_fns.netsuite_match_invoice(run_id, w.id, vendor_id, invoice_id, float(amount), currency))
+            return json.dumps(tool_fns.match_invoice(run_id, w.id, vendor_id, invoice_id, float(amount), currency, erp))
         finally:
             _finish(w, {"invoice_id": invoice_id})
 
@@ -330,8 +364,23 @@ def _build_regional_domain_tools(run_id, runner, parent, region):
             _finish(w, {"currency": currency})
 
     @tool
-    def submit_payment(vendor_id: str, amount: float, currency: str, rail: str, reference: str) -> str:
-        """Submit a payment to the banking provider. Spawns a payment-execution worker."""
+    def lookup_market_rate(symbol: str) -> str:
+        """Fetch a live mid-market FX snapshot (e.g. 'USD/EUR') from the market
+        data feed to sanity-check the booked rate. Spawns a route-optimization worker."""
+        w = _worker("route-optimization", f"mkt:{symbol}")
+        try:
+            return json.dumps(tool_fns.get_market_snapshot(run_id, w.id, symbol))
+        finally:
+            _finish(w, {"symbol": symbol})
+
+    @tool
+    async def submit_payment(vendor_id: str, amount: float, currency: str, rail: str, reference: str) -> str:
+        """Submit a payment to the rail-appropriate provider. Spawns a payment-execution worker."""
+        denied = await _require_approval(run_id, parent.id, "submit_payment",
+                                         {"vendor_id": vendor_id, "amount": float(amount),
+                                          "currency": currency, "rail": rail, "reference": reference})
+        if denied:
+            return json.dumps(denied)
         w = _worker("payment-execution", f"payment:{reference}")
         try:
             return json.dumps(tool_fns.submit_payment(run_id, w.id, vendor_id, float(amount), currency, rail, reference))
@@ -353,11 +402,13 @@ def _build_regional_domain_tools(run_id, runner, parent, region):
     def call_partner(provider_id: str, operation: str, payload_json: str = "{}") -> str:
         """Call an external partner provider over its real auth surface.
 
-        Use for third-party services beyond the core flow: meridian-pay/quetzal-payouts
-        (payments, payouts), inkwell-ocr (document extraction), slate-ledger (journals),
-        vela-notify (email/SMS), cordoba-fx (fx convert), ironbark-erp/tallyhall-books
-        (vendors/bills), halcyon-bank (open banking), beacon-crm (contacts/deals),
-        core-billing, lumen-identity, atlas-vendor (vendor MDM), sabre-tax, pulse-market.
+        Use for third-party services beyond the core flow: meridian-pay/quetzal-payouts/halcyon-bank
+        (payments, payouts, open banking), inkwell-ocr (document extraction), slate-ledger (journals),
+        vela-notify (email/SMS), cordoba-fx (fx convert), ironbark-erp/tallyhall-books (vendors/bills),
+        beacon-crm (contacts/deals), core-billing, lumen-identity (directory), atlas-vendor (vendor MDM),
+        sabre-tax, pulse-market (market data), junction-procure (requisitions/POs/budgets).
+        relay-automation, aegis-screening, and verafin-monitor require a Caracal mandate and are
+        gated until the Caracal SDK phase (calls return status 'pending_caracal_integration').
         `payload_json` is a JSON object string of operation arguments. Spawns a partner-integration worker.
         """
         try:
@@ -375,7 +426,7 @@ def _build_regional_domain_tools(run_id, runner, parent, region):
     return [
         list_pending_invoices, extract_invoice_data, match_invoice_in_ledger,
         check_vendor_compliance, lookup_fx_rate, lookup_withholding_rate,
-        submit_payment, record_audit, call_partner,
+        lookup_market_rate, submit_payment, record_audit, call_partner,
     ]
 
 
@@ -601,8 +652,13 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id):
             _finish(w, {"from": from_currency, "to": to_currency})
 
     @tool
-    def transfer_funds(from_region: str, to_region: str, amount_usd: float) -> str:
+    async def transfer_funds(from_region: str, to_region: str, amount_usd: float) -> str:
         """Move cash between regional operating accounts."""
+        denied = await _require_approval(run_id, parent.id, "transfer_funds",
+                                         {"from_region": from_region, "to_region": to_region,
+                                          "amount_usd": float(amount_usd)})
+        if denied:
+            return json.dumps(denied)
         w = _worker("treasury", f"transfer:{from_region}->{to_region}")
         try:
             return json.dumps(tool_fns.transfer_funds(
@@ -611,8 +667,13 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id):
             _finish(w, {"from": from_region, "to": to_region})
 
     @tool
-    def post_journal_entry(account_id: str, amount: float, currency: str, period: str) -> str:
+    async def post_journal_entry(account_id: str, amount: float, currency: str, period: str) -> str:
         """Post a journal entry to the GL for a given period."""
+        denied = await _require_approval(run_id, parent.id, "post_journal_entry",
+                                         {"account_id": account_id, "amount": float(amount),
+                                          "currency": currency, "period": period})
+        if denied:
+            return json.dumps(denied)
         w = _worker("close", f"je:{account_id}")
         try:
             return json.dumps(tool_fns.post_journal_entry(
@@ -724,6 +785,73 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id):
             _finish(w, {"region": region})
 
     @tool
+    def get_department_budget(department: str) -> str:
+        """Check remaining budget for a department before raising a requisition."""
+        w = _worker("vendor-lifecycle", f"budget:{department}")
+        try:
+            return json.dumps(tool_fns.get_budget(run_id, w.id, department))
+        finally:
+            _finish(w, {"department": department})
+
+    @tool
+    def raise_requisition(department: str, amount: float, description: str) -> str:
+        """Raise a purchase requisition for a department."""
+        w = _worker("vendor-lifecycle", f"req:{department}")
+        try:
+            return json.dumps(tool_fns.create_requisition(run_id, w.id, department, float(amount), description))
+        finally:
+            _finish(w, {"department": department})
+
+    @tool
+    def approve_requisition(requisition_id: str) -> str:
+        """Approve a pending purchase requisition."""
+        w = _worker("vendor-lifecycle", f"req-approve:{requisition_id}")
+        try:
+            return json.dumps(tool_fns.approve_requisition(run_id, w.id, requisition_id))
+        finally:
+            _finish(w, {"requisition_id": requisition_id})
+
+    @tool
+    async def raise_purchase_order(requisition_id: str, vendor_id: str) -> str:
+        """Convert an approved requisition into a purchase order against a vendor."""
+        denied = await _require_approval(run_id, parent.id, "raise_purchase_order",
+                                         {"requisition_id": requisition_id, "vendor_id": vendor_id})
+        if denied:
+            return json.dumps(denied)
+        w = _worker("vendor-lifecycle", f"po:{requisition_id}")
+        try:
+            return json.dumps(tool_fns.create_purchase_order(run_id, w.id, requisition_id, vendor_id))
+        finally:
+            _finish(w, {"requisition_id": requisition_id})
+
+    @tool
+    def get_supplier_contact(contact_id: str) -> str:
+        """Look up a supplier contact record in the CRM."""
+        w = _worker("vendor-lifecycle", f"crm:{contact_id}")
+        try:
+            return json.dumps(tool_fns.get_supplier_contact(run_id, w.id, contact_id))
+        finally:
+            _finish(w, {"contact_id": contact_id})
+
+    @tool
+    def log_supplier_activity(contact_id: str, activity_type: str) -> str:
+        """Record a supplier interaction (call, email, note) against a CRM contact."""
+        w = _worker("vendor-lifecycle", f"crm-log:{contact_id}")
+        try:
+            return json.dumps(tool_fns.log_supplier_activity(run_id, w.id, contact_id, activity_type))
+        finally:
+            _finish(w, {"contact_id": contact_id})
+
+    @tool
+    def list_approver_groups() -> str:
+        """List internal approver groups from the identity directory for routing approvals."""
+        w = _worker("compliance", "identity:groups")
+        try:
+            return json.dumps(tool_fns.list_approver_groups(run_id, w.id))
+        finally:
+            _finish(w, {"scope": "groups"})
+
+    @tool
     def record_audit(summary: str) -> str:
         """Record a final audit entry for this workflow."""
         w = _worker("audit", f"audit:workflow:{workflow_id}")
@@ -740,6 +868,8 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id):
         post_journal_entry, reconcile_account, compute_accrual, close_period,
         aml_monitor_transaction, sanctions_screen_batch, prepare_regulatory_filing, attest_control,
         issue_customer_invoice, send_dunning_notice, apply_customer_payment, get_ar_aging,
+        get_department_budget, raise_requisition, approve_requisition, raise_purchase_order,
+        get_supplier_contact, log_supplier_activity, list_approver_groups,
         record_audit,
     ]
 
@@ -836,7 +966,7 @@ def _build_fc_domain_tools(run_id, runner, fc, memory_store, plans, files, board
         a job_id; the orchestrator runs in the background. Call await_jobs with
         that job id (and any others you started this turn) before using outcomes.
         workflow_id must be one of: vendorLifecycle, treasury, close,
-        compliance, receivables."""
+        compliance, receivables, procurement."""
         wf = workflow_map.get(workflow_id.strip())
         if wf is None:
             return json.dumps({"error": f"unknown workflow {workflow_id!r}"})
@@ -917,7 +1047,7 @@ async def run_swarm(run_id: str, prompt: str) -> None:
     summarizer = _make_llm(summarizer_model, 0.0)
 
     session_memory.add_user(prompt, run_id)
-    ctx = session_memory.context_block()
+    ctx = session_memory.context_block(prompt)
 
     mem = memory_store.open(fc.id, SystemMessage(content=cfg.prompts.financeControl))
     if ctx:
