@@ -42,9 +42,9 @@ export interface StackComposeHandle {
 const CONTROL_MANAGED_ENV = 'CARACAL_ENGINE_CONTROL_ENABLED'
 const CONTROL_FAILURE_TAIL_LINES = 8
 
-function controlManagedEnv(env: Record<string, string | undefined> | undefined, includeControlProfile: boolean): Record<string, string | undefined> | undefined {
+function controlManagedEnv(env: Record<string, string | undefined> | undefined, includeControlProfile: boolean, home?: string): Record<string, string | undefined> | undefined {
   if (!includeControlProfile) return env
-  return { ...env, [CONTROL_MANAGED_ENV]: 'true', CARACAL_CONTROL_STATE_DIR: ensureControlGateDir() }
+  return { ...env, [CONTROL_MANAGED_ENV]: 'true', CARACAL_CONTROL_STATE_DIR: ensureControlGateDir(home) }
 }
 
 function controlProfileValue(value: string | undefined): boolean {
@@ -207,6 +207,7 @@ export function stackStatus(opts: StackStatusOpts = {}): Promise<ProbeResult[]> 
 export interface ComposeRunOpts {
   paths: StackPaths
   args: string[]
+  home?: string
   env?: Record<string, string | undefined>
   onLine?: (line: string, stream: 'stdout' | 'stderr') => void
   includeControlProfile?: boolean
@@ -216,7 +217,7 @@ export function composeRun(opts: ComposeRunOpts): StackComposeHandle {
   const includeControlProfile = opts.includeControlProfile ?? isControlEnabled()
   const handle = runExec({
     argv: composeArgv(opts.paths, opts.args, includeControlProfile),
-    env: controlManagedEnv(opts.env, includeControlProfile),
+    env: controlManagedEnv(opts.env, includeControlProfile, opts.home),
     cwd: opts.paths.cwd,
     onLine: opts.onLine,
   })
@@ -230,6 +231,8 @@ export type ControlServiceRuntime = 'running' | 'gated' | 'removed' | 'unmounted
 export interface ControlLifecycleOpts {
   paths: StackPaths
   action: ControlLifecycleAction
+  home?: string
+  accessEnv?: NodeJS.ProcessEnv
   env?: Record<string, string | undefined>
   onLine?: (line: string, stream: 'stdout' | 'stderr') => void
 }
@@ -305,6 +308,7 @@ function controlResult(
   state: ControlLifecycleState,
   service: ControlServiceRuntime,
   runtime: ReturnType<typeof controlRuntimeSettings> | ControlRuntimeState,
+  home?: string,
 ): ControlLifecycleResult {
   const text = controlLifecycleText(action, state)
   return {
@@ -313,7 +317,7 @@ function controlResult(
     service,
     mounted: state !== 'unmounted',
     enabled: state === 'enabled',
-    marker: controlStateFile(),
+    marker: controlStateFile(home),
     endpoint: runtime.endpoint,
     healthUrl: runtime.healthUrl,
     readyUrl: runtime.readyUrl,
@@ -324,26 +328,27 @@ function controlResult(
 }
 
 export async function applyControlLifecycleAction(opts: ControlLifecycleOpts): Promise<ControlLifecycleResult> {
-  authorizeControlManagementAccess()
-  const settings = controlRuntimeSettings()
-  const current = readControlState()
+  authorizeControlManagementAccess({ env: opts.accessEnv })
+  const settings = controlRuntimeSettings({ home: opts.home })
+  const current = readControlState(opts.home)
+  const stateOpts = opts.home ? { home: opts.home } : undefined
   if (opts.action === 'mount' && current) {
-    return controlResult(opts.action, current.enabled ? 'enabled' : 'disabled', current.enabled ? 'running' : 'gated', current)
+    return controlResult(opts.action, current.enabled ? 'enabled' : 'disabled', current.enabled ? 'running' : 'gated', current, opts.home)
   }
   if (opts.action === 'enable' && current?.enabled === true) {
-    return controlResult(opts.action, 'enabled', 'running', current)
+    return controlResult(opts.action, 'enabled', 'running', current, opts.home)
   }
   if (opts.action === 'enable' && !current) {
     throw new Error('Control runtime is not mounted; mount runtime before enabling the endpoint.')
   }
   if (opts.action === 'disable' && current?.enabled === false) {
-    return controlResult(opts.action, 'disabled', 'gated', current)
+    return controlResult(opts.action, 'disabled', 'gated', current, opts.home)
   }
   if (opts.action === 'unmount' && !current) {
-    return controlResult(opts.action, 'unmounted', 'unmounted', settings)
+    return controlResult(opts.action, 'unmounted', 'unmounted', settings, opts.home)
   }
   if (opts.action === 'disable' && !current) {
-    return controlResult(opts.action, 'unmounted', 'unmounted', settings)
+    return controlResult(opts.action, 'unmounted', 'unmounted', settings, opts.home)
   }
   const args = controlActionArgs(opts.paths.mode, opts.action, current?.mounted === true)
   if (!args) throw new Error(`unsupported control lifecycle action: ${opts.action}`)
@@ -356,6 +361,7 @@ export async function applyControlLifecycleAction(opts: ControlLifecycleOpts): P
     const code = await composeRun({
       paths: opts.paths,
       args,
+      home: opts.home,
       env: opts.env,
       onLine: sink,
       includeControlProfile: true,
@@ -365,18 +371,18 @@ export async function applyControlLifecycleAction(opts: ControlLifecycleOpts): P
     }
   }
   if (opts.action === 'unmount') {
-    setControlMounted(false, false)
-    return controlResult(opts.action, 'unmounted', 'removed', settings)
+    setControlMounted(false, false, stateOpts)
+    return controlResult(opts.action, 'unmounted', 'removed', settings, opts.home)
   }
   if (opts.action === 'mount') {
-    const state = setControlMounted(true, false) ?? settings
-    return controlResult(opts.action, 'disabled', 'gated', state)
+    const state = setControlMounted(true, false, stateOpts) ?? settings
+    return controlResult(opts.action, 'disabled', 'gated', state, opts.home)
   }
-  const state = setControlEnabled(opts.action === 'enable') ?? settings
+  const state = setControlEnabled(opts.action === 'enable', stateOpts) ?? settings
   if (opts.action === 'enable') {
     const probe = await probeOne({ name: state.service, url: state.readyUrl, port: state.port }, 1500)
     if (!probe.ok) {
-      setControlEnabled(false)
+      setControlEnabled(false, stateOpts)
       throw new Error(`Control endpoint gate did not open (${probe.detail}); unmount and mount the Control runtime once, then enable the endpoint.`)
     }
   }
@@ -385,6 +391,7 @@ export async function applyControlLifecycleAction(opts: ControlLifecycleOpts): P
     opts.action === 'enable' ? 'enabled' : 'disabled',
     opts.action === 'enable' ? 'running' : 'gated',
     state,
+    opts.home,
   )
 }
 
@@ -465,11 +472,11 @@ function enabledControlStatus(state: ControlRuntimeState, probe: ProbeResult, ho
   }
 }
 
-function controlComposeContainerMounted(paths: StackPaths, env?: Record<string, string | undefined>): boolean | undefined {
+function controlComposeContainerMounted(paths: StackPaths, env?: Record<string, string | undefined>, home?: string): boolean | undefined {
   const argv = composeArgv(paths, ['ps', '--all', '-q', 'control'], true)
   const result = spawnSync(argv[0]!, argv.slice(1), {
     cwd: paths.cwd,
-    env: { ...process.env, ...controlManagedEnv(env, true) },
+    env: { ...process.env, ...controlManagedEnv(env, true, home) },
     encoding: 'utf8',
   })
   if (result.status !== 0) return undefined
@@ -487,7 +494,7 @@ function reconciledControlState(opts: ControlServiceStatusOpts): ControlRuntimeS
     return setControlEnabled(false, { home: opts.home })
   }
   if (!opts.paths) return state
-  const mounted = controlComposeContainerMounted(opts.paths, opts.env)
+  const mounted = controlComposeContainerMounted(opts.paths, opts.env, opts.home)
   if (mounted === false) {
     setControlMounted(false, false, { home: opts.home })
     return undefined

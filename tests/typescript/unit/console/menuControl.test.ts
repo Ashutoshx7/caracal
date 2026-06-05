@@ -157,6 +157,49 @@ describe('Control menu views', () => {
     expect(app.setStatus).toHaveBeenCalledWith('control status: not allowed', 'error')
   })
 
+  it('uses the detected active stack runtime for Control status', async () => {
+    const app = fakeApp()
+    const control = await openControl(app)
+    engineMocks.detectActiveLocalStackRuntime.mockReturnValueOnce({
+      mode: 'rc',
+      version: '2026.06.04-rc.1',
+      registry: 'ghcr.io/garudex-labs/',
+      home: '/home/raw/.config/caracal',
+      secretsDir: '/home/raw/.config/caracal/secrets',
+    })
+    engineMocks.resolveStackPaths.mockReturnValueOnce({
+      mode: 'rc',
+      cwd: '/home/raw/.config/caracal',
+      composeFile: '/home/raw/.config/caracal/compose.yml',
+      envFiles: ['/home/raw/.config/caracal/caracal.env'],
+      secretsDir: '/home/raw/.config/caracal/secrets',
+    })
+
+    await control.init?.(app)
+
+    expect(engineMocks.authorizeControlManagementAccess).toHaveBeenCalledWith(expect.objectContaining({
+      env: expect.objectContaining({
+        CARACAL_MODE: 'rc',
+        CARACAL_HOME: '/home/raw/.config/caracal',
+        CARACAL_SECRETS_DIR: '/home/raw/.config/caracal/secrets',
+      }),
+    }))
+    expect(engineMocks.resolveStackPaths).toHaveBeenCalledWith({
+      mode: 'rc',
+      home: '/home/raw/.config/caracal',
+      repoRoot: undefined,
+    })
+    expect(engineMocks.controlServiceStatus).toHaveBeenCalledWith(expect.objectContaining({
+      home: '/home/raw/.config/caracal',
+      env: expect.objectContaining({
+        CARACAL_MODE: 'rc',
+        CARACAL_VERSION: '2026.06.04-rc.1',
+        CARACAL_REGISTRY: 'ghcr.io/garudex-labs/',
+        CARACAL_SECRETS_DIR: '/home/raw/.config/caracal/secrets',
+      }),
+    }))
+  })
+
   it('confirms and renders lifecycle output including captured runtime events', async () => {
     const app = fakeApp()
     const control = await openControl(app)

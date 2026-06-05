@@ -8,6 +8,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolvePaths } from '../../../../apps/runtime/src/commands/stack.ts'
+import { detectActiveLocalStackRuntime } from '../../../../packages/engine/src/stackPaths.ts'
+
+const spawnSyncMock = vi.hoisted(() => vi.fn())
+
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
+  spawnSync: spawnSyncMock,
+}))
 
 function repoFixture(): string {
   const repoRoot = mkdtempSync(join(tmpdir(), 'caracal-repo-'))
@@ -23,6 +31,7 @@ describe('resolvePaths', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllEnvs()
+    spawnSyncMock.mockReset()
   })
 
   it('defaults to dev mode when CARACAL_REPO_ROOT is set and CARACAL_MODE is unset', () => {
@@ -170,5 +179,48 @@ describe('resolvePaths', () => {
 
     expect(() => resolvePaths()).toThrow('exit:1')
     expect(exit).toHaveBeenCalledWith(1)
+  })
+})
+
+describe('detectActiveLocalStackRuntime', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    spawnSyncMock.mockReset()
+  })
+
+  it('detects the running local API stack mode, version, home, and secrets', () => {
+    spawnSyncMock
+      .mockReturnValueOnce({ status: 0, stdout: 'api-container\n' })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify([{
+          Config: {
+            Image: 'ghcr.io/garudex-labs/caracal-api:v2026.06.04-rc.1',
+            Env: ['CARACAL_MODE=rc'],
+            Labels: {
+              'com.docker.compose.project.working_dir': '/home/raw/.config/caracal',
+              'com.docker.compose.project.config_files': '/home/raw/.config/caracal/compose.yml',
+            },
+          },
+          Mounts: [
+            { Source: '/home/raw/.config/caracal/secrets/caracalAdminToken', Destination: '/run/secrets/caracalAdminToken' },
+          ],
+          NetworkSettings: {
+            Ports: {
+              '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: '3000' }],
+            },
+          },
+        }]),
+      })
+
+    expect(detectActiveLocalStackRuntime()).toEqual({
+      mode: 'rc',
+      version: '2026.06.04-rc.1',
+      registry: 'ghcr.io/garudex-labs/',
+      home: '/home/raw/.config/caracal',
+      repoRoot: undefined,
+      composeFile: '/home/raw/.config/caracal/compose.yml',
+      secretsDir: '/home/raw/.config/caracal/secrets',
+    })
   })
 })

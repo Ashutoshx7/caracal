@@ -3,8 +3,9 @@
 //
 // Resolves StackPaths for dev, rc, and stable modes.
 
+import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { bootstrapSecrets, prepareDevSecrets } from './secrets.js'
 import { installRuntimeAssets, runtimePaths } from './runtime.js'
 import type { StackPaths } from './stack.js'
@@ -14,8 +15,31 @@ export type StackMode = CaracalMode
 
 export interface ResolveStackPathsOptions {
   mode?: StackMode
+  home?: string
   repoRoot?: string
   onInfo?: (message: string) => void
+}
+
+export interface ActiveLocalStackRuntime {
+  mode: StackMode
+  version?: string
+  registry?: string
+  home?: string
+  repoRoot?: string
+  composeFile?: string
+  secretsDir?: string
+}
+
+interface DockerInspectContainer {
+  Config?: {
+    Image?: string
+    Env?: string[]
+    Labels?: Record<string, string>
+  }
+  Mounts?: Array<{ Source?: string; Destination?: string }>
+  NetworkSettings?: {
+    Ports?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>
+  }
 }
 
 export function resolveStackPaths(opts: ResolveStackPathsOptions = {}): StackPaths {
@@ -58,7 +82,7 @@ function devPaths(opts: ResolveStackPathsOptions): StackPaths {
 }
 
 function installedPaths(opts: ResolveStackPathsOptions, mode: Exclude<StackMode, 'dev'>): StackPaths {
-  const paths = runtimePaths()
+  const paths = runtimePaths(opts.home)
   const report = installRuntimeAssets(paths, mode)
   if (report.created) opts.onInfo?.(`provisioned runtime assets at ${paths.home}`)
   const composeFile = process.env.CARACAL_COMPOSE_FILE ?? paths.composeFile
@@ -69,5 +93,76 @@ function installedPaths(opts: ResolveStackPathsOptions, mode: Exclude<StackMode,
     cwd: paths.home,
     mode,
     secretsDir: paths.secretsDir,
+  }
+}
+
+function dockerOutput(args: string[]): string | undefined {
+  const result = spawnSync('docker', args, { encoding: 'utf8' })
+  if (result.status !== 0 || typeof result.stdout !== 'string') return undefined
+  const text = result.stdout.trim()
+  return text.length > 0 ? text : undefined
+}
+
+function inspectContainers(ids: string[]): DockerInspectContainer[] {
+  if (ids.length === 0) return []
+  const text = dockerOutput(['inspect', ...ids])
+  if (!text) return []
+  const parsed = JSON.parse(text) as unknown
+  return Array.isArray(parsed) ? parsed as DockerInspectContainer[] : []
+}
+
+function envValue(env: string[] | undefined, key: string): string | undefined {
+  const prefix = `${key}=`
+  return env?.find((entry) => entry.startsWith(prefix))?.slice(prefix.length)
+}
+
+function stackMode(value: string | undefined): StackMode | undefined {
+  if (value === 'dev' || value === 'rc' || value === 'stable') return value
+  return undefined
+}
+
+function imageRuntime(image: string | undefined): Pick<ActiveLocalStackRuntime, 'version' | 'registry'> {
+  const marker = 'caracal-api:'
+  const index = image?.lastIndexOf(marker) ?? -1
+  if (!image || index < 0) return {}
+  const tag = image.slice(index + marker.length)
+  const version = tag.startsWith('v') ? tag.slice(1) : tag
+  return { version, registry: image.slice(0, index) || undefined }
+}
+
+function publishesApiPort(container: DockerInspectContainer): boolean {
+  return container.NetworkSettings?.Ports?.['3000/tcp']?.some((port) => port.HostPort === '3000') === true
+}
+
+function mountedSecretDir(container: DockerInspectContainer): string | undefined {
+  const mount = container.Mounts?.find((item) => item.Source && item.Destination?.startsWith('/run/secrets/'))
+  return mount?.Source ? dirname(mount.Source) : undefined
+}
+
+export function detectActiveLocalStackRuntime(): ActiveLocalStackRuntime | undefined {
+  const ids = dockerOutput([
+    'ps',
+    '--filter',
+    'label=com.docker.compose.service=api',
+    '--filter',
+    'status=running',
+    '--format',
+    '{{.ID}}',
+  ])?.split(/\s+/).filter(Boolean) ?? []
+  const containers = inspectContainers(ids)
+  const container = containers.find(publishesApiPort) ?? containers[0]
+  if (!container) return undefined
+  const labels = container.Config?.Labels ?? {}
+  const mode = stackMode(envValue(container.Config?.Env, 'CARACAL_MODE'))
+  if (!mode) return undefined
+  const home = labels['com.docker.compose.project.working_dir']
+  const composeFile = labels['com.docker.compose.project.config_files']?.split(',')[0]
+  return {
+    mode,
+    ...imageRuntime(container.Config?.Image),
+    home: mode === 'dev' ? undefined : home,
+    repoRoot: mode === 'dev' ? home : undefined,
+    composeFile,
+    secretsDir: mountedSecretDir(container),
   }
 }
