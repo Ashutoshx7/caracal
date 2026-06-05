@@ -2103,5 +2103,435 @@ def _qbo_roll_balances(accounts, acct_by_num, vendors, customers, bills, invoice
         acct["CurrentBalanceWithSubAccounts"] = acct["CurrentBalance"]
 
 
+# --------------------------------------------------------------------------- #
+# Inkwell OCR — document AI / invoice capture
+# --------------------------------------------------------------------------- #
+_INKWELL_ENGINE = "inkwell-vision-3"
+_INKWELL_API_VERSION = "2026-02-01"
+_INKWELL_REVIEW_THRESHOLD = 0.85
+_INKWELL_FIELD_THRESHOLD = 0.70
+
+# Image and document types a real capture engine ingests, mapped to the MIME a
+# client would send. A name without a known extension is treated as a sniffed PDF.
+_INKWELL_MIME = {
+    "pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg",
+    "jpeg": "image/jpeg", "tif": "image/tiff", "tiff": "image/tiff",
+    "webp": "image/webp", "heic": "image/heic", "bmp": "image/bmp", "gif": "image/gif",
+}
+
+_INKWELL_MODELS = (
+    ("invoice", "Invoice", "Accounts-payable invoices: supplier, totals, taxes, and line items.", "invoice-2026.02", 0.971),
+    ("receipt", "Receipt", "Expense receipts: merchant, payment method, tip, and totals.", "receipt-2026.01", 0.958),
+    ("credit_note", "Credit Note", "Supplier credit notes and memos carrying negative balances.", "invoice-2026.02", 0.962),
+    ("purchase_order", "Purchase Order", "Outbound purchase orders with ordered line items.", "po-2025.11", 0.949),
+    ("bank_statement", "Bank Statement", "Statements with opening and closing balances and transactions.", "statement-2025.09", 0.933),
+    ("w9", "Form W-9", "US taxpayer identification request forms.", "usforms-2025.07", 0.981),
+)
+_INKWELL_MODEL_VERSION = {m[0]: m[3] for m in _INKWELL_MODELS}
+
+_INKWELL_LINE_DESCS = (
+    "Managed cloud hosting", "Professional services", "Software license — annual",
+    "Freight and logistics", "Hardware components", "Consulting retainer",
+    "Data processing fees", "Maintenance and support", "Marketing services",
+    "Office supplies", "Network bandwidth", "Audit services", "Field installation",
+)
+_INKWELL_RETAIL_ITEMS = (
+    "Coffee", "Sandwich", "Printer paper", "USB-C cable", "Taxi fare",
+    "Parking", "Hotel night", "Lunch", "Stationery", "Toner cartridge",
+)
+_INKWELL_PAY_METHODS = ("VISA", "MASTERCARD", "AMEX", "CASH", "CORPORATE CARD")
+
+
+def inkwell_mime(file_name: str) -> str | None:
+    """Resolve the MIME a real client would send, or None for an unsupported type."""
+    name = str(file_name or "").strip().lower()
+    if "." not in name:
+        return "application/pdf"
+    return _INKWELL_MIME.get(name.rsplit(".", 1)[1])
+
+
+def inkwell_models() -> dict[str, dict]:
+    """The extraction models Inkwell publishes, keyed by model id."""
+    out: dict[str, dict] = {}
+    supported_mimes = sorted(set(_INKWELL_MIME.values()))
+    for model_id, name, desc, version, avg in _INKWELL_MODELS:
+        out[model_id] = {
+            "modelId": model_id,
+            "object": "model",
+            "name": name,
+            "description": desc,
+            "version": version,
+            "status": "ga",
+            "engine": _INKWELL_ENGINE,
+            "avgConfidence": avg,
+            "supportedLocales": ["en-US", "en-GB", "de-DE", "fr-FR", "pt-BR"],
+            "supportedMimeTypes": supported_mimes,
+            "maxPages": 50,
+            "releasedAt": "2026-01-15T00:00:00Z",
+        }
+    return out
+
+
+def _inkwell_outcome(file_name: str, model: str) -> dict:
+    """Map a document's name onto the lifecycle outcome a real engine would reach."""
+    name = str(file_name or "").lower()
+
+    def has(*tokens: str) -> bool:
+        return any(t in name for t in tokens)
+
+    if has("corrupt", "damaged", "unreadable", "truncated"):
+        return {"status": "failed", "errorCode": "unreadable_document",
+                "errorMessage": "The file could not be decoded; it appears corrupt or truncated."}
+    if has("encrypted", "password", "protected", "locked"):
+        return {"status": "failed", "errorCode": "password_protected",
+                "errorMessage": "The document is password protected and cannot be opened."}
+    if has("blank", "empty"):
+        return {"status": "failed", "errorCode": "no_content_detected",
+                "errorMessage": "No machine-readable content was detected in the document."}
+
+    document_type = model
+    if has("receipt"):
+        document_type = "receipt"
+    elif has("creditnote", "credit_note", "credit-note", "creditmemo"):
+        document_type = "credit_note"
+    degraded = has("scan", "photo", "handwritten", "lowres", "low-res", "fax", "skewed")
+    return {"status": "extracted", "documentType": document_type, "degraded": degraded}
+
+
+def _inkwell_box(rng: random.Random) -> list[float]:
+    return [round(rng.uniform(0.05, 0.55), 4), round(rng.uniform(0.04, 0.92), 4),
+            round(rng.uniform(0.12, 0.38), 4), round(rng.uniform(0.012, 0.03), 4)]
+
+
+def _inkwell_field(rng: random.Random, value, page: int, base_conf: float) -> dict:
+    conf = round(min(0.999, max(0.30, rng.gauss(base_conf, 0.025))), 3)
+    return {"value": value, "confidence": conf, "page": page, "boundingBox": _inkwell_box(rng)}
+
+
+def _inkwell_invoice(rng: random.Random, document_type: str, page_count: int, base_conf: float) -> dict:
+    country, currency = rng.choice(_COUNTRIES)
+    last_page = max(1, page_count)
+    sign = -1 if document_type == "credit_note" else 1
+    line_items, subtotal = [], 0.0
+    for _ in range(rng.randint(1, 6)):
+        qty = rng.choice((1, 1, 2, 3, 5, 10, 12, 24))
+        unit = round(rng.uniform(18.0, 4200.0), 2)
+        amount = round(sign * qty * unit, 2)
+        subtotal = round(subtotal + amount, 2)
+        line_items.append({
+            "description": rng.choice(_INKWELL_LINE_DESCS),
+            "productCode": f"SKU-{rng.randint(1000, 9999)}",
+            "quantity": qty,
+            "unitPrice": unit,
+            "amount": amount,
+            "confidence": round(min(0.999, max(0.40, rng.gauss(base_conf, 0.04))), 3),
+        })
+    tax_rate = rng.choice((0.0, 0.05, 0.07, 0.0825, 0.19, 0.20))
+    tax_amount = round(subtotal * tax_rate, 2)
+    total = round(subtotal + tax_amount, 2)
+
+    issued = _EPOCH + timedelta(days=rng.randint(-120, -3))
+    term_days = rng.choice((15, 30, 45, 60))
+    due = issued + timedelta(days=term_days)
+    prefix = rng.choice(("INV", "BILL", "AP", "CN" if document_type == "credit_note" else "INV"))
+    supplier = _company(rng)
+    account = "".join(rng.choice("0123456789") for _ in range(8))
+
+    fields = {
+        "supplierName": _inkwell_field(rng, supplier, 1, base_conf),
+        "supplierTaxId": _inkwell_field(rng, f"{rng.randint(10, 99)}-{rng.randint(10**6, 10**7 - 1)}", 1, base_conf),
+        "supplierVatNumber": _inkwell_field(rng, f"{country}{rng.randint(10**8, 10**9 - 1)}", 1, base_conf),
+        "supplierAddress": _inkwell_field(rng, f"{rng.randint(1, 9999)} {rng.choice(_ROOTS)} Ave, {country}", 1, base_conf),
+        "supplierIban": _inkwell_field(rng, _iban(rng, country, account), last_page, base_conf),
+        "customerName": _inkwell_field(rng, "LynxCapital Holdings", 1, base_conf),
+        "customerAddress": _inkwell_field(rng, "200 Lynx Plaza, New York, US", 1, base_conf),
+        "invoiceNumber": _inkwell_field(rng, f"{prefix}-{issued.year}-{rng.randint(1000, 9999)}", 1, base_conf),
+        "purchaseOrderNumber": _inkwell_field(rng, f"PO-{rng.randint(100000, 999999)}", 1, base_conf),
+        "invoiceDate": _inkwell_field(rng, issued.isoformat(), 1, base_conf),
+        "dueDate": _inkwell_field(rng, due.isoformat(), 1, base_conf),
+        "paymentTerms": _inkwell_field(rng, f"NET{term_days}", 1, base_conf),
+        "currency": _inkwell_field(rng, currency, last_page, base_conf),
+        "subtotal": _inkwell_field(rng, subtotal, last_page, base_conf),
+        "taxAmount": _inkwell_field(rng, tax_amount, last_page, base_conf),
+        "totalAmount": _inkwell_field(rng, total, last_page, base_conf),
+        "amountDue": _inkwell_field(rng, total, last_page, base_conf),
+    }
+    taxes = [{"code": "VAT" if tax_rate else "EXEMPT", "rate": tax_rate,
+              "base": subtotal, "amount": tax_amount}]
+    locale = {"language": "en", "country": country, "currency": currency}
+    return {"locale": locale, "fields": fields, "lineItems": line_items, "taxes": taxes}
+
+
+def _inkwell_receipt(rng: random.Random, page_count: int, base_conf: float) -> dict:
+    country, currency = rng.choice(_COUNTRIES)
+    line_items, subtotal = [], 0.0
+    for _ in range(rng.randint(1, 5)):
+        qty = rng.choice((1, 1, 1, 2, 3))
+        unit = round(rng.uniform(2.5, 240.0), 2)
+        amount = round(qty * unit, 2)
+        subtotal = round(subtotal + amount, 2)
+        line_items.append({
+            "description": rng.choice(_INKWELL_RETAIL_ITEMS),
+            "quantity": qty, "unitPrice": unit, "amount": amount,
+            "confidence": round(min(0.999, max(0.40, rng.gauss(base_conf, 0.05))), 3),
+        })
+    tax_rate = rng.choice((0.0, 0.07, 0.0825, 0.20))
+    tax_amount = round(subtotal * tax_rate, 2)
+    tip = round(subtotal * rng.choice((0.0, 0.0, 0.1, 0.15, 0.18)), 2)
+    total = round(subtotal + tax_amount + tip, 2)
+    method = rng.choice(_INKWELL_PAY_METHODS)
+    purchased = _EPOCH + timedelta(days=rng.randint(-90, -1))
+
+    fields = {
+        "merchantName": _inkwell_field(rng, _company(rng), 1, base_conf),
+        "merchantAddress": _inkwell_field(rng, f"{rng.randint(1, 999)} {rng.choice(_ROOTS)} St, {country}", 1, base_conf),
+        "transactionDate": _inkwell_field(rng, purchased.isoformat(), 1, base_conf),
+        "transactionTime": _inkwell_field(rng, f"{rng.randint(7, 21):02d}:{rng.randint(0, 59):02d}", 1, base_conf),
+        "paymentMethod": _inkwell_field(rng, method, 1, base_conf),
+        "cardLast4": _inkwell_field(rng, "" if method == "CASH" else f"{rng.randint(0, 9999):04d}", 1, base_conf),
+        "currency": _inkwell_field(rng, currency, 1, base_conf),
+        "subtotal": _inkwell_field(rng, subtotal, 1, base_conf),
+        "taxAmount": _inkwell_field(rng, tax_amount, 1, base_conf),
+        "tip": _inkwell_field(rng, tip, 1, base_conf),
+        "totalAmount": _inkwell_field(rng, total, 1, base_conf),
+    }
+    taxes = [{"code": "SALES_TAX" if tax_rate else "EXEMPT", "rate": tax_rate,
+              "base": subtotal, "amount": tax_amount}]
+    locale = {"language": "en", "country": country, "currency": currency}
+    return {"locale": locale, "fields": fields, "lineItems": line_items, "taxes": taxes}
+
+
+def inkwell_extraction(doc: dict) -> dict:
+    """Build the deterministic extraction a document-AI engine returns for a document."""
+    rng = _rng("inkwell-ocr", "extract", doc["documentId"], doc["fileName"])
+    outcome = _inkwell_outcome(doc["fileName"], doc.get("model", "invoice"))
+    base = {
+        "documentId": doc["documentId"],
+        "object": "extraction",
+        "model": doc.get("model", "invoice"),
+        "modelVersion": doc.get("modelVersion", _INKWELL_MODEL_VERSION["invoice"]),
+        "apiVersion": _INKWELL_API_VERSION,
+        "engine": _INKWELL_ENGINE,
+        "pageCount": doc.get("pageCount", 1),
+        "processingMs": rng.randint(640, 4200),
+    }
+
+    if outcome["status"] == "failed":
+        base.update({
+            "status": "failed", "documentType": "unknown", "confidence": 0.0,
+            "needsReview": True, "reviewReasons": [outcome["errorCode"]],
+            "error": {"code": outcome["errorCode"], "message": outcome["errorMessage"]},
+            "locale": None, "fields": {}, "lineItems": [], "taxes": [],
+        })
+        return base
+
+    document_type = outcome["documentType"]
+    degraded = outcome["degraded"]
+    base_conf = rng.uniform(0.62, 0.78) if degraded else rng.uniform(0.90, 0.985)
+    body = (_inkwell_receipt(rng, base["pageCount"], base_conf) if document_type == "receipt"
+            else _inkwell_invoice(rng, document_type, base["pageCount"], base_conf))
+
+    fields = body["fields"]
+    confs = [f["confidence"] for f in fields.values()]
+    overall = round(sum(confs) / len(confs), 3) if confs else 0.0
+    reasons: list[str] = []
+    if overall < _INKWELL_REVIEW_THRESHOLD:
+        reasons.append("low_overall_confidence")
+    low = sorted(k for k, f in fields.items() if f["confidence"] < _INKWELL_FIELD_THRESHOLD)
+    if low:
+        reasons.append("low_field_confidence:" + ",".join(low))
+    if degraded:
+        reasons.append("image_quality_degraded")
+
+    base.update({
+        "status": "needs_review" if reasons else "extracted",
+        "documentType": document_type,
+        "locale": body["locale"],
+        "confidence": overall,
+        "needsReview": bool(reasons),
+        "reviewReasons": reasons,
+        "fields": fields,
+        "lineItems": body["lineItems"],
+        "taxes": body["taxes"],
+    })
+    return base
+
+
+def _inkwell_document(seed: str, idx: int, model: str, file_name: str) -> dict:
+    rng = _rng(seed, "doc", idx)
+    mime = inkwell_mime(file_name) or "application/pdf"
+    doc_id = "doc_%012x" % rng.getrandbits(48)
+    created = _instant(rng, -120, -1)
+    return {
+        "documentId": doc_id,
+        "object": "document",
+        "fileName": file_name,
+        "mimeType": mime,
+        "sizeBytes": rng.randint(48_000, 5_200_000),
+        "sha256": hashlib.sha256(f"{doc_id}:{file_name}".encode()).hexdigest(),
+        "pageCount": rng.choice((1, 1, 1, 2, 2, 3, 5)),
+        "model": model,
+        "modelVersion": _INKWELL_MODEL_VERSION[model],
+        "documentType": None,
+        "status": "processing",
+        "source": "api_upload",
+        "reference": None,
+        "callbackUrl": None,
+        "createdAt": created,
+        "completedAt": None,
+        "confidence": None,
+    }
+
+
+def inkwell_dataset(seed: str) -> dict[str, dict]:
+    """Build a coherent capture history: documents that have been extracted,
+    flagged for review, or failed, alongside the published extraction models."""
+    documents: dict[str, dict] = {}
+    extractions: dict[str, dict] = {}
+    variants = (
+        ("invoice", "invoice-{n}.pdf"),
+        ("invoice", "vendor-bill-{n}.pdf"),
+        ("invoice", "scan-invoice-{n}.jpg"),
+        ("receipt", "receipt-{n}.png"),
+        ("credit_note", "credit-note-{n}.pdf"),
+        ("invoice", "encrypted-invoice-{n}.pdf"),
+        ("invoice", "corrupt-scan-{n}.tiff"),
+        ("invoice", "invoice-{n}.pdf"),
+    )
+    for i in range(1, 41):
+        model, pattern = variants[i % len(variants)]
+        doc = _inkwell_document(seed, i, model, pattern.format(n=2026000 + i))
+        if i % 11 == 0:
+            documents[doc["documentId"]] = doc
+            continue
+        extraction = inkwell_extraction(doc)
+        doc["status"] = extraction["status"]
+        doc["documentType"] = extraction["documentType"]
+        doc["confidence"] = extraction["confidence"]
+        doc["completedAt"] = doc["createdAt"]
+        documents[doc["documentId"]] = doc
+        extractions[doc["documentId"]] = extraction
+    return {"documents": documents, "extractions": extractions, "models": inkwell_models()}
+
+
 def index_by(records: list[dict], key: str = "id") -> dict[str, dict]:
     return {r[key]: r for r in records}
+
+
+# --------------------------------------------------------------------------- #
+# Aegis Screening — sanctions / AML / KYB reference data
+# --------------------------------------------------------------------------- #
+_AEGIS_WATCHLISTS = (
+    ("ofac-sdn", "OFAC SDN", "US Treasury OFAC", "sanctions", "US"),
+    ("ofac-consolidated", "OFAC Consolidated (Non-SDN)", "US Treasury OFAC", "sanctions", "US"),
+    ("eu-consolidated", "EU Consolidated Sanctions List", "European Union", "sanctions", "EU"),
+    ("un-sc", "UN Security Council Consolidated List", "United Nations", "sanctions", "Global"),
+    ("uk-ofsi", "UK OFSI Consolidated List", "HM Treasury", "sanctions", "GB"),
+    ("bis-dpl", "BIS Denied Persons List", "US BIS", "sanctions", "US"),
+    ("pep-global", "Global PEP Database", "Aegis Intelligence", "pep", "Global"),
+    ("adverse-media", "Adverse Media Index", "Aegis Media Intelligence", "adverse_media", "Global"),
+    ("interpol-red", "Interpol Red Notices", "Interpol", "law_enforcement", "Global"),
+)
+
+# High-risk and sanctioned jurisdictions weighted up by the risk model.
+_AEGIS_HIGH_RISK = ("IR", "KP", "SY", "RU", "BY", "CU", "VE", "MM")
+
+# Deterministic fictional watchlist subjects for the simulated ecosystem. Each
+# screening that resolves to one of these produces a true exact/strong match.
+_AEGIS_SANCTIONED = (
+    ("Oblast Holdings LLC", "organization", "RU", ("ofac-sdn", "eu-consolidated"),
+     ("SANCTIONS",), "BLOCKING", ("Oblast Group", "OOO Oblast")),
+    ("Rubicon Maritime Trading", "organization", "IR", ("ofac-sdn", "un-sc"),
+     ("SANCTIONS",), "BLOCKING", ("Rubicon Shipping",)),
+    ("Crimson Star Logistics", "organization", "KP", ("un-sc", "ofac-sdn"),
+     ("SANCTIONS",), "BLOCKING", ("Crimson Star Co",)),
+    ("Pyotr Vasiliev", "individual", "RU", ("ofac-sdn", "uk-ofsi"),
+     ("SANCTIONS", "PEP"), "BLOCKING", ("P. Vasiliev", "Pyotr Vasilyev")),
+    ("Damascus Freight Forwarders", "organization", "SY", ("eu-consolidated", "ofac-sdn"),
+     ("SANCTIONS",), "BLOCKING", ()),
+    ("Aurelio Mancuso", "individual", "VE", ("ofac-sdn",),
+     ("SANCTIONS", "ADVERSE_MEDIA"), "BLOCKING", ("A. Mancuso",)),
+    ("Minsk Industrial Combine", "organization", "BY", ("eu-consolidated", "uk-ofsi"),
+     ("SANCTIONS",), "SECTORAL", ()),
+    ("Helena Brandt", "individual", "DE", ("pep-global",),
+     ("PEP",), None, ("H. Brandt",)),
+    ("Tobias Lindqvist", "individual", "SE", ("pep-global", "adverse-media"),
+     ("PEP", "ADVERSE_MEDIA"), None, ()),
+    ("Cobalt Reach Ventures", "organization", "VG", ("adverse-media",),
+     ("ADVERSE_MEDIA",), None, ("Cobalt Reach",)),
+)
+
+
+def _aegis_registration(rng: random.Random, country: str) -> str:
+    return f"{country}-{rng.randint(100000, 999999)}"
+
+
+def aegis_reference(seed: str) -> dict:
+    """Build the watchlist catalogue, the resolvable watchlist-subject index, and a
+    set of clean resolvable business entities the screening engine matches against."""
+    watchlists: dict[str, dict] = {}
+    for lid, name, source, kind, juris in _AEGIS_WATCHLISTS:
+        rng = _rng(seed, "wl", lid)
+        watchlists[lid] = {
+            "listId": lid, "name": name, "source": source, "type": kind,
+            "jurisdiction": juris, "recordCount": rng.randint(1800, 41000),
+            "lastUpdatedAt": _instant(rng, 1, 30), "refreshFrequency": "daily",
+        }
+
+    sanctioned: list[dict] = []
+    for idx, (name, etype, country, lists, programs, stype, aliases) in enumerate(_AEGIS_SANCTIONED):
+        rng = _rng(seed, "sanctioned", idx)
+        record = {
+            "entityId": f"ent_wl_{idx:04d}",
+            "legalName": name, "type": etype, "country": country,
+            "aliases": list(aliases), "watchlists": list(lists),
+            "programs": list(programs), "sanctionType": stype,
+            "listedAt": _day(rng, -900, -120), "source": "watchlist",
+            "verificationStatus": "watchlisted", "status": "active",
+        }
+        if etype == "individual":
+            record["dateOfBirth"] = _day(rng, -22000, -12000)
+        else:
+            record["incorporationDate"] = _day(rng, -7000, -1500)
+            record["registrationNumber"] = _aegis_registration(rng, country)
+        sanctioned.append(record)
+
+    businesses: list[dict] = []
+    for i in range(12):
+        rng = _rng(seed, "kyb_entity", i)
+        country, _ = rng.choice(_COUNTRIES)
+        legal = _company(rng)
+        dissolved = rng.random() < 0.12
+        owners = []
+        remaining = 100
+        for o in range(rng.randint(1, 3)):
+            share = remaining if o == rng.randint(0, 2) else rng.randint(15, 60)
+            share = min(share, remaining)
+            remaining -= share
+            owners.append({
+                "name": _person(rng), "ownershipPercent": share,
+                "country": rng.choice(_COUNTRIES)[0],
+                "isPep": rng.random() < 0.08, "verified": rng.random() < 0.85,
+            })
+            if remaining <= 0:
+                break
+        businesses.append({
+            "entityId": f"ent_biz_{i:04d}",
+            "legalName": legal, "type": "organization", "country": country,
+            "registrationNumber": _aegis_registration(rng, country),
+            "incorporationDate": _day(rng, -6000, -400),
+            "registeredAddress": {
+                "line1": f"{rng.randint(1, 400)} {rng.choice(_ROOTS)} Street",
+                "city": rng.choice(_ROOTS), "country": country,
+                "postalCode": f"{rng.randint(10000, 99999)}",
+            },
+            "industryCode": rng.choice(_MERCHANT_CATEGORIES)[0],
+            "status": "dissolved" if dissolved else "active",
+            "beneficialOwners": owners,
+            "directors": [{"name": _person(rng), "role": "Director"} for _ in range(rng.randint(1, 2))],
+            "aliases": [], "watchlists": [], "programs": [],
+            "verificationStatus": "unverified", "source": "registry",
+        })
+
+    return {"watchlists": watchlists, "sanctioned": sanctioned, "businesses": businesses}
+

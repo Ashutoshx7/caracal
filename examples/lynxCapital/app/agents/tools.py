@@ -40,8 +40,13 @@ def _run(run_id: str, agent_id: str, tool_name: str, provider_id: str,
 # -- invoice-intake tools --
 
 def extract_invoice(run_id: str, agent_id: str, invoice_id: str, document_ref: str) -> dict[str, object]:
-    return _run(run_id, agent_id, "extract_invoice", "inkwell-ocr", "submit_document",
-                {"fileName": document_ref, "reference": invoice_id})
+    submitted = _run(run_id, agent_id, "extract_invoice", "inkwell-ocr", "submit_document",
+                     {"fileName": document_ref, "reference": invoice_id, "model": "invoice"})
+    document_id = (submitted.get("data") or {}).get("documentId")
+    if not document_id:
+        return submitted
+    return _run(run_id, agent_id, "extract_invoice", "inkwell-ocr", "get_extraction",
+                {"documentId": document_id})
 
 
 def get_vendor_profile(run_id: str, agent_id: str, vendor_id: str) -> dict[str, object]:

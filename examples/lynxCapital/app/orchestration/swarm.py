@@ -322,7 +322,7 @@ def _build_regional_domain_tools(run_id, runner, parent, region):
         """OCR-extract invoice data. Spawns an invoice-intake worker."""
         w = _worker("invoice-intake", f"extract:{invoice_id}")
         try:
-            return json.dumps(tool_fns.extract_invoice(run_id, w.id, invoice_id, f"doc-{invoice_id}"))
+            return json.dumps(tool_fns.extract_invoice(run_id, w.id, invoice_id, f"{invoice_id}.pdf"))
         finally:
             _finish(w, {"invoice_id": invoice_id})
 
