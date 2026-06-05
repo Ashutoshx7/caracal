@@ -14,6 +14,12 @@ from _mock.providerlab import jwtmini
 
 ISSUER = "https://zone.caracal.test"
 
+# Mandate "use" values mirror caracalai_identity: a resource mandate authorizes a
+# call against a downstream provider, the audience the verifier binds to.
+USE_RESOURCE = "resource"
+USE_SESSION = "session"
+SUBJECT_TYPES = ("user", "application")
+
 
 @dataclass
 class MandateClaims:
@@ -25,6 +31,8 @@ class MandateClaims:
     root_session_id: str
     agent_session_id: str | None = None
     delegation_edge_id: str | None = None
+    use: str = USE_RESOURCE
+    subject_type: str = "application"
     ttl_seconds: int = 300
 
 
@@ -44,6 +52,8 @@ def sign(claims: MandateClaims, signing_key: str) -> str:
         "aud": claims.resource,
         "zone": claims.zone,
         "sub": claims.subject,
+        "sub_type": claims.subject_type,
+        "use": claims.use,
         "scopes": claims.scopes,
         "sid": claims.session_id,
         "root_sid": claims.root_session_id,
@@ -80,6 +90,12 @@ def verify(
         raise VerifyError("invalid_token", "mandate signature invalid") from exc
     if claims.get("iss") != ISSUER:
         raise VerifyError("invalid_token", "unexpected issuer")
+    if claims.get("use") not in (USE_RESOURCE, USE_SESSION):
+        raise VerifyError("invalid_token", "mandate use claim missing or invalid")
+    if claims.get("use") != USE_RESOURCE:
+        raise VerifyError("invalid_token", "mandate is not a resource mandate")
+    if claims.get("sub_type") not in SUBJECT_TYPES:
+        raise VerifyError("invalid_token", "mandate subject type invalid")
     if claims.get("zone") != zone:
         raise VerifyError("invalid_zone", "mandate zone mismatch")
     if claims.get("aud") != resource:

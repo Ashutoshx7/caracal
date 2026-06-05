@@ -67,6 +67,7 @@ describe('docker-compose default substitutions', () => {
     const yaml = readFileSync(resolve(repoRoot, 'infra', 'docker', 'docker-compose.yml'), 'utf8')
     expect(yaml).toContain('source: caracalAdminToken')
     expect(yaml).toContain('CONTROL_API_TOKEN_FILE: /run/secrets/caracalAdminToken')
+    expect(yaml).toContain('PORT: "8087"')
     expect(yaml).not.toContain('CONTROL_API_TOKEN: ${CARACAL_ADMIN_TOKEN:-}')
   })
 })
@@ -117,5 +118,11 @@ describe('runtime-compose default substitutions', () => {
     const yaml = readFileSync(resolve(repoRoot, 'infra', 'docker', 'runtime-compose.yml'), 'utf8')
     expect(yaml).not.toMatch(/^\s*-\s*"\d+:\d+"/m)
     expect(yaml).not.toMatch(/^\s*-\s*"0\.0\.0\.0:\d+:\d+"/m)
+  })
+
+  it('runtime control healthcheck probes the Control HTTP port', () => {
+    const yaml = readFileSync(resolve(repoRoot, 'infra', 'docker', 'runtime-compose.yml'), 'utf8')
+    expect(yaml).toContain('CONTROL_PORT: "8087"')
+    expect(yaml).toContain('PORT: "8087"')
   })
 })
