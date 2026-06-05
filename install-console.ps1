@@ -7,6 +7,8 @@
 param(
     [string]$Version = $env:CARACAL_VERSION,
     [string]$InstallDir = $env:CARACAL_INSTALL_DIR,
+    [string]$Color = $env:CARACAL_INSTALL_COLOR,
+    [string]$Progress = $env:CARACAL_INSTALL_PROGRESS,
     [switch]$VerifyProvenance,
     [switch]$NoVerifyProvenance,
     [switch]$RequireProvenance
@@ -25,6 +27,58 @@ if ($env:CARACAL_VERIFY_PROVENANCE -eq '0' -or $NoVerifyProvenance) { $VerifyPro
 if ($env:CARACAL_REQUIRE_PROVENANCE -eq '1') {
     $VerifyProvenance = $true
     $RequireProvenance = $true
+}
+
+if ([string]::IsNullOrEmpty($Color)) { $Color = 'auto' }
+$UseColor = switch ($Color.ToLowerInvariant()) {
+    'always' { $true; break }
+    'never' { $false; break }
+    'auto' { -not [Console]::IsOutputRedirected -and [string]::IsNullOrEmpty($env:NO_COLOR); break }
+    default { throw "unsupported color mode: $Color (use auto, always, or never)" }
+}
+if ([string]::IsNullOrEmpty($Progress)) { $Progress = 'auto' }
+$UseProgress = switch ($Progress.ToLowerInvariant()) {
+    'always' { $true; break }
+    'never' { $false; break }
+    'auto' { -not [Console]::IsErrorRedirected -and $env:CI -ne 'true'; break }
+    default { throw "unsupported progress mode: $Progress (use auto, always, or never)" }
+}
+$ProgressPreference = if ($UseProgress) { 'Continue' } else { 'SilentlyContinue' }
+
+function Write-CaracalMessage([string]$Label, [string]$Message, [ConsoleColor]$Color) {
+    if ($UseColor) {
+        Write-Host 'caracal-install' -NoNewline -ForegroundColor White
+        Write-Host " $Label " -NoNewline -ForegroundColor $Color
+        Write-Host $Message
+    } else {
+        Write-Host "caracal-install $Label $Message"
+    }
+}
+
+function Write-Step([string]$Message) {
+    Write-CaracalMessage '==>' $Message Cyan
+}
+
+function Write-Ok([string]$Message) {
+    Write-CaracalMessage '[OK]' $Message Green
+}
+
+function Write-Info([string]$Message) {
+    Write-CaracalMessage '[INFO]' $Message Cyan
+}
+
+function Write-CaracalWarning([string]$Message) {
+    Write-CaracalMessage '[WARN]' $Message Yellow
+}
+
+function Write-Section([string]$Title) {
+    Write-Host ''
+    if ($UseColor) {
+        Write-Host 'caracal-install ' -NoNewline -ForegroundColor White
+        Write-Host $Title -ForegroundColor White
+    } else {
+        Write-Host "caracal-install $Title"
+    }
 }
 
 $osArch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
@@ -46,9 +100,21 @@ $base = "https://github.com/$repo/releases/download/$tag"
 
 $tmp = New-Item -ItemType Directory -Force -Path (Join-Path $env:TEMP "caracal-install-$([guid]::NewGuid())")
 try {
-    Write-Host "caracal-install: target release $tag (windows-$arch)"
+    Write-Section 'Caracal Console Installer'
+    Write-Host "  Release:     $tag"
+    Write-Host "  Platform:    windows-$arch"
+    Write-Host "  Install dir: $InstallDir"
+    if ($RequireProvenance) {
+        Write-Host '  Provenance:  required'
+    } elseif ($VerifyProvenance) {
+        Write-Host '  Provenance:  verify when available'
+    } else {
+        Write-Host '  Provenance:  disabled'
+    }
+    Write-Host ''
+
     $sumsPath = Join-Path $tmp.FullName 'SHA256SUMS'
-    Write-Host 'caracal-install: downloading SHA256SUMS'
+    Write-Step 'Downloading release manifest'
     Invoke-WebRequest -Uri "$base/SHA256SUMS" -OutFile $sumsPath -UseBasicParsing
 
     $sums = @{}
@@ -62,21 +128,22 @@ try {
         $archive = "caracal-$Kind-windows-$arch-$tag.zip"
         if (-not $sums.ContainsKey($archive)) { throw "no checksum for $archive in SHA256SUMS" }
         $archivePath = Join-Path $tmp.FullName $archive
-        Write-Host "caracal-install: downloading $archive"
+        Write-Step "Downloading $archive"
         Invoke-WebRequest -Uri "$base/$archive" -OutFile $archivePath -UseBasicParsing
         $actual = (Get-FileHash -Algorithm SHA256 -Path $archivePath).Hash.ToLower()
         if ($actual -ne $sums[$archive]) {
             throw "checksum mismatch for $archive (expected $($sums[$archive]), got $actual)"
         }
+        Write-Ok "Checksum verified: $archive"
         if ($VerifyProvenance) {
             $gh = Get-Command gh -ErrorAction SilentlyContinue
             if (-not $gh) {
                 if ($RequireProvenance) { throw 'gh is required for provenance verification' }
-                Write-Warning "gh not found; skipping provenance verification for $archive"
+                Write-CaracalWarning "gh not found; skipping provenance verification for $archive"
             } else {
                 & gh attestation verify $archivePath --repo $repo | Out-Null
                 if ($LASTEXITCODE -ne 0) { throw "provenance verification failed for $archive" }
-                Write-Host "caracal-install: provenance verified for $archive"
+                Write-Ok "Provenance verified: $archive"
             }
         }
         Expand-Archive -Path $archivePath -DestinationPath $tmp.FullName -Force
@@ -115,7 +182,7 @@ try {
             }
             Move-Item -Force $staged[$name] $dest
             $installed += $name
-            Write-Host "caracal-install: installed $dest"
+            Write-Ok "Installed $dest"
         }
         $committed = $true
     } finally {
@@ -137,16 +204,20 @@ try {
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (-not ($userPath -split ';' | Where-Object { $_ -ieq $InstallDir })) {
     [Environment]::SetEnvironmentVariable('Path', "$userPath;$InstallDir", 'User')
-    Write-Host "caracal-install: added $InstallDir to user PATH (open a new shell to pick it up)"
+    Write-Info "Added $InstallDir to user PATH. Open a new shell to pick it up."
 }
 
-Write-Host 'caracal-install: done. Next steps:'
+$mode = if ($tag -like '*-rc.*') { 'rc' } else { 'stable' }
+Write-Ok 'Caracal Console is installed'
+Write-Section 'Next steps'
+Write-Host "  Release: $tag ($mode)"
 if ($installedRuntime) {
-    Write-Host '  caracal console        # launch the Console through the runtime CLI'
+    Write-Host '  Launch through runtime: caracal console'
 }
-Write-Host '  caracal-console        # launch the Console directly'
+Write-Host '  Launch directly: caracal-console'
+Write-Section 'Uninstall'
 if ($installedRuntime) {
-    Write-Host "caracal-install: to uninstall, remove caracal.exe and caracal-console.exe from $InstallDir and the user PATH entry."
+    Write-Host "  Remove caracal.exe and caracal-console.exe from $InstallDir and the user PATH entry."
 } else {
-    Write-Host "caracal-install: to uninstall, remove caracal-console.exe from $InstallDir and the user PATH entry."
+    Write-Host "  Remove caracal-console.exe from $InstallDir and the user PATH entry."
 }

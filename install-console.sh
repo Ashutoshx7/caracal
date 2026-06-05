@@ -11,9 +11,85 @@ INSTALL_DIR="${CARACAL_INSTALL_DIR:-${HOME}/.local/bin}"
 VERSION="${CARACAL_VERSION:-latest}"
 VERIFY_PROVENANCE="${CARACAL_VERIFY_PROVENANCE:-1}"
 REQUIRE_PROVENANCE="${CARACAL_REQUIRE_PROVENANCE:-0}"
+COLOR_MODE="${CARACAL_INSTALL_COLOR:-auto}"
+PROGRESS_MODE="${CARACAL_INSTALL_PROGRESS:-auto}"
+
+colorReset=""
+colorBold=""
+colorCyan=""
+colorGreen=""
+colorYellow=""
+colorRed=""
+useProgress=0
+
+configureColor() {
+    useColor=0
+    case "${COLOR_MODE}" in
+        always|1|true|yes) useColor=1 ;;
+        never|0|false|no) useColor=0 ;;
+        auto|"")
+            if { [ -t 1 ] || [ -t 2 ]; } && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != "dumb" ]; then
+                useColor=1
+            fi
+            ;;
+        *) err "unsupported color mode: ${COLOR_MODE} (use auto, always, or never)" ;;
+    esac
+    if [ "${useColor}" = "1" ]; then
+        colorReset="$(printf '\033[0m')"
+        colorBold="$(printf '\033[1m')"
+        colorCyan="$(printf '\033[36m')"
+        colorGreen="$(printf '\033[32m')"
+        colorYellow="$(printf '\033[33m')"
+        colorRed="$(printf '\033[31m')"
+    else
+        colorReset=""
+        colorBold=""
+        colorCyan=""
+        colorGreen=""
+        colorYellow=""
+        colorRed=""
+    fi
+    brand="${colorBold}caracal-install${colorReset}"
+}
+
+brand="${colorBold}caracal-install${colorReset}"
+
+configureProgress() {
+    useProgress=0
+    case "${PROGRESS_MODE}" in
+        always|1|true|yes) useProgress=1 ;;
+        never|0|false|no) useProgress=0 ;;
+        auto|"")
+            if [ -t 2 ] && [ "${TERM:-}" != "dumb" ] && [ "${CI:-}" != "true" ]; then
+                useProgress=1
+            fi
+            ;;
+        *) err "unsupported progress mode: ${PROGRESS_MODE} (use auto, always, or never)" ;;
+    esac
+}
+
+step() {
+    printf '%s %s==>%s %s\n' "${brand}" "${colorCyan}" "${colorReset}" "$1"
+}
+
+ok() {
+    printf '%s %s[OK]%s %s\n' "${brand}" "${colorGreen}" "${colorReset}" "$1"
+}
+
+info() {
+    printf '%s %s[INFO]%s %s\n' "${brand}" "${colorCyan}" "${colorReset}" "$1"
+}
+
+warn() {
+    printf '%s %s[WARN]%s %s\n' "${brand}" "${colorYellow}" "${colorReset}" "$1" >&2
+}
+
+section() {
+    printf '\n%s %s%s%s\n' "${brand}" "${colorBold}" "$1" "${colorReset}"
+}
 
 err() {
-    printf 'caracal-install: %s\n' "$1" >&2
+    printf '%s %s[ERROR]%s %s\n' "${brand}" "${colorRed}" "${colorReset}" "$1" >&2
     exit 1
 }
 
@@ -22,7 +98,7 @@ usage() {
 caracal-install: download the Caracal Console binaries from GitHub Releases.
 
 Usage:
-  install-console.sh [--version vYYYY.MM.DD[.N][-rc.N]] [--install-dir PATH] [--verify-provenance] [--no-verify-provenance] [--require-provenance]
+  install-console.sh [--version vYYYY.MM.DD[.N][-rc.N]] [--install-dir PATH] [--verify-provenance] [--no-verify-provenance] [--require-provenance] [--color auto|always|never] [--progress auto|always|never]
 
 Installs the thin 'caracal' runtime CLI and the 'caracal-console' Console binary.
 
@@ -30,14 +106,24 @@ Provenance attestation is verified by default when the GitHub CLI ('gh') is
 available; pass --no-verify-provenance to skip it or --require-provenance to
 fail the install when it cannot be verified.
 
+Color is enabled automatically on terminals. Use --color always to force color
+or NO_COLOR=1 / --color never to force plain text.
+
+Download progress is enabled automatically on terminals. Use --progress never
+to disable it.
+
 Environment overrides:
   CARACAL_VERSION       same as --version
   CARACAL_INSTALL_DIR   same as --install-dir
   CARACAL_VERIFY_PROVENANCE   same as --verify-provenance (set 0 to disable)
   CARACAL_REQUIRE_PROVENANCE  same as --require-provenance
+  CARACAL_INSTALL_COLOR same as --color
+  CARACAL_INSTALL_PROGRESS same as --progress
 EOF
 }
 
+configureColor
+configureProgress
 while [ $# -gt 0 ]; do
     case "$1" in
         --version) [ $# -ge 2 ] || err "--version requires a value"; VERSION="$2"; shift ;;
@@ -45,11 +131,15 @@ while [ $# -gt 0 ]; do
         --verify-provenance) VERIFY_PROVENANCE=1 ;;
         --no-verify-provenance) VERIFY_PROVENANCE=0; REQUIRE_PROVENANCE=0 ;;
         --require-provenance) VERIFY_PROVENANCE=1; REQUIRE_PROVENANCE=1 ;;
+        --color) [ $# -ge 2 ] || err "--color requires a value"; COLOR_MODE="$2"; shift ;;
+        --progress) [ $# -ge 2 ] || err "--progress requires a value"; PROGRESS_MODE="$2"; shift ;;
         --help|-h) usage; exit 0 ;;
         *) err "unknown argument: $1 (use --help for usage)" ;;
     esac
     shift
 done
+configureColor
+configureProgress
 
 require() {
     command -v "$1" >/dev/null 2>&1 || err "missing required command: $1"
@@ -62,8 +152,16 @@ require tar
 
 if command -v curl >/dev/null 2>&1; then
     fetch() { curl -fsSL "$1" -o "$2"; }
+    fetchAsset() {
+        if [ "${useProgress}" = "1" ]; then
+            curl -fL --progress-bar "$1" -o "$2"
+        else
+            curl -fsSL "$1" -o "$2"
+        fi
+    }
 elif command -v wget >/dev/null 2>&1; then
     fetch() { wget -qO "$2" "$1"; }
+    fetchAsset() { wget -qO "$2" "$1"; }
 else
     err "neither curl nor wget is installed"
 fi
@@ -73,12 +171,12 @@ verifyProvenance() {
     [ "${VERIFY_PROVENANCE}" = "1" ] || return 0
     if ! command -v gh >/dev/null 2>&1; then
         [ "${REQUIRE_PROVENANCE}" = "1" ] && err "gh is required for provenance verification"
-        printf 'caracal-install: warning: gh not found; skipping provenance verification for %s\n' "${file}" >&2
+        warn "gh not found; skipping provenance verification for ${file##*/}"
         return 0
     fi
     gh attestation verify "${file}" --repo "${REPO}" >/dev/null \
         || err "provenance verification failed for ${file}"
-    printf 'caracal-install: provenance verified for %s\n' "$(basename "${file}")"
+    ok "Provenance verified: ${file##*/}"
 }
 
 if command -v sha256sum >/dev/null 2>&1; then
@@ -142,8 +240,20 @@ case "${tag}" in
 esac
 base="https://github.com/${REPO}/releases/download/${tag}"
 
-printf 'caracal-install: target release %s (%s-%s)\n' "${tag}" "${os}" "${arch}"
-printf 'caracal-install: downloading SHA256SUMS\n'
+section "Caracal Console Installer"
+printf '  Release:     %s\n' "${tag}"
+printf '  Platform:    %s-%s\n' "${os}" "${arch}"
+printf '  Install dir: %s\n' "${INSTALL_DIR}"
+if [ "${REQUIRE_PROVENANCE}" = "1" ]; then
+    printf '  Provenance:  required\n'
+elif [ "${VERIFY_PROVENANCE}" = "1" ]; then
+    printf '  Provenance:  verify when available\n'
+else
+    printf '  Provenance:  disabled\n'
+fi
+printf '\n'
+
+step "Downloading release manifest"
 fetch "${base}/SHA256SUMS" "${tmp}/SHA256SUMS" || err "failed to download SHA256SUMS"
 
 stageArchive() {
@@ -153,10 +263,11 @@ stageArchive() {
     expected="$(awk -v n="${archive}" '$2 == n || $2 == "*"n {print $1}' "${tmp}/SHA256SUMS")"
     [ -n "${expected}" ] || err "no checksum for ${archive} in SHA256SUMS"
 
-    printf 'caracal-install: downloading %s\n' "${archive}"
-    fetch "${base}/${archive}" "${tmp}/${archive}" || err "failed to download ${archive}"
+    step "Downloading ${archive}"
+    fetchAsset "${base}/${archive}" "${tmp}/${archive}" || err "failed to download ${archive}"
     actual="$(sha "${tmp}/${archive}")"
     [ "${expected}" = "${actual}" ] || err "checksum mismatch for ${archive}: expected ${expected}, got ${actual}"
+    ok "Checksum verified: ${archive}"
     verifyProvenance "${tmp}/${archive}"
 
     extractDir="${tmp}/extract-${kind}"
@@ -198,7 +309,7 @@ installStaged() {
     mv "${src}" "${dest}"
     installedFiles="${installedFiles}${binFile} "
     chmod +x "${dest}"
-    printf 'caracal-install: installed %s\n' "${dest}"
+    ok "Installed ${dest}"
 }
 
 [ "${installedRuntime}" = "1" ] && installStaged "$([ "${os}" = windows ] && printf 'caracal.exe' || printf 'caracal')"
@@ -207,7 +318,7 @@ committed=1
 
 case ":${PATH}:" in
     *":${INSTALL_DIR}:"*) ;;
-    *) printf 'caracal-install: add %s to PATH (e.g. export PATH="%s:$PATH")\n' "${INSTALL_DIR}" "${INSTALL_DIR}" ;;
+    *) info "Add ${INSTALL_DIR} to PATH, for example: export PATH=\"${INSTALL_DIR}:\$PATH\"" ;;
 esac
 
 checkShadow() {
@@ -224,23 +335,25 @@ checkShadow() {
     done
     unset IFS
     if [ -n "${shadow}" ]; then
-        printf 'caracal-install: warning: %s appears earlier in PATH than %s.\n' "${shadow}" "${INSTALL_DIR}" >&2
-        printf 'caracal-install: remove it to use the installed binary: rm "%s"\n' "${shadow}" >&2
+        warn "${shadow} appears earlier in PATH than ${INSTALL_DIR}"
+        warn "Remove it to use the installed binary: rm \"${shadow}\""
     fi
 }
 
 [ "${installedRuntime}" = "1" ] && checkShadow caracal
 checkShadow caracal-console
 
-printf 'caracal-install: done. Next steps:\n'
 case "${tag}" in
     *-rc.*) mode=rc ;;
     *) mode=stable ;;
 esac
-printf '  installed release %s (mode: %s)\n' "${tag}" "${mode}"
-printf '  hash -r            # refresh your shell command cache\n'
-[ "${installedRuntime}" = "1" ] && printf '  caracal console        # launch the Console through the runtime CLI\n'
-printf '  caracal-console        # launch the Console directly\n'
-printf 'caracal-install: to uninstall, remove'
+ok "Caracal Console is installed"
+section "Next steps"
+printf '  Release: %s (%s)\n' "${tag}" "${mode}"
+printf '  Refresh shell cache: hash -r\n'
+[ "${installedRuntime}" = "1" ] && printf '  Launch through runtime: caracal console\n'
+printf '  Launch directly: caracal-console\n'
+section "Uninstall"
+printf '  Remove'
 [ "${installedRuntime}" = "1" ] && printf ' %s/caracal' "${INSTALL_DIR}"
 printf ' %s/caracal-console\n' "${INSTALL_DIR}"
