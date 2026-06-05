@@ -7,9 +7,14 @@ In-process event bus keyed by run ID with full per-run history.
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
 from collections import defaultdict
+from pathlib import Path
 
 from app.events.types import Event
+
+log = logging.getLogger("lynx.events")
 
 
 class EventBus:
@@ -18,9 +23,14 @@ class EventBus:
         self._run_queues: dict[str, list[asyncio.Queue]] = defaultdict(list)
         self._global_queues: list[asyncio.Queue] = []
         self._dropped_events = 0
+        log_dir = os.getenv("LYNX_EVENT_LOG_DIR", "").strip()
+        self._log_dir: Path | None = Path(log_dir) if log_dir else None
+        if self._log_dir:
+            self._log_dir.mkdir(parents=True, exist_ok=True)
 
     def publish(self, event: Event) -> None:
         self._history[event.run_id].append(event)
+        self._persist(event)
         for q in list(self._run_queues[event.run_id]):
             try:
                 q.put_nowait(event)
@@ -31,6 +41,15 @@ class EventBus:
                 q.put_nowait(event)
             except asyncio.QueueFull:
                 self._dropped_events += 1
+
+    def _persist(self, event: Event) -> None:
+        if not self._log_dir:
+            return
+        try:
+            with (self._log_dir / f"{event.run_id}.jsonl").open("a", encoding="utf-8") as fh:
+                fh.write(event.model_dump_json() + "\n")
+        except OSError as exc:
+            log.warning("event log write failed for %s: %s", event.run_id, exc)
 
     def history(self, run_id: str) -> list[Event]:
         return list(self._history[run_id])

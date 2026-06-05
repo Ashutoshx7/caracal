@@ -236,3 +236,17 @@ def job_completed(run_id: str, agent_id: str, job_id: str, status: str, result: 
         agent_id=agent_id, job_id=job_id, status=status, result=result,
         job_kind=kind, target=target,
     )
+
+
+def approval_required(run_id: str, agent_id: str, request_id: str, action: str, detail: dict) -> Event:
+    return _mk(
+        run_id, "system", "approval_required",
+        agent_id=agent_id, request_id=request_id, action=action, detail=detail,
+    )
+
+
+def approval_resolved(run_id: str, agent_id: str, request_id: str, approved: bool, reason: str) -> Event:
+    return _mk(
+        run_id, "system", "approval_resolved",
+        agent_id=agent_id, request_id=request_id, approved=approved, reason=reason,
+    )

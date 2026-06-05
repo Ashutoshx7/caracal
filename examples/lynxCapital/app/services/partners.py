@@ -51,6 +51,7 @@ class PartnerSpec:
     auth_scheme: str = "Bearer"
     client_auth_method: str = "client_secret_basic"
     scopes: tuple[str, ...] = ()
+    audience: str = ""
     use_pkce: bool = False
     offline_access: bool = False
     redirect_uri: str = "http://127.0.0.1:8000/callback"
@@ -77,7 +78,8 @@ _SPECS: dict[str, PartnerSpec] = {
         "ironbark-erp", "oauth_cc", 9403,
         ("list_vendors", "get_vendor", "create_bill", "get_bill",
          "match_invoice", "post_journal_entry", "get_account"),
-        client_auth_method="client_secret_post", scopes=("erp.read", "erp.write")),
+        client_auth_method="client_secret_post", scopes=("erp.read", "erp.write"),
+        audience="https://api.ironbark-erp.test"),
     "tallyhall-books": PartnerSpec(
         "tallyhall-books", "oauth_ac", 9404,
         ("list_vendors", "get_vendor", "create_bill", "match_bill",
@@ -241,6 +243,8 @@ def _fetch_client_credentials_token(spec: PartnerSpec, sess: _Session) -> _OAuth
     client_id = _required(spec.id, f"LYNX_PARTNER_{eid}_CLIENT_ID")
     client_secret = _required(spec.id, f"LYNX_PARTNER_{eid}_CLIENT_SECRET")
     data = {"grant_type": "client_credentials", "scope": " ".join(spec.scopes)}
+    if spec.audience:
+        data["resource"] = spec.audience
     headers = {}
     if spec.client_auth_method == "client_secret_basic":
         creds = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
