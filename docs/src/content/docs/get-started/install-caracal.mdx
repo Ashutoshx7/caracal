@@ -8,7 +8,7 @@ Install the released tools when you want to run Caracal as a product. The `carac
 
 ## Install CLI and Console
 
-The installer downloads release archives from GitHub, verifies each archive against `SHA256SUMS`, and installs:
+The installer downloads release archives from GitHub, verifies each archive against `SHA256SUMS`, verifies GitHub provenance attestations with `gh`, and installs:
 
 - `caracal`: local runtime CLI for `up`, `down`, `status`, `purge`, `run`, and `console`.
 - `caracal-console`: interactive Console for product-management workflows.
@@ -19,14 +19,14 @@ The installer downloads release archives from GitHub, verifies each archive agai
 curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | sh
 ```
 
-Optional hardening and pinning:
+Pin a release:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | \
-  sh -s -- --version vYYYY.MM.DD --require-provenance
+  sh -s -- --version vYYYY.MM.DD
 ```
 
-By default the installer writes to `~/.local/bin`. Override with `--install-dir /path/to/bin` or `CARACAL_INSTALL_DIR=/path/to/bin`.
+By default the installer writes to `~/.local/bin` and requires provenance verification. Override the install path with `--install-dir /path/to/bin` or `CARACAL_INSTALL_DIR=/path/to/bin`. Use `--no-verify-provenance` only when you explicitly need to skip provenance verification.
 
 ### Windows
 
@@ -36,13 +36,13 @@ iwr -UseBasicParsing https://raw.githubusercontent.com/Garudex-Labs/caracal/main
 powershell -ExecutionPolicy Bypass -File $installer
 ```
 
-Optional hardening and pinning:
+Pin a release:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File $installer -Version vYYYY.MM.DD -RequireProvenance
+powershell -ExecutionPolicy Bypass -File $installer -Version vYYYY.MM.DD
 ```
 
-The Windows installer writes to `%LOCALAPPDATA%\Programs\caracal` by default and adds that directory to the user `Path`. Open a new shell after installation.
+The Windows installer writes to `%LOCALAPPDATA%\Programs\caracal` by default, requires provenance verification, and adds the install directory to the user `Path`. Open a new shell after installation. Use `-NoVerifyProvenance` only when you explicitly need to skip provenance verification.
 
 ## Verify Installation
 
@@ -82,9 +82,9 @@ The local stack includes PostgreSQL and Redis containers. You do not need to ins
 
 | Platform | Architectures | Notes |
 | --- | --- | --- |
-| Linux | `amd64`, `arm64` | Requires `curl` or `wget`, `tar`, and `sha256sum` or `shasum`. |
-| macOS | `amd64`, `arm64` | If Gatekeeper quarantines the binary, remove quarantine from the installed file. |
-| Windows | `amd64` | Use the PowerShell installer and open a new shell after installation. |
+| Linux | `amd64`, `arm64` | Requires `curl` or `wget`, `tar`, `sha256sum` or `shasum`, and GitHub CLI `gh` for provenance verification. |
+| macOS | `amd64`, `arm64` | Requires GitHub CLI `gh`; if Gatekeeper quarantines the binary, remove quarantine from the installed file. |
+| Windows | `amd64` | Requires GitHub CLI `gh`; use the PowerShell installer and open a new shell after installation. |
 
 ## Next Step
 

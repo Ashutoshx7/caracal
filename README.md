@@ -69,6 +69,7 @@ More coming soon
 
 - Docker Desktop 4.x or Docker Engine 24+ with Compose v2
 - Git 2.x
+- GitHub CLI `gh` for installer provenance verification
 
 ### Install
 
@@ -88,7 +89,7 @@ curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-c
   sh -s -- --version v2026.06.04-rc.1
 ```
 
-Installs to `~/.local/bin`. Override with `--install-dir /usr/local/bin` (may need `sudo`).
+Installs to `~/.local/bin` and verifies release provenance by default. Override with `--install-dir /usr/local/bin` (may need `sudo`).
 
 </details>
 
@@ -115,7 +116,7 @@ iwr -useb https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-co
 powershell -ExecutionPolicy Bypass -File $installer -Version v2026.06.04-rc.1
 ```
 
-Installs to `%LOCALAPPDATA%\Programs\caracal`. Requires Docker Desktop with WSL2.
+Installs to `%LOCALAPPDATA%\Programs\caracal` and verifies release provenance by default. Requires Docker Desktop with WSL2.
 
 </details>
 
