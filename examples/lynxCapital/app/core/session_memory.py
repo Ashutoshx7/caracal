@@ -76,16 +76,26 @@ class SessionMemory:
                 self._runs = self._runs[-MAX_RUNS:]
         self._persist()
 
-    def context_block(self) -> str:
-        """Return a compact context string for LLM injection, or '' if no history."""
+    def context_block(self, query: str = "") -> str:
+        """Return a compact context string for LLM injection, or '' if no history.
+
+        When `query` is given, the most keyword-relevant prior runs are surfaced
+        alongside the most recent ones so long-lived sessions can recall older
+        work without a vector store."""
         with self._lock:
             runs = list(self._runs)
             turns = list(self._turns)
         lines: list[str] = []
 
         if runs:
-            lines.append("PREVIOUS RUNS (most recent last):")
-            for r in runs[-5:]:
+            recent = runs[-5:]
+            selected = list(recent)
+            relevant = self._rank_runs(query, runs, exclude=recent, limit=3) if query else []
+            for r in relevant:
+                if r not in selected:
+                    selected.insert(0, r)
+            lines.append("PREVIOUS RUNS (most relevant first, then most recent):")
+            for r in selected:
                 lines.append(f"  - {r.summary()}")
 
         if turns:
@@ -96,6 +106,25 @@ class SessionMemory:
                 lines.append(f"  {role}: {snippet}")
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _tokens(text: str) -> set[str]:
+        return {w for w in "".join(c.lower() if c.isalnum() else " " for c in text).split() if len(w) > 2}
+
+    def _rank_runs(self, query: str, runs: list[RunRecord], exclude: list[RunRecord],
+                   limit: int) -> list[RunRecord]:
+        terms = self._tokens(query)
+        if not terms:
+            return []
+        scored: list[tuple[int, float, RunRecord]] = []
+        for i, r in enumerate(runs):
+            if r in exclude:
+                continue
+            overlap = len(terms & self._tokens(f"{r.prompt} {' '.join(r.regions)}"))
+            if overlap:
+                scored.append((overlap, r.ts, r))
+        scored.sort(key=lambda s: (s[0], s[1]), reverse=True)
+        return [r for _, _, r in scored[:limit]]
 
     def last_run(self) -> RunRecord | None:
         with self._lock:

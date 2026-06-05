@@ -56,6 +56,22 @@ def get_fx_rate(run_id: str, agent_id: str, from_currency: str, to_currency: str
 
 # -- ledger-match tools (three accounting back ends) --
 
+def _pick_erp(vendor_id: str) -> str:
+    """Deterministically assign a vendor to an accounting back end: SMB vendors
+    keep their books in QuickBooks (tallyhall), the rest on NetSuite (ironbark)."""
+    return "tallyhall" if sum(ord(c) for c in vendor_id) % 3 == 0 else "ironbark"
+
+
+def match_invoice(run_id: str, agent_id: str, vendor_id: str, invoice_id: str,
+                  amount: float, currency: str, erp: str = "auto") -> dict[str, object]:
+    """Match an invoice against the vendor's own ledger, selecting the ERP that
+    holds that vendor's books."""
+    choice = erp.lower() if erp and erp != "auto" else _pick_erp(vendor_id)
+    if choice in ("tallyhall", "quickbooks", "qb"):
+        return quickbooks_match_bill(run_id, agent_id, vendor_id, invoice_id, amount, currency)
+    return netsuite_match_invoice(run_id, agent_id, vendor_id, invoice_id, amount, currency)
+
+
 def netsuite_match_invoice(run_id: str, agent_id: str, vendor_id: str, invoice_id: str, amount: float, currency: str) -> dict[str, object]:
     return _run(run_id, agent_id, "netsuite_match_invoice", "ironbark-erp", "match_invoice",
                 {"invoiceId": invoice_id, "vendorId": vendor_id, "amount": amount, "currency": currency})
@@ -77,8 +93,15 @@ def sap_get_vendor_record(run_id: str, agent_id: str, vendor_id: str) -> dict[st
 
 
 def quickbooks_match_bill(run_id: str, agent_id: str, vendor_id: str, invoice_id: str, amount: float, currency: str) -> dict[str, object]:
-    return _run(run_id, agent_id, "quickbooks_match_bill", "tallyhall-books", "create_bill",
-                {"vendorId": vendor_id, "amount": amount, "currency": currency})
+    """Record a vendor bill in QuickBooks then match it to its purchase reference."""
+    created = _run(run_id, agent_id, "quickbooks_match_bill", "tallyhall-books", "create_bill",
+                   {"vendorId": vendor_id, "amount": amount, "currency": currency})
+    bill = created.get("data") if isinstance(created, dict) else None
+    bill_id = bill.get("billId") if isinstance(bill, dict) else None
+    if not bill_id:
+        return created
+    return _run(run_id, agent_id, "quickbooks_match_bill", "tallyhall-books", "match_bill",
+                {"billId": bill_id, "poRef": invoice_id})
 
 
 def quickbooks_get_vendor(run_id: str, agent_id: str, vendor_id: str) -> dict[str, object]:
@@ -119,21 +142,48 @@ def get_quote(run_id: str, agent_id: str, from_currency: str, to_currency: str, 
                 {"from": from_currency, "to": to_currency, "amount": amount})
 
 
-# -- payment-execution tools (distinct rails) --
+# -- payment-execution tools (distinct rails routed to distinct providers) --
+
+_RAIL_PROVIDER = {
+    "WIRE": "quetzal", "SWIFT": "quetzal",
+    "ACH": "halcyon", "SEPA": "halcyon", "PAYNOW": "halcyon",
+    "PIX": "halcyon", "NEFT": "halcyon", "RTGS": "halcyon",
+}
+
 
 def submit_payment(run_id: str, agent_id: str, vendor_id: str, amount: float, currency: str, rail: str, reference: str) -> dict[str, object]:
+    """Route a vendor payment to the provider that serves the requested rail:
+    open-banking rails to halcyon-bank, cross-border rails to quetzal-payouts,
+    card/default to meridian-pay."""
+    target = _RAIL_PROVIDER.get((rail or "").upper(), "meridian")
+    if target == "halcyon":
+        return create_outbound_payment(run_id, agent_id, vendor_id, amount, currency, rail, reference)
+    if target == "quetzal":
+        return submit_payout(run_id, agent_id, vendor_id, amount, currency, rail, reference)
     return _run(run_id, agent_id, "submit_payment", "meridian-pay", "create_payout",
                 {"amount": amount, "currency": currency, "destination": vendor_id, "reference": reference})
 
 
 def submit_payout(run_id: str, agent_id: str, vendor_id: str, amount: float, currency: str, rail: str, reference: str) -> dict[str, object]:
+    """Cross-border mass-payout rail: register the recipient then release the payout."""
+    rec = _run(run_id, agent_id, "submit_payout", "quetzal-payouts", "create_recipient",
+               {"name": vendor_id, "currency": currency, "method": "bank"})
+    data = rec.get("data") if isinstance(rec, dict) else None
+    recipient_id = data.get("id") if isinstance(data, dict) else None
+    if not recipient_id:
+        return rec
     return _run(run_id, agent_id, "submit_payout", "quetzal-payouts", "create_payout",
-                {"recipientId": vendor_id, "amount": amount, "currency": currency})
+                {"recipientId": recipient_id, "amount": amount, "currency": currency})
 
 
 def create_outbound_payment(run_id: str, agent_id: str, vendor_id: str, amount: float, currency: str, rail: str, reference: str) -> dict[str, object]:
+    """Open-banking rail: draw from the operating account and pay the creditor."""
+    accounts = _run(run_id, agent_id, "create_outbound_payment", "halcyon-bank", "list_accounts", {})
+    data = accounts.get("data") if isinstance(accounts, dict) else None
+    items = data.get("items") if isinstance(data, dict) else None
+    from_account = items[0]["id"] if items else vendor_id
     return _run(run_id, agent_id, "create_outbound_payment", "halcyon-bank", "initiate_payment",
-                {"fromAccount": vendor_id, "amount": amount, "creditor": reference})
+                {"fromAccount": from_account, "amount": amount, "creditor": reference or vendor_id})
 
 
 # -- audit tools --
@@ -143,8 +193,9 @@ def get_contract_terms(run_id: str, agent_id: str, vendor_id: str) -> dict[str, 
                 {"contractId": vendor_id})
 
 
-def get_payment_status(run_id: str, agent_id: str, vendor_id: str) -> dict[str, object]:
-    return _run(run_id, agent_id, "get_payment_status", "meridian-pay", "get_balance", {})
+def get_payment_status(run_id: str, agent_id: str, charge_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "get_payment_status", "meridian-pay", "get_charge",
+                {"chargeId": charge_id})
 
 
 # -- vendor lifecycle tools --
@@ -251,6 +302,58 @@ def get_ar_aging(run_id: str, agent_id: str, region: str) -> dict[str, object]:
     return _run(run_id, agent_id, "get_ar_aging", "core-billing", "get_ar_aging", {})
 
 
+# -- procurement tools (junction-procure) --
+
+def create_requisition(run_id: str, agent_id: str, department: str, amount: float, description: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "create_requisition", "junction-procure", "create_requisition",
+                {"department": department, "amount": amount, "description": description})
+
+
+def approve_requisition(run_id: str, agent_id: str, requisition_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "approve_requisition", "junction-procure", "approve_requisition",
+                {"requisitionId": requisition_id})
+
+
+def create_purchase_order(run_id: str, agent_id: str, requisition_id: str, vendor_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "create_purchase_order", "junction-procure", "create_purchase_order",
+                {"requisitionId": requisition_id, "vendorId": vendor_id})
+
+
+def get_budget(run_id: str, agent_id: str, department: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "get_budget", "junction-procure", "get_budget",
+                {"department": department})
+
+
+# -- crm tools (beacon-crm) --
+
+def get_supplier_contact(run_id: str, agent_id: str, contact_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "get_supplier_contact", "beacon-crm", "get_contact",
+                {"contactId": contact_id})
+
+
+def log_supplier_activity(run_id: str, agent_id: str, contact_id: str, activity_type: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "log_supplier_activity", "beacon-crm", "log_activity",
+                {"contactId": contact_id, "type": activity_type})
+
+
+# -- identity tools (lumen-identity, internal directory) --
+
+def resolve_user(run_id: str, agent_id: str, user_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "resolve_user", "lumen-identity", "get_user",
+                {"userId": user_id})
+
+
+def list_approver_groups(run_id: str, agent_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "list_approver_groups", "lumen-identity", "list_groups", {})
+
+
+# -- market data tools (pulse-market) --
+
+def get_market_snapshot(run_id: str, agent_id: str, symbol: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "get_market_snapshot", "pulse-market", "get_snapshot",
+                {"symbol": symbol})
+
+
 # -- external partner integration tool --
 
 def partner_operation(run_id: str, agent_id: str, provider_id: str, operation: str,
@@ -273,6 +376,7 @@ TOOLS: dict[str, Callable] = {
     "extract_invoice": extract_invoice,
     "get_vendor_profile": get_vendor_profile,
     "get_fx_rate": get_fx_rate,
+    "match_invoice": match_invoice,
     "netsuite_match_invoice": netsuite_match_invoice,
     "netsuite_get_vendor_record": netsuite_get_vendor_record,
     "sap_match_invoice": sap_match_invoice,
@@ -309,5 +413,14 @@ TOOLS: dict[str, Callable] = {
     "send_dunning_notice": send_dunning_notice,
     "apply_customer_payment": apply_customer_payment,
     "get_ar_aging": get_ar_aging,
+    "create_requisition": create_requisition,
+    "approve_requisition": approve_requisition,
+    "create_purchase_order": create_purchase_order,
+    "get_budget": get_budget,
+    "get_supplier_contact": get_supplier_contact,
+    "log_supplier_activity": log_supplier_activity,
+    "resolve_user": resolve_user,
+    "list_approver_groups": list_approver_groups,
+    "get_market_snapshot": get_market_snapshot,
     "partner_operation": partner_operation,
 }
