@@ -1,104 +1,51 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Mock provider network: runs every transport (REST, SSE, gRPC, MCP) on its
-# own service so the Lynx app exercises real network boundaries.
+# Provider lab: serves all twenty external-style providers on their own
+# localhost ports (9400-9419) in one container so the Lynx app exercises
+# real network boundaries.
 
 services:
 
-  rest:
+  providerlab:
     build:
       context: ..
       dockerfile: _mock/Dockerfile
     image: lynx-mock:latest
-    command: python -m _mock.run_rest
+    command: python -m _mock.providerlab.run
     environment:
-      LYNX_REST_HOST: "0.0.0.0"
-      LYNX_REST_PORT: "8800"
-      LYNX_MOCK_FAST: "${LYNX_MOCK_FAST:-0}"
-      LYNX_HOOK_BASE: "${LYNX_HOOK_BASE:-http://host.docker.internal:8000}"
+      PROVIDERLAB_HOST: "0.0.0.0"
+      PROVIDERLAB_FAST: "${PROVIDERLAB_FAST:-0}"
     ports:
-      - "8800:8800"
+      - "9400-9419:9400-9419"
     networks:
       providers:
         aliases:
-          - mercury-bank.mock
-          - wise-payouts.mock
-          - stripe-treasury.mock
-          - quickbooks.mock
-          - netsuite.mock
-          - sap-erp.mock
-          - ocr-vision.mock
-          - close-engine.mock
-          - regulatory-filings.mock
-          - customer-billing.mock
-          - tax-rules.mock
-          - compliance-nexus.mock
-          - fx-rates.mock
+          - halcyon-bank.mock
+          - meridian-pay.mock
+          - cordoba-fx.mock
+          - ironbark-erp.mock
+          - tallyhall-books.mock
+          - slate-ledger.mock
+          - inkwell-ocr.mock
+          - aegis-screening.mock
+          - verafin-monitor.mock
+          - lumen-identity.mock
+          - beacon-crm.mock
+          - atlas-vendor.mock
+          - keystone-treasury.mock
+          - sabre-tax.mock
+          - quetzal-payouts.mock
+          - vela-notify.mock
+          - core-billing.mock
+          - relay-automation.mock
+          - pulse-market.mock
+          - junction-procure.mock
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8800/healthz').read()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9400/healthz').read()"]
       interval: 5s
       timeout: 2s
       retries: 5
-
-  fx-stream:
-    build:
-      context: ..
-      dockerfile: _mock/Dockerfile
-    image: lynx-mock:latest
-    depends_on: [rest]
-    command: python -m _mock.run_sse_fx
-    environment:
-      LYNX_FX_HOST: "0.0.0.0"
-      LYNX_FX_PORT: "8810"
-      LYNX_MOCK_FAST: "${LYNX_MOCK_FAST:-0}"
-    ports:
-      - "8810:8810"
-    networks: [providers]
-
-  treasury-grpc:
-    build:
-      context: ..
-      dockerfile: _mock/Dockerfile
-    image: lynx-mock:latest
-    depends_on: [rest]
-    command: python -m _mock.run_grpc_treasury
-    environment:
-      LYNX_GRPC_TREASURY_ADDR: "0.0.0.0:50051"
-      LYNX_MOCK_FAST: "${LYNX_MOCK_FAST:-0}"
-      LYNX_HOOK_BASE: "${LYNX_HOOK_BASE:-http://host.docker.internal:8000}"
-    ports:
-      - "50051:50051"
-    networks: [providers]
-
-  compliance-grpc:
-    build:
-      context: ..
-      dockerfile: _mock/Dockerfile
-    image: lynx-mock:latest
-    depends_on: [rest]
-    command: python -m _mock.run_grpc_compliance
-    environment:
-      LYNX_GRPC_COMPLIANCE_ADDR: "0.0.0.0:50052"
-      LYNX_MOCK_FAST: "${LYNX_MOCK_FAST:-0}"
-    ports:
-      - "50052:50052"
-    networks: [providers]
-
-  vendor-mcp:
-    build:
-      context: ..
-      dockerfile: _mock/Dockerfile
-    image: lynx-mock:latest
-    depends_on: [rest]
-    command: python -m _mock.run_mcp_vendor
-    environment:
-      LYNX_MCP_HOST: "0.0.0.0"
-      LYNX_MCP_PORT: "7800"
-      LYNX_MOCK_FAST: "${LYNX_MOCK_FAST:-0}"
-    ports:
-      - "7800:7800"
-    networks: [providers]
 
 networks:
   providers:

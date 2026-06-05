@@ -15,4 +15,4 @@ COPY _mock ./_mock
 RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app/_mock/sdk/lynx_sdk_stripe_treasury:/app/_mock/sdk/lynx_sdk_tax
+    PYTHONPATH=/app

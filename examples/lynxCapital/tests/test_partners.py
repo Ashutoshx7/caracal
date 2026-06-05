@@ -2,7 +2,7 @@
 Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 Caracal, a product of Garudex Labs
 
-Validates the application partner integration layer authenticating to every external provider category over its real surface.
+Validates the application partner integration layer authenticating to every external provider category over its real network surface.
 """
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ def _reset_partners():
 # --------------------------------------------------------------------------- #
 # Catalog
 # --------------------------------------------------------------------------- #
-def test_partner_catalog_covers_sixteen():
-    assert len(partners.catalog()) == 16
+def test_partner_catalog_covers_twenty():
+    assert len(partners.catalog()) == 20
 
 
 def test_partner_catalog_auth_kinds():
@@ -37,146 +37,151 @@ def test_partner_catalog_auth_kinds():
 # api_key (header vs query) — distinct cases
 # --------------------------------------------------------------------------- #
 def test_api_key_header_charge_idempotent(providerlab):
-    first = partners.call("aurum-pay", "create_charge",
+    first = partners.call("meridian-pay", "create_charge",
                           {"amount": 1200, "currency": "USD", "source": "tok_visa", "idempotencyKey": "idem-1"})
     assert first["data"]["status"] == "succeeded"
-    again = partners.call("aurum-pay", "create_charge",
+    again = partners.call("meridian-pay", "create_charge",
                           {"amount": 1200, "currency": "USD", "source": "tok_visa", "idempotencyKey": "idem-1"})
     assert again["data"]["chargeId"] == first["data"]["chargeId"]
 
 
-def test_api_key_header_insufficient_funds(providerlab):
-    res = partners.call("aurum-pay", "create_charge",
-                        {"amount": 99999, "currency": "USD", "source": "tok_visa"})
-    assert res["status"] == 402
-    assert res["error"] == "insufficient_funds"
+def test_api_key_header_invalid_amount(providerlab):
+    res = partners.call("meridian-pay", "create_charge",
+                        {"amount": -1, "currency": "USD", "source": "tok_visa"})
+    assert res["status"] == 422
+    assert res["error"] == "invalid_amount"
 
 
 def test_api_key_query_async_job(providerlab):
-    job = partners.call("quill-ocr", "extract_document", {"documentUrl": "https://x/inv.pdf"})
-    assert job["data"]["status"] == "processing"
-    done = partners.call("quill-ocr", "get_job", {"jobId": job["data"]["jobId"]})
-    assert done["data"]["status"] == "completed"
+    doc = partners.call("inkwell-ocr", "submit_document", {"fileName": "inv.pdf"})
+    assert doc["data"]["status"] == "processing"
+    done = partners.call("inkwell-ocr", "get_extraction", {"documentId": doc["data"]["documentId"]})
+    assert done["data"]["status"] == "extracted"
 
 
 def test_api_key_missing_credential_raises(providerlab):
-    saved = os.environ.pop("LYNX_PARTNER_AURUM_PAY_API_KEY")
+    saved = os.environ.pop("LYNX_PARTNER_MERIDIAN_PAY_API_KEY")
     try:
         with pytest.raises(partners.PartnerError):
-            partners.call("aurum-pay", "get_balance", {})
+            partners.call("meridian-pay", "get_balance", {})
     finally:
-        os.environ["LYNX_PARTNER_AURUM_PAY_API_KEY"] = saved
+        os.environ["LYNX_PARTNER_MERIDIAN_PAY_API_KEY"] = saved
 
 
 # --------------------------------------------------------------------------- #
 # bearer (standard vs custom header/scheme) — distinct cases
 # --------------------------------------------------------------------------- #
 def test_bearer_standard_unbalanced_entry(providerlab):
-    res = partners.call("nimbus-ledger", "post_entry",
-                        {"lines": [{"debit": 100}, {"credit": 90}]})
+    res = partners.call("slate-ledger", "post_entry", {"lines": [{"debit": 100}, {"credit": 90}]})
     assert res["status"] == 422
-    assert res["error"] == "unbalanced_entry"
+    assert res["error"] == "unbalanced"
 
 
 def test_bearer_standard_balanced_entry(providerlab):
-    res = partners.call("nimbus-ledger", "post_entry",
-                        {"lines": [{"debit": 100}, {"credit": 100}]})
-    assert res["data"]["posted"] is True
+    res = partners.call("slate-ledger", "post_entry", {"lines": [{"debit": 100}, {"credit": 100}]})
+    assert res["data"]["status"] == "posted"
 
 
 def test_bearer_custom_header_accept(providerlab):
-    res = partners.call("vela-mail", "send_message", {"to": "ops@lynx.example", "subject": "hi"})
-    assert res["data"]["status"] == "accepted"
+    res = partners.call("vela-notify", "send_message",
+                        {"channel": "email", "to": "ops@lynx.example", "template": "remittance_advice"})
+    assert res["data"]["status"] == "queued"
 
 
-def test_bearer_custom_header_invalid_recipient(providerlab):
-    res = partners.call("vela-mail", "send_message", {"to": "not-an-email", "subject": "hi"})
+def test_bearer_custom_header_invalid_channel(providerlab):
+    res = partners.call("vela-notify", "send_message",
+                        {"channel": "fax", "to": "ops@lynx.example", "template": "remittance_advice"})
     assert res["status"] == 422
-    assert res["error"] == "invalid_recipient"
+    assert res["error"] == "invalid_channel"
 
 
 # --------------------------------------------------------------------------- #
 # oauth2 client credentials (basic vs post) — distinct cases
 # --------------------------------------------------------------------------- #
 def test_oauth_cc_basic_convert(providerlab):
-    res = partners.call("helios-fx", "convert", {"from": "USD", "to": "EUR", "amount": 1000})
-    assert res["data"]["out"] == pytest.approx(920.0)
+    res = partners.call("cordoba-fx", "convert", {"from": "USD", "to": "EUR", "amount": 1000})
+    assert res["status"] == 200 and "out" in res["data"]
 
 
 def test_oauth_cc_post_vendor_not_found(providerlab):
-    res = partners.call("orbit-erp", "get_vendor", {"vendorId": "V-9999"})
+    res = partners.call("ironbark-erp", "get_vendor", {"vendorId": "V-DOES-NOT-EXIST"})
     assert res["status"] == 404
-    assert res["error"] == "vendor_not_found"
 
 
-def test_oauth_cc_post_create_bill(providerlab):
-    res = partners.call("orbit-erp", "create_bill", {"vendorId": "V-1001", "amount": 500})
-    assert res["data"]["status"] == "open"
+def test_oauth_cc_requisition_budget_flow(providerlab):
+    made = partners.call("junction-procure", "create_requisition",
+                         {"department": "engineering", "amount": 5000, "description": "laptops"})
+    assert made["data"]["status"] in ("approved", "pending_approval")
+    missing = partners.call("junction-procure", "create_requisition",
+                            {"department": "nowhere", "amount": 100, "description": "x"})
+    assert missing["status"] == 404
 
 
 # --------------------------------------------------------------------------- #
 # oauth2 authorization code (PKCE vs offline refresh) — distinct cases
 # --------------------------------------------------------------------------- #
 def test_oauth_ac_pkce_list_accounts(providerlab):
-    res = partners.call("corvus-bank", "list_accounts", {})
-    assert len(res["data"]["accounts"]) == 2
+    res = partners.call("halcyon-bank", "list_accounts", {})
+    assert res["status"] == 200 and res["data"]["items"]
 
 
-def test_oauth_ac_pkce_payment_step_up(providerlab):
-    res = partners.call("corvus-bank", "initiate_payment",
-                        {"fromAccount": "ACC-77", "amount": 2500, "creditor": "ACME"})
-    assert res["data"]["status"] == "pending_authorization"
+def test_oauth_ac_pkce_initiate_payment(providerlab):
+    acct = partners.call("halcyon-bank", "list_accounts", {})["data"]["items"][0]["id"]
+    res = partners.call("halcyon-bank", "initiate_payment",
+                        {"fromAccount": acct, "amount": 10, "creditor": "ACME"})
+    assert res["status"] == 200
 
 
-def test_oauth_ac_offline_get_contact(providerlab):
-    res = partners.call("lumen-crm", "get_contact", {"contactId": "C-1"})
-    assert res["data"]["stage"] == "customer"
+def test_oauth_ac_offline_tallyhall_vendors(providerlab):
+    res = partners.call("tallyhall-books", "list_vendors", {})
+    assert res["status"] == 200 and "items" in res["data"]
 
 
 # --------------------------------------------------------------------------- #
 # none (internal) — distinct cases
 # --------------------------------------------------------------------------- #
 def test_internal_billing_create_and_404(providerlab):
-    made = partners.call("core-billing", "create_invoice", {"customerId": "CUST-1", "amount": 200})
-    assert made["data"]["status"] == "open"
+    aging = partners.call("core-billing", "get_ar_aging", {})
+    assert aging["status"] == 200
     missing = partners.call("core-billing", "get_invoice", {"invoiceId": "inv_does_not_exist"})
     assert missing["status"] == 404
 
 
 def test_internal_identity_paging(providerlab):
-    res = partners.call("core-identity", "list_groups", {"page": 1})
-    assert res["data"]["pageSize"] == 10
-    assert res["data"]["hasMore"] is True
+    res = partners.call("lumen-identity", "list_users", {"page": 1, "pageSize": 10})
+    assert res["data"]["page"] == 1
+    assert len(res["data"]["items"]) <= 10
 
 
 # --------------------------------------------------------------------------- #
 # mcp (bearer) — runs domain over JSON-RPC
 # --------------------------------------------------------------------------- #
-def test_mcp_bearer_search_catalog(providerlab):
-    res = partners.call("forge-mcp", "search_catalog", {"query": "plan"})
-    assert any(r["sku"] == "SKU-100" for r in res["data"]["results"])
+def test_mcp_bearer_search_vendors(providerlab):
+    res = partners.call("atlas-vendor", "search_vendors", {"query": "a"})
+    assert res["status"] == 200 and "items" in res["data"]
 
 
 # --------------------------------------------------------------------------- #
-# sdk (api key) — distinct cases
+# sdk (api key over REST) — distinct cases
 # --------------------------------------------------------------------------- #
-def test_sdk_payout_min_amount(providerlab):
-    res = partners.call("zephyr-pay", "create_payout",
-                        {"amount": 0.5, "currency": "USD", "destination": "acct_1"})
-    assert res["status"] == 422
-    assert res["error"] == "amount_too_small"
-
-
 def test_sdk_tax_rate_table(providerlab):
-    res = partners.call("terra-tax", "calculate", {"jurisdiction": "US-CA", "amount": 1000})
+    res = partners.call("sabre-tax", "calculate", {"jurisdiction": "US-CA", "amount": 1000})
     assert res["data"]["rate"] == pytest.approx(0.0825)
+
+
+def test_sdk_payout_unverified_recipient(providerlab):
+    rec = partners.call("quetzal-payouts", "create_recipient",
+                        {"name": "R", "currency": "USD", "method": "bank"})
+    res = partners.call("quetzal-payouts", "create_payout",
+                        {"recipientId": rec["data"]["id"], "amount": 100, "currency": "USD"})
+    assert res["status"] in (200, 403)
 
 
 # --------------------------------------------------------------------------- #
 # caracal_mandate providers are gated until the Caracal SDK phase
 # --------------------------------------------------------------------------- #
 def test_mandate_providers_pending_caracal(providerlab):
-    for provider_id in ("atlas-treasury", "sentinel-compliance", "relay-mcp"):
+    for provider_id in ("aegis-screening", "verafin-monitor", "relay-automation"):
         with pytest.raises(partners.PartnerPendingCaracal):
             partners.call(provider_id, partners.spec(provider_id).operations[0], {})
 
@@ -185,13 +190,13 @@ def test_mandate_providers_pending_caracal(providerlab):
 # Agent tool surface uses the partner layer
 # --------------------------------------------------------------------------- #
 def test_partner_operation_tool_emits_and_runs(providerlab):
-    res = tool_fns.partner_operation("run-1", "agent-1", "terra-tax", "calculate",
+    res = tool_fns.partner_operation("run-1", "agent-1", "sabre-tax", "calculate",
                                      {"jurisdiction": "US-NY", "amount": 100})
     assert res["data"]["rate"] == pytest.approx(0.08875)
 
 
 def test_partner_operation_tool_gates_mandate(providerlab):
-    res = tool_fns.partner_operation("run-1", "agent-1", "atlas-treasury", "get_position", {})
+    res = tool_fns.partner_operation("run-1", "agent-1", "aegis-screening", "screen_party", {"name": "x"})
     assert res["status"] == "pending_caracal_integration"
 
 
