@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
 sse-starlette
+starlette==1.2.1
 pydantic
 pyyaml
 httpx
