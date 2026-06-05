@@ -15,6 +15,7 @@ import {
   controlPermissions,
   controlServiceStatus,
   DEFAULT_CONTROL_AUDIENCE,
+  detectActiveLocalStackRuntime,
   credentialRead,
   readControlState,
   resolveStackPaths,
@@ -22,13 +23,14 @@ import {
   type ControlLifecycleResult,
   type ControlKeyRecord,
   type ControlServiceStatus,
+  type ActiveLocalStackRuntime,
   type StackMode,
   type StackPaths,
 } from '@caracalai/engine'
 import {
   resolveStsUrl,
 } from '@caracalai/engine/runtime-config'
-import { pad, ui } from '../ansi.ts'
+import { pad, sanitizeAnsi, ui } from '../ansi.ts'
 import { explainError, maskSecretField } from '../errors.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
@@ -68,24 +70,44 @@ function controlAudience(): string {
   return process.env.CONTROL_AUDIENCE ?? DEFAULT_CONTROL_AUDIENCE
 }
 
-function resolveControlStackMode(): StackMode {
+type ControlStackRuntime = ActiveLocalStackRuntime
+
+function resolveControlStackRuntime(): ControlStackRuntime {
   const override = process.env.CARACAL_MODE
-  if (override === 'dev' || override === 'rc' || override === 'stable') return override
+  if (override === 'dev' || override === 'rc' || override === 'stable') return { mode: override }
   if (override) throw new Error(`CARACAL_MODE must be 'dev', 'rc', or 'stable' (got '${override}')`)
-  return CARACAL_CONSOLE_MODE
+  return detectActiveLocalStackRuntime() ?? {
+    mode: CARACAL_CONSOLE_MODE,
+    version: CARACAL_CONSOLE_VERSION,
+    repoRoot: process.env.CARACAL_REPO_ROOT,
+    registry: process.env.CARACAL_REGISTRY,
+  }
 }
 
-function controlComposeEnv(paths: StackPaths): Record<string, string | undefined> {
+function resolveControlStackPaths(runtime: ControlStackRuntime): StackPaths {
+  return resolveStackPaths({ mode: runtime.mode, home: runtime.home, repoRoot: runtime.repoRoot })
+}
+
+function controlAccessEnv(runtime: ControlStackRuntime): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    CARACAL_MODE: runtime.mode,
+    CARACAL_HOME: runtime.home ?? process.env.CARACAL_HOME,
+    CARACAL_SECRETS_DIR: runtime.secretsDir ?? process.env.CARACAL_SECRETS_DIR,
+  }
+}
+
+function controlComposeEnv(paths: StackPaths, runtime: ControlStackRuntime): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = {
     CARACAL_MODE: paths.mode,
     CARACAL_SECRETS_DIR: paths.secretsDir,
   }
   if (paths.mode !== 'dev') {
-    env.CARACAL_VERSION = CARACAL_CONSOLE_VERSION
-    env.CARACAL_REGISTRY = process.env.CARACAL_REGISTRY
+    env.CARACAL_VERSION = runtime.version ?? CARACAL_CONSOLE_VERSION
+    env.CARACAL_REGISTRY = runtime.registry ?? process.env.CARACAL_REGISTRY
   } else {
     env.CARACAL_DEV_SHA = CARACAL_CONSOLE_SHA
-    env.CARACAL_DEV_VERSION = CARACAL_CONSOLE_VERSION
+    env.CARACAL_DEV_VERSION = runtime.version ?? CARACAL_CONSOLE_VERSION
   }
   return env
 }
@@ -206,9 +228,10 @@ class ControlMenuView implements View {
 
   async init(app: App): Promise<void> {
     try {
-      authorizeControlManagementAccess()
-      const paths = resolveStackPaths({ mode: resolveControlStackMode() })
-      this.status = await controlServiceStatus({ paths, env: controlComposeEnv(paths), timeoutMs: 300 })
+      const runtime = resolveControlStackRuntime()
+      authorizeControlManagementAccess({ env: controlAccessEnv(runtime) })
+      const paths = resolveControlStackPaths(runtime)
+      this.status = await controlServiceStatus({ home: runtime.home, paths, env: controlComposeEnv(paths, runtime), timeoutMs: 300 })
       app.invalidate()
     } catch (err) {
       app.setStatus(`control status: ${explainError(err)}`, 'error')
@@ -288,9 +311,11 @@ class ControlMenuView implements View {
       title: `control / ${action}`,
       action,
       run: async (onLine) => {
-        authorizeControlManagementAccess()
-        const paths = resolveStackPaths({ mode: resolveControlStackMode() })
-        const result = await applyControlLifecycleAction({ paths, action, env: controlComposeEnv(paths), onLine })
+        const runtime = resolveControlStackRuntime()
+        const accessEnv = controlAccessEnv(runtime)
+        authorizeControlManagementAccess({ env: accessEnv })
+        const paths = resolveControlStackPaths(runtime)
+        const result = await applyControlLifecycleAction({ home: runtime.home, accessEnv, paths, action, env: controlComposeEnv(paths, runtime), onLine })
         this.status = result
         return result
       },
@@ -301,9 +326,10 @@ class ControlMenuView implements View {
     return new ControlStatusView({
       title: 'control / status',
       load: async () => {
-        authorizeControlManagementAccess()
-        const paths = resolveStackPaths({ mode: resolveControlStackMode() })
-        const status = await controlServiceStatus({ paths, env: controlComposeEnv(paths) })
+        const runtime = resolveControlStackRuntime()
+        authorizeControlManagementAccess({ env: controlAccessEnv(runtime) })
+        const paths = resolveControlStackPaths(runtime)
+        const status = await controlServiceStatus({ home: runtime.home, paths, env: controlComposeEnv(paths, runtime) })
         this.status = status
         return status
       },
@@ -527,6 +553,8 @@ interface ControlLifecycleViewOptions {
   run: (onLine: (line: string, stream: 'stdout' | 'stderr') => void) => Promise<ControlLifecycleResult>
 }
 
+const CONTROL_EVENT_TAIL_LINES = 8
+
 class ControlLifecycleView implements View {
   readonly title: string
   private readonly action: ControlLifecycleAction
@@ -535,6 +563,7 @@ class ControlLifecycleView implements View {
   private loading = true
   private error: string | undefined
   private lineCount = 0
+  private eventLines: string[] = []
   private app: App | undefined
   private aborted = false
 
@@ -558,8 +587,15 @@ class ControlLifecycleView implements View {
     app.setStatus(`control ${this.action}: ${this.progress()}`)
     app.invalidate()
     try {
-      const result = await this.runAction(() => {
+      const result = await this.runAction((line, stream) => {
         this.lineCount++
+        const clean = sanitizeAnsi(`${stream}: ${line}`).trim()
+        if (clean.length > 0) {
+          this.eventLines.push(clean)
+          if (this.eventLines.length > CONTROL_EVENT_TAIL_LINES) {
+            this.eventLines.splice(0, this.eventLines.length - CONTROL_EVENT_TAIL_LINES)
+          }
+        }
       })
       if (this.aborted) return
       this.result = result
@@ -589,7 +625,14 @@ class ControlLifecycleView implements View {
         ` ${ui.muted('state')} ${ui.info('in progress')}`,
       ]
     }
-    if (this.error) return ['', ' ' + ui.error('error: ') + this.error]
+    if (this.error) {
+      const lines = ['', ' ' + ui.error('error: ') + this.error]
+      if (this.eventLines.length > 0) {
+        lines.push('', ' ' + ui.muted('Recent runtime output'))
+        for (const line of this.eventLines) lines.push(' ' + line)
+      }
+      return lines
+    }
     if (!this.result) return ['', ' ' + ui.warn('Control action did not produce a result')]
     const eventSummary = (this.action === 'mount' || this.action === 'unmount') && this.lineCount > 0
       ? `${this.lineCount} runtime line${this.lineCount === 1 ? '' : 's'} captured`

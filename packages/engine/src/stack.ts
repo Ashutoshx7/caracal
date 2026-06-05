@@ -40,6 +40,7 @@ export interface StackComposeHandle {
 }
 
 const CONTROL_MANAGED_ENV = 'CARACAL_ENGINE_CONTROL_ENABLED'
+const CONTROL_FAILURE_TAIL_LINES = 8
 
 function controlManagedEnv(env: Record<string, string | undefined> | undefined, includeControlProfile: boolean): Record<string, string | undefined> | undefined {
   if (!includeControlProfile) return env
@@ -284,6 +285,21 @@ function controlLifecycleText(action: ControlLifecycleAction, state: ControlLife
   }
 }
 
+function captureControlLifecycleLine(lines: string[], line: string, stream: 'stdout' | 'stderr'): void {
+  const text = line.trim()
+  if (text.length === 0) return
+  lines.push(`${stream}: ${text}`)
+  if (lines.length > CONTROL_FAILURE_TAIL_LINES) {
+    lines.splice(0, lines.length - CONTROL_FAILURE_TAIL_LINES)
+  }
+}
+
+function controlLifecycleFailureMessage(action: ControlLifecycleAction, code: number, lines: readonly string[]): string {
+  const base = `control ${action} failed with exit code ${code}`
+  if (lines.length === 0) return base
+  return `${base}: ${lines.join(' | ')}`
+}
+
 function controlResult(
   action: ControlLifecycleAction,
   state: ControlLifecycleState,
@@ -331,7 +347,11 @@ export async function applyControlLifecycleAction(opts: ControlLifecycleOpts): P
   }
   const args = controlActionArgs(opts.paths.mode, opts.action, current?.mounted === true)
   if (!args) throw new Error(`unsupported control lifecycle action: ${opts.action}`)
-  const sink = opts.onLine ?? (() => {})
+  const lines: string[] = []
+  const sink = (line: string, stream: 'stdout' | 'stderr'): void => {
+    captureControlLifecycleLine(lines, line, stream)
+    opts.onLine?.(line, stream)
+  }
   if (args.length > 0) {
     const code = await composeRun({
       paths: opts.paths,
@@ -341,7 +361,7 @@ export async function applyControlLifecycleAction(opts: ControlLifecycleOpts): P
       includeControlProfile: true,
     }).exitCode
     if (code !== 0) {
-      throw new Error(`control ${opts.action} failed with exit code ${code}`)
+      throw new Error(controlLifecycleFailureMessage(opts.action, code, lines))
     }
   }
   if (opts.action === 'unmount') {

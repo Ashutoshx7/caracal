@@ -17,6 +17,7 @@ const engineMocks = vi.hoisted(() => ({
   controlKeyRotate: vi.fn(),
   controlPermissions: vi.fn(),
   controlServiceStatus: vi.fn(),
+  detectActiveLocalStackRuntime: vi.fn(),
   credentialRead: vi.fn(),
   readControlState: vi.fn(),
   resolveStackPaths: vi.fn(),
@@ -96,6 +97,7 @@ beforeEach(() => {
     mode: 'dev',
     secretsDir: '/tmp/caracal-secrets',
   })
+  engineMocks.detectActiveLocalStackRuntime.mockReturnValue(undefined)
   engineMocks.readControlState.mockReturnValue({ mounted: true, enabled: true })
   engineMocks.controlServiceStatus.mockResolvedValue(controlStatus())
   engineMocks.applyControlLifecycleAction.mockImplementation(async ({ onLine }) => {
