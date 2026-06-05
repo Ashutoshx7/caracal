@@ -381,5 +381,337 @@ def recipients(seed: str, count: int) -> list[dict]:
     return out
 
 
+_MERIDIAN_EPOCH = int(datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp())
+
+# (brand, last4, funding, network) — shaped after the canonical test cards real
+# card platforms publish so the wire surface looks like a live acceptance gateway.
+_CARDS = (
+    ("visa", "4242", "credit", "Visa"),
+    ("visa", "4000", "debit", "Visa"),
+    ("mastercard", "5555", "credit", "Mastercard"),
+    ("mastercard", "2223", "debit", "Mastercard"),
+    ("amex", "0005", "credit", "American Express"),
+    ("discover", "1117", "credit", "Discover"),
+)
+_WALLETS = ("apple_pay", "google_pay", "link")
+_DISPUTE_REASONS = ("fraudulent", "duplicate", "product_not_received",
+                    "subscription_canceled", "credit_not_processed", "general")
+_DISPUTE_NETWORK_CODE = {
+    "fraudulent": "10.4", "duplicate": "12.6.1", "product_not_received": "13.1",
+    "subscription_canceled": "13.2", "credit_not_processed": "13.6", "general": "13.7",
+}
+_REFUND_REASONS = ("requested_by_customer", "duplicate", "fraudulent")
+_RISK_LEVELS = ("normal", "normal", "normal", "elevated", "highest")
+_CHARGE_EVENT_TYPE = {
+    "succeeded": "charge.succeeded",
+    "failed": "charge.failed",
+    "requires_capture": "charge.updated",
+}
+
+
+def _meridian_ts(rng: random.Random, lo_days: int, hi_days: int) -> int:
+    """A unix timestamp offset back from the Meridian epoch by a day range."""
+    return _MERIDIAN_EPOCH - rng.randint(lo_days, hi_days) * 86_400 - rng.randint(0, 86_399)
+
+
+def _processing_fee(amount: float, currency: str) -> float:
+    """Blended acceptance fee: 2.9% + a fixed minor-unit component, as US card
+    platforms charge. Non-USD settlement adds a one-percent cross-border uplift."""
+    rate = 0.029 if currency == "USD" else 0.039
+    fixed = 0.30 if currency == "USD" else 0.25
+    return round(amount * rate + fixed, 2)
+
+
+def _card_payment_method(rng: random.Random) -> dict:
+    brand, last4, funding, network = rng.choice(_CARDS)
+    country, _ = rng.choice(_COUNTRIES)
+    wallet = rng.choice(_WALLETS) if rng.random() < 0.25 else None
+    return {
+        "type": "card",
+        "card": {
+            "brand": brand,
+            "last4": last4,
+            "expMonth": rng.randint(1, 12),
+            "expYear": 2027 + rng.randint(0, 4),
+            "funding": funding,
+            "network": network,
+            "country": country,
+            "fingerprint": f"fp_{_rng('fp', brand, last4, rng.random()).getrandbits(48):012x}",
+            "threeDSecure": "authenticated" if rng.random() < 0.4 else "not_required",
+            "wallet": wallet,
+            "checks": {
+                "cvcCheck": "pass",
+                "addressLine1Check": rng.choice(("pass", "pass", "unchecked")),
+                "addressPostalCodeCheck": rng.choice(("pass", "pass", "fail")),
+            },
+        },
+    }
+
+
+def _outcome(rng: random.Random, risk: str) -> dict:
+    score = {"normal": rng.randint(2, 40), "elevated": rng.randint(60, 74),
+             "highest": rng.randint(75, 95)}[risk]
+    return {
+        "networkStatus": "approved_by_network",
+        "reason": None,
+        "riskLevel": risk,
+        "riskScore": score,
+        "sellerMessage": "Payment complete.",
+        "type": "authorized",
+    }
+
+
+def _new_charge(rng: random.Random, idx: int, currency: str, created: int) -> dict:
+    amount = round(rng.uniform(18, 9800), 2)
+    pm = _card_payment_method(rng)
+    risk = rng.choice(_RISK_LEVELS)
+    fee = _processing_fee(amount, currency)
+    charge_id = f"ch_{rng.getrandbits(60):015x}"
+    name = _person(rng)
+    customer_no = rng.randint(10000, 99999)
+    return {
+        "id": charge_id,
+        "chargeId": charge_id,
+        "object": "charge",
+        "amount": amount,
+        "amountCaptured": amount,
+        "amountRefunded": 0.0,
+        "currency": currency,
+        "status": "succeeded",
+        "captured": True,
+        "paid": True,
+        "refunded": False,
+        "disputed": False,
+        "description": f"LynxCapital receivable {created}",
+        "statementDescriptor": "MERIDIAN* LYNXCAPITAL",
+        "source": f"tok_{pm['card']['brand']}",
+        "paymentMethod": f"pm_{rng.getrandbits(56):014x}",
+        "paymentMethodDetails": pm,
+        "billingDetails": {
+            "name": name,
+            "email": f"{name.split()[0].lower()}.{name.split()[1].lower()}@payer.example",
+            "phone": None,
+            "address": {"country": pm["card"]["country"], "postalCode": f"{rng.randint(10000, 99999)}"},
+        },
+        "outcome": _outcome(rng, risk),
+        "processingFee": fee,
+        "net": round(amount - fee, 2),
+        "balanceTransaction": f"txn_{rng.getrandbits(56):014x}",
+        "receiptUrl": f"https://pay.meridianpay.test/receipts/{charge_id}",
+        "customer": f"cus_{customer_no:08x}",
+        "metadata": {"invoiceId": f"INV-{idx:05d}", "region": pm["card"]["country"]},
+        "settlementId": None,
+        "payoutId": None,
+        "created": created,
+        "livemode": False,
+    }
+
+
+def _new_refund(rng: random.Random, charge: dict, amount: float, created: int) -> dict:
+    refund_id = f"re_{rng.getrandbits(60):015x}"
+    return {
+        "id": refund_id,
+        "refundId": refund_id,
+        "object": "refund",
+        "amount": amount,
+        "currency": charge["currency"],
+        "chargeId": charge["chargeId"],
+        "status": "succeeded",
+        "reason": rng.choice(_REFUND_REASONS),
+        "receiptNumber": f"{rng.randint(1000, 9999)}-{rng.randint(1000, 9999)}",
+        "balanceTransaction": f"txn_{rng.getrandbits(56):014x}",
+        "created": created,
+        "metadata": {},
+    }
+
+
+def _new_dispute(rng: random.Random, charge: dict, created: int) -> dict:
+    reason = rng.choice(_DISPUTE_REASONS)
+    status = rng.choice(("warning_needs_response", "needs_response", "needs_response",
+                         "under_review", "won", "lost"))
+    has_evidence = status in ("under_review", "won", "lost")
+    dispute_id = f"dp_{rng.getrandbits(60):015x}"
+    return {
+        "id": dispute_id,
+        "disputeId": dispute_id,
+        "object": "dispute",
+        "amount": charge["amount"],
+        "currency": charge["currency"],
+        "chargeId": charge["chargeId"],
+        "reason": reason,
+        "status": status,
+        "networkReasonCode": _DISPUTE_NETWORK_CODE[reason],
+        "isChargeRefundable": status in ("warning_needs_response", "needs_response"),
+        "evidenceDueBy": created + 21 * 86_400,
+        "evidenceDetails": {
+            "dueBy": created + 21 * 86_400,
+            "hasEvidence": has_evidence,
+            "submissionCount": 1 if has_evidence else 0,
+            "pastDue": False,
+        },
+        "evidence": {},
+        "balanceTransactions": [{
+            "id": f"txn_{rng.getrandbits(56):014x}",
+            "amount": -charge["amount"],
+            "fee": 15.00,
+            "type": "adjustment",
+        }],
+        "created": created,
+        "metadata": {},
+    }
+
+
+def _event(rng: random.Random, kind: str, obj: dict, created: int) -> dict:
+    return {
+        "id": f"evt_{rng.getrandbits(60):015x}",
+        "object": "event",
+        "type": kind,
+        "apiVersion": "2026-01-15",
+        "created": created,
+        "livemode": False,
+        "pendingWebhooks": 0,
+        "request": {"id": f"req_{rng.getrandbits(48):012x}", "idempotencyKey": None},
+        "data": {"object": obj},
+    }
+
+
+def meridian_dataset(seed: str) -> dict[str, dict]:
+    """Build a coherent payment-acceptance dataset: charges that settle into
+    payouts via settlement batches, with refunds, disputes, and the event stream
+    a real platform would have emitted as webhooks."""
+    charges: dict[str, dict] = {}
+    refunds: dict[str, dict] = {}
+    disputes: dict[str, dict] = {}
+    payouts: dict[str, dict] = {}
+    settlements: dict[str, dict] = {}
+    events: dict[str, dict] = {}
+
+    for i in range(1, 71):
+        rng = _rng(seed, "charge", i)
+        currency = "USD" if rng.random() < 0.82 else rng.choice(("EUR", "GBP"))
+        created = _meridian_ts(rng, 1, 75)
+        charge = _new_charge(rng, i, currency, created)
+
+        roll = rng.random()
+        if roll < 0.07:
+            charge.update(status="failed", captured=False, paid=False,
+                          amountCaptured=0.0, net=0.0, processingFee=0.0,
+                          balanceTransaction=None)
+            charge["outcome"].update(networkStatus="declined_by_network", type="issuer_declined",
+                                     reason="card_declined", sellerMessage="The bank declined this charge.")
+            charge["source"] = "tok_chargeDeclined"
+        elif roll < 0.10:
+            charge.update(status="requires_capture", captured=False, paid=False,
+                          amountCaptured=0.0)
+            charge["outcome"]["type"] = "manual"
+        events[charge["id"]] = _event(
+            rng, _CHARGE_EVENT_TYPE.get(charge["status"], "charge.updated"),
+            charge, created)
+        charges[charge["chargeId"]] = charge
+
+    succeeded = [c for c in charges.values() if c["status"] == "succeeded"]
+
+    refundable = [c for c in succeeded if _rng(seed, "refund_pick", c["chargeId"]).random() < 0.18]
+    for c in refundable:
+        rng = _rng(seed, "refund", c["chargeId"])
+        full = rng.random() < 0.6
+        amount = c["amount"] if full else round(c["amount"] * rng.uniform(0.2, 0.7), 2)
+        created = c["created"] + rng.randint(1, 10) * 86_400
+        refund = _new_refund(rng, c, amount, created)
+        refunds[refund["refundId"]] = refund
+        c["amountRefunded"] = amount
+        c["refunded"] = full
+        c["status"] = "refunded" if full else "succeeded"
+        events[refund["refundId"]] = _event(rng, "charge.refunded", refund, created)
+
+    disputed = [c for c in succeeded if _rng(seed, "dispute_pick", c["chargeId"]).random() < 0.12][:8]
+    for c in disputed:
+        rng = _rng(seed, "dispute", c["chargeId"])
+        created = c["created"] + rng.randint(2, 20) * 86_400
+        dispute = _new_dispute(rng, c, created)
+        disputes[dispute["disputeId"]] = dispute
+        c["disputed"] = True
+        events[dispute["disputeId"]] = _event(rng, "charge.dispute.created", dispute, created)
+
+    usd_settled = sorted((c for c in succeeded if c["currency"] == "USD"),
+                         key=lambda c: c["created"])
+    batch_size = max(1, len(usd_settled) // 6)
+    for b in range(0, len(usd_settled), batch_size):
+        batch = usd_settled[b:b + batch_size]
+        if not batch:
+            continue
+        idx = b // batch_size + 1
+        rng = _rng(seed, "settlement", idx)
+        gross = round(sum(c["amount"] for c in batch), 2)
+        fee = round(sum(c["processingFee"] for c in batch), 2)
+        refund_total = round(sum(c["amountRefunded"] for c in batch), 2)
+        net = round(gross - fee - refund_total, 2)
+        period_end = max(c["created"] for c in batch) + 2 * 86_400
+        status = "paid" if idx <= 4 else rng.choice(("paid", "in_transit", "in_transit"))
+        payout_id = f"po_{rng.getrandbits(60):015x}"
+        settlement_id = f"st_{rng.getrandbits(56):014x}"
+        arrival = period_end + 2 * 86_400
+        method = "instant" if rng.random() < 0.2 else "standard"
+        failure = None
+        if idx == 6 and status != "paid":
+            status = "failed"
+            failure = "account_closed"
+        payout = {
+            "id": payout_id,
+            "payoutId": payout_id,
+            "object": "payout",
+            "amount": net,
+            "currency": "USD",
+            "status": status,
+            "type": "bank_account",
+            "method": method,
+            "destination": f"ba_{rng.getrandbits(48):012x}",
+            "statementDescriptor": "MERIDIAN PAYOUT",
+            "sourceType": "card",
+            "automatic": True,
+            "arrivalDate": arrival,
+            "settlementId": settlement_id,
+            "failureCode": failure,
+            "failureMessage": "The bank account has been closed." if failure else None,
+            "created": period_end,
+            "metadata": {},
+        }
+        payouts[payout_id] = payout
+        settlements[settlement_id] = {
+            "id": settlement_id,
+            "settlementId": settlement_id,
+            "object": "settlement",
+            "status": status,
+            "currency": "USD",
+            "grossAmount": gross,
+            "feeAmount": fee,
+            "refundAmount": refund_total,
+            "netAmount": net,
+            "chargeCount": len(batch),
+            "refundCount": sum(1 for c in batch if c["amountRefunded"] > 0),
+            "payoutId": payout_id,
+            "periodStart": min(c["created"] for c in batch),
+            "periodEnd": period_end,
+            "reportUrl": f"https://pay.meridianpay.test/settlements/{settlement_id}/report.csv",
+            "created": period_end,
+        }
+        for c in batch:
+            c["settlementId"] = settlement_id
+            c["payoutId"] = payout_id
+        if status == "paid":
+            events[payout_id] = _event(rng, "payout.paid", payout, arrival)
+        elif status == "failed":
+            events[payout_id] = _event(rng, "payout.failed", payout, arrival)
+
+    return {
+        "charges": charges,
+        "refunds": refunds,
+        "disputes": disputes,
+        "payouts": payouts,
+        "settlements": settlements,
+        "events": events,
+    }
+
+
 def index_by(records: list[dict], key: str = "id") -> dict[str, dict]:
     return {r[key]: r for r in records}

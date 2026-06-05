@@ -80,10 +80,12 @@ CATALOG: tuple[Provider, ...] = (
     Provider(
         id="meridian-pay", brand="Meridian Pay", category="api_key",
         protocol="rest", port=9401, industry="Payments",
-        tagline="Card and wallet acceptance with payouts",
-        resources=("charges", "refunds", "payouts", "disputes", "balances"),
-        operations=("create_charge", "get_charge", "refund_charge",
-                    "create_payout", "get_balance", "list_disputes"),
+        tagline="Card and wallet acceptance with refunds, disputes, settlements, and payouts",
+        resources=("charges", "refunds", "disputes", "settlements", "payouts", "balances", "events"),
+        operations=("create_charge", "get_charge", "capture_charge", "list_charges",
+                    "refund_charge", "create_payout", "get_payout", "get_balance",
+                    "list_disputes", "get_dispute", "submit_dispute_evidence",
+                    "list_settlements", "get_settlement", "list_events"),
         failure_profile="standard", apikey_location="header", apikey_field="X-Api-Key",
     ),
     Provider(
