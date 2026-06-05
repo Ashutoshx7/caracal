@@ -117,8 +117,12 @@ _SPECS: dict[str, PartnerSpec] = {
         apikey_location="query", apikey_field="api_key"),
     "aegis-screening": PartnerSpec(
         "aegis-screening", "mandate", 9407,
-        ("screen_party", "get_screening", "get_case", "resolve_case"),
-        scopes=("screening.run", "cases.read")),
+        ("screen_party", "verify_business", "screen_batch", "rescreen_entity",
+         "get_screening", "list_screenings", "get_entity", "get_watchlist_hit",
+         "list_watchlists", "get_case", "list_cases", "get_audit_trail",
+         "assign_case", "add_case_note", "escalate_case", "resolve_case",
+         "create_monitor", "get_monitor", "list_monitors"),
+        scopes=("screening.run", "screening.read", "cases.read", "cases.write", "monitoring.write")),
     "verafin-monitor": PartnerSpec(
         "verafin-monitor", "mandate", 9408,
         ("monitor_transaction", "get_alert", "prepare_filing",

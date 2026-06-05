@@ -448,6 +448,110 @@ def test_mandate_revocation_anchor():
     assert r.json()["error"] == "session_revoked"
 
 
+def test_mandate_resource_use_claim_enforced():
+    """The mock verifier mirrors the SDK's required_use=resource check."""
+    c = client("aegis-screening")
+    session_token = _mint("aegis-screening", use=mandate.USE_SESSION)
+    r = c.post("/api/screen_party", json={"name": "x"},
+               headers={"Authorization": f"Bearer {session_token}"})
+    assert r.status_code == 401
+    assert r.json()["error"] == "invalid_token"
+
+
+def _aegis_client() -> tuple[TestClient, dict]:
+    c = client("aegis-screening")
+    return c, {"Authorization": f"Bearer {seed('aegis-screening')['mandate']}"}
+
+
+def _aegis_data(c: TestClient, h: dict, op: str, body: dict) -> dict:
+    r = c.post(f"/api/{op}", json=body, headers=h)
+    assert r.status_code == 200, (op, r.status_code, r.text)
+    return r.json()["data"]
+
+
+def test_aegis_screening_decisions_and_scoring():
+    c, h = _aegis_client()
+    clean = _aegis_data(c, h, "screen_party",
+                        {"name": "Harbor Freight Partners", "type": "organization", "country": "US"})
+    assert clean["decision"] == "clear" and clean["matchCount"] == 0 and clean["riskBand"] == "low"
+
+    blocked = _aegis_data(c, h, "screen_party",
+                          {"name": "Oblast Holdings LLC", "type": "organization", "country": "RU"})
+    assert blocked["decision"] == "block"
+    assert blocked["riskBand"] == "critical" and blocked["caseId"]
+    assert blocked["matches"] and blocked["riskFactors"]
+    assert blocked["recommendedAction"] == "reject_and_escalate_edd"
+
+    fuzzy = _aegis_data(c, h, "screen_party", {"name": "Oblast Holdings"})
+    assert fuzzy["decision"] in ("review", "block") and fuzzy["matchCount"] >= 1
+
+
+def test_aegis_case_lifecycle_and_audit_chain():
+    c, h = _aegis_client()
+    blocked = _aegis_data(c, h, "screen_party",
+                          {"name": "Rubicon Maritime Trading", "type": "organization", "country": "IR"})
+    case_id = blocked["caseId"]
+
+    _aegis_data(c, h, "assign_case", {"caseId": case_id, "assignee": "analyst@aegis"})
+    _aegis_data(c, h, "add_case_note", {"caseId": case_id, "note": "checking secondary identifiers"})
+    trail = _aegis_data(c, h, "get_audit_trail", {"caseId": case_id})
+    assert trail["chainIntact"] is True and trail["eventCount"] >= 3
+
+    resolved = _aegis_data(c, h, "resolve_case",
+                           {"caseId": case_id, "disposition": "true_match", "reason": "confirmed"})
+    assert resolved["status"] == "resolved" and resolved["disposition"] == "true_match"
+
+    again = c.post("/api/resolve_case", json={"caseId": case_id, "disposition": "true_match"}, headers=h)
+    assert again.status_code == 409
+    bad = c.post("/api/resolve_case", json={"caseId": case_id, "disposition": "nope"}, headers=h)
+    assert bad.status_code == 422
+
+
+def test_aegis_kyb_and_batch_and_monitoring():
+    c, h = _aegis_client()
+    kyb = _aegis_data(c, h, "verify_business",
+                      {"legalName": "Northwind Trading Co", "country": "US",
+                       "beneficialOwners": [{"name": "Dana Whitfield", "ownershipPercent": 100}]})
+    assert kyb["verificationStatus"] in ("verified", "manual_review", "failed")
+    assert kyb["entity"]["beneficialOwners"] is not None
+
+    batch = _aegis_data(c, h, "screen_batch", {"parties": [
+        "Harbor Freight Partners", {"name": "Crimson Star Logistics", "country": "KP"}]})
+    assert batch["submitted"] == 2
+    assert batch["summary"]["block"] >= 1
+
+    entity_id = kyb["entity"]["entityId"]
+    monitor = _aegis_data(c, h, "create_monitor", {"entityId": entity_id, "frequency": "weekly"})
+    assert monitor["status"] == "active"
+    fetched = _aegis_data(c, h, "get_monitor", {"monitorId": monitor["monitorId"]})
+    assert fetched["monitorId"] == monitor["monitorId"]
+    rescreen = _aegis_data(c, h, "rescreen_entity", {"entityId": entity_id})
+    assert "decision" in rescreen and "changed" in rescreen
+
+
+def test_aegis_reference_listing_and_not_found():
+    c, h = _aegis_client()
+    watchlists = _aegis_data(c, h, "list_watchlists", {})["watchlists"]
+    assert any(w["type"] == "sanctions" for w in watchlists)
+
+    cases = _aegis_data(c, h, "list_cases", {})
+    assert cases["total"] >= 1 and "items" in cases
+    assert _aegis_data(c, h, "list_screenings", {})["total"] >= 1
+
+    assert c.post("/api/get_case", json={"caseId": "case_missing"}, headers=h).status_code == 404
+    assert c.post("/api/get_entity", json={"entityId": "ent_missing"}, headers=h).status_code == 404
+
+
+def test_aegis_scope_step_up_enforced():
+    """A read-only mandate cannot run a screening."""
+    c = client("aegis-screening")
+    read_only = _mint("aegis-screening", scopes=["screening.read", "cases.read"])
+    r = c.post("/api/screen_party", json={"name": "x"},
+               headers={"Authorization": f"Bearer {read_only}"})
+    assert r.status_code == 403
+    assert r.json()["error"] == "insufficient_scope"
+
+
 # --------------------------------------------------------------------------- #
 # none (internal)
 # --------------------------------------------------------------------------- #

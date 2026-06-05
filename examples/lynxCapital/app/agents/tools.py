@@ -393,8 +393,8 @@ def get_payout_status(run_id: str, agent_id: str, payout_id: str) -> dict[str, o
 # -- vendor lifecycle tools --
 
 def kyb_screen_vendor(run_id: str, agent_id: str, vendor_id: str) -> dict[str, object]:
-    return _run(run_id, agent_id, "kyb_screen_vendor", "aegis-screening", "screen_party",
-                {"name": vendor_id})
+    return _run(run_id, agent_id, "kyb_screen_vendor", "aegis-screening", "verify_business",
+                {"legalName": vendor_id})
 
 
 def register_vendor(run_id: str, agent_id: str, vendor_id: str) -> dict[str, object]:
@@ -479,8 +479,8 @@ def aml_monitor_transaction(run_id: str, agent_id: str, vendor_id: str, amount: 
 
 
 def sanctions_screen_batch(run_id: str, agent_id: str, batch_id: str) -> dict[str, object]:
-    return _run(run_id, agent_id, "sanctions_screen_batch", "aegis-screening", "screen_party",
-                {"name": batch_id})
+    return _run(run_id, agent_id, "sanctions_screen_batch", "aegis-screening", "screen_batch",
+                {"batchId": batch_id})
 
 
 def prepare_regulatory_filing(run_id: str, agent_id: str, filing_type: str, period: str) -> dict[str, object]:
