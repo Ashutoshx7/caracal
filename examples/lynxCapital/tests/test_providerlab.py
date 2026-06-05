@@ -440,6 +440,44 @@ def test_api_key_pair_distinct_cases():
     assert done["status"] == "extracted" and "fields" in done
 
 
+def test_meridian_card_decline_and_capture_flow():
+    pay = client("meridian-pay")
+    h = {"X-Api-Key": seed("meridian-pay")["apiKey"]}
+    # A canonical decline token is rejected the way a real card gateway would (402).
+    declined = pay.post("/api/create_charge",
+                        json={"amount": 80, "currency": "USD", "source": "tok_chargeDeclined"}, headers=h)
+    assert declined.status_code == 402 and declined.json()["error"] == "card_declined"
+    # Authorize-then-capture: an uncaptured charge settles on explicit capture.
+    auth = pay.post("/api/create_charge",
+                    json={"amount": 250.0, "currency": "usd", "source": "tok_visa", "capture": False},
+                    headers=h).json()["data"]
+    assert auth["status"] == "requires_capture" and auth["paid"] is False
+    assert auth["paymentMethodDetails"]["card"]["brand"] == "visa"
+    captured = pay.post("/api/capture_charge", json={"chargeId": auth["chargeId"]}, headers=h).json()["data"]
+    assert captured["status"] == "succeeded" and captured["net"] < captured["amount"]
+
+
+def test_meridian_settlement_links_payout_and_dispute_evidence():
+    pay = client("meridian-pay")
+    h = {"X-Api-Key": seed("meridian-pay")["apiKey"]}
+    settlements = pay.post("/api/list_settlements", json={}, headers=h).json()["data"]["items"]
+    assert settlements, "seeded settlements expected"
+    settlement = settlements[0]
+    payout = pay.post("/api/get_payout", json={"payoutId": settlement["payoutId"]}, headers=h).json()["data"]
+    assert payout["settlementId"] == settlement["settlementId"]
+    assert settlement["netAmount"] == round(
+        settlement["grossAmount"] - settlement["feeAmount"] - settlement["refundAmount"], 2)
+    # An open dispute accepts evidence and transitions to review.
+    disputes = pay.post("/api/list_disputes", json={}, headers=h).json()["data"]["items"]
+    openable = next((d for d in disputes if d["status"] in ("warning_needs_response", "needs_response")), None)
+    if openable is not None:
+        reviewed = pay.post("/api/submit_dispute_evidence",
+                            json={"disputeId": openable["disputeId"],
+                                  "evidence": {"customerCommunication": "emails attached"}},
+                            headers=h).json()["data"]
+        assert reviewed["status"] == "under_review" and reviewed["evidenceDetails"]["hasEvidence"] is True
+
+
 def test_bearer_pair_distinct_cases():
     # Slate Ledger: double-entry validation rejects an unbalanced entry.
     ldg = client("slate-ledger")

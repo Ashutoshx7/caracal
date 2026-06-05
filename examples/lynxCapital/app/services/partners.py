@@ -66,8 +66,10 @@ _SPECS: dict[str, PartnerSpec] = {
         scopes=("accounts.read", "payments.write"), use_pkce=True),
     "meridian-pay": PartnerSpec(
         "meridian-pay", "api_key", 9401,
-        ("create_charge", "get_charge", "refund_charge",
-         "create_payout", "get_balance", "list_disputes"),
+        ("create_charge", "get_charge", "capture_charge", "list_charges",
+         "refund_charge", "create_payout", "get_payout", "get_balance",
+         "list_disputes", "get_dispute", "submit_dispute_evidence",
+         "list_settlements", "get_settlement", "list_events"),
         apikey_location="header", apikey_field="X-Api-Key"),
     "cordoba-fx": PartnerSpec(
         "cordoba-fx", "oauth_cc", 9402,

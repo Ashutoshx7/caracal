@@ -102,3 +102,20 @@ def test_payment_status_reads_charge(providerlab):
     res = tool_fns.get_payment_status("r", "a", charge_id)
     assert res["operation"] == "get_charge"
     assert res["data"]["chargeId"] == charge_id
+
+
+def test_receivables_capture_and_refund_reach_meridian(providerlab):
+    captured = tool_fns.capture_receivable("r", "a", "cus_1", 320.0, "USD", "tok_visa")
+    assert _provider_of(captured) == "meridian-pay"
+    assert captured["operation"] == "create_charge"
+    charge_id = captured["data"]["chargeId"]
+    refunded = tool_fns.refund_receivable("r", "a", charge_id, 120.0)
+    assert _provider_of(refunded) == "meridian-pay"
+    assert refunded["data"]["status"] == "succeeded"
+    assert refunded["data"]["amount"] == 120.0
+
+
+def test_payment_dispute_listing_reaches_meridian(providerlab):
+    res = tool_fns.list_payment_disputes("r", "a")
+    assert _provider_of(res) == "meridian-pay"
+    assert "items" in res["data"]

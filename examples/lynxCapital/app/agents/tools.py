@@ -175,7 +175,9 @@ def submit_payment(run_id: str, agent_id: str, vendor_id: str, amount: float, cu
     if target == "quetzal":
         return submit_payout(run_id, agent_id, vendor_id, amount, currency, rail, reference)
     return _run(run_id, agent_id, "submit_payment", "meridian-pay", "create_payout",
-                {"amount": amount, "currency": currency, "destination": vendor_id, "reference": reference})
+                {"amount": amount, "currency": currency, "destination": vendor_id,
+                 "statementDescriptor": "MERIDIAN PAYOUT",
+                 "metadata": {"vendorId": vendor_id, "reference": reference}})
 
 
 def submit_payout(run_id: str, agent_id: str, vendor_id: str, amount: float, currency: str, rail: str, reference: str) -> dict[str, object]:
@@ -217,6 +219,37 @@ def get_contract_terms(run_id: str, agent_id: str, vendor_id: str) -> dict[str, 
 def get_payment_status(run_id: str, agent_id: str, charge_id: str) -> dict[str, object]:
     return _run(run_id, agent_id, "get_payment_status", "meridian-pay", "get_charge",
                 {"chargeId": charge_id})
+
+
+# -- receivables tools (meridian-pay acceptance, refunds, disputes, settlements) --
+
+def capture_receivable(run_id: str, agent_id: str, customer_id: str, amount: float,
+                       currency: str, source: str = "tok_visa") -> dict[str, object]:
+    """Accept an inbound customer payment on the card-acceptance rail."""
+    return _run(run_id, agent_id, "capture_receivable", "meridian-pay", "create_charge",
+                {"amount": amount, "currency": currency, "source": source,
+                 "customer": customer_id, "metadata": {"customerId": customer_id}})
+
+
+def refund_receivable(run_id: str, agent_id: str, charge_id: str,
+                      amount: float | None = None) -> dict[str, object]:
+    """Refund a captured receivable in full or in part."""
+    payload: dict[str, object] = {"chargeId": charge_id, "reason": "requested_by_customer"}
+    if amount is not None:
+        payload["amount"] = amount
+    return _run(run_id, agent_id, "refund_receivable", "meridian-pay", "refund_charge", payload)
+
+
+def list_payment_disputes(run_id: str, agent_id: str, status: str = "") -> dict[str, object]:
+    """List chargeback disputes raised against captured receivables."""
+    payload = {"status": status} if status else {}
+    return _run(run_id, agent_id, "list_payment_disputes", "meridian-pay", "list_disputes", payload)
+
+
+def get_payout_status(run_id: str, agent_id: str, payout_id: str) -> dict[str, object]:
+    """Track a card-rail payout through to its settled state."""
+    return _run(run_id, agent_id, "get_payout_status", "meridian-pay", "get_payout",
+                {"payoutId": payout_id})
 
 
 # -- vendor lifecycle tools --
@@ -415,6 +448,10 @@ TOOLS: dict[str, Callable] = {
     "create_outbound_payment": create_outbound_payment,
     "get_contract_terms": get_contract_terms,
     "get_payment_status": get_payment_status,
+    "capture_receivable": capture_receivable,
+    "refund_receivable": refund_receivable,
+    "list_payment_disputes": list_payment_disputes,
+    "get_payout_status": get_payout_status,
     "kyb_screen_vendor": kyb_screen_vendor,
     "register_vendor": register_vendor,
     "refresh_vendor_compliance": refresh_vendor_compliance,
