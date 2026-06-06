@@ -963,12 +963,28 @@ func isHostAlnum(b byte) bool {
 func (s *Server) authenticateApp(ctx context.Context, req TokenExchangeRequest) (*Application, string, error) {
 	zoneID := strings.TrimSpace(req.ZoneID)
 	appID := strings.TrimSpace(req.ApplicationID)
-	if zoneID == "" || appID == "" {
-		return nil, "", fmt.Errorf("missing zone_id or application_id")
+	if appID == "" {
+		return nil, "", fmt.Errorf("missing application_id")
 	}
-	app, err := s.db.GetApplicationByID(ctx, appID, zoneID)
-	if err != nil {
-		return nil, "", err
+	var app *Application
+	var err error
+	if zoneID == "" {
+		app, err = s.db.GetApplicationByIDGlobal(ctx, appID)
+		if err != nil {
+			return nil, "", err
+		}
+		if !hasApplicationTrait(app, controlInvokeTrait) {
+			return nil, "", fmt.Errorf("zone_id required for non-control application")
+		}
+		zoneID = app.ZoneID
+	} else {
+		app, err = s.db.GetApplicationByID(ctx, appID, zoneID)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+	if app.ZoneID != zoneID {
+		return nil, "", fmt.Errorf("application zone mismatch")
 	}
 	if req.GatewayAuthenticated {
 		if req.SubjectToken == "" {

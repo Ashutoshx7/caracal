@@ -69,6 +69,7 @@ type DBQuerier interface {
 	GetActivePolicySetBinding(ctx context.Context, zoneID string) (*PolicySetBinding, error)
 	GetPolicySetVersion(ctx context.Context, id string) (*PolicySetVersion, error)
 	GetPolicyVersionsByIDs(ctx context.Context, ids []string) ([]PolicyVersion, error)
+	GetApplicationByIDGlobal(ctx context.Context, id string) (*Application, error)
 	ListBoundZoneIDs(ctx context.Context) ([]string, error)
 }
 
@@ -108,6 +109,20 @@ func (d *DB) GetApplicationByID(ctx context.Context, id, zoneID string) (*Applic
 		 FROM applications
 		 WHERE id = $1 AND zone_id = $2 AND archived_at IS NULL
 		   AND (expires_at IS NULL OR expires_at > now())`, id, zoneID,
+	).Scan(&a.ID, &a.ZoneID, &a.Name, &a.RegistrationMethod, &a.ClientSecretHash, &a.Traits)
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+func (d *DB) GetApplicationByIDGlobal(ctx context.Context, id string) (*Application, error) {
+	var a Application
+	err := d.pool.QueryRow(ctx,
+		`SELECT id, zone_id, name, registration_method, client_secret_hash, traits
+		 FROM applications
+		 WHERE id = $1 AND archived_at IS NULL
+		   AND (expires_at IS NULL OR expires_at > now())`, id,
 	).Scan(&a.ID, &a.ZoneID, &a.Name, &a.RegistrationMethod, &a.ClientSecretHash, &a.Traits)
 	if err != nil {
 		return nil, err

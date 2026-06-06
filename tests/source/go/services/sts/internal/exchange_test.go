@@ -240,6 +240,9 @@ func (s *stubDB) Ping(_ context.Context) error { return nil }
 func (s *stubDB) GetApplicationByID(_ context.Context, _, _ string) (*Application, error) {
 	return s.app, s.appErr
 }
+func (s *stubDB) GetApplicationByIDGlobal(_ context.Context, _ string) (*Application, error) {
+	return s.app, s.appErr
+}
 func (s *stubDB) GetResourceByIdentifier(_ context.Context, _, _ string) (*Resource, error) {
 	return s.resource, s.resErr
 }
@@ -402,6 +405,48 @@ func TestAuthenticateAppRejectsApplicationIdentityWithoutSecret(t *testing.T) {
 		ApplicationID: "app1",
 	}); !errors.Is(err, errSecretMismatch) {
 		t.Fatalf("application identity without secret must fail, got %v", err)
+	}
+}
+
+func TestAuthenticateAppDerivesZoneForControlKey(t *testing.T) {
+	hash, err := hashClientSecret("test-secret")
+	if err != nil {
+		t.Fatalf("hash client secret: %v", err)
+	}
+	srv := &Server{db: &stubDB{app: &Application{
+		ID:                 "control-app",
+		ZoneID:             "zone-bound",
+		Name:               "Control key",
+		RegistrationMethod: "managed",
+		ClientSecretHash:   &hash,
+		Traits:             []string{controlInvokeTrait, controlScopeTrait + "control:resource:read"},
+	}}}
+	app, zoneID, err := srv.authenticateApp(context.Background(), TokenExchangeRequest{
+		ApplicationID: "control-app",
+		ClientSecret:  "test-secret",
+	})
+	if err != nil || app.ID != "control-app" || zoneID != "zone-bound" {
+		t.Fatalf("control key should derive zone, app=%#v zone=%q err=%v", app, zoneID, err)
+	}
+}
+
+func TestAuthenticateAppRejectsZoneLessNonControlApplication(t *testing.T) {
+	hash, err := hashClientSecret("test-secret")
+	if err != nil {
+		t.Fatalf("hash client secret: %v", err)
+	}
+	srv := &Server{db: &stubDB{app: &Application{
+		ID:                 "app1",
+		ZoneID:             "zone1",
+		Name:               "Test App",
+		RegistrationMethod: "managed",
+		ClientSecretHash:   &hash,
+	}}}
+	if _, _, err := srv.authenticateApp(context.Background(), TokenExchangeRequest{
+		ApplicationID: "app1",
+		ClientSecret:  "test-secret",
+	}); err == nil || !strings.Contains(err.Error(), "zone_id required") {
+		t.Fatalf("non-control application without zone_id must fail, got %v", err)
 	}
 }
 
