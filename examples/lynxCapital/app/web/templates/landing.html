@@ -9,6 +9,7 @@ Lynx Capital overview page with a guided onboarding wizard.
 {% block content %}
 <style>
   .overview {
+    --corner: 2px;
     min-height: calc(100vh - 44px);
     display: grid;
     place-items: center;
@@ -16,12 +17,8 @@ Lynx Capital overview page with a guided onboarding wizard.
     background: var(--surface);
   }
   .overview-card {
-    --corner: 2px;
-    width: min(720px, 100%);
-    background: #fff;
-    border: 1px solid var(--border);
-    border-radius: var(--corner);
-    padding: 36px;
+    width: min(760px, 100%);
+    padding: 0;
   }
   .eyebrow {
     color: var(--accent);

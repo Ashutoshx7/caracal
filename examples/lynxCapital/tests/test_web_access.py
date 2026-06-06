@@ -28,6 +28,10 @@ def test_landing_is_lightweight_with_guided_onboarding():
     assert "rgba(" not in body
     assert "gradient(" not in body
     assert "box-shadow" not in body
+    overview_card_block = body.split(".overview-card {", 1)[1].split("}", 1)[0]
+    assert "background:" not in overview_card_block
+    assert "border:" not in overview_card_block
+    assert "border-radius" not in overview_card_block
     assert "Halcyon Bank" not in body
     assert "Provider ecosystem" not in body
 
