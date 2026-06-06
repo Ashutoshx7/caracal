@@ -21,6 +21,19 @@ os.environ.setdefault("OPENAI_API_KEY", "test-key")
 os.environ.setdefault("PROVIDERLAB_FAST", "1")
 
 
+@pytest.fixture(autouse=True)
+def _isolate_caracal_env():
+    """Setup-copy tests assert the unconfigured placeholders, so a developer's
+    live CARACAL_* values from the shell or local .env must not leak in."""
+    saved = {}
+    for key in ("CARACAL_ZONE_ID", "CARACAL_APPLICATION_ID", "CARACAL_APP_CLIENT_SECRET", "CARACAL_SUBJECT_TOKEN"):
+        saved[key] = os.environ.pop(key, None)
+    yield
+    for key, value in saved.items():
+        if value is not None:
+            os.environ[key] = value
+
+
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))

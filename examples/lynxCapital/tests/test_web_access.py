@@ -138,7 +138,7 @@ def test_setup_page_is_guided_and_provider_backed():
     assert "Automate setup" in body
     assert "Go to Caracal Console &gt; Zones &gt; New" in body
     assert "<b>name</b> = <code>\"Lynx Capital\"</code>" in body
-    assert "<b>dynamic clients</b> = <code>[x] enabled</code>" in body
+    assert "Leave <b>dynamic clients</b> unchecked." in body
     assert "Go to Control &gt; control key create" in body
     assert "<b>name</b> = <code>\"Lynx Capital Bootstrap\"</code>" in body
     assert "<b>max token TTL</b> = <code>300</code>" in body
@@ -160,10 +160,11 @@ def test_setup_page_is_guided_and_provider_backed():
     assert '<dt class="field-name">Name</dt>' in body
     assert '<dd class="field-value">&#34;Lynx Capital&#34;</dd>' in body
     assert '<dt class="field-name">Dynamic clients</dt>' in body
-    assert '<dd class="field-value">[x] enabled</dd>' in body
+    assert '<dd class="field-value">[ ] leave unchecked</dd>' in body
     assert "Enter the application fields" in body
     assert "Go to Applications &gt; New in the &#34;Lynx Capital&#34; zone" in body
-    assert '<dt class="field-name">Application ID</dt>' in body
+    assert '<dt class="field-name">Registration method</dt>' in body
+    assert '<dd class="field-value">managed</dd>' in body
     assert "Enter the policy fields" in body
     assert '<dd class="field-value">&#34;Lynx Capital baseline&#34;</dd>' in body
     assert '<dt class="field-name">Target application</dt>' in body
