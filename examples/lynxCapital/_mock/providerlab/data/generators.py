@@ -120,6 +120,208 @@ def vendors(seed: str, count: int) -> list[dict]:
     return out
 
 
+# --------------------------------------------------------------------------- #
+# Atlas Vendor Network — vendor master data, onboarding, and supplier records
+# --------------------------------------------------------------------------- #
+_ATLAS_CATEGORIES = (
+    ("Software", "43230000"), ("Professional Services", "80100000"),
+    ("Facilities", "72100000"), ("Logistics", "78100000"),
+    ("Hardware", "43210000"), ("Marketing", "82100000"),
+    ("Utilities", "83100000"), ("Consulting", "80101500"),
+    ("Manufacturing", "73100000"), ("Travel", "90120000"),
+)
+_ATLAS_TAX_ID_TYPE = {"US": "EIN", "GB": "VATIN", "DE": "VATIN", "FR": "VATIN",
+                      "BR": "CNPJ", "SG": "UEN", "JP": "CN", "CA": "BN"}
+_ATLAS_LIFECYCLE = (
+    ("active", "active"), ("active", "active"), ("active", "active"),
+    ("pending_review", "onboarding"), ("pending_review", "onboarding"),
+    ("on_hold", "active"), ("suspended", "suspended"), ("offboarded", "offboarded"),
+)
+_ATLAS_DOC_TYPES = (
+    ("w9", "Form W-9", 365 * 3), ("coi", "Certificate of Insurance", 365),
+    ("bank_letter", "Bank Verification Letter", 730),
+    ("msa", "Master Service Agreement", 365 * 2),
+    ("registration", "Certificate of Incorporation", 0),
+)
+_ATLAS_ONBOARDING_STEPS = (
+    ("profile", "Company profile captured"),
+    ("tax", "Tax identification validated"),
+    ("kyb", "KYB / sanctions screening cleared"),
+    ("banking", "Bank account verified"),
+    ("documents", "Required documents collected"),
+    ("approval", "Final approval and activation"),
+)
+_ATLAS_CONTACT_ROLES = ("Accounts Receivable", "Sales", "Compliance Officer",
+                        "Account Manager", "Support")
+
+
+def _atlas_tax_id(rng: random.Random, country: str) -> str:
+    if country == "US":
+        return f"{rng.randint(10, 99)}-{rng.randint(10**6, 10**7 - 1)}"
+    return f"{country}{rng.randint(10**8, 10**9 - 1)}"
+
+
+def _atlas_onboarding(rng: random.Random, status: str, stage: str, vendor_id: str) -> dict:
+    """A six-step onboarding case whose progress matches the vendor lifecycle stage."""
+    if stage in ("active", "suspended", "offboarded", "on_hold"):
+        cleared = len(_ATLAS_ONBOARDING_STEPS)
+    else:
+        cleared = rng.randint(1, len(_ATLAS_ONBOARDING_STEPS) - 1)
+    checklist = []
+    for idx, (step, label) in enumerate(_ATLAS_ONBOARDING_STEPS):
+        if idx < cleared:
+            checklist.append({"step": step, "label": label, "status": "completed",
+                              "completedAt": _instant(rng, -300, -10)})
+        elif idx == cleared:
+            checklist.append({"step": step, "label": label, "status": "in_progress",
+                              "completedAt": None})
+        else:
+            checklist.append({"step": step, "label": label, "status": "pending",
+                              "completedAt": None})
+    complete = cleared >= len(_ATLAS_ONBOARDING_STEPS)
+    return {
+        "caseId": f"ONB-{vendor_id.split('-')[-1]}",
+        "stage": "completed" if complete else _ATLAS_ONBOARDING_STEPS[cleared][0],
+        "status": "completed" if complete else "in_progress",
+        "checklist": checklist,
+        "owner": _person(rng),
+        "startedAt": _instant(rng, -320, -300),
+        "completedAt": _instant(rng, -300, -10) if complete else None,
+    }
+
+
+def atlas_vendors(seed: str, count: int) -> list[dict]:
+    """Vendor master records with onboarding, banking, compliance, contacts, and
+    documents, shaped after supplier-management platforms (Coupa/Ariba style)."""
+    out = []
+    for i in range(1, count + 1):
+        rng = _rng(seed, "atlas_vendor", i)
+        display = _company(rng)
+        country, currency = rng.choice(_COUNTRIES)
+        legal = f"{display} {_LEGAL_SUFFIX.get(country, 'Ltd.')}"
+        category, unspsc = rng.choice(_ATLAS_CATEGORIES)
+        status, stage = rng.choice(_ATLAS_LIFECYCLE)
+        risk_score = rng.randint(5, 95)
+        risk_tier = "low" if risk_score < 40 else "medium" if risk_score < 75 else "high"
+        vid = f"VEND-{i:05d}"
+        bank_verified = stage in ("active", "suspended") and rng.random() > 0.1
+        kyb = "cleared" if stage == "active" else rng.choice(("cleared", "pending", "flagged"))
+        contacts = []
+        for c in range(rng.randint(1, 3)):
+            person = _person(rng)
+            contacts.append({
+                "contactId": f"{vid}-C{c+1}",
+                "name": person,
+                "email": f"{person.lower().replace(' ', '.')}@{_slug(display)}.example",
+                "phone": _phone(rng, country),
+                "role": rng.choice(_ATLAS_CONTACT_ROLES),
+                "primary": c == 0,
+            })
+        documents = []
+        for dtype, dlabel, ttl in _ATLAS_DOC_TYPES:
+            if dtype in ("w9", "registration") and country != "US" and dtype == "w9":
+                continue
+            present = stage in ("active", "suspended") or rng.random() > 0.4
+            if not present:
+                continue
+            uploaded = _day(rng, -300, -20)
+            expires = None
+            if ttl:
+                expires = (date.fromisoformat(uploaded) + timedelta(days=ttl)).isoformat()
+            documents.append({
+                "documentId": f"DOC-{vid.split('-')[-1]}-{dtype.upper()}",
+                "type": dtype, "label": dlabel,
+                "status": "verified" if rng.random() > 0.15 else "received",
+                "fileName": f"{_slug(display)}-{dtype}.pdf",
+                "uploadedAt": uploaded, "expiresAt": expires,
+            })
+        out.append({
+            "id": vid,
+            "legalName": legal,
+            "displayName": display,
+            "slug": _slug(display),
+            "registrationNumber": f"REG-{country}-{rng.randint(10**5, 10**6 - 1)}",
+            "taxId": _atlas_tax_id(rng, country),
+            "taxIdType": _ATLAS_TAX_ID_TYPE.get(country, "TIN"),
+            "country": country,
+            "currency": currency,
+            "category": category,
+            "unspsc": unspsc,
+            "status": status,
+            "lifecycleStage": stage,
+            "riskTier": risk_tier,
+            "riskScore": risk_score,
+            "paymentTerms": rng.choice(_TERMS),
+            "website": f"https://www.{_slug(display)}.example",
+            "address": {
+                "line1": f"{rng.randint(1, 999)} {rng.choice(_ROOTS)} Street",
+                "city": _CITY_BY_COUNTRY.get(country, "Metropolis"),
+                "postalCode": f"{rng.randint(10000, 99999)}",
+                "country": country,
+            },
+            "primaryContact": contacts[0],
+            "contacts": contacts,
+            "banking": {
+                "status": "verified" if bank_verified else rng.choice(("unverified", "pending")),
+                "method": "micro_deposit",
+                "accountName": legal,
+                "accountLast4": f"{rng.randint(0, 9999):04d}",
+                "bankCountry": country,
+                "currency": currency,
+                "verifiedAt": _instant(rng, -200, -5) if bank_verified else None,
+            },
+            "compliance": {
+                "kyb": kyb,
+                "sanctions": "clear" if rng.random() > 0.03 else "review",
+                "taxValidation": "valid" if rng.random() > 0.1 else "pending",
+                "insurance": "current" if any(d["type"] == "coi" for d in documents) else "missing",
+                "w9OnFile": any(d["type"] == "w9" for d in documents),
+                "lastReviewedAt": _day(rng, -180, -10),
+                "nextReviewDue": _day(rng, 30, 360),
+            },
+            "documents": documents,
+            "onboarding": _atlas_onboarding(rng, status, stage, vid),
+            "createdAt": _day(rng, -540, -30),
+            "updatedAt": _instant(rng, -30, -1),
+        })
+    return out
+
+
+_ATLAS_CONTRACT_TYPES = ("master_service_agreement", "statement_of_work",
+                         "purchase_agreement", "nda", "sla")
+
+
+def atlas_contracts(seed: str, vendors: list[dict]) -> dict[str, dict]:
+    """Vendor contracts with value, term, renewal, and lifecycle status."""
+    contracts: dict[str, dict] = {}
+    n = 0
+    for v in vendors:
+        if v["lifecycleStage"] not in ("active", "suspended", "on_hold"):
+            continue
+        rng = _rng(seed, "atlas_contract", v["id"])
+        for _ in range(rng.randint(1, 2)):
+            n += 1
+            cid = f"CTR-{n:05d}"
+            start = _day(rng, -540, -60)
+            term_months = rng.choice((12, 24, 36))
+            end = (date.fromisoformat(start) + timedelta(days=term_months * 30)).isoformat()
+            expiring = date.fromisoformat(end) <= (_EPOCH + timedelta(days=60))
+            contracts[cid] = {
+                "id": cid,
+                "vendorId": v["id"],
+                "type": rng.choice(_ATLAS_CONTRACT_TYPES),
+                "currency": v["currency"],
+                "value": round(rng.uniform(10_000, 2_000_000), 2),
+                "termMonths": term_months,
+                "startDate": start,
+                "endDate": end,
+                "renewal": rng.choice(("auto", "manual")),
+                "status": "expiring" if expiring else rng.choice(("active", "active", "draft")),
+                "owner": _person(rng),
+            }
+    return contracts
+
+
 _BANK_ACCOUNT_PLAN = (
     ("US", "USD", "CurrentAccount", "Operating"),
     ("DE", "EUR", "CurrentAccount", "Operating"),

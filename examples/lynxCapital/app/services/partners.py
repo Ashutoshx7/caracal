@@ -143,8 +143,14 @@ _SPECS: dict[str, PartnerSpec] = {
          "list_service_accounts", "get_service_account")),
     "beacon-crm": PartnerSpec(
         "beacon-crm", "oauth_ac", 9410,
-        ("get_contact", "list_contacts", "update_deal", "log_activity", "get_account"),
-        scopes=("contacts.read", "deals.write"), offline_access=True),
+        ("list_contacts", "get_contact", "create_contact", "update_contact",
+         "list_accounts", "get_account",
+         "list_deals", "get_deal", "update_deal",
+         "list_activities", "log_activity",
+         "add_note", "list_notes", "list_relationships"),
+        scopes=("contacts.read", "accounts.read", "deals.read", "deals.write",
+                "activities.read", "activities.write"),
+        offline_access=True),
     "atlas-vendor": PartnerSpec(
         "atlas-vendor", "mcp_bearer", 9411,
         ("get_vendor_profile", "register_vendor", "get_contract_terms", "search_vendors"),
@@ -336,17 +342,42 @@ def _fetch_authorization_code_token(spec: PartnerSpec, sess: _Session) -> _OAuth
                        body.get("refresh_token"))
 
 
+def _refresh_authorization_code_token(spec: PartnerSpec, sess: _Session,
+                                      refresh_token: str) -> _OAuthToken | None:
+    """Exchange a stored refresh token for a fresh access token the way a real
+    offline integration does, rather than re-running interactive consent. The
+    provider rotates the refresh token on each use, so the new one is carried
+    forward; a rejected refresh token returns None to trigger re-authorization."""
+    eid = _env_id(spec.id)
+    client_id = _required(spec.id, f"LYNX_PARTNER_{eid}_CLIENT_ID")
+    client_secret = _required(spec.id, f"LYNX_PARTNER_{eid}_CLIENT_SECRET")
+    resp = sess.client.post("/oauth/token", data={
+        "grant_type": "refresh_token", "refresh_token": refresh_token,
+        "client_id": client_id, "client_secret": client_secret,
+    })
+    if resp.status_code != 200:
+        return None
+    body = resp.json()
+    return _OAuthToken(body["access_token"],
+                       time.time() + int(body.get("expires_in", 3600)) - 30,
+                       body.get("refresh_token", refresh_token))
+
+
 def _oauth_token(spec: PartnerSpec, sess: _Session) -> str:
     with sess.lock:
         token = sess.token
         if token is not None and token.expires_at > time.time():
             return token.access_token
         if spec.auth == "oauth_cc":
-            token = _fetch_client_credentials_token(spec, sess)
-        else:
-            token = _fetch_authorization_code_token(spec, sess)
-        sess.token = token
-        return token.access_token
+            sess.token = _fetch_client_credentials_token(spec, sess)
+            return sess.token.access_token
+        if spec.offline_access and token is not None and token.refresh_token:
+            refreshed = _refresh_authorization_code_token(spec, sess, token.refresh_token)
+            if refreshed is not None:
+                sess.token = refreshed
+                return refreshed.access_token
+        sess.token = _fetch_authorization_code_token(spec, sess)
+        return sess.token.access_token
 
 
 def _call_oauth(spec: PartnerSpec, operation: str, payload: dict) -> dict:
