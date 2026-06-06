@@ -79,7 +79,7 @@ docker compose -f _mock/docker-compose.yml down
 | Inkwell OCR | Invoice/document extraction | API key (query) | REST async-job + LLM | 9406 |
 | Aegis Screening | Sanctions/AML/KYB | Caracal mandate | REST + LLM | 9407 |
 | Verafin Monitor | Txn monitoring + filing | Caracal mandate (delegation) | REST async-job | 9408 |
-| Lumen Identity | Internal directory | none (internal) | REST | 9409 |
+| Lumen Identity | Internal directory & IAM | none (internal) | REST | 9409 |
 | Beacon CRM | Vendor/customer CRM | OAuth 2.0 auth code (refresh) | REST + webhooks | 9410 |
 | Atlas Vendor Network | Vendor master data | MCP (bearer) | MCP JSON-RPC | 9411 |
 | Keystone Treasury | Cash/forecast/hedge | API key (metadata) | gRPC-style | 9412 |

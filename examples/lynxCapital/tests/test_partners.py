@@ -141,6 +141,26 @@ def test_oauth_ac_offline_tallyhall_vendors(providerlab):
     assert res["status"] == 200 and "items" in res["data"]
 
 
+def test_oauth_ac_offline_refresh_reuses_refresh_token(providerlab, monkeypatch):
+    # Prime a session and capture its access + refresh token.
+    first = partners.call("beacon-crm", "list_contacts", {"pageSize": 1})
+    assert first["status"] == 200
+    sess = partners._SESSIONS["beacon-crm"]
+    old_access = sess.token.access_token
+    assert sess.token.refresh_token
+
+    # Expire the cached access token; re-consent must NOT be used.
+    sess.token.expires_at = 0.0
+
+    def _no_reconsent(spec, session):
+        raise AssertionError("offline integration must refresh, not re-run consent")
+
+    monkeypatch.setattr(partners, "_fetch_authorization_code_token", _no_reconsent)
+    again = partners.call("beacon-crm", "get_contact", {"contactId": "CONT-00001"})
+    assert again["status"] == 200
+    assert sess.token.access_token != old_access
+
+
 # --------------------------------------------------------------------------- #
 # none (internal) — distinct cases
 # --------------------------------------------------------------------------- #
