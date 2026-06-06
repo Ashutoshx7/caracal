@@ -846,11 +846,12 @@ func (c *Caracal) fire(hooks []LifecycleHook, ctx context.Context, cc CaracalCon
 
 // SpawnOptions overrides defaults for a single Spawn call.
 type SpawnOptions struct {
-	Kind       AgentKind
-	TTLSeconds int
-	ParentID   string
-	Metadata   map[string]any
-	TraceID    string
+	Kind         AgentKind
+	TTLSeconds   int
+	ParentID     string
+	Metadata     map[string]any
+	Capabilities []string
+	TraceID      string
 }
 
 // Spawn spawns an agent session and invokes fn with the bound context.
@@ -890,6 +891,7 @@ func (c *Caracal) Spawn(ctx context.Context, fn func(context.Context) error, opt
 		Kind:          kind,
 		TTLSeconds:    ttl,
 		Metadata:      o.Metadata,
+		Capabilities:  o.Capabilities,
 		TraceID:       o.TraceID,
 		OnAgentStart:  onStart,
 		OnAgentEnd:    onEnd,
@@ -925,6 +927,7 @@ type DelegateToSpawnOptions struct {
 	Kind                 AgentKind
 	TTLSeconds           int
 	Metadata             map[string]any
+	Capabilities         []string
 	TraceID              string
 }
 
@@ -966,6 +969,7 @@ func (c *Caracal) DelegateToSpawn(ctx context.Context, opts DelegateToSpawnOptio
 		Kind:                 kind,
 		TTLSeconds:           ttl,
 		Metadata:             opts.Metadata,
+		Capabilities:         opts.Capabilities,
 		TraceID:              opts.TraceID,
 		OnAgentStart:         onStart,
 		OnAgentEnd:           onEnd,

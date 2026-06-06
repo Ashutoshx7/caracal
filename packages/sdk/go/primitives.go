@@ -24,6 +24,7 @@ type SpawnInput struct {
 	Kind             AgentKind
 	TTLSeconds       int
 	Metadata         map[string]any
+	Capabilities     []string
 	TraceID          string
 	OnAgentStart     LifecycleHook
 	OnAgentEnd       LifecycleHook
@@ -50,6 +51,7 @@ func Spawn(ctx context.Context, opts SpawnInput, fn func(context.Context) error)
 		Kind:             kind,
 		TTLSeconds:       opts.TTLSeconds,
 		Metadata:         opts.Metadata,
+		Capabilities:     opts.Capabilities,
 	})
 	if err != nil {
 		return err
@@ -153,6 +155,7 @@ type DelegateToSpawnInput struct {
 	Kind                 AgentKind
 	TTLSeconds           int
 	Metadata             map[string]any
+	Capabilities         []string
 	TraceID              string
 	OnAgentStart         LifecycleHook
 	OnAgentEnd           LifecycleHook
@@ -180,6 +183,7 @@ func DelegateToSpawn(ctx context.Context, opts DelegateToSpawnInput, fn func(con
 		Kind:             kind,
 		TTLSeconds:       opts.TTLSeconds,
 		Metadata:         opts.Metadata,
+		Capabilities:     opts.Capabilities,
 	})
 	if err != nil {
 		return err

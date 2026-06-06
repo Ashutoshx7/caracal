@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // CoordinatorClient is the Caracal coordinator REST client.
@@ -47,6 +48,7 @@ type SpawnRequest struct {
 	Kind             AgentKind
 	TTLSeconds       int
 	Metadata         map[string]any
+	Capabilities     []string
 	IdempotencyKey   string
 }
 
@@ -133,6 +135,9 @@ func SpawnAgent(ctx context.Context, client *CoordinatorClient, bearer string, r
 	if req.Metadata != nil {
 		body["metadata"] = req.Metadata
 	}
+	if len(req.Capabilities) > 0 {
+		body["capabilities"] = req.Capabilities
+	}
 
 	extra := map[string]string{}
 	key := req.IdempotencyKey
@@ -155,7 +160,7 @@ func deriveIdempotencyKey(req SpawnRequest) string {
 	if req.SubjectSessionID == "" && req.ParentID == "" {
 		return ""
 	}
-	seed := req.ApplicationID + "|" + req.SubjectSessionID + "|" + req.ParentID + "|" + string(req.Kind)
+	seed := req.ApplicationID + "|" + req.SubjectSessionID + "|" + req.ParentID + "|" + string(req.Kind) + "|" + strings.Join(req.Capabilities, ",")
 	sum := sha256.Sum256([]byte(seed))
 	return hex.EncodeToString(sum[:])
 }
