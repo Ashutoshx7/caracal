@@ -185,6 +185,21 @@ def test_mcp_bearer_search_vendors(providerlab):
     assert res["status"] == 200 and "items" in res["data"]
 
 
+def test_mcp_compliance_and_onboarding(providerlab):
+    listed = partners.call("atlas-vendor", "list_vendors", {"status": "active", "pageSize": 5})
+    assert listed["status"] == 200 and listed["data"]["items"]
+    vid = listed["data"]["items"][0]["id"]
+    compliance = partners.call("atlas-vendor", "get_compliance_status", {"vendorId": vid})
+    assert compliance["status"] == 200 and "clearedToPay" in compliance["data"]
+    onboarding = partners.call("atlas-vendor", "get_onboarding_status", {"vendorId": vid})
+    assert "checklist" in onboarding["data"]["onboarding"]
+
+
+def test_mcp_tool_error_surfaces(providerlab):
+    res = partners.call("atlas-vendor", "get_vendor_profile", {"vendorId": "VEND-00000"})
+    assert res["data"] is None and "vendor_not_found" in res["error"]
+
+
 # --------------------------------------------------------------------------- #
 # sdk (api key over REST) — distinct cases
 # --------------------------------------------------------------------------- #

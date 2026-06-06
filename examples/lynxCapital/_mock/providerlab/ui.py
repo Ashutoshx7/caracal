@@ -156,6 +156,11 @@ def overview(provider: catalog.Provider) -> str:
         for k, v in seed.items() if not isinstance(v, (list, dict))
     )
     ops = "".join(f"<li><code>{_esc(o)}</code></li>" for o in provider.operations)
+    if provider.category == "mcp":
+        ops_hint = "Tools are invoked over JSON-RPC at <code>POST /mcp</code>."
+    else:
+        ops_hint = "Domain calls are served under <code>/api/&lt;operation&gt;</code>."
+    mcp_panel = _mcp_panel(provider)
     auth_summary = _auth_summary(provider)
     config = "".join(
         f"<tr><td>{_esc(label)}</td><td><code>{_esc(value)}</code></td></tr>"
@@ -181,9 +186,48 @@ def overview(provider: catalog.Provider) -> str:
 <div class="panel">
   <h2>Operations</h2>
   <ul>{ops}</ul>
-  <p class="muted">Domain calls are served under <code>/api/&lt;operation&gt;</code>.</p>
-</div>"""
+  <p class="muted">{ops_hint}</p>
+</div>{mcp_panel}"""
     return layout(provider, "home", body)
+
+
+def _mcp_panel(provider: catalog.Provider) -> str:
+    """Render the MCP tool catalog and resource list for an MCP provider."""
+    if provider.category != "mcp":
+        return ""
+    specs = base.TOOLSPECS.get(provider.id, {})
+    rows = []
+    for op in provider.operations:
+        spec = specs.get(op, {})
+        title = spec.get("title", op)
+        desc = spec.get("description", "")
+        ann = spec.get("annotations", {})
+        flags = []
+        if ann.get("readOnlyHint"):
+            flags.append("read-only")
+        if ann.get("destructiveHint"):
+            flags.append("destructive")
+        if ann.get("idempotentHint"):
+            flags.append("idempotent")
+        badge = f' <span class="badge">{" · ".join(flags)}</span>' if flags else ""
+        rows.append(f"<tr><td><code>{_esc(op)}</code></td><td>{_esc(title)}{badge}<br>"
+                    f'<span class="muted">{_esc(desc)}</span></td></tr>')
+    tools = (f'<div class="panel"><h2>MCP tools <span class="badge">{len(rows)}</span></h2>'
+             f"<table><tr><th>tool</th><th>description</th></tr>{''.join(rows)}</table>"
+             '<p class="muted">Discoverable via JSON-RPC <code>tools/list</code>; '
+             'invoked with <code>tools/call</code>.</p></div>')
+    resources = base.RESOURCES.get(provider.id, [])
+    if not resources:
+        return tools
+    res_rows = "".join(
+        f"<tr><td><code>{_esc(r['uri'])}</code></td><td>{_esc(r['name'])}<br>"
+        f'<span class="muted">{_esc(r["description"])}</span></td></tr>'
+        for r in resources)
+    res = (f'<div class="panel"><h2>MCP resources <span class="badge">{len(resources)}</span></h2>'
+           f"<table><tr><th>uri</th><th>resource</th></tr>{res_rows}</table>"
+           '<p class="muted">Discoverable via <code>resources/list</code>; '
+           'fetched with <code>resources/read</code>.</p></div>')
+    return tools + res
 
 
 def _credential_counts(store) -> tuple[int, int]:

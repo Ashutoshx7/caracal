@@ -165,10 +165,10 @@ def register_vendor(ctx: Ctx) -> dict:
     ctx.require("country")
     vendors = ctx.state.table("vendors")
     vid = f"VEND-{len(vendors) + 1:05d}"
-    checklist = [{"step": s, "label": l,
+    checklist = [{"step": s, "label": label,
                   "status": "completed" if s == "profile" else "pending",
                   "completedAt": _now() if s == "profile" else None}
-                 for s, l in zip(_ONBOARDING_STEPS, _STEP_LABELS)]
+                 for s, label in zip(_ONBOARDING_STEPS, _STEP_LABELS)]
     vendor = {
         "id": vid, "legalName": legal, "displayName": legal,
         "slug": legal.lower().replace(" ", "-"),
