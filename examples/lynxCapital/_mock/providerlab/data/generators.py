@@ -4032,3 +4032,341 @@ def sabre_dataset(seed: str) -> dict[str, dict]:
         "tax_codes": {row["taxCode"]: row for row in sabre_tax_codes()},
         "exemption_certificates": _sabre_exemption_certificates(seed),
     }
+
+
+# --------------------------------------------------------------------------- #
+# Vela Notify — transactional email + SMS notification platform
+# --------------------------------------------------------------------------- #
+_VELA_EMAIL_DOMAIN = "notifications.lynxcapital.test"
+_VELA_SMS_SENDER = "LYNXCAP"
+
+# Template catalogue. Each entry: alias, display name, channels, message stream,
+# category, subject (email), text body, html body, sms body, and the merge
+# variables the body interpolates. Bodies use Postmark/Handlebars {{var}} syntax.
+_VELA_TEMPLATE_DEFS: tuple[dict, ...] = (
+    {
+        "alias": "remittance_advice", "name": "Remittance Advice",
+        "channels": ("email",), "stream": "outbound-transactional", "category": "remittance",
+        "subject": "Remittance advice for payment {{reference}}",
+        "text": ("Hello {{vendorName}},\n\nA payment of {{currency}} {{amount}} has been "
+                 "remitted against reference {{reference}} on {{paymentDate}}.\n\n"
+                 "Thank you,\nLynxCapital Accounts Payable"),
+        "html": ("<p>Hello {{vendorName}},</p><p>A payment of <strong>{{currency}} {{amount}}"
+                 "</strong> has been remitted against reference <strong>{{reference}}</strong> "
+                 "on {{paymentDate}}.</p><p>Thank you,<br>LynxCapital Accounts Payable</p>"),
+        "sms": None,
+        "variables": ("vendorName", "amount", "currency", "reference", "paymentDate"),
+    },
+    {
+        "alias": "payment_confirmation", "name": "Payment Confirmation",
+        "channels": ("email", "sms"), "stream": "outbound-transactional", "category": "payment",
+        "subject": "Payment {{reference}} confirmed",
+        "text": ("Hi {{payeeName}},\n\nWe have confirmed your payment of {{currency}} {{amount}} "
+                 "(ref {{reference}}). No action is required.\n\nLynxCapital"),
+        "html": ("<p>Hi {{payeeName}},</p><p>We have confirmed your payment of "
+                 "<strong>{{currency}} {{amount}}</strong> (ref {{reference}}).</p>"),
+        "sms": "LynxCapital: payment of {{currency}} {{amount}} confirmed (ref {{reference}}).",
+        "variables": ("payeeName", "amount", "currency", "reference"),
+    },
+    {
+        "alias": "dunning_reminder", "name": "Dunning — Friendly Reminder",
+        "channels": ("email", "sms"), "stream": "outbound-transactional", "category": "dunning",
+        "subject": "Friendly reminder: invoice {{invoiceNumber}} is due {{dueDate}}",
+        "text": ("Hello {{customerName}},\n\nThis is a friendly reminder that invoice "
+                 "{{invoiceNumber}} for {{currency}} {{balance}} is due on {{dueDate}}. "
+                 "Please disregard if payment is already on its way.\n\nLynxCapital Collections"),
+        "html": ("<p>Hello {{customerName}},</p><p>Invoice <strong>{{invoiceNumber}}</strong> for "
+                 "<strong>{{currency}} {{balance}}</strong> is due on {{dueDate}}.</p>"),
+        "sms": "LynxCapital: invoice {{invoiceNumber}} ({{currency}} {{balance}}) is due {{dueDate}}.",
+        "variables": ("customerName", "invoiceNumber", "balance", "currency", "dueDate"),
+    },
+    {
+        "alias": "dunning_second_notice", "name": "Dunning — Second Notice",
+        "channels": ("email", "sms"), "stream": "outbound-transactional", "category": "dunning",
+        "subject": "Second notice: invoice {{invoiceNumber}} is past due",
+        "text": ("Hello {{customerName}},\n\nInvoice {{invoiceNumber}} for {{currency}} {{balance}} "
+                 "is now {{daysPastDue}} days past due. Please remit payment to avoid further "
+                 "action.\n\nLynxCapital Collections"),
+        "html": ("<p>Hello {{customerName}},</p><p>Invoice <strong>{{invoiceNumber}}</strong> is "
+                 "<strong>{{daysPastDue}} days past due</strong> ({{currency}} {{balance}}).</p>"),
+        "sms": "LynxCapital: invoice {{invoiceNumber}} is {{daysPastDue}} days past due. Please pay.",
+        "variables": ("customerName", "invoiceNumber", "balance", "currency", "daysPastDue"),
+    },
+    {
+        "alias": "dunning_final_notice", "name": "Dunning — Final Notice",
+        "channels": ("email", "sms"), "stream": "outbound-transactional", "category": "dunning",
+        "subject": "Final notice before collections: invoice {{invoiceNumber}}",
+        "text": ("Hello {{customerName}},\n\nThis is a final notice for invoice {{invoiceNumber}} "
+                 "({{currency}} {{balance}}). If payment is not received by {{graceDate}} the "
+                 "account will be referred to collections.\n\nLynxCapital Collections"),
+        "html": ("<p>Hello {{customerName}},</p><p><strong>Final notice</strong> for invoice "
+                 "{{invoiceNumber}} ({{currency}} {{balance}}). Pay by {{graceDate}}.</p>"),
+        "sms": "LynxCapital FINAL NOTICE: invoice {{invoiceNumber}} due by {{graceDate}} or it goes to collections.",
+        "variables": ("customerName", "invoiceNumber", "balance", "currency", "graceDate"),
+    },
+    {
+        "alias": "payout_dispatched", "name": "Payout Dispatched",
+        "channels": ("email",), "stream": "outbound-transactional", "category": "payout",
+        "subject": "Your payout {{payoutId}} is on its way",
+        "text": ("Hi {{recipientName}},\n\nA payout of {{currency}} {{amount}} ({{payoutId}}) has "
+                 "been dispatched and should arrive by {{arrivalDate}}.\n\nLynxCapital"),
+        "html": ("<p>Hi {{recipientName}},</p><p>Payout <strong>{{payoutId}}</strong> of "
+                 "{{currency}} {{amount}} is on its way (ETA {{arrivalDate}}).</p>"),
+        "sms": None,
+        "variables": ("recipientName", "amount", "currency", "payoutId", "arrivalDate"),
+    },
+    {
+        "alias": "statement_ready", "name": "Monthly Statement Ready",
+        "channels": ("email",), "stream": "broadcast", "category": "statement",
+        "subject": "Your {{period}} statement is ready",
+        "text": ("Hello {{customerName}},\n\nYour statement for {{period}} is now available in the "
+                 "portal.\n\nLynxCapital"),
+        "html": ("<p>Hello {{customerName}},</p><p>Your <strong>{{period}}</strong> statement is "
+                 "ready in the portal.</p>"),
+        "sms": None,
+        "variables": ("customerName", "period"),
+    },
+    {
+        "alias": "otp_verification", "name": "One-Time Passcode",
+        "channels": ("sms",), "stream": "outbound-transactional", "category": "verification",
+        "subject": None,
+        "text": None, "html": None,
+        "sms": "LynxCapital verification code: {{code}}. It expires in {{ttlMinutes}} minutes.",
+        "variables": ("code", "ttlMinutes"),
+    },
+)
+
+
+def _vela_id(rng: random.Random, prefix: str) -> str:
+    return f"{prefix}_{rng.getrandbits(48):012x}"
+
+
+def _vela_templates(seed: str) -> dict[str, dict]:
+    """Build the template catalogue keyed by alias, the way Postmark keys templates."""
+    out: dict[str, dict] = {}
+    for idx, spec in enumerate(_VELA_TEMPLATE_DEFS):
+        rng = _rng(seed, "vela-template", spec["alias"])
+        created = _instant(rng, 24, 90)
+        updated = _instant(rng, 91, 150)
+        out[spec["alias"]] = {
+            "templateId": _vela_id(rng, "tmpl"),
+            "alias": spec["alias"],
+            "name": spec["name"],
+            "channels": list(spec["channels"]),
+            "messageStream": spec["stream"],
+            "category": spec["category"],
+            "subject": spec["subject"],
+            "htmlBody": spec["html"],
+            "textBody": spec["text"],
+            "smsBody": spec["sms"],
+            "variables": list(spec["variables"]),
+            "active": True,
+            "version": rng.randint(1, 6),
+            "createdAt": created,
+            "updatedAt": updated,
+        }
+    return out
+
+
+def _vela_recipient(rng: random.Random, channel: str) -> tuple[str, str]:
+    """Return (display name, address) for the given channel."""
+    name = _person(rng)
+    if channel == "sms":
+        return name, _phone(rng, rng.choice(("US", "GB", "DE", "SG")))
+    first, last = name.lower().split(" ")
+    return name, f"{first}.{last}@{rng.choice(_ROOTS).lower()}.example"
+
+
+# Status plan per seeded message: (channel, template alias, terminal status, with_open).
+_VELA_MESSAGE_PLAN: tuple[tuple[str, str, str, bool], ...] = (
+    ("email", "remittance_advice", "delivered", True),
+    ("email", "remittance_advice", "delivered", False),
+    ("email", "payment_confirmation", "delivered", True),
+    ("email", "payout_dispatched", "delivered", False),
+    ("email", "statement_ready", "delivered", True),
+    ("email", "dunning_reminder", "delivered", False),
+    ("email", "dunning_second_notice", "delivered", True),
+    ("email", "dunning_final_notice", "bounced", False),
+    ("email", "dunning_reminder", "bounced", False),
+    ("email", "statement_ready", "spam", False),
+    ("email", "remittance_advice", "sent", False),
+    ("email", "payment_confirmation", "queued", False),
+    ("sms", "payment_confirmation", "delivered", False),
+    ("sms", "dunning_reminder", "delivered", False),
+    ("sms", "otp_verification", "delivered", False),
+    ("sms", "dunning_second_notice", "undelivered", False),
+    ("sms", "dunning_final_notice", "undelivered", False),
+    ("sms", "otp_verification", "sending", False),
+    ("sms", "payment_confirmation", "queued", False),
+)
+
+_VELA_BOUNCE_DETAIL = {
+    "type": "HardBounce", "code": 1,
+    "description": "The recipient's mail server permanently rejected the message.",
+}
+_VELA_SMS_ERRORS = {
+    "undelivered": (30003, "Unreachable destination handset"),
+}
+
+
+def _vela_messages(seed: str, templates: dict[str, dict]) -> tuple[dict[str, dict], dict[str, dict]]:
+    """Build seeded messages and their delivery-event timelines."""
+    messages: dict[str, dict] = {}
+    events: dict[str, dict] = {}
+
+    def add_event(rng, message, etype, base_dt, offset_s, detail=None):
+        eid = _vela_id(rng, "evt")
+        moment = base_dt + timedelta(seconds=offset_s)
+        events[eid] = {
+            "eventId": eid,
+            "messageId": message["messageId"],
+            "type": etype,
+            "channel": message["channel"],
+            "recipient": message["to"],
+            "occurredAt": moment.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "detail": detail or {},
+        }
+
+    for idx, (channel, alias, terminal, with_open) in enumerate(_VELA_MESSAGE_PLAN):
+        rng = _rng(seed, "vela-message", idx)
+        template = templates[alias]
+        display, address = _vela_recipient(rng, channel)
+        submitted = datetime.combine(
+            _EPOCH + timedelta(days=rng.randint(150, 178)), time.min, timezone.utc
+        ) + timedelta(seconds=rng.randint(0, 86_399))
+        message_id = _vela_id(rng, "msg")
+        sender = _VELA_SMS_SENDER if channel == "sms" else f"no-reply@{_VELA_EMAIL_DOMAIN}"
+        subject = template["subject"] if channel == "email" else None
+        message = {
+            "messageId": message_id,
+            "providerMessageId": _vela_id(rng, "carrier" if channel == "sms" else "esp"),
+            "channel": channel,
+            "messageStream": template["messageStream"],
+            "to": address,
+            "toName": display,
+            "from": sender,
+            "templateAlias": alias,
+            "subject": subject,
+            "tag": template["category"],
+            "status": terminal,
+            "metadata": {"campaign": template["category"]},
+            "errorCode": 0,
+            "error": None,
+            "bounce": None,
+            "submittedAt": submitted.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "updatedAt": None,
+        }
+
+        # Build the event timeline that produced the terminal status.
+        if channel == "email":
+            add_event(rng, message, "Sent", submitted, 2)
+            if terminal == "bounced":
+                add_event(rng, message, "Bounce", submitted, 6, dict(_VELA_BOUNCE_DETAIL))
+                message["bounce"] = dict(_VELA_BOUNCE_DETAIL)
+                message["errorCode"] = _VELA_BOUNCE_DETAIL["code"]
+                message["error"] = _VELA_BOUNCE_DETAIL["description"]
+            elif terminal == "spam":
+                add_event(rng, message, "Delivery", submitted, 5)
+                add_event(rng, message, "SpamComplaint", submitted, 3600,
+                          {"origin": "Recipient"})
+                message["status"] = "delivered"
+            elif terminal == "delivered":
+                add_event(rng, message, "Delivery", submitted, 5)
+                if with_open:
+                    add_event(rng, message, "Open", submitted, 900,
+                              {"client": rng.choice(("Gmail", "Outlook", "Apple Mail")),
+                               "os": rng.choice(("iOS", "Windows", "macOS"))})
+                    add_event(rng, message, "Click", submitted, 960,
+                              {"url": "https://portal.lynxcapital.test/payments"})
+            elif terminal == "sent":
+                pass  # in flight, no delivery confirmation yet
+            # queued -> no events beyond submission
+        else:  # sms
+            if message["status"] not in ("queued",):
+                add_event(rng, message, "sending", submitted, 1)
+            if terminal == "delivered":
+                add_event(rng, message, "sent", submitted, 3)
+                add_event(rng, message, "delivered", submitted, 8)
+            elif terminal == "undelivered":
+                code, reason = _VELA_SMS_ERRORS["undelivered"]
+                add_event(rng, message, "undelivered", submitted, 7,
+                          {"errorCode": code, "reason": reason})
+                message["errorCode"] = code
+                message["error"] = reason
+
+        messages[message_id] = message
+    return messages, events
+
+
+def _vela_suppressions(seed: str) -> dict[str, dict]:
+    """Recipients the platform will refuse to send to, mirroring Postmark/SendGrid
+    suppression lists fed by hard bounces, complaints, and unsubscribes."""
+    rows: dict[str, dict] = {}
+    plan = (
+        ("email", "HardBounce", "Recipient"),
+        ("email", "SpamComplaint", "Recipient"),
+        ("sms", "Unsubscribe", "Recipient"),
+    )
+    for idx, (channel, reason, origin) in enumerate(plan):
+        rng = _rng(seed, "vela-suppression", idx)
+        _, address = _vela_recipient(rng, channel)
+        key = f"{channel}:{address.lower()}"
+        rows[key] = {
+            "recipient": address,
+            "channel": channel,
+            "reason": reason,
+            "origin": origin,
+            "createdAt": _instant(rng, 120, 175),
+        }
+    return rows
+
+
+def _vela_webhooks(seed: str) -> dict[str, dict]:
+    """Registered webhook endpoints that receive delivery, bounce, and complaint
+    callbacks, with a short delivery-attempt history."""
+    out: dict[str, dict] = {}
+    plan = (
+        ("https://hooks.lynxcapital.test/vela/delivery",
+         ["Delivery", "Bounce", "SpamComplaint"], "outbound-transactional", True),
+        ("https://hooks.lynxcapital.test/vela/engagement",
+         ["Open", "Click"], "broadcast", True),
+    )
+    for idx, (url, evts, stream, enabled) in enumerate(plan):
+        rng = _rng(seed, "vela-webhook", idx)
+        hook_id = _vela_id(rng, "hook")
+        deliveries = []
+        for d in range(3):
+            ddt = _instant(rng, 160, 178)
+            status = 200 if d != 1 else 503
+            deliveries.append({
+                "attemptId": _vela_id(rng, "whk"),
+                "event": rng.choice(evts),
+                "responseStatus": status,
+                "succeeded": status == 200,
+                "occurredAt": ddt,
+            })
+        out[hook_id] = {
+            "webhookId": hook_id,
+            "url": url,
+            "messageStream": stream,
+            "events": evts,
+            "enabled": enabled,
+            "secret": f"whsec_{rng.getrandbits(80):020x}",
+            "createdAt": _instant(rng, 60, 120),
+            "deliveries": deliveries,
+        }
+    return out
+
+
+def vela_dataset(seed: str) -> dict[str, dict]:
+    """Seed Vela Notify with its template catalogue, a roll of messages spanning the
+    delivery lifecycle, their event timelines, a suppression list, and webhooks."""
+    templates = _vela_templates(seed)
+    messages, events = _vela_messages(seed, templates)
+    return {
+        "templates": templates,
+        "messages": messages,
+        "events": events,
+        "suppressions": _vela_suppressions(seed),
+        "webhooks": _vela_webhooks(seed),
+    }

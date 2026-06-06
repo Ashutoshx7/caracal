@@ -405,7 +405,7 @@ def _build_regional_domain_tools(run_id, runner, parent, region):
 
         Use for third-party services beyond the core flow: meridian-pay/quetzal-payouts/halcyon-bank
         (payments, payouts, open banking), inkwell-ocr (document extraction), slate-ledger (journals),
-        vela-notify (email/SMS), cordoba-fx (fx quotes/conversions/settlement payments), ironbark-erp/tallyhall-books (vendors/bills),
+        vela-notify (transactional email/SMS, templates, delivery tracking, suppressions, webhooks), cordoba-fx (fx quotes/conversions/settlement payments), ironbark-erp/tallyhall-books (vendors/bills),
         beacon-crm (CRM accounts/contacts/deal pipeline/activities), core-billing, lumen-identity (directory),
         atlas-vendor (vendor MDM/onboarding/verification/compliance/contracts over MCP),
         sabre-tax, pulse-market (market data), junction-procure (requisitions/POs/budgets).
@@ -854,6 +854,36 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id):
             _finish(w, {"customer_id": customer_id})
 
     @tool
+    def send_remittance_advice(vendor_id: str, amount: float, currency: str, reference: str) -> str:
+        """Email a vendor a remittance advice confirming a payment was sent."""
+        w = _worker("payments", f"remit:{reference}")
+        try:
+            return json.dumps(tool_fns.send_remittance_advice(
+                run_id, w.id, vendor_id, float(amount), currency, reference))
+        finally:
+            _finish(w, {"vendor_id": vendor_id, "reference": reference})
+
+    @tool
+    def send_payment_confirmation(payee_id: str, amount: float, currency: str,
+                                  reference: str, channel: str = "email") -> str:
+        """Notify a payee that their payment was confirmed, by email or SMS."""
+        w = _worker("payments", f"payconf:{reference}")
+        try:
+            return json.dumps(tool_fns.send_payment_confirmation(
+                run_id, w.id, payee_id, float(amount), currency, reference, channel))
+        finally:
+            _finish(w, {"payee_id": payee_id, "reference": reference})
+
+    @tool
+    def track_message_delivery(message_id: str) -> str:
+        """Check the delivery status and event timeline of a sent notification."""
+        w = _worker("receivables", f"track:{message_id}")
+        try:
+            return json.dumps(tool_fns.track_message_delivery(run_id, w.id, message_id))
+        finally:
+            _finish(w, {"message_id": message_id})
+
+    @tool
     def apply_customer_payment(invoice_id: str, amount: float) -> str:
         """Apply a received customer payment to an open invoice."""
         w = _worker("receivables", f"ar-apply:{invoice_id}")
@@ -1031,6 +1061,7 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id):
         aml_monitor_transaction, sanctions_screen_batch, prepare_regulatory_filing,
         submit_regulatory_filing, attest_control,
         issue_customer_invoice, send_dunning_notice, apply_customer_payment, get_ar_aging,
+        send_remittance_advice, send_payment_confirmation, track_message_delivery,
         get_department_budget, raise_requisition, approve_requisition, raise_purchase_order,
         get_supplier_contact, get_supplier_account, list_supplier_contacts,
         list_supplier_deals, advance_supplier_deal, log_supplier_activity,

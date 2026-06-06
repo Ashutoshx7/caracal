@@ -261,9 +261,14 @@ CATALOG: tuple[Provider, ...] = (
     Provider(
         id="vela-notify", brand="Vela Notify", category="bearer_token",
         protocol="rest", port=9415, industry="Messaging",
-        tagline="Transactional email and SMS for remittance and dunning",
-        resources=("messages", "templates"),
-        operations=("send_message", "get_message", "list_templates"),
+        tagline="Transactional email and SMS with templates, delivery tracking, suppressions, and webhooks",
+        resources=("messages", "templates", "events", "suppressions", "webhooks"),
+        operations=("send_message", "send_batch", "get_message", "list_messages",
+                    "get_message_events",
+                    "list_templates", "get_template", "create_template", "render_template",
+                    "list_suppressions", "create_suppression", "delete_suppression",
+                    "list_webhooks", "get_webhook", "create_webhook",
+                    "get_delivery_stats"),
         auth_header="X-Vela-Token", auth_scheme="Token",
     ),
     Provider(
