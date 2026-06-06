@@ -16,6 +16,7 @@ This FAQ collects high-friction questions that come up across the docs. Each ent
 | Model | [Does the open-source edition include managed multi-tenancy?](#faq-does-open-source-include-managed-multi-tenancy) |
 | Model | [What is the difference between an application, principal, and agent session?](#faq-application-principal-agent-session) |
 | Model | [When should I use a managed application versus DCR?](#faq-managed-application-versus-dcr) |
+| Model | [If many agents share one managed application, can policy and audit still tell them apart?](#faq-distinguish-agents-under-one-application) |
 | Resources | [What is the difference between a resource and a provider?](#faq-resource-versus-provider) |
 | Resources | [Why must the resource identifier stay stable if the upstream URL can change?](#faq-stable-resource-identifier) |
 | Resources | [How should I design scopes?](#faq-scope-design) |
@@ -81,6 +82,16 @@ Policy decisions consider all of them: which application is asking, which princi
 Use a managed application for durable software you intentionally operate: a backend service, Gateway application, orchestrator, or known agent runtime. Use DCR for spawned, high-churn, short-lived agent identities that need isolated credentials. Do not reuse one DCR application across multiple spawned agents.
 
 See [Identities and Applications](/concepts/principal/).
+
+<a id="faq-distinguish-agents-under-one-application"></a>
+
+### If many agents share one managed application, can policy and audit still tell them apart?
+
+Yes. The agent's identity in a decision is the agent session, not the application. Each token exchange carries the acting `agent_session_id`, `agent_kind`, and `capabilities`, plus the delegation edge and chain, alongside the `application_id`. Policy reads these as `input.principal.agent_session_id`, `input.principal.agent_kind`, and `input.principal.capabilities`, and audit metadata records the same fields with the parent and delegation context. Two agents under one managed application present different sessions, capabilities, and delegation paths, so they are fully distinguishable.
+
+A single managed application is therefore the right fit for one durable workload that runs many agents. Separate per-agent identity comes from spawning an agent session per agent with role-specific capabilities, not from creating an application per agent. Reach for a DCR application per agent only when a spawned agent needs an isolated, expiring credential of its own. What you gain from separate applications is credential isolation, not policy or audit distinguishability.
+
+See [Identities and Applications](/concepts/principal/) and [Model Your Application in Caracal](/guides/modeling-recipes/).
 
 ## Resources, Scopes, and Grants
 
