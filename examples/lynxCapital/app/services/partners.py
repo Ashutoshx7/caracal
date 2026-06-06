@@ -202,8 +202,12 @@ _SPECS: dict[str, PartnerSpec] = {
          "get_ar_aging", "get_ar_summary", "get_audit_trail")),
     "relay-automation": PartnerSpec(
         "relay-automation", "mandate", 9417,
-        ("list_workflows", "dispatch_job", "get_job", "cancel_job"),
-        scopes=("relay.invoke",)),
+        ("list_workflows", "get_workflow",
+         "start_execution", "get_execution", "list_executions",
+         "get_execution_logs", "get_execution_result",
+         "signal_execution", "retry_execution", "cancel_execution",
+         "list_queues", "get_queue", "get_execution_audit"),
+        scopes=("relay.workflows.read", "relay.executions.read", "relay.executions.write")),
     "pulse-market": PartnerSpec(
         "pulse-market", "api_key", 9418,
         ("list_instruments", "get_snapshot", "stream_rates"),
