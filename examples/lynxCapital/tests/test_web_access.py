@@ -19,21 +19,18 @@ def test_landing_is_lightweight_with_guided_onboarding():
     assert "Serious finance operations, safely simulated." in body
     assert "Continue Setup" in body
     assert "View Overview" in body
+    assert 'href="/overview/about"' in body
     assert "Operating model" in body
     assert "Operational coverage" in body
     assert "operation-line" in body
     assert "data-operation-detail" in body
     assert "Vendor Operations" in body
     assert "3-page overview" in body
-    assert "About Lynx Capital" in body
-    assert "Architecture & Providers" in body
-    assert "Demo Environment Notice" in body
-    assert "Proceed to Setup" in body
-    assert "I understand that this is a demonstration environment" in body
     assert "width: min(1360px" in body
-    assert "width: min(1020px" in body
     assert "@media (max-width: 1080px)" in body
     assert "@media (max-width: 760px)" in body
+    assert "modal-backdrop" not in body
+    assert "wizard-card" not in body
     assert "metric-row" not in body
     assert "value-card" not in body
     assert "coverage-item" not in body
@@ -44,13 +41,52 @@ def test_landing_is_lightweight_with_guided_onboarding():
     assert "Provider ecosystem" not in body
 
 
+def test_overview_pages_are_route_based_and_consistent():
+    pages = [
+        ("/overview/about", "About Lynx Capital", "/overview/architecture", "disabled-btn"),
+        ("/overview/architecture", "Architecture &amp; Providers", "/overview/notice", "/overview/about"),
+        ("/overview/notice", "Demo Environment Notice", "Proceed to Setup", "/overview/architecture"),
+    ]
+    with TestClient(app) as client:
+        for path, title, next_marker, previous_marker in pages:
+            response = client.get(path)
+            assert response.status_code == 200
+            body = response.text
+            assert title in body
+            assert next_marker in body
+            assert previous_marker in body
+            assert "overview-shell" in body
+            assert "modal-backdrop" not in body
+            assert "background: #111827" not in body
+            assert "gradient(" not in body
+            assert "box-shadow" not in body
+
+
+def test_notice_page_requires_acknowledgement_before_setup():
+    with TestClient(app) as client:
+        notice = client.get("/overview/notice")
+        assert notice.status_code == 200
+        body = notice.text
+        assert 'id="overview-ack"' in body
+        assert 'id="proceed-setup"' in body
+        assert "I understand that this is a demonstration environment" in body
+
+        blocked = client.get("/setup", follow_redirects=False)
+        assert blocked.status_code == 303
+        assert blocked.headers["location"] == "/overview/about"
+
+        client.post("/api/session/accept")
+        allowed = client.get("/setup", follow_redirects=False)
+        assert allowed.status_code == 200
+
+
 def test_protected_pages_redirect_without_acceptance_even_if_setup_cookie_exists():
     with TestClient(app) as client:
         client.cookies.set("lynx_setup", "1")
         for path in ("/setup", "/demo", "/prompts", "/logs"):
             response = client.get(path, follow_redirects=False)
             assert response.status_code == 303
-            assert response.headers["location"] == "/"
+            assert response.headers["location"] == "/overview/about"
 
 
 def test_setup_completion_requires_terms_acceptance():
@@ -64,11 +100,11 @@ def test_setup_completion_requires_terms_acceptance():
         assert allowed.json() == {"setup": True}
 
 
-def test_setup_requires_final_onboarding_acknowledgement():
+def test_setup_requires_final_overview_acknowledgement():
     with TestClient(app) as client:
         blocked = client.get("/setup", follow_redirects=False)
         assert blocked.status_code == 303
-        assert blocked.headers["location"] == "/"
+        assert blocked.headers["location"] == "/overview/about"
 
         client.post("/api/session/accept")
         allowed = client.get("/setup", follow_redirects=False)
