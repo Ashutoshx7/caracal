@@ -137,10 +137,10 @@ def test_setup_page_is_guided_and_provider_backed():
     assert "Automate Setup" in body
     assert "Automate setup" in body
     assert "Go to Caracal Console &gt; Zones &gt; New" in body
-    assert "<b>name</b> = <code>Lynx Capital</code>" in body
+    assert "<b>name</b> = <code>\"Lynx Capital\"</code>" in body
     assert "<b>dynamic clients</b> = <code>[x] enabled</code>" in body
     assert "Go to Control &gt; control key create" in body
-    assert "<b>name</b> = <code>Lynx Capital Bootstrap</code>" in body
+    assert "<b>name</b> = <code>\"Lynx Capital Bootstrap\"</code>" in body
     assert "<b>max token TTL</b> = <code>300</code>" in body
     assert "<b>expires in days</b> = <code>30</code>" in body
     assert "control:identity-provider:write" in body
@@ -153,11 +153,19 @@ def test_setup_page_is_guided_and_provider_backed():
     # Caracal configuration: zone, application, policy
     assert "Caracal configuration" in body
     assert "Enter the zone fields" in body
-    assert "Zone name field: Lynx Capital" in body
+    assert "field-name" in body
+    assert "field-value" in body
+    assert '<dt class="field-name">Name</dt>' in body
+    assert '<dd class="field-value">&#34;Lynx Capital&#34;</dd>' in body
+    assert '<dt class="field-name">Dynamic clients</dt>' in body
+    assert '<dd class="field-value">[x] enabled</dd>' in body
     assert "Enter the application fields" in body
-    assert "Application name field: Lynx Capital" in body
+    assert "Go to Applications &gt; New in the &#34;Lynx Capital&#34; zone" in body
+    assert '<dt class="field-name">Application ID</dt>' in body
     assert "Enter the policy fields" in body
-    assert "Policy name field: Lynx Capital baseline" in body
+    assert '<dd class="field-value">&#34;Lynx Capital baseline&#34;</dd>' in body
+    assert '<dt class="field-name">Target application</dt>' in body
+    assert '<dd class="field-value">&#34;Lynx Capital&#34;</dd>' in body
     assert "CARACAL_ZONE_ID=&lt;placeholder-zone-id&gt;" in body
     assert "CARACAL_APPLICATION_ID=&lt;placeholder-application-id&gt;" in body
     assert "CARACAL_APP_CLIENT_SECRET=&lt;placeholder-application-secret&gt;" in body

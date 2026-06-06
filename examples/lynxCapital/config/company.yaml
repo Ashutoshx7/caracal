@@ -451,7 +451,7 @@ prompts:
        - Treasury: get_cash_position, get_treasury_summary, forecast_liquidity, get_fx_exposure, place_fx_hedge, transfer_funds
        - Close: post_journal_entry, reconcile_account, compute_accrual, close_period
        - Compliance: aml_monitor_transaction, sanctions_screen_batch, prepare_regulatory_filing, attest_control
-       - Receivables: issue_customer_invoice, send_dunning_notice, apply_customer_payment, get_ar_aging
+       - Receivables: issue_customer_invoice, get_customer_account, list_customer_invoices, record_customer_payment, apply_customer_payment, send_dunning_notice, run_dunning_cycle, open_collection_case, write_off_invoice, get_ar_aging, get_ar_summary
        - Procurement: get_department_budget, raise_requisition, approve_requisition, raise_purchase_order
        - Supplier & identity: get_supplier_contact, log_supplier_activity, list_approver_groups
        - Shared: post_finding, read_findings, write_file, read_file, ls_files, record_audit

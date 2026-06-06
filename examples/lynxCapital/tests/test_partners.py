@@ -167,8 +167,19 @@ def test_oauth_ac_offline_refresh_reuses_refresh_token(providerlab, monkeypatch)
 def test_internal_billing_create_and_404(providerlab):
     aging = partners.call("core-billing", "get_ar_aging", {})
     assert aging["status"] == 200
+    assert set(aging["data"]["buckets"]) == {"current", "1-30", "31-60", "61-90", "90+"}
     missing = partners.call("core-billing", "get_invoice", {"invoiceId": "inv_does_not_exist"})
     assert missing["status"] == 404
+
+    summary = partners.call("core-billing", "get_ar_summary", {})
+    assert summary["status"] == 200
+    assert "daysSalesOutstanding" in summary["data"]
+
+    customer = partners.call("core-billing", "list_customers", {"pageSize": 1})["data"]["items"][0]
+    remit = partners.call("core-billing", "record_payment",
+                          {"customerId": customer["customerId"], "amount": 100})
+    assert remit["status"] == 200
+    assert remit["data"]["paymentId"].startswith("PMT-")
 
 
 def test_internal_identity_paging(providerlab):
