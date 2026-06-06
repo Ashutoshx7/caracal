@@ -63,7 +63,7 @@ A platform with many customer workspaces and one shared agent service must choos
 | Shared zone, resource per customer | Customers share a trust boundary and policy owner but target distinct upstreams or data sets. | Lower overhead; isolation is enforced by policy and grants, not by keys or audit separation. |
 | Shared zone, customer in policy input | Customer is a runtime attribute of the same resource, carried in the request and checked by policy. | Lowest overhead; relies entirely on policy correctness, so audit and keys are shared. |
 
-Decide on the strongest isolation a customer actually requires, then pick the least complex model that satisfies it. Do not encode customer identity into [scope names](/concepts/resource-grant/); keep it in the zone, principal, or policy input.
+Decide on the strongest isolation a customer actually requires, then pick the least complex model that satisfies it. Do not encode customer identity into [scope names](/concepts/resource-grant/); keep it in the zone, principal, or policy input. For the end-to-end pattern of serving many customers from one shared zone, see [Serve Your Own Customers](/guides/serve-customers/).
 
 ## High-Sensitivity Resources
 

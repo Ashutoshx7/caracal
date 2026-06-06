@@ -155,6 +155,7 @@ export default defineConfig({
               label: 'Plan the Integration',
               items: [
                 { label: 'Model Your Application in Caracal', link: '/guides/modeling-recipes/' },
+                { label: 'Serve Your Own Customers', link: '/guides/serve-customers/' },
                 { label: 'Define Resources and Providers', link: '/guides/resources-providers/' },
                 { label: 'Provider Recipes', link: '/guides/provider-recipes/' },
               ],
