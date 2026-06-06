@@ -103,6 +103,25 @@ def test_crm_activity_reachable(providerlab):
     assert _provider_of(res) == "beacon-crm"
 
 
+def test_crm_account_and_pipeline_reachable(providerlab):
+    contact = tool_fns.get_supplier_contact("r", "a", "CONT-00001")["data"]
+    account_id = contact["accountId"]
+
+    account = tool_fns.get_supplier_account("r", "a", account_id)
+    assert _provider_of(account) == "beacon-crm"
+    assert account["data"]["id"] == account_id
+
+    contacts = tool_fns.list_supplier_contacts("r", "a", account_id)
+    assert all(ct["accountId"] == account_id for ct in contacts["data"]["items"])
+
+    deals = tool_fns.list_supplier_deals("r", "a", account_id)
+    assert _provider_of(deals) == "beacon-crm"
+    assert all(d["status"] == "open" for d in deals["data"]["items"])
+
+    note = tool_fns.add_supplier_note("r", "a", "CONT-00001", "Reviewed payment terms.")
+    assert note["data"]["body"] == "Reviewed payment terms."
+
+
 # --------------------------------------------------------------------------- #
 # Tool-payload correctness fixes
 # --------------------------------------------------------------------------- #

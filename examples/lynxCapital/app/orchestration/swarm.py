@@ -406,7 +406,7 @@ def _build_regional_domain_tools(run_id, runner, parent, region):
         Use for third-party services beyond the core flow: meridian-pay/quetzal-payouts/halcyon-bank
         (payments, payouts, open banking), inkwell-ocr (document extraction), slate-ledger (journals),
         vela-notify (email/SMS), cordoba-fx (fx quotes/conversions/settlement payments), ironbark-erp/tallyhall-books (vendors/bills),
-        beacon-crm (contacts/deals), core-billing, lumen-identity (directory), atlas-vendor (vendor MDM),
+        beacon-crm (CRM accounts/contacts/deal pipeline/activities), core-billing, lumen-identity (directory), atlas-vendor (vendor MDM),
         sabre-tax, pulse-market (market data), junction-procure (requisitions/POs/budgets).
         relay-automation, aegis-screening, and verafin-monitor require a Caracal mandate and are
         gated until the Caracal SDK phase (calls return status 'pending_caracal_integration').
@@ -872,11 +872,56 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id):
             _finish(w, {"contact_id": contact_id})
 
     @tool
+    def get_supplier_account(account_id: str) -> str:
+        """Look up a supplier account (company) record in the CRM."""
+        w = _worker("vendor-lifecycle", f"crm-account:{account_id}")
+        try:
+            return json.dumps(tool_fns.get_supplier_account(run_id, w.id, account_id))
+        finally:
+            _finish(w, {"account_id": account_id})
+
+    @tool
+    def list_supplier_contacts(account_id: str) -> str:
+        """List the CRM contacts (buying committee) attached to a supplier account."""
+        w = _worker("vendor-lifecycle", f"crm-contacts:{account_id}")
+        try:
+            return json.dumps(tool_fns.list_supplier_contacts(run_id, w.id, account_id))
+        finally:
+            _finish(w, {"account_id": account_id})
+
+    @tool
+    def list_supplier_deals(account_id: str) -> str:
+        """List the open deals in the CRM pipeline for a supplier account."""
+        w = _worker("vendor-lifecycle", f"crm-deals:{account_id}")
+        try:
+            return json.dumps(tool_fns.list_supplier_deals(run_id, w.id, account_id))
+        finally:
+            _finish(w, {"account_id": account_id})
+
+    @tool
+    def advance_supplier_deal(deal_id: str, stage: str) -> str:
+        """Advance a CRM deal to a new pipeline stage (prospect, qualified, proposal, negotiation, won, lost)."""
+        w = _worker("vendor-lifecycle", f"crm-deal-stage:{deal_id}")
+        try:
+            return json.dumps(tool_fns.advance_supplier_deal(run_id, w.id, deal_id, stage))
+        finally:
+            _finish(w, {"deal_id": deal_id})
+
+    @tool
     def log_supplier_activity(contact_id: str, activity_type: str) -> str:
-        """Record a supplier interaction (call, email, note) against a CRM contact."""
+        """Record a supplier interaction (call, email, meeting, note, task) against a CRM contact."""
         w = _worker("vendor-lifecycle", f"crm-log:{contact_id}")
         try:
             return json.dumps(tool_fns.log_supplier_activity(run_id, w.id, contact_id, activity_type))
+        finally:
+            _finish(w, {"contact_id": contact_id})
+
+    @tool
+    def add_supplier_note(contact_id: str, body: str) -> str:
+        """Attach a free-text note to a CRM contact for the relationship record."""
+        w = _worker("vendor-lifecycle", f"crm-note:{contact_id}")
+        try:
+            return json.dumps(tool_fns.add_supplier_note(run_id, w.id, contact_id, body))
         finally:
             _finish(w, {"contact_id": contact_id})
 
@@ -935,7 +980,9 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id):
         submit_regulatory_filing, attest_control,
         issue_customer_invoice, send_dunning_notice, apply_customer_payment, get_ar_aging,
         get_department_budget, raise_requisition, approve_requisition, raise_purchase_order,
-        get_supplier_contact, log_supplier_activity, list_approver_groups,
+        get_supplier_contact, get_supplier_account, list_supplier_contacts,
+        list_supplier_deals, advance_supplier_deal, log_supplier_activity,
+        add_supplier_note, list_approver_groups,
         resolve_approver_chain, check_user_access,
         record_audit,
     ]
