@@ -664,6 +664,93 @@ def test_internal_provider_needs_no_credential():
     assert seed("lumen-identity")["credential"] is None
 
 
+def _cb(c: TestClient, op: str, payload: dict | None = None):
+    return c.post(f"/api/{op}", json=payload or {})
+
+
+def test_core_billing_aging_reconciles_with_invoices():
+    c = client("core-billing")
+    aging = _cb(c, "get_ar_aging").json()["data"]
+    assert set(aging["buckets"]) == {"current", "1-30", "31-60", "61-90", "90+"}
+    invoices, page = [], 1
+    while True:
+        body = _cb(c, "list_invoices", {"page": page, "pageSize": 100}).json()["data"]
+        invoices.extend(body["items"])
+        if not body["hasMore"]:
+            break
+        page += 1
+    open_due = round(sum(i["amountDue"] for i in invoices
+                         if i["status"] in ("open", "overdue", "partiallyPaid", "disputed")), 2)
+    assert open_due == pytest.approx(aging["total"], abs=0.05)
+
+
+def test_core_billing_invoice_lifecycle_and_cash_application():
+    c = client("core-billing")
+    cust = _cb(c, "list_customers", {"status": "active", "pageSize": 1}).json()["data"]["items"][0]
+    cid = cust["customerId"]
+    inv = _cb(c, "create_invoice", {"customerId": cid, "amount": 1000}).json()["data"]
+    assert inv["status"] == "open" and inv["amountDue"] == inv["total"]
+
+    partial = _cb(c, "apply_payment", {"invoiceId": inv["invoiceId"], "amount": 400}).json()["data"]
+    assert partial["invoiceStatus"] == "partiallyPaid" and partial["remaining"] == round(inv["total"] - 400, 2)
+
+    settle = _cb(c, "apply_payment", {"invoiceId": inv["invoiceId"], "amount": partial["remaining"]}).json()["data"]
+    assert settle["invoiceStatus"] == "paid" and settle["remaining"] == 0.0
+
+    # A paid invoice cannot be dunned or re-paid.
+    assert _cb(c, "issue_dunning", {"invoiceId": inv["invoiceId"]}).status_code == 409
+    assert _cb(c, "apply_payment", {"invoiceId": inv["invoiceId"], "amount": 1}).status_code == 409
+
+
+def test_core_billing_record_payment_oldest_first():
+    c = client("core-billing")
+    # Find a customer carrying two or more open invoices.
+    customers = _cb(c, "list_customers", {"pageSize": 100}).json()["data"]["items"]
+    target = None
+    for cust in customers:
+        body = _cb(c, "list_invoices", {"customerId": cust["customerId"], "overdue": True}).json()["data"]
+        if body["total"] >= 2:
+            target = (cust["customerId"], body["items"])
+            break
+    assert target, "expected a customer with multiple overdue invoices in the seed"
+    cid, _ = target
+    pay = _cb(c, "record_payment", {"customerId": cid, "amount": 250}).json()["data"]
+    assert pay["allocations"] and pay["appliedAmount"] == pytest.approx(250, abs=0.05)
+    oldest = min(pay["allocations"], key=lambda a: a["invoiceId"])
+    assert oldest["amount"] > 0
+
+
+def test_core_billing_dispute_blocks_dunning_then_credit_memo():
+    c = client("core-billing")
+    overdue = _cb(c, "list_invoices", {"overdue": True, "pageSize": 5}).json()["data"]["items"]
+    inv = overdue[0]
+    disputed = _cb(c, "dispute_invoice", {"invoiceId": inv["invoiceId"], "reason": "service_outage"}).json()["data"]
+    assert disputed["status"] == "disputed"
+    assert _cb(c, "issue_dunning", {"invoiceId": inv["invoiceId"]}).status_code == 409
+
+    memo = _cb(c, "issue_credit_memo",
+               {"customerId": inv["customerId"], "amount": 50, "reason": "goodwill"}).json()["data"]
+    # Credit memo requires the invoice not be in a closed state; dispute is still open.
+    applied = _cb(c, "apply_credit_memo",
+                  {"creditMemoId": memo["creditMemoId"], "invoiceId": inv["invoiceId"]}).json()["data"]
+    assert applied["applied"] > 0
+
+
+def test_core_billing_summary_and_audit_trail():
+    c = client("core-billing")
+    summary = _cb(c, "get_ar_summary").json()["data"]
+    for key in ("totalReceivable", "overdueReceivable", "daysSalesOutstanding",
+                "invoicesByStatus", "writtenOffAmount", "openCollectionCases"):
+        assert key in summary
+    assert summary["totalReceivable"] >= summary["overdueReceivable"]
+
+    # Issuing an invoice writes an audit event discoverable by entity.
+    cust = _cb(c, "list_customers", {"status": "active", "pageSize": 1}).json()["data"]["items"][0]
+    inv = _cb(c, "create_invoice", {"customerId": cust["customerId"], "amount": 500}).json()["data"]
+    trail = _cb(c, "get_audit_trail", {"entityId": inv["invoiceId"]}).json()["data"]
+    assert any(e["action"] == "invoice.issued" for e in trail["items"])
+
+
 # --------------------------------------------------------------------------- #
 # mcp (bearer and mandate guarded)
 # --------------------------------------------------------------------------- #

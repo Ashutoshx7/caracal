@@ -192,7 +192,14 @@ _SPECS: dict[str, PartnerSpec] = {
         auth_header="X-Vela-Token", auth_scheme="Token"),
     "core-billing": PartnerSpec(
         "core-billing", "none", 9416,
-        ("create_invoice", "get_invoice", "issue_dunning", "apply_payment", "get_ar_aging")),
+        ("list_customers", "get_customer",
+         "create_invoice", "get_invoice", "list_invoices",
+         "void_invoice", "write_off_invoice", "dispute_invoice",
+         "apply_payment", "record_payment", "get_payment", "list_payments",
+         "issue_credit_memo", "apply_credit_memo",
+         "issue_dunning", "run_dunning_cycle", "list_dunning",
+         "open_collection_case", "list_collections",
+         "get_ar_aging", "get_ar_summary", "get_audit_trail")),
     "relay-automation": PartnerSpec(
         "relay-automation", "mandate", 9417,
         ("list_workflows", "dispatch_job", "get_job", "cancel_job"),
