@@ -2,7 +2,7 @@
 Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 Caracal, a product of Garudex Labs
 
-Setup catalog helpers for provider credential requirements and local provider links.
+Setup catalog helpers for Caracal resource requirements and local provider links.
 """
 from __future__ import annotations
 
@@ -21,14 +21,6 @@ AUTH_LABELS = {
     "mandate": "Caracal mandate",
 }
 
-AUTH_ENV_KEYS = {
-    "api_key": ("API_KEY",),
-    "bearer": ("TOKEN",),
-    "mcp_bearer": ("TOKEN",),
-    "oauth_cc": ("CLIENT_ID", "CLIENT_SECRET"),
-    "oauth_ac": ("CLIENT_ID", "CLIENT_SECRET"),
-}
-
 
 def env_id(provider_id: str) -> str:
     return provider_id.upper().replace("-", "_")
@@ -38,31 +30,34 @@ def base_url(spec: partners.PartnerSpec) -> str:
     return os.environ.get(f"LYNX_PARTNER_{env_id(spec.id)}_URL", f"http://127.0.0.1:{spec.port}").rstrip("/")
 
 
-def credential_vars(spec: partners.PartnerSpec) -> list[str]:
-    return [f"LYNX_PARTNER_{env_id(spec.id)}_{key}" for key in AUTH_ENV_KEYS.get(spec.auth, ())]
+def resource_bindings() -> dict[str, str]:
+    bindings: dict[str, str] = {}
+    for item in os.environ.get("CARACAL_RESOURCES", "").split(","):
+        resource_id, separator, url = item.strip().partition("=")
+        if separator and resource_id and url:
+            bindings[resource_id.strip()] = url.strip()
+    return bindings
 
 
 def provider_entries(config_providers: list[Any]) -> list[dict[str, object]]:
     provider_config = {provider.id: provider for provider in config_providers}
     entries: list[dict[str, object]] = []
-    caracal_enabled = bool(os.environ.get("CARACAL_ZONE_ID") and os.environ.get("CARACAL_APPLICATION_ID"))
+    resources = resource_bindings()
     for spec in partners.catalog().values():
         provider = provider_config.get(spec.id)
-        variables = credential_vars(spec)
-        missing = [name for name in variables if not os.environ.get(name)]
         url = base_url(spec)
         if spec.auth == "none":
-            status = "Ready"
-            credentials = "No credential required"
+            status = "Internal Resource"
+            credentials = "Verified in process by Caracal"
         elif spec.auth == "mandate":
-            status = "Caracal Configured" if caracal_enabled else "Requires Caracal"
-            credentials = "Caracal-issued mandate"
-        elif not missing:
-            status = "Credentials Added"
-            credentials = ", ".join(variables)
+            status = "Mandate Resource" if spec.id in resources else "Unmapped"
+            credentials = resources.get(spec.id, "Add to CARACAL_RESOURCES")
+        elif spec.id in resources:
+            status = "Mapped"
+            credentials = resources[spec.id]
         else:
-            status = "Not Configured"
-            credentials = ", ".join(variables)
+            status = "Unmapped"
+            credentials = "Add to CARACAL_RESOURCES"
         entries.append({
             "id": spec.id,
             "name": provider.name if provider else spec.id.replace("-", " ").title(),
@@ -72,12 +67,9 @@ def provider_entries(config_providers: list[Any]) -> list[dict[str, object]]:
             "protocol": (provider.protocol if provider else "http").upper(),
             "purpose": ", ".join(operation.replace("_", " ") for operation in spec.operations[:3]),
             "credentials": credentials,
-            "variables": variables,
-            "missing": missing,
-            "dashboardUrl": url,
-            "credentialUrl": f"{url}/__lab/clients" if spec.auth.startswith("oauth") else f"{url}/__lab/credentials",
-            "documentationUrl": f"{url}/__lab/resources",
-            "apiClientUrl": f"{url}/__lab/api-clients",
+            "variables": [],
+            "missing": [] if status != "Unmapped" else [spec.id],
+            "upstreamUrl": url,
             "status": status,
         })
     return entries

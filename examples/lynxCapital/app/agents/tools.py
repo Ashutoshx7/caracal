@@ -561,9 +561,42 @@ def issue_customer_invoice(run_id: str, agent_id: str, customer_id: str, amount:
                 {"customerId": customer_id, "amount": amount})
 
 
+_DUNNING_TEMPLATES = {1: "dunning_reminder", 2: "dunning_second_notice", 3: "dunning_final_notice"}
+
+
+def _notify_recipient(party_id: str) -> str:
+    return f"{party_id.strip().lower().replace(' ', '.')}@accounts.lynxcapital.test"
+
+
 def send_dunning_notice(run_id: str, agent_id: str, customer_id: str, stage: int) -> dict[str, object]:
+    template = _DUNNING_TEMPLATES.get(int(stage), "dunning_final_notice")
     return _run(run_id, agent_id, "send_dunning_notice", "vela-notify", "send_message",
-                {"channel": "email", "to": customer_id, "template": "dunning_reminder"})
+                {"channel": "email", "to": _notify_recipient(customer_id), "template": template,
+                 "tag": "dunning", "metadata": {"customerId": customer_id, "stage": int(stage)}})
+
+
+def send_remittance_advice(run_id: str, agent_id: str, vendor_id: str, amount: float,
+                           currency: str, reference: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "send_remittance_advice", "vela-notify", "send_message",
+                {"channel": "email", "to": _notify_recipient(vendor_id), "template": "remittance_advice",
+                 "tag": "remittance",
+                 "metadata": {"vendorId": vendor_id, "amount": amount, "currency": currency,
+                              "reference": reference}})
+
+
+def send_payment_confirmation(run_id: str, agent_id: str, payee_id: str, amount: float,
+                              currency: str, reference: str, channel: str = "email") -> dict[str, object]:
+    recipient = _notify_recipient(payee_id) if channel == "email" else "+1 415 555 0100"
+    return _run(run_id, agent_id, "send_payment_confirmation", "vela-notify", "send_message",
+                {"channel": channel, "to": recipient, "template": "payment_confirmation",
+                 "tag": "payment",
+                 "metadata": {"payeeId": payee_id, "amount": amount, "currency": currency,
+                              "reference": reference}})
+
+
+def track_message_delivery(run_id: str, agent_id: str, message_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "track_message_delivery", "vela-notify", "get_message_events",
+                {"messageId": message_id})
 
 
 def apply_customer_payment(run_id: str, agent_id: str, invoice_id: str, amount: float) -> dict[str, object]:
@@ -755,6 +788,9 @@ TOOLS: dict[str, Callable] = {
     "attest_control": attest_control,
     "issue_customer_invoice": issue_customer_invoice,
     "send_dunning_notice": send_dunning_notice,
+    "send_remittance_advice": send_remittance_advice,
+    "send_payment_confirmation": send_payment_confirmation,
+    "track_message_delivery": track_message_delivery,
     "apply_customer_payment": apply_customer_payment,
     "get_ar_aging": get_ar_aging,
     "create_requisition": create_requisition,
