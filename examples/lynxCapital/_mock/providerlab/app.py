@@ -157,13 +157,11 @@ def build_app(provider: catalog.Provider) -> FastAPI:
             def run_tool(name: str, arguments: dict) -> dict:
                 return domain.dispatch(provider, state, name, arguments, principal)
 
-            try:
-                response = mcp.handle(provider, message, principal, run_tool)
-            except domain.DomainError as exc:
-                response = {"jsonrpc": "2.0", "id": message.get("id"),
-                            "error": {"code": exc.status, "message": f"{exc.code}: {exc.message}"}}
+            response = mcp.handle(provider, message, principal, run_tool)
             activity.record(str(principal.get("principal")), principal.get("auth"),
                            message.get("method", "mcp"), 200)
+            if response is None:
+                return Response(status_code=202)
             return JSONResponse(response)
 
     # ---------- streaming surface (SSE) ----------
