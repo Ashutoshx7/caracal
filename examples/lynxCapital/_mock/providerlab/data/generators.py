@@ -1565,6 +1565,351 @@ def ironbark_dataset(seed: str) -> dict[str, dict]:
 
 
 # --------------------------------------------------------------------------- #
+# Junction Procurement — procure-to-pay, modeled on Coupa, SAP Ariba, and Ivalua.
+# Suppliers, UNSPSC commodities, cost-center budgets with commitment accounting,
+# requisitions with amount-tiered approval chains, and purchase orders that flow
+# into goods receipts. Wire fields are camelCase the way Coupa and Ariba expose.
+# --------------------------------------------------------------------------- #
+_JUNCTION_COST_CENTERS = (
+    ("CC-1001", "Engineering", "engineering", 1_850_000.0),
+    ("CC-1002", "Operations", "operations", 1_240_000.0),
+    ("CC-1003", "Marketing", "marketing", 760_000.0),
+    ("CC-1004", "Finance", "finance", 540_000.0),
+    ("CC-1005", "Facilities", "facilities", 980_000.0),
+    ("CC-1006", "Information Technology", "it", 1_420_000.0),
+    ("CC-1007", "Legal", "legal", 430_000.0),
+)
+_JUNCTION_COMMODITIES = (
+    ("43211500", "Desktop and laptop computers", "Information Technology Hardware"),
+    ("43211900", "Computer displays", "Information Technology Hardware"),
+    ("43233200", "Software application licenses", "Software"),
+    ("81161800", "Cloud infrastructure services", "Information Technology Services"),
+    ("81111800", "Software engineering services", "Professional Services"),
+    ("80101600", "Management consulting", "Professional Services"),
+    ("44120000", "Office supplies", "Office and Administrative"),
+    ("72101500", "Facilities maintenance", "Facilities"),
+    ("78101800", "Inbound freight and logistics", "Logistics"),
+    ("92121700", "Security guard services", "Security Services"),
+    ("83111600", "Telecommunications services", "Telecommunications"),
+    ("82101500", "Advertising and marketing services", "Marketing"),
+)
+_JUNCTION_UOM = ("each", "license", "seat", "hour", "month", "case", "unit")
+_JUNCTION_SHIP_TO = (
+    {"name": "LynxCapital HQ", "addr1": "500 Congress Ave", "city": "Austin",
+     "region": "TX", "postalCode": "78701", "country": "US"},
+    {"name": "LynxCapital EMEA", "addr1": "20 Finsbury Circus", "city": "London",
+     "region": "", "postalCode": "EC2M 7EA", "country": "GB"},
+    {"name": "LynxCapital APAC", "addr1": "8 Marina Boulevard", "city": "Singapore",
+     "region": "", "postalCode": "018981", "country": "SG"},
+)
+_JUNCTION_FINANCE_PARTNER = {"id": "EMP-2201", "name": "Priya Okafor"}
+_JUNCTION_CFO = {"id": "EMP-1000", "name": "Marco Bianchi"}
+_JUNCTION_REQ_STATUS = ("draft", "pending_approval", "approved", "ordered", "rejected")
+
+
+def junction_required_approval_steps(total: float) -> int:
+    """Coupa-style approval matrix: more signatures as spend climbs through tiers."""
+    if total < 2_500.0:
+        return 0
+    if total < 25_000.0:
+        return 1
+    if total < 100_000.0:
+        return 2
+    return 3
+
+
+def _junction_approval_chain(manager: dict, steps: int) -> list[dict]:
+    roles = (("Cost Center Manager", manager),
+             ("Finance Business Partner", _JUNCTION_FINANCE_PARTNER),
+             ("Chief Financial Officer", _JUNCTION_CFO))
+    return [{"step": i + 1, "role": role, "approverId": person["id"],
+             "approverName": person["name"], "status": "pending",
+             "decidedAt": None, "comment": None}
+            for i, (role, person) in enumerate(roles[:steps])]
+
+
+def _junction_supplier(seed: str, i: int) -> dict:
+    rng = _rng(seed, "jp_supplier", i)
+    name = _company(rng)
+    country, currency = rng.choice(_COUNTRIES)
+    commodity = rng.choice(_JUNCTION_COMMODITIES)
+    status = rng.choices(("active", "active", "active", "pending_onboarding", "on_hold", "inactive"),
+                         weights=(58, 0, 0, 18, 14, 10))[0]
+    contact = _person(rng)
+    handle = _slug(name).split("-")[0]
+    return {
+        "supplierId": f"SUP-{100000 + i}",
+        "displayName": name,
+        "legalName": f"{name} {_LEGAL_SUFFIX.get(country, 'Ltd.')}",
+        "status": status,
+        "category": commodity[2],
+        "commodityCode": commodity[0],
+        "taxId": f"{country}{rng.randint(10 ** 8, 10 ** 9 - 1)}",
+        "currency": currency,
+        "paymentTerms": rng.choice(_TERMS),
+        "preferred": rng.random() < 0.35 and status == "active",
+        "riskRating": rng.choices(("low", "medium", "high"), weights=(64, 28, 8))[0],
+        "diversityCertified": rng.random() < 0.22,
+        "primaryContact": {
+            "name": contact,
+            "email": f"{contact.split()[0].lower()}.{contact.split()[1].lower()}@{handle}.example",
+            "phone": _phone(rng, country),
+        },
+        "remitToAddress": {
+            "addr1": f"{rng.randint(10, 9999)} {rng.choice(_ROOTS)} {rng.choice(('Ave', 'St', 'Blvd', 'Way'))}",
+            "city": _CITY_BY_COUNTRY.get(country, "Austin"),
+            "postalCode": f"{rng.randint(10000, 99999)}",
+            "country": country,
+        },
+        "onboardedDate": _instant(rng, -900, -45),
+    }
+
+
+def _junction_req_lines(rng: random.Random, currency: str,
+                        suppliers: list[dict]) -> tuple[list[dict], float]:
+    lines, subtotal = [], 0.0
+    for n in range(1, rng.randint(1, 4) + 1):
+        commodity = rng.choice(_JUNCTION_COMMODITIES)
+        supplier = rng.choice(suppliers) if suppliers and rng.random() < 0.8 else None
+        quantity = rng.randint(1, 25)
+        unit_price = round(rng.uniform(35, 3_500), 2)
+        line_total = round(quantity * unit_price, 2)
+        subtotal += line_total
+        lines.append({
+            "lineNumber": n,
+            "description": commodity[1],
+            "commodityCode": commodity[0],
+            "quantity": quantity,
+            "unitOfMeasure": rng.choice(_JUNCTION_UOM),
+            "unitPrice": unit_price,
+            "lineTotal": line_total,
+            "currency": currency,
+            "supplierId": supplier["supplierId"] if supplier else None,
+            "glAccount": rng.choice(("6100", "6200", "6300", "1500", "5000")),
+            "quantityReceived": 0,
+        })
+    return lines, round(subtotal, 2)
+
+
+def _junction_requisition(seed: str, idx: int, cost_center: dict,
+                          suppliers: list[dict], status: str) -> dict:
+    rng = _rng(seed, "jp_req", idx)
+    currency = "USD"
+    lines, subtotal = _junction_req_lines(rng, currency, suppliers)
+    tax = round(subtotal * 0.0, 2)
+    total = round(subtotal + tax, 2)
+    steps = junction_required_approval_steps(total)
+    chain = _junction_approval_chain(cost_center["manager"], steps)
+    requester = {"id": f"EMP-{rng.randint(1100, 1900)}", "name": _person(rng)}
+    created = _instant(rng, -180, -3)
+    approval_status = "not_required" if steps == 0 else "pending"
+    submitted_at = None if status == "draft" else created
+
+    if status in ("approved", "ordered"):
+        for step in chain:
+            step["status"] = "approved"
+            step["decidedAt"] = created
+            step["comment"] = "Within policy."
+        approval_status = "approved"
+    elif status == "rejected":
+        if chain:
+            chain[0]["status"] = "rejected"
+            chain[0]["decidedAt"] = created
+            chain[0]["comment"] = "Budget deferred to next quarter."
+        approval_status = "rejected"
+    elif status == "pending_approval" and len(chain) > 1 and rng.random() < 0.5:
+        chain[0]["status"] = "approved"
+        chain[0]["decidedAt"] = created
+        chain[0]["comment"] = "Endorsed."
+
+    if steps == 0 and status in ("pending_approval",):
+        status = "approved"
+        approval_status = "approved"
+
+    return {
+        "requisitionId": f"REQ-{200000 + idx}",
+        "requisitionNumber": f"REQ-2026-{idx:06d}",
+        "title": lines[0]["description"] if lines else "Purchase requisition",
+        "status": status,
+        "department": cost_center["department"],
+        "costCenter": cost_center["costCenter"],
+        "requestedBy": requester,
+        "currency": currency,
+        "justification": rng.choice((
+            "Approved headcount tooling refresh.",
+            "Renewal of an existing service contract.",
+            "Capacity expansion for the current quarter.",
+            "Replacement of end-of-life equipment.",
+            "New project spend approved in planning.",
+        )),
+        "neededByDate": _day(rng, 5, 75),
+        "shipTo": rng.choice(_JUNCTION_SHIP_TO),
+        "lines": lines,
+        "subtotal": subtotal,
+        "estimatedTax": tax,
+        "total": total,
+        "amount": total,
+        "approval": {"required": steps > 0, "status": approval_status,
+                     "policyTier": steps, "chain": chain},
+        "purchaseOrderId": None,
+        "createdAt": created,
+        "updatedAt": created,
+        "submittedAt": submitted_at,
+    }
+
+
+def _junction_purchase_order(seed: str, idx: int, req: dict,
+                             suppliers_by_id: dict) -> dict:
+    rng = _rng(seed, "jp_po", idx)
+    supplier = None
+    for line in req["lines"]:
+        if line.get("supplierId") and line["supplierId"] in suppliers_by_id:
+            supplier = suppliers_by_id[line["supplierId"]]
+            break
+    if supplier is None:
+        supplier = suppliers_by_id[next(iter(suppliers_by_id))]
+    issued = req["createdAt"]
+    received = rng.random() < 0.45
+    po_status = "received" if received else rng.choice(("issued", "acknowledged", "issued"))
+    lines = []
+    for line in req["lines"]:
+        qty_received = line["quantity"] if received else 0
+        lines.append({
+            "lineNumber": line["lineNumber"],
+            "description": line["description"],
+            "commodityCode": line["commodityCode"],
+            "quantity": line["quantity"],
+            "quantityReceived": qty_received,
+            "unitOfMeasure": line["unitOfMeasure"],
+            "unitPrice": line["unitPrice"],
+            "lineTotal": line["lineTotal"],
+            "glAccount": line["glAccount"],
+        })
+    return {
+        "poId": f"PO-{300000 + idx}",
+        "poNumber": f"PO-2026-{idx:06d}",
+        "requisitionId": req["requisitionId"],
+        "supplierId": supplier["supplierId"],
+        "supplierName": supplier["displayName"],
+        "status": po_status,
+        "costCenter": req["costCenter"],
+        "department": req["department"],
+        "currency": req["currency"],
+        "buyer": {"id": "EMP-2300", "name": "Lena Novak"},
+        "paymentTerms": supplier["paymentTerms"],
+        "shipTo": req["shipTo"],
+        "lines": lines,
+        "subtotal": req["subtotal"],
+        "tax": req["estimatedTax"],
+        "total": req["total"],
+        "amount": req["total"],
+        "issuedAt": issued,
+        "acknowledgedAt": issued if po_status in ("acknowledged", "received") else None,
+        "expectedDeliveryDate": req["neededByDate"],
+        "receipts": ([{
+            "receiptId": f"GRN-{400000 + idx}",
+            "receiptNumber": f"GRN-2026-{idx:06d}",
+            "receivedBy": {"id": "EMP-2400", "name": "Hassan Haddad"},
+            "receivedAt": _day(rng, -20, -1),
+            "lines": [{"lineNumber": l["lineNumber"], "quantityReceived": l["quantity"]}
+                      for l in lines],
+            "status": "received",
+        }] if received else []),
+    }
+
+
+def junction_dataset(seed: str) -> dict[str, dict]:
+    """Build a coherent procure-to-pay back office: a supplier master, a commodity
+    catalog, cost-center budgets, a requisition backlog whose approval chains and
+    statuses are tier-consistent, and the purchase orders and goods receipts those
+    requisitions flow into — with budget commitment and spend rolled up the way a
+    procurement ledger keeps them."""
+    suppliers = {s["supplierId"]: s for s in (_junction_supplier(seed, i) for i in range(1, 41))}
+    supplier_list = list(suppliers.values())
+
+    commodities = {c[0]: {"commodityCode": c[0], "name": c[1], "category": c[2]}
+                   for c in _JUNCTION_COMMODITIES}
+
+    cost_centers: dict[str, dict] = {}
+    for code, name, dept, budget in _JUNCTION_COST_CENTERS:
+        rng = _rng(seed, "jp_cc", code)
+        cost_centers[dept] = {
+            "costCenter": code,
+            "name": name,
+            "department": dept,
+            "manager": {"id": f"EMP-{rng.randint(1000, 1099)}", "name": _person(rng)},
+            "fiscalYear": "FY2026",
+            "currency": "USD",
+            "budgetAmount": budget,
+            "committedAmount": 0.0,
+            "spentAmount": 0.0,
+            "availableAmount": budget,
+            "softLimitPct": 0.90,
+            "hardLimitPct": 1.0,
+            "status": "open",
+        }
+
+    dept_keys = [cc["department"] for cc in cost_centers.values()]
+    requisitions: dict[str, dict] = {}
+    for idx in range(1, 33):
+        rng = _rng(seed, "jp_req_pick", idx)
+        dept = rng.choice(dept_keys)
+        status = rng.choices(_JUNCTION_REQ_STATUS, weights=(10, 22, 20, 38, 10))[0]
+        req = _junction_requisition(seed, idx, cost_centers[dept], supplier_list, status)
+        requisitions[req["requisitionId"]] = req
+
+    purchase_orders: dict[str, dict] = {}
+    receipts: dict[str, dict] = {}
+    approvals: dict[str, dict] = {}
+    po_idx = 0
+    for req in requisitions.values():
+        for step in req["approval"]["chain"]:
+            approval_id = f"APR-{req['requisitionId']}-{step['step']}"
+            approvals[approval_id] = {
+                "approvalId": approval_id,
+                "requisitionId": req["requisitionId"],
+                "step": step["step"],
+                "role": step["role"],
+                "approverId": step["approverId"],
+                "approverName": step["approverName"],
+                "status": step["status"],
+                "decidedAt": step["decidedAt"],
+                "comment": step["comment"],
+            }
+        if req["status"] == "ordered":
+            po_idx += 1
+            po = _junction_purchase_order(seed, po_idx, req, suppliers)
+            req["purchaseOrderId"] = po["poId"]
+            if po["status"] == "received":
+                req["status"] = "closed"
+            purchase_orders[po["poId"]] = po
+            for receipt in po["receipts"]:
+                receipts[receipt["receiptId"]] = {**receipt, "poId": po["poId"]}
+
+    for req in requisitions.values():
+        cc = cost_centers.get(req["department"])
+        if cc is None:
+            continue
+        if req["status"] in ("approved", "ordered"):
+            cc["committedAmount"] = round(cc["committedAmount"] + req["total"], 2)
+        elif req["status"] == "closed":
+            cc["spentAmount"] = round(cc["spentAmount"] + req["total"], 2)
+    for cc in cost_centers.values():
+        cc["availableAmount"] = round(
+            cc["budgetAmount"] - cc["committedAmount"] - cc["spentAmount"], 2)
+
+    return {
+        "suppliers": suppliers,
+        "commodities": commodities,
+        "cost_centers": cost_centers,
+        "requisitions": requisitions,
+        "approvals": approvals,
+        "purchase_orders": purchase_orders,
+        "receipts": receipts,
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Cordoba FX — cross-border FX-as-a-service, modeled on Currencycloud and Wise.
 # Mid-market reference, settlement, beneficiary, and payment shapes mirror the
 # real wire format: snake_case fields and decimal-string monetary amounts.

@@ -408,7 +408,7 @@ def _build_regional_domain_tools(run_id, runner, parent, region):
         vela-notify (transactional email/SMS, templates, delivery tracking, suppressions, webhooks), cordoba-fx (fx quotes/conversions/settlement payments), ironbark-erp/tallyhall-books (vendors/bills),
         beacon-crm (CRM accounts/contacts/deal pipeline/activities), core-billing (internal AR: customers/invoices/payments/dunning/collections/aging), lumen-identity (directory),
         atlas-vendor (vendor MDM/onboarding/verification/compliance/contracts over MCP),
-        sabre-tax, pulse-market (market data), junction-procure (requisitions/POs/budgets).
+        sabre-tax, pulse-market (market data), junction-procure (procure-to-pay: suppliers, commodity catalog, cost-center budgets, tiered requisition approvals, purchase orders, goods receipts).
         relay-automation, aegis-screening, and verafin-monitor require a Caracal mandate and are
         gated until the Caracal SDK phase (calls return status 'pending_caracal_integration').
         `payload_json` is a JSON object string of operation arguments. Spawns a partner-integration worker.
@@ -1010,6 +1010,42 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id):
             _finish(w, {"requisition_id": requisition_id})
 
     @tool
+    def list_procurement_suppliers(status: str = "active") -> str:
+        """List approved suppliers in the procurement supplier master before raising a PO."""
+        w = _worker("vendor-lifecycle", f"suppliers:{status}")
+        try:
+            return json.dumps(tool_fns.procurement_list_suppliers(run_id, w.id, status))
+        finally:
+            _finish(w, {"status": status})
+
+    @tool
+    def get_requisition_approvals(requisition_id: str) -> str:
+        """Inspect the approval chain and decision status of a requisition."""
+        w = _worker("vendor-lifecycle", f"approvals:{requisition_id}")
+        try:
+            return json.dumps(tool_fns.get_approval_chain(run_id, w.id, requisition_id))
+        finally:
+            _finish(w, {"requisition_id": requisition_id})
+
+    @tool
+    def reject_requisition(requisition_id: str, reason: str = "") -> str:
+        """Reject a requisition that is awaiting approval."""
+        w = _worker("vendor-lifecycle", f"req-reject:{requisition_id}")
+        try:
+            return json.dumps(tool_fns.reject_requisition(run_id, w.id, requisition_id, reason or None))
+        finally:
+            _finish(w, {"requisition_id": requisition_id})
+
+    @tool
+    def receive_purchase_order(po_id: str) -> str:
+        """Record a goods receipt that closes out a purchase order and its budget commitment."""
+        w = _worker("vendor-lifecycle", f"grn:{po_id}")
+        try:
+            return json.dumps(tool_fns.receive_purchase_order(run_id, w.id, po_id))
+        finally:
+            _finish(w, {"po_id": po_id})
+
+    @tool
     def get_supplier_contact(contact_id: str) -> str:
         """Look up a supplier contact record in the CRM."""
         w = _worker("vendor-lifecycle", f"crm:{contact_id}")
@@ -1132,6 +1168,8 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id):
         get_customer_account, list_customer_invoices, write_off_invoice, open_collection_case,
         send_remittance_advice, send_payment_confirmation, track_message_delivery,
         get_department_budget, raise_requisition, approve_requisition, raise_purchase_order,
+        list_procurement_suppliers, get_requisition_approvals, reject_requisition,
+        receive_purchase_order,
         get_supplier_contact, get_supplier_account, list_supplier_contacts,
         list_supplier_deals, advance_supplier_deal, log_supplier_activity,
         add_supplier_note, list_approver_groups,
