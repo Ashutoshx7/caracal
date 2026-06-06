@@ -170,7 +170,9 @@ _SPECS: dict[str, PartnerSpec] = {
         apikey_location="header", apikey_field="x-api-key"),
     "sabre-tax": PartnerSpec(
         "sabre-tax", "api_key", 9413,
-        ("calculate", "get_jurisdiction", "validate_id"),
+        ("calculate_tax", "get_transaction", "commit_transaction",
+         "void_transaction", "resolve_jurisdiction", "validate_tax_id",
+         "determine_withholding", "get_exemption_certificate", "list_tax_codes"),
         apikey_location="header", apikey_field="X-Api-Key"),
     "quetzal-payouts": PartnerSpec(
         "quetzal-payouts", "api_key", 9414,
