@@ -203,9 +203,14 @@ def test_mcp_tool_error_surfaces(providerlab):
 # --------------------------------------------------------------------------- #
 # sdk (api key over REST) — distinct cases
 # --------------------------------------------------------------------------- #
-def test_sdk_tax_rate_table(providerlab):
-    res = partners.call("sabre-tax", "calculate", {"jurisdiction": "US-CA", "amount": 1000})
-    assert res["data"]["rate"] == pytest.approx(0.0825)
+def test_sdk_tax_determination(providerlab):
+    juris = partners.call("sabre-tax", "resolve_jurisdiction",
+                          {"address": {"country": "US", "region": "NY"}})
+    assert juris["data"]["combinedRate"] == pytest.approx(0.08875)
+    wht = partners.call("sabre-tax", "determine_withholding",
+                        {"paymentType": "royalties", "grossAmount": 5000,
+                         "payee": {"country": "DE", "documentationType": "W-8BEN", "treatyClaim": True}})
+    assert wht["data"]["withholdingRate"] == 0.0 and wht["data"]["isTreatyApplicable"]
 
 
 def test_sdk_payout_unverified_recipient(providerlab):
@@ -229,9 +234,9 @@ def test_mandate_providers_pending_caracal(providerlab):
 # Agent tool surface uses the partner layer
 # --------------------------------------------------------------------------- #
 def test_partner_operation_tool_emits_and_runs(providerlab):
-    res = tool_fns.partner_operation("run-1", "agent-1", "sabre-tax", "calculate",
-                                     {"jurisdiction": "US-NY", "amount": 100})
-    assert res["data"]["rate"] == pytest.approx(0.08875)
+    res = tool_fns.partner_operation("run-1", "agent-1", "sabre-tax", "resolve_jurisdiction",
+                                     {"address": {"country": "US", "region": "NY"}})
+    assert res["data"]["combinedRate"] == pytest.approx(0.08875)
 
 
 def test_partner_operation_tool_gates_mandate(providerlab):

@@ -16,23 +16,27 @@ def test_landing_is_lightweight_with_guided_onboarding():
         response = client.get("/")
     assert response.status_code == 200
     body = response.text
-    assert "Finance operations, clearly routed." in body
+    assert "Serious finance operations, safely simulated." in body
     assert "Continue Setup" in body
     assert "View Overview" in body
-    assert "Demo scope" in body
+    assert "Operating model" in body
     assert "Operational coverage" in body
-    assert "coverage-item" in body
-    assert "data-coverage-detail" in body
+    assert "operation-line" in body
+    assert "data-operation-detail" in body
+    assert "Vendor Operations" in body
     assert "3-page overview" in body
     assert "About Lynx Capital" in body
     assert "Architecture & Providers" in body
     assert "Demo Environment Notice" in body
     assert "Proceed to Setup" in body
     assert "I understand that this is a demonstration environment" in body
-    assert "width: min(1180px" in body
+    assert "width: min(1360px" in body
     assert "width: min(1020px" in body
-    assert "@media (max-width: 980px)" in body
+    assert "@media (max-width: 1080px)" in body
     assert "@media (max-width: 760px)" in body
+    assert "metric-row" not in body
+    assert "value-card" not in body
+    assert "coverage-item" not in body
     assert "rgba(" not in body
     assert "gradient(" not in body
     assert "box-shadow" not in body

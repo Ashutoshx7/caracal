@@ -766,7 +766,8 @@ def test_mcp_mandate_guarded():
 # --------------------------------------------------------------------------- #
 def test_sdk_providers_authenticate():
     payloads = {
-        "sabre-tax": ("calculate", {"jurisdiction": "DE", "amount": 100.0}),
+        "sabre-tax": ("calculate_tax", {"addresses": {"shipTo": {"country": "US", "region": "CA"}},
+                                        "lines": [{"number": "1", "amount": 100.0}]}),
         "quetzal-payouts": ("get_quote", {"amount": 100.0, "sourceCurrency": "USD", "targetCurrency": "EUR"}),
     }
     for pid, (op, body) in payloads.items():
@@ -987,12 +988,34 @@ def test_lumen_identity_filters_and_listing():
 
 
 def test_sdk_pair_distinct_cases():
-    # Sabre Tax: rate-table calculation and jurisdiction not-found.
+    # Sabre Tax: multi-jurisdiction determination, treaty withholding, and not-found.
     t = client("sabre-tax")
     tk = {"X-Api-Key": seed("sabre-tax")["apiKey"]}
-    calc = t.post("/api/calculate", json={"jurisdiction": "DE", "amount": 100}, headers=tk)
-    assert calc.status_code == 200 and "tax" in calc.json()["data"]
-    nf = t.post("/api/calculate", json={"jurisdiction": "ZZ-NOWHERE", "amount": 100}, headers=tk)
+    calc = t.post("/api/calculate_tax", json={
+        "addresses": {"shipTo": {"country": "US", "region": "NY"}},
+        "lines": [{"number": "1", "amount": 1000, "taxCode": "P0000000"},
+                  {"number": "2", "amount": 200, "taxCode": "NT"}]}, headers=tk).json()["data"]
+    assert calc["status"] == "Saved" and calc["totalTax"] > 0
+    assert calc["totalExempt"] == 200.0 and any(s["jurisType"] == "City" for s in calc["summary"])
+    # A booked transaction can be retrieved, committed, and voided.
+    got = t.post("/api/get_transaction", json={"code": calc["code"]}, headers=tk)
+    assert got.status_code == 200
+    assert t.post("/api/commit_transaction", json={"code": calc["code"]},
+                  headers=tk).json()["data"]["status"] == "Committed"
+    # Treaty withholding: Germany royalties drop to 0%, treaty-less Brazil stays statutory 30%.
+    de = t.post("/api/determine_withholding", json={"paymentType": "royalties", "grossAmount": 10000,
+        "payee": {"country": "DE", "documentationType": "W-8BEN", "treatyClaim": True}},
+        headers=tk).json()["data"]
+    assert de["withholdingRate"] == 0.0 and de["isTreatyApplicable"]
+    br = t.post("/api/determine_withholding", json={"paymentType": "royalties",
+        "payee": {"country": "BR", "documentationType": "W-8BEN", "treatyClaim": True}},
+        headers=tk).json()["data"]
+    assert br["withholdingRate"] == pytest.approx(0.30)
+    # Tax-ID validation and an unresolvable jurisdiction.
+    vat = t.post("/api/validate_tax_id", json={"taxId": "DE123456789", "country": "DE"},
+                 headers=tk).json()["data"]
+    assert vat["isValid"] and vat["businessName"]
+    nf = t.post("/api/resolve_jurisdiction", json={"address": {"country": "ZZ"}}, headers=tk)
     assert nf.status_code == 404
     # Quetzal Payouts: unverified recipient cannot be paid out.
     q = client("quetzal-payouts")
