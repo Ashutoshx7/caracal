@@ -237,7 +237,8 @@ def _system_trigger(subject: str, kind: str) -> dict:
 # --------------------------------------------------------------------------- #
 # audit (hash-chained, per execution)
 # --------------------------------------------------------------------------- #
-def _audit(execution: dict, kind: str, actor: str, details: dict, at: str | None = None) -> dict:
+def _audit(state: base.State, execution: dict, kind: str, actor: str, details: dict,
+           at: str | None = None) -> dict:
     prev = execution["auditTrail"][-1]["hash"] if execution["auditTrail"] else "genesis"
     when = at or _ts()
     digest = hashlib.sha256(
@@ -246,6 +247,7 @@ def _audit(execution: dict, kind: str, actor: str, details: dict, at: str | None
              "type": kind, "actor": actor, "at": when, "details": details,
              "prevHash": prev, "hash": digest}
     execution["auditTrail"].append(event)
+    state.table("audit_events")[event["eventId"]] = event
     return event
 
 
@@ -292,6 +294,7 @@ def _seed_history(state: base.State) -> None:
                 state, wf, input_payload={"period": "2026-05", "batchSize": rng.randint(8, 240)},
                 trigger=_system_trigger(actor, kind), idempotency_key=None,
                 priority=wf["priority"], created_offset=-age,
+                plan_key=f"history:{wf['id']}:{n}",
             )
             stop = rng.random()
             if not roomy or stop < 0.78:
@@ -350,9 +353,11 @@ def _queue_running(state: base.State, queue: str) -> int:
 
 
 def _new_execution(state: base.State, wf: dict, *, input_payload: dict, trigger: dict,
-                   idempotency_key: str | None, priority: str, created_offset: int = 0) -> dict:
+                   idempotency_key: str | None, priority: str, created_offset: int = 0,
+                   plan_key: str | None = None) -> dict:
     exec_id = base.new_id("exec")
-    outcome = _plan_outcome(exec_id)
+    plan_key = plan_key or exec_id
+    outcome = _plan_outcome(plan_key)
     steps = [{"stepId": s["id"], "name": s["name"], "type": s["type"], "action": s["action"],
               "status": "pending", "attempt": 0, "startedAt": None, "finishedAt": None,
               "durationMs": None, "output": None, "error": None}
@@ -360,7 +365,7 @@ def _new_execution(state: base.State, wf: dict, *, input_payload: dict, trigger:
     retryable_idx = [i for i, s in enumerate(wf["steps"]) if s["retryable"]]
     long_idx = max(range(len(wf["steps"])),
                    key=lambda i: wf["steps"][i].get("timeoutSeconds", 0))
-    rng = gen._rng(ID, "plan", exec_id)
+    rng = gen._rng(ID, "plan", plan_key)
     fault_step = (rng.choice(retryable_idx) if outcome == "transient" and retryable_idx
                   else len(wf["steps"]) - 1 if outcome == "failure"
                   else long_idx if outcome == "timeout" else None)
@@ -388,7 +393,9 @@ def _new_execution(state: base.State, wf: dict, *, input_payload: dict, trigger:
         "metrics": {"totalSteps": len(steps), "completedSteps": 0, "retries": 0, "durationMs": 0},
         "_outcome": outcome,
         "_faultStep": fault_step,
+        "_planKey": plan_key,
         "_clock": created_offset,
+        "_startClock": created_offset,
         "scheduledAt": created,
         "startedAt": None if queued else created,
         "finishedAt": None,
@@ -398,10 +405,10 @@ def _new_execution(state: base.State, wf: dict, *, input_payload: dict, trigger:
         "auditTrail": [],
     }
     state.table("executions")[exec_id] = execution
-    _audit(execution, "execution_queued", trigger["subject"],
+    _audit(state, execution, "execution_queued", trigger["subject"],
            {"workflowId": wf["id"], "queue": wf["queue"], "priority": priority}, at=created)
     if not queued:
-        _audit(execution, "execution_started", trigger["subject"],
+        _audit(state, execution, "execution_started", trigger["subject"],
                {"attempt": 1, "outcome": outcome}, at=created)
     if idempotency_key:
         state.table("idempotency")[f"{wf['id']}:{idempotency_key}"] = exec_id
@@ -421,7 +428,7 @@ def _advance(state: base.State, execution: dict) -> dict:
         execution["status"] = "running"
         execution["startedAt"] = _ts(execution["_clock"])
         execution["updatedAt"] = execution["startedAt"]
-        _audit(execution, "execution_started", execution["trigger"]["subject"],
+        _audit(state, execution, "execution_started", execution["trigger"]["subject"],
                {"attempt": execution["attempt"], "outcome": execution["_outcome"]})
     if execution["status"] != "running":
         return execution
@@ -429,12 +436,12 @@ def _advance(state: base.State, execution: dict) -> dict:
     steps = execution["steps"]
     idx = next((i for i, s in enumerate(steps) if s["status"] in ("pending", "retrying")), None)
     if idx is None:
-        return _finish_success(execution)
+        return _finish_success(state, execution)
 
     spec = _wf_step(execution, idx)
     step = steps[idx]
     execution["currentStep"] = step["stepId"]
-    rng = gen._rng(ID, "step", execution["executionId"], idx, execution["attempt"])
+    rng = gen._rng(ID, "step", execution["_planKey"], idx, execution["attempt"])
     duration = rng.randint(800, spec.get("timeoutSeconds", 120) * 80)
     execution["_clock"] += max(1, duration // 1000)
     at = _ts(execution["_clock"])
@@ -446,12 +453,12 @@ def _advance(state: base.State, execution: dict) -> dict:
     if spec["type"] == "approval":
         execution["status"] = "waiting_signal"
         execution["updatedAt"] = at
-        _audit(execution, "approval_requested", "relay",
+        _audit(state, execution, "approval_requested", "relay",
                {"step": step["stepId"], "approver": "controller"}, at=at)
         return execution
 
     if idx == execution["_faultStep"]:
-        return _fail_step(execution, idx, at)
+        return _fail_step(state, execution, idx, at)
 
     step["status"] = "completed"
     step["finishedAt"] = at
@@ -459,15 +466,15 @@ def _advance(state: base.State, execution: dict) -> dict:
     step["output"] = {"ref": base.new_id(step["stepId"][:6] or "step")}
     execution["metrics"]["completedSteps"] += 1
     execution["updatedAt"] = at
-    _audit(execution, "step_completed", "relay",
+    _audit(state, execution, "step_completed", "relay",
            {"step": step["stepId"], "durationMs": duration}, at=at)
 
     if all(s["status"] == "completed" for s in steps):
-        return _finish_success(execution)
+        return _finish_success(state, execution)
     return execution
 
 
-def _fail_step(execution: dict, idx: int, at: str) -> dict:
+def _fail_step(state: base.State, execution: dict, idx: int, at: str) -> dict:
     spec = _wf_step(execution, idx)
     step = execution["steps"][idx]
     outcome = execution["_outcome"]
@@ -479,7 +486,7 @@ def _fail_step(execution: dict, idx: int, at: str) -> dict:
         execution["status"] = "timed_out"
         execution["error"] = {"code": "execution_timeout", "step": step["stepId"],
                               "message": "workflow exceeded its timeout budget"}
-        _audit(execution, "execution_timed_out", "relay",
+        _audit(state, execution, "execution_timed_out", "relay",
                {"step": step["stepId"], "timeoutSeconds": spec["timeoutSeconds"]}, at=at)
     else:
         code = "ledger_unavailable" if outcome == "transient" else "validation_failed"
@@ -491,14 +498,14 @@ def _fail_step(execution: dict, idx: int, at: str) -> dict:
         execution["status"] = "failed"
         execution["error"] = {"code": code, "step": step["stepId"], "retryable": retryable,
                               "message": step["error"]["message"]}
-        _audit(execution, "step_failed", "relay",
+        _audit(state, execution, "step_failed", "relay",
                {"step": step["stepId"], "code": code, "retryable": retryable}, at=at)
     execution["finishedAt"] = at
     execution["updatedAt"] = at
     return execution
 
 
-def _finish_success(execution: dict) -> dict:
+def _finish_success(state: base.State, execution: dict) -> dict:
     at = _ts(execution["_clock"])
     execution["status"] = "succeeded"
     execution["currentStep"] = None
@@ -510,21 +517,10 @@ def _finish_success(execution: dict) -> dict:
                       for s in execution["steps"] if s.get("output")],
         "completedSteps": execution["metrics"]["completedSteps"],
     }
-    started = execution.get("startedAt") or execution["scheduledAt"]
-    execution["metrics"]["durationMs"] = max(0, execution["_clock"] - _offset_of(execution, started)) * 1000
-    _audit(execution, "execution_succeeded", "relay",
+    execution["metrics"]["durationMs"] = max(0, execution["_clock"] - execution["_startClock"]) * 1000
+    _audit(state, execution, "execution_succeeded", "relay",
            {"completedSteps": execution["metrics"]["completedSteps"]}, at=at)
     return execution
-
-
-def _offset_of(execution: dict, iso: str) -> int:
-    base_iso = execution["scheduledAt"]
-    try:
-        a = datetime.fromisoformat(base_iso.replace("Z", "+00:00"))
-        b = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        return int((b - a).total_seconds()) + execution["_clock"]
-    except ValueError:
-        return execution["_clock"]
 
 
 def _apply_signal(state: base.State, execution: dict, decision: str, actor: str, note: str | None) -> dict:
@@ -540,9 +536,9 @@ def _apply_signal(state: base.State, execution: dict, decision: str, actor: str,
         execution["metrics"]["completedSteps"] += 1
         execution["status"] = "running"
         execution["updatedAt"] = at
-        _audit(execution, "approval_granted", actor, {"step": step["stepId"], "note": note}, at=at)
+        _audit(state, execution, "approval_granted", actor, {"step": step["stepId"], "note": note}, at=at)
         if all(s["status"] == "completed" for s in execution["steps"]):
-            _finish_success(execution)
+            _finish_success(state, execution)
     else:
         step["status"] = "rejected"
         step["finishedAt"] = at
@@ -551,7 +547,7 @@ def _apply_signal(state: base.State, execution: dict, decision: str, actor: str,
         execution["finishedAt"] = at
         execution["updatedAt"] = at
         execution["error"] = {"code": "approval_rejected", "step": step["stepId"], "message": note}
-        _audit(execution, "approval_rejected", actor, {"step": step["stepId"], "note": note}, at=at)
+        _audit(state, execution, "approval_rejected", actor, {"step": step["stepId"], "note": note}, at=at)
     return execution
 
 
@@ -577,7 +573,7 @@ def _apply_retry(state: base.State, execution: dict, actor: str) -> dict:
     execution["startedAt"] = execution["startedAt"] or at
     execution["finishedAt"] = None
     execution["updatedAt"] = at
-    _audit(execution, "execution_retried", actor, {"attempt": execution["attempt"]}, at=at)
+    _audit(state, execution, "execution_retried", actor, {"attempt": execution["attempt"]}, at=at)
     return execution
 
 
@@ -871,7 +867,7 @@ def cancel_execution(ctx: Ctx) -> dict:
     for s in ex["steps"]:
         if s["status"] in ("pending", "retrying"):
             s["status"] = "skipped"
-    _audit(ex, "execution_cancelled", str(ctx.principal.get("principal") or "operator"),
+    _audit(ctx.state, ex, "execution_cancelled", str(ctx.principal.get("principal") or "operator"),
            {"reason": ctx.get("reason")}, at=at)
     return _public(ex)
 

@@ -904,18 +904,25 @@ def test_relay_approval_signal_resumes_run():
     _, _, call = _relay()
     ex = call("start_execution", {"workflowId": "payout_release", "input": {"batch": "B-1"}})
     eid = ex["executionId"]
+    # Drive the run to its human-approval gate, retrying past any injected transient
+    # fault that lands before the approval step.
     status = ex["status"]
-    for _ in range(10):
+    for _ in range(20):
         if status == "waiting_signal":
             break
+        if status in ("failed", "timed_out"):
+            status = call("retry_execution", {"executionId": eid})["status"]
+            continue
         status = call("get_execution", {"executionId": eid})["status"]
     assert status == "waiting_signal"
     resumed = call("signal_execution", {"executionId": eid, "signal": "approve", "note": "ok"})
     assert resumed["status"] in ("running", "succeeded")
-    for _ in range(10):
+    for _ in range(20):
         g = call("get_execution", {"executionId": eid})
-        if g["status"] in ("succeeded", "failed", "timed_out", "cancelled"):
+        if g["status"] in ("succeeded", "cancelled"):
             break
+        if g["status"] in ("failed", "timed_out"):
+            call("retry_execution", {"executionId": eid})
     logs = call("get_execution_logs", {"executionId": eid})
     approval = next(s for s in logs["steps"] if s["type"] == "approval")
     assert approval["status"] == "completed"
