@@ -424,9 +424,34 @@ func TestAuthenticateAppDerivesZoneForControlKey(t *testing.T) {
 	app, zoneID, err := srv.authenticateApp(context.Background(), TokenExchangeRequest{
 		ApplicationID: "control-app",
 		ClientSecret:  "test-secret",
+		Resources:     []string{defaultControlAudience},
+		Scope:         "control:resource:read",
 	})
 	if err != nil || app.ID != "control-app" || zoneID != "zone-bound" {
 		t.Fatalf("control key should derive zone, app=%#v zone=%q err=%v", app, zoneID, err)
+	}
+}
+
+func TestAuthenticateAppRejectsZoneLessControlKeyForNonControlResource(t *testing.T) {
+	hash, err := hashClientSecret("test-secret")
+	if err != nil {
+		t.Fatalf("hash client secret: %v", err)
+	}
+	srv := &Server{db: &stubDB{app: &Application{
+		ID:                 "control-app",
+		ZoneID:             "zone-bound",
+		Name:               "Control key",
+		RegistrationMethod: "managed",
+		ClientSecretHash:   &hash,
+		Traits:             []string{controlInvokeTrait, controlScopeTrait + "control:resource:read"},
+	}}}
+	if _, _, err := srv.authenticateApp(context.Background(), TokenExchangeRequest{
+		ApplicationID: "control-app",
+		ClientSecret:  "test-secret",
+		Resources:     []string{"resource://payments"},
+		Scope:         "control:resource:read",
+	}); err == nil || !strings.Contains(err.Error(), "zone_id required") {
+		t.Fatalf("zone-less control key must be limited to Control audience, got %v", err)
 	}
 }
 

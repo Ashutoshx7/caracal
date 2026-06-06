@@ -976,6 +976,9 @@ func (s *Server) authenticateApp(ctx context.Context, req TokenExchangeRequest) 
 		if !hasApplicationTrait(app, controlInvokeTrait) {
 			return nil, "", fmt.Errorf("zone_id required for non-control application")
 		}
+		if !isZoneDerivedControlTokenRequest(req) {
+			return nil, "", fmt.Errorf("zone_id required for non-control token exchange")
+		}
 		zoneID = app.ZoneID
 	} else {
 		app, err = s.db.GetApplicationByID(ctx, appID, zoneID)
@@ -1005,6 +1008,30 @@ func (s *Server) authenticateApp(ctx context.Context, req TokenExchangeRequest) 
 		return nil, "", fmt.Errorf("client secret not configured")
 	}
 	return app, zoneID, nil
+}
+
+func isZoneDerivedControlTokenRequest(req TokenExchangeRequest) bool {
+	if req.SubjectToken != "" || req.ActorToken != "" || req.SessionID != "" || req.AgentSessionID != "" || req.DelegationEdgeID != "" {
+		return false
+	}
+	if len(req.Resources) == 0 {
+		return false
+	}
+	for _, resource := range req.Resources {
+		if strings.TrimSpace(resource) != controlAudience() {
+			return false
+		}
+	}
+	scopes := strings.Fields(req.Scope)
+	if len(scopes) == 0 {
+		return false
+	}
+	for _, scope := range scopes {
+		if !strings.HasPrefix(scope, "control:") {
+			return false
+		}
+	}
+	return true
 }
 
 // validateSubjectToken verifies an inbound STS-issued token: ES256 signature, this STS
