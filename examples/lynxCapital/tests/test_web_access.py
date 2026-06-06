@@ -22,6 +22,12 @@ def test_landing_is_lightweight_with_guided_onboarding():
     assert "Demo Environment Notice" in body
     assert "Proceed to Setup" in body
     assert "I understand that this is a demonstration environment" in body
+    assert "width: min(960px" in body
+    assert "height: 680px" in body
+    assert "height: 464px" in body
+    assert "rgba(" not in body
+    assert "gradient(" not in body
+    assert "box-shadow" not in body
     assert "Halcyon Bank" not in body
     assert "Provider ecosystem" not in body
 

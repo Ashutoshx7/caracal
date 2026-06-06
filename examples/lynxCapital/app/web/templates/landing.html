@@ -13,16 +13,14 @@ Lynx Capital overview page with a guided onboarding wizard.
     display: grid;
     place-items: center;
     padding: 32px 24px;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(245, 247, 250, 0.96)),
-      var(--surface);
+    background: var(--surface);
   }
   .overview-card {
+    --corner: 2px;
     width: min(720px, 100%);
     background: #fff;
     border: 1px solid var(--border);
-    border-radius: 14px;
-    box-shadow: 0 18px 52px rgba(11, 61, 145, 0.09);
+    border-radius: var(--corner);
     padding: 36px;
   }
   .eyebrow {
@@ -54,7 +52,7 @@ Lynx Capital overview page with a guided onboarding wizard.
   }
   .summary-point {
     border: 1px solid #e1e7f0;
-    border-radius: 10px;
+    border-radius: var(--corner);
     background: #f8fafc;
     padding: 12px;
   }
@@ -72,7 +70,7 @@ Lynx Capital overview page with a guided onboarding wizard.
   .primary-cta {
     background: var(--accent);
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--corner);
     color: #fff;
     cursor: pointer;
     font-size: 14px;
@@ -85,7 +83,7 @@ Lynx Capital overview page with a guided onboarding wizard.
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(10, 20, 38, 0.48);
+    background: #111827;
     display: none;
     place-items: center;
     padding: 24px;
@@ -95,14 +93,14 @@ Lynx Capital overview page with a guided onboarding wizard.
     display: grid;
   }
   .wizard-card {
-    width: min(760px, calc(100vw - 48px));
-    height: 560px;
+    --corner: 2px;
+    width: min(960px, calc(100vw - 48px));
+    height: 680px;
     background: #fff;
-    border: 1px solid rgba(208, 215, 227, 0.95);
-    border-radius: 16px;
-    box-shadow: 0 28px 80px rgba(10, 20, 38, 0.24);
+    border: 1px solid #8fa2bd;
+    border-radius: var(--corner);
     display: grid;
-    grid-template-rows: 74px 1fr 76px;
+    grid-template-rows: 84px 1fr 84px;
     overflow: hidden;
   }
   .wizard-head {
@@ -131,12 +129,12 @@ Lynx Capital overview page with a guided onboarding wizard.
     white-space: nowrap;
   }
   .wizard-body {
-    height: 410px;
+    height: 512px;
     padding: 24px;
     overflow: hidden;
   }
   .wizard-page {
-    height: 362px;
+    height: 464px;
     display: none;
   }
   .wizard-page.active {
@@ -147,6 +145,9 @@ Lynx Capital overview page with a guided onboarding wizard.
     color: var(--text);
     font-size: 20px;
     margin-bottom: 10px;
+  }
+  .page-intro {
+    max-width: 86ch;
   }
   .wizard-page p {
     color: #4b5567;
@@ -163,7 +164,7 @@ Lynx Capital overview page with a guided onboarding wizard.
   .capability-card,
   .notice-card {
     border: 1px solid #e1e7f0;
-    border-radius: 10px;
+    border-radius: var(--corner);
     background: #f8fafc;
     padding: 12px;
   }
@@ -185,12 +186,12 @@ Lynx Capital overview page with a guided onboarding wizard.
     display: grid;
     grid-template-columns: 1fr 22px 1fr 22px 1fr 22px 1fr;
     align-items: center;
-    margin: 18px 0;
+    margin: 16px 0;
   }
   .flow-box {
-    min-height: 76px;
+    min-height: 94px;
     border: 1px solid #dbe4f0;
-    border-radius: 12px;
+    border-radius: var(--corner);
     background: #f8fbff;
     padding: 12px;
   }
@@ -216,6 +217,29 @@ Lynx Capital overview page with a guided onboarding wizard.
     font-size: 12px;
     line-height: 1.6;
   }
+  .detail-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .detail-item {
+    border-left: 3px solid var(--accent);
+    background: #f8fafc;
+    padding: 10px 12px;
+  }
+  .detail-item strong {
+    color: var(--text);
+    display: block;
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+  .detail-item span {
+    color: #5a6478;
+    display: block;
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
   .notice-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -224,7 +248,7 @@ Lynx Capital overview page with a guided onboarding wizard.
   }
   .ack-row {
     border: 1px solid #ead6a8;
-    border-radius: 10px;
+    border-radius: var(--corner);
     background: #fff9ec;
     color: #4b5567;
     display: flex;
@@ -252,7 +276,7 @@ Lynx Capital overview page with a guided onboarding wizard.
   .secondary-btn,
   .ghost-btn,
   .next-btn {
-    border-radius: 7px;
+    border-radius: var(--corner);
     cursor: pointer;
     font-size: 12px;
     font-weight: 700;
@@ -280,9 +304,9 @@ Lynx Capital overview page with a guided onboarding wizard.
   }
   @media (max-width: 760px) {
     .overview-card { padding: 26px; }
-    .summary-points, .capability-grid, .notice-grid { grid-template-columns: 1fr; }
-    .wizard-card { height: 620px; }
-    .wizard-body { height: 470px; overflow-y: auto; }
+    .summary-points, .capability-grid, .notice-grid, .detail-list { grid-template-columns: 1fr; }
+    .wizard-card { height: 720px; }
+    .wizard-body { height: 552px; overflow-y: auto; }
     .wizard-page { height: auto; min-height: 410px; }
     .flow { grid-template-columns: 1fr; gap: 8px; }
     .flow-arrow { transform: rotate(90deg); }
@@ -327,69 +351,111 @@ Lynx Capital overview page with a guided onboarding wizard.
     <div class="wizard-body">
       <section class="wizard-page active" data-title="About Lynx Capital" data-subtitle="What the product is for.">
         <h3>About Lynx Capital</h3>
-        <p>Lynx Capital is a finance operations demo for teams that need to coordinate work across regions, systems, and approval boundaries. It is designed to show how an enterprise assistant can help with operational tasks while keeping execution visible.</p>
+        <p class="page-intro">Lynx Capital is a finance operations workspace for demonstrating how an enterprise assistant can coordinate structured business work across teams, regions, providers, and approval boundaries. The experience focuses on practical finance operations rather than a generic chatbot.</p>
         <div class="capability-grid">
           <div class="capability-card">
             <strong>Problems it addresses</strong>
-            <span>Manual routing, fragmented provider access, inconsistent audit trails, and slow cross-functional finance workflows.</span>
+            <span>Manual handoffs, fragmented provider access, slow exception handling, inconsistent audit trails, and limited visibility into multi-step finance execution.</span>
           </div>
           <div class="capability-card">
             <strong>Key capabilities</strong>
-            <span>Multi-agent planning, provider-backed tools, human approvals, live logs, memory, and topology visibility.</span>
+            <span>Multi-agent planning, provider-backed tools, human approvals, live logs, durable memory, stage tracking, and topology visibility for long-running workflows.</span>
           </div>
           <div class="capability-card">
             <strong>Intended users</strong>
-            <span>Finance operators, platform teams, risk reviewers, and product teams evaluating agent-enabled workflows.</span>
+            <span>Finance operators, platform engineers, risk reviewers, integration teams, and product leaders evaluating agent-enabled operational systems.</span>
           </div>
           <div class="capability-card">
             <strong>What you will do</strong>
-            <span>Configure the local environment, validate provider access, then run guided finance scenarios from the demo console.</span>
+            <span>Configure the local environment, validate provider readiness, choose a workflow prompt, and inspect execution through chat, graph, and logs.</span>
+          </div>
+        </div>
+        <div class="detail-list">
+          <div class="detail-item">
+            <strong>Primary workflows</strong>
+            <span>Payouts, receivables, procurement, period close, treasury, and compliance investigations.</span>
+          </div>
+          <div class="detail-item">
+            <strong>Operating model</strong>
+            <span>Finance Control coordinates specialized agents and only invokes tools when business context requires them.</span>
+          </div>
+          <div class="detail-item">
+            <strong>What to watch</strong>
+            <span>Provider calls, approval points, memory pressure, stage transitions, and audit-ready event history.</span>
           </div>
         </div>
       </section>
 
       <section class="wizard-page" data-title="Architecture & Providers" data-subtitle="How requests move through the system.">
         <h3>Architecture & Providers</h3>
-        <p>Requests begin in the Lynx workspace, move through an orchestration layer, and use provider tools only when a task requires external or internal business data.</p>
+        <p class="page-intro">Lynx Capital separates the user experience, orchestration layer, provider access, and audit surface. A request is interpreted as business intent first, then routed to the right agents and providers with visible state at each step.</p>
         <div class="flow" aria-label="High-level request flow">
           <div class="flow-box">
             <strong>User request</strong>
-            <span>A finance operator asks for a workflow or investigation.</span>
+            <span>A finance operator asks for a payout, close, treasury, compliance, procurement, or receivables workflow.</span>
           </div>
           <div class="flow-arrow">→</div>
           <div class="flow-box">
             <strong>Agent plan</strong>
-            <span>The runtime selects regions, workflows, tools, and approval points.</span>
+            <span>The runtime creates a plan, selects regions or workflows, and identifies tool calls and approval boundaries.</span>
           </div>
           <div class="flow-arrow">→</div>
           <div class="flow-box">
             <strong>Providers</strong>
-            <span>{{ overview.provider_count }} integrations cover banking, payments, ERP, tax, risk, treasury, CRM, procurement, and market data.</span>
+            <span>{{ overview.provider_count }} integrations cover banking, payments, ERP, tax, risk, treasury, CRM, procurement, identity, and market data.</span>
           </div>
           <div class="flow-arrow">→</div>
           <div class="flow-box">
             <strong>Result & audit</strong>
-            <span>Events stream into the console for inspection, recovery, and review.</span>
+            <span>Execution events, tool outcomes, graph state, and audit details stream into the console for review.</span>
           </div>
         </div>
-        <p class="architecture-note">The provider layer is intentionally diverse: REST, MCP, SDK-style, SSE, and gRPC-style surfaces are represented, but the setup flow only asks you for the configuration needed to run the local demo.</p>
+        <p class="architecture-note">The provider layer is intentionally diverse: REST, MCP, SDK-style, SSE, and gRPC-style surfaces are represented. Setup keeps this manageable by validating only the environment and provider readiness needed for the local demo.</p>
+        <div class="detail-list">
+          <div class="detail-item">
+            <strong>Provider access</strong>
+            <span>Tools call provider-style APIs instead of static fixtures, so failures, credentials, latency, and lifecycle behavior are visible.</span>
+          </div>
+          <div class="detail-item">
+            <strong>Caracal purpose</strong>
+            <span>The environment demonstrates how Caracal can sit in front of provider access and enforce delegated authority.</span>
+          </div>
+          <div class="detail-item">
+            <strong>Observability</strong>
+            <span>The demo exposes chat, graph, logs, memory, stages, approvals, and provider activity instead of hiding execution.</span>
+          </div>
+        </div>
       </section>
 
       <section class="wizard-page" data-title="Demo Environment Notice" data-subtitle="What is real, simulated, and expected.">
         <h3>Demo Environment Notice</h3>
-        <p>This environment exists to demonstrate Lynx Capital workflows and Caracal integration capabilities without touching real financial systems.</p>
+        <p class="page-intro">This environment exists to demonstrate Lynx Capital workflows and Caracal integration capabilities without touching real financial systems. Treat it as a product evaluation environment, not a production finance system.</p>
         <div class="notice-grid">
           <div class="notice-card">
             <strong>Real</strong>
-            <span>Application routing, agent orchestration, provider HTTP calls, event streaming, logs, setup checks, and UI state.</span>
+            <span>Application routing, agent orchestration, provider HTTP calls, setup validation, event streaming, logs, approvals, memory, and UI state.</span>
           </div>
           <div class="notice-card">
             <strong>Simulated</strong>
-            <span>Provider accounts, credentials, invoices, payments, sanctions results, tax outputs, market data, and audit records.</span>
+            <span>Provider accounts, generated credentials, invoices, payments, sanctions outcomes, tax responses, market data, and audit records.</span>
           </div>
           <div class="notice-card">
             <strong>Limitations</strong>
-            <span>No real money moves, no production compliance decision is made, and generated outputs require human judgment.</span>
+            <span>No real money moves, no production compliance decision is made, and every generated outcome requires human review.</span>
+          </div>
+        </div>
+        <div class="detail-list">
+          <div class="detail-item">
+            <strong>Expected setup</strong>
+            <span>You will validate an OpenAI key, provider network health, webhook secrets, and Caracal services when enabled.</span>
+          </div>
+          <div class="detail-item">
+            <strong>Safe operation</strong>
+            <span>Runs are designed for demonstration only; they should not be connected to real bank, tax, compliance, or ERP systems.</span>
+          </div>
+          <div class="detail-item">
+            <strong>Evaluation focus</strong>
+            <span>Review delegation, provider handling, observability, failure behavior, and whether workflows feel production-shaped.</span>
           </div>
         </div>
         <label class="ack-row">
