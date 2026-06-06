@@ -78,13 +78,13 @@ class ProviderStore:
         """Create one canonical credential per provider so verification flows have known values."""
         p = self.provider
         seed: dict = {"resource": f"resource://{p.id}", "scopes": list(p.scopes)}
-        if p.category in ("api_key", "sdk"):
+        if catalog.apikey_auth(p):
             rec = self._new_api_key("seed-key")
             seed["apiKey"] = rec["apiKey"]
             seed["location"] = p.apikey_location
             seed["field"] = p.apikey_field
-        elif p.category == "bearer_token":
-            rec = self._new_bearer("seed-token")
+        elif catalog.bearer_auth(p):
+            rec = self._new_bearer("seed-token", prefix="sk_live_" if p.category == "sdk" else "bt_")
             seed["bearerToken"] = rec["accessToken"]
             seed["header"] = p.auth_header
             seed["scheme"] = p.auth_scheme
@@ -153,10 +153,10 @@ class ProviderStore:
         self.data["apiKeys"].append(rec)
         return rec
 
-    def _new_bearer(self, label: str) -> dict:
+    def _new_bearer(self, label: str, prefix: str = "bt_") -> dict:
         rec = {
             "tokenId": f"tok_{uuid.uuid4().hex[:12]}",
-            "accessToken": f"bt_{secrets.token_urlsafe(28)}",
+            "accessToken": f"{prefix}{secrets.token_urlsafe(28)}",
             "label": label,
             "createdAt": _now(),
             "revoked": False,

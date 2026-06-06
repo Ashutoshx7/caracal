@@ -65,6 +65,7 @@ class Provider:
     require_delegation: bool = False
     mcp_auth: str = "bearer"                 # mcp: bearer | mandate
     sdk_package: str | None = None
+    sdk_auth: str = "api_key"                # sdk: api_key | bearer
 
 
 CATALOG: tuple[Provider, ...] = (
@@ -248,12 +249,14 @@ CATALOG: tuple[Provider, ...] = (
     Provider(
         id="quetzal-payouts", brand="Quetzal Payouts", category="sdk",
         protocol="sdk", port=9414, industry="Mass payouts",
-        tagline="Global recipient disbursement and batches",
-        resources=("recipients", "payouts", "batches", "quotes"),
-        operations=("create_recipient", "get_quote", "create_payout",
-                    "create_batch", "get_batch"),
+        tagline="Global recipient onboarding, FX-aware payout quotes, mass disbursement batches, and settlement funding",
+        resources=("recipients", "payouts", "batches", "quotes", "settlements", "balances"),
+        operations=("create_recipient", "get_recipient", "list_recipients", "verify_recipient",
+                    "get_quote", "create_payout", "get_payout", "list_payouts", "cancel_payout",
+                    "create_batch", "get_batch", "list_batches",
+                    "list_settlements", "get_balance"),
         failure_profile="flaky", auth_header="Authorization", auth_scheme="Bearer",
-        sdk_package="quetzal_payouts",
+        sdk_package="quetzal_payouts", sdk_auth="bearer",
     ),
     Provider(
         id="vela-notify", brand="Vela Notify", category="bearer_token",
@@ -312,6 +315,20 @@ def get(provider_id: str) -> Provider:
     if provider_id not in BY_ID:
         raise KeyError(f"unknown provider: {provider_id!r}")
     return BY_ID[provider_id]
+
+
+def apikey_auth(provider: Provider) -> bool:
+    """Wire auth resolves to an API key: api_key providers and SDK providers whose
+    shim authenticates with an API key under the hood."""
+    return provider.category == "api_key" or (
+        provider.category == "sdk" and provider.sdk_auth == "api_key")
+
+
+def bearer_auth(provider: Provider) -> bool:
+    """Wire auth resolves to a static bearer token: bearer_token providers and SDK
+    providers whose shim presents a secret key as a bearer token."""
+    return provider.category == "bearer_token" or (
+        provider.category == "sdk" and provider.sdk_auth == "bearer")
 
 
 def taxonomy_complete() -> bool:

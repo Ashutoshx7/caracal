@@ -215,10 +215,14 @@ def test_sdk_tax_determination(providerlab):
 
 def test_sdk_payout_unverified_recipient(providerlab):
     rec = partners.call("quetzal-payouts", "create_recipient",
-                        {"name": "R", "currency": "USD", "method": "bank"})
-    res = partners.call("quetzal-payouts", "create_payout",
-                        {"recipientId": rec["data"]["id"], "amount": 100, "currency": "USD"})
-    assert res["status"] in (200, 403)
+                        {"name": "R", "currency": "EUR", "method": "bank"})
+    blocked = partners.call("quetzal-payouts", "create_payout",
+                            {"recipientId": rec["data"]["id"], "amount": 100, "currency": "USD"})
+    assert blocked["status"] == 403 and blocked["data"]["error"] == "recipient_unverified"
+    partners.call("quetzal-payouts", "verify_recipient", {"recipientId": rec["data"]["id"]})
+    paid = partners.call("quetzal-payouts", "create_payout",
+                         {"recipientId": rec["data"]["id"], "amount": 100, "currency": "USD"})
+    assert paid["status"] == 200 and paid["data"]["status"] == "processing"
 
 
 # --------------------------------------------------------------------------- #
