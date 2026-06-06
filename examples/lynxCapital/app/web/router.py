@@ -298,6 +298,13 @@ def _setup_ctx(request: Request) -> dict:
         "setup_mapped_count": len(mapped),
         "setup_caracal_steps": _caracal_steps(),
         "setup_automate": _automate_plan(),
+        "setup_env": {
+            "zone": _env("CARACAL_ZONE_ID") or "<placeholder-zone-id>",
+            "application": _env("CARACAL_APPLICATION_ID") or "<placeholder-application-id>",
+            "applicationSecret": "<placeholder-application-secret>",
+            "controlClient": "<placeholder-control-client-id>",
+            "controlSecret": "<placeholder-control-client-secret>",
+        },
         "setup_progress": {
             "ready": ready,
             "total": len(configured),

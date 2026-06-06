@@ -657,19 +657,82 @@ def open_collection_case(run_id: str, agent_id: str, customer_id: str) -> dict[s
 
 # -- procurement tools (junction-procure) --
 
-def create_requisition(run_id: str, agent_id: str, department: str, amount: float, description: str) -> dict[str, object]:
+def procurement_list_suppliers(run_id: str, agent_id: str, status: str = "active",
+                               category: str | None = None) -> dict[str, object]:
+    payload: dict[str, object] = {"status": status}
+    if category:
+        payload["category"] = category
+    return _run(run_id, agent_id, "procurement_list_suppliers", "junction-procure",
+                "list_suppliers", payload)
+
+
+def procurement_get_supplier(run_id: str, agent_id: str, supplier_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "procurement_get_supplier", "junction-procure",
+                "get_supplier", {"supplierId": supplier_id})
+
+
+def create_requisition(run_id: str, agent_id: str, department: str, amount: float,
+                       description: str, justification: str | None = None) -> dict[str, object]:
+    payload: dict[str, object] = {"department": department, "amount": amount,
+                                  "description": description}
+    if justification:
+        payload["justification"] = justification
     return _run(run_id, agent_id, "create_requisition", "junction-procure", "create_requisition",
-                {"department": department, "amount": amount, "description": description})
+                payload)
 
 
-def approve_requisition(run_id: str, agent_id: str, requisition_id: str) -> dict[str, object]:
+def approve_requisition(run_id: str, agent_id: str, requisition_id: str,
+                        comment: str | None = None) -> dict[str, object]:
+    payload: dict[str, object] = {"requisitionId": requisition_id}
+    if comment:
+        payload["comment"] = comment
     return _run(run_id, agent_id, "approve_requisition", "junction-procure", "approve_requisition",
+                payload)
+
+
+def reject_requisition(run_id: str, agent_id: str, requisition_id: str,
+                       comment: str | None = None) -> dict[str, object]:
+    payload: dict[str, object] = {"requisitionId": requisition_id}
+    if comment:
+        payload["comment"] = comment
+    return _run(run_id, agent_id, "reject_requisition", "junction-procure", "reject_requisition",
+                payload)
+
+
+def get_requisition(run_id: str, agent_id: str, requisition_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "get_requisition", "junction-procure", "get_requisition",
+                {"requisitionId": requisition_id})
+
+
+def list_requisitions(run_id: str, agent_id: str, status: str | None = None,
+                      department: str | None = None) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    if status:
+        payload["status"] = status
+    if department:
+        payload["department"] = department
+    return _run(run_id, agent_id, "list_requisitions", "junction-procure", "list_requisitions",
+                payload)
+
+
+def get_approval_chain(run_id: str, agent_id: str, requisition_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "get_approval_chain", "junction-procure", "get_approval_chain",
                 {"requisitionId": requisition_id})
 
 
 def create_purchase_order(run_id: str, agent_id: str, requisition_id: str, vendor_id: str) -> dict[str, object]:
     return _run(run_id, agent_id, "create_purchase_order", "junction-procure", "create_purchase_order",
-                {"requisitionId": requisition_id, "vendorId": vendor_id})
+                {"requisitionId": requisition_id, "supplierId": vendor_id})
+
+
+def receive_purchase_order(run_id: str, agent_id: str, po_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "receive_purchase_order", "junction-procure", "receive_order",
+                {"poId": po_id})
+
+
+def get_purchase_order_status(run_id: str, agent_id: str, po_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "get_purchase_order_status", "junction-procure",
+                "get_purchase_order", {"poId": po_id})
 
 
 def get_budget(run_id: str, agent_id: str, department: str) -> dict[str, object]:
@@ -847,9 +910,17 @@ TOOLS: dict[str, Callable] = {
     "run_dunning_cycle": run_dunning_cycle,
     "write_off_invoice": write_off_invoice,
     "open_collection_case": open_collection_case,
+    "procurement_list_suppliers": procurement_list_suppliers,
+    "procurement_get_supplier": procurement_get_supplier,
     "create_requisition": create_requisition,
     "approve_requisition": approve_requisition,
+    "reject_requisition": reject_requisition,
+    "get_requisition": get_requisition,
+    "list_requisitions": list_requisitions,
+    "get_approval_chain": get_approval_chain,
     "create_purchase_order": create_purchase_order,
+    "receive_purchase_order": receive_purchase_order,
+    "get_purchase_order_status": get_purchase_order_status,
     "get_budget": get_budget,
     "get_supplier_contact": get_supplier_contact,
     "list_supplier_contacts": list_supplier_contacts,
