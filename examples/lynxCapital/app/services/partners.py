@@ -214,8 +214,13 @@ _SPECS: dict[str, PartnerSpec] = {
         apikey_location="header", apikey_field="X-Api-Key"),
     "junction-procure": PartnerSpec(
         "junction-procure", "oauth_cc", 9419,
-        ("create_requisition", "approve_requisition", "create_purchase_order",
-         "get_purchase_order", "get_budget"),
+        ("list_suppliers", "get_supplier", "list_commodities",
+         "create_requisition", "submit_requisition", "approve_requisition",
+         "reject_requisition", "list_requisitions", "get_requisition",
+         "get_approval_chain",
+         "create_purchase_order", "acknowledge_order", "receive_order",
+         "list_purchase_orders", "get_purchase_order",
+         "list_budgets", "get_budget"),
         client_auth_method="client_secret_basic", scopes=("procure.read", "procure.write")),
 }
 
