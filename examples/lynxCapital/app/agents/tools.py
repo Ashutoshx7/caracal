@@ -551,9 +551,34 @@ def get_supplier_contact(run_id: str, agent_id: str, contact_id: str) -> dict[st
                 {"contactId": contact_id})
 
 
+def list_supplier_contacts(run_id: str, agent_id: str, account_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "list_supplier_contacts", "beacon-crm", "list_contacts",
+                {"accountId": account_id})
+
+
+def get_supplier_account(run_id: str, agent_id: str, account_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "get_supplier_account", "beacon-crm", "get_account",
+                {"accountId": account_id})
+
+
+def list_supplier_deals(run_id: str, agent_id: str, account_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "list_supplier_deals", "beacon-crm", "list_deals",
+                {"accountId": account_id, "status": "open"})
+
+
+def advance_supplier_deal(run_id: str, agent_id: str, deal_id: str, stage: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "advance_supplier_deal", "beacon-crm", "update_deal",
+                {"dealId": deal_id, "stage": stage})
+
+
 def log_supplier_activity(run_id: str, agent_id: str, contact_id: str, activity_type: str) -> dict[str, object]:
     return _run(run_id, agent_id, "log_supplier_activity", "beacon-crm", "log_activity",
                 {"contactId": contact_id, "type": activity_type})
+
+
+def add_supplier_note(run_id: str, agent_id: str, contact_id: str, body: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "add_supplier_note", "beacon-crm", "add_note",
+                {"contactId": contact_id, "body": body})
 
 
 # -- identity tools (lumen-identity, internal directory) --
@@ -679,7 +704,12 @@ TOOLS: dict[str, Callable] = {
     "create_purchase_order": create_purchase_order,
     "get_budget": get_budget,
     "get_supplier_contact": get_supplier_contact,
+    "list_supplier_contacts": list_supplier_contacts,
+    "get_supplier_account": get_supplier_account,
+    "list_supplier_deals": list_supplier_deals,
+    "advance_supplier_deal": advance_supplier_deal,
     "log_supplier_activity": log_supplier_activity,
+    "add_supplier_note": add_supplier_note,
     "resolve_user": resolve_user,
     "list_approver_groups": list_approver_groups,
     "resolve_approver_chain": resolve_approver_chain,

@@ -89,6 +89,15 @@ def _iban(rng: random.Random, country: str, account_number: str) -> str:
     return f"{country}{check}{bank}{body}{account_number}"
 
 
+_DIAL_CODES = {"US": "+1", "GB": "+44", "DE": "+49", "FR": "+33",
+               "BR": "+55", "SG": "+65", "JP": "+81", "CA": "+1"}
+
+
+def _phone(rng: random.Random, country: str) -> str:
+    """A plausible E.164-style number for the contact's country."""
+    return f"{_DIAL_CODES.get(country, '+1')} {rng.randint(200, 989)} 555 {rng.randint(1000, 9999)}"
+
+
 def vendors(seed: str, count: int) -> list[dict]:
     """Vendor / supplier master records with country, currency, terms, and tax id."""
     out = []
@@ -107,25 +116,6 @@ def vendors(seed: str, count: int) -> list[dict]:
             "status": "active" if rng.random() > 0.08 else "on_hold",
             "riskTier": rng.choice(("low", "low", "medium", "high")),
             "createdAt": _day(rng, -540, -30),
-        })
-    return out
-
-
-def contacts(seed: str, count: int) -> list[dict]:
-    out = []
-    stages = ("lead", "qualified", "customer", "vendor", "churned")
-    for i in range(1, count + 1):
-        rng = _rng(seed, "contact", i)
-        name = _person(rng)
-        company = _company(rng)
-        out.append({
-            "id": f"CONT-{i:05d}",
-            "name": name,
-            "email": f"{name.split()[0].lower()}@{_slug(company).split('-')[0]}.example",
-            "company": company,
-            "stage": rng.choice(stages),
-            "ownerId": f"U-{rng.randint(1, 40)}",
-            "createdAt": _day(rng, -400, -1),
         })
     return out
 
@@ -332,22 +322,383 @@ def invoices(seed: str, vendor_ids: list[str], count: int) -> list[dict]:
     return out
 
 
-def users(seed: str, count: int) -> list[dict]:
-    out = []
-    roles = ("analyst", "controller", "treasurer", "approver", "auditor", "admin")
-    for i in range(1, count + 1):
-        rng = _rng(seed, "user", i)
-        name = _person(rng)
-        out.append({
-            "id": f"U-{i}",
-            "name": name,
-            "email": f"{name.split()[0].lower()}.{name.split()[1].lower()}@lynxcapital.example",
-            "role": rng.choice(roles),
-            "active": rng.random() > 0.06,
-            "groups": sorted({f"grp-{rng.choice(('finance','treasury','compliance','ap','ar'))}"
-                              for _ in range(rng.randint(1, 3))}),
-        })
-    return out
+# --------------------------------------------------------------------------- #
+# Lumen Identity — LynxCapital internal enterprise directory
+#
+# Lumen is an in-house directory and IAM platform, not an external provider.
+# It models the company org chart (departments -> teams -> employees), RBAC
+# roles with permission grants, security/access/distribution groups, and
+# governed service accounts. Relationships are internally consistent: every
+# employee resolves to a manager, team, department and cost centre, and every
+# group/service account resolves to the roles that grant its permissions.
+# --------------------------------------------------------------------------- #
+_LUMEN_DOMAIN = "lynxcapital.example"
+
+# (id, name, parentId, costCenter, headTitle)
+_LUMEN_DEPARTMENTS = (
+    ("DEPT-exec", "Executive", None, "CC-1000", "Chief Executive Officer"),
+    ("DEPT-finance", "Finance", None, "CC-2000", "Chief Financial Officer"),
+    ("DEPT-treasury", "Treasury", "DEPT-finance", "CC-2100", None),
+    ("DEPT-controllership", "Controllership", "DEPT-finance", "CC-2200", None),
+    ("DEPT-fpa", "Financial Planning & Analysis", "DEPT-finance", "CC-2300", None),
+    ("DEPT-procure-to-pay", "Procure-to-Pay", "DEPT-finance", "CC-2400", None),
+    ("DEPT-order-to-cash", "Order-to-Cash", "DEPT-finance", "CC-2500", None),
+    ("DEPT-risk", "Risk & Compliance", None, "CC-3000", "Chief Risk Officer"),
+    ("DEPT-financial-crime", "Financial Crime", "DEPT-risk", "CC-3100", None),
+    ("DEPT-regulatory", "Regulatory Affairs", "DEPT-risk", "CC-3200", None),
+    ("DEPT-engineering", "Engineering", None, "CC-4000", "Chief Technology Officer"),
+    ("DEPT-platform", "Platform Engineering", "DEPT-engineering", "CC-4100", None),
+    ("DEPT-data", "Data Engineering", "DEPT-engineering", "CC-4200", None),
+    ("DEPT-infosec", "Information Security", "DEPT-engineering", "CC-4300", None),
+    ("DEPT-it", "IT & Corporate Systems", None, "CC-5000", "Chief Information Officer"),
+    ("DEPT-people", "People & Talent", None, "CC-6000", "Chief People Officer"),
+)
+
+# (id, name, description, category, permissions)
+_LUMEN_ROLES = (
+    ("ROLE-employee", "Employee", "Birthright access granted to every active employee.",
+     "birthright", ("directory:read",)),
+    ("ROLE-treasury-analyst", "Treasury Analyst", "Reads cash positions and payment activity.",
+     "standard", ("directory:read", "treasury:read", "payments:read", "reports:read")),
+    ("ROLE-treasury-operator", "Treasury Operator", "Operates sweeps and initiates payments.",
+     "standard", ("directory:read", "treasury:read", "treasury:operate", "payments:read", "payments:initiate")),
+    ("ROLE-treasury-manager", "Treasury Manager", "Approves treasury movements and payments.",
+     "privileged", ("directory:read", "treasury:read", "treasury:operate", "treasury:approve",
+                    "payments:read", "payments:initiate", "payments:approve", "reports:read")),
+    ("ROLE-controller", "Financial Controller", "Owns the ledger and the financial close.",
+     "privileged", ("directory:read", "ledger:read", "ledger:post", "ledger:close",
+                    "ap:approve", "reports:read")),
+    ("ROLE-gl-accountant", "General Ledger Accountant", "Posts journal entries to the ledger.",
+     "standard", ("directory:read", "ledger:read", "ledger:post", "reports:read")),
+    ("ROLE-ap-clerk", "Accounts Payable Clerk", "Enters and processes supplier bills.",
+     "standard", ("directory:read", "ap:read", "ap:write", "vendor:read")),
+    ("ROLE-ap-approver", "Accounts Payable Approver", "Approves bills and releases payment.",
+     "privileged", ("directory:read", "ap:read", "ap:write", "ap:approve",
+                    "payments:initiate", "vendor:read")),
+    ("ROLE-ar-specialist", "Accounts Receivable Specialist", "Manages invoicing and collections.",
+     "standard", ("directory:read", "ar:read", "ar:write", "reports:read")),
+    ("ROLE-fpa-analyst", "FP&A Analyst", "Builds forecasts and management reporting.",
+     "standard", ("directory:read", "ledger:read", "reports:read")),
+    ("ROLE-compliance-analyst", "Compliance Analyst", "Runs screening and works alert cases.",
+     "standard", ("directory:read", "screening:read", "screening:run", "cases:write")),
+    ("ROLE-compliance-officer", "Compliance Officer", "Owns screening policy and case escalation.",
+     "privileged", ("directory:read", "screening:read", "screening:run", "cases:write",
+                    "filings:read", "filings:submit", "audit:read")),
+    ("ROLE-regulatory-reporter", "Regulatory Reporter", "Prepares and submits regulatory filings.",
+     "standard", ("directory:read", "filings:read", "filings:submit", "reports:read")),
+    ("ROLE-internal-auditor", "Internal Auditor", "Read-only assurance across finance systems.",
+     "privileged", ("directory:read", "audit:read", "ledger:read", "reports:read")),
+    ("ROLE-platform-engineer", "Platform Engineer", "Builds and deploys platform services.",
+     "standard", ("directory:read", "infra:read", "infra:deploy")),
+    ("ROLE-data-engineer", "Data Engineer", "Operates ingestion and analytics pipelines.",
+     "standard", ("directory:read", "infra:read", "ledger:read", "reports:read")),
+    ("ROLE-security-engineer", "Security Engineer", "Runs security operations and tooling.",
+     "privileged", ("directory:read", "infra:read", "audit:read", "secops:read", "secops:admin")),
+    ("ROLE-it-admin", "IT Administrator", "Administers corporate systems and accounts.",
+     "privileged", ("directory:read", "directory:write", "iam:admin")),
+    ("ROLE-directory-admin", "Directory Administrator", "Administers Lumen directory and IAM.",
+     "privileged", ("directory:read", "directory:write", "iam:admin")),
+    ("ROLE-hr-partner", "People Operations Partner", "Maintains employee records and lifecycle.",
+     "standard", ("directory:read", "directory:write")),
+    ("ROLE-executive", "Executive", "Oversight and reporting across the organisation.",
+     "privileged", ("directory:read", "reports:read", "audit:read")),
+)
+
+# (id, name, deptId, function, memberRole, managerRole, groupId, managerTitle, memberTitle, size)
+_LUMEN_TEAMS = (
+    ("TEAM-exec", "Executive Office", "DEPT-exec", "leadership",
+     "ROLE-executive", "ROLE-executive", "GRP-finance-leadership",
+     "Chief of Staff", "Executive Business Partner", 2),
+    ("TEAM-treasury-ops", "Treasury Operations", "DEPT-treasury", "treasury",
+     "ROLE-treasury-operator", "ROLE-treasury-manager", "GRP-treasury-operators",
+     "Head of Treasury Operations", "Treasury Operations Analyst", 6),
+    ("TEAM-cash-management", "Cash Management", "DEPT-treasury", "treasury",
+     "ROLE-treasury-analyst", "ROLE-treasury-manager", "GRP-treasury-operators",
+     "Cash Management Lead", "Cash Management Analyst", 4),
+    ("TEAM-gl", "General Ledger", "DEPT-controllership", "accounting",
+     "ROLE-gl-accountant", "ROLE-controller", "GRP-controllers",
+     "Group Controller", "General Ledger Accountant", 5),
+    ("TEAM-close", "Financial Close", "DEPT-controllership", "accounting",
+     "ROLE-gl-accountant", "ROLE-controller", "GRP-controllers",
+     "Close Manager", "Close Accountant", 4),
+    ("TEAM-ap", "Accounts Payable", "DEPT-procure-to-pay", "accounts_payable",
+     "ROLE-ap-clerk", "ROLE-ap-approver", "GRP-ap-team",
+     "Accounts Payable Manager", "Accounts Payable Clerk", 6),
+    ("TEAM-ar", "Accounts Receivable", "DEPT-order-to-cash", "accounts_receivable",
+     "ROLE-ar-specialist", "ROLE-ar-specialist", "GRP-ar-team",
+     "Accounts Receivable Manager", "Accounts Receivable Specialist", 5),
+    ("TEAM-fpa", "Planning & Analysis", "DEPT-fpa", "fpa",
+     "ROLE-fpa-analyst", "ROLE-fpa-analyst", "GRP-finance-leadership",
+     "FP&A Director", "FP&A Analyst", 4),
+    ("TEAM-aml", "Financial Crime Operations", "DEPT-financial-crime", "compliance",
+     "ROLE-compliance-analyst", "ROLE-compliance-officer", "GRP-compliance",
+     "Head of Financial Crime", "Financial Crime Analyst", 6),
+    ("TEAM-reg-reporting", "Regulatory Reporting", "DEPT-regulatory", "compliance",
+     "ROLE-regulatory-reporter", "ROLE-compliance-officer", "GRP-compliance",
+     "Regulatory Reporting Lead", "Regulatory Analyst", 3),
+    ("TEAM-audit", "Internal Audit", "DEPT-risk", "audit",
+     "ROLE-internal-auditor", "ROLE-internal-auditor", "GRP-auditors",
+     "Head of Internal Audit", "Internal Auditor", 3),
+    ("TEAM-platform", "Platform", "DEPT-platform", "engineering",
+     "ROLE-platform-engineer", "ROLE-platform-engineer", "GRP-platform-engineers",
+     "Engineering Manager, Platform", "Platform Engineer", 6),
+    ("TEAM-data", "Data", "DEPT-data", "engineering",
+     "ROLE-data-engineer", "ROLE-data-engineer", "GRP-platform-engineers",
+     "Data Engineering Lead", "Data Engineer", 4),
+    ("TEAM-secops", "Security Operations", "DEPT-infosec", "security",
+     "ROLE-security-engineer", "ROLE-security-engineer", "GRP-security",
+     "Head of Security", "Security Engineer", 4),
+    ("TEAM-itops", "IT Operations", "DEPT-it", "it",
+     "ROLE-it-admin", "ROLE-it-admin", "GRP-it-admins",
+     "IT Manager", "IT Administrator", 4),
+    ("TEAM-hr", "People Operations", "DEPT-people", "people",
+     "ROLE-hr-partner", "ROLE-hr-partner", "GRP-all-staff",
+     "Head of People", "People Operations Partner", 3),
+)
+
+# (id, name, type, description, roleIds, ownerTeamId)
+_LUMEN_GROUPS = (
+    ("GRP-all-staff", "All Staff", "distribution",
+     "Every active employee; company-wide announcements.", ("ROLE-employee",), "TEAM-hr"),
+    ("GRP-finance-leadership", "Finance Leadership", "distribution",
+     "Department heads and finance leads.", (), "TEAM-exec"),
+    ("GRP-treasury-operators", "Treasury Operators", "access",
+     "Operate cash sweeps and initiate payments.", ("ROLE-treasury-operator",), "TEAM-treasury-ops"),
+    ("GRP-controllers", "Controllers", "access",
+     "Post and close the general ledger.", ("ROLE-controller",), "TEAM-gl"),
+    ("GRP-ap-team", "Accounts Payable", "access",
+     "Process supplier bills and payment runs.", ("ROLE-ap-clerk",), "TEAM-ap"),
+    ("GRP-ar-team", "Accounts Receivable", "access",
+     "Manage customer invoicing and collections.", ("ROLE-ar-specialist",), "TEAM-ar"),
+    ("GRP-compliance", "Compliance", "access",
+     "Screening, case management, and regulatory reporting.", ("ROLE-compliance-analyst",), "TEAM-aml"),
+    ("GRP-auditors", "Internal Audit", "access",
+     "Read-only assurance access across finance systems.", ("ROLE-internal-auditor",), "TEAM-audit"),
+    ("GRP-platform-engineers", "Platform Engineers", "access",
+     "Deploy and operate platform and data services.", ("ROLE-platform-engineer",), "TEAM-platform"),
+    ("GRP-security", "Security Operations", "access",
+     "Security tooling and incident response.", ("ROLE-security-engineer",), "TEAM-secops"),
+    ("GRP-it-admins", "IT Administrators", "access",
+     "Administer corporate systems and identities.", ("ROLE-it-admin",), "TEAM-itops"),
+)
+
+# (id, username, purpose, ownerTeamId, roleId, environment)
+_LUMEN_SERVICE_ACCOUNTS = (
+    ("SVC-ap-bot", "ap-bot", "Automated supplier-bill intake and three-way match.",
+     "TEAM-ap", "ROLE-ap-clerk", "production"),
+    ("SVC-ar-bot", "ar-bot", "Automated invoice issuance and collections reminders.",
+     "TEAM-ar", "ROLE-ar-specialist", "production"),
+    ("SVC-treasury-sweep", "treasury-sweep", "Scheduled cash sweeps between operating accounts.",
+     "TEAM-cash-management", "ROLE-treasury-operator", "production"),
+    ("SVC-close-runner", "close-runner", "Month-end close task orchestration.",
+     "TEAM-close", "ROLE-gl-accountant", "production"),
+    ("SVC-ledger-poster", "ledger-poster", "Posts validated journal batches to the ledger.",
+     "TEAM-gl", "ROLE-gl-accountant", "production"),
+    ("SVC-ingest-pipeline", "ingest-pipeline", "Bank and statement ingestion pipeline.",
+     "TEAM-data", "ROLE-data-engineer", "production"),
+    ("SVC-screening-connector", "screening-connector", "Sanctions and AML screening connector.",
+     "TEAM-aml", "ROLE-compliance-analyst", "production"),
+    ("SVC-reg-filer", "reg-filer", "Automated regulatory filing submission.",
+     "TEAM-reg-reporting", "ROLE-regulatory-reporter", "production"),
+    ("SVC-directory-sync", "directory-sync", "Synchronises directory records to downstream systems.",
+     "TEAM-itops", "ROLE-directory-admin", "production"),
+    ("SVC-notify-dispatcher", "notify-dispatcher", "Sends transactional email and SMS notifications.",
+     "TEAM-platform", "ROLE-platform-engineer", "production"),
+    ("SVC-ci-deployer", "ci-deployer", "Continuous-delivery deploy agent.",
+     "TEAM-platform", "ROLE-platform-engineer", "staging"),
+    ("SVC-metrics-scraper", "metrics-scraper", "Collects platform and security telemetry.",
+     "TEAM-secops", "ROLE-security-engineer", "production"),
+)
+
+_LUMEN_OFFICES = (
+    ("London", "GB", "Europe/London"),
+    ("New York", "US", "America/New_York"),
+    ("Singapore", "SG", "Asia/Singapore"),
+    ("Frankfurt", "DE", "Europe/Berlin"),
+    ("Toronto", "CA", "America/Toronto"),
+    ("Bengaluru", "IN", "Asia/Kolkata"),
+)
+_LUMEN_STATUSES = ("active", "active", "active", "active", "active",
+                   "active", "active", "on_leave", "suspended", "offboarding")
+
+
+def _toplevel_dept(dept_id: str, parents: dict[str, str | None]) -> str:
+    cur = dept_id
+    while parents.get(cur):
+        cur = parents[cur]
+    return cur
+
+
+def lumen_directory(seed: str) -> dict[str, dict]:
+    """Build LynxCapital's internal directory as related directory tables.
+
+    Returns departments, teams, roles, groups, users (employees), and
+    service_accounts, each indexed by id and cross-referenced so the org
+    chart, RBAC grants, and ownership relationships resolve end to end.
+    """
+    role_perms = {r[0]: list(r[4]) for r in _LUMEN_ROLES}
+    dept_parents = {d[0]: d[2] for d in _LUMEN_DEPARTMENTS}
+    dept_cc = {d[0]: d[3] for d in _LUMEN_DEPARTMENTS}
+
+    departments = {
+        d[0]: {"id": d[0], "name": d[1], "parentDepartmentId": d[2],
+               "costCenter": d[3], "headEmployeeId": None, "headcount": 0}
+        for d in _LUMEN_DEPARTMENTS
+    }
+    teams = {
+        t[0]: {"id": t[0], "name": t[1], "departmentId": t[2], "function": t[3],
+               "managerId": None, "memberCount": 0}
+        for t in _LUMEN_TEAMS
+    }
+    roles = {
+        r[0]: {"id": r[0], "name": r[1], "description": r[2], "category": r[3],
+               "permissions": list(r[4]), "assignable": r[3] != "birthright"}
+        for r in _LUMEN_ROLES
+    }
+    groups = {
+        g[0]: {"id": g[0], "name": g[1], "type": g[2], "description": g[3],
+               "roleIds": list(g[4]), "ownerTeamId": g[5], "ownerEmployeeId": None,
+               "members": []}
+        for g in _LUMEN_GROUPS
+    }
+    users: dict[str, dict] = {}
+    used_usernames: set[str] = set()
+    counter = {"n": 1000}
+
+    def make_employee(team_id: str, dept_id: str, title: str, role_ids: list[str],
+                      group_ids: list[str], manager_id: str | None, *, leader: bool) -> str:
+        counter["n"] += 1
+        emp_no = counter["n"]
+        eid = f"EMP-{emp_no}"
+        rng = _rng(seed, "employee", emp_no)
+        given = rng.choice(_FIRST)
+        family = rng.choice(_LAST)
+        base_user = f"{given}.{family}".lower()
+        username = base_user
+        suffix = 1
+        while username in used_usernames:
+            suffix += 1
+            username = f"{base_user}{suffix}"
+        used_usernames.add(username)
+        office, country, tz = rng.choice(_LUMEN_OFFICES)
+        privileged = any(roles[r]["category"] == "privileged" for r in role_ids)
+        status = "active" if (leader or privileged) else rng.choice(_LUMEN_STATUSES)
+        emp_type = "full_time"
+        if not leader and rng.random() < 0.12:
+            emp_type = rng.choice(("contractor", "contractor", "part_time", "intern"))
+        hire = _instant(rng, -1600, -45)
+        terminated = None
+        last_login = _instant(rng, -7, 0)
+        if status == "offboarding":
+            last_login = _instant(rng, -30, -8)
+        record = {
+            "id": eid,
+            "employeeNumber": str(emp_no),
+            "username": username,
+            "userPrincipalName": f"{username}@{_LUMEN_DOMAIN}",
+            "displayName": f"{given} {family}",
+            "givenName": given,
+            "familyName": family,
+            "workEmail": f"{username}@{_LUMEN_DOMAIN}",
+            "status": status,
+            "employmentType": emp_type,
+            "jobTitle": title,
+            "departmentId": dept_id,
+            "teamId": team_id,
+            "managerId": manager_id,
+            "isManager": leader,
+            "location": {"office": office, "country": country, "timezone": tz},
+            "costCenter": dept_cc.get(dept_id, "CC-0000"),
+            "hireDate": hire[:10],
+            "terminationDate": terminated,
+            "roleIds": sorted(set(["ROLE-employee", *role_ids])),
+            "groupIds": sorted(set(group_ids)),
+            "mfaEnabled": True if privileged else rng.random() > 0.07,
+            "lastLoginAt": last_login,
+            "createdAt": hire,
+            "updatedAt": last_login,
+        }
+        users[eid] = record
+        for gid in record["groupIds"]:
+            if gid in groups and eid not in groups[gid]["members"]:
+                groups[gid]["members"].append(eid)
+        return eid
+
+    ceo = make_employee("TEAM-exec", "DEPT-exec", "Chief Executive Officer",
+                        ["ROLE-executive"], ["GRP-all-staff", "GRP-finance-leadership"],
+                        None, leader=True)
+    departments["DEPT-exec"]["headEmployeeId"] = ceo
+
+    dept_head: dict[str, str] = {"DEPT-exec": ceo}
+    for d in _LUMEN_DEPARTMENTS:
+        if d[2] is not None or d[0] == "DEPT-exec":
+            continue
+        subtree_team = next((t for t in _LUMEN_TEAMS
+                             if _toplevel_dept(t[2], dept_parents) == d[0]), None)
+        team_id = subtree_team[0] if subtree_team else "TEAM-exec"
+        head = make_employee(team_id, d[0], d[4], ["ROLE-executive"],
+                             ["GRP-all-staff", "GRP-finance-leadership"], ceo, leader=True)
+        departments[d[0]]["headEmployeeId"] = head
+        dept_head[d[0]] = head
+
+    for t in _LUMEN_TEAMS:
+        (tid, _name, dept_id, _fn, member_role, manager_role,
+         group_id, manager_title, member_title, size) = t
+        top = _toplevel_dept(dept_id, dept_parents)
+        head_id = dept_head.get(top, ceo)
+        mgr_groups = ["GRP-all-staff", group_id]
+        if roles[manager_role]["category"] == "privileged":
+            mgr_groups.append("GRP-finance-leadership")
+        manager = make_employee(tid, dept_id, manager_title, [manager_role],
+                                mgr_groups, head_id, leader=True)
+        teams[tid]["managerId"] = manager
+        if groups.get(group_id) and groups[group_id]["ownerEmployeeId"] is None:
+            groups[group_id]["ownerEmployeeId"] = manager
+        for _ in range(size):
+            make_employee(tid, dept_id, member_title, [member_role],
+                          ["GRP-all-staff", group_id], manager, leader=False)
+
+    for tid, team in teams.items():
+        team["memberCount"] = sum(1 for u in users.values() if u["teamId"] == tid)
+    for did, dept in departments.items():
+        dept["headcount"] = sum(1 for u in users.values() if u["departmentId"] == did)
+    for g in groups.values():
+        g["members"] = sorted(set(g["members"]))
+        g["memberCount"] = len(g["members"])
+
+    service_accounts = {}
+    for sid, uname, purpose, owner_team, role_id, env in _LUMEN_SERVICE_ACCOUNTS:
+        rng = _rng(seed, "svc", sid)
+        owner_emp = teams.get(owner_team, {}).get("managerId")
+        rotated = _instant(rng, -120, -20)
+        status = "active" if rng.random() > 0.12 else "disabled"
+        service_accounts[sid] = {
+            "id": sid,
+            "username": uname,
+            "displayName": f"{uname} service account",
+            "purpose": purpose,
+            "ownerTeamId": owner_team,
+            "ownerEmployeeId": owner_emp,
+            "roleIds": [role_id],
+            "scopes": sorted(set(role_perms.get(role_id, []))),
+            "environment": env,
+            "status": status,
+            "interactive": False,
+            "secretRotatedAt": rotated,
+            "secretExpiresAt": _instant(rng, 60, 240),
+            "lastUsedAt": _instant(rng, -3, 0) if status == "active" else rotated,
+            "createdBy": owner_emp,
+            "createdAt": _instant(rng, -700, -200),
+        }
+
+    return {
+        "departments": departments,
+        "teams": teams,
+        "roles": roles,
+        "groups": groups,
+        "users": users,
+        "service_accounts": service_accounts,
+    }
 
 
 def instruments(seed: str) -> list[dict]:
@@ -2535,3 +2886,350 @@ def aegis_reference(seed: str) -> dict:
 
     return {"watchlists": watchlists, "sanctioned": sanctioned, "businesses": businesses}
 
+
+# --------------------------------------------------------------------------- #
+# Verafin Monitor — transaction monitoring / BSA-AML regulatory reference data
+# --------------------------------------------------------------------------- #
+# Monitoring typologies and the weight each contributes to the 0-100 alert score.
+_VERAFIN_TYPOLOGIES = (
+    ("structuring", "Structuring / smurfing below reporting threshold", 38),
+    ("rapid_movement", "Rapid movement of funds (pass-through)", 30),
+    ("high_risk_geo", "Exposure to a high-risk jurisdiction", 28),
+    ("round_amount", "Round-amount layering pattern", 16),
+    ("velocity", "Account velocity spike", 22),
+    ("dormant_reactivation", "Reactivation of a dormant account", 20),
+    ("cash_intensive", "Cash-intensive activity", 24),
+)
+
+# Jurisdictions FinCEN/FATF treats as higher risk; lifts the monitoring score.
+_VERAFIN_HIGH_RISK = ("IR", "KP", "SY", "RU", "BY", "CU", "VE", "MM", "AF")
+
+# BSA reporting thresholds (USD) the rules engine references.
+_VERAFIN_CTR_THRESHOLD = 10_000
+_VERAFIN_SAR_THRESHOLD = 5_000
+
+# Channels carry different inherent monitoring risk.
+_VERAFIN_CHANNELS = ("wire", "ach", "card", "cash", "check", "crypto", "internal")
+
+# Regulatory and internal controls the program attests to each cycle.
+_VERAFIN_CONTROLS = (
+    ("ctrl-bsa-program", "BSA/AML Compliance Program", "31 CFR 1020.210",
+     "quarterly", "Board-approved program covering the four pillars."),
+    ("ctrl-sar-timeliness", "SAR Filing Timeliness", "31 CFR 1020.320",
+     "monthly", "SARs filed within 30 days of detection."),
+    ("ctrl-ctr-accuracy", "CTR Filing Accuracy", "31 CFR 1010.311",
+     "monthly", "CTRs filed within 15 days for cash over $10,000."),
+    ("ctrl-ofac-screening", "OFAC Sanctions Screening", "31 CFR 501",
+     "monthly", "Real-time interdiction against OFAC lists."),
+    ("ctrl-cdd", "Customer Due Diligence / Beneficial Ownership", "31 CFR 1010.230",
+     "quarterly", "CDD and 25% beneficial-ownership collection."),
+    ("ctrl-model-validation", "Monitoring Model Validation", "FFIEC BSA/AML Manual",
+     "annual", "Independent validation of detection thresholds."),
+    ("ctrl-independent-test", "Independent Testing", "31 CFR 1020.210(b)(4)",
+     "annual", "Independent audit of the AML program."),
+)
+
+
+def verafin_reference(seed: str) -> dict:
+    """Build monitored customers and accounts, the typology rule set, and the
+    regulatory control catalogue the monitoring and filing engine operates on."""
+    typologies = [
+        {"code": code, "description": desc, "weight": weight}
+        for code, desc, weight in _VERAFIN_TYPOLOGIES
+    ]
+
+    controls: dict[str, dict] = {}
+    for cid, name, citation, cadence, desc in _VERAFIN_CONTROLS:
+        rng = _rng(seed, "control", cid)
+        controls[cid] = {
+            "controlId": cid, "name": name, "regulatoryCitation": citation,
+            "framework": "FFIEC BSA/AML", "cadence": cadence, "description": desc,
+            "owner": f"{_person(rng).split()[0].lower()}.compliance@verafin.test",
+            "lastAttestedAt": None, "effectiveness": "not_yet_attested",
+        }
+
+    customers: dict[str, dict] = {}
+    accounts: dict[str, dict] = {}
+    risk_pool = ("low",) * 5 + ("medium",) * 3 + ("high",) * 2
+    for i in range(14):
+        rng = _rng(seed, "customer", i)
+        country, currency = rng.choice(_COUNTRIES)
+        if rng.random() < 0.18:
+            country = rng.choice(_VERAFIN_HIGH_RISK)
+        is_org = rng.random() < 0.7
+        cust_id = f"cust_{i:04d}"
+        rating = rng.choice(risk_pool)
+        if country in _VERAFIN_HIGH_RISK and rating == "low":
+            rating = "medium"
+        customers[cust_id] = {
+            "customerId": cust_id,
+            "legalName": _company(rng) if is_org else _person(rng),
+            "type": "organization" if is_org else "individual",
+            "country": country,
+            "kycRiskRating": rating,
+            "kycReviewedAt": _day(rng, -400, -20),
+            "onboardedAt": _day(rng, -2400, -420),
+            "industryCode": rng.choice(_MERCHANT_CATEGORIES)[0] if is_org else None,
+            "isCashIntensive": is_org and rng.random() < 0.25,
+            "status": "active",
+        }
+        for a in range(rng.randint(1, 2)):
+            acct_id = f"acct_{i:04d}_{a}"
+            kind = rng.choice(("operating", "escrow", "payroll", "settlement"))
+            accounts[acct_id] = {
+                "accountId": acct_id, "customerId": cust_id,
+                "type": kind, "currency": currency,
+                "openedAt": customers[cust_id]["onboardedAt"],
+                "status": "dormant" if rng.random() < 0.1 else "active",
+                "averageMonthlyVolume": rng.randint(20_000, 4_000_000),
+            }
+
+    return {
+        "typologies": typologies,
+        "controls": controls,
+        "customers": customers,
+        "accounts": accounts,
+        "ctrThreshold": _VERAFIN_CTR_THRESHOLD,
+        "sarThreshold": _VERAFIN_SAR_THRESHOLD,
+        "highRisk": list(_VERAFIN_HIGH_RISK),
+    }
+
+
+
+# --------------------------------------------------------------------------- #
+# Beacon CRM — accounts, contacts, deal pipeline, activities, notes, relations
+# --------------------------------------------------------------------------- #
+# A HubSpot/Pipedrive-style customer and vendor relationship dataset: companies
+# (accounts) hold people (contacts), deals move through a single sales pipeline
+# whose stages carry win probabilities, and the engagement history is captured
+# as activities and notes. Contact-to-contact relationships model the buying
+# committee inside an account.
+_CRM_INDUSTRIES = ("Software", "Manufacturing", "Logistics", "Financial Services",
+                   "Retail", "Healthcare", "Energy", "Telecommunications",
+                   "Media", "Construction", "Hospitality", "Agriculture")
+_CRM_JOB_TITLES = ("Chief Financial Officer", "VP Finance", "Procurement Manager",
+                   "Accounts Payable Lead", "Head of Operations", "Treasury Analyst",
+                   "Financial Controller", "Founder", "Director of Sales",
+                   "Office Manager", "Head of Procurement", "Operations Analyst")
+_CRM_SOURCES = ("inbound", "referral", "outbound", "event", "partner", "website")
+_CRM_LIFECYCLE = ("lead", "qualified", "customer", "vendor", "churned")
+_CRM_LEAD_STATUS = ("new", "open", "in_progress", "connected", "unqualified")
+_CRM_ACCOUNT_TYPES = ("customer", "prospect", "partner", "vendor")
+_CRM_TIERS = ("smb", "mid_market", "enterprise")
+_CRM_TAGS = ("vip", "newsletter", "decision_maker", "budget_holder",
+             "technical", "champion", "renewal_risk")
+_CRM_DEAL_THEMES = ("Annual Platform Renewal", "Expansion — Additional Seats",
+                    "New Implementation", "Managed Services Agreement",
+                    "Pilot Program", "Hardware Refresh", "Premium Support Upgrade",
+                    "Multi-Year Commitment")
+_CRM_LOST_REASONS = ("budget", "lost_to_competitor", "no_decision",
+                     "timing", "lost_to_incumbent", "no_budget_holder")
+_CRM_ACTIVITY_TYPES = ("call", "email", "meeting", "note", "task")
+_CRM_ACTIVITY_OUTCOMES = ("connected", "left_voicemail", "no_answer",
+                          "scheduled_follow_up", "completed")
+_CRM_RELATIONSHIP_TYPES = ("reports_to", "works_with", "introduced_by",
+                           "decision_maker_for")
+
+CRM_PIPELINE = "sales"
+# Ordered pipeline stages with the win probability each implies.
+CRM_STAGES = (("prospect", 10), ("qualified", 25), ("proposal", 50),
+              ("negotiation", 70), ("won", 100), ("lost", 0))
+_CRM_STAGE_PROB = dict(CRM_STAGES)
+
+
+def _crm_account(seed: str, idx: int) -> dict:
+    rng = _rng(seed, "crm_account", idx)
+    name = _company(rng)
+    country, currency = rng.choice(_COUNTRIES)
+    tier = rng.choices(_CRM_TIERS, weights=(6, 3, 1))[0]
+    employees = {"smb": rng.randint(5, 200),
+                 "mid_market": rng.randint(200, 2_000),
+                 "enterprise": rng.randint(2_000, 50_000)}[tier]
+    domain = f"{_slug(name).split('-')[0]}.example"
+    return {
+        "id": f"ACC-{idx:04d}",
+        "name": name,
+        "domain": domain,
+        "website": f"https://www.{domain}",
+        "industry": rng.choice(_CRM_INDUSTRIES),
+        "accountType": rng.choices(_CRM_ACCOUNT_TYPES, weights=(4, 3, 1, 2))[0],
+        "tier": tier,
+        "employeeCount": employees,
+        "annualRevenue": employees * rng.randint(80_000, 220_000),
+        "currency": currency,
+        "country": country,
+        "phone": _phone(rng, country),
+        "ownerId": f"USR-{rng.randint(1, 25):03d}",
+        "openDealCount": 0,
+        "createdAt": _instant(rng, -540, -120),
+        "updatedAt": _instant(rng, -110, -1),
+    }
+
+
+def _crm_contact(seed: str, idx: int, account: dict, primary: bool) -> dict:
+    rng = _rng(seed, "crm_contact", idx)
+    first, last = rng.choice(_FIRST), rng.choice(_LAST)
+    tags = rng.sample(_CRM_TAGS, rng.randint(0, 3))
+    if primary and "decision_maker" not in tags:
+        tags.append("decision_maker")
+    return {
+        "id": f"CONT-{idx:05d}",
+        "firstName": first,
+        "lastName": last,
+        "email": f"{first.lower()}.{last.lower()}@{account['domain']}",
+        "phone": _phone(rng, account["country"]),
+        "jobTitle": rng.choice(_CRM_JOB_TITLES),
+        "company": account["name"],
+        "accountId": account["id"],
+        "lifecycleStage": rng.choice(_CRM_LIFECYCLE),
+        "leadStatus": rng.choice(_CRM_LEAD_STATUS),
+        "source": rng.choice(_CRM_SOURCES),
+        "ownerId": account["ownerId"],
+        "tags": tags,
+        "country": account["country"],
+        "isPrimary": primary,
+        "createdAt": _instant(rng, -400, -40),
+        "updatedAt": _instant(rng, -39, -1),
+        "lastActivityAt": _instant(rng, -39, -1),
+    }
+
+
+def _crm_deal(seed: str, idx: int, account: dict, contact: dict) -> dict:
+    rng = _rng(seed, "crm_deal", idx)
+    stage, probability = rng.choice(CRM_STAGES)
+    status = {"won": "won", "lost": "lost"}.get(stage, "open")
+    created = _instant(rng, -300, -25)
+    deal = {
+        "id": f"DEAL-{idx:05d}",
+        "title": f"{account['name']} — {rng.choice(_CRM_DEAL_THEMES)}",
+        "accountId": account["id"],
+        "contactId": contact["id"],
+        "pipeline": CRM_PIPELINE,
+        "stage": stage,
+        "status": status,
+        "amount": round(rng.uniform(5_000, 400_000), 2),
+        "currency": account["currency"],
+        "probability": probability,
+        "expectedCloseDate": _day(rng, -20, 120),
+        "ownerId": account["ownerId"],
+        "source": rng.choice(_CRM_SOURCES),
+        "createdAt": created,
+        "updatedAt": _instant(rng, -24, -1),
+    }
+    if status == "won":
+        deal["wonAt"] = deal["updatedAt"]
+        deal["closedAt"] = deal["updatedAt"]
+    elif status == "lost":
+        deal["lostReason"] = rng.choice(_CRM_LOST_REASONS)
+        deal["closedAt"] = deal["updatedAt"]
+    return deal
+
+
+def _crm_activity(seed: str, idx: int, contact: dict, deal_id: str | None) -> dict:
+    rng = _rng(seed, "crm_activity", idx)
+    kind = rng.choice(_CRM_ACTIVITY_TYPES)
+    at = _instant(rng, -120, -1)
+    activity = {
+        "activityId": f"ACT-{idx:06d}",
+        "type": kind,
+        "contactId": contact["id"],
+        "accountId": contact["accountId"],
+        "dealId": deal_id,
+        "subject": f"{kind.title()} with {contact['firstName']} {contact['lastName']}",
+        "summary": f"{kind.title()} logged for {contact['company']}.",
+        "direction": rng.choice(("inbound", "outbound")),
+        "outcome": rng.choice(_CRM_ACTIVITY_OUTCOMES),
+        "ownerId": contact["ownerId"],
+        "at": at,
+        "createdAt": at,
+    }
+    if kind in ("call", "meeting"):
+        activity["durationMinutes"] = rng.choice((15, 30, 45, 60))
+    return activity
+
+
+def _crm_note(seed: str, idx: int, contact: dict, deal_id: str | None) -> dict:
+    rng = _rng(seed, "crm_note", idx)
+    bodies = (
+        f"Spoke with {contact['firstName']} about renewal terms and timeline.",
+        f"{contact['company']} requested an updated proposal and payment schedule.",
+        "Budget approval pending with finance; revisit next quarter.",
+        "Confirmed technical requirements with the operations team.",
+        "Champion is supportive; needs sign-off from the CFO.",
+    )
+    created = _instant(rng, -110, -1)
+    return {
+        "noteId": f"NOTE-{idx:06d}",
+        "contactId": contact["id"],
+        "accountId": contact["accountId"],
+        "dealId": deal_id,
+        "body": rng.choice(bodies),
+        "ownerId": contact["ownerId"],
+        "createdAt": created,
+    }
+
+
+def crm_dataset(seed: str) -> dict[str, dict]:
+    """Build a coherent CRM book of business: accounts each holding a small
+    buying committee of contacts, an open/won/lost deal pipeline linked to the
+    primary contact, and the seeded engagement history (activities, notes) and
+    contact-to-contact relationships that a real CRM accumulates over time."""
+    accounts: dict[str, dict] = {}
+    contacts: dict[str, dict] = {}
+    deals: dict[str, dict] = {}
+    activities: dict[str, dict] = {}
+    notes: dict[str, dict] = {}
+    relationships: dict[str, dict] = {}
+
+    contact_idx = deal_idx = act_idx = note_idx = rel_idx = 0
+    for a in range(1, 91):
+        account = _crm_account(seed, a)
+        accounts[account["id"]] = account
+        rng = _rng(seed, "crm_account_fill", a)
+
+        committee: list[dict] = []
+        for member in range(rng.randint(1, 4)):
+            contact_idx += 1
+            contact = _crm_contact(seed, contact_idx, account, primary=(member == 0))
+            contacts[contact["id"]] = contact
+            committee.append(contact)
+
+        primary = committee[0]
+        for member in committee[1:]:
+            rel_idx += 1
+            relationships[f"REL-{rel_idx:05d}"] = {
+                "relationshipId": f"REL-{rel_idx:05d}",
+                "type": rng.choice(_CRM_RELATIONSHIP_TYPES),
+                "fromContactId": member["id"],
+                "toContactId": primary["id"],
+                "accountId": account["id"],
+                "createdAt": member["createdAt"],
+            }
+
+        deal_id = None
+        for _ in range(rng.randint(0, 2)):
+            deal_idx += 1
+            deal = _crm_deal(seed, deal_idx, account, primary)
+            deals[deal["id"]] = deal
+            deal_id = deal["id"]
+            if deal["status"] == "open":
+                account["openDealCount"] += 1
+
+        for member in committee:
+            for _ in range(_rng(seed, "crm_hist", member["id"]).randint(0, 3)):
+                act_idx += 1
+                activity = _crm_activity(seed, act_idx, member, deal_id)
+                activities[activity["activityId"]] = activity
+            if rng.random() < 0.5:
+                note_idx += 1
+                note = _crm_note(seed, note_idx, member, deal_id)
+                notes[note["noteId"]] = note
+
+    return {
+        "accounts": accounts,
+        "contacts": contacts,
+        "deals": deals,
+        "activities": activities,
+        "notes": notes,
+        "relationships": relationships,
+    }
