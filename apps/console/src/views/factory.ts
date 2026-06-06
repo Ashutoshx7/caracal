@@ -1964,8 +1964,10 @@ export function agentsView(ctx: Ctx): View {
     title: 'agent sessions',
     info: resourceListInfo('agent session'),
     columns: [
-      { header: 'application', width: 28, value: (r) => r.application_name },
-      { header: 'parent', width: 36, value: (r) => r.parent_id ?? '-' },
+      { header: 'application', width: 24, value: (r) => r.application_name },
+      { header: 'kind', width: 10, value: (r) => r.kind ?? '-' },
+      { header: 'capabilities', width: 28, value: (r) => r.capabilities?.length ? r.capabilities.join(', ') : '-' },
+      { header: 'parent', width: 24, value: (r) => r.parent_id ?? '-' },
       { header: 'status', width: 10, value: (r) => r.status },
       { header: 'depth', width: 6, value: (r) => String(r.depth) },
       { header: 'spawned_at', width: 24, value: (r) => formatDateTimeOrValue(r.spawned_at, { compact: true }) },

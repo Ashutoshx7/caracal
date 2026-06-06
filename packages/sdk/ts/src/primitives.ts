@@ -26,6 +26,7 @@ export interface SpawnInput {
   kind?: AgentKind;
   ttlSeconds?: number;
   metadata?: JsonObject;
+  capabilities?: string[];
   traceId?: string;
   onAgentStart?: (ctx: CaracalContext) => void | Promise<void>;
   onAgentEnd?: (ctx: CaracalContext) => void | Promise<void>;
@@ -44,6 +45,7 @@ export async function spawn<T>(input: SpawnInput, fn: () => Promise<T>): Promise
     kind,
     ttlSeconds: input.ttlSeconds,
     metadata: input.metadata,
+    capabilities: input.capabilities,
   });
   const ctx: CaracalContext = {
     subjectToken: bearer,
@@ -121,6 +123,7 @@ export interface DelegateToSpawnInput {
   kind?: AgentKind;
   ttlSeconds?: number;
   metadata?: JsonObject;
+  capabilities?: string[];
   traceId?: string;
   onAgentStart?: (ctx: CaracalContext) => void | Promise<void>;
   onAgentEnd?: (ctx: CaracalContext) => void | Promise<void>;
@@ -149,6 +152,7 @@ export async function delegateToSpawn<T>(
     kind,
     ttlSeconds: input.ttlSeconds,
     metadata: input.metadata,
+    capabilities: input.capabilities,
   });
   let delRes;
   try {

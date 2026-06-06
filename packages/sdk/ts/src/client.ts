@@ -58,6 +58,7 @@ export interface SpawnOptions {
   subjectSessionId?: string;
   parentId?: string;
   metadata?: JsonObject;
+  capabilities?: string[];
   traceId?: string;
 }
 
@@ -78,6 +79,7 @@ export interface DelegateToSpawnOptions {
   kind?: AgentKind;
   ttlSeconds?: number;
   metadata?: JsonObject;
+  capabilities?: string[];
   traceId?: string;
 }
 
@@ -251,6 +253,7 @@ export class Caracal {
       subjectSessionId: opts.subjectSessionId,
       parentId: opts.parentId,
       metadata: opts.metadata,
+      capabilities: opts.capabilities,
       traceId: opts.traceId,
       onAgentStart: this.agentStartHooks.length ? (c) => this.fire(this.agentStartHooks, c) : undefined,
       onAgentEnd: this.agentEndHooks.length ? (c) => this.fire(this.agentEndHooks, c) : undefined,
@@ -284,6 +287,7 @@ export class Caracal {
       kind: opts.kind ?? this.config.defaultKind ?? AgentKind.Instance,
       ttlSeconds: opts.ttlSeconds ?? this.config.defaultTtlSeconds,
       metadata: opts.metadata,
+      capabilities: opts.capabilities,
       traceId: opts.traceId,
       onAgentStart: this.agentStartHooks.length ? (c) => this.fire(this.agentStartHooks, c) : undefined,
       onAgentEnd: this.agentEndHooks.length ? (c) => this.fire(this.agentEndHooks, c) : undefined,
