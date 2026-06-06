@@ -663,13 +663,34 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id):
             _finish(w, {"region": region})
 
     @tool
-    def forecast_liquidity(horizon_days: int = 30) -> str:
-        """Forecast inflow/outflow over a horizon (7, 30, or 90 days)."""
-        w = _worker("treasury", f"forecast:{horizon_days}")
+    def get_treasury_summary() -> str:
+        """Group cash summary across every currency, converted to USD. Use this
+        for a single consolidated view before deciding where to sweep or hedge."""
+        w = _worker("treasury", "summary")
         try:
-            return json.dumps(tool_fns.forecast_liquidity(run_id, w.id, int(horizon_days)))
+            return json.dumps(tool_fns.get_treasury_summary(run_id, w.id))
         finally:
-            _finish(w, {"horizon_days": horizon_days})
+            _finish(w, {})
+
+    @tool
+    def forecast_liquidity(horizon_days: int = 30, scenario: str = "base") -> str:
+        """Forecast inflow/outflow over a horizon (7, 30, or 90 days) under a
+        scenario (base, optimistic, or stress)."""
+        w = _worker("treasury", f"forecast:{horizon_days}:{scenario}")
+        try:
+            return json.dumps(tool_fns.forecast_liquidity(run_id, w.id, int(horizon_days), scenario))
+        finally:
+            _finish(w, {"horizon_days": horizon_days, "scenario": scenario})
+
+    @tool
+    def get_fx_exposure(currency: str) -> str:
+        """Return the net FX exposure for a currency, with the hedged and unhedged
+        amounts and 1-day value-at-risk. Use this to size a hedge before placing it."""
+        w = _worker("treasury", f"exposure:{currency}")
+        try:
+            return json.dumps(tool_fns.get_fx_exposure(run_id, w.id, currency))
+        finally:
+            _finish(w, {"currency": currency})
 
     @tool
     def place_fx_hedge(from_currency: str, to_currency: str, notional: float, tenor_days: int = 90) -> str:
@@ -1003,7 +1024,8 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id):
     return [
         kyb_screen_vendor, register_vendor, refresh_vendor_compliance, get_contract_terms_for_vendor,
         get_vendor_onboarding_status, advance_vendor_onboarding, verify_vendor_banking,
-        get_cash_position, forecast_liquidity, place_fx_hedge, transfer_funds,
+        get_cash_position, get_treasury_summary, forecast_liquidity, get_fx_exposure,
+        place_fx_hedge, transfer_funds,
         post_journal_entry, list_ledger_accounts, reconcile_account, compute_accrual,
         get_trial_balance, close_period,
         aml_monitor_transaction, sanctions_screen_batch, prepare_regulatory_filing,

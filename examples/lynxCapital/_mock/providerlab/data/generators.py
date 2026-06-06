@@ -1870,6 +1870,309 @@ def cordoba_dataset(seed: str) -> dict[str, dict]:
 
 
 # --------------------------------------------------------------------------- #
+# Keystone Treasury — corporate treasury management system, flavored after
+# Kyriba, GTreasury, ION Treasury, and FIS Quantum. A multi-entity group holds
+# bank-account cash positions in several currencies, hedges its FX exposure with
+# forwards and swaps, sweeps and lends cash intercompany, and runs short-term
+# investments. The reporting currency for the group is USD.
+# --------------------------------------------------------------------------- #
+_KEYSTONE_EPOCH = datetime(2026, 1, 1, tzinfo=timezone.utc)
+_KEYSTONE_REPORTING_CCY = "USD"
+
+# Legal entities in the treasury group: (id, name, country, functional currency, region).
+_KEYSTONE_ENTITIES = (
+    ("LXC-US", "LynxCapital Inc.", "US", "USD", "US"),
+    ("LXC-EU", "LynxCapital Europe GmbH", "DE", "EUR", "DE"),
+    ("LXC-UK", "LynxCapital UK Ltd.", "GB", "GBP", "GB"),
+    ("LXC-SG", "LynxCapital APAC Pte. Ltd.", "SG", "SGD", "SG"),
+    ("LXC-JP", "LynxCapital Japan KK", "JP", "JPY", "JP"),
+    ("LXC-BR", "LynxCapital Brasil Ltda.", "BR", "BRL", "BR"),
+)
+_KEYSTONE_ENTITY_BY_CCY = {ccy: eid for eid, _n, _c, ccy, _r in _KEYSTONE_ENTITIES}
+_KEYSTONE_ENTITY_BY_REGION = {region: eid for eid, _n, _c, _ccy, region in _KEYSTONE_ENTITIES}
+
+# Banking partners by country: (bank name, BIC prefix).
+_KEYSTONE_BANKS = {
+    "US": ("Halcyon Bank", "HLCYUS33"),
+    "DE": ("Northwind Bank", "NORDDEFF"),
+    "GB": ("Corvus Bank", "CORVGB2L"),
+    "SG": ("Sterling National", "STRLSGSG"),
+    "JP": ("Sterling National", "STRLJPJT"),
+    "BR": ("Corvus Bank", "CORVBRSP"),
+}
+
+# Account purposes per entity, in priority order; the first is the concentration
+# account a sweep pulls into.
+_KEYSTONE_ACCOUNT_PLAN = ("Operating", "Reserve", "Payroll")
+_KEYSTONE_ACCOUNT_TYPE = {
+    "Operating": "current", "Reserve": "current", "Payroll": "current",
+}
+
+_KEYSTONE_COUNTERPARTIES = (
+    "Halcyon Bank", "Corvus Bank", "Northwind Bank", "Sterling National",
+)
+_KEYSTONE_HEDGE_STATUS_FLOW = ("booked", "confirmed", "settled")
+_KEYSTONE_TRANSFER_STATUS_FLOW = ("pending", "value_dated", "executed", "settled")
+_KEYSTONE_OPERATION_TYPES = (
+    "cash_sweep", "money_market_investment", "term_deposit",
+    "commercial_paper", "intercompany_loan",
+)
+
+
+def keystone_usd(amount: float, currency: str) -> float:
+    """Group-reporting-currency (USD) equivalent of an amount in any currency."""
+    return amount * fx_mid_rate(currency, _KEYSTONE_REPORTING_CCY)
+
+
+def keystone_entity(*, currency: str | None = None, region: str | None = None) -> tuple | None:
+    """Resolve a treasury entity tuple by functional currency or region."""
+    eid = None
+    if currency is not None:
+        eid = _KEYSTONE_ENTITY_BY_CCY.get(currency.upper())
+    if eid is None and region is not None:
+        eid = _KEYSTONE_ENTITY_BY_REGION.get(region.upper())
+    if eid is None:
+        return None
+    return next(e for e in _KEYSTONE_ENTITIES if e[0] == eid)
+
+
+def keystone_currencies() -> tuple[str, ...]:
+    return tuple(ccy for _e, _n, _c, ccy, _r in _KEYSTONE_ENTITIES)
+
+
+def _keystone_account_number(rng: random.Random) -> str:
+    return "".join(rng.choice("0123456789") for _ in range(10))
+
+
+def _keystone_position(seed: str, entity: tuple, purpose: str) -> dict:
+    eid, name, country, currency, region = entity
+    rng = _rng(seed, "position", eid, purpose)
+    bank_name, bic_prefix = _KEYSTONE_BANKS[country]
+    account_number = _keystone_account_number(rng)
+    is_reserve = purpose == "Reserve"
+    floor, ceiling = (8_000_000, 60_000_000) if is_reserve else (500_000, 28_000_000)
+    if currency == "JPY":
+        floor, ceiling = floor * 150, ceiling * 150
+    elif currency == "BRL":
+        floor, ceiling = floor * 5, ceiling * 5
+    ledger = round(rng.uniform(floor, ceiling), 2)
+    holds = round(ledger * rng.uniform(0.01, 0.08), 2)
+    available = round(ledger - holds, 2)
+    intraday = round(rng.uniform(-400_000, 600_000) * (1 if currency != "JPY" else 150), 2)
+    overdraft = 0.0 if is_reserve else round(ceiling * 0.1, 2)
+    as_of = _KEYSTONE_EPOCH - timedelta(hours=rng.randint(1, 18))
+    return {
+        "accountId": f"acct_{bic_prefix[:4].lower()}_{account_number[-6:]}",
+        "accountName": f"{name} {purpose} {currency}",
+        "accountType": _KEYSTONE_ACCOUNT_TYPE[purpose],
+        "purpose": purpose,
+        "bankId": f"bank_{_slug(bank_name)}",
+        "bankName": bank_name,
+        "bic": f"{bic_prefix}",
+        "iban": _iban(rng, country, account_number) if country in ("DE", "GB", "BR") else None,
+        "accountNumber": account_number,
+        "legalEntityId": eid,
+        "legalEntity": name,
+        "region": region,
+        "country": country,
+        "currency": currency,
+        "ledgerBalance": ledger,
+        "holdsAndUncleared": holds,
+        "availableBalance": available,
+        "valueDatedBalance": round(available + intraday, 2),
+        "projectedBalance": round(available + intraday * rng.uniform(0.8, 1.4), 2),
+        "overdraftLimit": overdraft,
+        "creditInterestRate": round(rng.uniform(0.5, 4.25), 3),
+        "asOf": _fx_iso(as_of),
+        "lastMovementAt": _fx_iso(as_of - timedelta(hours=rng.randint(1, 40))),
+        "status": "active",
+    }
+
+
+def _keystone_hedge(seed: str, idx: int) -> dict:
+    rng = _rng(seed, "hedge", idx)
+    pairs = (("EUR", "USD"), ("GBP", "USD"), ("USD", "SGD"),
+             ("USD", "JPY"), ("USD", "BRL"), ("EUR", "GBP"))
+    buy, sell = pairs[idx % len(pairs)]
+    instrument = rng.choices(("forward", "fx_swap", "ndf"), weights=(6, 3, 1))[0]
+    side = rng.choice(("buy", "sell"))
+    notional = round(rng.uniform(500_000, 12_000_000), 2)
+    tenor_days = rng.choice((30, 60, 90, 90, 180, 270, 365))
+    trade_date = _KEYSTONE_EPOCH - timedelta(days=rng.randint(2, 120))
+    value_date = trade_date + timedelta(days=2)
+    settlement = trade_date + timedelta(days=tenor_days)
+    spot = fx_mid_rate(sell, buy)
+    forward_points = round(rng.uniform(-0.004, 0.006), 6)
+    all_in = spot + forward_points
+    settled = settlement <= _KEYSTONE_EPOCH
+    status = "settled" if settled else rng.choices(("booked", "confirmed"), weights=(1, 3))[0]
+    mtm = round(notional * rng.uniform(-0.03, 0.03), 2)
+    return {
+        "hedgeId": f"hdg_{rng.getrandbits(48):012x}",
+        "dealRef": f"FX{trade_date:%Y%m%d}-{1000 + idx}",
+        "instrument": instrument,
+        "pair": f"{buy}/{sell}",
+        "side": side,
+        "notional": notional,
+        "notionalCurrency": buy,
+        "counterCurrency": sell,
+        "spotRate": fx_rate_str(spot),
+        "forwardPoints": f"{forward_points:.6f}",
+        "allInRate": fx_rate_str(all_in),
+        "tradeDate": _fx_iso(trade_date),
+        "valueDate": value_date.date().isoformat(),
+        "settlementDate": settlement.date().isoformat(),
+        "tenorDays": tenor_days,
+        "counterparty": rng.choice(_KEYSTONE_COUNTERPARTIES),
+        "hedgeType": rng.choice(("cashflow", "balance_sheet")),
+        "portfolio": rng.choice(("FX-CORE", "FX-INTERCO")),
+        "status": status,
+        "markToMarket": mtm,
+        "markToMarketCurrency": "USD",
+    }
+
+
+def _keystone_transfer(seed: str, idx: int) -> dict:
+    rng = _rng(seed, "transfer", idx)
+    entities = [e for e in _KEYSTONE_ENTITIES]
+    src = entities[idx % len(entities)]
+    dst = entities[(idx * 3 + 1) % len(entities)]
+    if dst[0] == src[0]:
+        dst = entities[(idx + 2) % len(entities)]
+    same_entity = rng.random() < 0.3
+    if same_entity:
+        dst = src
+    currency = src[3]
+    amount = round(rng.uniform(100_000, 6_000_000) * (150 if currency == "JPY" else 1), 2)
+    initiated = _KEYSTONE_EPOCH - timedelta(days=rng.randint(0, 60))
+    value_date = initiated + timedelta(days=rng.choice((0, 1, 2)))
+    stage = rng.choices(range(4), weights=(1, 1, 1, 4))[0]
+    status = _KEYSTONE_TRANSFER_STATUS_FLOW[stage]
+    fee = 0.0 if same_entity else round(rng.uniform(3, 25), 2)
+    transfer_type = "internal_sweep" if same_entity else "intercompany"
+    return {
+        "transferId": f"tr_{rng.getrandbits(48):012x}",
+        "reference": f"TT{initiated:%Y%m%d}-{2000 + idx}",
+        "type": transfer_type,
+        "fromAccountId": f"acct_{src[0].lower()}_concentration",
+        "fromEntityId": src[0],
+        "fromEntity": src[1],
+        "toAccountId": f"acct_{dst[0].lower()}_concentration",
+        "toEntityId": dst[0],
+        "toEntity": dst[1],
+        "currency": currency,
+        "amount": amount,
+        "valueDate": value_date.date().isoformat(),
+        "status": status,
+        "purposeCode": rng.choice(("INTC", "CASH", "TREA", "LOAN")),
+        "fee": fee,
+        "feeCurrency": currency,
+        "initiatedAt": _fx_iso(initiated),
+        "settledAt": _fx_iso(value_date) if stage == 3 else None,
+    }
+
+
+def _keystone_exposure(seed: str, currency: str, positions: dict, hedges: dict) -> dict:
+    rng = _rng(seed, "exposure", currency)
+    cash = sum(p["valueDatedBalance"] for p in positions.values() if p["currency"] == currency)
+    receivables = round(rng.uniform(0.2, 1.5) * max(cash, 1_000_000), 2)
+    payables = round(rng.uniform(0.2, 1.4) * max(cash, 1_000_000), 2)
+    gross_long = round(cash + receivables, 2)
+    gross_short = round(payables, 2)
+    net = round(gross_long - gross_short, 2)
+    hedged = round(sum(
+        h["notional"] for h in hedges.values()
+        if currency in (h["notionalCurrency"], h["counterCurrency"]) and h["status"] != "settled"
+    ), 2)
+    unhedged = round(net - hedged, 2)
+    ratio = round(min(1.0, hedged / net), 4) if net > 0 else 0.0
+    var = round(abs(unhedged) * rng.uniform(0.008, 0.018), 2)
+    return {
+        "currency": currency,
+        "asOf": _fx_iso(_KEYSTONE_EPOCH - timedelta(hours=rng.randint(1, 12))),
+        "grossLong": gross_long,
+        "grossShort": gross_short,
+        "netExposure": net,
+        "hedgedAmount": hedged,
+        "unhedgedAmount": unhedged,
+        "hedgeRatio": ratio,
+        "valueAtRisk1d95": var,
+        "reportingCurrency": _KEYSTONE_REPORTING_CCY,
+        "netExposureBase": round(keystone_usd(net, currency), 2),
+    }
+
+
+def _keystone_operation(seed: str, idx: int) -> dict:
+    rng = _rng(seed, "operation", idx)
+    op_type = _KEYSTONE_OPERATION_TYPES[idx % len(_KEYSTONE_OPERATION_TYPES)]
+    entity = _KEYSTONE_ENTITIES[(idx * 2) % len(_KEYSTONE_ENTITIES)]
+    currency = entity[3]
+    principal = round(rng.uniform(1_000_000, 25_000_000) * (150 if currency == "JPY" else 1), 2)
+    value_date = _KEYSTONE_EPOCH - timedelta(days=rng.randint(0, 30))
+    tenor = rng.choice((1, 7, 14, 30, 30, 90, 180))
+    maturity = value_date + timedelta(days=tenor)
+    matured = maturity <= _KEYSTONE_EPOCH
+    rate = round(rng.uniform(0.5, 5.25), 3)
+    return {
+        "operationId": f"op_{rng.getrandbits(40):010x}",
+        "type": op_type,
+        "status": "matured" if matured else rng.choice(("booked", "confirmed", "active")),
+        "entityId": entity[0],
+        "entity": entity[1],
+        "currency": currency,
+        "principal": principal,
+        "rate": rate,
+        "tenorDays": tenor,
+        "valueDate": value_date.date().isoformat(),
+        "maturityDate": maturity.date().isoformat(),
+        "counterparty": rng.choice(_KEYSTONE_COUNTERPARTIES),
+        "reference": f"OP{value_date:%Y%m%d}-{3000 + idx}",
+        "createdAt": _fx_iso(value_date),
+    }
+
+
+def keystone_dataset(seed: str) -> dict[str, dict]:
+    """Build a coherent treasury book: multi-entity bank-account positions, an FX
+    hedge portfolio, intercompany and internal transfers, currency exposures
+    derived from those positions and hedges, and a history of short-term treasury
+    operations — the live picture a corporate treasury platform would hold."""
+    positions: dict[str, dict] = {}
+    for entity in _KEYSTONE_ENTITIES:
+        account_count = 3 if entity[3] in ("USD", "EUR") else 2
+        for purpose in _KEYSTONE_ACCOUNT_PLAN[:account_count]:
+            pos = _keystone_position(seed, entity, purpose)
+            positions[pos["accountId"]] = pos
+
+    hedges: dict[str, dict] = {}
+    for i in range(1, 13):
+        hedge = _keystone_hedge(seed, i)
+        hedges[hedge["hedgeId"]] = hedge
+
+    transfers: dict[str, dict] = {}
+    for i in range(1, 11):
+        transfer = _keystone_transfer(seed, i)
+        transfers[transfer["transferId"]] = transfer
+
+    exposures: dict[str, dict] = {}
+    for currency in keystone_currencies():
+        exposures[currency] = _keystone_exposure(seed, currency, positions, hedges)
+
+    operations: dict[str, dict] = {}
+    for i in range(1, 11):
+        op = _keystone_operation(seed, i)
+        operations[op["operationId"]] = op
+
+    return {
+        "positions": positions,
+        "forecasts": {},
+        "hedges": hedges,
+        "transfers": transfers,
+        "exposures": exposures,
+        "operations": operations,
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Slate Ledger — general-ledger and financial-close platform, flavored after
 # Sage Intacct, NetSuite, BlackLine, and FloQast. Accounts carry a normal
 # balance; journals are double-entry with an entry type and source; periods

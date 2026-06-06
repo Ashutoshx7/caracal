@@ -90,6 +90,19 @@ HANDLERS: dict[str, dict[str, Callable[[Ctx], dict]]] = {}
 SEEDERS: dict[str, Callable[[State], None]] = {}
 TOOLSPECS: dict[str, dict[str, dict]] = {}
 RESOURCES: dict[str, list[dict]] = {}
+GRPC_SERVICES: dict[str, dict] = {}
+
+
+def grpc_service(provider_id: str, *, package: str, services: list[dict]) -> None:
+    """Register the gRPC service surface a provider exposes.
+
+    Each service entry is ``{"name": <ServiceName>, "rpcs": [{"name": <Rpc>,
+    "operation": <op>, "request": <Msg>, "response": <Msg>,
+    "server_streaming": bool}]}``. The lab serves these methods over the shared
+    HTTP transport, but the descriptor lets the control surface present the
+    provider as the gRPC service it models."""
+    GRPC_SERVICES[provider_id] = {"package": package, "services": services}
+
 
 
 def op(provider_id: str, name: str, *, title: str | None = None,
