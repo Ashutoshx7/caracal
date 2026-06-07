@@ -15,8 +15,8 @@ import httpx
 from .json_types import JsonObject, JsonValue
 
 
-class AgentLifecycle(StrEnum):
-    AGENT = "agent"
+class Lifecycle(StrEnum):
+    TASK = "task"
     SERVICE = "service"
 
 
@@ -77,7 +77,7 @@ class SpawnRequest:
     application_id: str
     subject_session_id: str | None = None
     parent_id: str | None = None
-    lifecycle: AgentLifecycle | None = None
+    lifecycle: Lifecycle | None = None
     ttl_seconds: int | None = None
     metadata: JsonObject | None = None
     labels: list[str] | None = None

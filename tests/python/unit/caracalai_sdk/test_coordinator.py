@@ -10,7 +10,7 @@ import unittest
 import httpx
 
 from caracalai_sdk.coordinator import (
-    AgentLifecycle,
+    Lifecycle,
     CoordinatorClient,
     DelegationConstraints,
     DelegationRequest,
@@ -74,7 +74,7 @@ class SpawnAgentTests(unittest.IsolatedAsyncioTestCase):
                 application_id="app",
                 subject_session_id="sid-1",
                 parent_id="parent-1",
-                lifecycle=AgentLifecycle.SERVICE,
+                lifecycle=Lifecycle.SERVICE,
                 ttl_seconds=60,
                 metadata={"purpose": "test"},
                 labels=["refunds.execute", "ledger.read"],

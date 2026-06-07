@@ -13,7 +13,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from .context import CaracalContext, current, _ctx_var
 from .coordinator import (
-    AgentLifecycle,
+    Lifecycle,
     CoordinatorClient,
     DelegationConstraints,
     DelegationRequest,
@@ -235,7 +235,7 @@ async def spawn_service(
             zone_id=zone_id,
             application_id=application_id,
             parent_id=parent_agent_session_id,
-            lifecycle=AgentLifecycle.SERVICE,
+            lifecycle=Lifecycle.SERVICE,
             ttl_seconds=ttl_seconds,
             metadata=metadata,
             labels=labels,
