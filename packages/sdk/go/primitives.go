@@ -242,3 +242,92 @@ func DelegateToSpawn(ctx context.Context, opts DelegateToSpawnInput, fn func(con
 	}
 	return runErr
 }
+
+// SpawnServiceInput controls long-lived service agent spawning.
+type SpawnServiceInput struct {
+	Coordinator      *CoordinatorClient
+	ZoneID           string
+	ApplicationID    string
+	SubjectToken     string
+	SubjectSessionID string
+	ParentID         string
+	TTLSeconds       int
+	Metadata         map[string]any
+	Capabilities     []string
+	TraceID          string
+	OnAgentStart     LifecycleHook
+}
+
+// ServiceAgent is a handle for a long-lived service agent session. Unlike
+// Spawn, a service session is not terminated automatically: the holder must
+// Heartbeat to keep its lease and Close to retire it.
+type ServiceAgent struct {
+	Context     CaracalContext
+	coordinator *CoordinatorClient
+}
+
+// AgentSessionID returns the service session identifier.
+func (s *ServiceAgent) AgentSessionID() string {
+	return s.Context.AgentSessionID
+}
+
+// Heartbeat renews the service session lease.
+func (s *ServiceAgent) Heartbeat(ctx context.Context) error {
+	return HeartbeatAgent(ctx, s.coordinator, s.Context.SubjectToken, s.Context.ZoneID, s.Context.AgentSessionID)
+}
+
+// Close retires the service session.
+func (s *ServiceAgent) Close(ctx context.Context) error {
+	return TerminateAgent(ctx, s.coordinator, s.Context.SubjectToken, s.Context.ZoneID, s.Context.AgentSessionID)
+}
+
+// SpawnService spawns a long-lived service agent session and returns a handle
+// the caller owns. The session carries a heartbeat lease; renew it with
+// ServiceAgent.Heartbeat and retire it with ServiceAgent.Close.
+func SpawnService(ctx context.Context, opts SpawnServiceInput) (*ServiceAgent, error) {
+	parent, _ := Current(ctx)
+	parentID := opts.ParentID
+	if parentID == "" {
+		parentID = parent.AgentSessionID
+	}
+
+	res, err := SpawnAgent(ctx, opts.Coordinator, opts.SubjectToken, SpawnRequest{
+		ZoneID:           opts.ZoneID,
+		ApplicationID:    opts.ApplicationID,
+		SubjectSessionID: opts.SubjectSessionID,
+		ParentID:         parentID,
+		Kind:             KindService,
+		TTLSeconds:       opts.TTLSeconds,
+		Metadata:         opts.Metadata,
+		Capabilities:     opts.Capabilities,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	traceID := opts.TraceID
+	if traceID == "" {
+		traceID = parent.TraceID
+	}
+	sessionID := opts.SubjectSessionID
+	if sessionID == "" {
+		sessionID = parent.SessionID
+	}
+
+	c := CaracalContext{
+		SubjectToken:   opts.SubjectToken,
+		ZoneID:         opts.ZoneID,
+		ClientID:       opts.ApplicationID,
+		AgentSessionID: res.AgentSessionID,
+		ParentEdgeID:   parent.DelegationEdgeID,
+		SessionID:      sessionID,
+		TraceID:        traceID,
+		Hop:            parent.Hop,
+	}
+	if opts.OnAgentStart != nil {
+		if err := opts.OnAgentStart(ctx, c); err != nil {
+			return nil, errors.Join(err, TerminateAgent(ctx, opts.Coordinator, opts.SubjectToken, opts.ZoneID, res.AgentSessionID))
+		}
+	}
+	return &ServiceAgent{Context: c, coordinator: opts.Coordinator}, nil
+}

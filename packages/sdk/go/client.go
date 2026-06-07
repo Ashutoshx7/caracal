@@ -36,7 +36,6 @@ type Caracal struct {
 	TokenSource       TokenSource
 	GatewayURL        string
 	Resources         []ResourceBinding
-	DefaultKind       AgentKind
 	DefaultTTLSeconds int
 
 	agentStartHooks []LifecycleHook
@@ -846,7 +845,6 @@ func (c *Caracal) fire(hooks []LifecycleHook, ctx context.Context, cc CaracalCon
 
 // SpawnOptions overrides defaults for a single Spawn call.
 type SpawnOptions struct {
-	Kind         AgentKind
 	TTLSeconds   int
 	ParentID     string
 	Metadata     map[string]any
@@ -859,13 +857,6 @@ func (c *Caracal) Spawn(ctx context.Context, fn func(context.Context) error, opt
 	o := SpawnOptions{}
 	if len(opts) > 0 {
 		o = opts[0]
-	}
-	kind := o.Kind
-	if kind == "" {
-		kind = c.DefaultKind
-	}
-	if kind == "" {
-		kind = KindInstance
 	}
 	ttl := o.TTLSeconds
 	if ttl == 0 {
@@ -888,7 +879,6 @@ func (c *Caracal) Spawn(ctx context.Context, fn func(context.Context) error, opt
 		ApplicationID: c.ApplicationID,
 		SubjectToken:  subjectToken,
 		ParentID:      o.ParentID,
-		Kind:          kind,
 		TTLSeconds:    ttl,
 		Metadata:      o.Metadata,
 		Capabilities:  o.Capabilities,
@@ -896,6 +886,50 @@ func (c *Caracal) Spawn(ctx context.Context, fn func(context.Context) error, opt
 		OnAgentStart:  onStart,
 		OnAgentEnd:    onEnd,
 	}, fn)
+}
+
+// ServiceOptions overrides defaults for a single Service call.
+type ServiceOptions struct {
+	TTLSeconds   int
+	ParentID     string
+	Metadata     map[string]any
+	Capabilities []string
+	TraceID      string
+}
+
+// Service starts a long-lived service agent and returns a handle the caller
+// owns. Unlike Spawn, the session is not retired when a block exits: keep it
+// alive with ServiceAgent.Heartbeat and retire it with ServiceAgent.Close. Use
+// for daemons and workers that outlive a single request.
+func (c *Caracal) Service(ctx context.Context, opts ...ServiceOptions) (*ServiceAgent, error) {
+	o := ServiceOptions{}
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	ttl := o.TTLSeconds
+	if ttl == 0 {
+		ttl = c.DefaultTTLSeconds
+	}
+	var onStart LifecycleHook
+	if len(c.agentStartHooks) > 0 {
+		onStart = func(cx context.Context, cc CaracalContext) error { return c.fire(c.agentStartHooks, cx, cc) }
+	}
+	subjectToken, err := c.rootToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return SpawnService(ctx, SpawnServiceInput{
+		Coordinator:   c.Coordinator,
+		ZoneID:        c.ZoneID,
+		ApplicationID: c.ApplicationID,
+		SubjectToken:  subjectToken,
+		ParentID:      o.ParentID,
+		TTLSeconds:    ttl,
+		Metadata:      o.Metadata,
+		Capabilities:  o.Capabilities,
+		TraceID:       o.TraceID,
+		OnAgentStart:  onStart,
+	})
 }
 
 // DelegateOptions configures a delegation edge.
@@ -924,7 +958,6 @@ type DelegateToSpawnOptions struct {
 	Scopes               []string
 	Constraints          *DelegationConstraints
 	DelegationTTLSeconds int
-	Kind                 AgentKind
 	TTLSeconds           int
 	Metadata             map[string]any
 	Capabilities         []string
@@ -936,13 +969,6 @@ type DelegateToSpawnOptions struct {
 // boundaries (e.g. before launching a child goroutine) where the parent may
 // stop interacting before the child can issue any call.
 func (c *Caracal) DelegateToSpawn(ctx context.Context, opts DelegateToSpawnOptions, fn func(context.Context) error) error {
-	kind := opts.Kind
-	if kind == "" {
-		kind = c.DefaultKind
-	}
-	if kind == "" {
-		kind = KindInstance
-	}
 	ttl := opts.TTLSeconds
 	if ttl == 0 {
 		ttl = c.DefaultTTLSeconds
@@ -966,7 +992,6 @@ func (c *Caracal) DelegateToSpawn(ctx context.Context, opts DelegateToSpawnOptio
 		Scopes:               opts.Scopes,
 		Constraints:          opts.Constraints,
 		DelegationTTLSeconds: opts.DelegationTTLSeconds,
-		Kind:                 kind,
 		TTLSeconds:           ttl,
 		Metadata:             opts.Metadata,
 		Capabilities:         opts.Capabilities,

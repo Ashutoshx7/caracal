@@ -90,6 +90,54 @@ func TestSpawnTerminatesNonServiceKind(t *testing.T) {
 	}
 }
 
+func TestSpawnServiceHeartbeatAndClose(t *testing.T) {
+	calls := &[]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*calls = append(*calls, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/heartbeat"):
+			_, _ = w.Write([]byte(`{"agent":{"id":"svc-1"}}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/agents"):
+			_, _ = w.Write([]byte(`{"agent_session_id":"svc-1"}`))
+		case r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	coord := &sdk.CoordinatorClient{BaseURL: srv.URL}
+
+	svc, err := sdk.SpawnService(context.Background(), sdk.SpawnServiceInput{
+		Coordinator:   coord,
+		ZoneID:        "z",
+		ApplicationID: "app",
+		SubjectToken:  "tok",
+		Capabilities:  []string{"billing-worker"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if svc.AgentSessionID() != "svc-1" {
+		t.Errorf("expected svc-1, got %q", svc.AgentSessionID())
+	}
+	if err := svc.Heartbeat(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"POST /zones/z/agents",
+		"POST /zones/z/agents/svc-1/heartbeat",
+		"DELETE /zones/z/agents/svc-1",
+	}
+	if strings.Join(*calls, ",") != strings.Join(want, ",") {
+		t.Errorf("unexpected calls: %v", *calls)
+	}
+}
+
 func TestSpawnSkipsTerminationForServiceKind(t *testing.T) {
 	srv, calls := makeCoordinatorServer(t)
 	coord := &sdk.CoordinatorClient{BaseURL: srv.URL}
