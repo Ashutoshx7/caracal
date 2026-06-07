@@ -1,11 +1,11 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Integration-style tests for SDK primitives: spawn, delegate, and delegateToSpawn drive the coordinator client end-to-end.
+// Integration-style tests for SDK primitives: spawn (with grant) and delegate drive the coordinator client end-to-end.
 
 import { describe, it, expect, vi } from 'vitest'
-import { spawn, delegate, delegateToSpawn } from '../../../../packages/sdk/ts/src/primitives.js'
-import { AgentKind, type CoordinatorClient } from '../../../../packages/sdk/ts/src/coordinator.js'
+import { spawn, delegate, Grant } from '../../../../packages/sdk/ts/src/primitives.js'
+import { type CoordinatorClient } from '../../../../packages/sdk/ts/src/coordinator.js'
 import { bind, current, type CaracalContext } from '../../../../packages/sdk/ts/src/context.js'
 
 interface Recorder {
@@ -55,15 +55,6 @@ describe('spawn', () => {
     expect(result).toBe('done')
     expect(boundAgent).toBe('agent-new')
     expect(calls.map((c) => c.method)).toContain('DELETE')
-  })
-
-  it('does not terminate a service-kind agent', async () => {
-    const { client, calls } = recorder()
-    await spawn(
-      { coordinator: client, zoneId: 'zone-1', applicationId: 'app-1', subjectToken: 'tok', kind: AgentKind.Service },
-      async () => undefined,
-    )
-    expect(calls.some((c) => c.method === 'DELETE')).toBe(false)
   })
 
   it('runs lifecycle hooks around the bound function', async () => {
@@ -151,20 +142,20 @@ describe('delegate', () => {
   })
 })
 
-describe('delegateToSpawn', () => {
+describe('spawn with narrow grant', () => {
   it('requires an active agent session', async () => {
     const { client } = recorder()
-    await expect(delegateToSpawn(
-      { coordinator: client, zoneId: 'zone-1', applicationId: 'app-2', subjectToken: 'tok', scopes: ['read'] },
+    await expect(spawn(
+      { coordinator: client, zoneId: 'zone-1', applicationId: 'app-2', subjectToken: 'tok', grant: Grant.narrow(['read']) },
       async () => undefined,
-    )).rejects.toThrow(/active agent session/)
+    )).rejects.toThrow(/active parent agent session/)
   })
 
   it('spawns a child, records the delegation, and binds the merged context', async () => {
     const { client, calls } = recorder('agent-child', 'edge-child')
     await bind(baseCtx(), async () => {
-      const out = await delegateToSpawn(
-        { coordinator: client, zoneId: 'zone-1', applicationId: 'app-2', subjectToken: 'tok', scopes: ['read'] },
+      const out = await spawn(
+        { coordinator: client, zoneId: 'zone-1', applicationId: 'app-2', subjectToken: 'tok', grant: Grant.narrow(['read']) },
         async () => ({
           agent: current()?.agentSessionId,
           edge: current()?.delegationEdgeId,
@@ -189,8 +180,8 @@ describe('delegateToSpawn', () => {
     const client: CoordinatorClient = { baseUrl: 'http://coord', fetchImpl }
 
     await bind(baseCtx(), async () => {
-      await expect(delegateToSpawn(
-        { coordinator: client, zoneId: 'zone-1', applicationId: 'app-2', subjectToken: 'tok', scopes: ['read'] },
+      await expect(spawn(
+        { coordinator: client, zoneId: 'zone-1', applicationId: 'app-2', subjectToken: 'tok', grant: Grant.narrow(['read']) },
         async () => undefined,
       )).rejects.toThrow()
     })
@@ -202,13 +193,13 @@ describe('delegateToSpawn', () => {
     const onAgentEnd = vi.fn()
 
     await bind(baseCtx(), async () => {
-      await expect(delegateToSpawn(
+      await expect(spawn(
         {
           coordinator: client,
           zoneId: 'zone-1',
           applicationId: 'app-2',
           subjectToken: 'tok',
-          scopes: ['read'],
+          grant: Grant.narrow(['read']),
           onAgentStart: async () => { throw new Error('start failed') },
           onAgentEnd,
         },

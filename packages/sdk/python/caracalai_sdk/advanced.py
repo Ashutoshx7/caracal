@@ -52,7 +52,7 @@ from .coordinator import (
     spawn_agent,
     terminate_agent,
 )
-from .primitives import LifecycleHook, ServiceAgent, delegate, spawn, spawn_service
+from .primitives import Grant, LifecycleHook, ServiceAgent, delegate, spawn, spawn_service
 from .client import Caracal, CaracalConfig, ResourceBinding
 from .http import CaracalContextASGIMiddleware
 
@@ -100,6 +100,7 @@ __all__ = [
     "create_delegation",
     "spawn",
     "spawn_service",
+    "Grant",
     "ServiceAgent",
     "delegate",
     "LifecycleHook",

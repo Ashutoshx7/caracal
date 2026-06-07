@@ -7,11 +7,11 @@ Public surface of the Caracal Python SDK.
 
 from .client import Caracal, CaracalConfig, GatewayRequest, ResourceBinding
 from .context import AuthoritySummary, CaracalContext, capture_context, describe_authority
-from .coordinator import AgentKind, CoordinatorClient, DelegationConstraints
+from .coordinator import CoordinatorClient, DelegationConstraints
 from .envelope import Envelope
 from .http import CaracalContextASGIMiddleware, Verifier
 from .json_types import JsonObject, JsonPrimitive, JsonValue
-from .primitives import LifecycleHook, ServiceAgent
+from .primitives import Grant, LifecycleHook, ServiceAgent
 
 __all__ = [
     "Caracal",
@@ -22,11 +22,11 @@ __all__ = [
     "describe_authority",
     "CaracalContextASGIMiddleware",
     "Verifier",
-    "AgentKind",
     "CoordinatorClient",
     "DelegationConstraints",
     "Envelope",
     "GatewayRequest",
+    "Grant",
     "JsonObject",
     "JsonPrimitive",
     "JsonValue",
