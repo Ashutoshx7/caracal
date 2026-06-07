@@ -1331,23 +1331,23 @@ func TestAgentSessionMetadataIsPolicyAndAuditInput(t *testing.T) {
 	session := &AgentSession{
 		ID:           "agent-1",
 		Kind:         "ephemeral",
-		Capabilities: []string{"browser", "code"},
+		Labels: []string{"browser", "code"},
 	}
 	if got := agentSessionKind(session); got != "ephemeral" {
 		t.Fatalf("kind = %q", got)
 	}
-	caps := agentSessionCapabilities(session)
+	caps := agentSessionLabels(session)
 	caps[0] = "mutated"
-	if session.Capabilities[0] != "browser" {
-		t.Fatal("capabilities must be copied before policy evaluation")
+	if session.Labels[0] != "browser" {
+		t.Fatal("labels must be copied before policy evaluation")
 	}
 	meta := agentAuditMeta(session)
 	if meta["agent_kind"] != "ephemeral" {
 		t.Fatalf("audit metadata missing kind: %#v", meta)
 	}
-	gotCaps, ok := meta["agent_capabilities"].([]string)
+	gotCaps, ok := meta["agent_labels"].([]string)
 	if !ok || len(gotCaps) != 2 || gotCaps[1] != "code" {
-		t.Fatalf("audit metadata missing capabilities: %#v", meta)
+		t.Fatalf("audit metadata missing labels: %#v", meta)
 	}
 }
 

@@ -114,7 +114,7 @@ func TestSpawnServiceHeartbeatAndClose(t *testing.T) {
 		ZoneID:        "z",
 		ApplicationID: "app",
 		SubjectToken:  "tok",
-		Capabilities:  []string{"billing-worker"},
+		Labels:  []string{"billing-worker"},
 	})
 	if err != nil {
 		t.Fatal(err)
