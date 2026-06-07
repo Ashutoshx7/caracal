@@ -887,6 +887,7 @@ footer .meta a {
 
 /* FAQ registry layout */
 .faqSearchPanel {
+  position: relative;
   margin-block: 1rem 0.6rem;
 }
 
@@ -965,35 +966,32 @@ footer .meta a {
   color: var(--sl-color-text);
 }
 
-.faqFilterMenu {
-  position: relative;
-  flex: 0 0 auto;
-}
-
 .faqFilterToggle {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.22rem;
-  padding: 0.18rem 0.36rem;
+  min-height: 1.65rem;
+  padding: 0 0.42rem;
+  border: 0;
   border-radius: 4px;
   background: transparent;
   color: var(--sl-color-gray-3);
+  font: inherit;
   font-size: 0.76rem;
   font-weight: 700;
-  list-style: none;
+  line-height: 1;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.faqFilterToggle::-webkit-details-marker {
-  display: none;
-}
-
-.faqFilterToggle::after {
-  content: "";
-  font-size: 0.58rem;
-  font-weight: 700;
-  opacity: 0.5;
+.faqFilterIcon {
+  width: 0.86rem;
+  height: 0.86rem;
+  flex: 0 0 auto;
+  opacity: 0.72;
+  transform: translateY(0.01rem);
 }
 
 .faqFilterToggle:hover {
@@ -1006,9 +1004,14 @@ footer .meta a {
   color: var(--sl-color-text);
 }
 
+.faqFilterToggle[aria-expanded="true"] {
+  background: var(--sl-color-bg-inline-code);
+  color: var(--sl-color-text);
+}
+
 .faqFilterPopover {
   position: absolute;
-  top: calc(100% + 0.35rem);
+  top: calc(100% + 0.3rem);
   right: 0;
   z-index: 20;
   display: grid;
@@ -1019,6 +1022,10 @@ footer .meta a {
   border-radius: 6px;
   background: color-mix(in srgb, var(--sl-color-bg) 94%, var(--caracal-panel));
   box-shadow: 0 6px 16px color-mix(in srgb, var(--sl-color-black) 14%, transparent);
+}
+
+.faqFilterPopover[hidden] {
+  display: none;
 }
 
 .faqFilterPopover button {

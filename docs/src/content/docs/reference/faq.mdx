@@ -6,8 +6,6 @@ pageType: reference
 
 import FaqRegistryScript from '../../../components/FaqRegistryScript.astro';
 
-This FAQ is a permanent knowledge registry for high-friction Caracal questions. Each entry has a stable number, category, searchable keywords, and a direct URL anchor that can be shared externally.
-
 <section className="faqSearchPanel" aria-label="Search FAQs">
   <div className="faqSearchMeta">
     <span id="faq-search-status" className="faqSearchStatus" aria-live="polite">19 results</span>
@@ -16,18 +14,21 @@ This FAQ is a permanent knowledge registry for high-friction Caracal questions. 
     <label className="faqSearchLabel" htmlFor="faq-search">Search FAQs</label>
     <input id="faq-search" className="faqSearchInput" type="search" placeholder="Search by FAQ ID, title, keyword..." aria-controls="faq-registry" autocomplete="off" />
     <button type="button" className="faqClearFilters" data-faq-clear hidden>Clear</button>
-    <details className="faqFilterMenu" data-faq-filter-menu>
-      <summary className="faqFilterToggle">Filter</summary>
-      <div className="faqFilterPopover" aria-label="Filter FAQs by category">
-        <button type="button" className="isActive" data-faq-filter-option="all">All</button>
-        <button type="button" data-faq-filter-option="platform">Platform</button>
-        <button type="button" data-faq-filter-option="model">Model</button>
-        <button type="button" data-faq-filter-option="resources">Resources</button>
-        <button type="button" data-faq-filter-option="providers">Providers</button>
-        <button type="button" data-faq-filter-option="runtime">Runtime</button>
-        <button type="button" data-faq-filter-option="editions">Editions</button>
-      </div>
-    </details>
+    <button type="button" className="faqFilterToggle" data-faq-filter-toggle aria-expanded="false" aria-controls="faq-filter-popover">
+      <span data-faq-filter-label>Filter</span>
+      <svg className="faqFilterIcon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+        <path d="M2.5 4.5h11M5.5 8h5M7 11.5h2" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
+      </svg>
+    </button>
+  </div>
+  <div id="faq-filter-popover" className="faqFilterPopover" data-faq-filter-popover aria-label="Filter FAQs by category" hidden>
+    <button type="button" className="isActive" data-faq-filter-option="all">All</button>
+    <button type="button" data-faq-filter-option="platform">Platform</button>
+    <button type="button" data-faq-filter-option="model">Model</button>
+    <button type="button" data-faq-filter-option="resources">Resources</button>
+    <button type="button" data-faq-filter-option="providers">Providers</button>
+    <button type="button" data-faq-filter-option="runtime">Runtime</button>
+    <button type="button" data-faq-filter-option="editions">Editions</button>
   </div>
 </section>
 

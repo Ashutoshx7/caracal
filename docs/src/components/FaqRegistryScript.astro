@@ -19,8 +19,9 @@
     const faqCategories = Array.from(document.querySelectorAll("[data-faq-category]"))
     const faqFilterOptions = Array.from(document.querySelectorAll("[data-faq-filter-option]"))
     const faqStrip = document.querySelector("[data-faq-strip]")
-    const faqFilterMenu = document.querySelector("[data-faq-filter-menu]")
-    const faqFilterToggle = faqFilterMenu?.querySelector(".faqFilterToggle")
+    const faqFilterToggle = document.querySelector("[data-faq-filter-toggle]")
+    const faqFilterLabel = document.querySelector("[data-faq-filter-label]")
+    const faqFilterPopover = document.querySelector("[data-faq-filter-popover]")
     const faqClear = document.querySelector("[data-faq-clear]")
     const faqIndexDisclosure = document.querySelector(".faqIndexDisclosure")
     const faqStatus = document.getElementById("faq-search-status")
@@ -122,11 +123,14 @@
         faqFilterOptions.forEach((item) => {
           item.classList.toggle("isActive", item === option)
         })
-        if (faqFilterToggle) {
-          faqFilterToggle.textContent = activeFaqFilter === "all" ? "Filter" : option.textContent
-          faqFilterToggle.classList.toggle("isActive", activeFaqFilter !== "all")
+        if (faqFilterLabel) {
+          faqFilterLabel.textContent = activeFaqFilter === "all" ? "Filter" : option.textContent
         }
-        if (faqFilterMenu) faqFilterMenu.open = false
+        if (faqFilterToggle) {
+          faqFilterToggle.classList.toggle("isActive", activeFaqFilter !== "all")
+          faqFilterToggle.setAttribute("aria-expanded", "false")
+        }
+        if (faqFilterPopover) faqFilterPopover.hidden = true
         filterFaqs()
       })
     })
@@ -136,16 +140,26 @@
       faqFilterOptions.forEach((item) => {
         item.classList.toggle("isActive", item.dataset.faqFilterOption === "all")
       })
-      if (faqFilterToggle) {
-        faqFilterToggle.textContent = "Filter"
-        faqFilterToggle.classList.remove("isActive")
+      if (faqFilterLabel) {
+        faqFilterLabel.textContent = "Filter"
       }
+      if (faqFilterToggle) {
+        faqFilterToggle.classList.remove("isActive")
+        faqFilterToggle.setAttribute("aria-expanded", "false")
+      }
+      if (faqFilterPopover) faqFilterPopover.hidden = true
       filterFaqs()
     })
+    faqFilterToggle?.addEventListener("click", () => {
+      const expanded = faqFilterToggle.getAttribute("aria-expanded") === "true"
+      faqFilterToggle.setAttribute("aria-expanded", String(!expanded))
+      if (faqFilterPopover) faqFilterPopover.hidden = expanded
+    })
     document.addEventListener("click", (event) => {
-      if (!faqFilterMenu || !faqFilterMenu.open) return
-      if (event.target instanceof Node && !faqFilterMenu.contains(event.target)) {
-        faqFilterMenu.open = false
+      if (!faqFilterPopover || faqFilterPopover.hidden) return
+      if (event.target instanceof Node && !faqFilterPopover.contains(event.target) && !faqFilterToggle?.contains(event.target)) {
+        faqFilterPopover.hidden = true
+        faqFilterToggle?.setAttribute("aria-expanded", "false")
       }
     })
     faqStrip?.addEventListener("wheel", (event) => {
