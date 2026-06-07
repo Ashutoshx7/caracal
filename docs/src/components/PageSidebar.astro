@@ -221,9 +221,16 @@ If you cannot access the Markdown URL, ask me to paste the Markdown content.`
     return false
   }
 
-  const openTarget = (url: string) => {
-    const popup = window.open(url, '_blank', 'noopener,noreferrer')
-    if (!popup) window.location.href = url
+  const openTarget = (url: string, text: string, label: Element | null) => {
+    const popup = window.open(url, '_blank')
+    if (popup) {
+      popup.opener = null
+      return true
+    }
+
+    if (label) label.textContent = 'Open manually'
+    openManualCopy(text, url)
+    return false
   }
 
   const btn = document.getElementById('btn-copy-md') as HTMLButtonElement | null
@@ -284,7 +291,7 @@ If you cannot access the Markdown URL, ask me to paste the Markdown content.`
 
         if (link.dataset.copyPrompt === 'true') {
           if (await copyOrShowManual(prompt, label, 'Copied prompt!', link.dataset.aiUrl)) {
-            openTarget(link.dataset.aiUrl!)
+            openTarget(link.dataset.aiUrl!, prompt, label)
           }
         } else {
           const url = new URL(link.dataset.aiUrl!)
@@ -292,16 +299,16 @@ If you cannot access the Markdown URL, ask me to paste the Markdown content.`
 
           if (url.href.length > 24000) {
             if (await copyOrShowManual(prompt, label, 'Copied prompt!', link.dataset.aiUrl)) {
-              openTarget(link.dataset.aiUrl!)
+              openTarget(link.dataset.aiUrl!, prompt, label)
             }
           } else {
-            openTarget(url.href)
+            openTarget(url.href, promptForUrl, label)
           }
         }
       } catch (err) {
         console.error('AI prompt preparation failed', err)
         if (label) label.textContent = 'Opening fallback...'
-        openTarget(link.href)
+        openTarget(link.href, link.href, label)
       }
 
       setTimeout(() => {
