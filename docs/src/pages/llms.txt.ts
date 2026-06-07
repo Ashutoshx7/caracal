@@ -27,6 +27,7 @@ const sections: Record<string, string[]> = {
   'Guides': [
     'guides',
     'guides/modeling-recipes',
+    'guides/serve-customers',
     'guides/resources-providers',
     'guides/provider-recipes',
     'guides/author-policy',

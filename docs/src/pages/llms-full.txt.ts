@@ -23,6 +23,7 @@ const pageOrder = [
   'tutorials/choose-production-path',
   'guides',
   'guides/modeling-recipes',
+  'guides/serve-customers',
   'guides/resources-providers',
   'guides/provider-recipes',
   'guides/author-policy',
