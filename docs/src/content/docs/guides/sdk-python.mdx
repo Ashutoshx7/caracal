@@ -62,21 +62,25 @@ finally:
 ```
 
 
-## Delegate while spawning
+## Spawn a narrowed child
 
 ```python
-from caracalai_sdk import DelegationConstraints
+from caracalai_sdk import Grant, DelegationConstraints
 
 async with caracal.spawn() as parent:
-    async with caracal.delegate_to_spawn(
+    async with caracal.spawn(
         parent_ctx=parent,
-        resource_id="https://api.example.com/tickets",
-        scopes=["tickets:read"],
-        constraints=DelegationConstraints(max_hops=1, budget=5),
-        delegation_ttl_seconds=600,
+        grant=Grant.narrow(
+            ["tickets:read"],
+            resource_id="https://api.example.com/tickets",
+            constraints=DelegationConstraints(max_hops=1, budget=5),
+            ttl_seconds=600,
+        ),
     ):
         headers = caracal.headers()
 ```
+
+A plain `caracal.spawn()` already runs the child under the application's authority. Pass `grant=Grant.narrow(...)` only when the child should hold a least-privilege subset, or `grant=Grant.none()` for a child with no inherited authority.
 
 Use `async with caracal.bind(ctx)` before handing a captured context to a background task.
 
