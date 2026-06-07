@@ -35,7 +35,7 @@ const SpawnBody = z.object({
   application_id: z.string().min(1),
   subject_session_id: z.string().min(1).optional(),
   parent_id: z.string().nullable().default(null),
-  kind: AgentKind.default('ephemeral'),
+  kind: AgentKind.optional(),
   capabilities: AgentCapabilities,
   ttl_seconds: z.number().int().min(1).max(86400).default(DEFAULT_TTL),
   metadata: z.record(z.string(), z.unknown()).default({}),
@@ -117,7 +117,8 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
         await client.query('ROLLBACK')
         return reply.code(404).send({ error: 'application_not_found' })
       }
-      if (refs[0].registration_method === 'dcr' && body.kind !== 'ephemeral') {
+      const kind = body.kind ?? (refs[0].registration_method === 'dcr' ? 'ephemeral' : 'instance')
+      if (refs[0].registration_method === 'dcr' && kind !== 'ephemeral') {
         await client.query('ROLLBACK')
         return reply.code(409).send({ error: 'dcr_requires_ephemeral_agent' })
       }
@@ -177,7 +178,7 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
           return reply.code(429).send({ error: 'agent_depth_limit_exceeded' })
         }
       }
-      const deadline = heartbeatDeadline(body.kind)
+      const deadline = heartbeatDeadline(kind)
       const { rows } = await client.query(
          `INSERT INTO agent_sessions
           (id, zone_id, application_id, parent_id, subject_session_id, agent_kind, depth,
@@ -188,7 +189,7 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
                     agent_kind AS kind, agent_kind AS session_class,
                     capabilities, status, depth, spawned_at, last_heartbeat_at, heartbeat_deadline_at`,
         [id, zoneId, body.application_id, body.parent_id, subjectSessionId,
-          body.kind, depth, body.capabilities, MAX_CHILDREN, body.ttl_seconds, body.metadata,
+          kind, depth, body.capabilities, MAX_CHILDREN, body.ttl_seconds, body.metadata,
           deadline, deadline],
       )
       if (body.parent_id) {
