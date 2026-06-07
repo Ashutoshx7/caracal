@@ -10,7 +10,8 @@ export type { CaracalConfig, SpawnOptions, ServiceOptions, DelegateOptions, Reso
 export { captureContext, describeAuthority } from "./context.js";
 export type { AuthoritySummary, CaracalContext } from "./context.js";
 export type { CoordinatorClient } from "./coordinator.js";
-export { AgentKind } from "./coordinator.js";
+export { Grant } from "./primitives.js";
+export type { GrantMode } from "./primitives.js";
 export type { DelegationConstraints } from "./coordinator.js";
 export type { ServiceAgent } from "./primitives.js";
 export type { Envelope } from "./envelope.js";

@@ -21,11 +21,10 @@ import {
   spawn as spawnPrimitive,
   spawnService as spawnServicePrimitive,
   delegate as delegatePrimitive,
-  delegateToSpawn as delegateToSpawnPrimitive,
+  type Grant,
   type SpawnInput,
   type ServiceAgent,
   type DelegateInput,
-  type DelegateToSpawnInput,
 } from "./primitives.js";
 import { type DelegationConstraints } from "./coordinator.js";
 import type { JsonObject } from "./json.js";
@@ -54,6 +53,7 @@ export interface CaracalConfig {
 }
 
 export interface SpawnOptions {
+  grant?: Grant;
   ttlSeconds?: number;
   subjectSessionId?: string;
   parentId?: string;
@@ -78,17 +78,6 @@ export interface DelegateOptions {
   scopes: string[];
   constraints?: DelegationConstraints;
   ttlSeconds?: number;
-}
-
-export interface DelegateToSpawnOptions {
-  resourceId?: string;
-  scopes: string[];
-  constraints?: DelegationConstraints;
-  delegationTtlSeconds?: number;
-  ttlSeconds?: number;
-  metadata?: JsonObject;
-  labels?: string[];
-  traceId?: string;
 }
 
 export type LifecycleHook = (ctx: CaracalContext) => void | Promise<void>;
@@ -256,6 +245,7 @@ export class Caracal {
       zoneId: this.config.zoneId,
       applicationId: this.config.applicationId,
       subjectToken: await this.rootToken(),
+      grant: opts.grant,
       ttlSeconds: opts.ttlSeconds ?? this.config.defaultTtlSeconds,
       subjectSessionId: opts.subjectSessionId,
       parentId: opts.parentId,
@@ -295,26 +285,6 @@ export class Caracal {
       ttlSeconds: opts.ttlSeconds,
     };
     return delegatePrimitive(input, fn);
-  }
-
-  async delegateToSpawn<T>(opts: DelegateToSpawnOptions, fn: () => Promise<T>): Promise<T> {
-    const input: DelegateToSpawnInput = {
-      coordinator: this.config.coordinator,
-      zoneId: this.config.zoneId,
-      applicationId: this.config.applicationId,
-      subjectToken: await this.rootToken(),
-      resourceId: opts.resourceId,
-      scopes: opts.scopes,
-      constraints: opts.constraints,
-      delegationTtlSeconds: opts.delegationTtlSeconds,
-      ttlSeconds: opts.ttlSeconds ?? this.config.defaultTtlSeconds,
-      metadata: opts.metadata,
-      labels: opts.labels,
-      traceId: opts.traceId,
-      onAgentStart: this.agentStartHooks.length ? (c) => this.fire(this.agentStartHooks, c) : undefined,
-      onAgentEnd: this.agentEndHooks.length ? (c) => this.fire(this.agentEndHooks, c) : undefined,
-    };
-    return await delegateToSpawnPrimitive(input, fn);
   }
 
   bind<T>(ctx: CaracalContext, fn: () => Promise<T>): Promise<T> {
