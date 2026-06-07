@@ -27,7 +27,7 @@ export interface SpawnInput {
   kind?: AgentKind;
   ttlSeconds?: number;
   metadata?: JsonObject;
-  capabilities?: string[];
+  labels?: string[];
   traceId?: string;
   onAgentStart?: (ctx: CaracalContext) => void | Promise<void>;
   onAgentEnd?: (ctx: CaracalContext) => void | Promise<void>;
@@ -46,7 +46,7 @@ export async function spawn<T>(input: SpawnInput, fn: () => Promise<T>): Promise
     kind,
     ttlSeconds: input.ttlSeconds,
     metadata: input.metadata,
-    capabilities: input.capabilities,
+    labels: input.labels,
   });
   const ctx: CaracalContext = {
     subjectToken: bearer,
@@ -124,7 +124,7 @@ export interface DelegateToSpawnInput {
   kind?: AgentKind;
   ttlSeconds?: number;
   metadata?: JsonObject;
-  capabilities?: string[];
+  labels?: string[];
   traceId?: string;
   onAgentStart?: (ctx: CaracalContext) => void | Promise<void>;
   onAgentEnd?: (ctx: CaracalContext) => void | Promise<void>;
@@ -153,7 +153,7 @@ export async function delegateToSpawn<T>(
     kind,
     ttlSeconds: input.ttlSeconds,
     metadata: input.metadata,
-    capabilities: input.capabilities,
+    labels: input.labels,
   });
   let delRes;
   try {
@@ -208,7 +208,7 @@ export interface SpawnServiceInput {
   parentId?: string;
   ttlSeconds?: number;
   metadata?: JsonObject;
-  capabilities?: string[];
+  labels?: string[];
   traceId?: string;
   onAgentStart?: (ctx: CaracalContext) => void | Promise<void>;
 }
@@ -237,7 +237,7 @@ export async function spawnService(input: SpawnServiceInput): Promise<ServiceAge
     kind: AgentKind.Service,
     ttlSeconds: input.ttlSeconds,
     metadata: input.metadata,
-    capabilities: input.capabilities,
+    labels: input.labels,
   });
   const ctx: CaracalContext = {
     subjectToken: bearer,

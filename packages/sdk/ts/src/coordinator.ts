@@ -40,7 +40,7 @@ export interface SpawnRequest {
   kind?: AgentKind;
   ttlSeconds?: number;
   metadata?: JsonObject;
-  capabilities?: string[];
+  labels?: string[];
   idempotencyKey?: string;
 }
 
@@ -110,7 +110,7 @@ export async function spawnAgent(
       kind: req.kind,
       ttl_seconds: req.ttlSeconds,
       metadata: req.metadata,
-      capabilities: req.capabilities,
+      labels: req.labels,
     },
     headers,
   );
@@ -129,7 +129,7 @@ function deriveIdempotencyKey(req: SpawnRequest): string | undefined {
     req.subjectSessionId ?? "",
     req.parentId ?? "",
     String(req.kind ?? ""),
-    (req.capabilities ?? []).join(","),
+    (req.labels ?? []).join(","),
   ].join("|");
   return sha256Hex(seed);
 }
