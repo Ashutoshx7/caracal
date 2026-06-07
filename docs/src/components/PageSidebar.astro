@@ -40,7 +40,8 @@ If retrieval fails, read ${site}/llms-full.txt and find the section with "# URL:
               data-markdown-url={markdownPath}
               type="button"
             >
-              Copy as Markdown
+              <img class="ai-icon" src="/img/markdown.png" alt="" aria-hidden="true" loading="lazy" decoding="async" />
+              <span class="ai-btn-label">Copy as Markdown</span>
             </button>
             <a
               class="ai-btn"
@@ -48,7 +49,8 @@ If retrieval fails, read ${site}/llms-full.txt and find the section with "# URL:
               target="_blank"
               rel="noopener noreferrer"
             >
-              Ask Claude
+              <img class="ai-icon" src="/img/claude.png" alt="" aria-hidden="true" loading="lazy" decoding="async" />
+              <span class="ai-btn-label">Ask Claude</span>
             </a>
             <a
               class="ai-btn"
@@ -56,7 +58,17 @@ If retrieval fails, read ${site}/llms-full.txt and find the section with "# URL:
               target="_blank"
               rel="noopener noreferrer"
             >
-              Ask ChatGPT
+              <img class="ai-icon" src="/img/gpt.png" alt="" aria-hidden="true" loading="lazy" decoding="async" />
+              <span class="ai-btn-label">Ask ChatGPT</span>
+            </a>
+            <a
+              class="ai-btn"
+              href={`https://gemini.google.com/app?prompt=${encodeURIComponent(aiPrompt)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <img class="ai-icon" src="/img/gemini.png" alt="" aria-hidden="true" loading="lazy" decoding="async" />
+              <span class="ai-btn-label">Ask Gemini</span>
             </a>
           </div>
         </div>
@@ -73,6 +85,7 @@ If retrieval fails, read ${site}/llms-full.txt and find the section with "# URL:
   if (btn) {
     btn.addEventListener('click', async () => {
       const markdownUrl = btn.dataset.markdownUrl!
+      const label = btn.querySelector('.ai-btn-label')
 
       try {
         const response = await fetch(markdownUrl)
@@ -80,14 +93,14 @@ If retrieval fails, read ${site}/llms-full.txt and find the section with "# URL:
           throw new Error(`Markdown request failed with ${response.status}`)
         }
         await navigator.clipboard.writeText(await response.text())
-        btn.textContent = 'Copied!'
+        if (label) label.textContent = 'Copied!'
       } catch (err) {
         console.error('Markdown copy failed', err)
-        btn.textContent = 'Copy failed'
+        if (label) label.textContent = 'Copy failed'
       }
 
       setTimeout(() => {
-        btn.textContent = 'Copy as Markdown'
+        if (label) label.textContent = 'Copy as Markdown'
       }, 2000)
     })
   }
@@ -144,7 +157,9 @@ If retrieval fails, read ${site}/llms-full.txt and find the section with "# URL:
     }
 
     .ai-btn {
-      display: block;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
       font-size: var(--sl-text-xs);
       text-decoration: none;
       color: var(--sl-color-gray-3);
@@ -155,6 +170,15 @@ If retrieval fails, read ${site}/llms-full.txt and find the section with "# URL:
       padding: 0;
       text-align: left;
       font-family: inherit;
+    }
+
+    .ai-icon {
+      border-radius: 0.25rem;
+      display: block;
+      flex: 0 0 auto;
+      height: 1.15rem;
+      object-fit: contain;
+      width: 1.15rem;
     }
 
     .ai-btn:hover {
