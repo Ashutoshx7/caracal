@@ -1,212 +1,382 @@
 ---
 title: FAQ
-description: Stable answers to recurring Caracal modeling, runtime, provider, troubleshooting, and edition questions.
+description: Stable, searchable answers to recurring Caracal modeling, runtime, provider, troubleshooting, and edition questions.
 pageType: reference
 ---
 
-This FAQ collects high-friction questions that come up across the docs. Each entry has a stable anchor so other pages can link directly to the answer instead of repeating it.
-
-## Question Index
-
-| Area | Question |
-| --- | --- |
-| Fit | [What problem does Caracal solve?](#faq-what-problem-does-caracal-solve) |
-| Fit | [Is Caracal an identity provider, secrets manager, or API gateway?](#faq-is-caracal-an-idp-secrets-manager-or-api-gateway) |
-| Model | [What should a zone represent?](#faq-what-should-a-zone-represent) |
-| Model | [Does the open-source edition include managed multi-tenancy?](#faq-does-open-source-include-managed-multi-tenancy) |
-| Model | [What is the difference between an application, principal, and agent session?](#faq-application-principal-agent-session) |
-| Model | [Should I create one application per agent?](#faq-one-application-per-agent) |
-| Model | [When should I use a managed application versus DCR?](#faq-managed-application-versus-dcr) |
-| Model | [If many agents share one managed application, can policy and audit still tell them apart?](#faq-distinguish-agents-under-one-application) |
-| Resources | [What is the difference between a resource and a provider?](#faq-resource-versus-provider) |
-| Resources | [Why must the resource identifier stay stable if the upstream URL can change?](#faq-stable-resource-identifier) |
-| Resources | [How should I design scopes?](#faq-scope-design) |
-| Resources | [Do I manage grants directly?](#faq-do-i-manage-grants-directly) |
-| Providers | [Is an application secret the same as a provider credential?](#faq-app-secret-versus-provider-credential) |
-| Providers | [When should I use per-user OAuth instead of a shared provider credential?](#faq-per-user-oauth-versus-shared-credential) |
-| Runtime | [Why are zone and policy commands in the Console instead of the `caracal` CLI?](#faq-why-console-instead-of-cli) |
-| Troubleshooting | [What is the difference between a 403 from STS and a 403 from Gateway?](#faq-sts-403-versus-gateway-403) |
-| Troubleshooting | [Where is the diagnostic bundle or doctor command?](#faq-diagnostic-bundle) |
-| Troubleshooting | [Why is an audit event missing?](#faq-missing-audit-event) |
-| Editions | [Which features are Enterprise Edition only?](#faq-enterprise-only-features) |
-
-## Fit and Product Boundary
-
-<a id="faq-what-problem-does-caracal-solve"></a>
-
-### What problem does Caracal solve?
-
-Caracal gives agents and automated workflows short-lived, policy-approved authority instead of long-lived credentials. The agent asks for scoped authority at the moment it acts, STS evaluates policy, Gateway or a connector enforces the mandate, and Audit records the decision and result.
-
-See [Authority and Enforcement](/concepts/authority-model/) and the [Caracal Mental Model](/concepts/model-overview/).
-
-<a id="faq-is-caracal-an-idp-secrets-manager-or-api-gateway"></a>
-
-### Is Caracal an identity provider, secrets manager, or API gateway?
-
-No. Caracal is an authority broker for agent and workload actions. It can sit in front of HTTP resources like a protected Gateway, and it can broker provider credentials, but it does not replace your IdP, your static config store, or your general API management layer.
-
-Use an IdP for human login, a secret manager for static application configuration, and Caracal when an agent or service needs scoped, auditable authority for a resource.
-
-## Core Model
-
-<a id="faq-what-should-a-zone-represent"></a>
-
-### What should a zone represent?
-
-A zone should represent a trust boundary: the set of resources, sessions, policies, signing keys, and audit records that are allowed to share authority state. Use a separate zone when two workloads need independent signing keys, policy activation, or audit trails. Use one zone with separate resources when the same trust boundary protects multiple upstreams.
-
-For examples, see [Model Your Application in Caracal](/guides/modeling-recipes/).
-
-<a id="faq-does-open-source-include-managed-multi-tenancy"></a>
-
-### Does the open-source edition include managed multi-tenancy?
-
-No. The open-source Community Edition gives you zones as a manual isolation primitive. You can model customers, environments, or trust tiers with zones and automate them through the Admin API, but managed tenant, team, SSO, and hosted lifecycle features are Enterprise Edition features.
-
-To serve many of your own customers from one deployment without per-customer zones, see [Serve Your Own Customers](/guides/serve-customers/).
-
-See [Compare Editions](/enterprise/) for the commercial feature boundary.
-
-<a id="faq-application-principal-agent-session"></a>
-
-### What is the difference between an application, principal, and agent session?
-
-An application is registered software that authenticates to Caracal. A principal is the acting identity, such as a user, service, or agent. An agent session is a time-bounded execution context spawned from a subject session or application context.
-
-Policy decisions consider all of them: which application is asking, which principal is acting, which session anchors the request, and which resource scopes are requested.
-
-<a id="faq-one-application-per-agent"></a>
-
-### Should I create one application per agent?
-
-No. This is the most common modeling mistake, and it does not match how Caracal scales. An **application** and an **agent** are different layers:
-
-- An **application** is the credentialed security boundary. It is operator-provisioned (managed) or dynamically registered (DCR), holds a server-owned secret, and is the identity Caracal authenticates. Creating one is a deliberate, secret-bearing act.
-- An **agent session** is the scalable runtime unit. The workload that already holds the application credential creates agent sessions at runtime — no secret, no registration, no Console step. One application backs many concurrent agent sessions (up to 200 per application by default).
-
-The default model is **one managed application per durable workload, with many agent sessions under it**. When that workload fans out — spawning sub-agents, delegating a narrower slice of authority, or building an agent hierarchy for a single request — each of those is a new agent session under the *same* application, not a new application. Policy and audit still tell them apart by agent session, kind, labels, and delegation chain (see [the next answer](#faq-distinguish-agents-under-one-application)).
-
-One application per agent breaks this. Managed applications are operator-provisioned, so a workload cannot mint one per spawned agent at runtime. DCR can register at runtime, but a DCR application is meant to expire and bind exactly one ephemeral session, so per-request fan-out would register and tear down an application for every sub-agent — adding registration latency, credential sprawl, and registry churn for no policy or audit benefit. Reach for an application per agent only when a spawned agent genuinely needs its own isolated, expiring credential and a registry-visible identity; then use a DCR application with one ephemeral session, as described in [managed versus DCR](#faq-managed-application-versus-dcr).
-
-See [Identities and Applications](/concepts/principal/) and the [Caracal Mental Model](/concepts/model-overview/).
-
-<a id="faq-managed-application-versus-dcr"></a>
-
-### When should I use a managed application versus DCR?
-
-Use a managed application for durable software you intentionally operate: a backend service, Gateway application, orchestrator, or known agent runtime. Use DCR for spawned, high-churn, short-lived agent identities that need isolated credentials. Do not reuse one DCR application across multiple spawned agents.
-
-See [Identities and Applications](/concepts/principal/).
-
-<a id="faq-distinguish-agents-under-one-application"></a>
-
-### If many agents share one managed application, can policy and audit still tell them apart?
-
-Yes, with one important distinction between *attribution* and *credential isolation*.
-
-The agent's identity in a decision is the agent session, not the application. You do not pre-register agents in the Console; the workload that holds the application credential creates each agent session at runtime and declares its `agent_kind` and `labels` then. The token exchange carries the acting `agent_session_id`, `agent_kind`, and `labels`, plus the delegation edge and chain, alongside the `application_id`. Policy reads these as `input.principal.agent_session_id`, `input.principal.agent_kind`, and `input.principal.labels`, and audit records the same fields with the parent and delegation context. The Console agent list shows the `kind` and `labels` of every session, so you can see which agent is which under a shared application. So two agents under one managed application present different sessions, kinds, labels, and delegation paths, and both policy and audit can tell them apart without referencing the application.
-
-What is actually enforced is the **authority**, not the label. Spawning is gated by application ownership, the asserted `agent_session_id` is bound to the owning application at exchange, and requested scopes must stay within the delegation chain, which is itself bounded by the parent's authority. The `agent_kind` and `labels`, by contrast, are asserted by the credentialed workload and are not delegation-constrained. They are a sound basis for policy and audit when you control and trust the spawner, but they are not a defense against a compromised workload mislabeling its own sub-agents. For that, the boundary is scopes, delegation, and policy.
-
-A single managed application is therefore the right fit for one durable workload that spawns many agents: per-agent attribution comes from the agent session, kind, and labels, not from one application per agent. Reach for a DCR application per agent only when a spawned agent needs its own isolated, expiring credential and a registry-visible identity. What that buys you is credential isolation, not additional policy or audit distinguishability.
-
-See [Identities and Applications](/concepts/principal/) and [Model Your Application in Caracal](/guides/modeling-recipes/).
-
-## Resources, Scopes, and Grants
-
-<a id="faq-resource-versus-provider"></a>
-
-### What is the difference between a resource and a provider?
-
-A resource is the protected target and policy audience: the thing a mandate authorizes access to. A provider describes how Gateway authenticates upstream: no credential, Caracal mandate, OAuth, API key, or bearer token.
-
-Keep target identity, scopes, upstream URL, and Gateway binding on the resource. Keep secrets, token endpoints, OAuth settings, API keys, and bearer tokens on the provider.
-
-<a id="faq-stable-resource-identifier"></a>
-
-### Why must the resource identifier stay stable if the upstream URL can change?
-
-Policies, grants, mandates, and audit records refer to the resource identifier. If you use a mutable deployment hostname as the identifier, changing infrastructure also changes your authority boundary and breaks audit continuity. Use a stable audience URI such as `resource://billing`, then change the upstream URL when routing changes.
-
-<a id="faq-scope-design"></a>
-
-### How should I design scopes?
-
-Use small action-oriented scopes such as `payments:read`, `tickets:comment`, or `mcp:tool:call`. Do not encode environment, tenant, user, or hostname into scope names when that data belongs in the zone, principal, resource, or policy input.
-
-Scopes answer “what action is allowed?” Resource identifiers answer “what target is protected?”
-
-<a id="faq-do-i-manage-grants-directly"></a>
-
-### Do I manage grants directly?
-
-In the current Console flow, you usually define resources, scopes, applications, subjects, and policies rather than managing grants as a separate daily object. Grants are an authorization input that policy can read; the active policy set still makes the final allow, deny, or step-up decision.
-
-If access is denied, inspect the active policy, subject, application, resource, and scopes through [request trace](/operations/troubleshooting/).
-
-## Providers and Upstream Credentials
-
-<a id="faq-app-secret-versus-provider-credential"></a>
-
-### Is an application secret the same as a provider credential?
-
-No. An application secret authenticates the application to Caracal. A provider credential authenticates Gateway or STS to an upstream provider such as Google, Slack, OpenAI, or an internal API. Agents should authenticate to Caracal and receive short-lived mandates; they should not receive long-lived provider credentials.
-
-See [Define Resources and Providers](/guides/resources-providers/).
-
-<a id="faq-per-user-oauth-versus-shared-credential"></a>
-
-### When should I use per-user OAuth instead of a shared provider credential?
-
-Use per-user OAuth (`oauth2_authorization_code`) when the upstream call must act as a specific user and that user must consent. Use a shared service credential (`oauth2_client_credentials`, `api_key`, or `bearer_token`) when the agent acts as the application or service, not as an individual user.
-
-The concrete setup fields are in [Provider Recipes](/guides/provider-recipes/).
-
-## Runtime, Console, and Troubleshooting
-
-<a id="faq-why-console-instead-of-cli"></a>
-
-### Why are zone and policy commands in the Console instead of the `caracal` CLI?
-
-The top-level `caracal` CLI is intentionally limited to local runtime lifecycle and process execution: `up`, `down`, `status`, `purge`, `run`, and `console`. Product-management workflows such as zones, applications, providers, resources, policies, audit, diagnostics, agents, and delegation live in the Console, Admin API, and SDKs so they use one management surface and do not drift into duplicated CLI commands.
-
-See [Choose the Right Surface](/runtime-console/cli-and-console/).
-
-<a id="faq-sts-403-versus-gateway-403"></a>
-
-### What is the difference between a 403 from STS and a 403 from Gateway?
-
-A 403 from STS means the exchange was authenticated but policy did not allow the requested resource scopes, or a step-up/grant/session condition blocked issuance. A 403 from Gateway or a verifier means the request reached a protected boundary but the mandate, resource binding, scope check, revocation state, or route safety check failed.
-
-Use [request trace](/operations/troubleshooting/) with the request ID to identify the surface before changing policy or resource configuration.
-
-<a id="faq-diagnostic-bundle"></a>
-
-### Where is the diagnostic bundle or doctor command?
-
-The diagnostic bundle is exposed through existing surfaces instead of a separate top-level command. Use `caracal status --json` for runtime status, Console `diagnostics` for Doctor checks (`health`, `readiness`, `zones`, `preflight`), `audit` for recent decisions, and `request trace` for a known request ID.
-
-See [Troubleshoot by Symptom](/operations/troubleshooting/#diagnostic-bundle).
-
-<a id="faq-missing-audit-event"></a>
-
-### Why is an audit event missing?
-
-First confirm the request reached a Caracal-protected boundary. If it did, check the selected zone, time window, request ID, Audit service readiness, Redis stream health, replay backlog, and DLQ. If the request failed before STS, Gateway, Coordinator, or a connector emitted evidence, there may be no action-result event for that boundary.
-
-Start with [Inspect Diagnostics and Audit](/runtime-console/observability/) and [Debug Infrastructure Issues](/operations/debugging/).
-
-## Editions
-
-<a id="faq-enterprise-only-features"></a>
-
-### Which features are Enterprise Edition only?
-
-Managed multi-tenancy, hosted management UI, managed Gateway and service operation, SSO, SCIM provisioning, teams, organization-level RBAC, commercial support, and enterprise lifecycle features are Enterprise Edition features. The Community Edition remains self-hosted and uses zones, Admin API automation, Console workflows, SDKs, and connectors.
-
-See [Compare Editions](/enterprise/) or [book an enterprise call](https://cal.com/rawx18/caracal-enterprise-sales).
+import FaqRegistryScript from '../../../components/FaqRegistryScript.astro';
+
+This FAQ is a permanent knowledge registry for high-friction Caracal questions. Each entry has a stable number, category, searchable keywords, and a direct URL anchor that can be shared externally.
+
+<section className="faqSearchPanel" aria-label="Search FAQs">
+  <div className="faqSearchRow">
+    <label className="faqSearchLabel" htmlFor="faq-search">Search FAQs</label>
+    <input id="faq-search" className="faqSearchInput" type="search" placeholder="Search by FAQ ID, title, keyword..." aria-controls="faq-registry" autocomplete="off" />
+    <button type="button" className="faqClearFilters" data-faq-clear hidden>Clear</button>
+    <details className="faqFilterMenu" data-faq-filter-menu>
+      <summary className="faqFilterToggle">Filter</summary>
+      <div className="faqFilterPopover" aria-label="Filter FAQs by category">
+        <button type="button" className="isActive" data-faq-filter-option="all">All</button>
+        <button type="button" data-faq-filter-option="platform">Platform</button>
+        <button type="button" data-faq-filter-option="model">Model</button>
+        <button type="button" data-faq-filter-option="resources">Resources</button>
+        <button type="button" data-faq-filter-option="providers">Providers</button>
+        <button type="button" data-faq-filter-option="runtime">Runtime</button>
+        <button type="button" data-faq-filter-option="editions">Editions</button>
+      </div>
+    </details>
+    <span id="faq-search-status" className="faqSearchStatus" aria-live="polite">19 results</span>
+  </div>
+</section>
+
+<nav className="faqStrip" data-faq-strip aria-label="Suggested FAQs">
+  <a className="faqStripItem" href="#faq-001"><span>FAQ-001</span><strong>What problem does Caracal solve?</strong></a>
+  <a className="faqStripItem" href="#faq-003"><span>FAQ-003</span><strong>What should a zone represent?</strong></a>
+  <a className="faqStripItem" href="#faq-006"><span>FAQ-006</span><strong>Should I create one application per agent?</strong></a>
+  <a className="faqStripItem" href="#faq-008"><span>FAQ-008</span><strong>Can policy and audit tell agents apart under one application?</strong></a>
+  <a className="faqStripItem" href="#faq-016"><span>FAQ-016</span><strong>403 from STS vs Gateway?</strong></a>
+  <a className="faqStripItem" href="#faq-017"><span>FAQ-017</span><strong>Where is the diagnostic bundle or doctor command?</strong></a>
+  <a className="faqStripItem" href="#faq-019"><span>FAQ-019</span><strong>Which features are Enterprise Edition only?</strong></a>
+</nav>
+
+<div className="faqSectionRule" aria-hidden="true"></div>
+
+<div className="faqRegistryHeading">
+  <h2 id="faq-registry-heading">FAQ Registry</h2>
+  <span>Stable IDs</span>
+</div>
+
+The registry number is the permanent identifier. Use links such as `/reference/faq/#faq-006` when referencing a specific answer.
+
+<details className="faqIndexDisclosure">
+  <summary><span>Browse every FAQ ID</span><small>19 stable entries</small></summary>
+  <nav className="faqIndex" aria-label="FAQ registry index">
+    <a data-faq-index href="#faq-001"><span>FAQ-001</span><strong>What problem does Caracal solve?</strong><em className="faqTag faqTagPlatform">Platform</em></a>
+    <a data-faq-index href="#faq-002"><span>FAQ-002</span><strong>Is Caracal an identity provider, secrets manager, or API gateway?</strong><em className="faqTag faqTagPlatform">Platform</em></a>
+    <a data-faq-index href="#faq-003"><span>FAQ-003</span><strong>What should a zone represent?</strong><em className="faqTag faqTagModel">Architecture</em></a>
+    <a data-faq-index href="#faq-004"><span>FAQ-004</span><strong>Does the open-source edition include managed multi-tenancy?</strong><em className="faqTag faqTagModel">Architecture</em></a>
+    <a data-faq-index href="#faq-005"><span>FAQ-005</span><strong>What is the difference between an application, principal, and agent session?</strong><em className="faqTag faqTagIdentity">Identity</em></a>
+    <a data-faq-index href="#faq-006"><span>FAQ-006</span><strong>Should I create one application per agent?</strong><em className="faqTag faqTagIdentity">Identity</em></a>
+    <a data-faq-index href="#faq-007"><span>FAQ-007</span><strong>When should I use a managed application versus DCR?</strong><em className="faqTag faqTagIdentity">Identity</em></a>
+    <a data-faq-index href="#faq-008"><span>FAQ-008</span><strong>If many agents share one managed application, can policy and audit still tell them apart?</strong><em className="faqTag faqTagIdentity">Identity</em></a>
+    <a data-faq-index href="#faq-009"><span>FAQ-009</span><strong>What is the difference between a resource and a provider?</strong><em className="faqTag faqTagResource">Resources</em></a>
+    <a data-faq-index href="#faq-010"><span>FAQ-010</span><strong>Why must the resource identifier stay stable if the upstream URL can change?</strong><em className="faqTag faqTagResource">Resources</em></a>
+    <a data-faq-index href="#faq-011"><span>FAQ-011</span><strong>How should I design scopes?</strong><em className="faqTag faqTagResource">Resources</em></a>
+    <a data-faq-index href="#faq-012"><span>FAQ-012</span><strong>Do I manage grants directly?</strong><em className="faqTag faqTagResource">Resources</em></a>
+    <a data-faq-index href="#faq-013"><span>FAQ-013</span><strong>Is an application secret the same as a provider credential?</strong><em className="faqTag faqTagSecurity">Security</em></a>
+    <a data-faq-index href="#faq-014"><span>FAQ-014</span><strong>When should I use per-user OAuth instead of a shared provider credential?</strong><em className="faqTag faqTagSecurity">Security</em></a>
+    <a data-faq-index href="#faq-015"><span>FAQ-015</span><strong>Why are zone and policy commands in the Console instead of the caracal CLI?</strong><em className="faqTag faqTagRuntime">Runtime</em></a>
+    <a data-faq-index href="#faq-016"><span>FAQ-016</span><strong>What is the difference between a 403 from STS and a 403 from Gateway?</strong><em className="faqTag faqTagOps">Operations</em></a>
+    <a data-faq-index href="#faq-017"><span>FAQ-017</span><strong>Where is the diagnostic bundle or doctor command?</strong><em className="faqTag faqTagOps">Operations</em></a>
+    <a data-faq-index href="#faq-018"><span>FAQ-018</span><strong>Why is an audit event missing?</strong><em className="faqTag faqTagOps">Operations</em></a>
+    <a data-faq-index href="#faq-019"><span>FAQ-019</span><strong>Which features are Enterprise Edition only?</strong><em className="faqTag faqTagEdition">Editions</em></a>
+  </nav>
+</details>
+
+<p id="faq-empty" className="faqEmpty" hidden>No FAQs match that search.</p>
+
+<div id="faq-registry" className="faqRegistry">
+  <details className="faqCategory" data-faq-category="platform" open>
+    <summary className="faqCategoryHeader">
+      <p className="faqEyebrow">Platform fit</p>
+      <h2 id="faq-category-platform">Fit and product boundary</h2>
+    </summary>
+
+    <details id="faq-001" className="faqEntry" data-faq-entry data-faq-id="FAQ-001" data-faq-title="What problem does Caracal solve?" data-keywords="authority broker short-lived credentials policy STS Gateway Audit automation workflows">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-001</span>
+        <span className="faqTag faqTagPlatform">Platform</span>
+        <h3>What problem does Caracal solve?</h3>
+        <a className="faqPermalink" href="#faq-001" aria-label="Link to FAQ-001">#</a>
+      </summary>
+      <span id="faq-what-problem-does-caracal-solve" className="faqAnchor"></span>
+      <p>Caracal gives agents and automated workflows short-lived, policy-approved authority instead of long-lived credentials. The agent asks for scoped authority at the moment it acts, STS evaluates policy, Gateway or a connector enforces the mandate, and Audit records the decision and result.</p>
+      <p>See <a href="/concepts/authority-model/">Authority and Enforcement</a> and the <a href="/concepts/model-overview/">Caracal Mental Model</a>.</p>
+      <p className="faqRelated">Related: <a href="#faq-002">FAQ-002</a>, <a href="#faq-003">FAQ-003</a>, <a href="#faq-016">FAQ-016</a></p>
+    </details>
+
+    <details id="faq-002" className="faqEntry" data-faq-entry data-faq-id="FAQ-002" data-faq-title="Is Caracal an identity provider, secrets manager, or API gateway?" data-keywords="IdP identity provider secrets manager API gateway authority broker provider credentials">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-002</span>
+        <span className="faqTag faqTagPlatform">Platform</span>
+        <h3>Is Caracal an identity provider, secrets manager, or API gateway?</h3>
+        <a className="faqPermalink" href="#faq-002" aria-label="Link to FAQ-002">#</a>
+      </summary>
+      <span id="faq-is-caracal-an-idp-secrets-manager-or-api-gateway" className="faqAnchor"></span>
+      <p>No. Caracal is an authority broker for agent and workload actions. It can sit in front of HTTP resources like a protected Gateway, and it can broker provider credentials, but it does not replace your IdP, your static config store, or your general API management layer.</p>
+      <p>Use an IdP for human login, a secret manager for static application configuration, and Caracal when an agent or service needs scoped, auditable authority for a resource.</p>
+      <p className="faqRelated">Related: <a href="#faq-001">FAQ-001</a>, <a href="#faq-009">FAQ-009</a>, <a href="#faq-013">FAQ-013</a></p>
+    </details>
+  </details>
+
+  <details className="faqCategory" data-faq-category="model" open>
+    <summary className="faqCategoryHeader">
+      <p className="faqEyebrow">Architecture and identity</p>
+      <h2 id="faq-category-model">Core model</h2>
+    </summary>
+
+    <details id="faq-003" className="faqEntry" data-faq-entry data-faq-id="FAQ-003" data-faq-title="What should a zone represent?" data-keywords="zone architecture trust boundary signing keys policy activation audit trails isolation">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-003</span>
+        <span className="faqTag faqTagModel">Architecture</span>
+        <h3>What should a zone represent?</h3>
+        <a className="faqPermalink" href="#faq-003" aria-label="Link to FAQ-003">#</a>
+      </summary>
+      <span id="faq-what-should-a-zone-represent" className="faqAnchor"></span>
+      <p>A zone should represent a trust boundary: the set of resources, sessions, policies, signing keys, and audit records that are allowed to share authority state. Use a separate zone when two workloads need independent signing keys, policy activation, or audit trails. Use one zone with separate resources when the same trust boundary protects multiple upstreams.</p>
+      <p>For examples, see <a href="/guides/modeling-recipes/">Model Your Application in Caracal</a>.</p>
+      <p className="faqRelated">Related: <a href="#faq-004">FAQ-004</a>, <a href="#faq-009">FAQ-009</a>, <a href="#faq-011">FAQ-011</a></p>
+    </details>
+
+    <details id="faq-004" className="faqEntry" data-faq-entry data-faq-id="FAQ-004" data-faq-title="Does the open-source edition include managed multi-tenancy?" data-keywords="open source Community Edition multi-tenancy tenant teams SSO zones enterprise">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-004</span>
+        <span className="faqTag faqTagModel">Architecture</span>
+        <h3>Does the open-source edition include managed multi-tenancy?</h3>
+        <a className="faqPermalink" href="#faq-004" aria-label="Link to FAQ-004">#</a>
+      </summary>
+      <span id="faq-does-open-source-include-managed-multi-tenancy" className="faqAnchor"></span>
+      <p>No. The open-source Community Edition gives you zones as a manual isolation primitive. You can model customers, environments, or trust tiers with zones and automate them through the Admin API, but managed tenant, team, SSO, and hosted lifecycle features are Enterprise Edition features.</p>
+      <p>To serve many of your own customers from one deployment without per-customer zones, see <a href="/guides/serve-customers/">Serve Your Own Customers</a>.</p>
+      <p>See <a href="/enterprise/">Compare Editions</a> for the commercial feature boundary.</p>
+      <p className="faqRelated">Related: <a href="#faq-003">FAQ-003</a>, <a href="#faq-019">FAQ-019</a></p>
+    </details>
+
+    <details id="faq-005" className="faqEntry" data-faq-entry data-faq-id="FAQ-005" data-faq-title="What is the difference between an application, principal, and agent session?" data-keywords="application principal agent session identity subject runtime credential policy">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-005</span>
+        <span className="faqTag faqTagIdentity">Identity</span>
+        <h3>What is the difference between an application, principal, and agent session?</h3>
+        <a className="faqPermalink" href="#faq-005" aria-label="Link to FAQ-005">#</a>
+      </summary>
+      <span id="faq-application-principal-agent-session" className="faqAnchor"></span>
+      <p>An application is registered software that authenticates to Caracal. A principal is the acting identity, such as a user, service, or agent. An agent session is a time-bounded execution context spawned from a subject session or application context.</p>
+      <p>Policy decisions consider all of them: which application is asking, which principal is acting, which session anchors the request, and which resource scopes are requested.</p>
+      <p className="faqRelated">Related: <a href="#faq-006">FAQ-006</a>, <a href="#faq-007">FAQ-007</a>, <a href="#faq-008">FAQ-008</a></p>
+    </details>
+
+    <details id="faq-006" className="faqEntry faqEntryImportant" data-faq-entry data-faq-id="FAQ-006" data-faq-title="Should I create one application per agent?" data-keywords="application per agent managed application agent session DCR fan out delegation common mistake">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-006</span>
+        <span className="faqTag faqTagIdentity">Identity</span>
+        <h3>Should I create one application per agent?</h3>
+        <a className="faqPermalink" href="#faq-006" aria-label="Link to FAQ-006">#</a>
+      </summary>
+      <span id="faq-one-application-per-agent" className="faqAnchor"></span>
+      <p>No. This is the most common modeling mistake, and it does not match how Caracal scales. An <strong>application</strong> and an <strong>agent</strong> are different layers:</p>
+      <ul>
+        <li>An <strong>application</strong> is the credentialed security boundary. It is operator-provisioned (managed) or dynamically registered (DCR), holds a server-owned secret, and is the identity Caracal authenticates. Creating one is a deliberate, secret-bearing act.</li>
+        <li>An <strong>agent session</strong> is the scalable runtime unit. The workload that already holds the application credential creates agent sessions at runtime — no secret, no registration, no Console step. One application backs many concurrent agent sessions (up to 200 per application by default).</li>
+      </ul>
+      <p>The default model is <strong>one managed application per durable workload, with many agent sessions under it</strong>. When that workload fans out — spawning sub-agents, delegating a narrower slice of authority, or building an agent hierarchy for a single request — each of those is a new agent session under the <em>same</em> application, not a new application. Policy and audit still tell them apart by agent session, kind, labels, and delegation chain (see <a href="#faq-008">FAQ-008</a>).</p>
+      <p>One application per agent breaks this. Managed applications are operator-provisioned, so a workload cannot mint one per spawned agent at runtime. DCR can register at runtime, but a DCR application is meant to expire and bind exactly one ephemeral session, so per-request fan-out would register and tear down an application for every sub-agent — adding registration latency, credential sprawl, and registry churn for no policy or audit benefit. Reach for an application per agent only when a spawned agent genuinely needs its own isolated, expiring credential and a registry-visible identity; then use a DCR application with one ephemeral session, as described in <a href="#faq-007">FAQ-007</a>.</p>
+      <p>See <a href="/concepts/principal/">Identities and Applications</a> and the <a href="/concepts/model-overview/">Caracal Mental Model</a>.</p>
+      <p className="faqRelated">Related: <a href="#faq-005">FAQ-005</a>, <a href="#faq-007">FAQ-007</a>, <a href="#faq-008">FAQ-008</a></p>
+    </details>
+
+    <details id="faq-007" className="faqEntry" data-faq-entry data-faq-id="FAQ-007" data-faq-title="When should I use a managed application versus DCR?" data-keywords="managed application DCR dynamic client registration durable workload short-lived ephemeral credentials">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-007</span>
+        <span className="faqTag faqTagIdentity">Identity</span>
+        <h3>When should I use a managed application versus DCR?</h3>
+        <a className="faqPermalink" href="#faq-007" aria-label="Link to FAQ-007">#</a>
+      </summary>
+      <span id="faq-managed-application-versus-dcr" className="faqAnchor"></span>
+      <p>Use a managed application for durable software you intentionally operate: a backend service, Gateway application, orchestrator, or known agent runtime. Use DCR for spawned, high-churn, short-lived agent identities that need isolated credentials. Do not reuse one DCR application across multiple spawned agents.</p>
+      <p>See <a href="/concepts/principal/">Identities and Applications</a>.</p>
+      <p className="faqRelated">Related: <a href="#faq-005">FAQ-005</a>, <a href="#faq-006">FAQ-006</a>, <a href="#faq-008">FAQ-008</a></p>
+    </details>
+
+    <details id="faq-008" className="faqEntry faqEntryImportant" data-faq-entry data-faq-id="FAQ-008" data-faq-title="If many agents share one managed application, can policy and audit still tell them apart?" data-keywords="managed application shared agents policy audit attribution credential isolation labels delegation chain agent_kind">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-008</span>
+        <span className="faqTag faqTagIdentity">Identity</span>
+        <h3>If many agents share one managed application, can policy and audit still tell them apart?</h3>
+        <a className="faqPermalink" href="#faq-008" aria-label="Link to FAQ-008">#</a>
+      </summary>
+      <span id="faq-distinguish-agents-under-one-application" className="faqAnchor"></span>
+      <p>Yes, with one important distinction between <em>attribution</em> and <em>credential isolation</em>.</p>
+      <p>The agent's identity in a decision is the agent session, not the application. You do not pre-register agents in the Console; the workload that holds the application credential creates each agent session at runtime and declares its <code>agent_kind</code> and <code>labels</code> then. The token exchange carries the acting <code>agent_session_id</code>, <code>agent_kind</code>, and <code>labels</code>, plus the delegation edge and chain, alongside the <code>application_id</code>. Policy reads these as <code>input.principal.agent_session_id</code>, <code>input.principal.agent_kind</code>, and <code>input.principal.labels</code>, and audit records the same fields with the parent and delegation context. The Console agent list shows the <code>kind</code> and <code>labels</code> of every session, so you can see which agent is which under a shared application. So two agents under one managed application present different sessions, kinds, labels, and delegation paths, and both policy and audit can tell them apart without referencing the application.</p>
+      <p>What is actually enforced is the <strong>authority</strong>, not the label. Spawning is gated by application ownership, the asserted <code>agent_session_id</code> is bound to the owning application at exchange, and requested scopes must stay within the delegation chain, which is itself bounded by the parent's authority. The <code>agent_kind</code> and <code>labels</code>, by contrast, are asserted by the credentialed workload and are not delegation-constrained. They are a sound basis for policy and audit when you control and trust the spawner, but they are not a defense against a compromised workload mislabeling its own sub-agents. For that, the boundary is scopes, delegation, and policy.</p>
+      <p>A single managed application is therefore the right fit for one durable workload that spawns many agents: per-agent attribution comes from the agent session, kind, and labels, not from one application per agent. Reach for a DCR application per agent only when a spawned agent needs its own isolated, expiring credential and a registry-visible identity. What that buys you is credential isolation, not additional policy or audit distinguishability.</p>
+      <p>See <a href="/concepts/principal/">Identities and Applications</a> and <a href="/guides/modeling-recipes/">Model Your Application in Caracal</a>.</p>
+      <p className="faqRelated">Related: <a href="#faq-005">FAQ-005</a>, <a href="#faq-006">FAQ-006</a>, <a href="#faq-007">FAQ-007</a></p>
+    </details>
+  </details>
+
+  <details className="faqCategory" data-faq-category="resources" open>
+    <summary className="faqCategoryHeader">
+      <p className="faqEyebrow">Resources and grants</p>
+      <h2 id="faq-category-resources">Resources, scopes, and grants</h2>
+    </summary>
+
+    <details id="faq-009" className="faqEntry" data-faq-entry data-faq-id="FAQ-009" data-faq-title="What is the difference between a resource and a provider?" data-keywords="resource provider protected target policy audience upstream URL Gateway binding credentials OAuth API key bearer token">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-009</span>
+        <span className="faqTag faqTagResource">Resources</span>
+        <h3>What is the difference between a resource and a provider?</h3>
+        <a className="faqPermalink" href="#faq-009" aria-label="Link to FAQ-009">#</a>
+      </summary>
+      <span id="faq-resource-versus-provider" className="faqAnchor"></span>
+      <p>A resource is the protected target and policy audience: the thing a mandate authorizes access to. A provider describes how Gateway authenticates upstream: no credential, Caracal mandate, OAuth, API key, or bearer token.</p>
+      <p>Keep target identity, scopes, upstream URL, and Gateway binding on the resource. Keep secrets, token endpoints, OAuth settings, API keys, and bearer tokens on the provider.</p>
+      <p className="faqRelated">Related: <a href="#faq-010">FAQ-010</a>, <a href="#faq-011">FAQ-011</a>, <a href="#faq-013">FAQ-013</a></p>
+    </details>
+
+    <details id="faq-010" className="faqEntry" data-faq-entry data-faq-id="FAQ-010" data-faq-title="Why must the resource identifier stay stable if the upstream URL can change?" data-keywords="stable resource identifier upstream URL resource audience URI policy grants mandates audit continuity">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-010</span>
+        <span className="faqTag faqTagResource">Resources</span>
+        <h3>Why must the resource identifier stay stable if the upstream URL can change?</h3>
+        <a className="faqPermalink" href="#faq-010" aria-label="Link to FAQ-010">#</a>
+      </summary>
+      <span id="faq-stable-resource-identifier" className="faqAnchor"></span>
+      <p>Policies, grants, mandates, and audit records refer to the resource identifier. If you use a mutable deployment hostname as the identifier, changing infrastructure also changes your authority boundary and breaks audit continuity. Use a stable audience URI such as <code>resource://billing</code>, then change the upstream URL when routing changes.</p>
+      <p className="faqRelated">Related: <a href="#faq-003">FAQ-003</a>, <a href="#faq-009">FAQ-009</a>, <a href="#faq-011">FAQ-011</a></p>
+    </details>
+
+    <details id="faq-011" className="faqEntry" data-faq-entry data-faq-id="FAQ-011" data-faq-title="How should I design scopes?" data-keywords="scope design action-oriented scopes payments read tickets comment mcp tool call tenant environment policy input">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-011</span>
+        <span className="faqTag faqTagResource">Resources</span>
+        <h3>How should I design scopes?</h3>
+        <a className="faqPermalink" href="#faq-011" aria-label="Link to FAQ-011">#</a>
+      </summary>
+      <span id="faq-scope-design" className="faqAnchor"></span>
+      <p>Use small action-oriented scopes such as <code>payments:read</code>, <code>tickets:comment</code>, or <code>mcp:tool:call</code>. Do not encode environment, tenant, user, or hostname into scope names when that data belongs in the zone, principal, resource, or policy input.</p>
+      <p>Scopes answer "what action is allowed?" Resource identifiers answer "what target is protected?"</p>
+      <p className="faqRelated">Related: <a href="#faq-003">FAQ-003</a>, <a href="#faq-009">FAQ-009</a>, <a href="#faq-012">FAQ-012</a></p>
+    </details>
+
+    <details id="faq-012" className="faqEntry" data-faq-entry data-faq-id="FAQ-012" data-faq-title="Do I manage grants directly?" data-keywords="grants active policy set allow deny step-up subject application resource scopes request trace">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-012</span>
+        <span className="faqTag faqTagResource">Resources</span>
+        <h3>Do I manage grants directly?</h3>
+        <a className="faqPermalink" href="#faq-012" aria-label="Link to FAQ-012">#</a>
+      </summary>
+      <span id="faq-do-i-manage-grants-directly" className="faqAnchor"></span>
+      <p>In the current Console flow, you usually define resources, scopes, applications, subjects, and policies rather than managing grants as a separate daily object. Grants are an authorization input that policy can read; the active policy set still makes the final allow, deny, or step-up decision.</p>
+      <p>If access is denied, inspect the active policy, subject, application, resource, and scopes through <a href="/operations/troubleshooting/">request trace</a>.</p>
+      <p className="faqRelated">Related: <a href="#faq-011">FAQ-011</a>, <a href="#faq-016">FAQ-016</a></p>
+    </details>
+  </details>
+
+  <details className="faqCategory" data-faq-category="providers" open>
+    <summary className="faqCategoryHeader">
+      <p className="faqEyebrow">Provider security</p>
+      <h2 id="faq-category-providers">Providers and upstream credentials</h2>
+    </summary>
+
+    <details id="faq-013" className="faqEntry" data-faq-entry data-faq-id="FAQ-013" data-faq-title="Is an application secret the same as a provider credential?" data-keywords="application secret provider credential upstream provider Google Slack OpenAI API long-lived credentials mandates">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-013</span>
+        <span className="faqTag faqTagSecurity">Security</span>
+        <h3>Is an application secret the same as a provider credential?</h3>
+        <a className="faqPermalink" href="#faq-013" aria-label="Link to FAQ-013">#</a>
+      </summary>
+      <span id="faq-app-secret-versus-provider-credential" className="faqAnchor"></span>
+      <p>No. An application secret authenticates the application to Caracal. A provider credential authenticates Gateway or STS to an upstream provider such as Google, Slack, OpenAI, or an internal API. Agents should authenticate to Caracal and receive short-lived mandates; they should not receive long-lived provider credentials.</p>
+      <p>See <a href="/guides/resources-providers/">Define Resources and Providers</a>.</p>
+      <p className="faqRelated">Related: <a href="#faq-002">FAQ-002</a>, <a href="#faq-009">FAQ-009</a>, <a href="#faq-014">FAQ-014</a></p>
+    </details>
+
+    <details id="faq-014" className="faqEntry" data-faq-entry data-faq-id="FAQ-014" data-faq-title="When should I use per-user OAuth instead of a shared provider credential?" data-keywords="per-user OAuth shared provider credential authorization code client credentials api_key bearer_token consent">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-014</span>
+        <span className="faqTag faqTagSecurity">Security</span>
+        <h3>When should I use per-user OAuth instead of a shared provider credential?</h3>
+        <a className="faqPermalink" href="#faq-014" aria-label="Link to FAQ-014">#</a>
+      </summary>
+      <span id="faq-per-user-oauth-versus-shared-credential" className="faqAnchor"></span>
+      <p>Use per-user OAuth (<code>oauth2_authorization_code</code>) when the upstream call must act as a specific user and that user must consent. Use a shared service credential (<code>oauth2_client_credentials</code>, <code>api_key</code>, or <code>bearer_token</code>) when the agent acts as the application or service, not as an individual user.</p>
+      <p>The concrete setup fields are in <a href="/guides/provider-recipes/">Provider Recipes</a>.</p>
+      <p className="faqRelated">Related: <a href="#faq-013">FAQ-013</a>, <a href="#faq-016">FAQ-016</a></p>
+    </details>
+  </details>
+
+  <details className="faqCategory" data-faq-category="runtime" open>
+    <summary className="faqCategoryHeader">
+      <p className="faqEyebrow">Runtime and operations</p>
+      <h2 id="faq-category-runtime">Runtime, Console, and troubleshooting</h2>
+    </summary>
+
+    <details id="faq-015" className="faqEntry" data-faq-entry data-faq-id="FAQ-015" data-faq-title="Why are zone and policy commands in the Console instead of the caracal CLI?" data-keywords="caracal CLI Console Admin API SDK commands runtime lifecycle zones policies management surface">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-015</span>
+        <span className="faqTag faqTagRuntime">Runtime</span>
+        <h3>Why are zone and policy commands in the Console instead of the <code>caracal</code> CLI?</h3>
+        <a className="faqPermalink" href="#faq-015" aria-label="Link to FAQ-015">#</a>
+      </summary>
+      <span id="faq-why-console-instead-of-cli" className="faqAnchor"></span>
+      <p>The top-level <code>caracal</code> CLI is intentionally limited to local runtime lifecycle and process execution: <code>up</code>, <code>down</code>, <code>status</code>, <code>purge</code>, <code>run</code>, and <code>console</code>. Product-management workflows such as zones, applications, providers, resources, policies, audit, diagnostics, agents, and delegation live in the Console, Admin API, and SDKs so they use one management surface and do not drift into duplicated CLI commands.</p>
+      <p>See <a href="/runtime-console/cli-and-console/">Choose the Right Surface</a>.</p>
+      <p className="faqRelated">Related: <a href="#faq-017">FAQ-017</a>, <a href="#faq-018">FAQ-018</a></p>
+    </details>
+
+    <details id="faq-016" className="faqEntry faqEntryImportant" data-faq-entry data-faq-id="FAQ-016" data-faq-title="What is the difference between a 403 from STS and a 403 from Gateway?" data-keywords="403 STS Gateway verifier policy denied mandate resource binding scope check revocation route safety request trace">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-016</span>
+        <span className="faqTag faqTagOps">Operations</span>
+        <h3>What is the difference between a 403 from STS and a 403 from Gateway?</h3>
+        <a className="faqPermalink" href="#faq-016" aria-label="Link to FAQ-016">#</a>
+      </summary>
+      <span id="faq-sts-403-versus-gateway-403" className="faqAnchor"></span>
+      <p>A 403 from STS means the exchange was authenticated but policy did not allow the requested resource scopes, or a step-up/grant/session condition blocked issuance. A 403 from Gateway or a verifier means the request reached a protected boundary but the mandate, resource binding, scope check, revocation state, or route safety check failed.</p>
+      <p>Use <a href="/operations/troubleshooting/">request trace</a> with the request ID to identify the surface before changing policy or resource configuration.</p>
+      <p className="faqRelated">Related: <a href="#faq-011">FAQ-011</a>, <a href="#faq-012">FAQ-012</a>, <a href="#faq-017">FAQ-017</a></p>
+    </details>
+
+    <details id="faq-017" className="faqEntry" data-faq-entry data-faq-id="FAQ-017" data-faq-title="Where is the diagnostic bundle or doctor command?" data-keywords="diagnostic bundle doctor command status json diagnostics health readiness zones preflight audit request trace">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-017</span>
+        <span className="faqTag faqTagOps">Operations</span>
+        <h3>Where is the diagnostic bundle or doctor command?</h3>
+        <a className="faqPermalink" href="#faq-017" aria-label="Link to FAQ-017">#</a>
+      </summary>
+      <span id="faq-diagnostic-bundle" className="faqAnchor"></span>
+      <p>The diagnostic bundle is exposed through existing surfaces instead of a separate top-level command. Use <code>caracal status --json</code> for runtime status, Console <code>diagnostics</code> for Doctor checks (<code>health</code>, <code>readiness</code>, <code>zones</code>, <code>preflight</code>), <code>audit</code> for recent decisions, and <code>request trace</code> for a known request ID.</p>
+      <p>See <a href="/operations/troubleshooting/#diagnostic-bundle">Troubleshoot by Symptom</a>.</p>
+      <p className="faqRelated">Related: <a href="#faq-015">FAQ-015</a>, <a href="#faq-016">FAQ-016</a>, <a href="#faq-018">FAQ-018</a></p>
+    </details>
+
+    <details id="faq-018" className="faqEntry" data-faq-entry data-faq-id="FAQ-018" data-faq-title="Why is an audit event missing?" data-keywords="audit event missing request ID zone time window Audit service Redis stream replay backlog DLQ action result">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-018</span>
+        <span className="faqTag faqTagOps">Operations</span>
+        <h3>Why is an audit event missing?</h3>
+        <a className="faqPermalink" href="#faq-018" aria-label="Link to FAQ-018">#</a>
+      </summary>
+      <span id="faq-missing-audit-event" className="faqAnchor"></span>
+      <p>First confirm the request reached a Caracal-protected boundary. If it did, check the selected zone, time window, request ID, Audit service readiness, Redis stream health, replay backlog, and DLQ. If the request failed before STS, Gateway, Coordinator, or a connector emitted evidence, there may be no action-result event for that boundary.</p>
+      <p>Start with <a href="/runtime-console/observability/">Inspect Diagnostics and Audit</a> and <a href="/operations/debugging/">Debug Infrastructure Issues</a>.</p>
+      <p className="faqRelated">Related: <a href="#faq-016">FAQ-016</a>, <a href="#faq-017">FAQ-017</a></p>
+    </details>
+  </details>
+
+  <details className="faqCategory" data-faq-category="editions" open>
+    <summary className="faqCategoryHeader">
+      <p className="faqEyebrow">Edition boundary</p>
+      <h2 id="faq-category-editions">Editions</h2>
+    </summary>
+
+    <details id="faq-019" className="faqEntry" data-faq-entry data-faq-id="FAQ-019" data-faq-title="Which features are Enterprise Edition only?" data-keywords="Enterprise Edition Community Edition managed multi-tenancy hosted management UI SSO SCIM RBAC support lifecycle">
+      <summary className="faqEntryHeader">
+        <span className="faqNumber">FAQ-019</span>
+        <span className="faqTag faqTagEdition">Editions</span>
+        <h3>Which features are Enterprise Edition only?</h3>
+        <a className="faqPermalink" href="#faq-019" aria-label="Link to FAQ-019">#</a>
+      </summary>
+      <span id="faq-enterprise-only-features" className="faqAnchor"></span>
+      <p>Managed multi-tenancy, hosted management UI, managed Gateway and service operation, SSO, SCIM provisioning, teams, organization-level RBAC, commercial support, and enterprise lifecycle features are Enterprise Edition features. The Community Edition remains self-hosted and uses zones, Admin API automation, Console workflows, SDKs, and connectors.</p>
+      <p>See <a href="/enterprise/">Compare Editions</a> or <a href="https://cal.com/rawx18/caracal-enterprise-sales">book an enterprise call</a>.</p>
+      <p className="faqRelated">Related: <a href="#faq-004">FAQ-004</a></p>
+    </details>
+  </details>
+</div>
 
 ## Next Step
 
 Use [Glossary](/reference/glossary/) when you need canonical terms for concepts, API names, Console labels, and examples.
+
+<FaqRegistryScript />
