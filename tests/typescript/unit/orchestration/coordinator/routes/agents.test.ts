@@ -300,6 +300,46 @@ describe('POST /v1/zones/:zoneId/agents: spawn', () => {
     expect(refsCall?.[1]).toEqual(['z1', 'app-1', 'sid-test'])
   })
 
+  it('derives instance kind for managed applications when none is supplied', async () => {
+    const { app, db } = buildApp()
+    const client = spawnClient({
+      refs: { application_exists: true, session_exists: true, registration_method: 'managed' },
+      count: { app_n: '0', zone_n: '0' },
+      insert: { rows: [{ agent_session_id: 'agent-managed', zone_id: 'z1', application_id: 'app-1', parent_id: null }] },
+      outbox: true,
+    })
+    db.connect.mockResolvedValueOnce(client)
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/agents',
+      payload: { application_id: 'app-1', subject_session_id: 'sid-1' },
+    })
+    expect(res.statusCode).toBe(201)
+    const insertCall = client.query.mock.calls.find((call) => String(call[0]).includes('INSERT INTO agent_sessions'))
+    expect(insertCall?.[1]?.[5]).toBe('instance')
+  })
+
+  it('derives ephemeral kind for DCR applications when none is supplied', async () => {
+    const { app, db } = buildApp()
+    const client = spawnClient({
+      refs: { application_exists: true, session_exists: true, registration_method: 'dcr' },
+      count: { app_n: '0', zone_n: '0' },
+      insert: { rows: [{ agent_session_id: 'agent-dcr', zone_id: 'z1', application_id: 'app-1', parent_id: null }] },
+      outbox: true,
+    })
+    db.connect.mockResolvedValueOnce(client)
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/agents',
+      payload: { application_id: 'app-1', subject_session_id: 'sid-1' },
+    })
+    expect(res.statusCode).toBe(201)
+    const insertCall = client.query.mock.calls.find((call) => String(call[0]).includes('INSERT INTO agent_sessions'))
+    expect(insertCall?.[1]?.[5]).toBe('ephemeral')
+  })
+
   it('rejects oversized capability metadata before spawning', async () => {
     const { app, db } = buildApp()
     await app.ready()

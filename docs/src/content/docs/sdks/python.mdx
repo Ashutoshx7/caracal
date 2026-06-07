@@ -33,6 +33,7 @@ caracal = Caracal.connect()
 | Method | Purpose |
 | --- | --- |
 | `async with caracal.spawn(...)` | Create and bind an agent session. |
+| `await caracal.service(...)` | Start a long-lived service agent; returns a handle with `heartbeat()` and `aclose()`. |
 | `async with caracal.delegate(...)` | Create and bind a delegation edge to an existing agent session. |
 | `async with caracal.delegate_to_spawn(...)` | Spawn a child session and create the delegation edge before yielding context. |
 | `caracal.headers(allow_root=False)` | Project the current context into HTTP headers. |

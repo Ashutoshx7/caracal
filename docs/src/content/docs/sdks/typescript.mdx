@@ -33,6 +33,7 @@ const caracal = Caracal.connect();
 | Method | Purpose |
 | --- | --- |
 | `spawn(fn, options?)` | Create an agent session and bind context while `fn` runs. |
+| `service(options?)` | Start a long-lived service agent; returns a handle with `heartbeat()` and `close()`. |
 | `delegate(options, fn)` | Create a delegation edge to an existing agent session. |
 | `delegateToSpawn(options, fn)` | Spawn a child agent and create the delegation edge before running `fn`. |
 | `headers(options?)` | Project the current bound context into HTTP headers synchronously. |
