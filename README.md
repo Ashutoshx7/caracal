@@ -186,20 +186,6 @@ See [CONTRIBUTING.md](./.github/CONTRIBUTING.md) for clone, setup, testing, and 
         </a>
       </p>
     </td>
-    <td valign="top" width="33%">
-      <a href="https://github.com/yashgo0018" target="_blank">
-        <img src="https://avatars.githubusercontent.com/yashgo0018?s=150" width="120" alt="yashgo0018"/><br/>
-        <strong>yashgo0018</strong>
-      </a>
-      <p>
-        <a href="https://github.com/yashgo0018" target="_blank">
-          <img src="https://img.shields.io/badge/GitHub-100000?style=flat&logo=github&logoColor=white" alt="GitHub"/>
-        </a>
-        <a href="https://www.linkedin.com/in/yash-goyal-0018" target="_blank">
-          <img src="https://img.shields.io/badge/LinkedIn-0077B5?style=flat&logo=linkedin&logoColor=white" alt="LinkedIn"/>
-        </a>
-      </p>
-    </td>
   </tr>
 </table>
 
