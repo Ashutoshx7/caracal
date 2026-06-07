@@ -83,6 +83,23 @@ describe('GET /v1/zones/:zoneId/audit', () => {
     ])
   })
 
+  it('filters audit by agent_session_id and label', async () => {
+    const { app, db } = buildRouteApp(zoneEventsRoutes)
+    db.query.mockResolvedValueOnce({ rows: [] })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/zones/z1/audit?agent_session_id=agt-1&label=refund-agent',
+    })
+
+    expect(res.statusCode).toBe(200)
+    const sql = db.query.mock.calls[0][0] as string
+    expect(sql).toContain(`metadata_json->>'agent_session_id' = $2`)
+    expect(sql).toContain(`metadata_json->'agent_labels' @> $3::jsonb`)
+    expect(db.query.mock.calls[0][1]).toEqual(['z1', 'agt-1', '["refund-agent"]', 100])
+  })
+
   it('rejects malformed cursor values', async () => {
     const { app, db } = buildRouteApp(zoneEventsRoutes)
 
