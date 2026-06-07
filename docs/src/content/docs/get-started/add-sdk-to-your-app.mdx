@@ -41,7 +41,7 @@ Install the package for your application language.
 ## TypeScript
 
 ```typescript
-import { AgentKind, Caracal } from "@caracalai/sdk";
+import { Caracal } from "@caracalai/sdk";
 
 const caracal = Caracal.connect();
 const resourceId = process.env.CARACAL_RESOURCE_ID;
@@ -59,7 +59,7 @@ await caracal.spawn(async () => {
   });
 
   console.log(await response.text());
-}, { kind: AgentKind.Ephemeral });
+});
 ```
 
 ## Python
@@ -68,14 +68,14 @@ await caracal.spawn(async () => {
 import asyncio
 import os
 
-from caracalai_sdk import AgentKind, Caracal
+from caracalai_sdk import Caracal
 
 caracal = Caracal.connect()
 resource_id = os.environ["CARACAL_RESOURCE_ID"]
 resource_path = os.environ["CARACAL_RESOURCE_PATH"]
 
 async def main():
-    async with caracal.spawn(kind=AgentKind.EPHEMERAL) as ctx:
+    async with caracal.spawn() as ctx:
         print("Agent session:", ctx.agent_session_id)
 
         response = await caracal.fetch(
