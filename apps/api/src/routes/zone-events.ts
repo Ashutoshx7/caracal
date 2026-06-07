@@ -26,7 +26,7 @@ function reconstructPolicyInput(zoneId: string, metadata: unknown): Record<strin
     principal.registration_method = meta.application_registration_method
   }
   if (typeof meta.agent_session_id === 'string') principal.agent_session_id = meta.agent_session_id
-  if (typeof meta.agent_kind === 'string') principal.agent_kind = meta.agent_kind
+  if (typeof meta.agent_lifecycle === 'string') principal.lifecycle = meta.agent_lifecycle
   if (Array.isArray(meta.agent_labels)) principal.labels = meta.agent_labels
 
   const context: Record<string, unknown> = {

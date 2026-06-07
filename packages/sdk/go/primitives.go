@@ -251,7 +251,7 @@ func SpawnService(ctx context.Context, opts SpawnServiceInput) (*ServiceAgent, e
 		ApplicationID:    opts.ApplicationID,
 		SubjectSessionID: opts.SubjectSessionID,
 		ParentID:         parentID,
-		Kind:             KindService,
+		Lifecycle:        LifecycleService,
 		TTLSeconds:       opts.TTLSeconds,
 		Metadata:         opts.Metadata,
 		Labels:           opts.Labels,

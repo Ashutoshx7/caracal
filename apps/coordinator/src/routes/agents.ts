@@ -22,20 +22,20 @@ const LIST_MAX_LIMIT = 500
 export const MAX_AGENT_LABELS = 32
 export const MAX_AGENT_LABEL_LENGTH = 64
 
-export const AgentKind = z.enum(['service', 'instance', 'ephemeral'])
+export const AgentLifecycle = z.enum(['agent', 'service'])
 export const AgentLabels = z.array(
   z.string().trim().min(1).max(MAX_AGENT_LABEL_LENGTH),
 ).max(MAX_AGENT_LABELS).default([])
 
-function heartbeatDeadline(kind: z.infer<typeof AgentKind>): Date | null {
-  return kind === 'service' ? new Date(Date.now() + cfg.serviceAgentLeaseSeconds * 1000) : null
+function heartbeatDeadline(lifecycle: z.infer<typeof AgentLifecycle>): Date | null {
+  return lifecycle === 'service' ? new Date(Date.now() + cfg.serviceAgentLeaseSeconds * 1000) : null
 }
 
 const SpawnBody = z.object({
   application_id: z.string().min(1),
   subject_session_id: z.string().min(1).optional(),
   parent_id: z.string().nullable().default(null),
-  kind: AgentKind.optional(),
+  lifecycle: AgentLifecycle.optional(),
   labels: AgentLabels,
   ttl_seconds: z.number().int().min(1).max(86400).default(DEFAULT_TTL),
   metadata: z.record(z.string(), z.unknown()).default({}),
@@ -80,7 +80,7 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
       if (idempotencyKey) {
         const { rows: existing } = await client.query(
           `SELECT id AS agent_session_id, zone_id, application_id, parent_id,
-                  subject_session_id, agent_kind AS kind,
+                  subject_session_id, lifecycle,
                   labels, status, depth, ttl_seconds, metadata_json AS metadata,
                   spawned_at, last_heartbeat_at, heartbeat_deadline_at
            FROM agent_sessions
@@ -117,10 +117,10 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
         await client.query('ROLLBACK')
         return reply.code(404).send({ error: 'application_not_found' })
       }
-      const kind = body.kind ?? (refs[0].registration_method === 'dcr' ? 'ephemeral' : 'instance')
-      if (refs[0].registration_method === 'dcr' && kind !== 'ephemeral') {
+      const lifecycle = body.lifecycle ?? 'agent'
+      if (refs[0].registration_method === 'dcr' && lifecycle !== 'agent') {
         await client.query('ROLLBACK')
-        return reply.code(409).send({ error: 'dcr_requires_ephemeral_agent' })
+        return reply.code(409).send({ error: 'dcr_application_cannot_host_service' })
       }
       if (!refs[0].session_exists) {
         await client.query('ROLLBACK')
@@ -178,18 +178,18 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
           return reply.code(429).send({ error: 'agent_depth_limit_exceeded' })
         }
       }
-      const deadline = heartbeatDeadline(kind)
+      const deadline = heartbeatDeadline(lifecycle)
       const { rows } = await client.query(
          `INSERT INTO agent_sessions
-          (id, zone_id, application_id, parent_id, subject_session_id, agent_kind, depth,
+          (id, zone_id, application_id, parent_id, subject_session_id, lifecycle, depth,
            labels, max_children, ttl_seconds, metadata_json, last_heartbeat_at, heartbeat_deadline_at)
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
           RETURNING id AS agent_session_id, zone_id, application_id, parent_id,
-                    subject_session_id, agent_kind AS kind,
+                    subject_session_id, lifecycle,
                     labels, status, depth, ttl_seconds, metadata_json AS metadata,
                     spawned_at, last_heartbeat_at, heartbeat_deadline_at`,
         [id, zoneId, body.application_id, body.parent_id, subjectSessionId,
-          kind, depth, body.labels, MAX_CHILDREN, body.ttl_seconds, body.metadata,
+          lifecycle, depth, body.labels, MAX_CHILDREN, body.ttl_seconds, body.metadata,
           deadline, deadline],
       )
       if (body.parent_id) {
@@ -241,7 +241,7 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const { rows } = await fastify.db.query(
         `SELECT id AS agent_session_id, zone_id, application_id, parent_id,
-                subject_session_id, agent_kind AS kind,
+                subject_session_id, lifecycle,
                 labels, status, depth, ttl_seconds, metadata_json AS metadata,
                 spawned_at, terminated_at, last_heartbeat_at, heartbeat_deadline_at
          FROM agent_sessions WHERE zone_id = $1 ${cursorClause}
@@ -258,7 +258,7 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
     const { zoneId, id } = params
     const { rows } = await fastify.db.query(
         `SELECT id AS agent_session_id, zone_id, application_id, parent_id,
-                subject_session_id, agent_kind AS kind,
+                subject_session_id, lifecycle,
                 labels, status, depth, ttl_seconds, metadata_json AS metadata,
                 spawned_at, terminated_at, last_heartbeat_at, heartbeat_deadline_at
          FROM agent_sessions WHERE id = $1 AND zone_id = $2`,
@@ -274,7 +274,7 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
     const { zoneId, id } = params
     const { rows } = await fastify.db.query(
       `SELECT s.id AS agent_session_id, s.zone_id, s.application_id, s.parent_id,
-              s.subject_session_id, s.agent_kind AS kind,
+              s.subject_session_id, s.lifecycle,
               s.labels, s.status, s.depth, s.ttl_seconds, s.metadata_json AS metadata,
               s.spawned_at, s.last_heartbeat_at, s.heartbeat_deadline_at
        FROM agent_sessions s
@@ -357,7 +357,7 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
           UPDATE agent_sessions
           SET status = 'active',
               heartbeat_deadline_at = CASE
-                WHEN agent_kind = 'service' THEN now() + ($3::int * interval '1 second')
+                WHEN lifecycle = 'service' THEN now() + ($3::int * interval '1 second')
                 ELSE heartbeat_deadline_at
               END,
               updated_at = now()
