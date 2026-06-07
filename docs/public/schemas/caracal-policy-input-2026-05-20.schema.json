@@ -32,8 +32,9 @@
         "agent_session_id": {
           "type": "string"
         },
-        "agent_kind": {
-          "type": "string"
+        "lifecycle": {
+          "type": "string",
+          "enum": ["agent", "service"]
         },
         "labels": {
           "type": "array",

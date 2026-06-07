@@ -172,7 +172,7 @@ describe('POST /v1/zones/:zoneId/agents: spawn', () => {
     expect(JSON.parse(res.body)).toMatchObject({ error: 'agent_depth_limit_exceeded' })
   })
 
-  it('requires DCR applications to spawn ephemeral agent sessions', async () => {
+  it('rejects service lifecycle on DCR applications', async () => {
     const { app, db } = buildApp()
     db.connect.mockResolvedValueOnce(spawnClient({
       refs: { application_exists: true, session_exists: true, registration_method: 'dcr' },
@@ -181,10 +181,10 @@ describe('POST /v1/zones/:zoneId/agents: spawn', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/zones/z1/agents',
-      payload: { application_id: 'app-1', subject_session_id: 'sid-1', kind: 'service' },
+      payload: { application_id: 'app-1', subject_session_id: 'sid-1', lifecycle: 'service' },
     })
     expect(res.statusCode).toBe(409)
-    expect(JSON.parse(res.body)).toMatchObject({ error: 'dcr_requires_ephemeral_agent' })
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'dcr_application_cannot_host_service' })
   })
 
   it('binds each DCR application to only one active agent session', async () => {
@@ -197,7 +197,7 @@ describe('POST /v1/zones/:zoneId/agents: spawn', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/zones/z1/agents',
-      payload: { application_id: 'app-1', subject_session_id: 'sid-1', kind: 'ephemeral' },
+      payload: { application_id: 'app-1', subject_session_id: 'sid-1' },
     })
     expect(res.statusCode).toBe(409)
     expect(JSON.parse(res.body)).toMatchObject({ error: 'dcr_application_already_bound' })
@@ -292,7 +292,7 @@ describe('POST /v1/zones/:zoneId/agents: spawn', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/zones/z1/agents',
-      payload: { application_id: 'app-1', kind: 'ephemeral', metadata: { purpose: 'sdk' } },
+      payload: { application_id: 'app-1', lifecycle: 'service', metadata: { purpose: 'sdk' } },
     })
     expect(res.statusCode).toBe(201)
     expect(JSON.parse(res.body)).toMatchObject({ agent_session_id: 'agent-sdk' })
@@ -300,7 +300,7 @@ describe('POST /v1/zones/:zoneId/agents: spawn', () => {
     expect(refsCall?.[1]).toEqual(['z1', 'app-1', 'sid-test'])
   })
 
-  it('derives instance kind for managed applications when none is supplied', async () => {
+  it('defaults lifecycle to agent for managed applications when none is supplied', async () => {
     const { app, db } = buildApp()
     const client = spawnClient({
       refs: { application_exists: true, session_exists: true, registration_method: 'managed' },
@@ -317,10 +317,10 @@ describe('POST /v1/zones/:zoneId/agents: spawn', () => {
     })
     expect(res.statusCode).toBe(201)
     const insertCall = client.query.mock.calls.find((call) => String(call[0]).includes('INSERT INTO agent_sessions'))
-    expect(insertCall?.[1]?.[5]).toBe('instance')
+    expect(insertCall?.[1]?.[5]).toBe('agent')
   })
 
-  it('derives ephemeral kind for DCR applications when none is supplied', async () => {
+  it('defaults lifecycle to agent for DCR applications when none is supplied', async () => {
     const { app, db } = buildApp()
     const client = spawnClient({
       refs: { application_exists: true, session_exists: true, registration_method: 'dcr' },
@@ -337,7 +337,27 @@ describe('POST /v1/zones/:zoneId/agents: spawn', () => {
     })
     expect(res.statusCode).toBe(201)
     const insertCall = client.query.mock.calls.find((call) => String(call[0]).includes('INSERT INTO agent_sessions'))
-    expect(insertCall?.[1]?.[5]).toBe('ephemeral')
+    expect(insertCall?.[1]?.[5]).toBe('agent')
+  })
+
+  it('passes through service lifecycle for managed applications', async () => {
+    const { app, db } = buildApp()
+    const client = spawnClient({
+      refs: { application_exists: true, session_exists: true, registration_method: 'managed' },
+      count: { app_n: '0', zone_n: '0' },
+      insert: { rows: [{ agent_session_id: 'agent-service', zone_id: 'z1', application_id: 'app-1', parent_id: null }] },
+      outbox: true,
+    })
+    db.connect.mockResolvedValueOnce(client)
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/agents',
+      payload: { application_id: 'app-1', subject_session_id: 'sid-1', lifecycle: 'service' },
+    })
+    expect(res.statusCode).toBe(201)
+    const insertCall = client.query.mock.calls.find((call) => String(call[0]).includes('INSERT INTO agent_sessions'))
+    expect(insertCall?.[1]?.[5]).toBe('service')
   })
 
   it('rejects oversized label set before spawning', async () => {
