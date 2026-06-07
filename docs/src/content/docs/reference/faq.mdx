@@ -41,50 +41,10 @@ import FaqRegistryScript from '../../../components/FaqRegistryScript.astro';
   <a className="faqStripItem" href="#faq-019"><span>FAQ-019</span><strong>Which features are Enterprise Edition only?</strong></a>
 </nav>
 
-<div className="faqSectionRule" aria-hidden="true"></div>
-
-<div className="faqRegistryHeading">
-  <h2 id="faq-registry-heading">FAQ Registry</h2>
-  <span>Stable IDs</span>
-</div>
-
-The registry number is the permanent identifier. Use links such as `/reference/faq/#faq-006` when referencing a specific answer.
-
-<details className="faqIndexDisclosure">
-  <summary><span>Browse every FAQ ID</span><small>19 stable entries</small></summary>
-  <nav className="faqIndex" aria-label="FAQ registry index">
-    <a data-faq-index href="#faq-001"><span>FAQ-001</span><strong>What problem does Caracal solve?</strong><em className="faqTag faqTagPlatform">Platform</em></a>
-    <a data-faq-index href="#faq-002"><span>FAQ-002</span><strong>Is Caracal an identity provider, secrets manager, or API gateway?</strong><em className="faqTag faqTagPlatform">Platform</em></a>
-    <a data-faq-index href="#faq-003"><span>FAQ-003</span><strong>What should a zone represent?</strong><em className="faqTag faqTagModel">Architecture</em></a>
-    <a data-faq-index href="#faq-004"><span>FAQ-004</span><strong>Does the open-source edition include managed multi-tenancy?</strong><em className="faqTag faqTagModel">Architecture</em></a>
-    <a data-faq-index href="#faq-005"><span>FAQ-005</span><strong>What is the difference between an application, principal, and agent session?</strong><em className="faqTag faqTagIdentity">Identity</em></a>
-    <a data-faq-index href="#faq-006"><span>FAQ-006</span><strong>Should I create one application per agent?</strong><em className="faqTag faqTagIdentity">Identity</em></a>
-    <a data-faq-index href="#faq-007"><span>FAQ-007</span><strong>When should I use a managed application versus DCR?</strong><em className="faqTag faqTagIdentity">Identity</em></a>
-    <a data-faq-index href="#faq-008"><span>FAQ-008</span><strong>If many agents share one managed application, can policy and audit still tell them apart?</strong><em className="faqTag faqTagIdentity">Identity</em></a>
-    <a data-faq-index href="#faq-009"><span>FAQ-009</span><strong>What is the difference between a resource and a provider?</strong><em className="faqTag faqTagResource">Resources</em></a>
-    <a data-faq-index href="#faq-010"><span>FAQ-010</span><strong>Why must the resource identifier stay stable if the upstream URL can change?</strong><em className="faqTag faqTagResource">Resources</em></a>
-    <a data-faq-index href="#faq-011"><span>FAQ-011</span><strong>How should I design scopes?</strong><em className="faqTag faqTagResource">Resources</em></a>
-    <a data-faq-index href="#faq-012"><span>FAQ-012</span><strong>Do I manage grants directly?</strong><em className="faqTag faqTagResource">Resources</em></a>
-    <a data-faq-index href="#faq-013"><span>FAQ-013</span><strong>Is an application secret the same as a provider credential?</strong><em className="faqTag faqTagSecurity">Security</em></a>
-    <a data-faq-index href="#faq-014"><span>FAQ-014</span><strong>When should I use per-user OAuth instead of a shared provider credential?</strong><em className="faqTag faqTagSecurity">Security</em></a>
-    <a data-faq-index href="#faq-015"><span>FAQ-015</span><strong>Why are zone and policy commands in the Console instead of the caracal CLI?</strong><em className="faqTag faqTagRuntime">Runtime</em></a>
-    <a data-faq-index href="#faq-016"><span>FAQ-016</span><strong>What is the difference between a 403 from STS and a 403 from Gateway?</strong><em className="faqTag faqTagOps">Operations</em></a>
-    <a data-faq-index href="#faq-017"><span>FAQ-017</span><strong>Where is the diagnostic bundle or doctor command?</strong><em className="faqTag faqTagOps">Operations</em></a>
-    <a data-faq-index href="#faq-018"><span>FAQ-018</span><strong>Why is an audit event missing?</strong><em className="faqTag faqTagOps">Operations</em></a>
-    <a data-faq-index href="#faq-019"><span>FAQ-019</span><strong>Which features are Enterprise Edition only?</strong><em className="faqTag faqTagEdition">Editions</em></a>
-  </nav>
-</details>
-
 <p id="faq-empty" className="faqEmpty" hidden>No FAQs match that search.</p>
 
 <div id="faq-registry" className="faqRegistry">
-  <details className="faqCategory" data-faq-category="platform" open>
-    <summary className="faqCategoryHeader">
-      <p className="faqEyebrow">Platform fit</p>
-      <h2 id="faq-category-platform">Fit and product boundary</h2>
-    </summary>
-
-    <details id="faq-001" className="faqEntry" data-faq-entry data-faq-id="FAQ-001" data-faq-title="What problem does Caracal solve?" data-keywords="authority broker short-lived credentials policy STS Gateway Audit automation workflows">
+    <details id="faq-001" className="faqEntry" data-faq-entry data-faq-category="platform" data-faq-id="FAQ-001" data-faq-title="What problem does Caracal solve?" data-keywords="authority broker short-lived credentials policy STS Gateway Audit automation workflows">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-001</span>
         <span className="faqTag faqTagPlatform">Platform</span>
@@ -97,7 +57,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p className="faqRelated">Related: <a href="#faq-002">FAQ-002</a>, <a href="#faq-003">FAQ-003</a>, <a href="#faq-016">FAQ-016</a></p>
     </details>
 
-    <details id="faq-002" className="faqEntry" data-faq-entry data-faq-id="FAQ-002" data-faq-title="Is Caracal an identity provider, secrets manager, or API gateway?" data-keywords="IdP identity provider secrets manager API gateway authority broker provider credentials">
+    <details id="faq-002" className="faqEntry" data-faq-entry data-faq-category="platform" data-faq-id="FAQ-002" data-faq-title="Is Caracal an identity provider, secrets manager, or API gateway?" data-keywords="IdP identity provider secrets manager API gateway authority broker provider credentials">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-002</span>
         <span className="faqTag faqTagPlatform">Platform</span>
@@ -109,15 +69,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p>Use an IdP for human login, a secret manager for static application configuration, and Caracal when an agent or service needs scoped, auditable authority for a resource.</p>
       <p className="faqRelated">Related: <a href="#faq-001">FAQ-001</a>, <a href="#faq-009">FAQ-009</a>, <a href="#faq-013">FAQ-013</a></p>
     </details>
-  </details>
-
-  <details className="faqCategory" data-faq-category="model" open>
-    <summary className="faqCategoryHeader">
-      <p className="faqEyebrow">Architecture and identity</p>
-      <h2 id="faq-category-model">Core model</h2>
-    </summary>
-
-    <details id="faq-003" className="faqEntry" data-faq-entry data-faq-id="FAQ-003" data-faq-title="What should a zone represent?" data-keywords="zone architecture trust boundary signing keys policy activation audit trails isolation">
+    <details id="faq-003" className="faqEntry" data-faq-entry data-faq-category="model" data-faq-id="FAQ-003" data-faq-title="What should a zone represent?" data-keywords="zone architecture trust boundary signing keys policy activation audit trails isolation">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-003</span>
         <span className="faqTag faqTagModel">Architecture</span>
@@ -130,7 +82,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p className="faqRelated">Related: <a href="#faq-004">FAQ-004</a>, <a href="#faq-009">FAQ-009</a>, <a href="#faq-011">FAQ-011</a></p>
     </details>
 
-    <details id="faq-004" className="faqEntry" data-faq-entry data-faq-id="FAQ-004" data-faq-title="Does the open-source edition include managed multi-tenancy?" data-keywords="open source Community Edition multi-tenancy tenant teams SSO zones enterprise">
+    <details id="faq-004" className="faqEntry" data-faq-entry data-faq-category="model" data-faq-id="FAQ-004" data-faq-title="Does the open-source edition include managed multi-tenancy?" data-keywords="open source Community Edition multi-tenancy tenant teams SSO zones enterprise">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-004</span>
         <span className="faqTag faqTagModel">Architecture</span>
@@ -144,7 +96,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p className="faqRelated">Related: <a href="#faq-003">FAQ-003</a>, <a href="#faq-019">FAQ-019</a></p>
     </details>
 
-    <details id="faq-005" className="faqEntry" data-faq-entry data-faq-id="FAQ-005" data-faq-title="What is the difference between an application, principal, and agent session?" data-keywords="application principal agent session identity subject runtime credential policy">
+    <details id="faq-005" className="faqEntry" data-faq-entry data-faq-category="model" data-faq-id="FAQ-005" data-faq-title="What is the difference between an application, principal, and agent session?" data-keywords="application principal agent session identity subject runtime credential policy">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-005</span>
         <span className="faqTag faqTagIdentity">Identity</span>
@@ -157,7 +109,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p className="faqRelated">Related: <a href="#faq-006">FAQ-006</a>, <a href="#faq-007">FAQ-007</a>, <a href="#faq-008">FAQ-008</a></p>
     </details>
 
-    <details id="faq-006" className="faqEntry faqEntryImportant" data-faq-entry data-faq-id="FAQ-006" data-faq-title="Should I create one application per agent?" data-keywords="application per agent managed application agent session DCR fan out delegation common mistake">
+    <details id="faq-006" className="faqEntry faqEntryImportant" data-faq-entry data-faq-category="model" data-faq-id="FAQ-006" data-faq-title="Should I create one application per agent?" data-keywords="application per agent managed application agent session DCR fan out delegation common mistake">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-006</span>
         <span className="faqTag faqTagIdentity">Identity</span>
@@ -176,7 +128,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p className="faqRelated">Related: <a href="#faq-005">FAQ-005</a>, <a href="#faq-007">FAQ-007</a>, <a href="#faq-008">FAQ-008</a></p>
     </details>
 
-    <details id="faq-007" className="faqEntry" data-faq-entry data-faq-id="FAQ-007" data-faq-title="When should I use a managed application versus DCR?" data-keywords="managed application DCR dynamic client registration durable workload short-lived ephemeral credentials">
+    <details id="faq-007" className="faqEntry" data-faq-entry data-faq-category="model" data-faq-id="FAQ-007" data-faq-title="When should I use a managed application versus DCR?" data-keywords="managed application DCR dynamic client registration durable workload short-lived ephemeral credentials">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-007</span>
         <span className="faqTag faqTagIdentity">Identity</span>
@@ -189,7 +141,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p className="faqRelated">Related: <a href="#faq-005">FAQ-005</a>, <a href="#faq-006">FAQ-006</a>, <a href="#faq-008">FAQ-008</a></p>
     </details>
 
-    <details id="faq-008" className="faqEntry faqEntryImportant" data-faq-entry data-faq-id="FAQ-008" data-faq-title="If many agents share one managed application, can policy and audit still tell them apart?" data-keywords="managed application shared agents policy audit attribution credential isolation labels delegation chain agent_kind">
+    <details id="faq-008" className="faqEntry faqEntryImportant" data-faq-entry data-faq-category="model" data-faq-id="FAQ-008" data-faq-title="If many agents share one managed application, can policy and audit still tell them apart?" data-keywords="managed application shared agents policy audit attribution credential isolation labels delegation chain agent_kind">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-008</span>
         <span className="faqTag faqTagIdentity">Identity</span>
@@ -204,15 +156,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p>See <a href="/concepts/principal/">Identities and Applications</a> and <a href="/guides/modeling-recipes/">Model Your Application in Caracal</a>.</p>
       <p className="faqRelated">Related: <a href="#faq-005">FAQ-005</a>, <a href="#faq-006">FAQ-006</a>, <a href="#faq-007">FAQ-007</a></p>
     </details>
-  </details>
-
-  <details className="faqCategory" data-faq-category="resources" open>
-    <summary className="faqCategoryHeader">
-      <p className="faqEyebrow">Resources and grants</p>
-      <h2 id="faq-category-resources">Resources, scopes, and grants</h2>
-    </summary>
-
-    <details id="faq-009" className="faqEntry" data-faq-entry data-faq-id="FAQ-009" data-faq-title="What is the difference between a resource and a provider?" data-keywords="resource provider protected target policy audience upstream URL Gateway binding credentials OAuth API key bearer token">
+    <details id="faq-009" className="faqEntry" data-faq-entry data-faq-category="resources" data-faq-id="FAQ-009" data-faq-title="What is the difference between a resource and a provider?" data-keywords="resource provider protected target policy audience upstream URL Gateway binding credentials OAuth API key bearer token">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-009</span>
         <span className="faqTag faqTagResource">Resources</span>
@@ -225,7 +169,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p className="faqRelated">Related: <a href="#faq-010">FAQ-010</a>, <a href="#faq-011">FAQ-011</a>, <a href="#faq-013">FAQ-013</a></p>
     </details>
 
-    <details id="faq-010" className="faqEntry" data-faq-entry data-faq-id="FAQ-010" data-faq-title="Why must the resource identifier stay stable if the upstream URL can change?" data-keywords="stable resource identifier upstream URL resource audience URI policy grants mandates audit continuity">
+    <details id="faq-010" className="faqEntry" data-faq-entry data-faq-category="resources" data-faq-id="FAQ-010" data-faq-title="Why must the resource identifier stay stable if the upstream URL can change?" data-keywords="stable resource identifier upstream URL resource audience URI policy grants mandates audit continuity">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-010</span>
         <span className="faqTag faqTagResource">Resources</span>
@@ -237,7 +181,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p className="faqRelated">Related: <a href="#faq-003">FAQ-003</a>, <a href="#faq-009">FAQ-009</a>, <a href="#faq-011">FAQ-011</a></p>
     </details>
 
-    <details id="faq-011" className="faqEntry" data-faq-entry data-faq-id="FAQ-011" data-faq-title="How should I design scopes?" data-keywords="scope design action-oriented scopes payments read tickets comment mcp tool call tenant environment policy input">
+    <details id="faq-011" className="faqEntry" data-faq-entry data-faq-category="resources" data-faq-id="FAQ-011" data-faq-title="How should I design scopes?" data-keywords="scope design action-oriented scopes payments read tickets comment mcp tool call tenant environment policy input">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-011</span>
         <span className="faqTag faqTagResource">Resources</span>
@@ -250,7 +194,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p className="faqRelated">Related: <a href="#faq-003">FAQ-003</a>, <a href="#faq-009">FAQ-009</a>, <a href="#faq-012">FAQ-012</a></p>
     </details>
 
-    <details id="faq-012" className="faqEntry" data-faq-entry data-faq-id="FAQ-012" data-faq-title="Do I manage grants directly?" data-keywords="grants active policy set allow deny step-up subject application resource scopes request trace">
+    <details id="faq-012" className="faqEntry" data-faq-entry data-faq-category="resources" data-faq-id="FAQ-012" data-faq-title="Do I manage grants directly?" data-keywords="grants active policy set allow deny step-up subject application resource scopes request trace">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-012</span>
         <span className="faqTag faqTagResource">Resources</span>
@@ -262,15 +206,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p>If access is denied, inspect the active policy, subject, application, resource, and scopes through <a href="/operations/troubleshooting/">request trace</a>.</p>
       <p className="faqRelated">Related: <a href="#faq-011">FAQ-011</a>, <a href="#faq-016">FAQ-016</a></p>
     </details>
-  </details>
-
-  <details className="faqCategory" data-faq-category="providers" open>
-    <summary className="faqCategoryHeader">
-      <p className="faqEyebrow">Provider security</p>
-      <h2 id="faq-category-providers">Providers and upstream credentials</h2>
-    </summary>
-
-    <details id="faq-013" className="faqEntry" data-faq-entry data-faq-id="FAQ-013" data-faq-title="Is an application secret the same as a provider credential?" data-keywords="application secret provider credential upstream provider Google Slack OpenAI API long-lived credentials mandates">
+    <details id="faq-013" className="faqEntry" data-faq-entry data-faq-category="providers" data-faq-id="FAQ-013" data-faq-title="Is an application secret the same as a provider credential?" data-keywords="application secret provider credential upstream provider Google Slack OpenAI API long-lived credentials mandates">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-013</span>
         <span className="faqTag faqTagSecurity">Security</span>
@@ -283,7 +219,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p className="faqRelated">Related: <a href="#faq-002">FAQ-002</a>, <a href="#faq-009">FAQ-009</a>, <a href="#faq-014">FAQ-014</a></p>
     </details>
 
-    <details id="faq-014" className="faqEntry" data-faq-entry data-faq-id="FAQ-014" data-faq-title="When should I use per-user OAuth instead of a shared provider credential?" data-keywords="per-user OAuth shared provider credential authorization code client credentials api_key bearer_token consent">
+    <details id="faq-014" className="faqEntry" data-faq-entry data-faq-category="providers" data-faq-id="FAQ-014" data-faq-title="When should I use per-user OAuth instead of a shared provider credential?" data-keywords="per-user OAuth shared provider credential authorization code client credentials api_key bearer_token consent">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-014</span>
         <span className="faqTag faqTagSecurity">Security</span>
@@ -295,15 +231,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p>The concrete setup fields are in <a href="/guides/provider-recipes/">Provider Recipes</a>.</p>
       <p className="faqRelated">Related: <a href="#faq-013">FAQ-013</a>, <a href="#faq-016">FAQ-016</a></p>
     </details>
-  </details>
-
-  <details className="faqCategory" data-faq-category="runtime" open>
-    <summary className="faqCategoryHeader">
-      <p className="faqEyebrow">Runtime and operations</p>
-      <h2 id="faq-category-runtime">Runtime, Console, and troubleshooting</h2>
-    </summary>
-
-    <details id="faq-015" className="faqEntry" data-faq-entry data-faq-id="FAQ-015" data-faq-title="Why are zone and policy commands in the Console instead of the caracal CLI?" data-keywords="caracal CLI Console Admin API SDK commands runtime lifecycle zones policies management surface">
+    <details id="faq-015" className="faqEntry" data-faq-entry data-faq-category="runtime" data-faq-id="FAQ-015" data-faq-title="Why are zone and policy commands in the Console instead of the caracal CLI?" data-keywords="caracal CLI Console Admin API SDK commands runtime lifecycle zones policies management surface">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-015</span>
         <span className="faqTag faqTagRuntime">Runtime</span>
@@ -316,7 +244,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p className="faqRelated">Related: <a href="#faq-017">FAQ-017</a>, <a href="#faq-018">FAQ-018</a></p>
     </details>
 
-    <details id="faq-016" className="faqEntry faqEntryImportant" data-faq-entry data-faq-id="FAQ-016" data-faq-title="What is the difference between a 403 from STS and a 403 from Gateway?" data-keywords="403 STS Gateway verifier policy denied mandate resource binding scope check revocation route safety request trace">
+    <details id="faq-016" className="faqEntry faqEntryImportant" data-faq-entry data-faq-category="runtime" data-faq-id="FAQ-016" data-faq-title="What is the difference between a 403 from STS and a 403 from Gateway?" data-keywords="403 STS Gateway verifier policy denied mandate resource binding scope check revocation route safety request trace">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-016</span>
         <span className="faqTag faqTagOps">Operations</span>
@@ -329,7 +257,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p className="faqRelated">Related: <a href="#faq-011">FAQ-011</a>, <a href="#faq-012">FAQ-012</a>, <a href="#faq-017">FAQ-017</a></p>
     </details>
 
-    <details id="faq-017" className="faqEntry" data-faq-entry data-faq-id="FAQ-017" data-faq-title="Where is the diagnostic bundle or doctor command?" data-keywords="diagnostic bundle doctor command status json diagnostics health readiness zones preflight audit request trace">
+    <details id="faq-017" className="faqEntry" data-faq-entry data-faq-category="runtime" data-faq-id="FAQ-017" data-faq-title="Where is the diagnostic bundle or doctor command?" data-keywords="diagnostic bundle doctor command status json diagnostics health readiness zones preflight audit request trace">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-017</span>
         <span className="faqTag faqTagOps">Operations</span>
@@ -342,7 +270,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p className="faqRelated">Related: <a href="#faq-015">FAQ-015</a>, <a href="#faq-016">FAQ-016</a>, <a href="#faq-018">FAQ-018</a></p>
     </details>
 
-    <details id="faq-018" className="faqEntry" data-faq-entry data-faq-id="FAQ-018" data-faq-title="Why is an audit event missing?" data-keywords="audit event missing request ID zone time window Audit service Redis stream replay backlog DLQ action result">
+    <details id="faq-018" className="faqEntry" data-faq-entry data-faq-category="runtime" data-faq-id="FAQ-018" data-faq-title="Why is an audit event missing?" data-keywords="audit event missing request ID zone time window Audit service Redis stream replay backlog DLQ action result">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-018</span>
         <span className="faqTag faqTagOps">Operations</span>
@@ -354,15 +282,7 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p>Start with <a href="/runtime-console/observability/">Inspect Diagnostics and Audit</a> and <a href="/operations/debugging/">Debug Infrastructure Issues</a>.</p>
       <p className="faqRelated">Related: <a href="#faq-016">FAQ-016</a>, <a href="#faq-017">FAQ-017</a></p>
     </details>
-  </details>
-
-  <details className="faqCategory" data-faq-category="editions" open>
-    <summary className="faqCategoryHeader">
-      <p className="faqEyebrow">Edition boundary</p>
-      <h2 id="faq-category-editions">Editions</h2>
-    </summary>
-
-    <details id="faq-019" className="faqEntry" data-faq-entry data-faq-id="FAQ-019" data-faq-title="Which features are Enterprise Edition only?" data-keywords="Enterprise Edition Community Edition managed multi-tenancy hosted management UI SSO SCIM RBAC support lifecycle">
+    <details id="faq-019" className="faqEntry" data-faq-entry data-faq-category="editions" data-faq-id="FAQ-019" data-faq-title="Which features are Enterprise Edition only?" data-keywords="Enterprise Edition Community Edition managed multi-tenancy hosted management UI SSO SCIM RBAC support lifecycle">
       <summary className="faqEntryHeader">
         <span className="faqNumber">FAQ-019</span>
         <span className="faqTag faqTagEdition">Editions</span>
@@ -374,7 +294,6 @@ The registry number is the permanent identifier. Use links such as `/reference/f
       <p>See <a href="/enterprise/">Compare Editions</a> or <a href="https://cal.com/rawx18/caracal-enterprise-sales">book an enterprise call</a>.</p>
       <p className="faqRelated">Related: <a href="#faq-004">FAQ-004</a></p>
     </details>
-  </details>
 </div>
 
 ## Next Step

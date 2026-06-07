@@ -3,7 +3,7 @@
  * Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
  * Caracal, a product of Garudex Labs
  *
- * FAQ registry behavior for filtering entries and index links.
+ * FAQ registry behavior for filtering and ordering entries.
  */
 ---
 
@@ -15,44 +15,68 @@
     faqInput.dataset.faqRegistryReady = "true"
 
     const faqEntries = Array.from(document.querySelectorAll("[data-faq-entry]"))
-    const faqIndexItems = Array.from(document.querySelectorAll("[data-faq-index]"))
-    const faqCategories = Array.from(document.querySelectorAll("[data-faq-category]"))
+    const faqRegistry = document.getElementById("faq-registry")
     const faqFilterOptions = Array.from(document.querySelectorAll("[data-faq-filter-option]"))
     const faqStrip = document.querySelector("[data-faq-strip]")
     const faqFilterToggle = document.querySelector("[data-faq-filter-toggle]")
     const faqFilterLabel = document.querySelector("[data-faq-filter-label]")
     const faqFilterPopover = document.querySelector("[data-faq-filter-popover]")
     const faqClear = document.querySelector("[data-faq-clear]")
-    const faqIndexDisclosure = document.querySelector(".faqIndexDisclosure")
     const faqStatus = document.getElementById("faq-search-status")
     const faqEmpty = document.getElementById("faq-empty")
     const activeFaqFilters = new Set()
 
-    const faqText = new Map(
-      faqEntries.map((entry) => [
-        entry.id,
-        [
-          entry.dataset.faqId,
-          entry.dataset.faqTitle,
-          entry.dataset.keywords,
-          entry.textContent,
-        ].join(" ").toLowerCase(),
-      ]),
+    const faqData = new Map(
+      faqEntries.map((entry, index) => {
+        const faqId = entry.dataset.faqId || ""
+        const title = entry.dataset.faqTitle || ""
+        const keywords = entry.dataset.keywords || ""
+
+        return [
+          entry.id,
+          {
+            index,
+            faqId: faqId.toLowerCase(),
+            title: title.toLowerCase(),
+            keywords: keywords.toLowerCase(),
+            content: entry.textContent.toLowerCase(),
+            number: Number(faqId.replace("FAQ-", "")),
+          },
+        ]
+      }),
     )
 
-    function faqMatches(text, query) {
-      return query.split(new RegExp("\\s+")).filter(Boolean).every((term) => text.includes(term))
+    function queryTerms(query) {
+      return query.split(new RegExp("\\s+")).filter(Boolean)
+    }
+
+    function faqScore(entry, terms, query) {
+      if (terms.length === 0) return 0
+
+      const data = faqData.get(entry.id)
+      if (!data) return 0
+
+      const searchable = `${data.faqId} ${data.title} ${data.keywords} ${data.content}`
+      if (!terms.every((term) => searchable.includes(term))) return -1
+
+      let score = 0
+      if (data.faqId === query || data.faqId.replace("-", "") === query.replace("-", "")) score += 120
+      if (data.title.includes(query)) score += 80
+      if (data.keywords.includes(query)) score += 50
+
+      terms.forEach((term) => {
+        if (data.faqId.includes(term)) score += 40
+        if (data.title.includes(term)) score += 20
+        if (data.keywords.includes(term)) score += 12
+        if (data.content.includes(term)) score += 3
+      })
+
+      return score
     }
 
     function openFaq(entry) {
       entry.hidden = false
       entry.open = true
-
-      const category = entry.closest("[data-faq-category]")
-      if (category) {
-        category.hidden = false
-        category.open = true
-      }
     }
 
     function openFaqFromHash() {
@@ -69,36 +93,37 @@
 
     function filterFaqs() {
       const query = faqInput.value.trim().toLowerCase()
+      const terms = queryTerms(query)
+      const orderedEntries = [...faqEntries]
       let visibleCount = 0
 
-      faqEntries.forEach((entry) => {
-        const category = entry.closest("[data-faq-category]")?.dataset.faqCategory
+      orderedEntries.sort((first, second) => {
+        const firstData = faqData.get(first.id)
+        const secondData = faqData.get(second.id)
+        if (!query) return (firstData?.number || 0) - (secondData?.number || 0)
+
+        const firstScore = faqScore(first, terms, query)
+        const secondScore = faqScore(second, terms, query)
+        if (firstScore !== secondScore) return secondScore - firstScore
+        return (firstData?.index || 0) - (secondData?.index || 0)
+      })
+
+      orderedEntries.forEach((entry) => {
+        const category = entry.dataset.faqCategory
         const matchesFilter = activeFaqFilters.size === 0 || activeFaqFilters.has(category)
-        const matches = matchesFilter && (!query || faqMatches(faqText.get(entry.id), query))
+        const matches = matchesFilter && (!query || faqScore(entry, terms, query) >= 0)
         entry.hidden = !matches
-        entry.open = Boolean(query && matches)
+        entry.open = false
         if (matches) visibleCount += 1
+        faqRegistry?.append(entry)
       })
 
-      faqIndexItems.forEach((item) => {
-        const targetId = item.getAttribute("href").slice(1)
-        const target = document.getElementById(targetId)
-        item.hidden = target ? target.hidden : false
-      })
-
-      faqCategories.forEach((category) => {
-        const hasVisibleEntry = Array.from(category.querySelectorAll("[data-faq-entry]")).some((entry) => !entry.hidden)
-        category.hidden = !hasVisibleEntry
-        category.open = query ? hasVisibleEntry : true
-      })
-
-      if (faqIndexDisclosure) faqIndexDisclosure.open = Boolean(query)
       if (faqStrip) faqStrip.hidden = Boolean(query) || activeFaqFilters.size > 0
       if (faqClear) faqClear.hidden = !query && activeFaqFilters.size === 0
       faqEmpty.hidden = visibleCount > 0
       faqStatus.textContent = `${visibleCount} result${visibleCount === 1 ? "" : "s"}`
 
-      openFaqFromHash()
+      if (!query && activeFaqFilters.size === 0) openFaqFromHash()
     }
 
     document.querySelectorAll(".faqPermalink").forEach((link) => {
