@@ -27,7 +27,7 @@ Applications represent software that can participate in Caracal flows:
 - a connector-protected resource server;
 - a managed or dynamically registered client.
 
-Applications have registration metadata, a server-owned token credential, and a registration method. Managed applications are operator-provisioned for known durable software. Dynamically registered applications are short-lived identities created through the zone DCR endpoint for spawned or high-churn agents.
+Applications have registration metadata, a server-owned token credential, and a registration method. Managed applications are operator-provisioned for known durable software, including the runtime that spawns and fans out child agents. Dynamically registered applications are short-lived, isolated identities created through the zone DCR endpoint when a separate auto-expiring credential boundary is needed — for example a per-tenant or per-integration identity — rather than for ordinary spawn fan-out.
 
 ## Applications Are the Credential Boundary; Agents Are the Runtime Unit
 
@@ -46,10 +46,10 @@ An application is registered, holds a server-owned secret, and is the identity C
 
 | Method | Identity boundary | Operational rule |
 | --- | --- | --- |
-| Managed | One durable service, orchestrator, Gateway, or known agent runtime. | Operators create it intentionally and may reuse it across many sessions for the same workload. |
-| DCR | One spawned ephemeral agent identity. | DCR applications always expire, can bind to only one active ephemeral agent session, and should not be shared across spawned agents. |
+| Managed | One durable service, orchestrator, Gateway, or agent runtime — including the runtime that spawns and fans out child agents. | Operators create it intentionally and reuse it across many agent sessions for the same workload. Spawned children run as `instance` sessions under this same application. |
+| DCR | One short-lived, isolated application identity (per tenant, per integration, or per externally-issued ephemeral identity). | Registered through the zone DCR endpoint (a control-plane action), always expires, binds to exactly one ephemeral agent session, and is not a spawn parent for further sessions. |
 
-DCR is for identity isolation, not bulk credential pooling. A runtime that spawns several ephemeral agents should register a separate DCR application for each spawned agent, then create exactly one ephemeral agent session for that application. The agent session carries the parent relationship, subject session, labels, and delegation context; the DCR application carries the short-lived credential identity used to authenticate token exchanges.
+DCR is for identity isolation, not for ordinary spawn fan-out. The common case — a runtime spawning many child agents — uses **one managed application**: every child is an `instance` agent session under that managed app, distinguished by its `agent_session_id`, `labels`, and delegation context. Reach for DCR only when a child needs its own separate, auto-expiring credential boundary (for example a per-tenant identity). Registering that DCR application is a control-plane operation through the zone DCR endpoint; the SDK `spawn()` primitive never registers applications and always runs children under the caller's existing application. A DCR application carries exactly one ephemeral agent session and, because it binds a single session, cannot itself be the parent that spawns additional sessions.
 
 :::note[FAQ]
 [What is the difference between an application, principal, and agent session?](/reference/faq/#faq-005) and [when should I use a managed application versus DCR?](/reference/faq/#faq-007)
@@ -58,6 +58,14 @@ DCR is for identity isolation, not bulk credential pooling. A runtime that spawn
 Disabling DCR on a zone has two separate operational meanings. The zone flag always stops future dynamic registration immediately. If live DCR applications already exist, operators must choose whether those identities continue until expiry or are revoked immediately. Revocation archives the live DCR applications, revokes related authority sessions and delegation anchors, and terminates related ephemeral agent access so STS, Gateway, and Coordinator paths stop accepting those identities.
 
 Policies receive `input.principal.registration_method`, `input.principal.agent_session_id`, `input.principal.agent_kind`, and `input.principal.labels`, so policy authors can distinguish durable managed clients from ephemeral DCR clients without relying on SDK-specific behavior. Audit metadata records the application id, application name, registration method, agent session id, parent/delegation context, requested scopes, and resource for each token-exchange decision.
+
+## Telling Agent Sessions Apart
+
+Every agent session has one canonical identity: the server-minted `agent_session_id`. It is unique, returned to the caller the moment `spawn()` (or `service()`) creates the session, and stamped onto every token exchange and audit event that session produces. That id — not the application, kind, or labels — is the answer to "which agent did this?".
+
+`labels` are a descriptor, not an identity. Many sessions under one application can share the same labels on purpose: that is how fan-out works, where a hundred `["pricing-worker"]` sessions are intentionally interchangeable. When sessions must be told apart by meaning rather than by raw id, give them distinguishing `labels`, attach business correlation in `metadata`, or propagate a `trace_id`. Two sessions that share the same application, labels, and metadata are fungible by design — the unique `agent_session_id` still separates them in audit.
+
+The zone audit endpoint filters directly on these fields: query `agent_session_id` to follow one exact session, or `label` to scope to a role across a fleet of sessions.
 
 ## Sessions Bind Identity to Time
 

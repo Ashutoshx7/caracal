@@ -56,7 +56,7 @@ The SDKs expose one primitive for creating children and one for granting a peer:
 | Python | `spawn()` / `spawn(grant=…)` | `delegate()` |
 | Go | `Spawn()` / `Spawn` with `Grant` | `Delegate()` |
 
-`spawn()` returns a child running under the application's authority. Pass a **narrowing grant** (`Grant.narrow([...])`, `Grant.narrow(...)`, or `GrantNarrow(...)`) to bind a least-privilege delegation edge to the child, or `Grant.none()` for a child with no inherited authority. `delegate()` records an edge to an already-existing session — the path used to hand authority to a peer in another application.
+`spawn()` returns a child running under the **same application's** authority — it never moves a child into a different application. Pass a **narrowing grant** (`Grant.narrow([...])`, `Grant.narrow(...)`, or `GrantNarrow(...)`) to bind a least-privilege delegation edge to the child, or `Grant.none()` for a child with no inherited authority. To hand authority across applications, use `delegate()`, which records an edge to an already-existing peer session under that other application.
 
 These helpers propagate session and delegation context so later token exchanges include the correct graph proof.
 
