@@ -147,7 +147,7 @@ describe('POST /v1/zones/:zoneId/agents/:id/heartbeat', () => {
     const client = {
       query: vi.fn()
         .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [{ application_id: 'app-1', status: 'active', lifecycle: 'agent' }] })
+        .mockResolvedValueOnce({ rows: [{ application_id: 'app-1', status: 'active', lifecycle: 'task' }] })
         .mockResolvedValue({ rows: [] }),
       release: vi.fn(),
     }
@@ -216,7 +216,7 @@ describe('POST /v1/zones/:zoneId/agents/:id/heartbeat', () => {
     const client = {
       query: vi.fn()
         .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [{ application_id: 'app-1', status: 'active', lifecycle: 'agent' }] })
+        .mockResolvedValueOnce({ rows: [{ application_id: 'app-1', status: 'active', lifecycle: 'task' }] })
         .mockRejectedValueOnce(new Error('update failed')),
       release: vi.fn(),
     }
@@ -280,7 +280,7 @@ describe('POST /v1/zones/:zoneId/agents/:id/heartbeat: lifecycle guards', () => 
     const client = {
       query: vi.fn()
         .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [{ application_id: 'app-1', status: 'terminated', lifecycle: 'agent' }] })
+        .mockResolvedValueOnce({ rows: [{ application_id: 'app-1', status: 'terminated', lifecycle: 'task' }] })
         .mockResolvedValue({ rows: [] }),
       release: vi.fn(),
     }
@@ -324,7 +324,7 @@ describe('POST /v1/zones/:zoneId/agents/:id/heartbeat: lifecycle guards', () => 
     const client = {
       query: vi.fn()
         .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [{ application_id: 'app-1', status: 'active', lifecycle: 'agent' }] })
+        .mockResolvedValueOnce({ rows: [{ application_id: 'app-1', status: 'active', lifecycle: 'task' }] })
         .mockResolvedValueOnce({ rows: [{ id: 'agent-1', application_id: 'app-1' }] })
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValue({ rows: [] }),

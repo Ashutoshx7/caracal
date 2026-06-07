@@ -300,7 +300,7 @@ describe('POST /v1/zones/:zoneId/agents: spawn', () => {
     expect(refsCall?.[1]).toEqual(['z1', 'app-1', 'sid-test'])
   })
 
-  it('defaults lifecycle to agent for managed applications when none is supplied', async () => {
+  it('defaults lifecycle to task for managed applications when none is supplied', async () => {
     const { app, db } = buildApp()
     const client = spawnClient({
       refs: { application_exists: true, session_exists: true, registration_method: 'managed' },
@@ -317,10 +317,10 @@ describe('POST /v1/zones/:zoneId/agents: spawn', () => {
     })
     expect(res.statusCode).toBe(201)
     const insertCall = client.query.mock.calls.find((call) => String(call[0]).includes('INSERT INTO agent_sessions'))
-    expect(insertCall?.[1]?.[5]).toBe('agent')
+    expect(insertCall?.[1]?.[5]).toBe('task')
   })
 
-  it('defaults lifecycle to agent for DCR applications when none is supplied', async () => {
+  it('defaults lifecycle to task for DCR applications when none is supplied', async () => {
     const { app, db } = buildApp()
     const client = spawnClient({
       refs: { application_exists: true, session_exists: true, registration_method: 'dcr' },
@@ -337,7 +337,7 @@ describe('POST /v1/zones/:zoneId/agents: spawn', () => {
     })
     expect(res.statusCode).toBe(201)
     const insertCall = client.query.mock.calls.find((call) => String(call[0]).includes('INSERT INTO agent_sessions'))
-    expect(insertCall?.[1]?.[5]).toBe('agent')
+    expect(insertCall?.[1]?.[5]).toBe('task')
   })
 
   it('passes through service lifecycle for managed applications', async () => {

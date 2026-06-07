@@ -34,7 +34,7 @@
         },
         "lifecycle": {
           "type": "string",
-          "enum": ["agent", "service"]
+          "enum": ["task", "service"]
         },
         "labels": {
           "type": "array",
