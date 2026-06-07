@@ -203,6 +203,7 @@ function formatPage(doc: Awaited<ReturnType<typeof getCollection<'docs'>>>[numbe
     '---',
     `# ${doc.data.title}`,
     `# URL: ${base}/${doc.id}/`,
+    `# Markdown: ${base}/markdown/${doc.id}.md`,
     `# Type: ${(d.pageType as string | undefined) ?? 'page'}`,
     `# Concepts: ${((d.concepts as string[] | undefined) ?? []).join(', ')}`,
     `# Requires: ${((d.requires as string[] | undefined) ?? []).join(', ')}`,

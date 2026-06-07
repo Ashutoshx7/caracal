@@ -17,3 +17,5 @@ Sitemap: https://docs.caracal.run/sitemap-index.xml
 
 # AI discovery: https://docs.caracal.run/llms.txt
 # Full content: https://docs.caracal.run/llms-full.txt
+# Page metadata: https://docs.caracal.run/page-index.json
+# Per-page Markdown: https://docs.caracal.run/markdown/
