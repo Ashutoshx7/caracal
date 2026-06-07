@@ -356,7 +356,6 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
          )
           UPDATE agent_sessions
           SET status = 'active',
-              last_active_at = now(),
               heartbeat_deadline_at = CASE
                 WHEN agent_kind = 'service' THEN now() + ($3::int * interval '1 second')
                 ELSE heartbeat_deadline_at

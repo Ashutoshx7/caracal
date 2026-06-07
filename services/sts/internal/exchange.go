@@ -1333,10 +1333,15 @@ func agentAuditMeta(session *AgentSession) map[string]any {
 	if session == nil {
 		return nil
 	}
-	return map[string]any{
+	meta := map[string]any{
 		"agent_kind":   session.Kind,
 		"agent_labels": agentSessionLabels(session),
+		"agent_depth":  session.Depth,
 	}
+	if session.ParentID != nil {
+		meta["agent_parent_id"] = *session.ParentID
+	}
+	return meta
 }
 
 func applicationAuditMeta(app *Application) map[string]any {
