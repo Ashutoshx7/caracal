@@ -8,13 +8,16 @@
 
 import MobileTableOfContents from 'virtual:starlight/components/MobileTableOfContents'
 import TableOfContents from 'virtual:starlight/components/TableOfContents'
+import { formatPageMarkdown } from '../lib/pageMarkdown'
 
-const { toc } = Astro.locals.starlightRoute
+const { entry, toc } = Astro.locals.starlightRoute
 const site = 'https://docs.caracal.run'
 const pagePath = Astro.url.pathname.replace(/^\/|\/$/g, '') || 'index'
 const pageUrl = new URL(Astro.url.pathname, site).href
 const markdownPath = `/markdown/${pagePath}.md`
 const markdownUrl = new URL(markdownPath, site).href
+const pageMarkdown = formatPageMarkdown(entry)
+const serializedPageMarkdown = JSON.stringify(pageMarkdown).replace(/</g, '\\u003c')
 const aiPrompt = `Read this Markdown copy of the Caracal documentation page and explain it: ${markdownUrl}
 
 Use the canonical page for context: ${pageUrl}
@@ -25,7 +28,7 @@ const chatGptPrompt = `Explain this Caracal documentation page.
 Markdown URL: ${markdownUrl}
 Canonical URL: ${pageUrl}
 
-If you cannot retrieve the page, ask me to paste the Markdown content.`
+If you cannot access the Markdown URL, ask me to paste the Markdown content.`
 ---
 
 {toc && (
@@ -72,7 +75,6 @@ If you cannot retrieve the page, ask me to paste the Markdown content.`
               data-markdown-absolute-url={markdownUrl}
               data-page-url={pageUrl}
               data-copy-full-prompt="true"
-              data-prefill-chars="3200"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -83,7 +85,6 @@ If you cannot retrieve the page, ask me to paste the Markdown content.`
               class="ai-btn"
               href="https://gemini.google.com/app"
               data-ai-url="https://gemini.google.com/app"
-              data-ai-param="q"
               data-markdown-url={markdownPath}
               data-markdown-absolute-url={markdownUrl}
               data-page-url={pageUrl}
@@ -116,23 +117,122 @@ If you cannot retrieve the page, ask me to paste the Markdown content.`
 
       </div>
     </div>
+
+    <script id="page-markdown-source" type="application/json" set:html={serializedPageMarkdown}></script>
+    <div id="copy-fallback" class="copy-fallback" role="dialog" aria-modal="true" aria-labelledby="copy-fallback-title" hidden>
+      <div class="copy-fallback-panel">
+        <h2 id="copy-fallback-title">Copy prompt manually</h2>
+        <p>Automatic clipboard access is blocked by this browser. Copy this text, then paste it into the chat.</p>
+        <textarea id="copy-fallback-text" readonly></textarea>
+        <div class="copy-fallback-actions">
+          <button id="copy-fallback-select" class="copy-fallback-button" type="button">Select text</button>
+          <a id="copy-fallback-open" class="copy-fallback-button" target="_blank" rel="noopener noreferrer" hidden>Open chat</a>
+          <button id="copy-fallback-close" class="copy-fallback-button copy-fallback-button-secondary" type="button">Close</button>
+        </div>
+      </div>
+    </div>
   </>
 )}
 
 <script>
+  const copyFallback = document.getElementById('copy-fallback') as HTMLDivElement | null
+  const copyFallbackText = document.getElementById('copy-fallback-text') as HTMLTextAreaElement | null
+  const copyFallbackSelect = document.getElementById('copy-fallback-select') as HTMLButtonElement | null
+  const copyFallbackOpen = document.getElementById('copy-fallback-open') as HTMLAnchorElement | null
+  const copyFallbackClose = document.getElementById('copy-fallback-close') as HTMLButtonElement | null
+  const pageMarkdownSource = document.getElementById('page-markdown-source') as HTMLScriptElement | null
+  const pageMarkdown = JSON.parse(pageMarkdownSource?.textContent ?? '""') as string
+
+  const selectManualCopyText = () => {
+    if (!copyFallbackText) return
+    copyFallbackText.focus()
+    copyFallbackText.select()
+    copyFallbackText.setSelectionRange(0, copyFallbackText.value.length)
+  }
+
+  const openManualCopy = (text: string, url?: string) => {
+    if (!copyFallback || !copyFallbackText || !copyFallbackOpen) return
+    copyFallbackText.value = text
+    if (url) {
+      copyFallbackOpen.href = url
+      copyFallbackOpen.hidden = false
+    } else {
+      copyFallbackOpen.removeAttribute('href')
+      copyFallbackOpen.hidden = true
+    }
+    copyFallback.hidden = false
+    selectManualCopyText()
+  }
+
+  const closeManualCopy = () => {
+    if (copyFallback) copyFallback.hidden = true
+  }
+
+  copyFallbackSelect?.addEventListener('click', selectManualCopyText)
+  copyFallbackClose?.addEventListener('click', closeManualCopy)
+
+  const copyText = async (text: string) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+        return true
+      }
+    } catch (err) {
+      console.warn('Clipboard API copy failed', err)
+    }
+
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.inset = '0 auto auto 0'
+    textarea.style.opacity = '0'
+    textarea.style.pointerEvents = 'none'
+    textarea.style.width = '1px'
+    textarea.style.height = '1px'
+    document.body.appendChild(textarea)
+    textarea.focus()
+    textarea.select()
+    textarea.setSelectionRange(0, textarea.value.length)
+
+    try {
+      return document.execCommand('copy')
+    } catch (err) {
+      console.warn('Fallback clipboard copy failed', err)
+      return false
+    } finally {
+      textarea.remove()
+    }
+  }
+
+  const copyOrShowManual = async (
+    text: string,
+    label: Element | null,
+    copiedText: string,
+    url?: string,
+  ) => {
+    if (await copyText(text)) {
+      if (label) label.textContent = copiedText
+      return true
+    }
+
+    if (label) label.textContent = 'Copy manually'
+    openManualCopy(text, url)
+    return false
+  }
+
+  const openTarget = (url: string) => {
+    const popup = window.open(url, '_blank', 'noopener,noreferrer')
+    if (!popup) window.location.href = url
+  }
+
   const btn = document.getElementById('btn-copy-md') as HTMLButtonElement | null
   if (btn) {
     btn.addEventListener('click', async () => {
-      const markdownUrl = btn.dataset.markdownUrl!
       const label = btn.querySelector('.ai-btn-label')
 
       try {
-        const response = await fetch(markdownUrl)
-        if (!response.ok) {
-          throw new Error(`Markdown request failed with ${response.status}`)
-        }
-        await navigator.clipboard.writeText(await response.text())
-        if (label) label.textContent = 'Copied!'
+        await copyOrShowManual(pageMarkdown, label, 'Copied!')
       } catch (err) {
         console.error('Markdown copy failed', err)
         if (label) label.textContent = 'Copy failed'
@@ -149,21 +249,12 @@ If you cannot retrieve the page, ask me to paste the Markdown content.`
     link.addEventListener('click', async (event) => {
       event.preventDefault()
 
-      const popup = window.open('about:blank', '_blank')
-      if (popup) popup.opener = null
-
       const label = link.querySelector('.ai-btn-label')
       const originalText = label?.textContent ?? ''
 
       try {
-        if (label) label.textContent = 'Loading page...'
+        if (label) label.textContent = 'Preparing...'
 
-        const response = await fetch(link.dataset.markdownUrl!)
-        if (!response.ok) {
-          throw new Error(`Markdown request failed with ${response.status}`)
-        }
-
-        const markdown = await response.text()
         const prompt = [
           'Explain this Caracal documentation page using the Markdown content below.',
           '',
@@ -172,48 +263,45 @@ If you cannot retrieve the page, ask me to paste the Markdown content.`
           '',
           'Markdown content:',
           '',
-          markdown,
+          pageMarkdown,
         ].join('\n')
         let promptForUrl = prompt
-        const prefillChars = Number(link.dataset.prefillChars ?? '0')
 
-        if (prefillChars > 0) {
-          if (link.dataset.copyFullPrompt === 'true') {
-            await navigator.clipboard.writeText(prompt)
-            if (label) label.textContent = 'Copied full prompt!'
+        if (link.dataset.copyFullPrompt === 'true') {
+          const copied = await copyOrShowManual(prompt, label, 'Copied full prompt!', link.dataset.aiUrl)
+          if (!copied) {
+            return
           }
 
           promptForUrl = [
-            'Explain this Caracal documentation page using the Markdown excerpt below.',
-            'The full Markdown prompt was copied to my clipboard; ask me to paste it if you need the rest.',
-            '',
+            'Explain this Caracal documentation page.',
             `Canonical URL: ${link.dataset.pageUrl}`,
             `Markdown URL: ${link.dataset.markdownAbsoluteUrl}`,
             '',
-            'Markdown excerpt:',
-            '',
-            markdown.slice(0, prefillChars),
+            'The full Markdown content was copied to my clipboard. If you cannot access the Markdown URL, ask me to paste it.',
           ].join('\n')
         }
 
-        const url = new URL(link.dataset.aiUrl!)
-        url.searchParams.set(link.dataset.aiParam!, promptForUrl)
-
-        if (link.dataset.copyPrompt === 'true' || url.href.length > 24000) {
-          await navigator.clipboard.writeText(prompt)
-          if (label) label.textContent = 'Copied prompt!'
-          if (popup) popup.location.href = link.dataset.aiUrl!
-          else window.location.href = link.dataset.aiUrl!
-        } else if (popup) {
-          popup.location.href = url.href
+        if (link.dataset.copyPrompt === 'true') {
+          if (await copyOrShowManual(prompt, label, 'Copied prompt!', link.dataset.aiUrl)) {
+            openTarget(link.dataset.aiUrl!)
+          }
         } else {
-          window.location.href = url.href
+          const url = new URL(link.dataset.aiUrl!)
+          url.searchParams.set(link.dataset.aiParam!, promptForUrl)
+
+          if (url.href.length > 24000) {
+            if (await copyOrShowManual(prompt, label, 'Copied prompt!', link.dataset.aiUrl)) {
+              openTarget(link.dataset.aiUrl!)
+            }
+          } else {
+            openTarget(url.href)
+          }
         }
       } catch (err) {
         console.error('AI prompt preparation failed', err)
         if (label) label.textContent = 'Opening fallback...'
-        if (popup) popup.location.href = link.href
-        else window.location.href = link.href
+        openTarget(link.href)
       }
 
       setTimeout(() => {
@@ -310,6 +398,86 @@ If you cannot retrieve the page, ask me to paste the Markdown content.`
 
     button.ai-btn {
       appearance: none;
+    }
+
+    .copy-fallback[hidden] {
+      display: none;
+    }
+
+    .copy-fallback {
+      align-items: center;
+      background: rgba(0, 0, 0, 0.72);
+      bottom: 0;
+      display: flex;
+      justify-content: center;
+      left: 0;
+      padding: 1rem;
+      position: fixed;
+      right: 0;
+      top: 0;
+      z-index: 1000;
+    }
+
+    .copy-fallback-panel {
+      background: var(--sl-color-bg);
+      border: 1px solid var(--sl-color-hairline);
+      border-radius: 0.75rem;
+      box-shadow: var(--sl-shadow-lg);
+      max-width: 42rem;
+      padding: 1rem;
+      width: min(100%, 42rem);
+    }
+
+    .copy-fallback-panel h2 {
+      color: var(--sl-color-white);
+      font-size: var(--sl-text-h4);
+      margin: 0 0 0.5rem;
+    }
+
+    .copy-fallback-panel p {
+      color: var(--sl-color-gray-2);
+      font-size: var(--sl-text-sm);
+      margin: 0 0 0.75rem;
+    }
+
+    .copy-fallback textarea {
+      background: var(--sl-color-black);
+      border: 1px solid var(--sl-color-gray-5);
+      border-radius: 0.5rem;
+      color: var(--sl-color-white);
+      font: inherit;
+      min-height: 16rem;
+      padding: 0.75rem;
+      resize: vertical;
+      width: 100%;
+    }
+
+    .copy-fallback-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: flex-end;
+      margin-top: 0.75rem;
+    }
+
+    .copy-fallback-button {
+      appearance: none;
+      background: var(--sl-color-accent);
+      border: 1px solid var(--sl-color-accent);
+      border-radius: 999rem;
+      color: var(--sl-color-black);
+      cursor: pointer;
+      display: inline-flex;
+      font: inherit;
+      font-size: var(--sl-text-sm);
+      line-height: 1;
+      padding: 0.55rem 0.85rem;
+      text-decoration: none;
+    }
+
+    .copy-fallback-button-secondary {
+      background: transparent;
+      color: var(--sl-color-gray-2);
     }
 
     @media (min-width: 72rem) {
