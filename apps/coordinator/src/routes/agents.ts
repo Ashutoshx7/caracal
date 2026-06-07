@@ -80,9 +80,9 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
       if (idempotencyKey) {
         const { rows: existing } = await client.query(
           `SELECT id AS agent_session_id, zone_id, application_id, parent_id,
-                  subject_session_id, subject_session_id AS authority_root_session_id,
-                  agent_kind AS kind, agent_kind AS session_class,
-                  labels, status, depth, spawned_at, last_heartbeat_at, heartbeat_deadline_at
+                  subject_session_id, agent_kind AS kind,
+                  labels, status, depth, ttl_seconds, metadata_json AS metadata,
+                  spawned_at, last_heartbeat_at, heartbeat_deadline_at
            FROM agent_sessions
            WHERE zone_id = $1 AND application_id = $2 AND subject_session_id = $3
              AND COALESCE(parent_id, '') = COALESCE($4, '')
@@ -185,9 +185,9 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
            labels, max_children, ttl_seconds, metadata_json, last_heartbeat_at, heartbeat_deadline_at)
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
           RETURNING id AS agent_session_id, zone_id, application_id, parent_id,
-                    subject_session_id, subject_session_id AS authority_root_session_id,
-                    agent_kind AS kind, agent_kind AS session_class,
-                    labels, status, depth, spawned_at, last_heartbeat_at, heartbeat_deadline_at`,
+                    subject_session_id, agent_kind AS kind,
+                    labels, status, depth, ttl_seconds, metadata_json AS metadata,
+                    spawned_at, last_heartbeat_at, heartbeat_deadline_at`,
         [id, zoneId, body.application_id, body.parent_id, subjectSessionId,
           kind, depth, body.labels, MAX_CHILDREN, body.ttl_seconds, body.metadata,
           deadline, deadline],
@@ -241,9 +241,9 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const { rows } = await fastify.db.query(
         `SELECT id AS agent_session_id, zone_id, application_id, parent_id,
-                subject_session_id, subject_session_id AS authority_root_session_id,
-                agent_kind AS kind, agent_kind AS session_class,
-                labels, status, depth, spawned_at, terminated_at, last_heartbeat_at, heartbeat_deadline_at
+                subject_session_id, agent_kind AS kind,
+                labels, status, depth, ttl_seconds, metadata_json AS metadata,
+                spawned_at, terminated_at, last_heartbeat_at, heartbeat_deadline_at
          FROM agent_sessions WHERE zone_id = $1 ${cursorClause}
        ORDER BY id DESC LIMIT $2`,
       queryParams,
@@ -258,9 +258,9 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
     const { zoneId, id } = params
     const { rows } = await fastify.db.query(
         `SELECT id AS agent_session_id, zone_id, application_id, parent_id,
-                subject_session_id, subject_session_id AS authority_root_session_id,
-                agent_kind AS kind, agent_kind AS session_class,
-                labels, status, depth, spawned_at, terminated_at, last_heartbeat_at, heartbeat_deadline_at
+                subject_session_id, agent_kind AS kind,
+                labels, status, depth, ttl_seconds, metadata_json AS metadata,
+                spawned_at, terminated_at, last_heartbeat_at, heartbeat_deadline_at
          FROM agent_sessions WHERE id = $1 AND zone_id = $2`,
       [id, zoneId],
     )
@@ -274,9 +274,9 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
     const { zoneId, id } = params
     const { rows } = await fastify.db.query(
       `SELECT s.id AS agent_session_id, s.zone_id, s.application_id, s.parent_id,
-              s.subject_session_id, s.subject_session_id AS authority_root_session_id,
-              s.agent_kind AS kind, s.agent_kind AS session_class,
-              s.labels, s.status, s.depth, s.spawned_at, s.last_heartbeat_at, s.heartbeat_deadline_at
+              s.subject_session_id, s.agent_kind AS kind,
+              s.labels, s.status, s.depth, s.ttl_seconds, s.metadata_json AS metadata,
+              s.spawned_at, s.last_heartbeat_at, s.heartbeat_deadline_at
        FROM agent_sessions s
        JOIN agent_topology t ON t.child_id = s.id
        WHERE t.parent_id = $1 AND s.zone_id = $2

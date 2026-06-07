@@ -1,0 +1,164 @@
+---
+/*
+ * Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+ * Caracal, a product of Garudex Labs
+ *
+ * FAQ registry behavior for filtering entries and index links.
+ */
+---
+
+<script>
+  function setupFaqRegistry() {
+    const faqInput = document.getElementById("faq-search")
+    if (!faqInput) return
+    if (faqInput.dataset.faqRegistryReady === "true") return
+    faqInput.dataset.faqRegistryReady = "true"
+
+    const faqEntries = Array.from(document.querySelectorAll("[data-faq-entry]"))
+    const faqIndexItems = Array.from(document.querySelectorAll("[data-faq-index]"))
+    const faqCategories = Array.from(document.querySelectorAll("[data-faq-category]"))
+    const faqFilterOptions = Array.from(document.querySelectorAll("[data-faq-filter-option]"))
+    const faqStrip = document.querySelector("[data-faq-strip]")
+    const faqFilterMenu = document.querySelector("[data-faq-filter-menu]")
+    const faqFilterToggle = faqFilterMenu?.querySelector(".faqFilterToggle")
+    const faqClear = document.querySelector("[data-faq-clear]")
+    const faqIndexDisclosure = document.querySelector(".faqIndexDisclosure")
+    const faqStatus = document.getElementById("faq-search-status")
+    const faqEmpty = document.getElementById("faq-empty")
+    let activeFaqFilter = "all"
+
+    const faqText = new Map(
+      faqEntries.map((entry) => [
+        entry.id,
+        [
+          entry.dataset.faqId,
+          entry.dataset.faqTitle,
+          entry.dataset.keywords,
+          entry.textContent,
+        ].join(" ").toLowerCase(),
+      ]),
+    )
+
+    function faqMatches(text, query) {
+      return query.split(new RegExp("\\s+")).filter(Boolean).every((term) => text.includes(term))
+    }
+
+    function openFaq(entry) {
+      entry.hidden = false
+      entry.open = true
+
+      const category = entry.closest("[data-faq-category]")
+      if (category) {
+        category.hidden = false
+        category.open = true
+      }
+    }
+
+    function openFaqFromHash() {
+      const id = window.location.hash.slice(1)
+      if (!id) return
+
+      const target = document.getElementById(id)
+      const entry = target?.matches("[data-faq-entry]") ? target : target?.closest("[data-faq-entry]")
+      if (!entry) return
+
+      openFaq(entry)
+      requestAnimationFrame(() => entry.scrollIntoView({ block: "start" }))
+    }
+
+    function filterFaqs() {
+      const query = faqInput.value.trim().toLowerCase()
+      let visibleCount = 0
+
+      faqEntries.forEach((entry) => {
+        const category = entry.closest("[data-faq-category]")?.dataset.faqCategory
+        const matchesFilter = activeFaqFilter === "all" || category === activeFaqFilter
+        const matches = matchesFilter && (!query || faqMatches(faqText.get(entry.id), query))
+        entry.hidden = !matches
+        entry.open = Boolean(query && matches)
+        if (matches) visibleCount += 1
+      })
+
+      faqIndexItems.forEach((item) => {
+        const targetId = item.getAttribute("href").slice(1)
+        const target = document.getElementById(targetId)
+        item.hidden = target ? target.hidden : false
+      })
+
+      faqCategories.forEach((category) => {
+        const hasVisibleEntry = Array.from(category.querySelectorAll("[data-faq-entry]")).some((entry) => !entry.hidden)
+        category.hidden = !hasVisibleEntry
+        category.open = query ? hasVisibleEntry : true
+      })
+
+      if (faqIndexDisclosure) faqIndexDisclosure.open = Boolean(query)
+      if (faqStrip) faqStrip.hidden = Boolean(query) || activeFaqFilter !== "all"
+      if (faqClear) faqClear.hidden = !query && activeFaqFilter === "all"
+      faqEmpty.hidden = visibleCount > 0
+      faqStatus.textContent = `${visibleCount} result${visibleCount === 1 ? "" : "s"}`
+
+      openFaqFromHash()
+    }
+
+    document.querySelectorAll(".faqPermalink").forEach((link) => {
+      link.addEventListener("click", (event) => event.stopPropagation())
+    })
+
+    document.addEventListener("click", (event) => {
+      if (!(event.target instanceof Element)) return
+
+      const link = event.target.closest('a[href^="#faq-"]')
+      if (!link) return
+
+      const target = document.getElementById(link.getAttribute("href").slice(1))
+      const entry = target?.matches("[data-faq-entry]") ? target : target?.closest("[data-faq-entry]")
+      if (entry) openFaq(entry)
+    })
+
+    window.addEventListener("hashchange", openFaqFromHash)
+    faqFilterOptions.forEach((option) => {
+      option.addEventListener("click", () => {
+        activeFaqFilter = option.dataset.faqFilterOption || "all"
+        faqFilterOptions.forEach((item) => {
+          item.classList.toggle("isActive", item === option)
+        })
+        if (faqFilterToggle) {
+          faqFilterToggle.textContent = activeFaqFilter === "all" ? "Filter" : option.textContent
+          faqFilterToggle.classList.toggle("isActive", activeFaqFilter !== "all")
+        }
+        if (faqFilterMenu) faqFilterMenu.open = false
+        filterFaqs()
+      })
+    })
+    faqClear?.addEventListener("click", () => {
+      faqInput.value = ""
+      activeFaqFilter = "all"
+      faqFilterOptions.forEach((item) => {
+        item.classList.toggle("isActive", item.dataset.faqFilterOption === "all")
+      })
+      if (faqFilterToggle) {
+        faqFilterToggle.textContent = "Filter"
+        faqFilterToggle.classList.remove("isActive")
+      }
+      filterFaqs()
+    })
+    document.addEventListener("click", (event) => {
+      if (!faqFilterMenu || !faqFilterMenu.open) return
+      if (event.target instanceof Node && !faqFilterMenu.contains(event.target)) {
+        faqFilterMenu.open = false
+      }
+    })
+    faqStrip?.addEventListener("wheel", (event) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+      if (faqStrip.scrollWidth <= faqStrip.clientWidth) return
+      event.preventDefault()
+      faqStrip.scrollLeft += event.deltaY
+    }, { passive: false })
+    faqInput.addEventListener("input", filterFaqs)
+    filterFaqs()
+    openFaqFromHash()
+  }
+
+  setupFaqRegistry()
+  document.addEventListener("astro:page-load", setupFaqRegistry)
+</script>

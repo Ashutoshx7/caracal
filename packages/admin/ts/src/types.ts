@@ -448,8 +448,12 @@ export interface AgentSession {
   labels: string[]
   status: string
   depth: number
+  ttl_seconds: number | null
+  metadata: Record<string, unknown> | null
   spawned_at: string
-  terminated_at: string | null
+  terminated_at?: string | null
+  last_heartbeat_at?: string | null
+  heartbeat_deadline_at?: string | null
 }
 
 export interface DelegationEdge {
