@@ -41,7 +41,7 @@ async def spawn(
     kind: AgentKind | None = None,
     ttl_seconds: int | None = None,
     metadata: JsonObject | None = None,
-    capabilities: list[str] | None = None,
+    labels: list[str] | None = None,
     trace_id: str | None = None,
     on_agent_start: LifecycleHook | None = None,
     on_agent_end: LifecycleHook | None = None,
@@ -67,7 +67,7 @@ async def spawn(
             kind=kind,
             ttl_seconds=ttl_seconds,
             metadata=metadata,
-            capabilities=capabilities,
+            labels=labels,
         ),
     )
 
@@ -147,7 +147,7 @@ async def spawn_service(
     parent_ctx: CaracalContext | None = None,
     ttl_seconds: int | None = None,
     metadata: JsonObject | None = None,
-    capabilities: list[str] | None = None,
+    labels: list[str] | None = None,
     trace_id: str | None = None,
     on_agent_start: LifecycleHook | None = None,
 ) -> ServiceAgent:
@@ -167,7 +167,7 @@ async def spawn_service(
             kind=AgentKind.SERVICE,
             ttl_seconds=ttl_seconds,
             metadata=metadata,
-            capabilities=capabilities,
+            labels=labels,
         ),
     )
 
@@ -246,7 +246,7 @@ async def delegate_to_spawn(
     kind: AgentKind | None = None,
     ttl_seconds: int | None = None,
     metadata: JsonObject | None = None,
-    capabilities: list[str] | None = None,
+    labels: list[str] | None = None,
     trace_id: str | None = None,
     on_agent_start: LifecycleHook | None = None,
     on_agent_end: LifecycleHook | None = None,
@@ -277,7 +277,7 @@ async def delegate_to_spawn(
             kind=kind,
             ttl_seconds=ttl_seconds,
             metadata=metadata,
-            capabilities=capabilities,
+            labels=labels,
         ),
     )
 

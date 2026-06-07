@@ -723,7 +723,7 @@ class Caracal:
         parent_id: str | None = None,
         parent_ctx: CaracalContext | None = None,
         metadata: JsonObject | None = None,
-        capabilities: list[str] | None = None,
+        labels: list[str] | None = None,
         trace_id: str | None = None,
     ) -> AsyncGenerator[CaracalContext, None]:
         on_start: LifecycleHook | None = (
@@ -741,7 +741,7 @@ class Caracal:
             parent_ctx=parent_ctx,
             ttl_seconds=ttl_seconds if ttl_seconds is not None else self.config.default_ttl_seconds,
             metadata=metadata,
-            capabilities=capabilities,
+            labels=labels,
             trace_id=trace_id,
             on_agent_start=on_start,
             on_agent_end=on_end,
@@ -755,7 +755,7 @@ class Caracal:
         parent_id: str | None = None,
         parent_ctx: CaracalContext | None = None,
         metadata: JsonObject | None = None,
-        capabilities: list[str] | None = None,
+        labels: list[str] | None = None,
         trace_id: str | None = None,
     ) -> ServiceAgent:
         """Start a long-lived service agent and return a handle the caller owns.
@@ -776,7 +776,7 @@ class Caracal:
             parent_ctx=parent_ctx,
             ttl_seconds=ttl_seconds if ttl_seconds is not None else self.config.default_ttl_seconds,
             metadata=metadata,
-            capabilities=capabilities,
+            labels=labels,
             trace_id=trace_id,
             on_agent_start=on_start,
         )
@@ -814,7 +814,7 @@ class Caracal:
         delegation_ttl_seconds: int | None = None,
         ttl_seconds: int | None = None,
         metadata: JsonObject | None = None,
-        capabilities: list[str] | None = None,
+        labels: list[str] | None = None,
         trace_id: str | None = None,
     ) -> AsyncGenerator[CaracalContext, None]:
         on_start: LifecycleHook | None = (
@@ -835,7 +835,7 @@ class Caracal:
             delegation_ttl_seconds=delegation_ttl_seconds,
             ttl_seconds=ttl_seconds if ttl_seconds is not None else self.config.default_ttl_seconds,
             metadata=metadata,
-            capabilities=capabilities,
+            labels=labels,
             trace_id=trace_id,
             on_agent_start=on_start,
             on_agent_end=on_end,
