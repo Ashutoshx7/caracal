@@ -15,6 +15,7 @@ This FAQ collects high-friction questions that come up across the docs. Each ent
 | Model | [What should a zone represent?](#faq-what-should-a-zone-represent) |
 | Model | [Does the open-source edition include managed multi-tenancy?](#faq-does-open-source-include-managed-multi-tenancy) |
 | Model | [What is the difference between an application, principal, and agent session?](#faq-application-principal-agent-session) |
+| Model | [Should I create one application per agent?](#faq-one-application-per-agent) |
 | Model | [When should I use a managed application versus DCR?](#faq-managed-application-versus-dcr) |
 | Model | [If many agents share one managed application, can policy and audit still tell them apart?](#faq-distinguish-agents-under-one-application) |
 | Resources | [What is the difference between a resource and a provider?](#faq-resource-versus-provider) |
@@ -74,6 +75,21 @@ See [Compare Editions](/enterprise/) for the commercial feature boundary.
 An application is registered software that authenticates to Caracal. A principal is the acting identity, such as a user, service, or agent. An agent session is a time-bounded execution context spawned from a subject session or application context.
 
 Policy decisions consider all of them: which application is asking, which principal is acting, which session anchors the request, and which resource scopes are requested.
+
+<a id="faq-one-application-per-agent"></a>
+
+### Should I create one application per agent?
+
+No. This is the most common modeling mistake, and it does not match how Caracal scales. An **application** and an **agent** are different layers:
+
+- An **application** is the credentialed security boundary. It is operator-provisioned (managed) or dynamically registered (DCR), holds a server-owned secret, and is the identity Caracal authenticates. Creating one is a deliberate, secret-bearing act.
+- An **agent session** is the scalable runtime unit. The workload that already holds the application credential creates agent sessions at runtime — no secret, no registration, no Console step. One application backs many concurrent agent sessions (up to 200 per application by default).
+
+The default model is **one managed application per durable workload, with many agent sessions under it**. When that workload fans out — spawning sub-agents, delegating a narrower slice of authority, or building an agent hierarchy for a single request — each of those is a new agent session under the *same* application, not a new application. Policy and audit still tell them apart by agent session, kind, labels, and delegation chain (see [the next answer](#faq-distinguish-agents-under-one-application)).
+
+One application per agent breaks this. Managed applications are operator-provisioned, so a workload cannot mint one per spawned agent at runtime. DCR can register at runtime, but a DCR application is meant to expire and bind exactly one ephemeral session, so per-request fan-out would register and tear down an application for every sub-agent — adding registration latency, credential sprawl, and registry churn for no policy or audit benefit. Reach for an application per agent only when a spawned agent genuinely needs its own isolated, expiring credential and a registry-visible identity; then use a DCR application with one ephemeral session, as described in [managed versus DCR](#faq-managed-application-versus-dcr).
+
+See [Identities and Applications](/concepts/principal/) and the [Caracal Mental Model](/concepts/model-overview/).
 
 <a id="faq-managed-application-versus-dcr"></a>
 
