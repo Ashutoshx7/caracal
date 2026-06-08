@@ -103,7 +103,11 @@ func (s *Server) tryRefreshBrokeredGrant(ctx context.Context, zoneID, userID, re
 	if err != nil {
 		return nil
 	}
-	if grant.ExpiresAt != nil && grant.ExpiresAt.After(time.Now()) {
+	now, err := s.db.CurrentTime(ctx)
+	if err != nil {
+		return sharederr.New(sharederr.STSUnavailable, "trusted time unavailable")
+	}
+	if grant.ExpiresAt != nil && grant.ExpiresAt.After(now) {
 		return nil
 	}
 	if len(grant.RefreshTokenCt) == 0 || grant.ProviderID == nil {
@@ -119,7 +123,11 @@ func (s *Server) refreshExpiredBrokeredGrant(ctx context.Context, zoneID, userID
 	if err != nil {
 		return nil
 	}
-	if grant.ExpiresAt != nil && grant.ExpiresAt.After(time.Now()) {
+	now, err := s.db.CurrentTime(ctx)
+	if err != nil {
+		return sharederr.New(sharederr.STSUnavailable, "trusted time unavailable")
+	}
+	if grant.ExpiresAt != nil && grant.ExpiresAt.After(now) {
 		return nil
 	}
 	if len(grant.RefreshTokenCt) == 0 || grant.ProviderID == nil {
@@ -188,7 +196,11 @@ func (s *Server) refreshExpiredBrokeredGrant(ctx context.Context, zoneID, userID
 		return sharederr.New(sharederr.Internal, "token re-encryption failed")
 	}
 	cappedTTL := capGrantTTL(tokenResp.ExpiresIn, s.cfg.MaxGrantTTLSeconds)
-	expiresAt := time.Now().Add(cappedTTL)
+	now, err = s.db.CurrentTime(ctx)
+	if err != nil {
+		return sharederr.New(sharederr.STSUnavailable, "trusted time unavailable")
+	}
+	expiresAt := now.Add(cappedTTL)
 	if cappedTTL < time.Duration(tokenResp.ExpiresIn)*time.Second {
 		s.log.Warn().
 			Str("provider", provider.ID).
@@ -394,7 +406,11 @@ func (s *Server) persistRefreshedGrant(
 		if readErr != nil {
 			return readErr
 		}
-		if latest.ExpiresAt != nil && latest.ExpiresAt.After(time.Now()) {
+		now, timeErr := s.db.CurrentTime(ctx)
+		if timeErr != nil {
+			return timeErr
+		}
+		if latest.ExpiresAt != nil && latest.ExpiresAt.After(now) {
 			return nil
 		}
 		expectedVersion = latest.RefreshTokenVersion
