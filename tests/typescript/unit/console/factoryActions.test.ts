@@ -426,6 +426,36 @@ describe('applications actions', () => {
     expect(pushed[pushed.length - 1]).toBe(form)
   })
 
+  it('rotates a managed application secret and reveals it once', async () => {
+    const { client, ctx } = newCtx()
+    client.applications.patch.mockResolvedValueOnce({ id: 'app-1', name: 'agent' })
+    const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>
+    setRows(list, [{ id: 'app-1', name: 'agent', registration_method: 'managed', traits: [] }])
+    const app = fakeApp()
+    const confirm = await pressKey(list, 'r', app) as ConfirmView
+    expect(confirm).toBeInstanceOf(ConfirmView)
+    await confirm.onKey('y', { app, size: { rows: 20, cols: 80 }, status: '' })
+    const patchArg = client.applications.patch.mock.calls[0]
+    expect(patchArg[0]).toBe('z1')
+    expect(patchArg[1]).toBe('app-1')
+    expect(patchArg[2].client_secret).toMatch(/^cs_[A-Za-z0-9_-]+$/)
+    const pushed = (app as unknown as { _pushed: unknown[] })._pushed
+    const detail = pushed[pushed.length - 1] as DetailView
+    expect(detail).toBeInstanceOf(DetailView)
+    await detail.init(app)
+    const out = detail.render({ app, size: { rows: 20, cols: 80 }, status: '' }).join('\n')
+    expect(out).toContain('client_secret')
+    expect(out).toContain('••••')
+  })
+
+  it('does not offer secret rotation for DCR applications', () => {
+    const { ctx } = newCtx()
+    const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>
+    setRows(list, [{ id: 'd1', name: 'dcr-app', registration_method: 'dcr', traits: [] }])
+    const rotate = list.footerActions().find((action) => action.label === 'rotate secret')
+    expect(rotate?.enabledWhen?.()).toBe(false)
+  })
+
   it('does not create DCR applications from Console', async () => {
     const { client, ctx } = newCtx()
     const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>

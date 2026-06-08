@@ -28,6 +28,7 @@ import type {
 } from '@caracalai/admin'
 import type { JsonObject } from '@caracalai/core'
 import { readFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import type { App, View } from '../screen.ts'
 import type { ConsoleStateStore } from '../state.ts'
 import { maskSecretField } from '../errors.ts'
@@ -370,7 +371,7 @@ function resourceHelp(kind: ResourceHelpKind): InfoPage & { notes: string[] } {
           { label: 'DCR', value: 'Dynamic Client Registration; short-lived self-registering clients created programmatically through the admin SDK or REST, shown read-only in Console.' },
           { label: 'Client secret', value: 'One-time credential used by token applications; store it when Console displays it because it is not returned again.' },
         ],
-        notes: ['One-time client secrets are shown only when created or rotated.', 'Use copy-page on details when debugging SDK or API calls.'],
+        notes: ['One-time client secrets are shown only when created or rotated; rotate a managed application secret with the rotate-secret action.', 'Use copy-page on details when debugging SDK or API calls.'],
       }
     case 'resource':
       return {
@@ -699,6 +700,10 @@ function int(v: string | undefined): number | undefined {
 function requireClientSecret(value: string | undefined): string {
   if (!value) throw new Error('application response did not include the one-time client secret')
   return value
+}
+
+function generateClientSecret(): string {
+  return `cs_${randomBytes(32).toString('base64url')}`
 }
 
 async function popAndReload(app: App, list: ListView<unknown>): Promise<void> {
@@ -1132,6 +1137,42 @@ export function applicationsView(ctx: Ctx): View {
                 name: v.name || undefined,
               } as Partial<ApplicationInput>)
               await popAndReload(app, list as unknown as ListView<unknown>)
+            },
+          })
+        },
+      },
+      {
+        key: 'r', label: 'rotate secret', enabled: (row) => row?.registration_method === 'managed', build: (row) => {
+          if (!row) throw new Error('no row selected')
+          if (row.registration_method !== 'managed') throw new Error('only managed applications can rotate their secret')
+          return new ConfirmView({
+            message: `rotate client secret for ${row.name}? the current secret stops working immediately.`,
+            info: infoPage({
+              title: 'Rotate client secret',
+              meaning: 'Replaces the managed application client secret with a freshly generated one.',
+              when: 'Rotate after a suspected leak, on a scheduled cadence, or when offboarding whoever held the old secret.',
+              impact: 'The previous secret is invalidated immediately; running workloads must be reconfigured with the new secret.',
+              example: 'rotate client secret for Son of Anton',
+              valid: 'Press y to rotate, n or esc to cancel.',
+              after: 'The new secret is shown once and never returned again - store it before leaving the page.',
+              notes: ['DCR applications cannot rotate in Console; they are short-lived and replaced by re-registration.'],
+            }),
+            onConfirm: async (app) => {
+              const clientSecret = generateClientSecret()
+              await ctx.client.applications.patch(ctx.zoneId, row.id, { client_secret: clientSecret })
+              await popAndReload(app, list as unknown as ListView<unknown>)
+              open(app, new DetailView({
+                title: `app / ${row.name}`,
+                load: async () => ({
+                  id: row.id,
+                  zone_id: ctx.zoneId,
+                  name: row.name,
+                  registration_method: row.registration_method,
+                  client_secret: clientSecret,
+                  note: 'store client_secret now - it cannot be retrieved later',
+                }),
+                mask: maskSecretField,
+              }))
             },
           })
         },
