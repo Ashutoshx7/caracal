@@ -69,6 +69,7 @@ export interface ServiceOptions {
   metadata?: JsonObject;
   labels?: string[];
   traceId?: string;
+  heartbeatIntervalMs?: number;
 }
 
 export interface DelegateOptions {
@@ -270,6 +271,7 @@ export class Caracal {
       metadata: opts.metadata,
       labels: opts.labels,
       traceId: opts.traceId,
+      heartbeatIntervalMs: opts.heartbeatIntervalMs,
       onAgentStart: this.agentStartHooks.length ? (c) => this.fire(this.agentStartHooks, c) : undefined,
     });
   }

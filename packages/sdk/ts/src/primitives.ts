@@ -185,13 +185,15 @@ export interface SpawnServiceInput {
   metadata?: JsonObject;
   labels?: string[];
   traceId?: string;
+  heartbeatIntervalMs?: number;
   onAgentStart?: (ctx: CaracalContext) => void | Promise<void>;
 }
 
 /**
  * Handle for a long-lived service agent session. Unlike spawn, a service
  * session is not terminated automatically: the holder must heartbeat to keep
- * its lease and close to retire it.
+ * its lease and close to retire it. Pass heartbeatIntervalMs to spawnService to
+ * renew the lease from a background timer so it survives long provider streams.
  */
 export interface ServiceAgent {
   context: CaracalContext;
@@ -225,10 +227,23 @@ export async function spawnService(input: SpawnServiceInput): Promise<ServiceAge
     hop: parent?.hop ?? 0,
   };
   if (input.onAgentStart) await input.onAgentStart(ctx);
+  const heartbeat = () => heartbeatAgent(input.coordinator, bearer, input.zoneId, res.agent_session_id);
+  let timer: ReturnType<typeof setInterval> | undefined;
+  if (input.heartbeatIntervalMs && input.heartbeatIntervalMs > 0) {
+    timer = setInterval(() => {
+      heartbeat().catch((err) => {
+        console.warn(`caracal: auto-heartbeat failed for agent ${res.agent_session_id}; retrying next tick`, err);
+      });
+    }, input.heartbeatIntervalMs);
+    timer.unref?.();
+  }
   return {
     context: ctx,
     agentSessionId: res.agent_session_id,
-    heartbeat: () => heartbeatAgent(input.coordinator, bearer, input.zoneId, res.agent_session_id),
-    close: () => terminateAgent(input.coordinator, bearer, input.zoneId, res.agent_session_id),
+    heartbeat,
+    close: () => {
+      if (timer) clearInterval(timer);
+      return terminateAgent(input.coordinator, bearer, input.zoneId, res.agent_session_id);
+    },
   };
 }
