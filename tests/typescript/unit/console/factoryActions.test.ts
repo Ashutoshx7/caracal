@@ -338,63 +338,33 @@ describe('applications actions', () => {
     expect(out).not.toContain('token')
   })
 
-  it('n opens a low-friction application form with generated managed defaults', async () => {
+  it('n opens a low-friction managed application form', async () => {
     const { ctx } = newCtx()
     const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>
     const pushed = await pressKey(list, 'n', fakeApp()) as FormView
     const keys = (pushed as unknown as { fields: { key: string }[] }).fields.map((f) => f.key)
-    expect(keys).toEqual(['name', 'registration_method', 'expires_in'])
-    expect(pushed.values_().registration_method).toBe('managed')
+    expect(keys).toEqual(['name'])
     const app = fakeApp()
-    let body = pushed.render({ app, size: { rows: 20, cols: 100 }, status: '' }).join('\n')
-    expect(body).toContain('registration method ↳')
-    expect(body).toContain('[ managed ]')
+    const body = pushed.render({ app, size: { rows: 20, cols: 100 }, status: '' }).join('\n')
+    expect(body).not.toContain('registration method')
     expect(body).not.toContain('client lifetime seconds')
-
-    ;(pushed as unknown as { values: Record<string, string> }).values.registration_method = 'dcr'
-    body = pushed.render({ app, size: { rows: 20, cols: 100 }, status: '' }).join('\n')
-    expect(body).toContain('client lifetime seconds')
-    expect(body).toContain('3600')
-    expect(body).not.toContain('require consent')
-    expect(body).not.toContain('traits')
   })
 
-  it('application registration method help explains managed vs DCR use cases', async () => {
+  it('application name help explains managed creation and that DCR is programmatic', async () => {
     const { ctx } = newCtx()
     const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>
     const app = fakeApp()
     const form = await pressKey(list, 'n', app) as FormView
-    ;(form as unknown as { focus: number }).focus = 1
+    ;(form as unknown as { focus: number }).focus = 0
 
     await form.onKey('?', { app, size: { rows: 25, cols: 100 }, status: '' })
 
     const pushed = (app as unknown as { _pushed: unknown[] })._pushed
     const info = pushed[pushed.length - 1] as { render: FormView['render'] }
     const help = info.render({ app, size: { rows: 25, cols: 100 }, status: '' }).join('\n')
-    expect(help).toContain('known durable agents')
-    expect(help).toContain('ephemeral agents')
+    expect(help).toContain('managed')
     expect(help).toContain('Dynamic Client Registration')
-  })
-
-  it('client lifetime help explains DCR expiry instead of showing a name example', async () => {
-    const { ctx } = newCtx()
-    const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>
-    const app = fakeApp()
-    const form = await pressKey(list, 'n', app) as FormView
-    ;(form as unknown as { values: Record<string, string> }).values.registration_method = 'dcr'
-    ;(form as unknown as { focus: number }).focus = 2
-
-    await form.onKey('?', { app, size: { rows: 25, cols: 100 }, status: '' })
-
-    const pushed = (app as unknown as { _pushed: unknown[] })._pushed
-    const info = pushed[pushed.length - 1] as { render: FormView['render'] }
-    const help = info.render({ app, size: { rows: 25, cols: 100 }, status: '' }).join('\n')
-    expect(help).toContain('DCR client lifetime')
-    expect(help).toContain('one hour')
-    expect(help).toContain('Example')
-    expect(help).toContain('3600')
-    expect(help).toContain('expires_at')
-    expect(help).not.toContain('Son of Anton')
+    expect(help).toContain('not in Console')
   })
 
   it('creates managed applications with a generated confidential client secret', async () => {
@@ -415,7 +385,7 @@ describe('applications actions', () => {
       name: 'runner',
       registration_method: 'managed',
     }
-    ;(form as unknown as { focus: number }).focus = 2
+    ;(form as unknown as { focus: number }).focus = 0
 
     await form.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
 
@@ -456,35 +426,21 @@ describe('applications actions', () => {
     expect(pushed[pushed.length - 1]).toBe(form)
   })
 
-  it('creates DCR applications from the unified application form', async () => {
+  it('does not create DCR applications from Console', async () => {
     const { client, ctx } = newCtx()
-    client.applications.dcr.mockResolvedValueOnce({
-      id: 'app-1',
-      zone_id: 'z1',
-      name: 'app',
-      registration_method: 'dcr',
-      client_secret: 'cs_generated',
-      expires_at: '2026-01-01T00:00:00.000Z',
-      created_at: '2026-01-01T00:00:00.000Z',
-    })
     const list = applicationsView(ctx as unknown as Parameters<typeof applicationsView>[0]) as ListView<unknown>
     const app = fakeApp()
     const pushed = await pressKey(list, 'n', app) as FormView
-    expect(pushed).toBeInstanceOf(FormView)
-    ;(pushed as unknown as { values: Record<string, string> }).values = {
-      name: 'app',
-      registration_method: 'dcr',
-      expires_in: '60',
-    }
-    ;(pushed as unknown as { focus: number }).focus = 3
+    const keys = (pushed as unknown as { fields: { key: string }[] }).fields.map((f) => f.key)
+    expect(keys).toEqual(['name'])
+    ;(pushed as unknown as { values: Record<string, string> }).values = { name: 'app' }
+    ;(pushed as unknown as { focus: number }).focus = 0
     await pushed.onKey('enter', { app, size: { rows: 20, cols: 80 }, status: '' })
-    expect(client.applications.dcr).toHaveBeenCalledWith('z1', expect.objectContaining({
+    expect(client.applications.dcr).not.toHaveBeenCalled()
+    expect(client.applications.create).toHaveBeenCalledWith('z1', expect.objectContaining({
       name: 'app',
-      expires_in: 60,
+      registration_method: 'managed',
     }))
-    expect(client.applications.create).not.toHaveBeenCalled()
-    const detail = (app as unknown as { _pushed: unknown[] })._pushed.at(-1) as DetailView
-    expect(detail).toBeInstanceOf(DetailView)
   })
 
   it('does not expose DCR as a separate applications footer action', () => {
