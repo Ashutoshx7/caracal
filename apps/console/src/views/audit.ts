@@ -6,7 +6,7 @@
 import type { AdminClient, AuditEvent, AuditQuery } from '@caracalai/admin'
 import { ansi, pad, sanitizeAnsi, truncate, ui } from '../ansi.ts'
 import { explainError } from '../errors.ts'
-import { formatDateTimeOrValue } from '../format.ts'
+import { formatDateTimeOrValue, resolveTimeInput } from '../format.ts'
 import type { Key } from '../keys.ts'
 import type { App, View, ViewContext } from '../screen.ts'
 import { DetailView } from './detail.ts'
@@ -230,8 +230,8 @@ export class AuditTailView implements View {
         { key: 'event_type', label: 'event type', kind: 'text', default: this.filters.event_type ?? '', advanced: true },
         { key: 'agent_session_id', label: 'agent session', kind: 'text', default: this.filters.agent_session_id ?? '', advanced: true, hint: 'follow one exact agent session id' },
         { key: 'label', label: 'agent label', kind: 'text', default: this.filters.label ?? '', advanced: true, hint: 'scope to one agent role across sessions' },
-        { key: 'since', label: 'since', kind: 'text', default: this.filters.since ?? '', advanced: true },
-        { key: 'until', label: 'until', kind: 'text', default: this.filters.until ?? '', advanced: true },
+        { key: 'since', label: 'since', kind: 'text', default: this.filters.since ?? '', advanced: true, hint: 'relative (15m, 2h, 7d), an ISO timestamp, or a date', validate: validateTimeInput },
+        { key: 'until', label: 'until', kind: 'text', default: this.filters.until ?? '', advanced: true, hint: 'relative (15m, 2h, 7d), an ISO timestamp, or a date', validate: validateTimeInput },
         { key: 'limit', label: 'limit', kind: 'text', default: this.filters.limit === undefined ? '100' : String(this.filters.limit), advanced: true, validate: (v) => v && !/^[1-9]\d*$/.test(v.trim()) ? 'limit must be a positive integer' : undefined },
       ],
       onSubmit: async (v, app) => {
@@ -241,8 +241,8 @@ export class AuditTailView implements View {
         this.filters.event_type = v.event_type || undefined
         this.filters.agent_session_id = v.agent_session_id || undefined
         this.filters.label = v.label || undefined
-        this.filters.since = v.since || undefined
-        this.filters.until = v.until || undefined
+        this.filters.since = resolveTimeInput(v.since)
+        this.filters.until = resolveTimeInput(v.until)
         this.filters.limit = parseLimit(v.limit)
         this.decision = decision ?? 'all'
         this.onFiltersChange?.({ ...this.filters })
@@ -267,6 +267,15 @@ export class AuditTailView implements View {
 
 function compact(parts: readonly (string | undefined)[]): string {
   return parts.filter((part): part is string => Boolean(part)).join(' ')
+}
+
+function validateTimeInput(value: string): string | undefined {
+  try {
+    resolveTimeInput(value)
+    return undefined
+  } catch (err) {
+    return err instanceof Error ? err.message : 'invalid time'
+  }
 }
 
 function parseLimit(value: string | undefined): number | undefined {

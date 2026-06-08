@@ -558,7 +558,7 @@ function validFor(kind: string, title: string, options?: readonly string[], opts
   if (key === 'profile_path' || key === 'secret_file_path') return 'Absolute local file path.'
   if (key === 'credential_env') return 'Environment variable name using letters, numbers, and underscores.'
   if (key === 'request_id') return 'Exact request ID from audit, logs, Gateway, STS, or policy evaluation output.'
-  if (key === 'since' || key === 'until') return 'Readable date/time, ISO timestamp, or supported relative time accepted by the API.'
+  if (key === 'since' || key === 'until') return 'Relative time like 15m, 2h, or 7d, an ISO timestamp, or a date; the Console converts it for the API.'
   if (kind === 'list') return 'Comma-separated values; empty items are ignored.'
   if (kind === 'secret') return 'Paste the exact secret value; it is masked by default.'
   if (kind === 'file') return 'Pick a readable file or enter an absolute path.'
