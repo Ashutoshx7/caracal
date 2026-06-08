@@ -218,6 +218,15 @@ export interface PolicyTemplate {
   content: string
 }
 
+export interface PolicyPreview {
+  package: string
+  rules: string[]
+  default_result: boolean
+  decisions: string[]
+  inputs_referenced: string[]
+  data_referenced: string[]
+}
+
 export interface PolicyValidation {
   valid: boolean
   schema_version: string
@@ -228,6 +237,7 @@ export interface PolicyValidation {
     decision: string[]
     evaluation_status: string[]
   }
+  preview: PolicyPreview | null
   warnings: string[]
 }
 

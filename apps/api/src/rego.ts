@@ -140,8 +140,43 @@ export function analyzeAuthzPolicy(content: string): string[] {
     || /default\s+result\s*:=\s*\{[\s\S]*?"decision"\s*:\s*"allow"/.test(content)) {
     warnings.push('default_result_allows_access')
   }
+  if (!/\bdefault\s+result\b/.test(source)) {
+    warnings.push('missing_default_result')
+  }
   if (!/\brequested_scopes\b/.test(source)) {
     warnings.push('missing_requested_scope_check')
   }
   return warnings
+}
+
+export interface AuthzPolicyPreview {
+  package: string
+  rules: string[]
+  default_result: boolean
+  decisions: string[]
+  inputs_referenced: string[]
+  data_referenced: string[]
+}
+
+function collectPaths(source: string, root: string): string[] {
+  const re = new RegExp(`\\b${root}((?:\\.[a-zA-Z_][a-zA-Z0-9_]*)+)`, 'g')
+  const paths = new Set<string>()
+  for (const m of source.matchAll(re)) paths.add(`${root}${m[1]}`)
+  return [...paths].sort()
+}
+
+export function previewAuthzPolicy(content: string): AuthzPolicyPreview | null {
+  const check = parseRego(content)
+  if (check.error || check.packageName !== 'caracal.authz') return null
+  const { source } = stripCommentsAndStrings(content)
+  const decisions = new Set<string>()
+  for (const m of content.matchAll(/"decision"\s*:\s*"(allow|deny)"/g)) decisions.add(m[1])
+  return {
+    package: check.packageName,
+    rules: [...check.rules].sort(),
+    default_result: /\bdefault\s+result\b/.test(source),
+    decisions: [...decisions].sort(),
+    inputs_referenced: collectPaths(source, 'input'),
+    data_referenced: collectPaths(source, 'data'),
+  }
 }
