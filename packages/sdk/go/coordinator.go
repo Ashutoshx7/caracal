@@ -40,20 +40,22 @@ const (
 
 // SpawnRequest parameters for coordinator agent spawn.
 type SpawnRequest struct {
-	ZoneID           string
-	ApplicationID    string
-	SubjectSessionID string
-	ParentID         string
-	Lifecycle        Lifecycle
-	TTLSeconds       int
-	Metadata         map[string]any
-	Labels           []string
-	IdempotencyKey   string
+	ZoneID              string
+	ApplicationID       string
+	SubjectSessionID    string
+	ParentID            string
+	Lifecycle           Lifecycle
+	TTLSeconds          int
+	Metadata            map[string]any
+	Labels              []string
+	IdempotencyKey      string
+	InheritParentEdgeID string
 }
 
 // SpawnResponse from the coordinator.
 type SpawnResponse struct {
-	AgentSessionID string `json:"agent_session_id"`
+	AgentSessionID   string `json:"agent_session_id"`
+	DelegationEdgeID string `json:"delegation_edge_id"`
 }
 
 // DelegationConstraints narrows a delegation edge.
@@ -138,6 +140,9 @@ func SpawnAgent(ctx context.Context, client *CoordinatorClient, bearer string, r
 	}
 	if len(req.Labels) > 0 {
 		body["labels"] = req.Labels
+	}
+	if req.InheritParentEdgeID != "" {
+		body["inherit_parent_edge_id"] = req.InheritParentEdgeID
 	}
 
 	extra := map[string]string{}

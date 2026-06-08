@@ -26,10 +26,13 @@ const (
 )
 
 // Grant is the authority handed to a spawned child. The zero value (and
-// GrantInherit) runs the child under its application's authority with no
-// delegation edge. GrantNarrow issues a bounded delegation edge so the child
-// holds only the listed scopes; the server re-validates the subset, so a narrow
-// can never broaden. GrantNone spawns without issuing any edge.
+// GrantInherit) runs the child under its parent's effective authority: a child
+// of a narrowed parent inherits that same narrowing (the server mirrors the
+// parent's edge onto the child), so least-privilege is transitive by default,
+// while a child of a root parent runs under full application authority.
+// GrantNarrow issues a bounded delegation edge so the child holds only the
+// listed scopes; the server re-validates the subset, so a narrow can never
+// broaden. GrantNone spawns without issuing any edge.
 type Grant struct {
 	Mode        GrantMode
 	Scopes      []string
@@ -38,7 +41,8 @@ type Grant struct {
 	TTLSeconds  int
 }
 
-// GrantInherit runs the child under its application's authority (the default).
+// GrantInherit runs the child under its parent's effective authority (the
+// default): narrowing applied to the parent is carried forward to the child.
 func GrantInherit() Grant { return Grant{Mode: GrantModeInherit} }
 
 // GrantNone spawns a child without any delegation edge.
@@ -82,21 +86,31 @@ func Spawn(ctx context.Context, opts SpawnInput, fn func(context.Context) error)
 		parentID = parent.AgentSessionID
 	}
 
+	var inheritParentEdgeID string
+	if grant.Mode == GrantModeInherit && parent.AgentSessionID != "" &&
+		parent.DelegationEdgeID != "" && opts.ApplicationID == parent.ClientID {
+		inheritParentEdgeID = parent.DelegationEdgeID
+	}
+
 	res, err := SpawnAgent(ctx, opts.Coordinator, opts.SubjectToken, SpawnRequest{
-		ZoneID:           opts.ZoneID,
-		ApplicationID:    opts.ApplicationID,
-		SubjectSessionID: opts.SubjectSessionID,
-		ParentID:         parentID,
-		TTLSeconds:       opts.TTLSeconds,
-		Metadata:         opts.Metadata,
-		Labels:           opts.Labels,
+		ZoneID:              opts.ZoneID,
+		ApplicationID:       opts.ApplicationID,
+		SubjectSessionID:    opts.SubjectSessionID,
+		ParentID:            parentID,
+		TTLSeconds:          opts.TTLSeconds,
+		Metadata:            opts.Metadata,
+		Labels:              opts.Labels,
+		InheritParentEdgeID: inheritParentEdgeID,
 	})
 	if err != nil {
 		return err
 	}
 
-	var delegationEdgeID string
+	delegationEdgeID := res.DelegationEdgeID
 	hop := parent.Hop
+	if delegationEdgeID != "" {
+		hop = parent.Hop + 1
+	}
 	if grant.Mode == GrantModeNarrow {
 		if parent.AgentSessionID == "" {
 			return errors.Join(
