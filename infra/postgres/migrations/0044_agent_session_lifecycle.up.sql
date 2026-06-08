@@ -20,6 +20,13 @@ ALTER TABLE agent_sessions
     ADD CONSTRAINT agent_sessions_lifecycle_check
     CHECK (lifecycle IN ('task', 'service'));
 
+ALTER TABLE agent_sessions
+    ALTER COLUMN ttl_seconds DROP NOT NULL;
+
+UPDATE agent_sessions
+    SET ttl_seconds = NULL
+    WHERE lifecycle = 'service';
+
 DROP INDEX IF EXISTS agent_sessions_service_heartbeat_deadline_idx;
 
 CREATE INDEX IF NOT EXISTS agent_sessions_service_heartbeat_deadline_idx

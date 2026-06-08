@@ -108,6 +108,63 @@ describe('spawn', () => {
     })
     expect(calls.some((c) => c.path.endsWith('/agents'))).toBe(true)
   })
+
+  it('carries the parent narrowing edge forward on an intra-app inherit child', async () => {
+    const bodies: Record<string, unknown>[] = []
+    const fetchImpl = (async (url: string, init?: { method?: string; body?: string }) => {
+      const method = init?.method ?? 'GET'
+      const path = new URL(url).pathname
+      if (method === 'DELETE') return new Response(null, { status: 204 })
+      if (path.endsWith('/agents')) {
+        bodies.push(JSON.parse(init?.body ?? '{}'))
+        return new Response(JSON.stringify({ agent_session_id: 'agent-child', delegation_edge_id: 'edge-child' }), { status: 200 })
+      }
+      return new Response(JSON.stringify({}), { status: 200 })
+    }) as unknown as typeof fetch
+    const client: CoordinatorClient = { baseUrl: 'http://coord', fetchImpl }
+    let childEdge: string | undefined
+    let childHop: number | undefined
+    await bind(baseCtx({ delegationEdgeId: 'edge-parent', hop: 1 }), async () => {
+      await spawn(
+        { coordinator: client, zoneId: 'zone-1', applicationId: 'app-1', subjectToken: 'tok' },
+        async () => {
+          childEdge = current()?.delegationEdgeId
+          childHop = current()?.hop
+          return undefined
+        },
+      )
+    })
+    expect(bodies[0]?.inherit_parent_edge_id).toBe('edge-parent')
+    expect(childEdge).toBe('edge-child')
+    expect(childHop).toBe(2)
+  })
+
+  it('does not request an inherit edge when spawning into another application', async () => {
+    const bodies: Record<string, unknown>[] = []
+    const fetchImpl = (async (url: string, init?: { method?: string; body?: string }) => {
+      const method = init?.method ?? 'GET'
+      const path = new URL(url).pathname
+      if (method === 'DELETE') return new Response(null, { status: 204 })
+      if (path.endsWith('/agents')) {
+        bodies.push(JSON.parse(init?.body ?? '{}'))
+        return new Response(JSON.stringify({ agent_session_id: 'agent-child' }), { status: 200 })
+      }
+      return new Response(JSON.stringify({}), { status: 200 })
+    }) as unknown as typeof fetch
+    const client: CoordinatorClient = { baseUrl: 'http://coord', fetchImpl }
+    let childEdge: string | undefined
+    await bind(baseCtx({ delegationEdgeId: 'edge-parent', hop: 1 }), async () => {
+      await spawn(
+        { coordinator: client, zoneId: 'zone-1', applicationId: 'other-app', subjectToken: 'tok' },
+        async () => {
+          childEdge = current()?.delegationEdgeId
+          return undefined
+        },
+      )
+    })
+    expect(bodies[0]?.inherit_parent_edge_id).toBeUndefined()
+    expect(childEdge).toBeUndefined()
+  })
 })
 
 describe('delegate', () => {

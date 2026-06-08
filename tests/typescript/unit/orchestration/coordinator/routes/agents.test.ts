@@ -51,6 +51,7 @@ interface SpawnStage {
   } | null
   insert?: { rows: unknown[] }
   withTopology?: boolean
+  inheritEdge?: 'active' | 'inactive'
   outbox?: boolean
 }
 
@@ -61,6 +62,15 @@ function spawnClient(stages: SpawnStage): { query: ReturnType<typeof vi.fn>; rel
   if (stages.parent !== undefined) responses.push({ rows: stages.parent ? [stages.parent] : [] })
   if (stages.insert) responses.push(stages.insert)
   if (stages.withTopology) responses.push({ rows: [] }, { rows: [] })
+  if (stages.inheritEdge === 'active') {
+    responses.push({ rows: [{ id: 'edge-parent', receiver_application_id: 'app-1', resource_id: null, scopes: ['payments:read'], constraints_json: {}, expires_at: '2099-01-01T00:00:00.000Z' }] })
+    responses.push({ rows: [] })
+    responses.push({ rows: [{ epoch: '1' }] })
+    responses.push({ rows: [] })
+  }
+  if (stages.inheritEdge === 'inactive') {
+    responses.push({ rows: [] })
+  }
   if (stages.outbox) responses.push({ rows: [] })
   responses.push({ rows: [] })
   const query = vi.fn()
@@ -309,6 +319,61 @@ describe('POST /v1/zones/:zoneId/agents: spawn', () => {
       expect.stringContaining('UPDATE agent_sessions SET child_count'),
       ['parent-1'],
     )
+  })
+
+  it('mirrors the parent narrowing edge onto an inherit child and returns its edge id', async () => {
+    const { app, db } = buildApp()
+    const client = spawnClient({
+      refs: { application_exists: true, session_exists: true, registration_method: 'managed' },
+      count: { app_n: '0', zone_n: '0' },
+      parent: { depth: 1, child_count: 0, max_children: 10, application_id: 'app-1', registration_method: 'managed' },
+      insert: { rows: [{ agent_session_id: 'agent-child', zone_id: 'z1', application_id: 'app-1', parent_id: 'parent-1' }] },
+      withTopology: true,
+      inheritEdge: 'active',
+      outbox: true,
+    })
+    db.connect.mockResolvedValueOnce(client)
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/agents',
+      payload: { application_id: 'app-1', subject_session_id: 'sid-1', parent_id: 'parent-1', inherit_parent_edge_id: 'edge-parent' },
+    })
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body)
+    expect(typeof body.delegation_edge_id).toBe('string')
+    expect(body.delegation_edge_id.length).toBeGreaterThan(0)
+    const edgeInsert = client.query.mock.calls.find((call) => String(call[0]).includes('INSERT INTO delegation_edges'))
+    expect(edgeInsert).toBeDefined()
+    expect(edgeInsert?.[1]?.[2]).toBe('parent-1')
+    expect(typeof edgeInsert?.[1]?.[3]).toBe('string')
+    expect(edgeInsert?.[1]?.[8]).toEqual(['payments:read'])
+    const invalidate = client.query.mock.calls.find((call) => String(call[0]).includes('caracal_outbox') && call[1]?.[1] === 'caracal.delegations.invalidate')
+    expect(invalidate).toBeDefined()
+  })
+
+  it('fails closed with 409 when the requested inherit parent edge is not active', async () => {
+    const { app, db } = buildApp()
+    const client = spawnClient({
+      refs: { application_exists: true, session_exists: true, registration_method: 'managed' },
+      count: { app_n: '0', zone_n: '0' },
+      parent: { depth: 1, child_count: 0, max_children: 10, application_id: 'app-1', registration_method: 'managed' },
+      insert: { rows: [{ agent_session_id: 'agent-child', zone_id: 'z1', application_id: 'app-1', parent_id: 'parent-1' }] },
+      withTopology: true,
+      inheritEdge: 'inactive',
+    })
+    db.connect.mockResolvedValueOnce(client)
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/agents',
+      payload: { application_id: 'app-1', subject_session_id: 'sid-1', parent_id: 'parent-1', inherit_parent_edge_id: 'stale-edge' },
+    })
+    expect(res.statusCode).toBe(409)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'inherit_parent_edge_not_active' })
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK')
+    const edgeInsert = client.query.mock.calls.find((call) => String(call[0]).includes('INSERT INTO delegation_edges'))
+    expect(edgeInsert).toBeUndefined()
   })
 
   it('rolls back and releases the connection when spawn insert fails', async () => {

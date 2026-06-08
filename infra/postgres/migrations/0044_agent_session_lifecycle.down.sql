@@ -3,6 +3,13 @@
 --
 -- Restores the three-value agent_kind descriptor.
 
+UPDATE agent_sessions
+    SET ttl_seconds = 3600
+    WHERE ttl_seconds IS NULL;
+
+ALTER TABLE agent_sessions
+    ALTER COLUMN ttl_seconds SET NOT NULL;
+
 DROP INDEX IF EXISTS agent_sessions_service_heartbeat_deadline_idx;
 
 ALTER TABLE agent_sessions
