@@ -133,7 +133,23 @@ describe('AdminClient', () => {
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer jwt')
   })
 
-  it('unwraps coordinator agent list pages', async () => {
+  it('forwards agent list filters as query params', async () => {
+    const f = fetchOk({ items: [], next_cursor: null })
+    const c = new AdminClient({
+      apiUrl: 'http://api',
+      coordinatorUrl: 'http://coord',
+      adminToken: 'a',
+      coordinatorToken: 'jwt',
+      fetchImpl: f,
+    })
+    await c.agents.list('z1', { status: 'active', lifecycle: 'service', application_id: 'app-1', label: 'worker', limit: 25 })
+    const [url] = (f as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0]
+    expect(url).toContain('status=active')
+    expect(url).toContain('lifecycle=service')
+    expect(url).toContain('application_id=app-1')
+    expect(url).toContain('label=worker')
+    expect(url).toContain('limit=25')
+  })
     const f = fetchOk({
       items: [{
         agent_session_id: 'agent-1',

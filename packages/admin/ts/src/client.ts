@@ -6,6 +6,7 @@
 import { AdminApiError } from './errors.js'
 import type { JsonValue } from '@caracalai/core'
 import type {
+  AgentListQuery,
   AgentSession,
   Application,
   ApplicationInput,
@@ -150,12 +151,12 @@ export class AdminClient {
     const token = opts.base === 'coordinator' ? this.coordinatorToken : this.adminToken
     if (!token) throw new Error('coordinator_token_not_configured')
 
-    const qs = opts.query
-      ? '?' + Object.entries(opts.query)
+    const pairs = opts.query
+      ? Object.entries(opts.query)
           .filter(([, v]) => v !== undefined && v !== '')
           .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
-          .join('&')
-      : ''
+      : []
+    const qs = pairs.length ? '?' + pairs.join('&') : ''
     const url = `${base}${path}${qs}`
     const headers: Record<string, string> = { Authorization: `Bearer ${token}`, ...opts.headers }
     let body: BodyInit | undefined
@@ -406,8 +407,8 @@ export class AdminClient {
 
   // Agents (coordinator)
   agents = {
-    list: async (zoneId: string) => {
-      const response = await this.request<AgentListResponse>(`/zones/${zoneId}/agents`, { base: 'coordinator' })
+    list: async (zoneId: string, query?: AgentListQuery) => {
+      const response = await this.request<AgentListResponse>(`/zones/${zoneId}/agents`, { base: 'coordinator', query: { ...query } })
       if (!Array.isArray(response.items)) throw new Error('agents response missing items')
       return response.items
     },

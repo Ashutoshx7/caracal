@@ -453,6 +453,15 @@ export interface AgentSessionQuery {
   limit?: number
 }
 
+export interface AgentListQuery {
+  status?: 'active' | 'suspended' | 'terminated'
+  lifecycle?: 'task' | 'service'
+  application_id?: string
+  label?: string
+  cursor?: string
+  limit?: number
+}
+
 export interface StepUpChallenge {
   id: string
   zone_id: string
