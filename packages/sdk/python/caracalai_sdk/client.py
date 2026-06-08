@@ -762,13 +762,15 @@ class Caracal:
         metadata: JsonObject | None = None,
         labels: list[str] | None = None,
         trace_id: str | None = None,
+        heartbeat_interval: float | None = None,
     ) -> ServiceAgent:
         """Start a long-lived service agent and return a handle the caller owns.
 
         Unlike :meth:`spawn`, the session is not retired when a block exits: keep
         it alive by calling :meth:`ServiceAgent.heartbeat` and retire it with
         :meth:`ServiceAgent.aclose`. Use for daemons and workers that outlive a
-        single request."""
+        single request. Pass ``heartbeat_interval`` to renew the lease from a
+        background task so it survives long provider/resource streams."""
         on_start: LifecycleHook | None = (
             (lambda c: self._fire(self._agent_start_hooks, c)) if self._agent_start_hooks else None
         )
@@ -783,6 +785,7 @@ class Caracal:
             metadata=metadata,
             labels=labels,
             trace_id=trace_id,
+            heartbeat_interval=heartbeat_interval,
             on_agent_start=on_start,
         )
 

@@ -7,8 +7,10 @@ SDK primitives: spawn an agent session and delegate authority as async context m
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from .context import CaracalContext, current, _ctx_var
@@ -25,6 +27,8 @@ from .coordinator import (
 )
 from .json_types import JsonObject
 
+
+logger = logging.getLogger("caracalai_sdk")
 
 LifecycleHook = Callable[[CaracalContext], Awaitable[None]]
 
@@ -174,11 +178,20 @@ async def spawn(
 class ServiceAgent:
     """Handle for a long-lived service agent session. Unlike :func:`spawn`,
     a service session is not terminated automatically: the holder must
-    :meth:`heartbeat` to keep its lease and :meth:`aclose` to retire it."""
+    :meth:`heartbeat` to keep its lease and :meth:`aclose` to retire it.
+
+    Pass ``heartbeat_interval`` to :func:`spawn_service` to have the handle
+    renew its own lease from an independent background task. The renewal runs
+    on its own loop iteration, so the lease keeps advancing even while the
+    calling coroutine is awaiting a long provider/resource stream. A transient
+    renewal error is logged and retried on the next tick rather than raised."""
 
     coordinator: CoordinatorClient
     subject_token: str
     context: CaracalContext
+    heartbeat_interval: float | None = None
+    status: str = "healthy"
+    _auto_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False, compare=False)
 
     @property
     def agent_session_id(self) -> str:
@@ -193,7 +206,34 @@ class ServiceAgent:
             status,
         )
 
+    def _start_auto_heartbeat(self) -> None:
+        if self.heartbeat_interval is None or self._auto_task is not None:
+            return
+        self._auto_task = asyncio.create_task(self._auto_heartbeat_loop())
+
+    async def _auto_heartbeat_loop(self) -> None:
+        assert self.heartbeat_interval is not None
+        while True:
+            await asyncio.sleep(self.heartbeat_interval)
+            try:
+                await self.heartbeat(self.status)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning(
+                    "auto-heartbeat failed for agent %s; retrying next tick",
+                    self.context.agent_session_id,
+                    exc_info=True,
+                )
+
     async def aclose(self) -> None:
+        if self._auto_task is not None:
+            self._auto_task.cancel()
+            try:
+                await self._auto_task
+            except asyncio.CancelledError:
+                pass
+            self._auto_task = None
         await terminate_agent(
             self.coordinator,
             self.subject_token,
@@ -202,6 +242,7 @@ class ServiceAgent:
         )
 
     async def __aenter__(self) -> ServiceAgent:
+        self._start_auto_heartbeat()
         return self
 
     async def __aexit__(self, *exc: object) -> None:
@@ -220,11 +261,16 @@ async def spawn_service(
     metadata: JsonObject | None = None,
     labels: list[str] | None = None,
     trace_id: str | None = None,
+    heartbeat_interval: float | None = None,
     on_agent_start: LifecycleHook | None = None,
 ) -> ServiceAgent:
     """Spawn a long-lived service agent session and return a handle the caller
     owns. The session carries a heartbeat lease; renew it with
-    :meth:`ServiceAgent.heartbeat` and retire it with :meth:`ServiceAgent.aclose`."""
+    :meth:`ServiceAgent.heartbeat` and retire it with :meth:`ServiceAgent.aclose`.
+
+    Pass ``heartbeat_interval`` (seconds, well below the server lease) to renew
+    the lease automatically from a background task — the lease keeps advancing
+    even while the caller is blocked on a long provider/resource stream."""
     parent = parent_ctx if parent_ctx is not None else current()
     parent_agent_session_id = parent_id or (parent.agent_session_id if parent else None)
 
@@ -254,7 +300,14 @@ async def spawn_service(
     )
     if on_agent_start is not None:
         await on_agent_start(ctx)
-    return ServiceAgent(coordinator=coordinator, subject_token=subject_token, context=ctx)
+    agent = ServiceAgent(
+        coordinator=coordinator,
+        subject_token=subject_token,
+        context=ctx,
+        heartbeat_interval=heartbeat_interval,
+    )
+    agent._start_auto_heartbeat()
+    return agent
 
 
 @asynccontextmanager
