@@ -30,6 +30,8 @@ export async function redisTimeMs(redis: RedisClient): Promise<number> {
   const [seconds, microseconds] = await redis.time()
   const secondsPart = Number(seconds)
   const microsecondsPart = Number(microseconds)
-  if (!Number.isFinite(secondsPart) || !Number.isFinite(microsecondsPart)) return Date.now()
+  if (!Number.isFinite(secondsPart) || !Number.isFinite(microsecondsPart)) {
+    throw new Error('redis TIME returned an invalid response')
+  }
   return secondsPart * 1000 + Math.floor(microsecondsPart / 1000)
 }

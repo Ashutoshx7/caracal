@@ -87,16 +87,13 @@ export class RedisReplay implements Replay {
   }
 
   private async redisNowMs(): Promise<number> {
-    try {
-      const parts = await this.client.time()
-      const seconds = Number(parts[0])
-      const micros = Number(parts[1])
-      if (Number.isFinite(seconds) && Number.isFinite(micros)) {
-        return seconds * 1000 + Math.floor(micros / 1000)
-      }
-    } catch {
-      return Date.now()
+    if (typeof this.client.time !== 'function') return Date.now()
+    const parts = await this.client.time()
+    const seconds = Number(parts[0])
+    const micros = Number(parts[1])
+    if (Number.isFinite(seconds) && Number.isFinite(micros)) {
+      return seconds * 1000 + Math.floor(micros / 1000)
     }
-    return Date.now()
+    throw new Error('redis TIME returned an invalid response')
   }
 }
