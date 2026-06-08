@@ -8,6 +8,9 @@ package sdk
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"sync"
+	"time"
 )
 
 // LifecycleHook fires before fn runs (start) and after it returns (end).
@@ -200,25 +203,31 @@ func Delegate(ctx context.Context, opts DelegateInput, fn func(context.Context) 
 
 // SpawnServiceInput controls long-lived service agent spawning.
 type SpawnServiceInput struct {
-	Coordinator      *CoordinatorClient
-	ZoneID           string
-	ApplicationID    string
-	SubjectToken     string
-	SubjectSessionID string
-	ParentID         string
-	TTLSeconds       int
-	Metadata         map[string]any
-	Labels           []string
-	TraceID          string
-	OnAgentStart     LifecycleHook
+	Coordinator       *CoordinatorClient
+	ZoneID            string
+	ApplicationID     string
+	SubjectToken      string
+	SubjectSessionID  string
+	ParentID          string
+	TTLSeconds        int
+	Metadata          map[string]any
+	Labels            []string
+	TraceID           string
+	HeartbeatInterval time.Duration
+	OnAgentStart      LifecycleHook
 }
 
 // ServiceAgent is a handle for a long-lived service agent session. Unlike
 // Spawn, a service session is not terminated automatically: the holder must
-// Heartbeat to keep its lease and Close to retire it.
+// Heartbeat to keep its lease and Close to retire it. Set
+// SpawnServiceInput.HeartbeatInterval to renew the lease from a background
+// goroutine so it survives long provider/resource streams.
 type ServiceAgent struct {
 	Context     CaracalContext
 	coordinator *CoordinatorClient
+	stop        chan struct{}
+	stopOnce    sync.Once
+	wg          sync.WaitGroup
 }
 
 // AgentSessionID returns the service session identifier.
@@ -231,8 +240,33 @@ func (s *ServiceAgent) Heartbeat(ctx context.Context) error {
 	return HeartbeatAgent(ctx, s.coordinator, s.Context.SubjectToken, s.Context.ZoneID, s.Context.AgentSessionID)
 }
 
+func (s *ServiceAgent) startAutoHeartbeat(interval time.Duration) {
+	s.stop = make(chan struct{})
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-s.stop:
+				return
+			case <-ticker.C:
+				if err := s.Heartbeat(context.Background()); err != nil {
+					slog.Warn("caracal auto-heartbeat failed; retrying next tick",
+						"agent_session_id", s.Context.AgentSessionID, "err", err)
+				}
+			}
+		}
+	}()
+}
+
 // Close retires the service session.
 func (s *ServiceAgent) Close(ctx context.Context) error {
+	if s.stop != nil {
+		s.stopOnce.Do(func() { close(s.stop) })
+		s.wg.Wait()
+	}
 	return TerminateAgent(ctx, s.coordinator, s.Context.SubjectToken, s.Context.ZoneID, s.Context.AgentSessionID)
 }
 
@@ -284,5 +318,9 @@ func SpawnService(ctx context.Context, opts SpawnServiceInput) (*ServiceAgent, e
 			return nil, errors.Join(err, TerminateAgent(ctx, opts.Coordinator, opts.SubjectToken, opts.ZoneID, res.AgentSessionID))
 		}
 	}
-	return &ServiceAgent{Context: c, coordinator: opts.Coordinator}, nil
+	agent := &ServiceAgent{Context: c, coordinator: opts.Coordinator}
+	if opts.HeartbeatInterval > 0 {
+		agent.startAutoHeartbeat(opts.HeartbeatInterval)
+	}
+	return agent, nil
 }
