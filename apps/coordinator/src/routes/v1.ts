@@ -8,6 +8,7 @@ import type { FastifyPluginAsync, FastifyRequest, FastifyReply, FastifyInstance 
 import { z } from 'zod'
 import { verify, type JwtConfig } from '@caracalai/identity'
 import { cfg } from '../config.js'
+import { redisMinuteBucket } from '../redis.js'
 import { AgentLabels, Lifecycle } from './agents.js'
 
 const BeginBody = z.object({
@@ -78,7 +79,7 @@ function clientIp(req: FastifyRequest): string {
 
 async function v1RateLimit(fastify: FastifyInstance, req: FastifyRequest, reply: FastifyReply): Promise<boolean> {
   if (cfg.v1RateLimitPerMin <= 0) return false
-  const minute = Math.floor(Date.now() / 60_000)
+  const minute = await redisMinuteBucket(fastify.redis)
   const key = `coordinator:v1_rl:${clientIp(req)}:${minute}`
   const count = await fastify.redis.incr(key)
   if (count === 1) await fastify.redis.expire(key, 90)
@@ -188,7 +189,7 @@ export const v1Routes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/v1/verify', async (req, reply) => {
     if (cfg.verifyRateLimitPerMin > 0) {
-      const minute = Math.floor(Date.now() / 60_000)
+      const minute = await redisMinuteBucket(fastify.redis)
       const key = `coordinator:verify_rl:${clientIp(req)}:${minute}`
       const count = await fastify.redis.incr(key)
       if (count === 1) await fastify.redis.expire(key, 90)

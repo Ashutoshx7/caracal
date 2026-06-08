@@ -91,6 +91,36 @@ const SessionQuery = z.object({
   limit: z.coerce.number().int().min(1).max(1000).default(100),
 })
 
+const AgentSessionQuery = z.object({
+  status: z.enum(['active', 'suspended', 'terminated', 'expired']).optional(),
+  lifecycle: z.enum(['task', 'service']).optional(),
+  application_id: z.string().min(1).optional(),
+  parent_id: z.string().min(1).optional(),
+  label: z.string().min(1).max(64).optional(),
+  format: z.enum(['json', 'csv']).default('json'),
+  cursor: z.string().min(1).max(512).optional(),
+  limit: z.coerce.number().int().min(1).max(1000).default(100),
+})
+
+const AGENT_SESSION_CSV_COLUMNS = [
+  'id', 'application_id', 'parent_id', 'status', 'lifecycle', 'labels',
+  'depth', 'child_count', 'spawned_at', 'last_active_at', 'terminated_at', 'ttl_seconds',
+] as const
+
+function toCsvCell(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  const text = Array.isArray(value) ? value.join(' ') : String(value)
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+function agentSessionsCsv(rows: Record<string, unknown>[]): string {
+  const lines = [AGENT_SESSION_CSV_COLUMNS.join(',')]
+  for (const row of rows) {
+    lines.push(AGENT_SESSION_CSV_COLUMNS.map((col) => toCsvCell(row[col])).join(','))
+  }
+  return `${lines.join('\r\n')}\r\n`
+}
+
 const ZoneRequestParams = ZoneParams.extend({ requestId: z.string().regex(/^[A-Za-z0-9_.\-:]{1,128}$/) })
 
 export const zoneEventsRoutes: FastifyPluginAsync = async (fastify) => {
@@ -226,6 +256,53 @@ export const zoneEventsRoutes: FastifyPluginAsync = async (fastify) => {
     const last = rows[rows.length - 1]
     const next = rows.length === q.limit && last
       ? encodeCursor(new Date(last.created_at).toISOString(), last.id)
+      : null
+    return { rows, next_cursor: next }
+  })
+
+  fastify.get('/zones/:zoneId/agent-sessions', async (req, reply) => {
+    const params = parseParams(ZoneParams, req, reply)
+    if (!params) return
+    const parsed = AgentSessionQuery.safeParse(req.query ?? {})
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_query' })
+    const q = parsed.data
+
+    const conds = ['zone_id = $1']
+    const values: (string | number)[] = [params.zoneId]
+    if (q.status) { values.push(q.status); conds.push(`status = $${values.length}`) }
+    if (q.lifecycle) { values.push(q.lifecycle); conds.push(`lifecycle = $${values.length}`) }
+    if (q.application_id) { values.push(q.application_id); conds.push(`application_id = $${values.length}`) }
+    if (q.parent_id) { values.push(q.parent_id); conds.push(`parent_id = $${values.length}`) }
+    if (q.label) { values.push(`{${q.label}}`); conds.push(`labels @> $${values.length}`) }
+
+    const cursor = q.cursor ? decodeCursor(q.cursor) : null
+    if (q.cursor && !cursor) return reply.code(400).send({ error: 'invalid_cursor' })
+    if (cursor) {
+      values.push(cursor.ts)
+      values.push(cursor.id)
+      conds.push(`(spawned_at, id) < ($${values.length - 1}, $${values.length})`)
+    }
+    values.push(q.limit)
+
+    const { rows } = await fastify.db.query(
+      `SELECT id, application_id, parent_id, status, lifecycle, labels, depth, child_count,
+              spawned_at, last_active_at, terminated_at, ttl_seconds
+       FROM agent_sessions
+       WHERE ${conds.join(' AND ')}
+       ORDER BY spawned_at DESC, id DESC
+       LIMIT $${values.length}`,
+      values,
+    )
+
+    if (q.format === 'csv') {
+      reply.header('content-type', 'text/csv; charset=utf-8')
+      reply.header('content-disposition', `attachment; filename="agent-sessions-${params.zoneId}.csv"`)
+      return reply.send(agentSessionsCsv(rows))
+    }
+
+    const last = rows[rows.length - 1]
+    const next = rows.length === q.limit && last
+      ? encodeCursor(new Date(last.spawned_at).toISOString(), last.id)
       : null
     return { rows, next_cursor: next }
   })

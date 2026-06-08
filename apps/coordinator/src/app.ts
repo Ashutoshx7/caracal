@@ -21,6 +21,7 @@ import { registerAdminAuditHook } from './admin-audit.js'
 import { ttlSweeperStats } from './jobs/ttl-sweeper.js'
 import { serviceLeaseSweeperStats } from './jobs/service-lease-sweeper.js'
 import { retentionCleanerStats } from './jobs/retention-cleaner.js'
+import { redisMinuteBucket } from './redis.js'
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -124,7 +125,7 @@ export async function buildApp({ cfg, db, redis, isDraining }: CoordinatorDeps) 
     const tc = parseTraceparent(value)
     bindTrace({ traceId: tc.traceId, spanId: tc.spanId || req.id })
     if (cfg.coordinatorRateLimitPerMin <= 0) return
-    const minute = Math.floor(Date.now() / 60_000)
+    const minute = await redisMinuteBucket(redis)
     const key = `coordinator:global_rl:${req.ip}:${minute}`
     const count = await redis.incr(key)
     if (count === 1) await redis.expire(key, 90)
@@ -137,7 +138,7 @@ export async function buildApp({ cfg, db, redis, isDraining }: CoordinatorDeps) 
   app.get('/health', async () => ({ ok: true }))
   app.get('/ready', async (req, reply) => {
     if (cfg.readyRateLimitPerMin > 0) {
-      const minute = Math.floor(Date.now() / 60_000)
+      const minute = await redisMinuteBucket(redis)
       const key = `coordinator:ready_rl:${req.ip}:${minute}`
       const count = await redis.incr(key)
       if (count === 1) await redis.expire(key, 90)

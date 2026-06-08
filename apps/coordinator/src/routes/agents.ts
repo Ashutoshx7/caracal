@@ -27,17 +27,13 @@ export const AgentLabels = z.array(
   z.string().trim().min(1).max(MAX_AGENT_LABEL_LENGTH),
 ).max(MAX_AGENT_LABELS).default([])
 
-function heartbeatDeadline(lifecycle: z.infer<typeof Lifecycle>): Date | null {
-  return lifecycle === 'service' ? new Date(Date.now() + cfg.serviceAgentLeaseSeconds * 1000) : null
-}
-
 const SpawnBody = z.object({
   application_id: z.string().min(1),
   subject_session_id: z.string().min(1).optional(),
   parent_id: z.string().nullable().default(null),
   lifecycle: Lifecycle.optional(),
   labels: AgentLabels,
-  ttl_seconds: z.number().int().min(1).max(86400).default(DEFAULT_TTL),
+  ttl_seconds: z.number().int().min(1).max(86400).optional(),
   metadata: z.record(z.string(), z.unknown()).default({}),
 })
 
@@ -122,6 +118,10 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
         await client.query('ROLLBACK')
         return reply.code(409).send({ error: 'dcr_application_cannot_host_service' })
       }
+      if (refs[0].registration_method === 'dcr' && body.parent_id) {
+        await client.query('ROLLBACK')
+        return reply.code(409).send({ error: 'dcr_application_cannot_be_child' })
+      }
       if (!refs[0].session_exists) {
         await client.query('ROLLBACK')
         return reply.code(404).send({
@@ -154,14 +154,25 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
       let depth = 0
       if (body.parent_id) {
         const { rows: parent } = await client.query(
-          `SELECT depth, child_count, max_children, application_id FROM agent_sessions
-           WHERE id = $1 AND zone_id = $2 AND status = 'active'
-           FOR UPDATE`,
+          `SELECT s.depth, s.child_count, s.max_children, s.application_id, s.lifecycle,
+                  a.registration_method
+           FROM agent_sessions s
+           JOIN applications a ON a.id = s.application_id AND a.zone_id = s.zone_id
+           WHERE s.id = $1 AND s.zone_id = $2 AND s.status = 'active'
+           FOR UPDATE OF s`,
           [body.parent_id, zoneId],
         )
         if (!parent[0]) {
           await client.query('ROLLBACK')
           return reply.code(404).send({ error: 'parent_not_found' })
+        }
+        if (parent[0].registration_method === 'dcr') {
+          await client.query('ROLLBACK')
+          return reply.code(409).send({ error: 'dcr_application_cannot_spawn' })
+        }
+        if (parent[0].lifecycle === 'task' && lifecycle === 'service') {
+          await client.query('ROLLBACK')
+          return reply.code(409).send({ error: 'task_agent_cannot_spawn_service' })
         }
         if (parent[0].application_id !== body.application_id
           && !requireScope(req, `coordinator.spawn_under:${parent[0].application_id}`)) {
@@ -178,19 +189,21 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
           return reply.code(429).send({ error: 'agent_depth_limit_exceeded' })
         }
       }
-      const deadline = heartbeatDeadline(lifecycle)
+      const ttlSeconds = body.ttl_seconds ?? (lifecycle === 'service' ? null : DEFAULT_TTL)
       const { rows } = await client.query(
          `INSERT INTO agent_sessions
           (id, zone_id, application_id, parent_id, subject_session_id, lifecycle, depth,
-           labels, max_children, ttl_seconds, metadata_json, last_heartbeat_at, heartbeat_deadline_at)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-          RETURNING id AS agent_session_id, zone_id, application_id, parent_id,
-                    subject_session_id, lifecycle,
-                    labels, status, depth, ttl_seconds, metadata_json AS metadata,
-                    spawned_at, last_heartbeat_at, heartbeat_deadline_at`,
+            labels, max_children, ttl_seconds, metadata_json, last_heartbeat_at, heartbeat_deadline_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,
+                  CASE WHEN $6 = 'service' THEN now() ELSE NULL END,
+                  CASE WHEN $6 = 'service' THEN now() + ($12::int * interval '1 second') ELSE NULL END)
+           RETURNING id AS agent_session_id, zone_id, application_id, parent_id,
+                     subject_session_id, lifecycle,
+                     labels, status, depth, ttl_seconds, metadata_json AS metadata,
+                     spawned_at, last_heartbeat_at, heartbeat_deadline_at`,
         [id, zoneId, body.application_id, body.parent_id, subjectSessionId,
-          lifecycle, depth, body.labels, MAX_CHILDREN, body.ttl_seconds, body.metadata,
-          deadline, deadline],
+          lifecycle, depth, body.labels, MAX_CHILDREN, ttlSeconds, body.metadata,
+          cfg.serviceAgentLeaseSeconds],
       )
       if (body.parent_id) {
         await client.query(
