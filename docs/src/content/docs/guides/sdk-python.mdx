@@ -48,7 +48,7 @@ See [If many agents share one managed application, can policy and audit still te
 
 ## Long-lived service agents
 
-Daemons and workers that outlive a single request use `service()` instead of `spawn()`. It returns a handle you own: keep the session alive by calling `heartbeat()` on a timer and retire it with `aclose()`. A service session is reaped by the coordinator if it stops heartbeating before its lease expires.
+Daemons and workers that outlive a single request use `service()` instead of `spawn()`. It returns a handle you own: keep the session alive by calling `heartbeat()` on a timer and retire it with `aclose()`. Each `heartbeat()` **renews the lease** — it extends the deadline the coordinator measures liveness against; it does not merely check status. A service session is reaped by the coordinator only if it stops heartbeating before its lease expires. Unlike a `task`, a `service` is **not** subject to the wall-clock TTL sweeper; its lifetime is governed entirely by the lease, so a faithfully heartbeated service runs until you close it.
 
 ```python
 svc = await caracal.service(labels=["billing-worker"])
@@ -60,6 +60,19 @@ try:
 finally:
     await svc.aclose()
 ```
+
+When the main coroutine spends long stretches awaiting a provider (a streaming response, a slow tool), renewing the lease from the same loop can starve. Pass `heartbeat_interval` to renew the lease from an independent background task, so the lease stays current even while your code is blocked on a long `await`:
+
+```python
+svc = await caracal.service(labels=["voice-worker"], heartbeat_interval=30)
+try:
+    async for chunk in stream(caracal.headers()):   # lease renews in the background
+        await handle(chunk)
+finally:
+    await svc.aclose()
+```
+
+Auto-heartbeat is opt-in (omit `heartbeat_interval` to renew manually). It renews even while your code awaits, and transient renewal errors are logged and retried on the next tick rather than crashing the worker. A renewal cannot run while the event loop is blocked synchronously (CPU-bound work with no `await`); in that case the lease correctly lapses, which is the liveness signal working as intended.
 
 
 ## Spawn a narrowed child

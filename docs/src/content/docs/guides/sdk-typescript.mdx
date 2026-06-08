@@ -53,7 +53,7 @@ See [If many agents share one managed application, can policy and audit still te
 
 ## Long-lived service agents
 
-Daemons and workers that outlive a single request use `service()` instead of `spawn()`. It returns a handle you own: keep the session alive by calling `heartbeat()` on a timer and retire it with `close()`. A service session is reaped by the coordinator if it stops heartbeating before its lease expires.
+Daemons and workers that outlive a single request use `service()` instead of `spawn()`. It returns a handle you own: keep the session alive by calling `heartbeat()` on a timer and retire it with `close()`. Each `heartbeat()` **renews the lease** — it extends the deadline the coordinator measures liveness against; it does not merely check status. A service session is reaped by the coordinator only if it stops heartbeating before its lease expires. Unlike a `task`, a `service` is **not** subject to the wall-clock TTL sweeper; its lifetime is governed entirely by the lease, so a faithfully heartbeated service runs until you close it.
 
 ```ts
 const svc = await caracal.service({ labels: ["billing-worker"] });
@@ -67,6 +67,21 @@ try {
   await svc.close();
 }
 ```
+
+When your code spends long stretches awaiting a provider (a streaming response, a slow tool), renewing the lease from the same loop can starve. Pass `heartbeatIntervalMs` to renew the lease from an independent timer, so the lease stays current even while your code is blocked on a long `await`:
+
+```ts
+const svc = await caracal.service({ labels: ["voice-worker"], heartbeatIntervalMs: 30_000 });
+try {
+  for await (const chunk of stream(await caracal.headersAsync())) {  // lease renews in the background
+    await handle(chunk);
+  }
+} finally {
+  await svc.close();
+}
+```
+
+Auto-heartbeat is opt-in (omit `heartbeatIntervalMs` to renew manually). Transient renewal errors are logged and retried on the next tick rather than crashing the worker. A renewal cannot run while the event loop is blocked synchronously; in that case the lease correctly lapses, which is the liveness signal working as intended.
 
 ## Spawn a narrowed child
 
