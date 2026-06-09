@@ -265,6 +265,10 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
       if (typeof auth !== 'string' || auth.length !== expected.length || !timingSafeEqual(Buffer.from(auth), Buffer.from(expected))) {
         return reply.code(401).send({ error: 'unauthorized' })
       }
+    } else if (isPublished()) {
+      // Published builds bind to 0.0.0.0; refuse to expose operational metrics
+      // on the network unless an operator has provisioned METRICS_BEARER.
+      return reply.code(401).send({ error: 'unauthorized' })
     }
     const health = await withTimeout(queryOutboxHealth(db), READY_CHECK_TIMEOUT_MS, 'metrics outbox check timed out')
     reply.type('text/plain; version=0.0.4')

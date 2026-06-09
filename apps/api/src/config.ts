@@ -6,7 +6,7 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { loadEnvFile } from 'node:process'
-import { getenv, mustGetenv, intEnv, boolEnv, resolveFileSecrets } from '@caracalai/core'
+import { getenv, mustGetenv, intEnv, boolEnv, resolveFileSecrets, isPublished } from '@caracalai/core'
 
 function loadEnvChain(): void {
   const seen = new Set<string>()
@@ -133,7 +133,7 @@ export function loadConfig(): Config {
     maxResourcesPerZone: intEnv('API_MAX_RESOURCES_PER_ZONE', 100_000, 0),
     readyOutboxDeadMax: intEnv('API_READY_OUTBOX_DEAD_MAX', 0, 0),
     trustProxy: boolEnv('TRUST_PROXY', false),
-    enableDocs: boolEnv('API_ENABLE_DOCS', true),
+    enableDocs: boolEnv('API_ENABLE_DOCS', !isPublished()),
     metricsBearer: process.env.METRICS_BEARER ?? null,
   }
 }

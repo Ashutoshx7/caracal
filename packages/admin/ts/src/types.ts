@@ -474,10 +474,6 @@ export interface StepUpChallenge {
   approver_subject_id: string | null
 }
 
-export interface StepUpChallengeSatisfyInput {
-  approver_subject_id: string
-}
-
 export interface StepUpChallengeSatisfaction {
   id: string
   satisfied_at: string
