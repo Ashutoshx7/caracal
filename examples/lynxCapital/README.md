@@ -1,61 +1,64 @@
 # Lynx Capital
 
-A production-grade reference for running a multi-tenant SaaS platform on Caracal. Lynx
-Capital is a wealth-management platform that serves many customer firms (tenants). Each
-tenant runs Portfolio, Research, and Compliance agents over shared domain services, and
-every tenant is isolated from every other by identity, grants, and policy.
+A production-grade reference for running a SaaS platform on Caracal the way Caracal is meant
+to be used. Lynx Capital is a wealth-management platform that serves many customer firms.
+Each customer runs Portfolio, Research, and Compliance agents over shared domain services,
+and every customer is isolated from every other by its subject identity and the policy set.
 
-This example is the primary reference implementation for modelling tenants, applications,
-agents, resources, policies, and the SDK flows that tie them together.
+This example is the primary reference implementation for modelling customers, the one managed
+application, least-privilege agents, resources, policies, and the SDK flows that tie them
+together.
 
 ## Architecture
 
 ```
 Lynx Capital platform (one zone)
 │
-├── lynx-platform              managed application — the durable platform runtime credential
-│     └── agent sessions       spawned per tenant + role, labelled tenant:<id> + capabilities
+├── lynx-platform              one managed application — the platform runtime credential
+│     └── agent sessions       spawned per customer + role, least-privilege, metadata={customer_id}
+│
+├── credential providers       pf-mandate | rs-mandate | cp-mandate (caracal_mandate)
 │
 ├── resources
 │     ├── resource://portfolio   portfolio:read | portfolio:write | portfolio:admin
 │     ├── resource://research     research:read  | research:write
 │     └── resource://compliance   compliance:review | compliance:admin
 │
-├── policy set "lynx-multitenant"   00-base + 11 scenario policies (policies/)
+├── policy set "lynx-platform"   00-base + 11 scenario policies (policies/)
 │
-└── tenants
-      ├── aurora    DCR application tenant-aurora    → portfolio / research / compliance agents
-      └── borealis  DCR application tenant-borealis  → portfolio / research / compliance agents
+└── customers (subjects)
+      ├── aurora    customer:aurora    plan=enterprise  → portfolio / research / compliance agents
+      └── borealis  customer:borealis  plan=growth      → portfolio / research / compliance agents
 ```
 
 The single source of truth for this model is [`config/tenancy.yaml`](config/tenancy.yaml);
 the capability-to-scope mapping lives in [`policies/manifest.json`](policies/manifest.json).
 
-### Managed application vs DCR applications
+### One zone, one managed application, customers as subjects
 
-| | Managed application (`lynx-platform`) | DCR application (`tenant-<id>`) |
-| --- | --- | --- |
-| Purpose | Durable platform runtime credential | Per-tenant isolated credential boundary |
-| Lifetime | Long-lived | Auto-expiring (`expires-in`, ≤ 3600s) |
-| Count | One for the whole platform | One per customer tenant |
-| Spawns agents | Yes — fan-out of labelled agent sessions | No — leaf/single-session |
-| Use it when | The platform itself acts and orchestrates | A tenant needs an independent, revocable identity |
+Caracal multi-tenancy does **not** mean one application per customer. It means one zone and
+one managed application, with **each customer modelled as a subject**. Every customer agent
+is an agent session spawned under `lynx-platform`, correlated to the customer through the
+subject (and `spawn` metadata) and narrowed to the role's least-privilege scopes. This keeps
+one durable credential while giving every customer/role its own least-privilege session and
+audit trail.
 
-Per-tenant **agents** are not separate applications. They are agent sessions spawned under
-`lynx-platform`, carrying a `tenant:<id>` binding label plus the role's capability labels.
-This keeps one durable credential while giving every tenant/role its own least-privilege,
-independently revocable session and audit trail.
+Dynamic Client Registration (DCR) is deliberately **not** used here. DCR is for
+externally-launched, isolated, auto-expiring identities that bind to a single agent session —
+not for an operator fanning out its own in-process agents. Using customers-as-subjects is the
+correct, simpler model and is what Caracal optimises for.
 
-### Tenant isolation
+### Customer isolation
 
-Three independent layers must all agree before any call succeeds:
-
-1. **Grants** bind each tenant's subject (`customer:<id>`) only to its own resource scopes.
-   A cross-tenant request has no grant and is rejected before policy runs.
-2. **Labels** stamp every agent session with `tenant:<id>`; the policy library requires the
-   label tenant to match the request's tenant claim.
-3. **Policy** (`policies/00-base.rego`) is default-deny and only allows scopes that a loaded
-   capability explicitly contributes for the matching tenant.
+- **Subject** — each customer is a stable subject; an agent only ever acts for the customer
+  it was spawned for, and the upstream serves only that subject's data. Isolation is
+  structural, not a forgeable label.
+- **Policy** — [`policies/00-base.rego`](policies/00-base.rego) is default-deny, denies any
+  customer-scoped request that carries no customer subject, and gates premium capabilities on
+  the customer's `plan` claim, so the same role yields different authority per customer.
+- **Least privilege** — every agent is spawned with `Grant.narrow(...)` over the role's
+  scopes, capped to one delegation hop, a short TTL, and an explicit call budget. Effective
+  authority is the intersection of policy, grant, resource, and delegation.
 
 ## Quick start (full platform)
 
@@ -69,29 +72,33 @@ python -m pip install --upgrade pip
 pip install -e ".[dev]"
 ```
 
-### 2. Configure the environment
+### 2. Configure the workload environment
 
 ```bash
 cp -n .env.example .env
 ```
 
-`.env` is grouped into: deployment environment + service endpoints, the managed platform
-application, the control automation key, the admin token, the three domain resource
-upstreams, and the model key. Fill in the values you have; provisioning produces the rest.
-See [Environment model](#environment-model).
+The workload `.env` holds only the Caracal variables the application reads at runtime.
+Prefer a Console-generated `caracal.toml` profile (`CARACAL_CONFIG`); otherwise set the
+zone, the managed application credential, and `CARACAL_RESOURCES`. See
+[Environment model](#environment-model).
 
 ### 3. Provision the platform
 
-Provisioning is idempotent and reads `config/tenancy.yaml` + `policies/`:
+Provisioning is driven by a **scoped Control key** created once in Console, sourced from a
+separate operator file so its credentials never mix with the workload `.env`:
 
 ```bash
+cp -n .env.provision.example .env.provision   # fill in CONTROL_CLIENT_ID / _SECRET
+. .env.provision
 python scripts/provision.py
 ```
 
-It creates the managed application, the three resources, authors the policy library and
-activates the `lynx-multitenant` policy set, registers a DCR application per tenant, and
-binds each tenant's grants. One-time secrets are written to `config/provisioned.json`
-(keep it untracked). Tear down with `python scripts/teardown.py`.
+It reads `config/tenancy.yaml` + `policies/` and idempotently registers the credential
+providers and the three resources, authors the policy library, and activates the
+`lynx-platform` policy set. Tear down with `python scripts/teardown.py`. The managed
+application itself is created once in Console (its secret is shown once); provisioning never
+handles runtime secrets or grants — the policy set is the day-to-day authorization knob.
 
 ### 4. Run the SDK reference
 
@@ -100,26 +107,26 @@ python scripts/reference.py
 ```
 
 [`scripts/reference.py`](scripts/reference.py) is the canonical SDK walkthrough: it prints
-the full tenant/agent/scope plan offline, and when Caracal is configured it authenticates
-as the managed platform, spawns each tenant's role agents with narrowed grants, exercises
-gateway resource authorization, and demonstrates delegated least-privilege fan-out — with
-redacted secrets and fail-closed error handling.
+the full customer/agent/scope plan offline, and when Caracal is configured it connects as the
+managed application, spawns each customer's role agents with narrowed grants, exercises
+gateway resource authorization with `fetch()`, and demonstrates delegated least-privilege
+fan-out — with redacted secrets and fail-closed error handling.
 
 ## When to use what
 
-- **Onboard a tenant**: add a tenant block to `config/tenancy.yaml` (id, name, DCR app name,
-  subject, agents) and re-run `scripts/provision.py`. The new tenant gets its own DCR
-  application, grants, and agents; existing tenants are untouched.
+- **Onboard a customer**: add a customer block to `config/tenancy.yaml` (id, name, subject,
+  plan, agents). No new application, grant, or DCR registration is needed — the platform
+  spawns its agents under the one managed application against the existing policy set.
 - **Add a capability/policy**: drop a `*.rego` into `policies/`, register it in
   `policies/manifest.json` (capability → resource → grants) and map it to a role. Re-run
   provisioning to author and activate the new policy-set version.
-- **Add a resource**: add it under `resources:` in `config/tenancy.yaml` with its scopes and
-  an `upstreamEnv`, then point that env var at the upstream per environment.
+- **Add a resource**: add a provider and a resource under `config/tenancy.yaml` with its
+  scopes and an `upstreamEnv`, then point that env var at the upstream per environment.
 
 ## Policy library
 
 [`policies/`](policies/) is an importable, OPA-tested library. `00-base.rego` provides the
-default-deny decision contract and tenant isolation; eleven scenario policies
+default-deny decision contract and per-customer subject scoping; eleven scenario policies
 (`portfolio-read/write/admin`, `research-read/write`, `compliance-review/admin`,
 `customer-admin`, `auditor`, `delegated-advisor`, `emergency-access`) each contribute the
 scopes their capability allows. Full documentation, expected access behavior, and testing
@@ -136,35 +143,41 @@ Application code uses one seam, [`app/caracal.py`](app/caracal.py):
 ```python
 from app import caracal
 
-# Spawn a tenant's role agent under the managed platform application: tenant + capability
-# labels, a delegation edge narrowed to the role's least-privilege scopes.
-async with caracal.spawn_agent("aurora", "portfolio") as ctx:
-    response = caracal.gateway_call("portfolio", "read", {"account": "..."})
-
-# Authenticate as a tenant's isolated DCR application.
-client = caracal.tenant_client(application_id, client_secret)
+# Spawn one customer's role agent under the one managed application: capability labels, the
+# customer in metadata, and a delegation edge narrowed to the role's least-privilege scopes.
+async with caracal.spawn_customer_agent("aurora", "portfolio") as ctx:
+    response = await caracal.fetch("portfolio", "/api/read", method="GET")
 ```
 
-`spawn_agent` derives labels and scopes from `config/tenancy.yaml` + `policies/manifest.json`
-via [`app/tenancy.py`](app/tenancy.py), so the SDK, provisioning, and policy all stay
-consistent with a single model.
+`spawn_customer_agent` derives labels and scopes from `config/tenancy.yaml` +
+`policies/manifest.json` via [`app/tenancy.py`](app/tenancy.py), so the SDK, provisioning, and
+policy all stay consistent with a single model. The client itself is built with
+`Caracal.connect()`, which resolves the zone, credential, resources, and every service URL
+from the Console profile or the workload environment — the application hardcodes no endpoints.
 
 ## Environment model
 
+The workload application reads only Caracal variables; the operator provisioning script reads
+only its own. The two never mix.
+
+**Workload (`.env`)**
+
 | Variable | Purpose |
 | --- | --- |
-| `CARACAL_ENVIRONMENT` | `local` / `staging` / `production` selector. |
-| `CARACAL_ZONE_ID` | The platform's isolation boundary. |
-| `CARACAL_STS_URL` / `CARACAL_COORDINATOR_URL` / `CARACAL_GATEWAY_URL` | Runtime service endpoints. |
-| `CARACAL_CONTROL_URL` / `CARACAL_API_URL` | Provisioning (control catalog) and admin (grants) endpoints. |
-| `CARACAL_APPLICATION_ID` / `CARACAL_APP_CLIENT_SECRET` | The managed platform application credential. |
-| `CONTROL_CLIENT_ID` / `CONTROL_CLIENT_SECRET` / `CONTROL_AUDIENCE` | Control automation key used by `scripts/provision.py`. |
-| `CARACAL_ADMIN_TOKEN` | Authorizes resource-grant creation through the Admin API. |
-| `LYNX_RESOURCE_PORTFOLIO_URL` / `_RESEARCH_URL` / `_COMPLIANCE_URL` | Domain resource upstreams per environment. |
+| `CARACAL_CONFIG` | Path to the Console `caracal.toml` profile (preferred; resolves everything below). |
+| `CARACAL_ZONE_ID` | The platform's isolation boundary (fallback when no profile). |
+| `CARACAL_APPLICATION_ID` / `CARACAL_APP_CLIENT_SECRET[_FILE]` | The one managed application credential. |
+| `CARACAL_RESOURCES` | `slug=upstream` pairs for the resources the app may route to. |
+| `CARACAL_STS_URL` / `CARACAL_GATEWAY_URL` / `CARACAL_COORDINATOR_URL` | Optional service overrides. |
 | `OPENAI_API_KEY` | Model provider key. |
 
-Per-tenant DCR secrets are produced by provisioning into `config/provisioned.json`; they are
-never placed in `.env`.
+**Operator (`.env.provision`, sourced only when provisioning)**
+
+| Variable | Purpose |
+| --- | --- |
+| `CONTROL_CLIENT_ID` / `CONTROL_CLIENT_SECRET` | The scoped Control key issued by Console. |
+| `STS_URL` / `CONTROL_URL` / `CONTROL_AUDIENCE` / `CONTROL_SCOPES` / `CONTROL_TTL_SECONDS` | Optional Control overrides. |
+| `LYNX_RESOURCE_PORTFOLIO_URL` / `_RESEARCH_URL` / `_COMPLIANCE_URL` | Resource upstreams registered at provisioning time. |
 
 ## Testing
 
@@ -175,36 +188,36 @@ python -m pytest -q                          # full example suite
 ```
 
 The identity-layer tests cover the policy decision suite, the provisioning-plan builders
-(managed/DCR/resource/policy commands, per-tenant grants), and the multi-tenant setup
-surface. They run offline — no live control plane required.
+(provider/resource/policy commands), and the setup surface. They run offline — no live
+control plane required.
 
 ## Production-readiness review
 
 - **Security / authorization boundaries** — default-deny base policy; every requested scope
   must be explicitly contributed by a loaded capability. No allow-all baseline.
-- **Tenant isolation** — enforced redundantly by grants, session labels, and policy; a
-  cross-tenant request fails at the grant layer before policy and again in policy.
-- **Privilege escalation** — agents are spawned with grants narrowed to the role's scopes;
-  `emergency-access` requires a resolved step-up challenge; `delegated-advisor` intersects
-  with the delegation edge's scopes.
-- **Secret management** — one-time secrets land only in `config/provisioned.json`; the SDK
-  reference redacts tokens; the gateway holds upstream provider credentials so application
-  code never sees them.
-- **DCR boundaries** — per-tenant applications auto-expire (`expires-in ≤ 3600s`) and are
-  independently revocable, limiting blast radius.
-- **SDK ergonomics** — a single `app/caracal.py` seam; model-driven labels/scopes keep the
-  SDK, provisioning, and policy in lock-step.
-- **Maintainability** — onboarding a tenant or capability is a config/manifest edit plus a
-  re-run of provisioning; no code changes.
+- **Customer isolation** — each customer is a subject; agents only act for the customer they
+  were spawned for, and the base policy denies customer-scoped requests with no subject.
+- **Privilege escalation** — agents are spawned with `Grant.narrow` over the role's scopes,
+  capped to one hop, a short TTL, and a call budget; `emergency-access` requires a resolved
+  step-up; `delegated-advisor` intersects with the delegation edge's scopes; admin and
+  break-glass capabilities require a premium plan.
+- **Secret management** — the workload reads its credential from a profile or
+  `CARACAL_APP_CLIENT_SECRET_FILE`; the gateway holds upstream provider credentials so
+  application code never sees them; the SDK reference redacts tokens.
+- **Least authority** — provisioning uses a scoped, short-TTL, zone-bound Control key with no
+  runtime data authority; there is no admin token in the workload.
+- **SDK ergonomics** — a single `app/caracal.py` seam built on `Caracal.connect()`;
+  model-driven labels/scopes keep the SDK, provisioning, and policy in lock-step.
+- **Maintainability** — onboarding a customer or capability is a config/manifest edit; no code
+  changes.
 
 ---
 
 ## Bundled demo workload (optional)
 
-The repository also ships a FastAPI + LangGraph swarm that processes a simulated global
-payout cycle against a local mock provider network under `_mock/`. It is an optional
-workload for exercising the runtime and is independent of the multi-tenant identity model
-above.
+The repository also ships a FastAPI + LangGraph swarm that processes a simulated global payout
+cycle against a local mock provider network under `_mock/`. It is an optional workload for
+exercising the runtime and is independent of the identity model above.
 
 ```bash
 docker compose -f _mock/docker-compose.yml up -d --build --wait   # start mock providers
@@ -213,5 +226,5 @@ docker compose -f _mock/docker-compose.yml down                   # tear down
 ```
 
 Open `http://localhost:8000`; the landing page leads through the overview pages before the
-guided `/setup` wizard, which teaches the managed-application, policy-library, and per-tenant
-DCR flow described here.
+guided `/setup` wizard, which teaches the one-zone, managed-application, policy-library, and
+customers-as-subjects flow described here.
