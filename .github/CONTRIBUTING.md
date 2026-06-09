@@ -32,7 +32,7 @@
 
 ```bash
 git clone https://github.com/Garudex-Labs/caracal.git && cd caracal
-pnpm install
+pnpm run setup
 pnpm caracal up                     # Build and start the full stack
 
 # Essential Commands
@@ -41,6 +41,8 @@ pnpm caracal status                 # Check health status of all services
 pnpm caracal down [--help]          # Stop the stack
 pnpm caracal purge                  # Remove stack, volumes, logs, cache, and installed data
 ```
+
+`pnpm run setup` installs Node workspace packages, downloads Go module dependencies, creates `.venv`, installs Python test/style dependencies, and installs local Python packages in editable mode.
 
 <details>
 <summary>Drop the `pnpm` prefix</summary>
@@ -83,6 +85,7 @@ Clients authenticate by exchanging the Control key credentials for a token whose
 ## Tests
 
 ```bash
+pnpm run style                               # changed-file style gate
 pnpm test                                    # full suite (ts + go + py)
 pnpm run test:typescript | test:go | test:python
 ```
@@ -90,9 +93,21 @@ pnpm run test:typescript | test:go | test:python
 `scripts/testCi.sh` mirrors `.github/workflows/test.yml` locally:
 
 ```bash
-scripts/testCi.sh                # full suite (ts + go + py + docs)
-scripts/testCi.sh --smoke | --go | --py | --ts
+scripts/testCi.sh                # full suite (style + ts + go + py + docs)
+scripts/testCi.sh --smoke | --style | --go | --py | --ts
 ```
+
+## Coding Style
+
+Caracal uses the official language style conventions for its primary implementation languages:
+
+| Language | Style guide | Automatic enforcement |
+| --- | --- | --- |
+| TypeScript and JavaScript | TypeScript Handbook style with the repository Prettier profile in `.prettierrc.json` | `pnpm run style` runs Prettier on changed TS/JS source files. |
+| Go | Effective Go and `gofmt` formatting | `pnpm run style` runs `gofmt -l` on changed Go source files. |
+| Python | PEP 8 layout as formatted by Ruff | `pnpm run style` runs `ruff format --check` on changed Python source files. |
+
+Pull requests run the same style gate automatically for changed primary-language files. Use `pnpm run style:fix` to format changed files and `pnpm run style:all` before broad cleanup work.
 
 ## Submitting Changes
 
@@ -104,6 +119,7 @@ scripts/testCi.sh --smoke | --go | --py | --ts
   - `pnpm caracal console`
   - `pnpm caracal down`
 4. Ensure tests pass:
+  - `pnpm run style`
   - `pnpm test`
   - `scripts/testCi.sh --smoke` (post-commit parity)
   - `scripts/testCi.sh` (daily-check parity)
@@ -129,6 +145,10 @@ pnpm caracal down                                          # Stop dev before tes
 ```
 
 `build:release` stamps dev binaries and local `localhost/caracal-{svc}:<base>-dev.sha<sha>` images. Do not use dev builds downstream.
+
+### Native build flags
+
+Go-based container builds preserve debug information by default and accept standard build arguments for native toolchains: `CGO_ENABLED`, `CC`, `CFLAGS`, `CXX`, `CXXFLAGS`, `LDFLAGS`, `GOFLAGS`, `GO_BUILDFLAGS`, and `GO_LDFLAGS`. The Dockerfiles add `-mod=readonly` and `-trimpath`; pass linker options through `GO_LDFLAGS` when a release or diagnostic build needs them.
 
 ### Release flow
 
