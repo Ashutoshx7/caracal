@@ -213,12 +213,16 @@ def _overview_ctx(request: Request, key: str) -> dict:
 
 
 CONTROL_SCOPES = [
-    "control:identity-provider:read",
-    "control:identity-provider:write",
+    "control:app:read",
+    "control:app:write",
     "control:resource:read",
     "control:resource:write",
+    "control:identity-provider:read",
+    "control:identity-provider:write",
     "control:policy:read",
     "control:policy:write",
+    "control:policy-set:read",
+    "control:policy-set:write",
 ]
 
 
@@ -229,45 +233,54 @@ def _env(name: str) -> str:
 def _caracal_steps() -> list[dict[str, object]]:
     cfg = get_config()
     zone = _env("CARACAL_ZONE_ID") or "<placeholder-zone-id>"
-    application = _env("CARACAL_APPLICATION_ID") or "<placeholder-application-id>"
+    application = _env("CARACAL_APPLICATION_ID") or "<placeholder-managed-application-id>"
     return [
         {
             "step": "01",
-            "title": "Enter the zone fields",
+            "title": "Create the zone",
             "path": "Go to Caracal Console > Zones > New",
             "consoleFields": [
                 {"label": "Name", "value": f"\"{cfg.company}\""},
-                {"label": "Dynamic clients", "value": "[ ] leave unchecked"},
+                {"label": "Dynamic clients", "value": "[x] enabled (required for per-tenant DCR apps)"},
                 {"label": "Zone ID", "value": zone},
             ],
-            "why": "The zone is the boundary that owns the application, policy, and provider resources. Lynx spawns its run agents under one managed application, so dynamic client registration is not needed.",
+            "why": "The zone is the isolation boundary that owns the managed platform application, the domain resources, the policy set, and every per-tenant DCR application. Dynamic client registration is enabled so each customer tenant gets its own auto-expiring application.",
             "field": "CARACAL_ZONE_ID",
             "value": zone,
         },
         {
             "step": "02",
-            "title": "Enter the application fields",
+            "title": "Create the managed platform application",
             "path": f"Go to Applications > New in the \"{cfg.company}\" zone",
             "consoleFields": [
-                {"label": "Name", "value": f"\"{cfg.company}\""},
+                {"label": "Name", "value": "\"lynx-platform\""},
                 {"label": "Registration method", "value": "managed"},
             ],
-            "why": "After saving, Console generates the Application ID and a one-time client secret. Copy them into CARACAL_APPLICATION_ID and CARACAL_APP_CLIENT_SECRET; the secret is shown once and cannot be retrieved later. Lynx uses this managed application for STS exchange and gateway access, and spawns each run as an agent session under it.",
+            "why": "This durable managed application is the platform runtime credential. Every tenant's Portfolio, Research, and Compliance agents are spawned as labelled sessions under it. Copy the generated Application ID and one-time secret into CARACAL_APPLICATION_ID and CARACAL_APP_CLIENT_SECRET; the secret is shown once.",
             "field": "CARACAL_APPLICATION_ID",
             "value": application,
         },
         {
             "step": "03",
-            "title": "Enter the policy fields",
-            "path": "Go to Policies > New",
+            "title": "Import the policy library and activate the policy set",
+            "path": "Go to Policies > Import, then Policy sets > Activate",
             "consoleFields": [
-                {"label": "Name", "value": "\"Lynx Capital baseline\""},
-                {"label": "Target application", "value": "\"Lynx Capital\""},
-                {"label": "Target resources", "value": "Lynx provider resources"},
+                {"label": "Library", "value": "examples/lynxCapital/policies"},
+                {"label": "Policy set", "value": "\"lynx-multitenant\""},
+                {"label": "Activate", "value": "latest version"},
             ],
-            "why": "The gateway evaluates this policy on every provider call Lynx makes.",
-            "field": "CARACAL_APP_CLIENT_SECRET",
-            "value": "<placeholder-application-secret>",
+            "why": "The library's 00-base policy plus eleven scenario policies enforce per-tenant isolation, role capabilities, delegation, and step-up. The active policy set is evaluated on every token exchange and gateway call.",
+        },
+        {
+            "step": "04",
+            "title": "Register a DCR application per tenant",
+            "path": "Control > app dcr — once per customer tenant",
+            "consoleFields": [
+                {"label": "Applications", "value": "tenant-aurora, tenant-borealis"},
+                {"label": "Registration method", "value": "dcr"},
+                {"label": "Expires in", "value": "3600s"},
+            ],
+            "why": "Each customer tenant gets its own dynamically registered, auto-expiring, independently revocable application — the per-tenant credential boundary. The one-time secrets are written to config/provisioned.json.",
         },
     ]
 
@@ -299,7 +312,7 @@ def _setup_ctx(request: Request) -> dict:
         "setup_automate": _automate_plan(),
         "setup_env": {
             "zone": _env("CARACAL_ZONE_ID") or "<placeholder-zone-id>",
-            "application": _env("CARACAL_APPLICATION_ID") or "<placeholder-application-id>",
+            "application": _env("CARACAL_APPLICATION_ID") or "<placeholder-managed-application-id>",
             "applicationSecret": "<placeholder-application-secret>",
             "controlClient": "<placeholder-control-client-id>",
             "controlSecret": "<placeholder-control-client-secret>",
