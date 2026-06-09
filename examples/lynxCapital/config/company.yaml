@@ -168,31 +168,31 @@ agentLayers:
     ephemeral: false
   - id: "invoice-intake"
     label: "Invoice Intake"
-    perRegion: 6
+    perRegion: 2
     ephemeral: false
   - id: "ledger-match"
     label: "Ledger Match"
-    perRegion: 4
+    perRegion: 2
     ephemeral: false
   - id: "policy-check"
     label: "Policy Check"
-    perRegion: 5
+    perRegion: 2
     ephemeral: false
   - id: "route-optimization"
     label: "Route Optimization"
-    perRegion: 3
+    perRegion: 1
     ephemeral: false
   - id: "payment-execution"
     label: "Payment Execution"
-    perRegion: 720
+    perRegion: 4
     ephemeral: true
   - id: "audit"
     label: "Audit"
-    perRegion: 2
+    perRegion: 1
     ephemeral: false
   - id: "exception"
     label: "Exception"
-    perRegion: 80
+    perRegion: 2
     ephemeral: true
 
 workflows:

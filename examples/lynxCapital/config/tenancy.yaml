@@ -1,80 +1,84 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Identity model for the Lynx Capital platform: one managed application, the upstream
-# credential providers and domain resources the Gateway protects, and the customers the
-# platform serves. Customers are Caracal subjects, not separate applications; every
-# customer agent is an agent session spawned under the one managed application and
-# narrowed to least privilege. The capability-to-scope mapping lives in policies/manifest.json.
+# Identity model for the Lynx Capital platform: one managed application per domain service,
+# the upstream credential provider and domain resource each service protects, and the
+# customers the platform serves. Each service is its own trust boundary — a managed
+# application that can reach only its own resource — so a portfolio agent can never obtain
+# research or compliance authority. Customers are Caracal subjects, not applications; every
+# customer agent is an agent session spawned under one service application and narrowed to
+# least privilege. The capability-to-scope mapping lives in policies/manifest.json.
 
-# The single durable managed application that backs the Lynx Capital platform runtime.
-# One managed application serves every customer; per-customer attribution comes from the
-# subject an agent is spawned for, never from a separate credential.
-platform:
-  applicationName: "lynx-platform"
-  controlKeyName: "lynx-platform-control"
+# One managed application per domain service. Each application is a durable, Console-created
+# identity that backs exactly one service, owns exactly one credential provider and one
+# resource, and spawns only that service's agents. Running each service as its own
+# application is what makes the boundary real: the gateway never lets one application's
+# mandate select another application's resource.
+applications:
+  - id: "portfolio"
+    applicationName: "lynx-portfolio"
+    controlKeyName: "lynx-portfolio-control"
+    provider:
+      identifier: "pf-mandate"
+      name: "Portfolio Mandate"
+      kind: "caracal_mandate"
+      config: {}
+    resource:
+      identifier: "resource://portfolio"
+      resourceId: "portfolio"
+      name: "Portfolio Service"
+      scopes: ["portfolio:read", "portfolio:write", "portfolio:admin"]
+      upstreamEnv: "LYNX_RESOURCE_PORTFOLIO_URL"
+    agents: ["portfolio", "auditor"]
+  - id: "research"
+    applicationName: "lynx-research"
+    controlKeyName: "lynx-research-control"
+    provider:
+      identifier: "rs-mandate"
+      name: "Research Mandate"
+      kind: "caracal_mandate"
+      config: {}
+    resource:
+      identifier: "resource://research"
+      resourceId: "research"
+      name: "Research Service"
+      scopes: ["research:read", "research:write"]
+      upstreamEnv: "LYNX_RESOURCE_RESEARCH_URL"
+    agents: ["research", "auditor"]
+  - id: "compliance"
+    applicationName: "lynx-compliance"
+    controlKeyName: "lynx-compliance-control"
+    provider:
+      identifier: "cp-mandate"
+      name: "Compliance Mandate"
+      kind: "caracal_mandate"
+      config: {}
+    resource:
+      identifier: "resource://compliance"
+      resourceId: "compliance"
+      name: "Compliance Service"
+      scopes: ["compliance:review", "compliance:admin"]
+      upstreamEnv: "LYNX_RESOURCE_COMPLIANCE_URL"
+    agents: ["compliance", "auditor"]
 
-# How the Gateway authenticates to each upstream domain service. caracal_mandate forwards
-# the agent's own Caracal mandate to the upstream, so the agent never holds a third-party
-# secret and the upstream verifies authority itself. One provider backs one resource here,
-# but a provider is reusable across many resources.
-providers:
-  - identifier: "pf-mandate"
-    name: "Portfolio Mandate"
-    kind: "caracal_mandate"
-    config: {}
-  - identifier: "rs-mandate"
-    name: "Research Mandate"
-    kind: "caracal_mandate"
-    config: {}
-  - identifier: "cp-mandate"
-    name: "Compliance Mandate"
-    kind: "caracal_mandate"
-    config: {}
-
-# Domain services the platform protects. Each becomes a Caracal resource with
-# action-oriented scopes and a credential provider. Upstream URLs are read from the named
-# environment variable so the same identifiers point at the right service per deployment.
-resources:
-  - identifier: "resource://portfolio"
-    resourceId: "portfolio"
-    name: "Portfolio Service"
-    scopes: ["portfolio:read", "portfolio:write", "portfolio:admin"]
-    upstreamEnv: "LYNX_RESOURCE_PORTFOLIO_URL"
-    providerRef: "pf-mandate"
-  - identifier: "resource://research"
-    resourceId: "research"
-    name: "Research Service"
-    scopes: ["research:read", "research:write"]
-    upstreamEnv: "LYNX_RESOURCE_RESEARCH_URL"
-    providerRef: "rs-mandate"
-  - identifier: "resource://compliance"
-    resourceId: "compliance"
-    name: "Compliance Service"
-    scopes: ["compliance:review", "compliance:admin"]
-    upstreamEnv: "LYNX_RESOURCE_COMPLIANCE_URL"
-    providerRef: "cp-mandate"
-
-# The policy set authored from the policies/ library and activated for the zone. The
-# policy set is the day-to-day authorization knob; it differentiates customers by their
-# subject claims (for example a plan entitlement) and roles by their capability labels.
+# The policy set authored from the policies/ library and activated for the zone. The policy
+# set is the day-to-day authorization knob; it differentiates customers by their subject
+# claims (for example a plan entitlement) and agents by their capability labels.
 policySet:
   name: "lynx-platform"
   description: "Lynx Capital authorization: role capabilities, per-customer entitlements, delegation, and step-up."
   schemaVersion: "2026-05-20"
 
-# The customers the platform serves. Each customer is a stable Caracal subject; its plan
-# is a subject claim the policy set keys premium capabilities on. A customer's agents are
-# spawned under the one managed application with metadata={"customer_id": <id>} and the
-# role's capability labels, narrowed to the role's least-privilege scopes.
+# The customers the platform serves. Each customer is a stable Caracal subject; its plan is a
+# subject claim the policy set keys premium capabilities on. A customer's agents are spawned
+# under the relevant service application with metadata={"customer_id": <id>} and the role's
+# capability labels, narrowed to that application's resource scopes.
 customers:
   - id: "aurora"
     name: "Aurora Wealth"
     subject: "customer:aurora"
     plan: "enterprise"
-    agents: ["portfolio", "research", "compliance"]
   - id: "borealis"
     name: "Borealis Advisors"
     subject: "customer:borealis"
     plan: "growth"
-    agents: ["portfolio", "research", "compliance"]

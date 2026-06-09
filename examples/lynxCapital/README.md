@@ -5,43 +5,41 @@ to be used. Lynx Capital is a wealth-management platform that serves many custom
 Each customer runs Portfolio, Research, and Compliance agents over shared domain services,
 and every customer is isolated from every other by its subject identity and the policy set.
 
-This example is the primary reference implementation for modelling customers, the one managed
-application, least-privilege agents, resources, policies, and the SDK flows that tie them
-together.
+This example is the primary reference implementation for modelling customers, one managed
+application per service, least-privilege agents, resources, policies, and the SDK flows that
+tie them together.
 
 ## Architecture
 
 ```
 Lynx Capital platform (one zone)
 │
-├── lynx-platform              one managed application — the platform runtime credential
-│     └── agent sessions       spawned per customer + role, least-privilege, metadata={customer_id}
-│
-├── credential providers       pf-mandate | rs-mandate | cp-mandate (caracal_mandate)
-│
-├── resources
-│     ├── resource://portfolio   portfolio:read | portfolio:write | portfolio:admin
-│     ├── resource://research     research:read  | research:write
-│     └── resource://compliance   compliance:review | compliance:admin
+├── service applications (managed)     one application = one trust boundary per service
+│     ├── lynx-portfolio   → resource://portfolio    portfolio:read|write|admin   (pf-mandate)
+│     ├── lynx-research    → resource://research      research:read|write          (rs-mandate)
+│     └── lynx-compliance  → resource://compliance    compliance:review|admin      (cp-mandate)
+│           └── agent sessions   spawned per customer + role, least-privilege, metadata={customer_id}
 │
 ├── policy set "lynx-platform"   00-base + 11 scenario policies (policies/)
 │
 └── customers (subjects)
-      ├── aurora    customer:aurora    plan=enterprise  → portfolio / research / compliance agents
-      └── borealis  customer:borealis  plan=growth      → portfolio / research / compliance agents
+      ├── aurora    customer:aurora    plan=enterprise
+      └── borealis  customer:borealis  plan=growth
 ```
 
 The single source of truth for this model is [`config/tenancy.yaml`](config/tenancy.yaml);
 the capability-to-scope mapping lives in [`policies/manifest.json`](policies/manifest.json).
 
-### One zone, one managed application, customers as subjects
+### One zone, one application per service, customers as subjects
 
-Caracal multi-tenancy does **not** mean one application per customer. It means one zone and
-one managed application, with **each customer modelled as a subject**. Every customer agent
-is an agent session spawned under `lynx-platform`, correlated to the customer through the
-subject (and `spawn` metadata) and narrowed to the role's least-privilege scopes. This keeps
-one durable credential while giving every customer/role its own least-privilege session and
-audit trail.
+Caracal multi-tenancy does **not** mean one application per customer. It means one zone with
+**one managed application per domain service** — its own trust boundary that can reach only
+its own resource — and **each customer modelled as a subject**. Every customer agent is an
+agent session spawned under the relevant service application (`lynx-portfolio`,
+`lynx-research`, or `lynx-compliance`), correlated to the customer through the subject (and
+`spawn` metadata) and narrowed to that application's resource scopes. A portfolio agent can
+therefore never obtain research or compliance authority, even when its role is cross-domain,
+and every customer/role gets its own least-privilege session and audit trail.
 
 Dynamic Client Registration (DCR) is deliberately **not** used here. DCR is for
 externally-launched, isolated, auto-expiring identities that bind to a single agent session —
@@ -94,11 +92,12 @@ cp -n .env.provision.example .env.provision   # fill in CONTROL_CLIENT_ID / _SEC
 python scripts/provision.py
 ```
 
-It reads `config/tenancy.yaml` + `policies/` and idempotently registers the credential
-providers and the three resources, authors the policy library, and activates the
-`lynx-platform` policy set. Tear down with `python scripts/teardown.py`. The managed
-application itself is created once in Console (its secret is shown once); provisioning never
-handles runtime secrets or grants — the policy set is the day-to-day authorization knob.
+It reads `config/tenancy.yaml` + `policies/` and idempotently creates the managed
+applications, registers the credential providers and the three resources (each bound to its
+application), authors the policy library, and activates the `lynx-platform` policy set. Tear
+down with `python scripts/teardown.py`. The managed applications are normally created once in
+Console (each secret is shown once); provisioning never handles runtime secrets or grants —
+the policy set is the day-to-day authorization knob.
 
 ### 4. Run the SDK reference
 
@@ -107,21 +106,22 @@ python scripts/reference.py
 ```
 
 [`scripts/reference.py`](scripts/reference.py) is the canonical SDK walkthrough: it prints
-the full customer/agent/scope plan offline, and when Caracal is configured it connects as the
-managed application, spawns each customer's role agents with narrowed grants, exercises
-gateway resource authorization with `fetch()`, and demonstrates delegated least-privilege
-fan-out — with redacted secrets and fail-closed error handling.
+the full application/customer/agent/scope plan offline, and when Caracal is configured it
+connects as a service application, spawns each customer's role agents with narrowed grants,
+exercises gateway resource authorization with `fetch()`, and demonstrates delegated
+least-privilege fan-out — with redacted secrets and fail-closed error handling.
 
 ## When to use what
 
 - **Onboard a customer**: add a customer block to `config/tenancy.yaml` (id, name, subject,
-  plan, agents). No new application, grant, or DCR registration is needed — the platform
-  spawns its agents under the one managed application against the existing policy set.
+  plan). No new application, grant, or DCR registration is needed — each service application
+  spawns its agents for the new subject against the existing policy set.
 - **Add a capability/policy**: drop a `*.rego` into `policies/`, register it in
   `policies/manifest.json` (capability → resource → grants) and map it to a role. Re-run
   provisioning to author and activate the new policy-set version.
-- **Add a resource**: add a provider and a resource under `config/tenancy.yaml` with its
-  scopes and an `upstreamEnv`, then point that env var at the upstream per environment.
+- **Add a service**: add an application block to `config/tenancy.yaml` with its provider,
+  resource (scopes + `upstreamEnv`), and agents, then point that env var at the upstream per
+  environment.
 
 ## Policy library
 
@@ -143,9 +143,9 @@ Application code uses one seam, [`app/caracal.py`](app/caracal.py):
 ```python
 from app import caracal
 
-# Spawn one customer's role agent under the one managed application: capability labels, the
-# customer in metadata, and a delegation edge narrowed to the role's least-privilege scopes.
-async with caracal.spawn_customer_agent("aurora", "portfolio") as ctx:
+# Spawn one customer's role agent under its service application: capability labels, the
+# customer in metadata, and a delegation edge narrowed to that application's resource scopes.
+async with caracal.spawn_customer_agent("aurora", "portfolio", application_id="portfolio") as ctx:
     response = await caracal.fetch("portfolio", "/api/read", method="GET")
 ```
 
@@ -166,10 +166,11 @@ only its own. The two never mix.
 | --- | --- |
 | `CARACAL_CONFIG` | Path to the Console `caracal.toml` profile (preferred; resolves everything below). |
 | `CARACAL_ZONE_ID` | The platform's isolation boundary (fallback when no profile). |
-| `CARACAL_APPLICATION_ID` / `CARACAL_APP_CLIENT_SECRET[_FILE]` | The one managed application credential. |
+| `CARACAL_APPLICATION_ID` / `CARACAL_APP_CLIENT_SECRET[_FILE]` | This service's managed application credential (one per service process). |
 | `CARACAL_RESOURCES` | `slug=upstream` pairs for the resources the app may route to. |
 | `CARACAL_STS_URL` / `CARACAL_GATEWAY_URL` / `CARACAL_COORDINATOR_URL` | Optional service overrides. |
 | `OPENAI_API_KEY` | Model provider key. |
+| `LYNX_SIMULATION` | Offline demo only — serve the simulated providers directly. Provider access otherwise fails closed without Caracal. |
 
 **Operator (`.env.provision`, sourced only when provisioning)**
 
