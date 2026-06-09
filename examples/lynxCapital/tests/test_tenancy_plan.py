@@ -2,7 +2,7 @@
 Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 Caracal, a product of Garudex Labs
 
-Unit tests for the Lynx Capital multi-tenant provisioning-plan builders and tenant model.
+Unit tests for the Lynx Capital identity model and Control provisioning-plan builders.
 """
 from __future__ import annotations
 
@@ -12,7 +12,8 @@ from app import tenancy
 def test_model_and_manifest_load():
     model = tenancy.load_model()
     assert model.platform.applicationName == "lynx-platform"
-    assert {t.id for t in model.tenants} == {"aurora", "borealis"}
+    assert {c.id for c in model.customers} == {"aurora", "borealis"}
+    assert {c.plan for c in model.customers} == {"enterprise", "growth"}
     assert {r.identifier for r in model.resources} == {
         "resource://portfolio",
         "resource://research",
@@ -22,26 +23,26 @@ def test_model_and_manifest_load():
     assert manifest.capabilities_for("portfolio") == ["portfolio-read", "portfolio-write", "research-read"]
 
 
-def test_managed_and_dcr_commands():
+def test_provider_and_resource_commands_bind():
     model = tenancy.load_model()
-    managed = tenancy.managed_app_command(model)
-    assert managed == {"command": "app", "subcommand": "create", "flags": {"name": "lynx-platform"}}
+    providers = tenancy.provider_commands(model)
+    assert {c["flags"]["identifier"] for c in providers} == {"pf-mandate", "rs-mandate", "cp-mandate"}
+    assert all(c["flags"]["kind"] == "caracal_mandate" for c in providers)
 
-    dcr = tenancy.dcr_app_command(model.tenants[0])
-    assert dcr["subcommand"] == "dcr"
-    assert dcr["flags"]["name"] == "tenant-aurora"
-    assert dcr["flags"]["expires-in"] <= 3600
-
-
-def test_resource_and_policy_commands_cover_the_library():
-    model = tenancy.load_model()
-    resources = tenancy.resource_commands(model)
+    provider_ids = {c["flags"]["identifier"]: f"cp_{c['flags']['identifier']}" for c in providers}
+    resources = tenancy.resource_commands(model, provider_ids)
     assert {c["flags"]["identifier"] for c in resources} == {
         "resource://portfolio",
         "resource://research",
         "resource://compliance",
     }
+    portfolio = next(c for c in resources if c["flags"]["identifier"] == "resource://portfolio")
+    assert portfolio["flags"]["credential-provider-id"] == "cp_pf-mandate"
+    assert portfolio["flags"]["scopes"] == ["portfolio:read", "portfolio:write", "portfolio:admin"]
 
+
+def test_policy_commands_cover_the_library():
+    model = tenancy.load_model()
     policies = tenancy.policy_commands(model)
     names = [c["flags"]["name"] for c in policies]
     assert names[0] == "00-base", "base policy must be authored first"
@@ -51,27 +52,15 @@ def test_resource_and_policy_commands_cover_the_library():
 
 
 def test_agent_labels_and_role_scopes_are_least_privilege():
-    labels = tenancy.agent_labels("aurora", "portfolio")
-    assert labels[0] == "tenant:aurora"
-    assert "portfolio-write" in labels
+    labels = tenancy.agent_labels("portfolio")
+    assert labels == ["portfolio-read", "portfolio-write", "research-read"]
+    assert not any(label.startswith("tenant:") for label in labels)
 
     scopes = tenancy.role_scopes("portfolio")
     assert "portfolio:write" in scopes
     assert "compliance:admin" not in scopes
 
 
-def test_grant_specs_are_per_tenant_and_scoped():
-    model = tenancy.load_model()
-    specs = tenancy.grant_specs(model)
-    tenants = {s["tenant_id"] for s in specs}
-    assert tenants == {"aurora", "borealis"}
-
-    aurora_portfolio = [
-        s for s in specs if s["tenant_id"] == "aurora" and s["resource_identifier"] == "resource://portfolio"
-    ]
-    assert aurora_portfolio, "aurora must hold a portfolio grant"
-    assert "portfolio:write" in aurora_portfolio[0]["scopes"]
-
-    for spec in specs:
-        assert spec["user_id"].startswith("customer:")
-        assert spec["scopes"] == sorted(spec["scopes"])
+def test_customer_metadata_carries_the_subject_correlation():
+    metadata = tenancy.customer_metadata("aurora", "portfolio")
+    assert metadata == {"customer_id": "aurora", "role": "portfolio"}
