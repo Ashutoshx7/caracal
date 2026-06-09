@@ -4,6 +4,33 @@
 
 This model identifies what can go wrong, who owns the response, what mitigation is expected, and how maintainers verify the system remains safe.
 
+## Assurance Case
+
+**Claim:** Caracal's security requirements — pre-execution authority, deny-by-default authorization, tamper-evident audit, secret confidentiality, and a trusted release path — are met for the in-scope open-source product.
+
+The argument rests on four pillars, each substantiated by the sections and code referenced below.
+
+1. **Threat model.** The threats are enumerated as T1–T12 in [What Can Go Wrong](#what-can-go-wrong), each with an owner, a required mitigation in [Mitigations / Actions](#mitigations--actions), and a verification step in [Validation / How to Verify](#validation--how-to-verify). [Review Triggers](#review-triggers) keeps the model current as boundaries change.
+
+2. **Trust boundaries.** Boundaries are identified explicitly in [Trust Boundaries](#trust-boundaries): client→API/coordinator, API/coordinator→PostgreSQL/Redis, STS→keys/policy/sessions, gateway→upstreams, control→API/coordinator, producers→stream consumers, audit producers→audit service, containers→host, and OSS→enterprise. Every boundary states what is untrusted and where mediation occurs.
+
+3. **Secure design principles are applied.** The design embodies the standard principles, and each is enforced in code:
+   - *Deny-by-default / fail-safe defaults:* STS rejects partial policy results and fails closed on policy, key, replay, revocation, and signing errors; control is disabled unless `CARACAL_CONTROL_ENABLED=true`; the audit HMAC key is required in `rc`/`stable` (T2, T6, T9).
+   - *Complete mediation:* the gateway performs a fresh STS exchange per proxied request and validates bindings before dispatch; protected routes require mandatory auth hooks (T1, T3).
+   - *Least privilege:* STS issues narrowly scoped ES256 mandates; control enforces per-resource `control:<command>:<verb>` scopes; zone-scoped admin tokens limit blast radius (T2, T9, T12).
+   - *Defense in depth:* application-layer zone guards are backed by row-level security, request size/timeout limits, SSRF egress blocking, and hardened containers (T1, T3, T8, T12).
+   - *Separation of privilege and economy of mechanism:* OPA/Rego is the sole policy engine, the gateway is the only proxied-access path, and STS-issued tokens are the only accepted runtime authority ([Assumptions](#assumptions)).
+
+4. **Common implementation weaknesses are countered.** The mitigations map to the recognized weakness classes, and each countermeasure is tested:
+   - *Injection / malformed input:* schema validation (zod, OPA input contracts) on every untrusted request before database or Redis access (T1; route, property, and fuzz tests).
+   - *Broken authentication / token confusion:* ES256 verification pins `WithValidMethods`, with issuer, audience, expiry, replay (JTI), and revocation checks (T2; STS negative tests).
+   - *SSRF and unsafe egress:* the gateway resolves and blocks private, loopback, link-local, CGNAT, and metadata addresses and disables redirects before connecting (T3; gateway SSRF tests).
+   - *Sensitive data exposure:* secrets resolve from files, logs and responses redact key material and credentials, and the audit ledger never stores plaintext claims (T5, T6; redaction and audit tests).
+   - *Tampering / integrity loss:* append-only audit writes with an HMAC chain, HMAC-signed Redis stream messages, and dedupe with ack-after-durable-handling (T6, T7; audit and stream tests).
+   - *Supply-chain compromise:* reviewed lockfiles and module sums, CodeQL/Semgrep/Trivy/Scorecard scanning, and signed, provenance-attested release artifacts verifiable per [Verify a Release](https://caracal.run/security/verify-releases/) (T10; release checks).
+
+Residual, knowingly-open items are tracked in [Known residual risks](#known-residual-risks-tracked-not-yet-fully-closed) so the assurance case stays honest about its current limits.
+
 ## Scope
 
 In scope:
