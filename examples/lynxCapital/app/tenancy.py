@@ -1,0 +1,209 @@
+"""
+Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+Caracal, a product of Garudex Labs
+
+Multi-tenant identity model loader and provisioning-plan builders for Lynx Capital.
+"""
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+import yaml
+from pydantic import BaseModel
+
+ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_TENANCY_PATH = ROOT / "config" / "tenancy.yaml"
+DEFAULT_POLICIES_DIR = ROOT / "policies"
+SCHEMA_VERSION = "2026-05-20"
+
+
+class PlatformSpec(BaseModel):
+    applicationName: str
+    controlKeyName: str = ""
+
+
+class ResourceSpec(BaseModel):
+    identifier: str
+    resourceId: str
+    name: str
+    scopes: list[str]
+    upstreamEnv: str
+
+    def upstream_url(self) -> str:
+        return os.environ.get(self.upstreamEnv, "").rstrip("/")
+
+
+class PolicySetSpec(BaseModel):
+    name: str
+    description: str = ""
+    schemaVersion: str = SCHEMA_VERSION
+
+
+class TenantSpec(BaseModel):
+    id: str
+    name: str
+    dcrApplicationName: str
+    dcrExpiresIn: int = 3600
+    subject: str
+    agents: list[str]
+
+
+class TenancyModel(BaseModel):
+    platform: PlatformSpec
+    resources: list[ResourceSpec]
+    policySet: PolicySetSpec
+    tenants: list[TenantSpec]
+
+    def resource(self, identifier: str) -> ResourceSpec:
+        for spec in self.resources:
+            if spec.identifier == identifier or spec.resourceId == identifier:
+                return spec
+        raise KeyError(f"unknown resource: {identifier!r}")
+
+
+class PolicyManifest(BaseModel):
+    roles: dict[str, list[str]]
+    policies: list[dict]
+
+    def capabilities_for(self, role: str) -> list[str]:
+        if role not in self.roles:
+            raise KeyError(f"unknown role: {role!r}")
+        return list(self.roles[role])
+
+
+_model: TenancyModel | None = None
+_manifest: PolicyManifest | None = None
+
+
+def load_model(path: str | os.PathLike[str] | None = None) -> TenancyModel:
+    global _model
+    if _model is not None and path is None:
+        return _model
+    target = Path(path) if path is not None else Path(os.environ.get("LYNX_TENANCY", DEFAULT_TENANCY_PATH))
+    data = yaml.safe_load(target.read_text(encoding="utf-8"))
+    model = TenancyModel.model_validate(data)
+    if path is None:
+        _model = model
+    return model
+
+
+def load_manifest(path: str | os.PathLike[str] | None = None) -> PolicyManifest:
+    global _manifest
+    if _manifest is not None and path is None:
+        return _manifest
+    target = Path(path) if path is not None else DEFAULT_POLICIES_DIR / "manifest.json"
+    data = json.loads(target.read_text(encoding="utf-8"))
+    manifest = PolicyManifest.model_validate(data)
+    if path is None:
+        _manifest = manifest
+    return manifest
+
+
+def agent_labels(tenant_id: str, role: str, manifest: PolicyManifest | None = None) -> list[str]:
+    """The Caracal agent-session labels for one tenant's role: the tenant binding label
+    plus every capability label the role's policies key on."""
+    manifest = manifest or load_manifest()
+    return [f"tenant:{tenant_id}", *manifest.capabilities_for(role)]
+
+
+def role_scopes(
+    role: str,
+    model: TenancyModel | None = None,
+    manifest: PolicyManifest | None = None,
+) -> list[str]:
+    """The union of resource scopes a role's capabilities can ever grant, used to narrow
+    a spawned agent's delegation edge to least privilege for that role."""
+    model = model or load_model()
+    manifest = manifest or load_manifest()
+    known = {scope for resource in model.resources for scope in resource.scopes}
+    scopes: set[str] = set()
+    for capability in manifest.capabilities_for(role):
+        for entry in manifest.policies:
+            if entry.get("capability") == capability:
+                scopes.update(set(entry.get("grants", [])) & known)
+    return sorted(scopes)
+
+
+def managed_app_command(model: TenancyModel) -> dict:
+    """Control invoke payload that creates the durable managed platform application."""
+    return {"command": "app", "subcommand": "create", "flags": {"name": model.platform.applicationName}}
+
+
+def dcr_app_command(tenant: TenantSpec) -> dict:
+    """Control invoke payload that registers a tenant's isolated DCR application."""
+    return {
+        "command": "app",
+        "subcommand": "dcr",
+        "flags": {"name": tenant.dcrApplicationName, "expires-in": tenant.dcrExpiresIn},
+    }
+
+
+def resource_commands(model: TenancyModel) -> list[dict]:
+    """Control invoke payloads that register each Lynx domain resource."""
+    commands: list[dict] = []
+    for spec in model.resources:
+        flags = {
+            "name": spec.name,
+            "identifier": spec.identifier,
+            "scopes": " ".join(spec.scopes),
+        }
+        upstream = spec.upstream_url()
+        if upstream:
+            flags["upstream-url"] = upstream
+        commands.append({"command": "resource", "subcommand": "create", "flags": flags})
+    return commands
+
+
+def policy_files(policies_dir: str | os.PathLike[str] | None = None) -> list[tuple[str, str]]:
+    """The policy library as ordered (name, content) pairs. 00-base is always first so
+    the decision contract is present before the scenario policies that contribute to it."""
+    directory = Path(policies_dir) if policies_dir is not None else DEFAULT_POLICIES_DIR
+    files = sorted(p for p in directory.glob("*.rego") if not p.name.endswith("_test.rego"))
+    return [(p.stem, p.read_text(encoding="utf-8")) for p in files]
+
+
+def policy_commands(model: TenancyModel, policies_dir: str | os.PathLike[str] | None = None) -> list[dict]:
+    """Control invoke payloads that author every policy in the library."""
+    return [
+        {
+            "command": "policy",
+            "subcommand": "create",
+            "flags": {"name": name, "content": content, "schema-version": model.policySet.schemaVersion},
+        }
+        for name, content in policy_files(policies_dir)
+    ]
+
+
+def grant_specs(model: TenancyModel, manifest: PolicyManifest | None = None) -> list[dict]:
+    """Admin REST grant bodies binding each tenant's subject to the resource scopes its
+    agents may request. application_id is filled in at provisioning time with the
+    tenant's DCR application id. Cross-tenant access has no grant and is therefore
+    impossible even before policy evaluation."""
+    manifest = manifest or load_manifest()
+    specs: list[dict] = []
+    for tenant in model.tenants:
+        scopes_by_resource: dict[str, set[str]] = {}
+        for role in tenant.agents:
+            for capability in manifest.capabilities_for(role):
+                for entry in manifest.policies:
+                    if entry.get("capability") != capability:
+                        continue
+                    resource = entry.get("resource")
+                    grants = entry.get("grants", [])
+                    targets = [r.identifier for r in model.resources] if resource == "*" else [resource]
+                    for target in targets:
+                        resource_scopes = set(model.resource(target).scopes)
+                        scopes_by_resource.setdefault(target, set()).update(set(grants) & resource_scopes)
+        for resource_identifier, scopes in scopes_by_resource.items():
+            if not scopes:
+                continue
+            specs.append({
+                "tenant_id": tenant.id,
+                "user_id": tenant.subject,
+                "resource_identifier": resource_identifier,
+                "resource_id": model.resource(resource_identifier).resourceId,
+                "scopes": sorted(scopes),
+            })
+    return specs

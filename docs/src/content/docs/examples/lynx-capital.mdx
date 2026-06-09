@@ -1,32 +1,47 @@
 ---
 title: Run Lynx Capital
-description: Run the FastAPI and LangGraph payout reference lab protected by Caracal.
+description: Run the multi-tenant SaaS reference protected by Caracal managed and DCR applications.
 pageType: workflow
 ---
 
-Lynx Capital is a runnable reference lab under `examples/lynxCapital`. It models an autonomous financial execution workflow that processes a global SaaS payout cycle with a live agent topology view and SSE log stream.
+Lynx Capital is a runnable reference under `examples/lynxCapital`. It models a multi-tenant
+wealth-management platform: many customer firms (tenants) each run Portfolio, Research, and
+Compliance agents over shared domain services, with every tenant isolated by identity,
+grants, and policy. It is the primary reference for modelling tenants, applications, agents,
+resources, and policies on Caracal.
 
-## What it uses
+## Architecture
 
-| Area | Current implementation |
+| Building block | Role |
 | --- | --- |
-| App framework | FastAPI on port `8000`. |
-| Agent workflow | LangGraph/LangChain-based swarm. |
-| Python runtime | Python `>=3.12`. |
-| Caracal package | `caracalai-sdk==0.1.5rc1`. |
-| Provider fixtures | Local REST, SSE, gRPC, and MCP fixtures under `_mock/`. |
-| Caracal services | Released runtime/Console, API, Coordinator, Gateway, STS, Redis. |
+| `lynx-platform` | One **managed application** — the durable platform runtime credential that spawns every tenant's agents. |
+| `tenant-<id>` | One **DCR application** per tenant — an isolated, auto-expiring, independently revocable credential boundary. |
+| Agents | Portfolio / Research / Compliance **agent sessions** spawned under the managed application, labelled `tenant:<id>` plus role capabilities. |
+| Resources | `resource://portfolio`, `resource://research`, `resource://compliance`, each with action-oriented scopes. |
+| Policy set | `lynx-multitenant`: `00-base` (default-deny + tenant isolation) plus eleven scenario policies. |
+
+The model is declared once in `config/tenancy.yaml` and `policies/manifest.json`; the SDK
+seam, provisioning, and policy all read from it.
+
+### Managed vs DCR applications
+
+Use the **managed application** for the platform's own durable runtime that orchestrates and
+spawns agents. Use a **DCR application** to give each tenant an independent, auto-expiring
+identity. Per-tenant agents are not separate applications — they are labelled agent sessions
+under the one managed application, which keeps a single durable credential while giving each
+tenant and role its own least-privilege session and audit trail.
 
 ## Setup flow
 
 ```mermaid
 flowchart LR
-  Install[Install Python deps] --> Env[Copy .env and set OpenAI key]
-  Env --> Caracal[caracal up and Console setup]
-  Caracal --> Profile[Write caracal.toml and secret file]
-  Profile --> Providers[Start _mock provider network]
-  Providers --> App[Run Lynx app]
-  App --> Inspect[Inspect sessions and delegation in Console]
+  Install[Install Python deps] --> Env[Copy .env and set keys]
+  Env --> Provision[scripts/provision.py]
+  Provision --> Managed[Managed app + resources + policy set]
+  Provision --> Tenants[Per-tenant DCR apps + grants]
+  Managed --> Reference[scripts/reference.py]
+  Tenants --> Reference
+  Reference --> Inspect[Inspect sessions and delegation in Console]
 ```
 
 ## Commands
@@ -35,62 +50,72 @@ flowchart LR
 cd examples/lynxCapital
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .
-pip install -e _mock/sdk/lynx_sdk_stripe_treasury -e _mock/sdk/lynx_sdk_tax
-cp .env.example .env
+pip install -e ".[dev]"
+cp -n .env.example .env
 ```
 
-Start Caracal with the released runtime and Console, then use Console to create the Lynx zone, enable Control, create a control key, and register provider resources.
+Fill in `.env` (deployment environment, service endpoints, the managed platform application,
+the control automation key, the admin token, and the three domain resource upstreams), then
+provision the platform. Provisioning is idempotent and reads `config/tenancy.yaml` and
+`policies/`.
 
 ```bash
-caracal up
-caracal status --ready
-caracal-console
+python scripts/provision.py     # managed app, resources, policy set, per-tenant DCR apps, grants
+python scripts/reference.py     # SDK walkthrough: spawn agents, gateway authz, delegation
+python scripts/teardown.py      # remove the provisioned objects
 ```
 
-Start local provider fixtures:
+One-time secrets are written to `config/provisioned.json`; keep it untracked.
+
+## Policies
+
+`policies/` is an importable, OPA-tested library covering portfolio, research, compliance,
+customer-admin, auditor, delegated-advisor, and emergency-access scenarios. Each policy
+documents its expected access behavior in `policies/README.md`.
 
 ```bash
-docker compose -f _mock/docker-compose.yml up -d --build --wait
+opa test policies/ -v
 ```
 
-Run the app:
+## SDK integration
 
-```bash
-python -m uvicorn app.main:app --reload --port 8000
+Application code uses one seam, `app/caracal.py`:
+
+```python
+from app import caracal
+
+async with caracal.spawn_agent("aurora", "portfolio") as ctx:
+    response = caracal.gateway_call("portfolio", "read", {"account": "..."})
 ```
 
-Open `http://localhost:8000`.
-
-## App routes
-
-| Path | Purpose |
-| --- | --- |
-| `/` | Scenario landing page. |
-| `/overview/about` | First overview page: what Lynx Capital is. |
-| `/overview/architecture` | Second overview page: app and provider shape. |
-| `/overview/notice` | Third overview page: demo notice and setup acknowledgement. |
-| `/setup` | Validates OpenAI and Caracal connectivity. |
-| `/demo` | Chat interface and live agent topology graph. |
-| `/logs` | Runtime activity stream. |
-| `/prompts` | Ready-to-run prompts. |
+`spawn_agent` stamps the `tenant:<id>` and capability labels the policy library keys on and
+narrows the delegation edge to the role's least-privilege scopes.
 
 ## Tests
 
 ```bash
+opa test policies/ -v
 pytest tests/
 ```
 
-The tests cover provider transports, topology, lifecycle behavior, and Caracal boundary assumptions.
+The tests cover the policy decision suite, the provisioning-plan builders and per-tenant
+grants, the multi-tenant setup surface, and the provider transports, topology, and lifecycle
+of the bundled workload.
 
-## Teardown
+## Bundled demo workload
+
+The repository also ships a FastAPI and LangGraph swarm that processes a simulated payout
+cycle against local provider fixtures under `_mock/`. It is optional and independent of the
+identity model above.
 
 ```bash
+docker compose -f _mock/docker-compose.yml up -d --build --wait
+python -m uvicorn app.main:app --reload --port 8000
 docker compose -f _mock/docker-compose.yml down
-caracal down
 ```
 
-Use `caracal purge` only when you intentionally want to remove local runtime state and generated profile material.
+Open `http://localhost:8000`; the guided `/setup` wizard teaches the managed-application,
+policy-library, and per-tenant DCR flow.
 
 ## Related examples
 
