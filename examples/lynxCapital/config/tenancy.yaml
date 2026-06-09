@@ -1,57 +1,80 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Multi-tenant identity model for the Lynx Capital platform: the managed platform
-# application, the per-tenant DCR applications, the domain resources, and the agent
-# roles each tenant runs. The capability-to-scope mapping lives in policies/manifest.json.
+# Identity model for the Lynx Capital platform: one managed application, the upstream
+# credential providers and domain resources the Gateway protects, and the customers the
+# platform serves. Customers are Caracal subjects, not separate applications; every
+# customer agent is an agent session spawned under the one managed application and
+# narrowed to least privilege. The capability-to-scope mapping lives in policies/manifest.json.
 
-# The durable managed application that backs the Lynx Capital platform runtime. One
-# managed application serves every tenant; per-tenant attribution comes from agent
-# sessions, labels, and the per-tenant DCR applications below.
+# The single durable managed application that backs the Lynx Capital platform runtime.
+# One managed application serves every customer; per-customer attribution comes from the
+# subject an agent is spawned for, never from a separate credential.
 platform:
   applicationName: "lynx-platform"
   controlKeyName: "lynx-platform-control"
 
+# How the Gateway authenticates to each upstream domain service. caracal_mandate forwards
+# the agent's own Caracal mandate to the upstream, so the agent never holds a third-party
+# secret and the upstream verifies authority itself. One provider backs one resource here,
+# but a provider is reusable across many resources.
+providers:
+  - identifier: "pf-mandate"
+    name: "Portfolio Mandate"
+    kind: "caracal_mandate"
+    config: {}
+  - identifier: "rs-mandate"
+    name: "Research Mandate"
+    kind: "caracal_mandate"
+    config: {}
+  - identifier: "cp-mandate"
+    name: "Compliance Mandate"
+    kind: "caracal_mandate"
+    config: {}
+
 # Domain services the platform protects. Each becomes a Caracal resource with
-# action-oriented scopes. Upstream URLs are read from the named environment variable so
-# the same identifiers point at the right service per deployment environment.
+# action-oriented scopes and a credential provider. Upstream URLs are read from the named
+# environment variable so the same identifiers point at the right service per deployment.
 resources:
   - identifier: "resource://portfolio"
     resourceId: "portfolio"
     name: "Portfolio Service"
     scopes: ["portfolio:read", "portfolio:write", "portfolio:admin"]
     upstreamEnv: "LYNX_RESOURCE_PORTFOLIO_URL"
+    providerRef: "pf-mandate"
   - identifier: "resource://research"
     resourceId: "research"
     name: "Research Service"
     scopes: ["research:read", "research:write"]
     upstreamEnv: "LYNX_RESOURCE_RESEARCH_URL"
+    providerRef: "rs-mandate"
   - identifier: "resource://compliance"
     resourceId: "compliance"
     name: "Compliance Service"
     scopes: ["compliance:review", "compliance:admin"]
     upstreamEnv: "LYNX_RESOURCE_COMPLIANCE_URL"
+    providerRef: "cp-mandate"
 
-# The policy set authored from the policies/ library and activated for the zone.
+# The policy set authored from the policies/ library and activated for the zone. The
+# policy set is the day-to-day authorization knob; it differentiates customers by their
+# subject claims (for example a plan entitlement) and roles by their capability labels.
 policySet:
-  name: "lynx-multitenant"
-  description: "Lynx Capital multi-tenant authorization (per-tenant isolation, role capabilities, delegation, and step-up)."
+  name: "lynx-platform"
+  description: "Lynx Capital authorization: role capabilities, per-customer entitlements, delegation, and step-up."
   schemaVersion: "2026-05-20"
 
-# Customer tenants. Each tenant gets its own DCR application (an isolated,
-# auto-expiring, independently revocable credential boundary) and runs Portfolio,
-# Research, and Compliance agents. Agents are spawned under the managed platform
-# application, labelled with `tenant:<id>` and their role capabilities.
-tenants:
+# The customers the platform serves. Each customer is a stable Caracal subject; its plan
+# is a subject claim the policy set keys premium capabilities on. A customer's agents are
+# spawned under the one managed application with metadata={"customer_id": <id>} and the
+# role's capability labels, narrowed to the role's least-privilege scopes.
+customers:
   - id: "aurora"
     name: "Aurora Wealth"
-    dcrApplicationName: "tenant-aurora"
-    dcrExpiresIn: 3600
     subject: "customer:aurora"
+    plan: "enterprise"
     agents: ["portfolio", "research", "compliance"]
   - id: "borealis"
     name: "Borealis Advisors"
-    dcrApplicationName: "tenant-borealis"
-    dcrExpiresIn: 3600
     subject: "customer:borealis"
+    plan: "growth"
     agents: ["portfolio", "research", "compliance"]

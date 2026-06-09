@@ -272,7 +272,7 @@ CARACAL_APP_CLIENT_SECRET={{ setup_env.applicationSecret }}</pre>
       <div class="automation-path">
         <article>
           <h3>1. Create the zone</h3>
-          <p>Go to Caracal Console &gt; Zones &gt; New. Set <b>name</b> = <code>"Lynx Capital"</code>. Enable <b>dynamic clients</b> (required for per-tenant DCR apps).</p>
+          <p>Go to Caracal Console &gt; Zones &gt; New. Set <b>name</b> = <code>"Lynx Capital"</code>. One zone backs the whole platform.</p>
         </article>
         <article>
           <h3>2. Create the control key</h3>
@@ -291,13 +291,11 @@ CARACAL_APP_CLIENT_SECRET={{ setup_env.applicationSecret }}</pre>
       </div>
       <div class="automation-terminal">
         <div class="command-block">
-          <h3>Add to examples/lynxCapital/.env</h3>
-        <pre class="script">CARACAL_ZONE_ID={{ setup_env.zone }}
-
-CONTROL_CLIENT_ID="{{ setup_env.controlClient }}"
+          <h3>Add to examples/lynxCapital/.env.provision</h3>
+        <pre class="script">CONTROL_CLIENT_ID="{{ setup_env.controlClient }}"
 
 CONTROL_CLIENT_SECRET="{{ setup_env.controlSecret }}"</pre>
-          <p class="automation-note">The scripts load <code>.env</code> automatically. Keep a blank line between runtime values and control credentials for readability.</p>
+          <p class="automation-note">Provisioning credentials live in <code>.env.provision</code>, kept separate from the workload <code>.env</code>. Source it before running the scripts.</p>
         </div>
         <div class="command-block">
           <h3>Run</h3>
