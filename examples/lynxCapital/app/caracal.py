@@ -89,6 +89,37 @@ def context_middleware():
     return client.context_middleware(allow_root=_allow_root())
 
 
+def browser_context_middleware():
+    """ASGI middleware factory that binds Caracal context when an inbound mandate is present
+    while leaving normal browser onboarding requests public."""
+    middleware = context_middleware()
+    if middleware is None:
+        return None
+
+    class BrowserCaracalContextMiddleware:
+        def __init__(self, app):
+            self.app = app
+            self.bound_app = middleware(app)
+
+        async def __call__(self, scope, receive, send):
+            if scope.get("type") != "http":
+                await self.bound_app(scope, receive, send)
+                return
+            if _has_bearer(scope.get("headers", [])):
+                await self.bound_app(scope, receive, send)
+                return
+            await self.app(scope, receive, send)
+
+    return BrowserCaracalContextMiddleware
+
+
+def _has_bearer(headers: list[tuple[bytes, bytes]]) -> bool:
+    for key, value in headers:
+        if key.lower() == b"authorization" and value.strip().lower().startswith(b"bearer "):
+            return True
+    return False
+
+
 def spawn(**kwargs: Any):
     """Open a delegated agent context for a run so every downstream upstream call carries a
     scoped, non-root mandate. Returns an async context manager."""
@@ -197,6 +228,7 @@ __all__ = [
     "runtime",
     "aclose",
     "context_middleware",
+    "browser_context_middleware",
     "spawn",
     "spawn_customer_agent",
     "fetch",

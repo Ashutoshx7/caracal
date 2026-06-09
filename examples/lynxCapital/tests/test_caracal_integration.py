@@ -10,6 +10,7 @@ import asyncio
 import importlib
 
 import pytest
+from fastapi.testclient import TestClient
 
 import app.caracal as caracal
 
@@ -83,3 +84,16 @@ def test_verifier_rejects_invalid_token(configured):
         configured.verify_internal(
             zone_id="zone_demo", audience="lumen-identity", required_scopes=["read"]
         )
+
+
+def test_configured_caracal_keeps_browser_setup_public(configured):
+    import app.main as main
+
+    importlib.reload(main)
+    with TestClient(main.app) as client:
+        landing = client.get("/")
+        favicon = client.get("/favicon.ico")
+
+    assert landing.status_code == 200
+    assert "Continue Setup" in landing.text
+    assert favicon.status_code == 204

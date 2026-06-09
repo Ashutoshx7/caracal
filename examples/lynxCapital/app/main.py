@@ -38,9 +38,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Lynx Capital", lifespan=lifespan)
 
 from app import caracal
-# Establish the inbound Caracal context per request so delegated authority
-# propagates into each run; returns None (skipped) when the integration is off.
-_caracal_mw = caracal.context_middleware()
+# Establish inbound Caracal context when a request carries a mandate while keeping
+# the browser setup flow reachable before any Console credentials are copied.
+_caracal_mw = caracal.browser_context_middleware()
 if _caracal_mw is not None:
     app.add_middleware(_caracal_mw)
 

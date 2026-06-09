@@ -57,7 +57,8 @@ class ControlError(RuntimeError):
 
 
 def config_from_env(env: dict[str, str] | None = None) -> ControlConfig:
-    env = env or dict(os.environ)
+    if env is None:
+        env = dict(os.environ)
     missing = [
         name
         for name in ("CONTROL_CLIENT_ID", "CONTROL_CLIENT_SECRET")
