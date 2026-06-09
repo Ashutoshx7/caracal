@@ -2,8 +2,8 @@
 Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 Caracal, a product of Garudex Labs
 
-Removes the Lynx Capital multi-tenant deployment: per-tenant DCR applications, the policy
-set, policies, resources, and the managed platform application.
+Removes the Lynx Capital deployment through the Control API: the policy set, the policies,
+the domain resources, and the upstream credential providers.
 """
 from __future__ import annotations
 
@@ -27,10 +27,6 @@ def main() -> None:
     model = tenancy.load_model()
     client = ControlClient(config_from_env())
 
-    app_list = client.invoke("app", "list")
-    for tenant in model.tenants:
-        remove(client, "app", find_by_name(app_list, tenant.dcrApplicationName), "tenant DCR app")
-
     remove(client, "policy-set", find_by_name(client.invoke("policy-set", "list"), model.policySet.name), "policy-set")
 
     policy_list = client.invoke("policy", "list")
@@ -41,8 +37,11 @@ def main() -> None:
     for resource in model.resources:
         remove(client, "resource", find_by_identifier(resource_list, resource.identifier), "resource")
 
-    remove(client, "app", find_by_name(client.invoke("app", "list"), model.platform.applicationName), "managed app")
-    print(f"removed platform + {len(model.tenants)} tenants")
+    provider_list = client.invoke("identity-provider", "list")
+    for provider in model.providers:
+        remove(client, "identity-provider", find_by_identifier(provider_list, provider.identifier), "provider")
+
+    print(f"removed the {model.policySet.name} policy set, {len(model.resources)} resources, and {len(model.providers)} providers")
 
 
 if __name__ == "__main__":

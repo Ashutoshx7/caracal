@@ -138,49 +138,49 @@ def test_setup_page_is_guided_and_provider_backed():
     assert "Automate setup" in body
     assert "Go to Caracal Console &gt; Zones &gt; New" in body
     assert "<b>name</b> = <code>\"Lynx Capital\"</code>" in body
-    assert "Enable <b>dynamic clients</b> (required for per-tenant DCR apps)." in body
+    assert "One zone backs the whole platform." in body
     assert "Go to Control &gt; control key create" in body
     assert "<b>name</b> = <code>\"Lynx Capital Bootstrap\"</code>" in body
     assert "<b>max token TTL</b> = <code>300</code>" in body
     assert "<b>expires in days</b> = <code>30</code>" in body
     assert "control:identity-provider:write" in body
     assert "control:resource:write" in body
-    assert "CARACAL_ZONE_ID" in body
     assert "CONTROL_CLIENT_ID" in body
     assert "CONTROL_CLIENT_SECRET" in body
-    assert "Add to examples/lynxCapital/.env" in body
-    assert "The scripts load <code>.env</code> automatically." in body
+    assert "Add to examples/lynxCapital/.env.provision" in body
     assert "python scripts/provision.py" in body
     assert "python scripts/teardown.py" in body
-    # Caracal configuration: zone, managed platform app, policy library, per-tenant DCR
+    # Caracal configuration: zone, managed app, providers/resources, policy set, customers
     assert "Caracal configuration" in body
     assert "field-name" in body
     assert "field-value" in body
     assert "Create the zone" in body
     assert '<dt class="field-name">Name</dt>' in body
     assert '<dd class="field-value">&#34;Lynx Capital&#34;</dd>' in body
-    assert '<dt class="field-name">Dynamic clients</dt>' in body
-    assert '<dd class="field-value">[x] enabled (required for per-tenant DCR apps)</dd>' in body
-    assert "Create the managed platform application" in body
+    assert "Create the managed application" in body
     assert "Go to Applications &gt; New in the &#34;Lynx Capital&#34; zone" in body
     assert '<dt class="field-name">Registration method</dt>' in body
     assert '<dd class="field-value">managed</dd>' in body
     assert '<dd class="field-value">&#34;lynx-platform&#34;</dd>' in body
+    assert "Register the credential providers and domain resources" in body
+    assert '<dd class="field-value">pf-mandate, rs-mandate, cp-mandate</dd>' in body
+    assert '<dd class="field-value">caracal_mandate</dd>' in body
     assert "Import the policy library and activate the policy set" in body
     assert '<dd class="field-value">examples/lynxCapital/policies</dd>' in body
-    assert '<dd class="field-value">&#34;lynx-multitenant&#34;</dd>' in body
-    assert "Register a DCR application per tenant" in body
-    assert '<dd class="field-value">tenant-aurora, tenant-borealis</dd>' in body
-    assert '<dd class="field-value">dcr</dd>' in body
-    # The single-app / single-baseline-policy anti-pattern must be gone
+    assert '<dd class="field-value">&#34;lynx-platform&#34;</dd>' in body
+    assert "Serve customers as subjects" in body
+    assert '<dd class="field-value">aurora (enterprise), borealis (growth)</dd>' in body
+    assert '<dd class="field-value">subject + spawn metadata</dd>' in body
+    # The single-app / single-baseline-policy and per-tenant-DCR anti-patterns must be gone
     assert "Lynx Capital baseline" not in body
     assert "[ ] leave unchecked" not in body
-    assert "CARACAL_ZONE_ID=&lt;placeholder-zone-id&gt;" in body
-    assert "CARACAL_APPLICATION_ID=&lt;placeholder-managed-application-id&gt;" in body
-    assert "CARACAL_APP_CLIENT_SECRET=&lt;placeholder-application-secret&gt;" in body
-    assert 'CONTROL_CLIENT_ID="&lt;placeholder-control-client-id&gt;"' in body
-    assert 'CONTROL_CLIENT_SECRET="&lt;placeholder-control-client-secret&gt;"' in body
-    assert 'export CARACAL_ZONE_ID="<placeholder-zone-id>"' not in body
+    assert "per-tenant DCR" not in body
+    assert "tenant-aurora" not in body
+    assert "CARACAL_ZONE_ID=&lt;zone-id&gt;" in body
+    assert "CARACAL_APPLICATION_ID=&lt;managed-application-id&gt;" in body
+    assert "CARACAL_APP_CLIENT_SECRET=&lt;managed-application-secret&gt;" in body
+    assert 'CONTROL_CLIENT_ID="&lt;control-key-client-id&gt;"' in body
+    assert 'CONTROL_CLIENT_SECRET="&lt;one-time-control-key-secret&gt;"' in body
     assert "Add these values to <code>examples/lynxCapital/.env</code>" in body
     # Providers: manual mapping to Caracal resources
     assert "Providers" in body
@@ -256,7 +256,7 @@ def test_demo_workspace_is_end_user_focused():
     assert "Execution timeline" not in body
 
 
-def test_provision_scripts_exist_and_build_multitenant_plan():
+def test_provision_scripts_exist_and_build_plan():
     import sys
     from pathlib import Path
 
@@ -276,28 +276,31 @@ def test_provision_scripts_exist_and_build_multitenant_plan():
         sys.path.remove(str(scripts_dir))
 
     model = tenancy.load_model()
-    managed = tenancy.managed_app_command(model)
-    assert managed["subcommand"] == "create"
-    assert managed["flags"]["name"] == "lynx-platform"
+    providers = tenancy.provider_commands(model)
+    assert {c["flags"]["identifier"] for c in providers} == {"pf-mandate", "rs-mandate", "cp-mandate"}
 
-    dcr_apps = [tenancy.dcr_app_command(t)["flags"]["name"] for t in model.tenants]
-    assert dcr_apps == ["tenant-aurora", "tenant-borealis"]
+    provider_ids = {c["flags"]["identifier"]: c["flags"]["identifier"] for c in providers}
+    resources = tenancy.resource_commands(model, provider_ids)
+    assert {c["flags"]["identifier"] for c in resources} == {
+        "resource://portfolio",
+        "resource://research",
+        "resource://compliance",
+    }
 
     policies = tenancy.policy_commands(model)
     assert policies[0]["flags"]["name"] == "00-base"
     assert all("package caracal.authz" in c["flags"]["content"] for c in policies)
 
-    grants = tenancy.grant_specs(model)
-    assert {g["tenant_id"] for g in grants} == {"aurora", "borealis"}
+    assert {c.id for c in model.customers} == {"aurora", "borealis"}
 
     import pytest
 
     with pytest.raises(control_client.ControlError):
         control_client.config_from_env({})
     config = control_client.config_from_env({
-        "CONTROL_CLIENT_ID": "<placeholder-control-client-id>",
-        "CONTROL_CLIENT_SECRET": "<placeholder-control-client-secret>",
+        "CONTROL_CLIENT_ID": "<control-key-client-id>",
+        "CONTROL_CLIENT_SECRET": "<one-time-control-key-secret>",
     })
     assert config.scopes == control_client.SCOPES
-    assert "control:app:write" in control_client.SCOPES
+    assert "control:resource:write" in control_client.SCOPES
     assert "control:policy-set:write" in control_client.SCOPES
