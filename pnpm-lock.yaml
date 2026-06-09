@@ -38,6 +38,9 @@ importers:
       pg:
         specifier: ^8.20.0
         version: 8.20.0
+      prettier:
+        specifier: ^3.8.3
+        version: 3.8.3
       vitest:
         specifier: ^4.1.6
         version: 4.1.6(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.6)(vite@7.3.3(@types/node@24.12.2)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -3930,6 +3933,11 @@ packages:
   prettier@2.8.8:
     resolution: {integrity: sha512-tdN8qQGvNjw4CHbY+XXk0JgCXn9QiF21a55rBe5LJAU+kDyC4WQn4+awm2Xfk2lQMk5fKup9XgzTZtGkjBdP9Q==}
     engines: {node: '>=10.13.0'}
+    hasBin: true
+
+  prettier@3.8.3:
+    resolution: {integrity: sha512-7igPTM53cGHMW8xWuVTydi2KO233VFiTNyF5hLJqpilHfmn8C8gPf+PS7dUT64YcXFbiMGZxS9pCSxL/Dxm/Jw==}
+    engines: {node: '>=14'}
     hasBin: true
 
   prismjs@1.30.0:
@@ -8763,6 +8771,8 @@ snapshots:
   potpack@1.0.2: {}
 
   prettier@2.8.8: {}
+
+  prettier@3.8.3: {}
 
   prismjs@1.30.0: {}
 

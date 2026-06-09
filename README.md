@@ -77,7 +77,8 @@ The installer provides the thin `caracal` runtime CLI and the `caracal-console` 
 
 > Version examples below pin `v2026.06.09-rc.1`. Check [GitHub Releases](https://github.com/Garudex-Labs/caracal/releases) for the latest available tag. Unpinned installs follow GitHub's latest stable release.
 > Pin a version: `--version vYYYY.MM.DD` on Unix or `-Version vYYYY.MM.DD` in PowerShell.  
-> Change install directory: `--install-dir /path` on Unix or `-InstallDir C:\path` in PowerShell.
+> Change install directory: `--install-dir /path` on Unix or `-InstallDir C:\path` in PowerShell. Unix installers also honor `PREFIX`/`CARACAL_PREFIX` and `DESTDIR` for staged installs.
+> Uninstall: rerun the installer with `--uninstall` on Unix or `-Uninstall` in PowerShell.
 > Provenance verification is required by default.
 
 <details>
@@ -89,7 +90,7 @@ curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-c
   sh -s -- --version v2026.06.09-rc.1
 ```
 
-Installs to `~/.local/bin` and verifies release provenance by default. Override with `--install-dir /usr/local/bin` (may need `sudo`).
+Installs to `~/.local/bin` and verifies release provenance by default. Override with `--install-dir /usr/local/bin` (may need `sudo`) or use packaging-style roots such as `PREFIX=/usr DESTDIR=/tmp/pkg`.
 
 </details>
 
@@ -116,7 +117,7 @@ iwr -useb https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-co
 powershell -ExecutionPolicy Bypass -File $installer -Version v2026.06.09-rc.1
 ```
 
-Installs to `%LOCALAPPDATA%\Programs\caracal` and verifies release provenance by default. Requires Docker Desktop with WSL2.
+Installs to `%LOCALAPPDATA%\Programs\caracal` and verifies release provenance by default. Remove installed binaries and the user `Path` entry with `-Uninstall`. Requires Docker Desktop with WSL2.
 
 </details>
 
@@ -147,6 +148,8 @@ caracal run -- node worker.js         # workload execution
 - Go 1.26+ (only when changing Go services or shared Go packages)
 - Python 3.14+ (only when changing Python packages)
 - Bun (only when building distributable runtime/console binaries)
+
+Run `pnpm run setup` after cloning to install workspace packages, Go modules, Python test/style tooling, and editable Python packages.
 
 See [CONTRIBUTING.md](./.github/CONTRIBUTING.md) for clone, setup, testing, and pull request workflow.
 
