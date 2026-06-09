@@ -30,7 +30,6 @@ const ResourceBody = ResourceBodyBase.refine((body) => body.name !== undefined |
 const ResourcePatchBody = ResourceBodyBase.partial()
 
 const DEFAULT_CONTROL_AUDIENCE = 'caracal-control'
-const CONTROL_RESOURCE_HEADER = 'x-caracal-control-resource'
 const NONE_PROVIDER_ID_PREFIX = 'provider-none-'
 const NONE_PROVIDER_IDENTIFIER = 'provider://none'
 const RESOURCE_IDENTIFIER_PREFIX = 'resource://'
@@ -158,8 +157,12 @@ function isControlResource(identifier: string): boolean {
   return identifier === controlAudience()
 }
 
+// Managing the control resource (the identity that fronts Caracal's own control
+// plane) is restricted to global-scope operators, matching the global-only guard
+// on the privileged `control:` trait namespace. Authority is derived from the
+// authenticated token scope, never from a client-supplied header.
 function isControlResourceOperation(req: FastifyRequest): boolean {
-  return req.headers[CONTROL_RESOURCE_HEADER] === 'manage'
+  return req.actor?.scope === 'global'
 }
 
 async function syncGatewayBinding(

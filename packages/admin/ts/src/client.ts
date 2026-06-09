@@ -88,8 +88,6 @@ interface RowListResponse<T> {
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_RETRIES = 3
 const MAX_RETRY_AFTER_MS = 30_000
-const CONTROL_RESOURCE_HEADER = 'x-caracal-control-resource'
-const APPLICATION_INTERNALS_HEADER = 'x-caracal-application-internals'
 
 function grantListQuery(query?: GrantQuery): Record<string, string | number | undefined> | undefined {
   if (!query) return undefined
@@ -226,14 +224,10 @@ export class AdminClient {
 
   // Applications
   applications = {
-    list: (zoneId: string, opts?: { applicationInternals?: boolean }) =>
-      this.request<Application[]>(`/v1/zones/${zoneId}/applications`, {
-        headers: opts?.applicationInternals ? { [APPLICATION_INTERNALS_HEADER]: 'control' } : undefined,
-      }),
-    get: (zoneId: string, id: string, opts?: { applicationInternals?: boolean }) =>
-      this.request<Application>(`/v1/zones/${zoneId}/applications/${id}`, {
-        headers: opts?.applicationInternals ? { [APPLICATION_INTERNALS_HEADER]: 'control' } : undefined,
-      }),
+    list: (zoneId: string) =>
+      this.request<Application[]>(`/v1/zones/${zoneId}/applications`),
+    get: (zoneId: string, id: string) =>
+      this.request<Application>(`/v1/zones/${zoneId}/applications/${id}`),
     create: (zoneId: string, input: ApplicationInput) =>
       this.request<Application>(`/v1/zones/${zoneId}/applications`, { method: 'POST', body: input }),
     patch: (zoneId: string, id: string, input: ApplicationPatchInput) =>
@@ -251,25 +245,19 @@ export class AdminClient {
 
   // Resources
   resources = {
-    list: (zoneId: string, opts?: { controlResource?: boolean }) =>
-      this.request<Resource[]>(`/v1/zones/${zoneId}/resources`, {
-        headers: opts?.controlResource ? { [CONTROL_RESOURCE_HEADER]: 'manage' } : undefined,
-      }),
-    get: (zoneId: string, id: string, opts?: { controlResource?: boolean }) =>
-      this.request<Resource>(`/v1/zones/${zoneId}/resources/${id}`, {
-        headers: opts?.controlResource ? { [CONTROL_RESOURCE_HEADER]: 'manage' } : undefined,
-      }),
-    create: (zoneId: string, input: ResourceInput, opts?: { controlResource?: boolean }) =>
+    list: (zoneId: string) =>
+      this.request<Resource[]>(`/v1/zones/${zoneId}/resources`),
+    get: (zoneId: string, id: string) =>
+      this.request<Resource>(`/v1/zones/${zoneId}/resources/${id}`),
+    create: (zoneId: string, input: ResourceInput) =>
       this.request<Resource>(`/v1/zones/${zoneId}/resources`, {
         method: 'POST',
         body: input,
-        headers: opts?.controlResource ? { [CONTROL_RESOURCE_HEADER]: 'manage' } : undefined,
       }),
-    patch: (zoneId: string, id: string, input: Partial<ResourceInput>, opts?: { controlResource?: boolean }) =>
+    patch: (zoneId: string, id: string, input: Partial<ResourceInput>) =>
       this.request<Resource>(`/v1/zones/${zoneId}/resources/${id}`, {
         method: 'PATCH',
         body: input,
-        headers: opts?.controlResource ? { [CONTROL_RESOURCE_HEADER]: 'manage' } : undefined,
       }),
     delete: (zoneId: string, id: string) =>
       this.request<void>(`/v1/zones/${zoneId}/resources/${id}`, { method: 'DELETE', expectEmpty: true }),
