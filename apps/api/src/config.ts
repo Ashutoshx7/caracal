@@ -48,6 +48,7 @@ export interface Config {
   redisUrl: string
   stsUrl: string
   gatewayStsHmacKey: Buffer | null
+  auditHmacKey: Buffer | null
   logLevel: string
   bootstrapAdminToken: string | null
   shutdownGraceMs: number
@@ -91,6 +92,12 @@ export function loadConfig(): Config {
   if (gatewayStsHmacKey && gatewayStsHmacKey.length < 32) {
     throw new Error('GATEWAY_STS_HMAC_KEY must be hex-encoded with at least 32 bytes')
   }
+  const auditHmacKey = process.env.AUDIT_HMAC_KEY
+    ? Buffer.from(process.env.AUDIT_HMAC_KEY, 'hex')
+    : null
+  if (auditHmacKey && auditHmacKey.length < 32) {
+    throw new Error('AUDIT_HMAC_KEY must be hex-encoded with at least 32 bytes')
+  }
   return {
     port: intEnv('PORT', 3000, 1),
     host: getenv('HOST', process.env.CARACAL_MODE === 'rc' || process.env.CARACAL_MODE === 'stable' ? '0.0.0.0' : '127.0.0.1'),
@@ -98,6 +105,7 @@ export function loadConfig(): Config {
     redisUrl: mustGetenv('REDIS_URL'),
     stsUrl: getenv('STS_URL', 'http://localhost:8080'),
     gatewayStsHmacKey,
+    auditHmacKey,
     logLevel: getenv('LOG_LEVEL', 'info'),
     bootstrapAdminToken: process.env.CARACAL_ADMIN_TOKEN ?? null,
     shutdownGraceMs: intEnv('SHUTDOWN_GRACE_MS', 15_000, 1),

@@ -12,6 +12,7 @@ import type { DB } from './db.js'
 import type { RedisClient } from './redis.js'
 import { redisMinuteBucket } from './redis.js'
 import { hashAdminToken, verifyAdminTokenHash } from './hash-secret.js'
+import { bindRequestZoneScope, GLOBAL_ZONE_SCOPE } from './zone-context.js'
 
 type AdminScope = 'global' | 'zone'
 
@@ -216,6 +217,7 @@ const adminAuthImpl: FastifyPluginAsync<AuthPluginOptions> = async (fastify, opt
     }
 
     req.actor = actor
+    bindRequestZoneScope(actor.scope === 'zone' && actor.zoneId ? actor.zoneId : GLOBAL_ZONE_SCOPE)
     if (await shouldTouchLastUsed(redis, actor.id, debounceSec)) {
       touchLastUsed(opts.db, actor.id).catch((err) => {
         req.log.warn({ err, tokenId: actor.id }, 'failed to update admin_tokens.last_used_at')
