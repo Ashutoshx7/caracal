@@ -173,21 +173,14 @@ Lynx Capital guided setup page for Caracal configuration, providers, and launch.
       {% endfor %}
     </div>
     <div class="env-card">
-      <h3>Workload <code>examples/lynxCapital/.env</code> — run one process per service</h3>
-      <p>Each service is its own managed application, so in production each service process gets its own Application ID, secret, and the single resource it may reach. Fill in the credential for the service this process runs:</p>
+      <h3>Workload <code>examples/lynxCapital/.env</code></h3>
+      <p>Every application boundary gets its own Application ID and one-time client secret from the Console or the <code>scripts/provision.py</code> output. The swarm process loads all of them; each boundary's agents present only that boundary's authority:</p>
       <pre class="script">CARACAL_ZONE_ID={{ setup_env.zone }}
 {% for app in setup_env.applications %}
-# {{ app.name }} (reaches {{ app.resource.split('=')[0] }} only)
-CARACAL_APPLICATION_ID={{ app.applicationId }}
-CARACAL_APP_CLIENT_SECRET={{ app.secret }}
-CARACAL_RESOURCES={{ app.resource }}
+# {{ app.name }}
+{{ app.envId }}={{ app.applicationId }}
+{{ app.envSecret }}={{ app.secret }}
 {% endfor %}
-OPENAI_API_KEY={{ setup_env.openaiKey }}</pre>
-      <p>To run the bundled single-process demo instead, use any one service application above and map all three resources at once:</p>
-      <pre class="script">CARACAL_ZONE_ID={{ setup_env.zone }}
-CARACAL_APPLICATION_ID={{ setup_env.application }}
-CARACAL_APP_CLIENT_SECRET={{ setup_env.applicationSecret }}
-CARACAL_RESOURCES={{ setup_env.resources }}
 OPENAI_API_KEY={{ setup_env.openaiKey }}</pre>
       <p>Lynx loads <code>.env</code> automatically when the app starts. Without Caracal configured, provider access fails closed; set <code>LYNX_SIMULATION=1</code> only to exercise the offline simulators.</p>
     </div>
@@ -197,7 +190,7 @@ OPENAI_API_KEY={{ setup_env.openaiKey }}</pre>
     <div class="section-head">
       <span class="kicker">Section 2</span>
       <h2 id="providers-heading">Providers</h2>
-      <p>Each provider becomes one Caracal resource. Create credentials in the provider console, then map the resource id to its upstream in <code>CARACAL_RESOURCES</code> — or let the automated script do all {{ setup_external_count }} at once.</p>
+      <p>Each partner is registered as a Caracal credential provider in the exact config its kind supports, then exposed to each application through that application's own resource view. <code>scripts/provision.py</code> creates all {{ setup_external_count }} from <code>config/tenancy.yaml</code>.</p>
     </div>
     <div class="provider-grid">
       {% for provider in setup_providers %}
@@ -211,11 +204,16 @@ OPENAI_API_KEY={{ setup_env.openaiKey }}</pre>
         </header>
         <p class="use">{{ provider.purpose }}</p>
         <dl>
-          <div class="map-row"><dt>Resource</dt><dd>{{ provider.resourceIdentifier }}</dd></div>
+          <div class="map-row"><dt>Provider</dt><dd>{{ provider.providerIdentifier }}</dd></div>
           <div class="map-row"><dt>Kind</dt><dd>{{ provider.kind }}</dd></div>
           <div class="map-row"><dt>Scopes</dt><dd>{{ provider.scopes }}</dd></div>
           <div class="map-row"><dt>Credentials</dt><dd>{{ provider.credentials }}</dd></div>
-          <div class="map-row"><dt>Resources</dt><dd>{{ provider.id }}={{ provider.upstreamUrl }}</dd></div>
+          {% for view in provider.views %}
+          <div class="map-row"><dt>View ({{ view.application }})</dt><dd>{{ view.identifier }} — {{ view.scopes }}</dd></div>
+          {% endfor %}
+          {% if provider.configEnv %}
+          <div class="map-row"><dt>Env</dt><dd>{{ provider.configEnv|join(', ') }}</dd></div>
+          {% endif %}
         </dl>
         <div class="provider-links">
           <a href="{{ provider.dashboardUrl }}" target="_blank" rel="noreferrer">Open provider console</a>
@@ -235,10 +233,10 @@ OPENAI_API_KEY={{ setup_env.openaiKey }}</pre>
     </div>
     <div class="validation-layout">
       <div class="check-list" aria-label="Validation checks">
-        <span>Required identifiers<small>Zone and application are set</small></span>
-        <span>Application access<small>Application secret or subject token</small></span>
-        <span>Caracal mapping<small>Providers map to resources</small></span>
-        <span>Provider setup<small>Credentials and bindings in place</small></span>
+        <span>Zone<small>CARACAL_ZONE_ID is set</small></span>
+        <span>Application boundaries<small>Every application has an id and secret</small></span>
+        <span>Credential providers<small>All partners registered with Caracal</small></span>
+        <span>Resource views<small>Per-application views created and bound</small></span>
       </div>
       <div>
         <div class="validation-actions" style="display:flex;gap:10px;margin-bottom:12px;">
@@ -303,10 +301,8 @@ OPENAI_API_KEY={{ setup_env.openaiKey }}</pre>
         <div class="command-block">
           <h3>Add to examples/lynxCapital/.env.provision</h3>
         <pre class="script">CONTROL_CLIENT_ID="{{ setup_env.controlClient }}"
-CONTROL_CLIENT_SECRET="{{ setup_env.controlSecret }}"
-{% for line in setup_env.resourceLines %}
-{{ line.env }}={{ line.url }}{% endfor %}</pre>
-          <p class="automation-note">Provisioning credentials live in <code>.env.provision</code>, kept separate from the workload <code>.env</code>. The LYNX_RESOURCE_*_URL values point each domain resource at its upstream when <code>scripts/provision.py</code> registers it. Source the file before running the scripts.</p>
+CONTROL_CLIENT_SECRET="{{ setup_env.controlSecret }}"</pre>
+          <p class="automation-note">Provisioning credentials live in <code>.env.provision</code>, kept separate from the workload <code>.env</code>. <code>scripts/provision.py</code> idempotently creates the applications, providers, resource views, and policy set from <code>config/tenancy.yaml</code>, renders the application-id bindings into the policy library, and prints the per-application credential exports for the workload env.</p>
         </div>
         <div class="command-block">
           <h3>Run</h3>
