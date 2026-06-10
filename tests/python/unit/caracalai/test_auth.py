@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Tests for caracalai_sdk.auth client_secret token exchange and caching.
+# Tests for caracalai.auth client_secret token exchange and caching.
 
 import base64
 import json
@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import httpx
 
-from caracalai_sdk.auth import (
+from caracalai.auth import (
     GRANT_TYPE,
     ClientSecretExchanger,
     _decode_jwt_exp,
@@ -20,7 +20,11 @@ from caracalai_sdk.auth import (
 
 def _jwt(payload: dict) -> str:
     header = base64.urlsafe_b64encode(b'{"alg":"none"}').rstrip(b"=").decode("ascii")
-    body = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode("ascii")
+    body = (
+        base64.urlsafe_b64encode(json.dumps(payload).encode())
+        .rstrip(b"=")
+        .decode("ascii")
+    )
     return f"{header}.{body}.sig"
 
 
@@ -43,7 +47,7 @@ def _patch_client(handler):
     def factory(*args, **kwargs):
         return _RealClient(transport=httpx.MockTransport(handler))
 
-    return patch("caracalai_sdk.auth.httpx.Client", factory)
+    return patch("caracalai.auth.httpx.Client", factory)
 
 
 class DecodeJwtExpTests(unittest.TestCase):
@@ -116,7 +120,9 @@ class GetTokenTests(unittest.TestCase):
 
         def handler(req: httpx.Request) -> httpx.Response:
             captured.append(req.content)
-            return httpx.Response(200, json={"access_token": _jwt({"exp": time.time() + 3600})})
+            return httpx.Response(
+                200, json={"access_token": _jwt({"exp": time.time() + 3600})}
+            )
 
         with _patch_client(handler):
             _exchanger(resources=["urn:a", "urn:b"]).get_token()

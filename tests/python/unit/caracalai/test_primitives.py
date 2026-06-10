@@ -9,9 +9,9 @@ import unittest
 
 import httpx
 
-from caracalai_sdk.coordinator import CoordinatorClient
-from caracalai_sdk.context import current
-from caracalai_sdk.primitives import Grant, spawn, delegate
+from caracalai.coordinator import CoordinatorClient
+from caracalai.context import current
+from caracalai.primitives import Grant, spawn, delegate
 
 
 def _coord(handler) -> CoordinatorClient:
@@ -63,7 +63,9 @@ class SpawnTests(unittest.IsolatedAsyncioTestCase):
 
         coord = _coord(handler)
         async with spawn(
-            coordinator=coord, zone_id="z", application_id="app",
+            coordinator=coord,
+            zone_id="z",
+            application_id="app",
             subject_token="tok",
         ):
             pass
@@ -79,8 +81,11 @@ class SpawnTests(unittest.IsolatedAsyncioTestCase):
 
         coord = _coord(_default_handler)
         async with spawn(
-            coordinator=coord, zone_id="z", application_id="app",
-            subject_token="tok", on_agent_start=on_start,
+            coordinator=coord,
+            zone_id="z",
+            application_id="app",
+            subject_token="tok",
+            on_agent_start=on_start,
         ):
             pass
 
@@ -94,8 +99,11 @@ class SpawnTests(unittest.IsolatedAsyncioTestCase):
 
         coord = _coord(_default_handler)
         async with spawn(
-            coordinator=coord, zone_id="z", application_id="app",
-            subject_token="tok", on_agent_end=on_end,
+            coordinator=coord,
+            zone_id="z",
+            application_id="app",
+            subject_token="tok",
+            on_agent_end=on_end,
         ):
             pass
 
@@ -121,8 +129,12 @@ class SpawnTests(unittest.IsolatedAsyncioTestCase):
         coord = _coord(handler)
         with self.assertRaises(RuntimeError):
             async with spawn(
-                coordinator=coord, zone_id="z", application_id="app",
-                subject_token="tok", on_agent_start=on_start, on_agent_end=on_end,
+                coordinator=coord,
+                zone_id="z",
+                application_id="app",
+                subject_token="tok",
+                on_agent_start=on_start,
+                on_agent_end=on_end,
             ):
                 pass  # pragma: no cover
 
@@ -136,7 +148,10 @@ class SpawnTests(unittest.IsolatedAsyncioTestCase):
         coord = _coord(handler)
         with self.assertRaises(httpx.HTTPStatusError):
             async with spawn(
-                coordinator=coord, zone_id="z", application_id="app", subject_token="tok"
+                coordinator=coord,
+                zone_id="z",
+                application_id="app",
+                subject_token="tok",
             ):
                 pass  # pragma: no cover
 
@@ -188,8 +203,11 @@ class SpawnNarrowGrantTests(unittest.IsolatedAsyncioTestCase):
         coord = _coord(_default_handler)
         with self.assertRaises(RuntimeError):
             async with spawn(
-                coordinator=coord, zone_id="z", application_id="app",
-                subject_token="tok", grant=Grant.narrow(["tool:call"]),
+                coordinator=coord,
+                zone_id="z",
+                application_id="app",
+                subject_token="tok",
+                grant=Grant.narrow(["tool:call"]),
             ):
                 pass  # pragma: no cover
 
@@ -212,8 +230,11 @@ class SpawnNarrowGrantTests(unittest.IsolatedAsyncioTestCase):
             coordinator=coord, zone_id="z", application_id="app", subject_token="tok"
         ) as parent:
             async with spawn(
-                coordinator=coord, zone_id="z", application_id="app-child",
-                subject_token="tok", grant=Grant.narrow(["tool:call"]),
+                coordinator=coord,
+                zone_id="z",
+                application_id="app-child",
+                subject_token="tok",
+                grant=Grant.narrow(["tool:call"]),
             ) as child:
                 self.assertEqual(child.agent_session_id, "child-1")
                 self.assertEqual(child.delegation_edge_id, "edge-9")
@@ -245,14 +266,24 @@ class SpawnNarrowGrantTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.assertRaises(httpx.HTTPStatusError):
                 async with spawn(
-                    coordinator=coord, zone_id="z", application_id="app-child",
-                    subject_token="tok", grant=Grant.narrow(["tool:call"]),
+                    coordinator=coord,
+                    zone_id="z",
+                    application_id="app-child",
+                    subject_token="tok",
+                    grant=Grant.narrow(["tool:call"]),
                 ):
                     pass  # pragma: no cover
 
-        self.assertTrue(any(method == "DELETE" and path.endswith("/agents/child-1") for method, path in calls))
+        self.assertTrue(
+            any(
+                method == "DELETE" and path.endswith("/agents/child-1")
+                for method, path in calls
+            )
+        )
 
-    async def test_start_hook_failure_terminates_spawned_child_without_end_hook(self) -> None:
+    async def test_start_hook_failure_terminates_spawned_child_without_end_hook(
+        self,
+    ) -> None:
         calls: list[str] = []
         events: list[str] = []
 
@@ -279,9 +310,13 @@ class SpawnNarrowGrantTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.assertRaises(RuntimeError):
                 async with spawn(
-                    coordinator=coord, zone_id="z", application_id="app-child",
-                    subject_token="tok", grant=Grant.narrow(["tool:call"]),
-                    on_agent_start=on_start, on_agent_end=on_end,
+                    coordinator=coord,
+                    zone_id="z",
+                    application_id="app-child",
+                    subject_token="tok",
+                    grant=Grant.narrow(["tool:call"]),
+                    on_agent_start=on_start,
+                    on_agent_end=on_end,
                 ):
                     pass  # pragma: no cover
 
@@ -293,7 +328,7 @@ class ParentCtxOverrideTests(unittest.IsolatedAsyncioTestCase):
     """CP-3: spawn must accept an explicit parent context."""
 
     async def test_spawn_uses_explicit_parent_ctx_when_no_current(self) -> None:
-        from caracalai_sdk.context import CaracalContext
+        from caracalai.context import CaracalContext
 
         captured: dict = {}
 
@@ -308,7 +343,7 @@ class ParentCtxOverrideTests(unittest.IsolatedAsyncioTestCase):
         parent = CaracalContext(
             subject_token="parent-tok",
             zone_id="z",
-            client_id="parent-app",
+            application_id="parent-app",
             agent_session_id="parent-session",
             hop=2,
             trace_id="11111111111111111111111111111111",
@@ -328,7 +363,7 @@ class ParentCtxOverrideTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(captured["body"].get("parent_id"), "parent-session")
 
     async def test_spawn_narrow_uses_explicit_parent_ctx(self) -> None:
-        from caracalai_sdk.context import CaracalContext
+        from caracalai.context import CaracalContext
 
         seen = {"delegations": 0, "agents": 0}
 
@@ -345,7 +380,7 @@ class ParentCtxOverrideTests(unittest.IsolatedAsyncioTestCase):
         parent = CaracalContext(
             subject_token="parent-tok",
             zone_id="z",
-            client_id="parent-app",
+            application_id="parent-app",
             agent_session_id="parent-session",
             hop=1,
             trace_id="11111111111111111111111111111111",
@@ -366,13 +401,13 @@ class ParentCtxOverrideTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen["agents"], 1)
 
     async def test_spawn_narrow_requires_parent_session(self) -> None:
-        from caracalai_sdk.context import CaracalContext
+        from caracalai.context import CaracalContext
 
         coord = _coord(_default_handler)
         bare = CaracalContext(
             subject_token="parent-tok",
             zone_id="z",
-            client_id="parent-app",
+            application_id="parent-app",
             agent_session_id=None,
         )
         with self.assertRaises(RuntimeError):
@@ -389,7 +424,7 @@ class ParentCtxOverrideTests(unittest.IsolatedAsyncioTestCase):
 
 class SpawnInheritEdgeTests(unittest.IsolatedAsyncioTestCase):
     async def test_inherit_child_carries_parent_edge_forward(self) -> None:
-        from caracalai_sdk.context import CaracalContext
+        from caracalai.context import CaracalContext
 
         captured: dict = {}
 
@@ -400,14 +435,17 @@ class SpawnInheritEdgeTests(unittest.IsolatedAsyncioTestCase):
                 captured["body"] = json.loads(req.content.decode())
                 return httpx.Response(
                     200,
-                    json={"agent_session_id": "agent-2", "delegation_edge_id": "edge-child"},
+                    json={
+                        "agent_session_id": "agent-2",
+                        "delegation_edge_id": "edge-child",
+                    },
                 )
             return httpx.Response(204)
 
         parent = CaracalContext(
             subject_token="parent-tok",
             zone_id="z",
-            client_id="app",
+            application_id="app",
             agent_session_id="parent-session",
             delegation_edge_id="edge-parent",
             hop=1,
@@ -427,7 +465,7 @@ class SpawnInheritEdgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(captured["body"].get("inherit_parent_edge_id"), "edge-parent")
 
     async def test_inherit_skips_edge_when_cross_app(self) -> None:
-        from caracalai_sdk.context import CaracalContext
+        from caracalai.context import CaracalContext
 
         captured: dict = {}
 
@@ -442,7 +480,7 @@ class SpawnInheritEdgeTests(unittest.IsolatedAsyncioTestCase):
         parent = CaracalContext(
             subject_token="parent-tok",
             zone_id="z",
-            client_id="parent-app",
+            application_id="parent-app",
             agent_session_id="parent-session",
             delegation_edge_id="edge-parent",
             hop=1,
@@ -460,7 +498,7 @@ class SpawnInheritEdgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(captured["body"].get("inherit_parent_edge_id"))
 
     async def test_inherit_root_parent_creates_no_edge(self) -> None:
-        from caracalai_sdk.context import CaracalContext
+        from caracalai.context import CaracalContext
 
         captured: dict = {}
 
@@ -475,7 +513,7 @@ class SpawnInheritEdgeTests(unittest.IsolatedAsyncioTestCase):
         parent = CaracalContext(
             subject_token="parent-tok",
             zone_id="z",
-            client_id="app",
+            application_id="app",
             agent_session_id="parent-session",
             delegation_edge_id=None,
             hop=0,
@@ -492,10 +530,9 @@ class SpawnInheritEdgeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(ctx.hop, 0)
         self.assertIsNone(captured["body"].get("inherit_parent_edge_id"))
 
-
     async def test_auto_heartbeat_renews_in_background(self) -> None:
         import asyncio
-        from caracalai_sdk.primitives import spawn_service
+        from caracalai.primitives import spawn_service
 
         heartbeats = 0
 
@@ -510,8 +547,11 @@ class SpawnInheritEdgeTests(unittest.IsolatedAsyncioTestCase):
 
         coord = _coord(handler)
         agent = await spawn_service(
-            coordinator=coord, zone_id="z", application_id="app",
-            subject_token="tok", heartbeat_interval=0.01,
+            coordinator=coord,
+            zone_id="z",
+            application_id="app",
+            subject_token="tok",
+            heartbeat_interval=0.01,
         )
         await asyncio.sleep(0.05)
         await agent.aclose()
@@ -522,7 +562,7 @@ class SpawnInheritEdgeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_auto_heartbeat_survives_transient_failure(self) -> None:
         import asyncio
-        from caracalai_sdk.primitives import spawn_service
+        from caracalai.primitives import spawn_service
 
         calls = 0
 
@@ -539,8 +579,11 @@ class SpawnInheritEdgeTests(unittest.IsolatedAsyncioTestCase):
 
         coord = _coord(handler)
         agent = await spawn_service(
-            coordinator=coord, zone_id="z", application_id="app",
-            subject_token="tok", heartbeat_interval=0.01,
+            coordinator=coord,
+            zone_id="z",
+            application_id="app",
+            subject_token="tok",
+            heartbeat_interval=0.01,
         )
         await asyncio.sleep(0.05)
         await agent.aclose()
@@ -548,7 +591,7 @@ class SpawnInheritEdgeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_auto_heartbeat_without_interval(self) -> None:
         import asyncio
-        from caracalai_sdk.primitives import spawn_service
+        from caracalai.primitives import spawn_service
 
         heartbeats = 0
 
@@ -563,7 +606,10 @@ class SpawnInheritEdgeTests(unittest.IsolatedAsyncioTestCase):
 
         coord = _coord(handler)
         agent = await spawn_service(
-            coordinator=coord, zone_id="z", application_id="app", subject_token="tok",
+            coordinator=coord,
+            zone_id="z",
+            application_id="app",
+            subject_token="tok",
         )
         await asyncio.sleep(0.03)
         await agent.aclose()

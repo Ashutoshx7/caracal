@@ -9,7 +9,7 @@ import unittest
 
 import httpx
 
-from caracalai_sdk.coordinator import (
+from caracalai.coordinator import (
     Lifecycle,
     CoordinatorClient,
     DelegationConstraints,
@@ -34,7 +34,8 @@ class SpawnAgentTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, json={"agent_session_id": "agent-1"})
 
         res = await spawn_agent(
-            _client(handler), "tok",
+            _client(handler),
+            "tok",
             SpawnRequest(zone_id="z", application_id="app"),
         )
         self.assertEqual(res.agent_session_id, "agent-1")
@@ -45,7 +46,8 @@ class SpawnAgentTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(httpx.HTTPStatusError):
             await spawn_agent(
-                _client(handler), "tok",
+                _client(handler),
+                "tok",
                 SpawnRequest(zone_id="z", application_id="app"),
             )
 
@@ -55,7 +57,8 @@ class SpawnAgentTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(KeyError):
             await spawn_agent(
-                _client(handler), "tok",
+                _client(handler),
+                "tok",
                 SpawnRequest(zone_id="z", application_id="app"),
             )
 
@@ -64,11 +67,13 @@ class SpawnAgentTests(unittest.IsolatedAsyncioTestCase):
 
         async def handler(req: httpx.Request) -> httpx.Response:
             import json
+
             captured.append(json.loads(req.content))
             return httpx.Response(200, json={"agent_session_id": "a-1"})
 
         await spawn_agent(
-            _client(handler), "tok",
+            _client(handler),
+            "tok",
             SpawnRequest(
                 zone_id="z",
                 application_id="app",
@@ -96,7 +101,8 @@ class SpawnAgentTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, json={"agent_session_id": "a-1"})
 
         await spawn_agent(
-            _client(handler), "tok",
+            _client(handler),
+            "tok",
             SpawnRequest(
                 zone_id="z",
                 application_id="app",
@@ -116,7 +122,8 @@ class SpawnAgentTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, json={"agent_session_id": "a-1"})
 
         await spawn_agent(
-            _client(handler), "tok",
+            _client(handler),
+            "tok",
             SpawnRequest(
                 zone_id="z",
                 application_id="app",
@@ -124,7 +131,9 @@ class SpawnAgentTests(unittest.IsolatedAsyncioTestCase):
                 idempotency_key="user-supplied-key",
             ),
         )
-        self.assertEqual(captured[0].headers.get("idempotency-key"), "user-supplied-key")
+        self.assertEqual(
+            captured[0].headers.get("idempotency-key"), "user-supplied-key"
+        )
 
     async def test_no_idempotency_key_when_no_stable_inputs(self) -> None:
         captured: list[httpx.Request] = []
@@ -134,7 +143,8 @@ class SpawnAgentTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, json={"agent_session_id": "a-1"})
 
         await spawn_agent(
-            _client(handler), "tok",
+            _client(handler),
+            "tok",
             SpawnRequest(zone_id="z", application_id="app"),
         )
         self.assertNotIn("idempotency-key", captured[0].headers)
@@ -146,7 +156,7 @@ class CoordinatorLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(c._client)
         client = c._http()
         self.assertIs(c._client, client)
-        await c.close()
+        await c.aclose()
 
     async def test_close_is_idempotent(self) -> None:
         async def handler(req: httpx.Request) -> httpx.Response:
@@ -154,8 +164,8 @@ class CoordinatorLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
         c = _client(handler)
         c._http()
-        await c.close()
-        await c.close()
+        await c.aclose()
+        await c.aclose()
         self.assertIsNone(c._client)
 
 
@@ -180,7 +190,8 @@ class CreateDelegationTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(200, json={"delegation_edge_id": "edge-1"})
 
         res = await create_delegation(
-            _client(handler), "tok",
+            _client(handler),
+            "tok",
             DelegationRequest(
                 zone_id="z",
                 issuer_application_id="app",
@@ -198,7 +209,8 @@ class CreateDelegationTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(httpx.HTTPStatusError):
             await create_delegation(
-                _client(handler), "tok",
+                _client(handler),
+                "tok",
                 DelegationRequest(
                     zone_id="z",
                     issuer_application_id="app",
@@ -215,7 +227,8 @@ class CreateDelegationTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(KeyError):
             await create_delegation(
-                _client(handler), "tok",
+                _client(handler),
+                "tok",
                 DelegationRequest(
                     zone_id="z",
                     issuer_application_id="app",
@@ -231,11 +244,13 @@ class CreateDelegationTests(unittest.IsolatedAsyncioTestCase):
 
         async def handler(req: httpx.Request) -> httpx.Response:
             import json
+
             captured.append(json.loads(req.content))
             return httpx.Response(200, json={"delegation_edge_id": "edge-1"})
 
         await create_delegation(
-            _client(handler), "tok",
+            _client(handler),
+            "tok",
             DelegationRequest(
                 zone_id="z",
                 issuer_application_id="app",
@@ -248,7 +263,9 @@ class CreateDelegationTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         body = captured[0]
-        self.assertEqual(body["constraints"], {"resources": ["calendar"], "max_depth": 2})
+        self.assertEqual(
+            body["constraints"], {"resources": ["calendar"], "max_depth": 2}
+        )
         self.assertEqual(body["ttl_seconds"], 30)
 
     async def test_sends_resource_and_parent_edge_when_set(self) -> None:
@@ -256,11 +273,13 @@ class CreateDelegationTests(unittest.IsolatedAsyncioTestCase):
 
         async def handler(req: httpx.Request) -> httpx.Response:
             import json
+
             captured.append(json.loads(req.content))
             return httpx.Response(200, json={"delegation_edge_id": "edge-1"})
 
         await create_delegation(
-            _client(handler), "tok",
+            _client(handler),
+            "tok",
             DelegationRequest(
                 zone_id="z",
                 issuer_application_id="app",
