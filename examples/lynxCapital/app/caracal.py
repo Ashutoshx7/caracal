@@ -2,238 +2,259 @@
 Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 Caracal, a product of Garudex Labs
 
-Caracal SDK seam for the Lynx Capital platform: the per-service managed-application client,
-the per-customer agent spawn and delegation flows, and the gateway and verifier paths the
-service authorizes through.
+Caracal SDK seam for the Lynx Capital swarm: per-application clients, worker spawning
+under narrowed delegation edges, resource-mandate minting, and gateway-mediated calls.
 """
 from __future__ import annotations
 
 import os
 import threading
-from typing import Any
+import time
+from dataclasses import dataclass
 
 import httpx
 
-# Caracal runtime client and authority primitives from the published SDK.
 from caracalai_sdk import Caracal, CaracalContext, DelegationConstraints, Grant
-# Caracal verifier primitives used to authenticate inbound authority before serving
-# internal providers.
-from caracalai_identity import (
-    JwtConfig,
-    MANDATE_USE_RESOURCE,
-    TokenInvalidError,
-    ScopeInsufficientError,
-    ZoneInvalidError,
-    verify_config,
-)
 
 from app import tenancy
 
-_lock = threading.Lock()
-_client: Caracal | None = None
-_built = False
+TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange"
+STS_TOKEN_PATH = "/oauth/2/token"
+WORKER_TTL_SECONDS = int(os.environ.get("LYNX_WORKER_TTL_SECONDS", "600"))
+MANDATE_TTL_SECONDS = int(os.environ.get("LYNX_MANDATE_TTL_SECONDS", "300"))
+MANDATE_REFRESH_LEEWAY_SECONDS = 30.0
 
-# Default least-privilege envelope for a spawned customer agent: one delegation hop and a
-# short time-to-live so a leaked child mandate cannot be re-delegated or outlive its run.
-DEFAULT_AGENT_TTL_SECONDS = 600
-DEFAULT_AGENT_BUDGET = 5
+_lock = threading.Lock()
+_runtimes: dict[str, AppRuntime] | None = None
+
+
+def _env_key(app_key: str) -> str:
+    return app_key.upper().replace("-", "_")
+
+
+def _service_url(name: str, default: str) -> str:
+    return os.environ.get(name, default).rstrip("/")
 
 
 def enabled() -> bool:
-    """Caracal routing is active when a runtime profile or the managed application identity
-    is configured; absent that, the app falls back to the direct local provider path."""
-    if os.environ.get("CARACAL_CONFIG"):
-        return True
-    return bool(os.environ.get("CARACAL_ZONE_ID") and os.environ.get("CARACAL_APPLICATION_ID"))
+    """Caracal routing is active when the zone and the operations application identity are
+    configured. Absent that, the swarm may only run in explicit simulation mode."""
+    return bool(
+        os.environ.get("CARACAL_ZONE_ID")
+        and _application_id("operations")
+        and os.environ.get("LYNX_CARACAL_OPERATIONS_CLIENT_SECRET")
+    )
 
 
-def _allow_root() -> bool:
-    """Bootstrap escape hatch: when set, upstream calls may use the platform's own service
-    identity instead of a delegated agent mandate. Off by default so hot paths never
-    silently leak root authority."""
-    return os.environ.get("CARACAL_ALLOW_ROOT", "").strip().lower() in ("1", "true", "yes", "on")
+def _application_id(app_key: str) -> str:
+    configured = os.environ.get(f"LYNX_CARACAL_{_env_key(app_key)}_APPLICATION_ID", "").strip()
+    if configured:
+        return configured
+    provisioned = tenancy.load_provisioned().get("applications", {})
+    entry = provisioned.get(app_key)
+    return str(entry.get("application_id", "")) if isinstance(entry, dict) else ""
 
 
-def runtime() -> Caracal | None:
-    """Build (once) and return the process-wide managed application client, or None when the
-    integration is not configured. `connect()` reads the Console-generated runtime profile
-    when present and otherwise the workload environment; service URLs resolve from there, so
-    the application never hardcodes an STS, gateway, or coordinator address. Each service runs
-    as its own managed application; this process is whichever application its runtime profile
-    names, and it spawns only that service's agents."""
-    global _client, _built
+def _client_secret(app_key: str) -> str:
+    return os.environ.get(f"LYNX_CARACAL_{_env_key(app_key)}_CLIENT_SECRET", "").strip()
+
+
+def application_credentials(app_key: str) -> tuple[bool, bool]:
+    """Whether an application boundary's id and client secret are configured."""
+    return bool(_application_id(app_key)), bool(_client_secret(app_key))
+
+
+@dataclass
+class AppRuntime:
+    """One application boundary's bound runtime: its control-plane identity, its SDK
+    client holding the session mandate, and the shared transport worker threads use to
+    mint resource mandates and call the Gateway."""
+
+    key: str
+    application_id: str
+    client_secret: str
+    zone_id: str
+    sts_url: str
+    gateway_url: str
+    client: Caracal
+    http: httpx.Client
+    views: list[str]
+
+    def mint_mandate(self, ctx: CaracalContext, view_identifier: str, scopes: list[str]) -> tuple[str, float]:
+        """Exchange the application credential plus the agent's session and delegation
+        edge for a resource mandate narrowed to one view and the requested scopes. The
+        STS evaluates policy here with the delegation edge populated."""
+        form = {
+            "grant_type": TOKEN_EXCHANGE_GRANT,
+            "zone_id": self.zone_id,
+            "application_id": self.application_id,
+            "client_secret": self.client_secret,
+            "agent_session_id": ctx.agent_session_id or "",
+            "delegation_edge_id": ctx.delegation_edge_id or "",
+            "resource": view_identifier,
+            "scope": " ".join(scopes),
+            "ttl_seconds": str(MANDATE_TTL_SECONDS),
+        }
+        response = self.http.post(f"{self.sts_url}{STS_TOKEN_PATH}", data=form)
+        response.raise_for_status()
+        body = response.json()
+        token = body.get("access_token")
+        if not isinstance(token, str) or not token:
+            raise RuntimeError(f"STS mandate exchange for {view_identifier} returned no access_token")
+        expires_in = body.get("expires_in")
+        ttl = float(expires_in) if isinstance(expires_in, (int, float)) else float(MANDATE_TTL_SECONDS)
+        return token, time.time() + ttl
+
+
+class WorkerAuthority:
+    """One spawned agent's resource authority: its Caracal session context, its granted
+    scope set, and a per-view mandate cache. Every partner call flows through here."""
+
+    def __init__(self, runtime: AppRuntime, ctx: CaracalContext, role: str, scopes: list[str]):
+        self.runtime = runtime
+        self.ctx = ctx
+        self.role = role
+        self.scopes = frozenset(scopes)
+        self._mandates: dict[tuple[str, frozenset[str]], tuple[str, float]] = {}
+        self._mandate_lock = threading.Lock()
+
+    @property
+    def application(self) -> str:
+        return self.runtime.key
+
+    @property
+    def agent_session_id(self) -> str | None:
+        return self.ctx.agent_session_id
+
+    def allows(self, scope: str) -> bool:
+        return scope in self.scopes
+
+    def mandate(self, view_identifier: str, scopes: list[str]) -> str:
+        key = (view_identifier, frozenset(scopes))
+        with self._mandate_lock:
+            cached = self._mandates.get(key)
+            if cached and cached[1] - time.time() > MANDATE_REFRESH_LEEWAY_SECONDS:
+                return cached[0]
+            token, expiry = self.runtime.mint_mandate(self.ctx, view_identifier, sorted(scopes))
+            self._mandates[key] = (token, expiry)
+            return token
+
+    def gateway_post(
+        self,
+        view_identifier: str,
+        path: str,
+        payload: dict,
+        scopes: list[str],
+        *,
+        timeout_s: float = 8.0,
+    ) -> httpx.Response:
+        """Call the provider behind a resource view through the Caracal Gateway. The
+        Gateway validates the mandate, re-exchanges it against policy, injects the
+        provider credential, and forwards the request; the worker never holds the
+        partner secret."""
+        token = self.mandate(view_identifier, scopes)
+        return self.runtime.http.post(
+            f"{self.runtime.gateway_url}{path}",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Caracal-Resource": view_identifier,
+            },
+            timeout=timeout_s,
+        )
+
+
+def _build_runtime(app_key: str, model: tenancy.TenancyModel) -> AppRuntime:
+    application_id = _application_id(app_key)
+    client_secret = _client_secret(app_key)
+    if not application_id or not client_secret:
+        raise RuntimeError(
+            f"application {app_key} is missing LYNX_CARACAL_{_env_key(app_key)}_APPLICATION_ID "
+            "or _CLIENT_SECRET; provision the zone and export the printed credentials"
+        )
+    zone_id = os.environ["CARACAL_ZONE_ID"]
+    sts_url = _service_url("CARACAL_STS_URL", "http://localhost:8080")
+    coordinator_url = _service_url("CARACAL_COORDINATOR_URL", "http://localhost:4000")
+    gateway_url = _service_url("CARACAL_GATEWAY_URL", "http://localhost:8081")
+    views = [resource.identifier for resource in model.application_resources(app_key)]
+    client = Caracal.from_client_secret(
+        coordinator_url=coordinator_url,
+        sts_url=sts_url,
+        zone_id=zone_id,
+        application_id=application_id,
+        client_secret=client_secret,
+        resources=views,
+        gateway_url=gateway_url,
+    )
+    return AppRuntime(
+        key=app_key,
+        application_id=application_id,
+        client_secret=client_secret,
+        zone_id=zone_id,
+        sts_url=sts_url,
+        gateway_url=gateway_url,
+        client=client,
+        http=httpx.Client(timeout=10.0),
+        views=views,
+    )
+
+
+def startup() -> None:
+    """Build the per-application client registry. Fails closed: when Caracal is enabled,
+    every application boundary must resolve its credentials."""
+    global _runtimes
     if not enabled():
-        return None
+        return
     with _lock:
-        if not _built:
-            _client = Caracal.connect()
-            _built = True
-        return _client
+        if _runtimes is not None:
+            return
+        model = tenancy.load_model()
+        _runtimes = {app.id: _build_runtime(app.id, model) for app in model.applications}
+
+
+def runtime(app_key: str) -> AppRuntime:
+    if _runtimes is None:
+        raise RuntimeError("Caracal runtimes are not started; call caracal.startup() first")
+    try:
+        return _runtimes[app_key]
+    except KeyError:
+        raise RuntimeError(f"unknown application boundary: {app_key!r}") from None
+
+
+def runtimes() -> dict[str, AppRuntime]:
+    return dict(_runtimes or {})
 
 
 async def aclose() -> None:
-    """Release the SDK client's pooled transports and background token refresh."""
-    global _client, _built
+    """Release every application client's pooled transports and token refresh."""
+    global _runtimes
     with _lock:
-        client, _client, _built = _client, None, False
-    if client is not None:
-        await client.close()
+        registry, _runtimes = _runtimes, None
+    for app_runtime in (registry or {}).values():
+        app_runtime.http.close()
+        await app_runtime.client.close()
 
 
-def context_middleware():
-    """ASGI middleware factory that establishes the inbound Caracal context for each request
-    so delegated authority propagates into the run, or None when off."""
-    client = runtime()
-    if client is None:
-        return None
-    return client.context_middleware(allow_root=_allow_root())
-
-
-def browser_context_middleware():
-    """ASGI middleware factory that binds Caracal context when an inbound mandate is present
-    while leaving normal browser onboarding requests public."""
-    middleware = context_middleware()
-    if middleware is None:
-        return None
-
-    class BrowserCaracalContextMiddleware:
-        def __init__(self, app):
-            self.app = app
-            self.bound_app = middleware(app)
-
-        async def __call__(self, scope, receive, send):
-            if scope.get("type") != "http":
-                await self.bound_app(scope, receive, send)
-                return
-            if _has_bearer(scope.get("headers", [])):
-                await self.bound_app(scope, receive, send)
-                return
-            await self.app(scope, receive, send)
-
-    return BrowserCaracalContextMiddleware
-
-
-def _has_bearer(headers: list[tuple[bytes, bytes]]) -> bool:
-    for key, value in headers:
-        if key.lower() == b"authorization" and value.strip().lower().startswith(b"bearer "):
-            return True
-    return False
-
-
-def spawn(**kwargs: Any):
-    """Open a delegated agent context for a run so every downstream upstream call carries a
-    scoped, non-root mandate. Returns an async context manager."""
-    client = runtime()
-    if client is None:
-        return None
-    return client.spawn(**kwargs)
-
-
-def spawn_customer_agent(
-    customer_id: str,
-    role: str,
-    *,
-    application_id: str,
-    parent_ctx: CaracalContext | None = None,
-    ttl_seconds: int = DEFAULT_AGENT_TTL_SECONDS,
-    budget: int = DEFAULT_AGENT_BUDGET,
-):
-    """Spawn one customer's role agent under a service managed application.
-
-    application_id selects the service whose resource bounds the agent: the role's capability
-    grants are intersected with that application's resource scopes, so an agent spawned under
-    the portfolio application can never obtain research or compliance authority even when its
-    role is cross-domain. The customer the agent serves travels in the spawn metadata (and, in
-    production, in the customer's subject token); it is never a separate application or a scope
-    name. The agent session carries only the role's capability labels — which the policy set
-    keys on — and a delegation edge narrowed to that least-privilege scope set, capped to a
-    single hop, a short TTL, and an explicit call budget. Effective authority is the
-    intersection of policy, this grant, the resource, and any inherited delegation, so the
-    agent can never exceed the role. Returns an async context manager, or None when Caracal is
-    not configured."""
-    client = runtime()
-    if client is None:
-        return None
-    scopes = tenancy.role_scopes(role, application=application_id)
-    constraints = DelegationConstraints(max_hops=1, budget=budget, ttl_seconds=ttl_seconds)
-    grant = Grant.narrow(scopes, constraints=constraints, ttl_seconds=ttl_seconds) if scopes else Grant.none()
-    return client.spawn(
-        grant=grant,
-        labels=tenancy.agent_labels(role),
-        metadata=tenancy.customer_metadata(customer_id, role, application_id),
-        parent_ctx=parent_ctx,
+def worker_grant(scopes: list[str], views: list[str], *, ttl_seconds: int = WORKER_TTL_SECONDS) -> Grant:
+    """The least-privilege delegation grant for one worker: only the role's scopes, only
+    the views those scopes live on, one hop, and a run-bounded TTL."""
+    return Grant.narrow(
+        sorted(scopes),
+        constraints=DelegationConstraints(resources=sorted(views), max_hops=1, ttl_seconds=ttl_seconds),
         ttl_seconds=ttl_seconds,
     )
 
 
-async def fetch(resource_id: str, path: str, *, method: str = "GET", **kwargs: Any) -> httpx.Response:
-    """Call an upstream resource through the Caracal Gateway from within a bound agent
-    context. The Gateway validates the mandate, selects the upstream by resource id, injects
-    the provider credential it holds, and forwards the call, so the agent never sees the
-    third-party secret."""
-    client = runtime()
-    if client is None:
-        raise RuntimeError("fetch requires Caracal to be configured")
-    return await client.fetch(resource_id, path, method=method, **kwargs)
-
-
-def _envelope_headers(client: Caracal) -> dict[str, str]:
-    """Project the active delegated context into Caracal envelope headers. Fails closed when
-    no context is bound unless root identity is explicitly permitted, so a token is never
-    leaked from a background task that escaped the request context."""
-    return client.headers(allow_root=_allow_root())
-
-
-def gateway_call(resource_id: str, operation: str, payload: dict, *, timeout_s: float = 6.0) -> httpx.Response:
-    """Route an external provider operation through the Caracal upstream gateway.
-
-    The gateway validates the Caracal envelope, selects the upstream by resource id, injects
-    the provider credential it holds, and forwards the call — so the application itself never
-    sees the third-party secret."""
-    client = runtime()
-    if client is None:
-        raise RuntimeError("gateway_call requires Caracal to be configured")
-    request = client.gateway_request(resource_id, f"/api/{operation}")
-    headers = {**request.headers, **_envelope_headers(client)}
-    with httpx.Client(timeout=timeout_s) as http:
-        return http.post(request.url, json=payload, headers=headers)
-
-
-def verify_internal(*, zone_id: str, audience: str, required_scopes: list[str] | None = None):
-    """Authenticate the active authority for an internal provider using the Caracal verifier,
-    then return its claims. Internal providers are not network-exposed, so authority is checked
-    in-process here at their trust boundary rather than at a gateway."""
-    client = runtime()
-    if client is None:
-        raise RuntimeError("verify_internal requires Caracal to be configured")
-    headers = _envelope_headers(client)
-    token = headers.get("Authorization", "")
-    if token.lower().startswith("bearer "):
-        token = token[7:].strip()
-    config = JwtConfig(
-        issuer=os.environ.get("CARACAL_ISSUER", os.environ.get("CARACAL_STS_URL", "")),
-        audience=audience,
-        expected_zone_id=zone_id,
-        required_scopes=list(required_scopes or []),
-        required_use=MANDATE_USE_RESOURCE,
-    )
-    return verify_config(token, config)
-
-
-# Re-export the verifier's typed failures so callers can fail closed precisely.
-VerifyErrors = (TokenInvalidError, ScopeInsufficientError, ZoneInvalidError)
-
 __all__ = [
+    "AppRuntime",
+    "CaracalContext",
+    "WORKER_TTL_SECONDS",
+    "WorkerAuthority",
+    "aclose",
+    "application_credentials",
     "enabled",
     "runtime",
-    "aclose",
-    "context_middleware",
-    "browser_context_middleware",
-    "spawn",
-    "spawn_customer_agent",
-    "fetch",
-    "gateway_call",
-    "verify_internal",
-    "VerifyErrors",
-    "CaracalContext",
+    "runtimes",
+    "startup",
+    "worker_grant",
 ]

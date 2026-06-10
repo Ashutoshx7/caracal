@@ -2,101 +2,99 @@
 Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 Caracal, a product of Garudex Labs
 
-Setup catalog helpers for Caracal resources and provider setup links.
+Setup catalog helpers that join the partner catalog with the tenancy identity model and the provisioned control-plane state.
 """
 from __future__ import annotations
 
-import os
+import re
 from typing import Any
 
+from app import tenancy
 from app.services import partners
 
-AUTH_LABELS = {
+KIND_LABELS = {
     "api_key": "API key",
-    "bearer": "Bearer token",
-    "mcp_bearer": "MCP bearer token",
-    "oauth_cc": "OAuth client credentials",
-    "oauth_ac": "OAuth authorization code",
+    "bearer_token": "Bearer token",
+    "oauth2_client_credentials": "OAuth client credentials",
+    "oauth2_authorization_code": "OAuth authorization code",
     "none": "No credential",
-    "mandate": "Caracal mandate",
+    "caracal_mandate": "Caracal mandate",
 }
 
 CREDENTIAL_REQUIREMENTS = {
     "api_key": "API key",
-    "bearer": "Bearer token",
-    "mcp_bearer": "MCP bearer token",
-    "oauth_cc": "Client ID and client secret",
-    "oauth_ac": "Client ID, client secret, and redirect configuration",
+    "bearer_token": "Bearer token",
+    "oauth2_client_credentials": "Client ID and client secret",
+    "oauth2_authorization_code": "Client ID, client secret, and redirect configuration",
     "none": "No provider credential",
-    "mandate": "Caracal-issued resource mandate",
+    "caracal_mandate": "None — the Gateway forwards the agent's Caracal mandate",
 }
 
-PROVIDER_KINDS = {
-    "api_key": "api_key",
-    "bearer": "bearer_token",
-    "mcp_bearer": "bearer_token",
-    "oauth_cc": "oauth2_client_credentials",
-    "oauth_ac": "oauth2_authorization_code",
-    "none": "internal",
-    "mandate": "caracal_mandate",
-}
+_ENV_REF = re.compile(r"\$\{([A-Z0-9_]+)(?::[^}]*)?\}")
 
 
-def env_id(provider_id: str) -> str:
-    return provider_id.upper().replace("-", "_")
+def provisioned_state() -> tuple[dict[str, str], set[str]]:
+    """The provider identifier map and resource identifier set recorded by provision.py."""
+    recorded = tenancy.load_provisioned()
+    providers = recorded.get("providers", {})
+    resources = set(recorded.get("resources", []))
+    return (providers if isinstance(providers, dict) else {}), resources
 
 
-def base_url(spec: partners.PartnerSpec) -> str:
-    return os.environ.get(f"LYNX_PARTNER_{env_id(spec.id)}_URL", f"http://127.0.0.1:{spec.port}").rstrip("/")
-
-
-def resource_bindings() -> dict[str, str]:
-    bindings: dict[str, str] = {}
-    for item in os.environ.get("CARACAL_RESOURCES", "").split(","):
-        resource_id, separator, url = item.strip().partition("=")
-        if separator and resource_id and url:
-            bindings[resource_id.strip()] = url.strip()
-    return bindings
+def config_env_refs(provider: tenancy.ProviderSpec) -> list[str]:
+    """The operator env vars a provider's config references, without defaults applied."""
+    refs: list[str] = []
+    for value in provider.config.values():
+        if isinstance(value, str):
+            for match in _ENV_REF.finditer(value):
+                if match.group(1) not in refs:
+                    refs.append(match.group(1))
+    return refs
 
 
 def provider_entries(config_providers: list[Any]) -> list[dict[str, object]]:
-    provider_config = {provider.id: provider for provider in config_providers}
+    """One setup card per partner provider: its Caracal provider kind and config, the
+    per-application resource views the Gateway binds for it, and its provisioned state."""
+    display = {provider.id: provider for provider in config_providers}
+    model = tenancy.load_model()
+    provisioned_providers, provisioned_resources = provisioned_state()
     entries: list[dict[str, object]] = []
-    resources = resource_bindings()
     for spec in partners.catalog().values():
-        provider = provider_config.get(spec.id)
-        url = base_url(spec)
-        if spec.auth == "none":
-            status = "Ready"
-            resource = "Verified in process by Caracal"
-        elif spec.auth == "mandate":
-            status = "Mapped" if spec.id in resources else "Unmapped"
-            resource = resources.get(spec.id, "Add to CARACAL_RESOURCES")
-        elif spec.id in resources:
-            status = "Mapped"
-            resource = resources[spec.id]
+        provider = model.provider(spec.id)
+        meta = display.get(spec.id)
+        url = provider.upstream_url()
+        views = [r for r in model.resources if r.provider == spec.id]
+        views_ready = [v for v in views if v.identifier in provisioned_resources]
+        registered = provider.identifier in provisioned_providers
+        if registered and len(views_ready) == len(views):
+            status = "Provisioned"
+        elif registered:
+            status = "Partial"
         else:
-            status = "Unmapped"
-            resource = "Add to CARACAL_RESOURCES"
-        credential_url = f"{url}/__lab/clients" if spec.auth.startswith("oauth") else f"{url}/__lab/credentials"
-        resource_identifier = f"resource://{spec.id}"
-        scopes = " ".join(spec.scopes) if spec.scopes else f"{spec.id.replace('-', '.')}.read"
+            status = "Unprovisioned"
+        credential_url = (
+            f"{url}/__lab/clients" if provider.kind.startswith("oauth2") else f"{url}/__lab/credentials"
+        )
         entries.append({
             "id": spec.id,
-            "name": provider.name if provider else spec.id.replace("-", " ").title(),
-            "category": (provider.category if provider else "provider").replace("_", " ").title(),
-            "auth": AUTH_LABELS.get(spec.auth, spec.auth.replace("_", " ").title()),
-            "authType": provider.authType if provider else spec.auth,
-            "protocol": (provider.protocol if provider else "http").upper(),
+            "name": meta.name if meta else provider.name,
+            "category": (meta.category if meta else "provider").replace("_", " ").title(),
+            "auth": KIND_LABELS.get(provider.kind, provider.kind),
+            "authType": meta.authType if meta else provider.kind,
+            "protocol": (meta.protocol if meta else provider.protocol).upper(),
             "purpose": ", ".join(operation.replace("_", " ") for operation in spec.operations[:3]),
-            "credentials": CREDENTIAL_REQUIREMENTS.get(spec.auth, spec.auth.replace("_", " ").title()),
-            "kind": PROVIDER_KINDS.get(spec.auth, "api_key"),
-            "resourceIdentifier": resource_identifier,
-            "scopes": scopes,
-            "resource": resource,
-            "external": spec.auth != "none",
-            "variables": [],
-            "missing": [] if status != "Unmapped" else [spec.id],
+            "credentials": CREDENTIAL_REQUIREMENTS.get(provider.kind, provider.kind),
+            "kind": provider.kind,
+            "providerIdentifier": provider.identifier,
+            "scopes": " ".join(sorted(provider.scopes)),
+            "views": [
+                {"identifier": v.identifier, "application": v.application,
+                 "scopes": " ".join(v.scopes),
+                 "ready": v.identifier in provisioned_resources}
+                for v in views
+            ],
+            "configEnv": config_env_refs(provider),
+            "external": provider.kind != "none",
             "upstreamUrl": url,
             "dashboardUrl": url,
             "credentialUrl": credential_url,
