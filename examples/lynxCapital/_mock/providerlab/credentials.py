@@ -272,6 +272,15 @@ class ProviderStore:
                 rec["useCount"] = rec.get("useCount", 0) + 1
                 return
 
+    def touch_client(self, client_id: str) -> None:
+        """Record last-use telemetry on an OAuth client whenever one of its access
+        tokens authenticates a call, matching the API key and bearer paths."""
+        for rec in self.data["clients"]:
+            if rec["clientId"] == client_id:
+                rec["lastUsedAt"] = _now()
+                rec["useCount"] = rec.get("useCount", 0) + 1
+                return
+
     def revoked_history(self) -> list[dict]:
         """Flatten every revoked credential across kinds for an audit history view."""
         history: list[dict] = []
@@ -316,6 +325,11 @@ class ProviderStore:
     # ---- oauth issuance ----
     def issue_token(self, client_id: str, scope: str, *, subject: str = "service",
                     refresh: bool = False, audience: str | None = None) -> dict:
+        cutoff = _now() - 86400
+        self.data["tokens"] = [
+            t for t in self.data["tokens"]
+            if t["expiresAt"] >= cutoff or (t.get("refreshToken") and not t.get("refreshConsumed"))
+        ]
         token = {
             "accessToken": f"at_{secrets.token_urlsafe(28)}",
             "tokenType": "Bearer",
@@ -376,8 +390,12 @@ class ProviderStore:
 
     def consume_auth_code(self, code: str) -> dict | None:
         record = self.data["authCodes"].pop(code, None)
+        now = _now()
+        self.data["authCodes"] = {
+            c: r for c, r in self.data["authCodes"].items() if r["expiresAt"] >= now
+        }
         self._save()
-        if record is None or record["expiresAt"] < _now():
+        if record is None or record["expiresAt"] < now:
             return None
         return record
 

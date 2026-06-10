@@ -65,6 +65,7 @@ def authenticate(provider: catalog.Provider, request: Request) -> dict:
         if provider.audience and token.get("audience") != provider.audience:
             raise AuthError(403, "invalid_audience",
                             f"access token is not authorized for resource {provider.audience}")
+        store.touch_client(token["clientId"])
         return {"principal": token["clientId"], "auth": "oauth", "scope": token["scope"]}
 
     if cat == "caracal_mandate" or (cat == "mcp" and provider.mcp_auth == "mandate"):

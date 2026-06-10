@@ -151,6 +151,7 @@ def build_app(provider: catalog.Provider) -> FastAPI:
             try:
                 principal = auth.authenticate(provider, request)
             except auth.AuthError as exc:
+                activity.record("anonymous", "rejected", "mcp", exc.status)
                 return _auth_error_response(exc, provider)
             message = await request.json()
 
@@ -272,19 +273,11 @@ def _install_oauth(app: FastAPI, provider: catalog.Provider) -> None:
                 return error
             client = store.find_client(q.get("client_id", ""))
             redirect_uri = q.get("redirect_uri", client["redirectUris"][0] if client["redirectUris"] else "")
-            consent = f"""<!doctype html><html><body style="font-family:sans-serif;background:#0f1320;color:#e7ecf5;padding:40px">
-<h2>{provider.brand} authorization</h2>
-<p>Application <code>{q.get('client_id','')}</code> requests scope <code>{q.get('scope','')}</code>.</p>
-<form method="post" action="/oauth/authorize">
-  <input type="hidden" name="client_id" value="{q.get('client_id','')}">
-  <input type="hidden" name="redirect_uri" value="{redirect_uri}">
-  <input type="hidden" name="scope" value="{q.get('scope','')}">
-  <input type="hidden" name="state" value="{q.get('state','')}">
-  <input type="hidden" name="code_challenge" value="{q.get('code_challenge','')}">
-  <input type="hidden" name="code_challenge_method" value="{q.get('code_challenge_method','S256')}">
-  <button style="background:#2f56b5;color:#fff;border:0;padding:8px 16px;border-radius:4px">Approve</button>
-</form></body></html>"""
-            return HTMLResponse(consent)
+            params = {key: q.get(key, "") for key in
+                      ("client_id", "scope", "state", "code_challenge")}
+            params["redirect_uri"] = redirect_uri
+            params["code_challenge_method"] = q.get("code_challenge_method", "S256")
+            return HTMLResponse(ui.consent_page(provider, params))
 
         @app.post("/oauth/authorize")
         async def authorize_decision(request: Request):
