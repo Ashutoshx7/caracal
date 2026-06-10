@@ -113,7 +113,7 @@ func TestSpawnServiceHeartbeatAndClose(t *testing.T) {
 		ZoneID:        "z",
 		ApplicationID: "app",
 		SubjectToken:  "tok",
-		Labels:  []string{"billing-worker"},
+		Labels:        []string{"billing-worker"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +236,7 @@ func TestDelegateIncrementsHopAndBindsEdge(t *testing.T) {
 	parent := sdk.CaracalContext{
 		SubjectToken:   "tok",
 		ZoneID:         "z",
-		ClientID:       "app",
+		ApplicationID:  "app",
 		AgentSessionID: "agent-1",
 		Hop:            1,
 	}
@@ -352,7 +352,7 @@ func TestSpawnInheritCarriesParentEdgeForward(t *testing.T) {
 	parent := sdk.CaracalContext{
 		SubjectToken:     "tok",
 		ZoneID:           "z",
-		ClientID:         "app",
+		ApplicationID:    "app",
 		AgentSessionID:   "parent-session",
 		DelegationEdgeID: "edge-parent",
 		Hop:              1,
@@ -408,7 +408,7 @@ func TestSpawnInheritSkipsEdgeCrossApp(t *testing.T) {
 	parent := sdk.CaracalContext{
 		SubjectToken:     "tok",
 		ZoneID:           "z",
-		ClientID:         "app",
+		ApplicationID:    "app",
 		AgentSessionID:   "parent-session",
 		DelegationEdgeID: "edge-parent",
 		Hop:              1,

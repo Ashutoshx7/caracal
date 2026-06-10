@@ -350,7 +350,7 @@ func TestCaracalCurrentAndBindFromRequestRootFallback(t *testing.T) {
 	if !ok {
 		t.Fatal("client Current should return bound context")
 	}
-	if cur.SubjectToken != "root-token" || cur.ZoneID != "z" || cur.ClientID != "app" {
+	if cur.SubjectToken != "root-token" || cur.ZoneID != "z" || cur.ApplicationID != "app" {
 		t.Fatalf("unexpected bound context: %#v", cur)
 	}
 }
@@ -416,7 +416,7 @@ func TestHTTPClientInjects(t *testing.T) {
 	ctx := sdk.Bind(context.Background(), sdk.CaracalContext{
 		SubjectToken:   "tok",
 		ZoneID:         "z",
-		ClientID:       "a",
+		ApplicationID:  "a",
 		AgentSessionID: "sess9",
 		Hop:            1,
 	})
@@ -457,10 +457,10 @@ func TestGatewayRequestBuildsExplicitGatewayTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := sdk.Bind(context.Background(), sdk.CaracalContext{
-		SubjectToken: "tok",
-		ZoneID:       "z",
-		ClientID:     "a",
-		Hop:          1,
+		SubjectToken:  "tok",
+		ZoneID:        "z",
+		ApplicationID: "a",
+		Hop:           1,
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.URL, nil)
 	if err != nil {
@@ -504,14 +504,14 @@ func TestFetchComposesGatewayRequestAndTransport(t *testing.T) {
 	defer srv.Close()
 	c.GatewayURL = srv.URL + "/proxy"
 	ctx := sdk.Bind(context.Background(), sdk.CaracalContext{
-		SubjectToken: "tok",
-		ZoneID:       "z",
-		ClientID:     "a",
-		Hop:          1,
+		SubjectToken:  "tok",
+		ZoneID:        "z",
+		ApplicationID: "a",
+		Hop:           1,
 	})
 	header := http.Header{}
 	header.Set("Content-Type", "application/json")
-	resp, err := c.Fetch(ctx, http.MethodPost, "resource://calendar", "events?limit=10", nil, header)
+	resp, err := c.Fetch(ctx, http.MethodPost, "resource://calendar", "events?limit=10", sdk.FetchOptions{Header: header})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -552,7 +552,7 @@ func TestTransportRoutesMatchingResourceBindingsThroughGateway(t *testing.T) {
 	}))
 	defer gateway.Close()
 	c.GatewayURL = gateway.URL + "/gateway"
-	ctx := sdk.Bind(context.Background(), sdk.CaracalContext{SubjectToken: "tok", ZoneID: "z", ClientID: "a"})
+	ctx := sdk.Bind(context.Background(), sdk.CaracalContext{SubjectToken: "tok", ZoneID: "z", ApplicationID: "a"})
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.pipernet.example/v1/users?limit=10", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -593,7 +593,7 @@ func TestTransportUsesExplicitResourceBindingAndSkipsGatewayOrigin(t *testing.T)
 	}))
 	defer gateway.Close()
 	c.GatewayURL = gateway.URL + "/gateway"
-	ctx := sdk.Bind(context.Background(), sdk.CaracalContext{SubjectToken: "tok", ZoneID: "z", ClientID: "a"})
+	ctx := sdk.Bind(context.Background(), sdk.CaracalContext{SubjectToken: "tok", ZoneID: "z", ApplicationID: "a"})
 
 	explicit, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.other.example/raw", nil)
 	explicit.Header.Set("X-Caracal-Resource", "resource://pipernet")
