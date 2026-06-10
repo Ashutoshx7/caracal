@@ -26,15 +26,17 @@ os.environ.setdefault("LYNX_SIMULATION", "1")
 
 @pytest.fixture(autouse=True)
 def _isolate_caracal_env():
-    """Setup-copy tests assert the unconfigured placeholders, so a developer's
-    live CARACAL_* values from the shell or local .env must not leak in."""
-    saved = {}
-    for key in ("CARACAL_ZONE_ID", "CARACAL_APPLICATION_ID", "CARACAL_APP_CLIENT_SECRET", "CARACAL_SUBJECT_TOKEN"):
-        saved[key] = os.environ.pop(key, None)
+    """Tests exercise the simulation path and the setup surfaces' unconfigured
+    placeholders, so a developer's live Caracal zone or application credentials
+    from the shell or local .env must not leak in."""
+    saved = {
+        key: os.environ.pop(key)
+        for key in list(os.environ)
+        if key in ("CARACAL_ZONE_ID", "CARACAL_STS_URL", "CARACAL_COORDINATOR_URL", "CARACAL_GATEWAY_URL")
+        or key.startswith("LYNX_CARACAL_")
+    }
     yield
-    for key, value in saved.items():
-        if value is not None:
-            os.environ[key] = value
+    os.environ.update(saved)
 
 
 def _free_port() -> int:
@@ -91,6 +93,8 @@ def providerlab() -> dict[str, str]:
         elif provider.category in ("oauth2_client_credentials", "oauth2_authorization_code"):
             os.environ[f"LYNX_PARTNER_{eid}_CLIENT_ID"] = seed["clientId"]
             os.environ[f"LYNX_PARTNER_{eid}_CLIENT_SECRET"] = seed["clientSecret"]
+        elif provider.category == "caracal_mandate" or (provider.category == "mcp" and provider.mcp_auth == "mandate"):
+            os.environ[f"LYNX_PARTNER_{eid}_MANDATE"] = seed["mandate"]
 
     yield urls
 
