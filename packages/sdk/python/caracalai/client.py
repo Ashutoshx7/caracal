@@ -141,7 +141,6 @@ def _parse_resource_bindings(raw: str | None) -> list[ResourceBinding]:
 def _load_resource_bindings_file(path: str | None) -> list[ResourceBinding]:
     if not path:
         return []
-    import json
 
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)

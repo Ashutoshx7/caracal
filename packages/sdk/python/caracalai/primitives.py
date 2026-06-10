@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field, replace
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
@@ -167,7 +167,7 @@ async def spawn(
             )
             delegation_edge_id = deleg.delegation_edge_id
             hop = parent.hop + 1
-    except BaseException:
+    except (asyncio.CancelledError, Exception):
         await terminate_agent(coordinator, bearer, zone_id, res.agent_session_id)
         raise
 
@@ -256,10 +256,8 @@ class ServiceAgent:
     async def aclose(self) -> None:
         if self._auto_task is not None:
             self._auto_task.cancel()
-            try:
+            with suppress(asyncio.CancelledError):
                 await self._auto_task
-            except asyncio.CancelledError:
-                pass
             self._auto_task = None
         await terminate_agent(
             self.coordinator,
