@@ -23,6 +23,8 @@ jobs:
 
       - name: Run AI inference
         id: inference
+        if: ${{ vars.CARACAL_ENABLE_ISSUE_AI_SUMMARY == 'true' }}
+        continue-on-error: true
         uses: actions/ai-inference@v1
         with:
           prompt: |
@@ -45,9 +47,22 @@ jobs:
             Title: ${{ github.event.issue.title }}
             Body: ${{ github.event.issue.body }}
 
-      - name: Comment with AI summary
+      - name: Comment with issue summary
         run: |
-          gh issue comment $ISSUE_NUMBER --body "$RESPONSE"
+          if [ -n "$RESPONSE" ]; then
+            gh issue comment "$ISSUE_NUMBER" --body "$RESPONSE"
+            exit 0
+          fi
+
+          cat > "$RUNNER_TEMP/issue-summary.md" <<'SUMMARY'
+          **Caracal issue summary:** Automated AI summarization is unavailable for this run, so maintainers should triage the issue directly from the title and body.
+
+          **Likely area:** Needs triage.
+
+          **Contributor signal:** Check the issue body for reproduction details, expected behavior, affected workflow, environment details, or missing information.
+          SUMMARY
+
+          gh issue comment "$ISSUE_NUMBER" --body-file "$RUNNER_TEMP/issue-summary.md"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
