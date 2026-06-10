@@ -66,7 +66,7 @@ The transport injects Caracal envelope headers from `context.Context`. For expli
 Daemons and workers that outlive a single request use `Service` instead of `Spawn`. It returns a handle you own: keep the session alive by calling `Heartbeat` on a timer and retire it with `Close`. A service session is reaped by the coordinator if it stops heartbeating before its lease expires.
 
 ```go
-svc, err := client.Service(context.Background(), caracal.ServiceOptions{
+svc, err := client.SpawnService(context.Background(), caracal.ServiceOptions{
 	Labels: []string{"billing-worker"},
 })
 if err != nil {

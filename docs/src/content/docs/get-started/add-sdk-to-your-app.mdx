@@ -68,7 +68,7 @@ await caracal.spawn(async () => {
 import asyncio
 import os
 
-from caracalai_sdk import Caracal
+from caracalai import Caracal
 
 caracal = Caracal()
 resource_id = os.environ["CARACAL_RESOURCE_ID"]
@@ -119,7 +119,7 @@ func main() {
         cc, _ := c.Current(ctx)
         fmt.Println("Agent session:", cc.AgentSessionID)
 
-        resp, err := c.Fetch(ctx, http.MethodGet, resourceID, resourcePath, nil, nil)
+        resp, err := c.Fetch(ctx, http.MethodGet, resourceID, resourcePath)
         if err != nil {
             return err
         }
