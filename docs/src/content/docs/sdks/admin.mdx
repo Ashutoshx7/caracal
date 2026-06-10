@@ -73,7 +73,7 @@ const app = await admin.applications.dcr(zoneId, {
 
 Creation is hardened server-side and cannot be misused as open self-registration:
 
-- **Admin token required** — the endpoint sits behind admin-bearer auth; a workload must hold a real, revocable, zone-scoped admin credential. Agent SDKs (`caracalai_sdk`) cannot create applications.
+- **Admin token required** — the endpoint sits behind admin-bearer auth; a workload must hold a real, revocable, zone-scoped admin credential. Agent SDKs (`caracalai`) cannot create applications.
 - **Zone feature gate** — refused with `dcr_disabled` unless an operator enabled `dcr_enabled` on the zone.
 - **Rate-limited and capped** — per-actor request limiting plus a per-zone cap on live DCR applications (`dcr_rate_limit_exceeded` / `dcr_limit_exceeded`).
 - **Short-lived by construction** — `expires_in` is capped at one hour; expired applications are denied at token authentication and later archived by DCR cleanup.
