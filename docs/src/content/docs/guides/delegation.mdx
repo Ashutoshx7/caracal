@@ -23,7 +23,7 @@ flowchart LR
 ```ts
 import { Caracal, Grant } from "@caracalai/sdk";
 
-const caracal = Caracal.connect();
+const caracal = new Caracal();
 
 await caracal.spawn(async () => {
   await caracal.spawn(async () => {

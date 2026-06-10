@@ -43,7 +43,7 @@ Install the package for your application language.
 ```typescript
 import { Caracal } from "@caracalai/sdk";
 
-const caracal = Caracal.connect();
+const caracal = new Caracal();
 const resourceId = process.env.CARACAL_RESOURCE_ID;
 const resourcePath = process.env.CARACAL_RESOURCE_PATH;
 
@@ -70,7 +70,7 @@ import os
 
 from caracalai_sdk import Caracal
 
-caracal = Caracal.connect()
+caracal = Caracal()
 resource_id = os.environ["CARACAL_RESOURCE_ID"]
 resource_path = os.environ["CARACAL_RESOURCE_PATH"]
 
@@ -104,7 +104,7 @@ import (
 )
 
 func main() {
-    c, err := caracal.Connect()
+    c, err := caracal.New()
     if err != nil {
         panic(err)
     }
@@ -139,7 +139,7 @@ func main() {
 
 | Call | Role |
 | --- | --- |
-| `connect()` / `Connect()` | Loads the generated profile or environment configuration and prepares token exchange. |
+| `new Caracal()` / `Caracal()` / `New()` | Loads the generated profile or environment configuration and prepares token exchange. |
 | `spawn()` / `Spawn()` | Creates an agent session, binds context for the work, and terminates the session when the block exits. |
 | `fetch()` / `Fetch()` | Sends one request to a resource through the Gateway with context and authority injected. |
 | `gatewayRequest()` / `GatewayRequest()` | Builds the Gateway URL and `X-Caracal-Resource` header for explicit resource routing. |
