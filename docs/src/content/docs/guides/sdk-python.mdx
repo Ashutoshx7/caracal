@@ -16,10 +16,10 @@ pip install caracalai-sdk
 ```python
 from caracalai_sdk import Caracal
 
-caracal = Caracal.connect()
+caracal = Caracal()
 ```
 
-`connect()` loads `CARACAL_CONFIG`, the default generated profile, or environment variables. Generated profiles are created by Console guided setup.
+`Caracal()` loads `CARACAL_CONFIG`, the default generated profile, or environment variables. Generated profiles are created by Console guided setup.
 
 ## Spawn and call a resource
 
@@ -27,7 +27,7 @@ caracal = Caracal.connect()
 import httpx
 from caracalai_sdk import Caracal
 
-caracal = Caracal.connect()
+caracal = Caracal()
 
 async with caracal.spawn():
     headers = caracal.headers()
@@ -115,7 +115,7 @@ After a verifier boundary, use the SDK middleware to bind an inbound Caracal env
 from fastapi import FastAPI
 from caracalai_sdk import Caracal
 
-caracal = Caracal.connect()
+caracal = Caracal()
 app = FastAPI()
 app.add_middleware(caracal.context_middleware())
 ```

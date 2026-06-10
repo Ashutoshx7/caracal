@@ -24,7 +24,7 @@ import (
 )
 
 func main() {
-	client, err := caracal.Connect()
+	client, err := caracal.New()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func main() {
 }
 ```
 
-`Connect()` loads `CARACAL_CONFIG`, the default generated profile, or environment variables.
+`New()` loads `CARACAL_CONFIG`, the default generated profile, or environment variables.
 
 ## Use an HTTP client
 

@@ -16,19 +16,19 @@ go get github.com/garudex-labs/caracal/packages/sdk/go
 ```go
 import caracal "github.com/garudex-labs/caracal/packages/sdk/go"
 
-client, err := caracal.Connect()
+client, err := caracal.New()
 if err != nil {
 	return err
 }
 ```
 
-`Connect()` loads `CARACAL_CONFIG`, the default generated profile, or environment variables. `FromEnv()`, `FromConfig()`, and `FromClientSecret()` are available when you need explicit control.
+`New()` loads `CARACAL_CONFIG`, the default generated profile, or environment variables. `FromEnv()`, `FromConfig()`, and `FromClientSecret()` are available when you need explicit control.
 
 ## Core methods
 
 | API | Purpose |
 | --- | --- |
-| `Connect()` | Auto-detect profile or environment configuration. |
+| `New()` | Auto-detect profile or environment configuration. |
 | `FromEnv()` | Load from environment variables. |
 | `FromConfig(path)` | Load a generated runtime profile. |
 | `FromClientSecret(options)` | Use STS client-secret exchange for root SDK operations. |
