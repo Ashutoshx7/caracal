@@ -5,6 +5,7 @@ Caracal, a product of Garudex Labs
 Caracal SDK seam for the Lynx Capital swarm: per-application clients, worker spawning
 under narrowed delegation edges, resource-mandate minting, and gateway-mediated calls.
 """
+
 from __future__ import annotations
 
 import os
@@ -14,7 +15,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from caracalai_sdk import Caracal, CaracalContext, DelegationConstraints, Grant
+from caracalai import Caracal, CaracalContext, DelegationConstraints, Grant
 
 from app import tenancy
 
@@ -47,7 +48,9 @@ def enabled() -> bool:
 
 
 def _application_id(app_key: str) -> str:
-    configured = os.environ.get(f"LYNX_CARACAL_{_env_key(app_key)}_APPLICATION_ID", "").strip()
+    configured = os.environ.get(
+        f"LYNX_CARACAL_{_env_key(app_key)}_APPLICATION_ID", ""
+    ).strip()
     if configured:
         return configured
     provisioned = tenancy.load_provisioned().get("applications", {})
@@ -80,7 +83,9 @@ class AppRuntime:
     http: httpx.Client
     views: list[str]
 
-    def mint_mandate(self, ctx: CaracalContext, view_identifier: str, scopes: list[str]) -> tuple[str, float]:
+    def mint_mandate(
+        self, ctx: CaracalContext, view_identifier: str, scopes: list[str]
+    ) -> tuple[str, float]:
         """Exchange the application credential plus the agent's session and delegation
         edge for a resource mandate narrowed to one view and the requested scopes. The
         STS evaluates policy here with the delegation edge populated."""
@@ -100,9 +105,15 @@ class AppRuntime:
         body = response.json()
         token = body.get("access_token")
         if not isinstance(token, str) or not token:
-            raise RuntimeError(f"STS mandate exchange for {view_identifier} returned no access_token")
+            raise RuntimeError(
+                f"STS mandate exchange for {view_identifier} returned no access_token"
+            )
         expires_in = body.get("expires_in")
-        ttl = float(expires_in) if isinstance(expires_in, (int, float)) else float(MANDATE_TTL_SECONDS)
+        ttl = (
+            float(expires_in)
+            if isinstance(expires_in, (int, float))
+            else float(MANDATE_TTL_SECONDS)
+        )
         return token, time.time() + ttl
 
 
@@ -110,7 +121,9 @@ class WorkerAuthority:
     """One spawned agent's resource authority: its Caracal session context, its granted
     scope set, and a per-view mandate cache. Every partner call flows through here."""
 
-    def __init__(self, runtime: AppRuntime, ctx: CaracalContext, role: str, scopes: list[str]):
+    def __init__(
+        self, runtime: AppRuntime, ctx: CaracalContext, role: str, scopes: list[str]
+    ):
         self.runtime = runtime
         self.ctx = ctx
         self.role = role
@@ -135,7 +148,9 @@ class WorkerAuthority:
             cached = self._mandates.get(key)
             if cached and cached[1] - time.time() > MANDATE_REFRESH_LEEWAY_SECONDS:
                 return cached[0]
-            token, expiry = self.runtime.mint_mandate(self.ctx, view_identifier, sorted(scopes))
+            token, expiry = self.runtime.mint_mandate(
+                self.ctx, view_identifier, sorted(scopes)
+            )
             self._mandates[key] = (token, expiry)
             return token
 
@@ -209,12 +224,16 @@ def startup() -> None:
         if _runtimes is not None:
             return
         model = tenancy.load_model()
-        _runtimes = {app.id: _build_runtime(app.id, model) for app in model.applications}
+        _runtimes = {
+            app.id: _build_runtime(app.id, model) for app in model.applications
+        }
 
 
 def runtime(app_key: str) -> AppRuntime:
     if _runtimes is None:
-        raise RuntimeError("Caracal runtimes are not started; call caracal.startup() first")
+        raise RuntimeError(
+            "Caracal runtimes are not started; call caracal.startup() first"
+        )
     try:
         return _runtimes[app_key]
     except KeyError:
@@ -232,15 +251,19 @@ async def aclose() -> None:
         registry, _runtimes = _runtimes, None
     for app_runtime in (registry or {}).values():
         app_runtime.http.close()
-        await app_runtime.client.close()
+        await app_runtime.client.aclose()
 
 
-def worker_grant(scopes: list[str], views: list[str], *, ttl_seconds: int = WORKER_TTL_SECONDS) -> Grant:
+def worker_grant(
+    scopes: list[str], views: list[str], *, ttl_seconds: int = WORKER_TTL_SECONDS
+) -> Grant:
     """The least-privilege delegation grant for one worker: only the role's scopes, only
     the views those scopes live on, one hop, and a run-bounded TTL."""
     return Grant.narrow(
         sorted(scopes),
-        constraints=DelegationConstraints(resources=sorted(views), max_hops=1, ttl_seconds=ttl_seconds),
+        constraints=DelegationConstraints(
+            resources=sorted(views), max_hops=1, ttl_seconds=ttl_seconds
+        ),
         ttl_seconds=ttl_seconds,
     )
 
