@@ -97,6 +97,9 @@ def test_notice_page_requires_acknowledgement_before_setup():
         body = allowed.text
         assert "Setup" in body
         assert "Connect Lynx Capital to Caracal" in body
+        body = allowed.text
+        assert "Setup" in body
+        assert "Connect Lynx Capital to Caracal" in body
 
 
 def test_protected_pages_redirect_without_acceptance_even_if_setup_cookie_exists():
