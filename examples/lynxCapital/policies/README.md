@@ -9,8 +9,9 @@ part of the `lynx-finance-ops` policy set.
 
 The library is **default-deny**. `00-base.rego` owns the decision contract, the shared rule
 helpers, and the application bootstrap rule; `01-bindings.rego` and `02-grants.rego` are
-data documents; the `10-…16-` files contribute one mutually exclusive allow rule pair per
-application boundary.
+data documents; `10-decisions.rego` contributes the one mint/use allow rule pair shared by
+every application boundary, naming the deciding boundary in `determining_policies`
+(`lynx-<application>-mint` / `lynx-<application>-use`).
 
 ```
 result := {
@@ -28,12 +29,12 @@ Every STS evaluation falls into exactly one shape, so exactly one rule family ca
 1. **Bootstrap** (`00-base`): an application exchanging its client secret for its session
    mandate. Only the `agent:lifecycle` scope, no agent session, no delegation edge, no
    subject token. The session mandate authorizes coordinator spawns, never resource calls.
-2. **Mint** (per-application policies): a spawned agent minting a resource mandate. The
+2. **Mint** (`10-decisions`): a spawned agent minting a resource mandate. The
    exchange carries its `agent_session_id` and `delegation_edge_id` and no subject token.
    Allowed only when the resource view belongs to the calling application, the agent's role
    label is granted on that view, and every requested scope sits inside both the role's
    grant and the delegation edge's narrowed scope set.
-3. **Use** (per-application policies): the Gateway re-exchanging a presented mandate before
+3. **Use** (`10-decisions`): the Gateway re-exchanging a presented mandate before
    forwarding upstream. The subject claims carry the minting agent's `delegation_edge_id`
    and `target`; allowed only when the target includes the resource view, the view belongs
    to the principal application, and the agent's role label is granted on it.
@@ -50,21 +51,25 @@ Every STS evaluation falls into exactly one shape, so exactly one rule family ca
 Both carry an inert `result … if { false }` rule because the platform requires every
 authored policy to define a `result` rule; they never decide on their own.
 
-## Per-application policies
+## The decisions policy
 
-| File | Application | Boundary |
-| --- | --- | --- |
-| `10-operations.rego` | lynx-operations | Orchestrators and ad-hoc partner integration |
-| `11-intake.rego` | lynx-intake | Invoice capture and vendor lifecycle |
-| `12-ledger.rego` | lynx-ledger | ERP matching, close, receivables |
-| `13-compliance.rego` | lynx-compliance | Screening, monitoring, filing, tax |
-| `14-treasury.rego` | lynx-treasury | Cash, FX, market data, routing |
-| `15-payments.rego` | lynx-payments | Money movement and notifications |
-| `16-audit.rego` | lynx-audit | Read-only verification |
+`10-decisions.rego` holds the single mint/use rule pair. The application boundary is not
+restated in the logic: `principal_owns_resource` requires the resource view's owning
+application (from the grants document) to equal the acting principal's bound application
+key (from the bindings document), so cross-application access is impossible by
+construction, and the Gateway additionally binds each resource view to exactly one
+application. Adding an application requires no policy change — only `config/tenancy.yaml`
+and the regenerated grants document.
 
-Cross-application access is impossible by construction: every rule requires
-`principal_owns_resource`, and the Gateway additionally binds each resource view to exactly
-one application.
+| Application | Boundary |
+| --- | --- |
+| lynx-operations | Orchestrators and ad-hoc partner integration |
+| lynx-intake | Invoice capture and vendor lifecycle |
+| lynx-ledger | ERP matching, close, receivables |
+| lynx-compliance | Screening, monitoring, filing, tax |
+| lynx-treasury | Cash, FX, market data, routing |
+| lynx-payments | Money movement and notifications |
+| lynx-audit | Read-only verification |
 
 ## Customer confinement
 

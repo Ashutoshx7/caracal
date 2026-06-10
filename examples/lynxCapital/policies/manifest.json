@@ -6,12 +6,6 @@
     "00-base",
     "01-bindings",
     "02-grants",
-    "10-operations",
-    "11-intake",
-    "12-ledger",
-    "13-compliance",
-    "14-treasury",
-    "15-payments",
-    "16-audit"
+    "10-decisions"
   ]
 }

@@ -73,6 +73,15 @@ describe('analyzeAuthzPolicy', () => {
     const warnings = analyzeAuthzPolicy('package caracal.authz\nresult := { "decision": "allow" } if { "read" in input.context.requested_scopes }')
     expect(warnings).toContain('missing_default_result')
   })
+
+  it('does not flag a deny default followed by allow rules', () => {
+    const warnings = analyzeAuthzPolicy(`package caracal.authz
+default result := { "decision": "deny", "evaluation_status": "complete", "determining_policies": [], "diagnostics": [] }
+result := { "decision": "allow", "evaluation_status": "complete", "determining_policies": [], "diagnostics": [] } if {
+  every scope in input.context.requested_scopes { scope in {"read"} }
+}`)
+    expect(warnings).not.toContain('default_result_allows_access')
+  })
 })
 
 describe('previewAuthzPolicy', () => {
