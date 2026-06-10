@@ -4,6 +4,7 @@ Caracal, a product of Garudex Labs
 
 Tests for Lynx Capital web access gates and onboarding context.
 """
+
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
@@ -43,9 +44,24 @@ def test_landing_is_lightweight_with_guided_onboarding():
 
 def test_overview_pages_are_route_based_and_consistent():
     pages = [
-        ("/overview/about", "About Lynx Capital", "/overview/architecture", "disabled-btn"),
-        ("/overview/architecture", "Architecture &amp; Providers", "/overview/notice", "/overview/about"),
-        ("/overview/notice", "Demo Environment Notice", "Proceed to Setup", "/overview/architecture"),
+        (
+            "/overview/about",
+            "About Lynx Capital",
+            "/overview/architecture",
+            "disabled-btn",
+        ),
+        (
+            "/overview/architecture",
+            "Architecture &amp; Providers",
+            "/overview/notice",
+            "/overview/about",
+        ),
+        (
+            "/overview/notice",
+            "Demo Environment Notice",
+            "Proceed to Setup",
+            "/overview/architecture",
+        ),
     ]
     with TestClient(app) as client:
         for path, title, next_marker, previous_marker in pages:
@@ -78,6 +94,9 @@ def test_notice_page_requires_acknowledgement_before_setup():
         client.post("/api/session/accept")
         allowed = client.get("/setup", follow_redirects=False)
         assert allowed.status_code == 200
+        body = allowed.text
+        assert "Setup" in body
+        assert "Connect Lynx Capital to Caracal" in body
 
 
 def test_protected_pages_redirect_without_acceptance_even_if_setup_cookie_exists():
@@ -129,18 +148,24 @@ def test_setup_page_is_guided_and_provider_backed():
     assert 'data-setup-tab="automate"' not in body
     assert 'data-setup-panel="automate"' not in body
     assert 'data-setup-panel="caracal" aria-labelledby="caracal-heading"' in body
-    assert 'data-setup-panel="providers" aria-labelledby="providers-heading" hidden' in body
-    assert 'data-setup-panel="validation" aria-labelledby="validation-heading" hidden' in body
+    assert (
+        'data-setup-panel="providers" aria-labelledby="providers-heading" hidden'
+        in body
+    )
+    assert (
+        'data-setup-panel="validation" aria-labelledby="validation-heading" hidden'
+        in body
+    )
     assert 'data-setup-panel="launch" aria-labelledby="launch-heading" hidden' in body
     assert "function showSetupSection(name)" in body
     # Automation is a popup action, not a setup section
     assert "Automate Setup" in body
     assert "Automate setup" in body
     assert "Go to Caracal Console &gt; Zones &gt; New" in body
-    assert "<b>name</b> = <code>\"Lynx Capital\"</code>" in body
+    assert '<b>name</b> = <code>"Lynx Capital"</code>' in body
     assert "One zone backs the whole platform." in body
     assert "Go to Control &gt; control key create" in body
-    assert "<b>name</b> = <code>\"Lynx Capital Bootstrap\"</code>" in body
+    assert '<b>name</b> = <code>"Lynx Capital Bootstrap"</code>' in body
     assert "<b>max token TTL</b> = <code>300</code>" in body
     assert "<b>expires in days</b> = <code>30</code>" in body
     assert "control:identity-provider:write" in body
@@ -161,8 +186,13 @@ def test_setup_page_is_guided_and_provider_backed():
     assert '<dt class="field-name">Registration method</dt>' in body
     assert '<dd class="field-value">managed</dd>' in body
     for boundary in (
-        "lynx-operations", "lynx-intake", "lynx-ledger", "lynx-compliance",
-        "lynx-treasury", "lynx-payments", "lynx-audit",
+        "lynx-operations",
+        "lynx-intake",
+        "lynx-ledger",
+        "lynx-compliance",
+        "lynx-treasury",
+        "lynx-payments",
+        "lynx-audit",
     ):
         assert boundary in body
     assert "Register the partner credential providers" in body
@@ -182,8 +212,14 @@ def test_setup_page_is_guided_and_provider_backed():
     assert "LYNX_RESOURCE_" not in body
     # Workload env block: one zone id plus per-boundary application credentials.
     assert "CARACAL_ZONE_ID=&lt;zone-id&gt;" in body
-    assert "LYNX_CARACAL_OPERATIONS_APPLICATION_ID=&lt;lynx-operations-application-id&gt;" in body
-    assert "LYNX_CARACAL_OPERATIONS_CLIENT_SECRET=&lt;lynx-operations-client-secret&gt;" in body
+    assert (
+        "LYNX_CARACAL_OPERATIONS_APPLICATION_ID=&lt;lynx-operations-application-id&gt;"
+        in body
+    )
+    assert (
+        "LYNX_CARACAL_OPERATIONS_CLIENT_SECRET=&lt;lynx-operations-client-secret&gt;"
+        in body
+    )
     assert "LYNX_CARACAL_AUDIT_APPLICATION_ID=&lt;lynx-audit-application-id&gt;" in body
     assert "OPENAI_API_KEY=sk-..." in body
     assert 'CONTROL_CLIENT_ID="&lt;control-key-client-id&gt;"' in body
@@ -207,9 +243,17 @@ def test_setup_page_is_guided_and_provider_backed():
     assert "Junction Procurement" in body
     # Validation: user-facing checks only, no infra health
     assert "Zone<small>CARACAL_ZONE_ID is set</small>" in body
-    assert "Application boundaries<small>Every application has an id and secret</small>" in body
-    assert "Credential providers<small>All partners registered with Caracal</small>" in body
-    assert "Resource views<small>Per-application views created and bound</small>" in body
+    assert (
+        "Application boundaries<small>Every application has an id and secret</small>"
+        in body
+    )
+    assert (
+        "Credential providers<small>All partners registered with Caracal</small>"
+        in body
+    )
+    assert (
+        "Resource views<small>Per-application views created and bound</small>" in body
+    )
     assert "Run Validation" in body
     assert "Launch Demo" in body
     assert "Open Workspace" in body
@@ -243,6 +287,16 @@ def test_demo_prompts_and_logs_require_setup_after_acceptance():
             response = client.get(path, follow_redirects=False)
             assert response.status_code == 303
             assert response.headers["location"] == "/setup"
+
+
+def test_demo_prompts_and_logs_are_accessible_after_setup_completion():
+    with TestClient(app) as client:
+        client.cookies.set("lynx_accepted", "1")
+        client.cookies.set("lynx_setup", "1")
+        for path in ("/demo", "/prompts", "/logs"):
+            response = client.get(path, follow_redirects=False)
+            assert response.status_code == 200
+            assert response.text.strip()
 
 
 def test_demo_workspace_is_end_user_focused():
@@ -283,6 +337,7 @@ def test_provision_scripts_exist_and_build_plan():
         import control_client
         from app import tenancy
     finally:
+        sys.path.remove(str(root))
         sys.path.remove(str(scripts_dir))
 
     import json
@@ -295,13 +350,19 @@ def test_provision_scripts_exist_and_build_plan():
         for name in re.findall(r"\$\{([A-Z0-9_]+)", json.dumps(provider.config))
     }
     providers = tenancy.provider_commands(model, env=stub_env)
-    assert {c["flags"]["identifier"] for c in providers} == {p.identifier for p in model.providers}
+    assert {c["flags"]["identifier"] for c in providers} == {
+        p.identifier for p in model.providers
+    }
     assert "provider://halcyon-bank" in {c["flags"]["identifier"] for c in providers}
 
-    provider_ids = {c["flags"]["identifier"]: c["flags"]["identifier"] for c in providers}
+    provider_ids = {
+        c["flags"]["identifier"]: c["flags"]["identifier"] for c in providers
+    }
     application_ids = {a.id: f"app_{a.id}" for a in model.applications}
     resources = tenancy.resource_commands(model, provider_ids, application_ids)
-    assert {c["flags"]["identifier"] for c in resources} == {r.identifier for r in model.resources}
+    assert {c["flags"]["identifier"] for c in resources} == {
+        r.identifier for r in model.resources
+    }
     assert len(resources) == len(model.resources)
 
     policies = tenancy.policy_commands(model)
@@ -312,10 +373,12 @@ def test_provision_scripts_exist_and_build_plan():
 
     with pytest.raises(control_client.ControlError):
         control_client.config_from_env({})
-    config = control_client.config_from_env({
-        "CONTROL_CLIENT_ID": "<control-key-client-id>",
-        "CONTROL_CLIENT_SECRET": "<one-time-control-key-secret>",
-    })
+    config = control_client.config_from_env(
+        {
+            "CONTROL_CLIENT_ID": "<control-key-client-id>",
+            "CONTROL_CLIENT_SECRET": "<one-time-control-key-secret>",
+        }
+    )
     assert config.scopes == control_client.SCOPES
     assert "control:resource:write" in control_client.SCOPES
     assert "control:policy-set:write" in control_client.SCOPES

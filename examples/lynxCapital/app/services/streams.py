@@ -4,6 +4,7 @@ Caracal, a product of Garudex Labs
 
 Long-lived stream consumer that bridges the Pulse Market Data SSE feed onto the in-process event bus.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,8 +26,14 @@ _stop = threading.Event()
 _threads: list[threading.Thread] = []
 
 
+def get_active_stream_count() -> int:
+    return sum(1 for thread in _threads if thread.is_alive())
+
+
 def _publish_tick(data: dict) -> None:
-    bus.publish(Event(run_id="streams", category="service", kind="market.tick", payload=data))
+    bus.publish(
+        Event(run_id="streams", category="service", kind="market.tick", payload=data)
+    )
 
 
 def _handle_line(line: str, event: str) -> str:
@@ -63,7 +70,9 @@ async def _governed_stream(symbol: str) -> None:
                 await asyncio.sleep(2.0)
 
 
-async def _stream_once(rt: caracal.AppRuntime, root: caracal.CaracalContext, symbol: str) -> None:
+async def _stream_once(
+    rt: caracal.AppRuntime, root: caracal.CaracalContext, symbol: str
+) -> None:
     async with rt.client.spawn(
         grant=caracal.worker_grant(["pulse:read"], [PULSE_VIEW]),
         labels=tenancy.agent_labels(STREAM_ROLE),
@@ -78,7 +87,10 @@ async def _stream_once(rt: caracal.AppRuntime, root: caracal.CaracalContext, sym
             async with http.stream(
                 "GET",
                 f"{rt.gateway_url}/stream",
-                headers={"Authorization": f"Bearer {token}", "X-Caracal-Resource": PULSE_VIEW},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "X-Caracal-Resource": PULSE_VIEW,
+                },
                 params={"symbol": symbol, "ticks": 50},
             ) as resp:
                 event = "message"
@@ -93,7 +105,9 @@ def _consume_direct(url: str, api_key: str, symbol: str) -> None:
     params = {"symbol": symbol, "ticks": 50}
     while not _stop.is_set():
         try:
-            with httpx.stream("GET", f"{url}/stream", headers=headers, params=params, timeout=None) as resp:
+            with httpx.stream(
+                "GET", f"{url}/stream", headers=headers, params=params, timeout=None
+            ) as resp:
                 event = "message"
                 for line in resp.iter_lines():
                     if _stop.is_set():
