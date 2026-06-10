@@ -229,6 +229,7 @@ def test_setup_page_is_guided_and_provider_backed():
     assert 'CONTROL_CLIENT_SECRET="&lt;one-time-control-key-secret&gt;"' in body
     # Providers: registered with Caracal in provider-supported format, with per-app views
     assert "Providers" in body
+    assert "provider-table" in body
     assert "provider://halcyon-bank" in body
     assert "provider://meridian-pay" in body
     assert "provider://relay-automation" in body
@@ -245,18 +246,14 @@ def test_setup_page_is_guided_and_provider_backed():
     assert "Quetzal Payouts" in body
     assert "Junction Procurement" in body
     # Validation: user-facing checks only, no infra health
-    assert "Zone<small>CARACAL_ZONE_ID is set</small>" in body
-    assert (
-        "Application boundaries<small>Every application has an id and secret</small>"
-        in body
-    )
-    assert (
-        "Credential providers<small>All partners registered with Caracal</small>"
-        in body
-    )
-    assert (
-        "Resource views<small>Per-application views created and bound</small>" in body
-    )
+    assert 'data-check="identity"' in body
+    assert 'data-check="applications"' in body
+    assert 'data-check="providers"' in body
+    assert 'data-check="resources"' in body
+    assert "CARACAL_ZONE_ID is set" in body
+    assert "Every application has an id and secret" in body
+    assert "All partners registered with Caracal" in body
+    assert "Per-application views created and bound" in body
     assert "Run Validation" in body
     assert "Launch Demo" in body
     assert "Open Workspace" in body

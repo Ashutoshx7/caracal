@@ -250,7 +250,7 @@ def _caracal_steps() -> list[dict[str, object]]:
                 {"label": "Name", "value": f"\"{cfg.company}\""},
                 {"label": "Zone ID", "value": zone},
             ],
-            "why": "The zone is the isolation boundary that owns the managed applications, the credential providers, the resource views, and the policy set. One zone backs the whole Lynx Capital platform.",
+            "why": "The zone is the isolation boundary that owns the applications, providers, resource views, and policy set.",
             "field": "CARACAL_ZONE_ID",
             "value": zone,
         },
@@ -262,7 +262,7 @@ def _caracal_steps() -> list[dict[str, object]]:
                 {"label": "Names", "value": app_names},
                 {"label": "Registration method", "value": "managed"},
             ],
-            "why": "Each application is a credential and trust boundary holding only its own partner authority — orchestration, intake, ledger, compliance, treasury, payments, and audit. Every agent in the swarm runs as a labeled agent session under its role's application. Copy each Application ID and one-time client secret into the LYNX_CARACAL_<APP>_* variables; each secret is shown once.",
+            "why": "Each application is a credential boundary. Copy each Application ID and one-time client secret into the LYNX_CARACAL_<APP>_* variables.",
         },
         {
             "step": "03",
@@ -272,7 +272,7 @@ def _caracal_steps() -> list[dict[str, object]]:
                 {"label": "Providers", "value": f"{len(model.providers)} partners, identifier provider://<slug>"},
                 {"label": "Kinds", "value": "api_key, bearer_token, oauth2_client_credentials, oauth2_authorization_code, caracal_mandate, none"},
             ],
-            "why": "Each partner is registered in the exact config shape its provider kind supports — header or query API keys, static bearer tokens, OAuth client credentials or authorization-code with PKCE and refresh, mandate-verifying providers, and the credential-free internal directory. The Gateway holds these credentials; agents never do.",
+            "why": "Each partner is registered in the exact config shape its kind supports. The Gateway holds these credentials; agents never do.",
         },
         {
             "step": "04",
@@ -282,7 +282,7 @@ def _caracal_steps() -> list[dict[str, object]]:
                 {"label": "Views", "value": f"{len(model.resources)} resources, identifier resource://<app>-<provider>"},
                 {"label": "Gateway binding", "value": "each view binds to exactly one application"},
             ],
-            "why": "The Gateway binds every resource to exactly one application, so a shared partner gets one view per boundary that needs it, each carrying only the scopes that boundary may hold. A payments agent and an audit agent reach the same partner through different views with different authority.",
+            "why": "Every view binds to exactly one application and carries only the scopes that boundary may hold.",
         },
         {
             "step": "05",
@@ -293,7 +293,7 @@ def _caracal_steps() -> list[dict[str, object]]:
                 {"label": "Policy set", "value": f"\"{model.policySet.name}\""},
                 {"label": "Bindings", "value": "01-bindings.rego is rendered from the created application ids"},
             ],
-            "why": "The base policy default-denies, then one policy per application allows exactly its roles' mandate mints and gateway calls: the delegation edge must carry the scope, the agent's role label must be granted it, and the resource view must belong to the calling application. The active set is evaluated on every token exchange and gateway call.",
+            "why": "The base policy default-denies; one policy per application allows exactly its roles' mandate mints and gateway calls.",
         },
         {
             "step": "06",
@@ -304,7 +304,7 @@ def _caracal_steps() -> list[dict[str, object]]:
                 {"label": "Identity", "value": "labels [role, lynx-swarm] + run/agent metadata"},
                 {"label": "Grants", "value": "Grant.narrow(role scopes, views, max_hops=1, run TTL)"},
             ],
-            "why": "Every spawned agent — orchestrators and the thousands of ephemeral workers — gets its own agent session under its role's application, narrowed by a delegation edge to its role's scopes and views. Logs and policy decisions identify exactly which agent did what.",
+            "why": "Every spawned agent gets its own labeled session, narrowed by a delegation edge to its role's scopes and views.",
         },
     ]
 
@@ -355,8 +355,9 @@ def _setup_ctx(request: Request) -> dict:
             "total": len(configured),
             "percent": round((ready / len(configured)) * 100),
         },
-        "setup_links": {
-            "overview": "/overview/about",
+        "setup_status": {
+            "caracal": configured["zone"] and configured["applications"] and configured["openai"],
+            "providers": configured["providers"],
         },
     })
     return ctx
