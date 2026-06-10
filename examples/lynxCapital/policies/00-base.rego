@@ -62,6 +62,7 @@ worker_mint if {
 	every scope in input.context.requested_scopes {
 		scope in input.delegation_edge.scopes
 	}
+	customer_confined
 }
 
 # The agent's role label must allow every requested scope on this resource.
@@ -70,6 +71,32 @@ mint_role_allowed if {
 	scopes := resource_grant.roles[role]
 	every scope in input.context.requested_scopes {
 		scope in scopes
+	}
+}
+
+# Customer confinement. An agent session spawned for one customer carries a
+# customer:<id> label, and that label caps the authority it may mint to the
+# customer-record surface: receivables data and the notifications that serve it. A
+# customer-labeled agent can never mint treasury, payment-rail, or any other
+# non-customer scope, whatever its role would otherwise allow.
+customer_scopes := {
+	"corebilling:read", "corebilling:post", "corebilling:collect",
+	"vela:send", "vela:read",
+}
+
+customer_labeled if {
+	some label in input.principal.labels
+	startswith(label, "customer:")
+}
+
+customer_confined if {
+	not customer_labeled
+}
+
+customer_confined if {
+	customer_labeled
+	every scope in input.context.requested_scopes {
+		scope in customer_scopes
 	}
 }
 

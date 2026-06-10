@@ -128,6 +128,32 @@ def test_runner_rejects_unknown_role():
         pool.acquire("no-such-role", "scope")
 
 
+def test_customer_identity_propagates_through_spawn():
+    from app.core.workers import WorkerPool
+    from app.events.bus import bus
+
+    seen = []
+    unsubscribe = bus.subscribe(lambda e: seen.append(e))
+    try:
+        runner = AgentRunner("run-cust")
+        parent = runner.spawn("workflow-orchestrator", "wf.ar", parent=None, layer="orchestrator")
+        pool = WorkerPool("run-cust", runner, parent)
+        worker = pool.acquire("receivables", "ar-dun:cust-204", customer_id="cust-204")
+        assert worker.customer_id == "cust-204"
+        spawn_events = [e for e in seen if e.kind == "agent_spawn" and e.payload["agent_id"] == worker.id]
+        assert spawn_events and spawn_events[0].payload["customer_id"] == "cust-204"
+    finally:
+        unsubscribe()
+
+    assert tenancy.agent_labels("receivables", "cust-204") == [
+        "receivables", "lynx-swarm", "customer:cust-204",
+    ]
+    metadata = tenancy.agent_metadata("run-cust", worker.id, "ar-dun:cust-204", customer_id="cust-204")
+    assert metadata["customer_id"] == "cust-204"
+    assert tenancy.agent_labels("receivables") == ["receivables", "lynx-swarm"]
+    assert "customer_id" not in tenancy.agent_metadata("run-cust", worker.id, "ar-summary")
+
+
 def test_partner_call_fails_closed_without_caracal_or_simulation(monkeypatch):
     monkeypatch.delenv("LYNX_SIMULATION", raising=False)
     with pytest.raises(partners.PartnerError, match="fails closed|simulation mode is off"):
