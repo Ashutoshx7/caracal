@@ -58,19 +58,20 @@ class CaracalASGIMiddleware:
                 token = decode_envelope(headers.get).subject_token
                 if not token:
                     if not self.allow_root:
-                        return await _reject(
-                            send, "missing_token", "Missing bearer token"
-                        )
+                        await _reject(send, "missing_token", "Missing bearer token")
+                        return
                 else:
                     await self.verifier(token)
             async with self.caracal.bind_from_headers(
                 headers, allow_root=self.allow_root
             ):
                 await self.app(scope, receive, send)
+            return
         except RuntimeError as err:
             if "missing a bearer token" not in str(err):
                 raise
             await _reject(send, "missing_token", "Missing bearer token")
+            return
 
 
 async def _reject(send: Send, code: str, message: str) -> None:

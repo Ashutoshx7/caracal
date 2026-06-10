@@ -16,7 +16,6 @@ from caracalai.advanced import (
     HEADER_AUTHORIZATION,
     HEADER_BAGGAGE,
     HEADER_TRACEPARENT,
-    BAGGAGE_SESSION,
     MAX_HOP,
     Envelope,
     decode_envelope,
