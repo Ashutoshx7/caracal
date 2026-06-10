@@ -6,7 +6,7 @@ Demo chat composer template for prompts and run controls.
 #}
 <div class="chat-composer">
   <div class="composer-input-shell">
-    <textarea id="prompt-input" rows="1" placeholder="Ask the swarm to run a finance operation, investigate an exception, or coordinate a workflow..."></textarea>
+    <textarea id="prompt-input" rows="1" placeholder="Ask the team to run a finance operation, investigate an exception, or coordinate a workflow..."></textarea>
   </div>
 
   <div class="composer-footer">
@@ -15,13 +15,13 @@ Demo chat composer template for prompts and run controls.
         <span class="model-picker-label">Model</span>
         <select id="model-select" class="model-picker-select"></select>
       </label>
-      <button class="btn btn-ghost" id="pause-btn" hidden title="Pause or resume stream rendering">Pause</button>
-      <span class="composer-hint">Enter sends - Shift+Enter adds a line - traces stay visible</span>
+      <button class="btn" id="pause-btn" hidden title="Pause or resume stream rendering">Pause</button>
+      <span class="composer-hint">Enter sends · Shift+Enter adds a line</span>
     </div>
 
     <div class="composer-actions">
       <button class="btn btn-stop" id="stop-btn" hidden title="Cancel the current run">Cancel</button>
-      <button class="btn btn-primary" id="start-btn">Send</button>
+      <button class="btn btn-primary" id="start-btn" type="button">Send</button>
     </div>
   </div>
 </div>
