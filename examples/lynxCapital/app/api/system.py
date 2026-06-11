@@ -64,3 +64,21 @@ def set_model(body: ModelChangeRequest) -> ModelResponse:
         allowed=list(ALLOWED_MODELS),
         contextLimit=MODEL_CONTEXT_LIMITS.get(settings.model, 128_000),
     )
+
+
+class ApprovalSettingResponse(BaseModel):
+    required: bool
+
+
+class ApprovalSettingRequest(BaseModel):
+    required: bool
+
+
+@router.get("/approvals")
+def get_approvals() -> ApprovalSettingResponse:
+    return ApprovalSettingResponse(required=settings.approvals_required())
+
+
+@router.post("/approvals")
+def set_approvals(body: ApprovalSettingRequest) -> ApprovalSettingResponse:
+    return ApprovalSettingResponse(required=settings.set_approvals(body.required))

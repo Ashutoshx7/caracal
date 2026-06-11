@@ -11,9 +11,7 @@ import os
 from dataclasses import dataclass, field
 from uuid import uuid4
 
-
-def _enabled() -> bool:
-    return os.environ.get("LYNX_REQUIRE_APPROVAL", "").strip().lower() in ("1", "true", "yes", "on")
+from app.core.settings import settings
 
 
 def _timeout() -> float:
@@ -38,8 +36,8 @@ class Decision:
 
 
 class ApprovalGate:
-    """Per-process registry of pending approvals. When LYNX_REQUIRE_APPROVAL is
-    unset the gate auto-approves so autonomous runs are unaffected; when set it
+    """Per-process registry of pending approvals. When approval gating is off
+    the gate auto-approves so autonomous runs are unaffected; when on it
     blocks the requesting tool until a reviewer resolves it or the wait times
     out (timeout denies, which is the safe default for financial actions)."""
 
@@ -48,7 +46,7 @@ class ApprovalGate:
         self._lock = asyncio.Lock()
 
     def required(self) -> bool:
-        return _enabled()
+        return settings.approvals_required()
 
     async def request(self, run_id: str, action: str) -> tuple[str, _Pending]:
         request_id = f"appr-{uuid4().hex[:10]}"
