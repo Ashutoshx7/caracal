@@ -122,7 +122,10 @@ class MandateVerifier:
         return MandateVerifier(merge_options(self.defaults, overrides))
 
     async def warmup(self) -> None:
-        await warm_jwks(self.defaults.issuer)
+        # JWKS keysets are zone-scoped; without a configured zone the keyset
+        # to warm is unknown until the first token arrives.
+        if self.defaults.expected_zone_id:
+            await warm_jwks(self.defaults.issuer, self.defaults.expected_zone_id)
 
 
 def create_mandate_verifier(defaults: AuthOptions) -> MandateVerifier:

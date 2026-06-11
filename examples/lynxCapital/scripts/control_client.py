@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -83,16 +86,26 @@ def config_from_env(env: dict[str, str] | None = None) -> ControlConfig:
 
 
 def _post(url: str, body: bytes, headers: dict[str, str]) -> dict:
-    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            payload = response.read().decode("utf-8")
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")
-        raise ControlError(f"{url} -> {exc.code}: {detail}") from None
-    except urllib.error.URLError as exc:
-        raise ControlError(f"{url} unreachable: {exc.reason}") from None
-    return json.loads(payload) if payload else {}
+    """POST with bounded retry on Control rate limiting, honoring the advertised window."""
+    for attempt in range(4):
+        request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                payload = response.read().decode("utf-8")
+            return json.loads(payload) if payload else {}
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")
+            if exc.code == 429 and attempt < 3:
+                retry_after = exc.headers.get("Retry-After", "")
+                match = re.search(r"\d+", retry_after or detail)
+                wait = min(int(match.group()) if match else 30, 120)
+                print(f"rate limited; retrying in {wait}s", file=sys.stderr)
+                time.sleep(wait + 1)
+                continue
+            raise ControlError(f"{url} -> {exc.code}: {detail}") from None
+        except urllib.error.URLError as exc:
+            raise ControlError(f"{url} unreachable: {exc.reason}") from None
+    raise ControlError(f"{url} rate limited after retries")
 
 
 class ControlClient:
