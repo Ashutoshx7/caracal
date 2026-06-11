@@ -1,0 +1,42 @@
+---
+/*
+ * Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+ * Caracal, a product of Garudex Labs
+ *
+ * Editorial article shell for individual blog posts with a back link, header, and post body slot.
+ */
+
+interface Props {
+  title: string;
+  category: string;
+  author?: string;
+  date?: string;
+  readingTime?: string;
+}
+
+const { title, category, author, date, readingTime } = Astro.props;
+
+const formatDate = (iso?: string) =>
+  iso ? new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : undefined;
+---
+
+<section class="media-page">
+  <article class="post-article">
+    <a class="post-article__back" href="/blogs/">
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
+      </svg>
+      <span>All posts</span>
+    </a>
+    <p class="vlog-kicker">{category}</p>
+    <h1 class="post-article__title">{title}</h1>
+    <p class="post-meta">
+      {author && <span>{author}</span>}
+      {formatDate(date) && <span>{formatDate(date)}</span>}
+      {readingTime && <span>{readingTime}</span>}
+    </p>
+    <div class="post-article__body">
+      <slot />
+    </div>
+  </article>
+</section>
