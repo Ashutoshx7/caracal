@@ -44,18 +44,11 @@ applications:
 providers:
   - id: "halcyon-bank"
     name: "Halcyon Bank"
-    kind: "oauth2_authorization_code"
+    kind: "bearer_token"
     port: 9400
     integrationView: "treasury-halcyon"
     config:
-      authorization_endpoint: "${LYNX_PARTNER_HALCYON_BANK_AUTHORIZE_URL:https://halcyon-bank.mock:9400/oauth/authorize}"
-      token_endpoint: "${LYNX_PARTNER_HALCYON_BANK_TOKEN_URL:https://halcyon-bank.mock:9400/oauth/token}"
-      redirect_uri: "${LYNX_OAUTH_REDIRECT_URI:http://127.0.0.1:8000/oauth/callback}"
-      client_id: "${LYNX_PARTNER_HALCYON_BANK_CLIENT_ID}"
-      client_secret: "${LYNX_PARTNER_HALCYON_BANK_CLIENT_SECRET}"
-      client_auth_method: "client_secret_basic"
-      scopes: ["accounts.read", "payments.write"]
-      allowed_token_hosts: ["halcyon-bank.mock"]
+      bearer_token: "${LYNX_PARTNER_HALCYON_BANK_TOKEN}"
     scopes:
       halcyon:read: ["list_accounts", "get_account", "list_transactions", "get_statement"]
       halcyon:pay: ["initiate_payment", "get_payment"]
@@ -74,16 +67,11 @@ providers:
       meridian:read: ["get_charge", "list_charges", "list_disputes", "get_dispute", "list_settlements", "get_settlement", "list_events"]
   - id: "cordoba-fx"
     name: "Cordoba FX"
-    kind: "oauth2_client_credentials"
+    kind: "bearer_token"
     port: 9402
     integrationView: "audit-cordoba"
     config:
-      token_endpoint: "${LYNX_PARTNER_CORDOBA_FX_TOKEN_URL:https://cordoba-fx.mock:9402/oauth/token}"
-      client_id: "${LYNX_PARTNER_CORDOBA_FX_CLIENT_ID}"
-      client_secret: "${LYNX_PARTNER_CORDOBA_FX_CLIENT_SECRET}"
-      client_auth_method: "client_secret_basic"
-      scopes: ["fx.read", "fx.convert", "fx.transfer"]
-      allowed_token_hosts: ["cordoba-fx.mock"]
+      bearer_token: "${LYNX_PARTNER_CORDOBA_FX_TOKEN}"
     scopes:
       cordoba:quote: ["get_quote"]
       cordoba:convert: ["create_conversion"]
@@ -91,34 +79,21 @@ providers:
       cordoba:read: ["get_conversion", "get_beneficiary", "list_beneficiaries", "get_payment", "list_balances"]
   - id: "ironbark-erp"
     name: "Ironbark ERP"
-    kind: "oauth2_client_credentials"
+    kind: "bearer_token"
     port: 9403
     integrationView: "ledger-ironbark"
     config:
-      token_endpoint: "${LYNX_PARTNER_IRONBARK_ERP_TOKEN_URL:https://ironbark-erp.mock:9403/oauth/token}"
-      client_id: "${LYNX_PARTNER_IRONBARK_ERP_CLIENT_ID}"
-      client_secret: "${LYNX_PARTNER_IRONBARK_ERP_CLIENT_SECRET}"
-      client_auth_method: "client_secret_post"
-      scopes: ["erp.read", "erp.write"]
-      resource: "https://api.ironbark-erp.test"
-      allowed_token_hosts: ["ironbark-erp.mock"]
+      bearer_token: "${LYNX_PARTNER_IRONBARK_ERP_TOKEN}"
     scopes:
       ironbark:read: ["list_vendors", "get_vendor", "list_purchase_orders", "get_purchase_order", "list_bills", "get_bill", "get_journal_entry", "list_journal_entries", "list_accounts", "get_account"]
       ironbark:post: ["match_invoice", "create_purchase_order", "create_bill", "approve_bill", "post_journal_entry"]
   - id: "tallyhall-books"
     name: "Tallyhall Books"
-    kind: "oauth2_authorization_code"
+    kind: "bearer_token"
     port: 9404
     integrationView: "ledger-tallyhall"
     config:
-      authorization_endpoint: "${LYNX_PARTNER_TALLYHALL_BOOKS_AUTHORIZE_URL:https://tallyhall-books.mock:9404/oauth/authorize}"
-      token_endpoint: "${LYNX_PARTNER_TALLYHALL_BOOKS_TOKEN_URL:https://tallyhall-books.mock:9404/oauth/token}"
-      redirect_uri: "${LYNX_OAUTH_REDIRECT_URI:http://127.0.0.1:8000/oauth/callback}"
-      client_id: "${LYNX_PARTNER_TALLYHALL_BOOKS_CLIENT_ID}"
-      client_secret: "${LYNX_PARTNER_TALLYHALL_BOOKS_CLIENT_SECRET}"
-      client_auth_method: "client_secret_basic"
-      scopes: ["com.intuit.quickbooks.accounting", "com.intuit.quickbooks.payment"]
-      allowed_token_hosts: ["tallyhall-books.mock"]
+      bearer_token: "${LYNX_PARTNER_TALLYHALL_BOOKS_TOKEN}"
     scopes:
       tallyhall:read: ["get_company_info", "list_accounts", "get_account", "list_vendors", "get_vendor", "list_customers", "get_customer", "list_items", "list_bills", "get_bill", "list_invoices", "get_invoice", "list_expenses", "get_expense", "list_journal_entries", "get_journal_entry"]
       tallyhall:post: ["create_vendor", "create_bill", "match_bill", "create_expense", "post_journal_entry"]
@@ -132,7 +107,6 @@ providers:
     integrationView: "ledger-slate"
     config:
       bearer_token: "${LYNX_PARTNER_SLATE_LEDGER_TOKEN}"
-      allowed_token_hosts: ["slate-ledger.mock"]
     scopes:
       slate:read: ["list_accounts", "get_account", "get_entry", "list_entries", "get_reconciliation", "trial_balance", "get_period", "list_periods"]
       slate:post: ["post_entry", "reverse_entry", "reconcile_account", "create_accrual", "close_period"]
@@ -178,18 +152,11 @@ providers:
       lumen:read: ["get_user", "lookup_user", "list_users", "get_user_access", "list_direct_reports", "get_manager_chain", "list_roles", "get_role", "list_groups", "get_group", "list_teams", "get_team", "list_departments", "get_department", "list_service_accounts", "get_service_account"]
   - id: "beacon-crm"
     name: "Beacon CRM"
-    kind: "oauth2_authorization_code"
+    kind: "bearer_token"
     port: 9410
     integrationView: "intake-beacon"
     config:
-      authorization_endpoint: "${LYNX_PARTNER_BEACON_CRM_AUTHORIZE_URL:https://beacon-crm.mock:9410/oauth/authorize}"
-      token_endpoint: "${LYNX_PARTNER_BEACON_CRM_TOKEN_URL:https://beacon-crm.mock:9410/oauth/token}"
-      redirect_uri: "${LYNX_OAUTH_REDIRECT_URI:http://127.0.0.1:8000/oauth/callback}"
-      client_id: "${LYNX_PARTNER_BEACON_CRM_CLIENT_ID}"
-      client_secret: "${LYNX_PARTNER_BEACON_CRM_CLIENT_SECRET}"
-      client_auth_method: "client_secret_basic"
-      scopes: ["contacts.read", "accounts.read", "deals.read", "deals.write", "activities.read", "activities.write"]
-      allowed_token_hosts: ["beacon-crm.mock"]
+      bearer_token: "${LYNX_PARTNER_BEACON_CRM_TOKEN}"
     scopes:
       beacon:read: ["list_contacts", "get_contact", "list_accounts", "get_account", "list_deals", "get_deal", "list_activities", "list_notes", "list_relationships"]
       beacon:write: ["create_contact", "update_contact", "update_deal", "log_activity", "add_note"]
@@ -201,7 +168,6 @@ providers:
     integrationView: "intake-atlas"
     config:
       bearer_token: "${LYNX_PARTNER_ATLAS_VENDOR_TOKEN}"
-      allowed_token_hosts: ["atlas-vendor.mock"]
     scopes:
       atlas:read: ["search_vendors", "list_vendors", "get_vendor_profile", "list_vendor_contacts", "get_onboarding_status", "get_compliance_status", "list_vendor_documents", "list_contracts", "get_contract_terms"]
       atlas:onboard: ["register_vendor", "advance_onboarding", "verify_vendor_banking", "submit_vendor_document", "set_vendor_status"]
@@ -235,7 +201,6 @@ providers:
     integrationView: "payments-quetzal"
     config:
       bearer_token: "${LYNX_PARTNER_QUETZAL_PAYOUTS_TOKEN}"
-      allowed_token_hosts: ["quetzal-payouts.mock"]
     scopes:
       quetzal:payout: ["create_recipient", "get_recipient", "verify_recipient", "get_quote", "create_payout", "get_payout", "cancel_payout", "list_payouts", "get_balance"]
   - id: "vela-notify"
@@ -247,7 +212,6 @@ providers:
       bearer_token: "${LYNX_PARTNER_VELA_NOTIFY_TOKEN}"
       auth_header: "X-Vela-Token"
       auth_scheme: "Token"
-      allowed_token_hosts: ["vela-notify.mock"]
     scopes:
       vela:send: ["send_message", "send_batch"]
       vela:read: ["get_message", "list_messages", "get_message_events", "get_delivery_stats"]
@@ -284,16 +248,11 @@ providers:
       pulse:read: ["list_instruments", "get_instrument", "get_snapshot", "get_quotes", "get_bars", "get_market_status", "list_reference_rates", "get_reference_rate"]
   - id: "junction-procure"
     name: "Junction Procurement"
-    kind: "oauth2_client_credentials"
+    kind: "bearer_token"
     port: 9419
     integrationView: "intake-junction"
     config:
-      token_endpoint: "${LYNX_PARTNER_JUNCTION_PROCURE_TOKEN_URL:https://junction-procure.mock:9419/oauth/token}"
-      client_id: "${LYNX_PARTNER_JUNCTION_PROCURE_CLIENT_ID}"
-      client_secret: "${LYNX_PARTNER_JUNCTION_PROCURE_CLIENT_SECRET}"
-      client_auth_method: "client_secret_basic"
-      scopes: ["procure.read", "procure.write"]
-      allowed_token_hosts: ["junction-procure.mock"]
+      bearer_token: "${LYNX_PARTNER_JUNCTION_PROCURE_TOKEN}"
     scopes:
       junction:read: ["list_suppliers", "get_supplier", "list_commodities", "list_requisitions", "get_requisition", "get_approval_chain", "list_purchase_orders", "get_purchase_order", "list_budgets", "get_budget"]
       junction:requisition: ["create_requisition", "submit_requisition", "approve_requisition", "reject_requisition"]

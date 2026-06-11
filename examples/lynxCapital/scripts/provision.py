@@ -79,6 +79,7 @@ def ensure_providers(client: ControlClient, model: tenancy.TenancyModel) -> dict
         if found:
             client.invoke("identity-provider", "patch", {
                 "id": _id_of(found, identifier),
+                "kind": command["flags"]["kind"],
                 "config": command["flags"]["config"],
             })
             result = found
