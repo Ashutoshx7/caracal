@@ -9,8 +9,8 @@ services:
 
   providerlab:
     build:
-      context: ..
-      dockerfile: _mock/Dockerfile
+      context: ../../..
+      dockerfile: examples/lynxCapital/_mock/Dockerfile
     image: lynx-mock:latest
     command: python -m _mock.providerlab.run
     environment:
