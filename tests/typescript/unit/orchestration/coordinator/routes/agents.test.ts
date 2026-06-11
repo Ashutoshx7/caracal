@@ -400,6 +400,27 @@ describe('POST /v1/zones/:zoneId/agents: spawn', () => {
     expect(client.release).toHaveBeenCalled()
   })
 
+  it('replays the session stored under the supplied idempotency key', async () => {
+    const { app, db } = buildApp()
+    const query = vi.fn()
+    query.mockResolvedValueOnce({ rows: [] })
+    query.mockResolvedValueOnce({ rows: [] })
+    query.mockResolvedValueOnce({ rows: [{ agent_session_id: 'agent-replay', zone_id: 'z1', application_id: 'app-1' }] })
+    query.mockResolvedValueOnce({ rows: [] })
+    db.connect.mockResolvedValueOnce({ query, release: vi.fn() })
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/agents',
+      headers: { 'idempotency-key': 'spawn-key-1' },
+      payload: { application_id: 'app-1' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body)).toMatchObject({ agent_session_id: 'agent-replay' })
+    const lookup = query.mock.calls.find((call) => String(call[0]).includes('idempotency_key'))
+    expect(lookup?.[1]).toEqual(['z1', 'app-1', 'spawn-key-1'])
+  })
+
   it('defaults subject_session_id from the verified bearer and returns the agent session id', async () => {
     const { app, db } = buildApp()
     const client = spawnClient({
@@ -552,6 +573,34 @@ describe('DELETE /v1/zones/:zoneId/agents/:id: cascade terminate', () => {
       expect.objectContaining({ session_id: 'sid-root', agent_session_id: 'agent-root' }),
       expect.objectContaining({ session_id: 'sid-child', agent_session_id: 'agent-child' }),
     ]))
+  })
+
+  it('skips session revocation when another live agent still uses the subject session', async () => {
+    const { app, db } = buildApp()
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [{ application_id: 'app-1' }] })
+        .mockResolvedValueOnce({ rows: [
+          { id: 'agent-root', subject_session_id: 'sid-shared', parent_id: null },
+          { id: 'agent-child', subject_session_id: 'sid-own', parent_id: 'agent-root' },
+        ] })
+        .mockResolvedValueOnce({ rows: [{ subject_session_id: 'sid-shared' }] })
+        .mockResolvedValue({ rows: [] }),
+      release: vi.fn(),
+    }
+    db.connect.mockResolvedValueOnce(client)
+    await app.ready()
+    const res = await app.inject({ method: 'DELETE', url: '/v1/zones/z1/agents/agent-root' })
+    expect(res.statusCode).toBe(204)
+    const outboxCalls = client.query.mock.calls.filter((call) => String(call[0]).includes('INSERT INTO caracal_outbox'))
+    const params = (outboxCalls[0]?.[1] ?? []) as unknown[]
+    const dedupeKeys = params.filter((_, i) => i % 4 === 2)
+    expect(dedupeKeys).toEqual(expect.arrayContaining([
+      'terminate:agent-root', 'terminate:agent-child', 'agent_terminate:agent-child',
+    ]))
+    expect(dedupeKeys).not.toContain('agent_terminate:agent-root')
   })
 })
 

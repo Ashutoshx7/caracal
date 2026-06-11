@@ -93,7 +93,7 @@ class SpawnAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["metadata"], {"purpose": "test"})
         self.assertEqual(body["labels"], ["refunds.execute", "ledger.read"])
 
-    async def test_derives_idempotency_key_when_stable_inputs_present(self) -> None:
+    async def test_no_idempotency_key_when_not_supplied(self) -> None:
         captured: list[httpx.Request] = []
 
         async def handler(req: httpx.Request) -> httpx.Response:
@@ -110,11 +110,9 @@ class SpawnAgentTests(unittest.IsolatedAsyncioTestCase):
                 parent_id="parent-1",
             ),
         )
-        key = captured[0].headers.get("idempotency-key")
-        self.assertIsNotNone(key)
-        self.assertEqual(len(key), 64)
+        self.assertNotIn("idempotency-key", captured[0].headers)
 
-    async def test_explicit_idempotency_key_overrides_derived(self) -> None:
+    async def test_explicit_idempotency_key_sent(self) -> None:
         captured: list[httpx.Request] = []
 
         async def handler(req: httpx.Request) -> httpx.Response:
@@ -134,20 +132,6 @@ class SpawnAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             captured[0].headers.get("idempotency-key"), "user-supplied-key"
         )
-
-    async def test_no_idempotency_key_when_no_stable_inputs(self) -> None:
-        captured: list[httpx.Request] = []
-
-        async def handler(req: httpx.Request) -> httpx.Response:
-            captured.append(req)
-            return httpx.Response(200, json={"agent_session_id": "a-1"})
-
-        await spawn_agent(
-            _client(handler),
-            "tok",
-            SpawnRequest(zone_id="z", application_id="app"),
-        )
-        self.assertNotIn("idempotency-key", captured[0].headers)
 
 
 class CoordinatorLifecycleTests(unittest.IsolatedAsyncioTestCase):

@@ -722,7 +722,7 @@ func TestCoordinatorResponsesUseExplicitIDs(t *testing.T) {
 	}
 }
 
-func TestSpawnAgentDerivesIdempotencyKey(t *testing.T) {
+func TestSpawnAgentNoIdempotencyKeyByDefault(t *testing.T) {
 	var seen http.Header
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = r.Header.Clone()
@@ -738,9 +738,8 @@ func TestSpawnAgentDerivesIdempotencyKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key := seen.Get("Idempotency-Key")
-	if len(key) != 64 {
-		t.Fatalf("expected 64-char idempotency key, got %q", key)
+	if key := seen.Get("Idempotency-Key"); key != "" {
+		t.Fatalf("expected no idempotency key, got %q", key)
 	}
 }
 

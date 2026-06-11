@@ -610,7 +610,7 @@ describe('agent lifecycle and delegation', () => {
     ])
   })
 
-  it('derives a stable Idempotency-Key on spawn when subjectSessionId or parentId is present', async () => {
+  it('sends no Idempotency-Key on spawn unless explicitly supplied', async () => {
     const calls: { url: string; init: RequestInit }[] = []
     const fakeFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       calls.push({ url: String(input), init })
@@ -637,13 +637,9 @@ describe('agent lifecycle and delegation', () => {
     )
     const agentPosts = calls.filter((call) => call.init.method === 'POST' && call.url.endsWith('/agents'))
     expect(agentPosts.length).toBeGreaterThanOrEqual(2)
-    const key1 = new Headers(agentPosts[0].init.headers as HeadersInit).get('idempotency-key')
-    const key2 = new Headers(agentPosts[1].init.headers as HeadersInit).get('idempotency-key')
-    expect(key1).toBeTruthy()
-    expect(key2).toBeTruthy()
-    expect(key1!.length).toBe(64)
-    expect(key2!.length).toBe(64)
-    expect(key1).toBe(key2)
+    for (const post of agentPosts) {
+      expect(new Headers(post.init.headers as HeadersInit).get('idempotency-key')).toBeNull()
+    }
   })
 })
 
