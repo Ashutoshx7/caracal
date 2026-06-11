@@ -6,26 +6,30 @@ Demo message templates for user prompts, agent turns, tool calls, controls, and 
 #}
 <template id="tpl-user-message">
   <article class="msg msg-user">
-    <header class="msg-meta">
-      <span class="msg-author">You</span>
-      <span class="msg-spacer"></span>
-      <span class="msg-time"></span>
-    </header>
-    <div class="msg-content"></div>
+    <div class="msg-body">
+      <header class="msg-meta">
+        <span class="msg-author">You</span>
+        <span class="msg-spacer"></span>
+        <span class="msg-time"></span>
+      </header>
+      <div class="msg-content"></div>
+    </div>
   </article>
 </template>
 
 <template id="tpl-assistant-message">
   <article class="msg msg-assistant tone-worker">
-    <header class="msg-meta">
-      <span class="msg-avatar-dot" aria-hidden="true"></span>
-      <span class="msg-author">Agent</span>
-      <span class="msg-model-tag"></span>
-      <span class="msg-spacer"></span>
-      <span class="msg-status-indicator">Streaming</span>
-      <span class="msg-time"></span>
-    </header>
-    <div class="msg-content"></div>
+    <span class="msg-avatar" aria-hidden="true"></span>
+    <div class="msg-body">
+      <header class="msg-meta">
+        <span class="msg-author">Agent</span>
+        <span class="msg-model-tag"></span>
+        <span class="msg-spacer"></span>
+        <span class="msg-status-indicator">Streaming</span>
+        <span class="msg-time"></span>
+      </header>
+      <div class="msg-content"></div>
+    </div>
   </article>
 </template>
 
