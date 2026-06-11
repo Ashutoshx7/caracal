@@ -39,7 +39,7 @@ pnpm caracal up                     # Build and start the full stack
 pnpm caracal --help                 # Show runtime shell help and available lifecycle commands
 pnpm caracal status                 # Check health status of all services
 pnpm caracal down [--help]          # Stop the stack
-pnpm caracal purge                  # Remove stack, volumes, logs, cache, and installed data
+pnpm caracal purge                  # Remove stack, volumes, logs, examples, cache, and installed data
 ```
 
 `pnpm install` is the standard dependency install command for the Node workspace. Run `pnpm run setup` when you need the full cross-platform developer environment: it runs `pnpm install`, downloads Go module dependencies, creates `.venv`, installs Python test/style dependencies, and installs local Python packages in editable mode.

@@ -143,7 +143,7 @@ Installs to `%LOCALAPPDATA%\Programs\caracal` and verifies release provenance by
 caracal up                            # start all services, override with `CARACAL_VERSION=vYYYY.MM.DD caracal up`
 caracal status [--ready]              # probe all services
 caracal down                          # stop; add -v to remove volumes
-caracal purge                         # interactive cleanup (containers, volumes, config, runtime, caches)
+caracal purge                         # interactive cleanup (containers, volumes, config, runtime, examples, caches)
 caracal console                       # launch Console
 caracal run -- node worker.js         # workload execution
 ```
