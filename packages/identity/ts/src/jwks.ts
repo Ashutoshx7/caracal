@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// JWKS cache for mandate signature verification.
+// JWKS cache for mandate signature verification, keyed per issuer zone.
 
 import { createLocalJWKSet, type JWTVerifyGetKey } from 'jose'
 
@@ -19,9 +19,9 @@ export interface JwksCacheOptions {
 }
 
 export interface JwksCache {
-  getKeySet: (issuer: string) => Promise<JWTVerifyGetKey>
-  warm: (issuer: string) => Promise<void>
-  clear: (issuer?: string) => void
+  getKeySet: (issuer: string, zoneId: string) => Promise<JWTVerifyGetKey>
+  warm: (issuer: string, zoneId: string) => Promise<void>
+  clear: (issuer?: string, zoneId?: string) => void
 }
 
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000
@@ -55,29 +55,31 @@ export function createJwksCache(opts: JwksCacheOptions = {}): JwksCache {
   const fetchImpl = opts.fetchImpl
   const cache = new Map<string, JwksEntry>()
 
-  async function getKeySet(issuer: string): Promise<JWTVerifyGetKey> {
+  async function getKeySet(issuer: string, zoneId: string): Promise<JWTVerifyGetKey> {
+    const key = cacheKey(issuer, zoneId)
     const now = performance.now()
-    const entry = cache.get(issuer)
+    const entry = cache.get(key)
     if (entry) {
       const age = now - entry.fetchedAtMonoMs
       if (age < ttlMs) return entry.keySet
-      if (age > maxStaleMs) return fetchAndStore(issuer)
+      if (age > maxStaleMs) return fetchAndStore(issuer, zoneId)
       if (!entry.revalidating) {
-        entry.revalidating = fetchAndStore(issuer)
+        entry.revalidating = fetchAndStore(issuer, zoneId)
           .catch(() => entry.keySet)
           .finally(() => {
-            const current = cache.get(issuer)
+            const current = cache.get(key)
             if (current) current.revalidating = undefined
           })
       }
       return entry.keySet
     }
-    return fetchAndStore(issuer)
+    return fetchAndStore(issuer, zoneId)
   }
 
-  async function fetchAndStore(issuer: string): Promise<JWTVerifyGetKey> {
+  async function fetchAndStore(issuer: string, zoneId: string): Promise<JWTVerifyGetKey> {
     assertSecureIssuer(issuer)
-    const url = `${issuer.replace(/\/$/, '')}/.well-known/jwks.json`
+    if (!zoneId) throw new Error('zone_id required: STS serves one signing keyset per zone')
+    const url = `${issuer.replace(/\/$/, '')}/.well-known/jwks.json?${new URLSearchParams({ zone_id: zoneId })}`
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), fetchTimeoutMs)
     try {
@@ -85,7 +87,7 @@ export function createJwksCache(opts: JwksCacheOptions = {}): JwksCache {
       if (!res.ok) throw new Error(`JWKS fetch failed: ${res.status}`)
       const body = (await res.json()) as { keys: object[] }
       const keySet = createLocalJWKSet({ keys: body.keys } as Parameters<typeof createLocalJWKSet>[0])
-      cache.set(issuer, { keySet, fetchedAtMonoMs: performance.now() })
+      cache.set(cacheKey(issuer, zoneId), { keySet, fetchedAtMonoMs: performance.now() })
       return keySet
     } finally {
       clearTimeout(timeout)
@@ -94,12 +96,18 @@ export function createJwksCache(opts: JwksCacheOptions = {}): JwksCache {
 
   return {
     getKeySet,
-    async warm(issuer: string): Promise<void> {
-      await getKeySet(issuer)
+    async warm(issuer: string, zoneId: string): Promise<void> {
+      await getKeySet(issuer, zoneId)
     },
-    clear(issuer?: string): void {
+    clear(issuer?: string, zoneId?: string): void {
+      if (issuer && zoneId) {
+        cache.delete(cacheKey(issuer, zoneId))
+        return
+      }
       if (issuer) {
-        cache.delete(issuer)
+        for (const key of cache.keys()) {
+          if (key.startsWith(`${issuer}\u0000`)) cache.delete(key)
+        }
         return
       }
       cache.clear()
@@ -107,16 +115,20 @@ export function createJwksCache(opts: JwksCacheOptions = {}): JwksCache {
   }
 }
 
+function cacheKey(issuer: string, zoneId: string): string {
+  return `${issuer}\u0000${zoneId}`
+}
+
 const defaultCache = createJwksCache()
 
-export async function getKeySet(issuer: string): Promise<JWTVerifyGetKey> {
-  return defaultCache.getKeySet(issuer)
+export async function getKeySet(issuer: string, zoneId: string): Promise<JWTVerifyGetKey> {
+  return defaultCache.getKeySet(issuer, zoneId)
 }
 
-export async function warmJwks(issuer: string): Promise<void> {
-  await defaultCache.warm(issuer)
+export async function warmJwks(issuer: string, zoneId: string): Promise<void> {
+  await defaultCache.warm(issuer, zoneId)
 }
 
-export function clearJwksCache(issuer?: string): void {
-  defaultCache.clear(issuer)
+export function clearJwksCache(issuer?: string, zoneId?: string): void {
+  defaultCache.clear(issuer, zoneId)
 }

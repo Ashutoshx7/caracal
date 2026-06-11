@@ -55,11 +55,14 @@ export function createMandateVerifier(defaults: AuthDeps): MandateVerifier {
       return createMandateVerifier({ ...defaults, ...overrides })
     },
     async warmup(): Promise<void> {
+      // JWKS keysets are zone-scoped; without a configured zone the keyset to
+      // warm is unknown until the first token arrives.
+      if (!defaults.zoneId) return
       if (defaults.jwksCache) {
-        await defaults.jwksCache.warm(defaults.issuer)
+        await defaults.jwksCache.warm(defaults.issuer, defaults.zoneId)
         return
       }
-      await warmJwks(defaults.issuer)
+      await warmJwks(defaults.issuer, defaults.zoneId)
     },
   }
 }
