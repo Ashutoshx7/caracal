@@ -3,13 +3,25 @@
  * Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
  * Caracal, a product of Garudex Labs
  *
- * Compact community strip with the featured video, program highlights, and blog and vlog links.
+ * Compact community strip with the featured video, featured blog post, and blog and vlog links.
  */
 
+import { getCollection } from "astro:content";
 import community from "../data/community.json";
 
 const featured = community.vlogs.find((v) => v.featured);
-const highlights = community.highlights;
+
+const posts = await getCollection("docs", (entry) => entry.id.startsWith("blog/") && Boolean(entry.data.post));
+const featuredPost = posts
+  .sort((a, b) => new Date(b.data.post!.date).valueOf() - new Date(a.data.post!.date).valueOf())
+  .find((entry) => entry.data.post!.featured) ?? posts[0];
+const postMeta = featuredPost?.data.post;
+const postTint = postMeta
+  ? (community.blogCategories as { name: string; tint: string }[]).find((c) => c.name === postMeta.category)?.tint ?? "#60a5fa"
+  : "#60a5fa";
+const postDate = postMeta
+  ? new Date(postMeta.date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+  : "";
 ---
 
 <section class="docs-strip" aria-labelledby="docs-strip-heading">
@@ -40,16 +52,21 @@ const highlights = community.highlights;
       </a>
     )}
 
-    <ul class="docs-strip__list">
-      {highlights.map((item) => (
-        <li>
-          <a class="docs-strip__item" href={item.href} target="_blank" rel="noopener noreferrer">
-            <span class="docs-strip__item-title">{item.title}</span>
-            <span class="docs-strip__item-body">{item.description}</span>
-          </a>
-        </li>
-      ))}
-    </ul>
+    {featuredPost && postMeta && (
+      <a class="docs-strip__post" href={`/${featuredPost.id}/`} style={`--tint: ${postTint}`}>
+        <span class="docs-strip__post-kicker">
+          <span class="chip">{postMeta.category}</span>
+          <span class="docs-strip__post-label">From the blog</span>
+        </span>
+        <span class="docs-strip__post-title">{featuredPost.data.title}</span>
+        <span class="docs-strip__post-desc">{featuredPost.data.description}</span>
+        <span class="docs-strip__post-meta">
+          <span>{postMeta.author}</span>
+          <span>{postDate}</span>
+          {postMeta.readingTime && <span>{postMeta.readingTime}</span>}
+        </span>
+      </a>
+    )}
 
   </div>
 </section>
