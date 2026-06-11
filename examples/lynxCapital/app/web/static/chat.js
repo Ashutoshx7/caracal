@@ -1159,6 +1159,28 @@ promptInput.addEventListener('keydown', (event) => {
   }
 })
 
+modelSelect.addEventListener('change', async () => {
+  const requested = modelSelect.value
+  modelSelect.disabled = true
+  try {
+    const response = await fetch('/api/system/model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: requested }),
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const data = await response.json()
+    if (!AppState.active) {
+      renderMessage('system', { kicker: 'MODEL', text: `Model set to ${data.model}.` })
+    }
+  } catch (error) {
+    renderMessage('system', { kicker: 'MODEL', variant: 'error', text: `Could not switch to ${requested}: ${error.message}` })
+    await loadModelList()
+  } finally {
+    modelSelect.disabled = false
+  }
+})
+
 stream.addEventListener('scroll', () => {
   AppState.autoScroll = isNearBottom()
 })
