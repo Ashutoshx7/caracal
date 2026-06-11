@@ -97,11 +97,21 @@ def ensure_resources(
     provider_ids: dict[str, str],
     application_ids: dict[str, str],
 ) -> None:
+    """Create each per-application resource view. Existing views are patched so upstream
+    URLs, scopes, and bindings reconcile on re-run."""
     existing = client.invoke("resource", "list")
     for command in tenancy.resource_commands(model, provider_ids, application_ids):
         identifier = command["flags"]["identifier"]
-        if find_by_identifier(existing, identifier):
-            print(f"resource exists: {identifier}")
+        found = find_by_identifier(existing, identifier)
+        if found:
+            client.invoke("resource", "patch", {
+                "id": _id_of(found, identifier),
+                "scopes": command["flags"]["scopes"],
+                "upstream-url": command["flags"]["upstream-url"],
+                "credential-provider-id": command["flags"]["credential-provider-id"],
+                "gateway-application-id": command["flags"]["gateway-application-id"],
+            })
+            print(f"resource patched: {identifier}")
             continue
         client.run(command)
         print(f"resource created: {identifier}")

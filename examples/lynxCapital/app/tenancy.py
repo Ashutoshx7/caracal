@@ -50,7 +50,7 @@ class ProviderSpec(BaseModel):
 
     def upstream_url(self) -> str:
         env = f"LYNX_PARTNER_{self.id.upper().replace('-', '_')}_URL"
-        return os.environ.get(env, f"http://127.0.0.1:{self.port}").rstrip("/")
+        return os.environ.get(env, f"http://{self.id}.mock:{self.port}").rstrip("/")
 
     def operation_scope(self, operation: str) -> str | None:
         for scope, operations in self.scopes.items():

@@ -18,7 +18,7 @@ def lines() -> list[str]:
     for provider in catalog.CATALOG:
         seed = credentials.load(provider.id).data["seed"]
         eid = _eid(provider.id)
-        out.append(f"export LYNX_PARTNER_{eid}_URL=http://127.0.0.1:{provider.port}")
+        out.append(f"export LYNX_PARTNER_{eid}_URL=http://{provider.id}.mock:{provider.port}")
         if catalog.apikey_auth(provider):
             out.append(f"export LYNX_PARTNER_{eid}_API_KEY={seed['apiKey']}")
         elif catalog.bearer_auth(provider) or (provider.category == "mcp" and provider.mcp_auth == "bearer"):
