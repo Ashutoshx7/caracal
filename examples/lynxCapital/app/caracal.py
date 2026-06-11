@@ -14,12 +14,17 @@ from dataclasses import dataclass
 
 import httpx
 
-from caracalai import Caracal, CaracalContext, DelegationConstraints, Grant
+from caracalai import (
+    Caracal,
+    CaracalContext,
+    DelegationConstraints,
+    Grant,
+    ServiceAgent,
+)
 
 from app import tenancy
 
 WORKER_TTL_SECONDS = int(os.environ.get("LYNX_WORKER_TTL_SECONDS", "600"))
-MANDATE_TTL_SECONDS = int(os.environ.get("LYNX_MANDATE_TTL_SECONDS", "300"))
 
 _lock = threading.Lock()
 _runtimes: dict[str, AppRuntime] | None = None
@@ -65,16 +70,15 @@ def application_credentials(app_key: str) -> tuple[bool, bool]:
 
 @dataclass
 class AppRuntime:
-    """One application boundary's bound runtime: its control-plane identity, its SDK
-    client holding the session mandate and resource-mandate minting, and the shared
-    transport worker threads use to call the Gateway."""
+    """One application boundary's bound runtime: its control-plane identity and its SDK
+    client holding the session mandate, resource-mandate minting, and gateway-routed
+    transports."""
 
     key: str
     application_id: str
     zone_id: str
     gateway_url: str
     client: Caracal
-    http: httpx.Client
     views: list[str]
 
 
@@ -101,18 +105,6 @@ class WorkerAuthority:
     def allows(self, scope: str) -> bool:
         return scope in self.scopes
 
-    def mandate(self, view_identifier: str, scopes: list[str]) -> str:
-        """The SDK exchanges the application credential plus this agent's session and
-        delegation edge for a resource mandate narrowed to one view and the requested
-        scopes, caching it per agent until it nears expiry. The STS evaluates policy
-        here with the delegation edge populated."""
-        return self.runtime.client.mint_mandate(
-            view_identifier,
-            scopes,
-            ctx=self.ctx,
-            ttl_seconds=MANDATE_TTL_SECONDS,
-        )
-
     def gateway_post(
         self,
         view_identifier: str,
@@ -121,21 +113,19 @@ class WorkerAuthority:
         scopes: list[str],
         *,
         timeout_s: float = 8.0,
+        transport: httpx.BaseTransport | None = None,
     ) -> httpx.Response:
         """Call the provider behind a resource view through the Caracal Gateway. The
-        Gateway validates the mandate, re-exchanges it against policy, injects the
-        provider credential, and forwards the request; the worker never holds the
-        partner secret."""
-        token = self.mandate(view_identifier, scopes)
-        return self.runtime.http.post(
-            f"{self.runtime.gateway_url}{path}",
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "X-Caracal-Resource": view_identifier,
-            },
-            timeout=timeout_s,
-        )
+        SDK mints a cached resource mandate narrowed to this agent's session, delegation
+        edge, and the requested scopes, then routes the request; the worker never holds
+        the partner secret."""
+        client = self.runtime.client
+        request = client.gateway_request(view_identifier, path)
+        kwargs: dict = {"timeout": timeout_s}
+        if transport is not None:
+            kwargs["transport"] = transport
+        with client.sync_transport(ctx=self.ctx, scopes=scopes, **kwargs) as http:
+            return http.post(request.url, json=payload, headers=request.headers)
 
 
 def _build_runtime(app_key: str, model: tenancy.TenancyModel) -> AppRuntime:
@@ -166,7 +156,6 @@ def _build_runtime(app_key: str, model: tenancy.TenancyModel) -> AppRuntime:
         zone_id=zone_id,
         gateway_url=gateway_url,
         client=client,
-        http=httpx.Client(timeout=10.0),
         views=views,
     )
 
@@ -207,7 +196,6 @@ async def aclose() -> None:
     with _lock:
         registry, _runtimes = _runtimes, None
     for app_runtime in (registry or {}).values():
-        app_runtime.http.close()
         await app_runtime.client.aclose()
 
 
@@ -228,6 +216,7 @@ def worker_grant(
 __all__ = [
     "AppRuntime",
     "CaracalContext",
+    "ServiceAgent",
     "WORKER_TTL_SECONDS",
     "WorkerAuthority",
     "aclose",

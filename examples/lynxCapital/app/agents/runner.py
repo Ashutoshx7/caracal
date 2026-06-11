@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from typing import Callable
 from uuid import uuid4
 
@@ -64,37 +65,48 @@ class AgentHandle:
             self._release()
 
 
-class _SessionKeeper:
-    """Holds one Caracal session open, keeping the spawn context's enter and exit
-    inside a single loop task so the SDK's context binding stays valid."""
+class _SessionRegistry:
+    """Tracks the run's open Caracal service sessions and retires them on the run
+    loop, from any thread."""
 
     def __init__(self) -> None:
-        self._done = asyncio.Event()
-        self.task: asyncio.Task | None = None
+        self._open: list[caracal.ServiceAgent] = []
+        self._closing: list[asyncio.Task] = []
+        self._lock = threading.Lock()
 
-    async def open(self, cm) -> caracal.CaracalContext:
-        loop = asyncio.get_running_loop()
-        ready: asyncio.Future = loop.create_future()
-        self.task = loop.create_task(self._hold(cm, ready))
-        return await ready
+    def add(self, svc: caracal.ServiceAgent) -> None:
+        with self._lock:
+            self._open.append(svc)
 
-    async def _hold(self, cm, ready: asyncio.Future) -> None:
-        try:
-            async with cm as ctx:
-                ready.set_result(ctx)
-                await self._done.wait()
-        except asyncio.CancelledError:
-            if not ready.done():
-                ready.cancel()
-            raise
-        except Exception as exc:
-            if not ready.done():
-                ready.set_exception(exc)
-            else:
-                log.warning("caracal session close failed: %s", exc)
+    def retire(self, svc: caracal.ServiceAgent, loop: asyncio.AbstractEventLoop) -> None:
+        with self._lock:
+            if svc not in self._open:
+                return
+            self._open.remove(svc)
+        if loop.is_closed():
+            return
 
-    def release(self, loop: asyncio.AbstractEventLoop) -> None:
-        loop.call_soon_threadsafe(self._done.set)
+        def schedule() -> None:
+            with self._lock:
+                self._closing.append(loop.create_task(_close_session(svc)))
+
+        loop.call_soon_threadsafe(schedule)
+
+    async def aclose(self) -> None:
+        with self._lock:
+            open_now, self._open = self._open, []
+            closing, self._closing = self._closing, []
+        if open_now:
+            await asyncio.gather(*(_close_session(svc) for svc in open_now))
+        if closing:
+            await asyncio.gather(*closing, return_exceptions=True)
+
+
+async def _close_session(svc: caracal.ServiceAgent) -> None:
+    try:
+        await svc.aclose()
+    except Exception as exc:
+        log.warning("caracal session close failed: %s", exc)
 
 
 class AgentRunner:
@@ -108,7 +120,7 @@ class AgentRunner:
         self._handles: dict[str, AgentHandle] = {}
         self._children: dict[str, list[str]] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._keepers: list[_SessionKeeper] = []
+        self._sessions = _SessionRegistry()
         self._roots: dict[str, caracal.CaracalContext] = {}
         self._root_lock = asyncio.Lock()
 
@@ -269,24 +281,21 @@ class AgentRunner:
             parent_ctx = await self._root(app_key)
 
         grant = caracal.worker_grant(scopes, views) if scopes else None
-        keeper = _SessionKeeper()
-        ctx = await keeper.open(
-            runtime.client.spawn(
-                grant=grant,
-                labels=tenancy.agent_labels(role, customer_id),
-                metadata=tenancy.agent_metadata(
-                    self.run_id, agent_id, scope, region, customer_id
-                ),
-                parent_ctx=parent_ctx,
-                ttl_seconds=caracal.WORKER_TTL_SECONDS,
-                trace_id=self.run_id,
-            )
+        svc = await runtime.client.spawn_service(
+            grant=grant,
+            labels=tenancy.agent_labels(role, customer_id),
+            metadata=tenancy.agent_metadata(
+                self.run_id, agent_id, scope, region, customer_id
+            ),
+            parent_ctx=parent_ctx,
+            ttl_seconds=caracal.WORKER_TTL_SECONDS,
+            trace_id=self.run_id,
         )
-        self._keepers.append(keeper)
+        self._sessions.add(svc)
         loop = self._loop
         return caracal.WorkerAuthority(
-            runtime, ctx, role, scopes
-        ), lambda: keeper.release(loop)
+            runtime, svc.context, role, scopes
+        ), lambda: self._sessions.retire(svc, loop)
 
     def _partner_plan(self, scope: str) -> tuple[str, list[str], list[str]] | None:
         """Resolve a dynamic partner-integration spawn from its work scope, shaped
@@ -308,30 +317,19 @@ class AgentRunner:
             if ctx is not None:
                 return ctx
             runtime = caracal.runtime(app_key)
-            keeper = _SessionKeeper()
-            ctx = await keeper.open(
-                runtime.client.spawn(
-                    labels=["dispatcher", "lynx-swarm"],
-                    metadata={"run_id": self.run_id, "application": app_key},
-                    trace_id=self.run_id,
-                )
+            svc = await runtime.client.spawn_service(
+                labels=["dispatcher", "lynx-swarm"],
+                metadata={"run_id": self.run_id, "application": app_key},
+                trace_id=self.run_id,
             )
-            self._keepers.append(keeper)
-            self._roots[app_key] = ctx
-            return ctx
+            self._sessions.add(svc)
+            self._roots[app_key] = svc.context
+            return svc.context
 
     async def aclose(self) -> None:
         """Retire every Caracal session the run opened, workers and roots alike."""
-        loop = asyncio.get_running_loop()
-        tasks = []
-        for keeper in self._keepers:
-            keeper.release(loop)
-            if keeper.task is not None:
-                tasks.append(keeper.task)
-        self._keepers.clear()
         self._roots.clear()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        await self._sessions.aclose()
 
     def cancel_subtree(self, agent_id: str) -> None:
         for child_id in list(self._children.get(agent_id, [])):
