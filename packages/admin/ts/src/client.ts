@@ -280,14 +280,14 @@ export class AdminClient {
     get: (zoneId: string, id: string) =>
       this.request<Policy & { versions: PolicyVersion[] }>(`/v1/zones/${zoneId}/policies/${id}`),
     create: (zoneId: string, input: PolicyInput) =>
-      this.request<Policy & { version: PolicyVersion }>(`/v1/zones/${zoneId}/policies`, { method: 'POST', body: input }),
+      this.request<Policy & { version_id: string; version: PolicyVersion }>(`/v1/zones/${zoneId}/policies`, { method: 'POST', body: input }),
     validate: (content: string, schemaVersion?: string) =>
       this.request<PolicyValidation>('/v1/policies/validate', {
         method: 'POST',
         body: { content, schema_version: schemaVersion },
       }),
     addVersion: (zoneId: string, id: string, content: string, schemaVersion?: string) =>
-      this.request<PolicyVersion>(`/v1/zones/${zoneId}/policies/${id}/versions`, {
+      this.request<PolicyVersion & { version_id: string }>(`/v1/zones/${zoneId}/policies/${id}/versions`, {
         method: 'POST',
         body: { content, schema_version: schemaVersion ?? '2026-05-20' },
       }),
@@ -315,7 +315,7 @@ export class AdminClient {
         body: { name, description },
       }),
     addVersion: (zoneId: string, id: string, manifest: { policy_version_id: string }[], schemaVersion?: string) =>
-      this.request<PolicySetVersion>(`/v1/zones/${zoneId}/policy-sets/${id}/versions`, {
+      this.request<PolicySetVersion & { version_id: string }>(`/v1/zones/${zoneId}/policy-sets/${id}/versions`, {
         method: 'POST',
         body: { manifest, schema_version: schemaVersion },
       }),

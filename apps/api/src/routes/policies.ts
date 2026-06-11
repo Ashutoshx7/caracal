@@ -120,7 +120,7 @@ export const policiesRoutes: FastifyPluginAsync = async (fastify) => {
          RETURNING id, policy_id, version, content_sha256, schema_version, created_at`,
         [versionId, policyId, body.content, contentSHA, body.schema_version, createdBy],
       )
-      return reply.code(201).send({ id: policyId, zone_id: params.zoneId, name: body.name, description: body.description ?? null, version: rows[0] })
+      return reply.code(201).send({ id: policyId, version_id: rows[0].id, zone_id: params.zoneId, name: body.name, description: body.description ?? null, version: rows[0] })
     })
   })
 
@@ -152,7 +152,7 @@ export const policiesRoutes: FastifyPluginAsync = async (fastify) => {
          RETURNING id, policy_id, version, content_sha256, schema_version, created_at`,
         [versionId, params.id, body.content, contentSHA, body.schema_version, req.actor.name],
       )
-      return reply.code(201).send(rows[0])
+      return reply.code(201).send({ version_id: rows[0].id, ...rows[0] })
     })
   })
 

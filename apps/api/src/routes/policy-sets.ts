@@ -146,7 +146,7 @@ export const policySetsRoutes: FastifyPluginAsync = async (fastify) => {
          RETURNING id, policy_set_id, version, manifest_sha256, schema_version, created_at`,
         [versionId, params.id, manifestJSON, manifestSHA, body.schema_version, req.actor.name],
       )
-      return reply.code(201).send(rows[0])
+      return reply.code(201).send({ version_id: rows[0].id, ...rows[0] })
     })
   })
 
