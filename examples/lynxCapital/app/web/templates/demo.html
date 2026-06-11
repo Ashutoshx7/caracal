@@ -7,7 +7,7 @@ Demo page template for the Lynx Capital runtime workspace.
 {% extends "layout.html" %}
 {% block title %}{{ company }} - Demo{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/static/demo.css?v=15">
+<link rel="stylesheet" href="/static/demo.css?v=16">
 
 <div class="app-shell">
   <aside class="left-sidebar" aria-label="Runtime session">
@@ -71,23 +71,7 @@ Demo page template for the Lynx Capital runtime workspace.
             <div class="welcome-head">
               <span class="welcome-eyebrow">{{ shortName }} finance operations</span>
               <h2 class="welcome-title">What would you like the team to handle?</h2>
-              <p class="welcome-copy">
-                Describe a finance task. Agents plan the work, call the
-                {{ providers|length }} connected services through Caracal, and ask for
-                approval on sensitive steps. Every call, decision, and trace stays visible.
-              </p>
-            </div>
-
-            <div class="welcome-tasks">
-              {% for wf in workflows %}
-              <button type="button" class="welcome-task" data-prompt="Run the {{ wf.label }} workflow. {{ wf.focus }}">
-                <span class="welcome-task-name">{{ wf.label }}</span>
-                <span class="welcome-task-copy">{{ wf.focus }}</span>
-                <span class="welcome-task-steps">
-                  {% for st in wf.stages %}<span class="welcome-step">{{ st.label }}</span>{% endfor %}
-                </span>
-              </button>
-              {% endfor %}
+              <a class="welcome-link" href="/prompts">Browse example prompts →</a>
             </div>
           </div>
         </div>
@@ -214,18 +198,6 @@ Demo page template for the Lynx Capital runtime workspace.
 {% include "components/demo/message_component.html" %}
 {% include "components/demo/event_block.html" %}
 
-<script>
-  document.addEventListener("click", (event) => {
-    const task = event.target.closest(".welcome-task");
-    if (!task) return;
-    const input = document.getElementById("prompt-input");
-    if (!input) return;
-    input.value = task.dataset.prompt || "";
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.focus();
-  });
-</script>
-
-<script src="/static/chat.js?v=16" type="module"></script>
+<script src="/static/chat.js?v=17" type="module"></script>
 <script src="/static/graph.js?v=15" type="module"></script>
 {% endblock %}
