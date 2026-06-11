@@ -10,6 +10,7 @@ Use this page when you are protecting an inbound resource-server boundary and ne
 | Need | Use |
 | --- | --- |
 | Express route middleware | [Express Connector](./connectors/express/) |
+| FastAPI/Starlette (ASGI) middleware | [ASGI Connector](./connectors/asgi/) |
 | FastMCP server or tool authentication | [FastMCP Connector](./connectors/fastmcp/) |
 | Go `net/http` middleware | [Go net/http Connector](./connectors/nethttp/) |
 | Framework-neutral bearer parsing and mandate verification | [MCP Auth Transport](./transport-mcp/) |
@@ -50,5 +51,6 @@ All HTTP verification layers should preserve the shared status mapping:
 
 - [Protect an MCP Server](/guides/protect-mcp/)
 - [Protect an Express App](/guides/protect-express/)
+- [Protect a FastAPI App](/guides/protect-fastapi/)
 - [Protect a FastMCP App](/guides/protect-fastmcp/)
 - [Protect a Go net/http Service](/guides/protect-nethttp/)
