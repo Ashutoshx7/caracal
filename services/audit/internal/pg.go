@@ -10,12 +10,14 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -49,6 +51,24 @@ func (w *PGWriter) Insert(ctx context.Context, ev AuditEvent, ingestSig string) 
 
 	// Per-zone advisory lock serialises chain head reads/writes.
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, ev.ZoneID); err != nil {
+		return InsertResult{}, err
+	}
+
+	// Canonicalise the event to its stored representation before hashing:
+	// timestamptz keeps microseconds and jsonb normalises JSON text, so the
+	// tamper sweep recomputes the hash over exactly these bytes when it reads
+	// the row back. Hashing the raw wire bytes would mismatch on every row.
+	ev.OccurredAt = ev.OccurredAt.UTC().Truncate(time.Microsecond)
+	if err := tx.QueryRow(ctx,
+		`SELECT $1::jsonb::text, $2::jsonb::text, $3::jsonb::text`,
+		nullableJSON(ev.DeterminingPoliciesJSON),
+		nullableJSON(ev.DiagnosticsJSON),
+		nullableJSON(ev.MetadataJSON),
+	).Scan(
+		jsonText(&ev.DeterminingPoliciesJSON),
+		jsonText(&ev.DiagnosticsJSON),
+		jsonText(&ev.MetadataJSON),
+	); err != nil {
 		return InsertResult{}, err
 	}
 
@@ -402,6 +422,25 @@ func nullableJSON(v []byte) *string {
 	}
 	s := string(v)
 	return &s
+}
+
+// jsonText returns a scan target that writes a nullable jsonb::text column back
+// into the event's raw JSON field, preserving SQL NULL as an empty value.
+func jsonText(dst *json.RawMessage) any {
+	return &jsonTextScanner{dst: dst}
+}
+
+type jsonTextScanner struct {
+	dst *json.RawMessage
+}
+
+func (s *jsonTextScanner) ScanText(v pgtype.Text) error {
+	if !v.Valid {
+		*s.dst = nil
+		return nil
+	}
+	*s.dst = json.RawMessage(v.String)
+	return nil
 }
 
 func nullEmpty(s string) *string {

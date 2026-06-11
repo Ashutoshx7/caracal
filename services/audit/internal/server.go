@@ -58,6 +58,7 @@ type Server struct {
 type auditServerStore interface {
 	Ping(context.Context) error
 	Search(context.Context, SearchParams) ([]EventRow, error)
+	RehashChains(context.Context, zerolog.Logger) error
 }
 
 type auditServerRedis interface {
@@ -128,7 +129,13 @@ func (s *Server) Run(ctx context.Context) error {
 	g.Go(func() error { s.retentLead.Run(gctx); return nil })
 	g.Go(func() error { s.consumer.Run(gctx); return nil })
 	g.Go(func() error { s.exporter.Run(gctx); return nil })
-	g.Go(func() error { s.sweeper.Run(gctx); return nil })
+	g.Go(func() error {
+		if err := s.pg.RehashChains(gctx, s.log); err != nil {
+			s.log.Error().Err(err).Msg("audit chain rehash failed")
+		}
+		s.sweeper.Run(gctx)
+		return nil
+	})
 	g.Go(func() error { s.retention.Run(gctx); return nil })
 	g.Go(func() error { s.pollConsumerLag(gctx); return nil })
 
