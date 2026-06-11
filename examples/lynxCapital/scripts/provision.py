@@ -41,6 +41,8 @@ def _version_id(result: object) -> str:
     version = result.get("version") or result.get("latest_version")
     if isinstance(version, dict) and version.get("id"):
         return str(version["id"])
+    if result.get("policy_id") and result.get("id"):
+        return str(result["id"])
     versions = result.get("versions")
     if isinstance(versions, list) and versions and isinstance(versions[-1], dict):
         return str(versions[-1].get("id", ""))
