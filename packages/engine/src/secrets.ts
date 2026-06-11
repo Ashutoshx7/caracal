@@ -24,6 +24,7 @@ export const SECRET_FILES: readonly SecretFile[] = [
   { envKey: 'REDIS_PASSWORD', fileName: 'redisPassword', bytes: 24 },
   { envKey: 'CARACAL_ADMIN_TOKEN', fileName: 'caracalAdminToken', bytes: 32 },
   { envKey: 'CARACAL_COORDINATOR_TOKEN', fileName: 'caracalCoordinatorToken', bytes: 32 },
+  { envKey: 'METRICS_BEARER', fileName: 'metricsBearer', bytes: 32 },
   { envKey: 'ZONE_KEK', fileName: 'zoneKek', bytes: 32 },
   { envKey: 'AUDIT_HMAC_KEY', fileName: 'auditHmacKey', bytes: 32 },
   { envKey: 'STREAMS_HMAC_KEY', fileName: 'streamsHmacKey', bytes: 32 },

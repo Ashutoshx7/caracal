@@ -4,7 +4,7 @@
 // Shared doctor diagnostics for Console operator health checks.
 
 import type { Zone } from '@caracalai/admin'
-import { discoverCoordinatorToken } from '@caracalai/core'
+import { discoverCoordinatorToken, discoverMetricsBearer } from '@caracalai/core'
 import { DEFAULT_API_URL, DEFAULT_COORDINATOR_URL, DEFAULT_GATEWAY_URL, DEFAULT_ZONE_URL, resolveServiceUrl } from './runtimeConfig.js'
 import { scrubTokens } from './crash.js'
 import { adminTokenProvisionCommand, buildAdminClient as buildAdminClientCore, type AdminContext } from './shared.js'
@@ -257,6 +257,11 @@ function coordinatorTokenHeaders(): ProbeHeaders | undefined {
   return token ? { Authorization: `Bearer ${token}` } : undefined
 }
 
+function metricsBearerHeaders(): ProbeHeaders | undefined {
+  const token = discoverMetricsBearer()
+  return token ? { Authorization: `Bearer ${token}` } : undefined
+}
+
 async function runMetricsCheck(checks: DoctorCheck[], target: ServiceTarget, headers?: ProbeHeaders): Promise<void> {
   const body = await fetchJSON(`${target.baseUrl}${target.metricsPath}`, headers)
   const evaluation = target.evaluateMetrics ? target.evaluateMetrics(body) : { detail: 'queryable', status: 'ok' as DoctorStatus }
@@ -269,8 +274,12 @@ async function runMetricsCheck(checks: DoctorCheck[], target: ServiceTarget, hea
   })
 }
 
-async function runCoordinatorMetrics(checks: DoctorCheck[], target: ServiceTarget): Promise<void> {
-  const headers = coordinatorTokenHeaders()
+async function runProtectedMetrics(
+  checks: DoctorCheck[],
+  target: ServiceTarget,
+  headers: ProbeHeaders | undefined,
+  failAdvice: string,
+): Promise<void> {
   try {
     await runMetricsCheck(checks, target, headers)
   } catch (err) {
@@ -278,19 +287,19 @@ async function runCoordinatorMetrics(checks: DoctorCheck[], target: ServiceTarge
     if (!headers && /^HTTP 401\b/.test(detail)) {
       addCheck(checks, {
         section: 'readiness',
-        check: 'coordinator metrics',
+        check: `${target.name} metrics`,
         status: 'warn',
-        detail: 'protected; managed coordinator token not found',
-        advice: 'Run `caracal up` to generate and mount the coordinator operator token.',
+        detail: 'protected; managed operator token not found',
+        advice: 'Run `caracal up` to generate and mount the operator metrics token.',
       })
       return
     }
     addCheck(checks, {
       section: 'readiness',
-      check: 'coordinator metrics',
+      check: `${target.name} metrics`,
       status: 'fail',
       detail,
-      advice: 'Confirm coordinator exposes authenticated operator metrics on /stats.',
+      advice: failAdvice,
     })
   }
 }
@@ -312,21 +321,13 @@ async function runServiceChecks(checks: DoctorCheck[], apiUrl: string): Promise<
       `Inspect ${target.name} logs and confirm the service is bound to ${target.baseUrl}.`,
     )
     if (target.metricsPath) {
-      if (target.name === 'coordinator') {
-        await runCoordinatorMetrics(checks, target)
-        continue
-      }
-      try {
-        await runMetricsCheck(checks, target)
-      } catch (err) {
-        addCheck(checks, {
-          section: 'readiness',
-          check: `${target.name} metrics`,
-          status: 'fail',
-          detail: message(err),
-          advice: `Confirm ${target.name} exposes operator metrics on ${target.metricsPath}.`,
-        })
-      }
+      const headers = target.name === 'coordinator' ? coordinatorTokenHeaders() : metricsBearerHeaders()
+      await runProtectedMetrics(
+        checks,
+        target,
+        headers,
+        `Confirm ${target.name} exposes operator metrics on ${target.metricsPath}.`,
+      )
     }
   }
 }

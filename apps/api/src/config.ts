@@ -39,6 +39,7 @@ resolveFileSecrets([
   'STREAMS_HMAC_KEY',
   'AUDIT_HMAC_KEY',
   'GATEWAY_STS_HMAC_KEY',
+  'METRICS_BEARER',
 ])
 
 export interface Config {
