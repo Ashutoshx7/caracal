@@ -194,6 +194,9 @@ def main() -> None:
     ensure_resources(client, model, provider_ids, application_ids)
     ensure_policy_set(client, model, application_ids)
     write_outputs(application_ids, provider_ids, model)
+    terms = json.dumps(tenancy.partnership_manifest(model), separators=(",", ":"))
+    print("partnership terms for the mandate-verifying providers (export before starting the provider lab):")
+    print(f"  export LYNX_CARACAL_PARTNERSHIP='{terms}'")
     print(
         f"provisioned {len(model.applications)} applications, {len(model.providers)} providers, "
         f"{len(model.resources)} resource views, and the {model.policySet.name} policy set"

@@ -875,6 +875,7 @@ class Caracal:
     async def spawn_service(
         self,
         *,
+        grant: Grant | None = None,
         ttl_seconds: int | None = None,
         parent_id: str | None = None,
         parent_ctx: CaracalContext | None = None,
@@ -888,8 +889,10 @@ class Caracal:
         Unlike :meth:`spawn`, the session is not retired when a block exits: keep
         it alive by calling :meth:`ServiceAgent.heartbeat` and retire it with
         :meth:`ServiceAgent.aclose`. Use for daemons and workers that outlive a
-        single request. Pass ``heartbeat_interval`` to renew the lease from a
-        background task so it survives long provider/resource streams."""
+        single request. Pass ``grant=Grant.narrow([...])`` to issue a bounded
+        delegation edge so the handle holds only a subset of scopes, and
+        ``heartbeat_interval`` to renew the lease from a background task so it
+        survives long provider/resource streams."""
         on_start: LifecycleHook | None = (
             (lambda c: self._fire(self._agent_start_hooks, c))
             if self._agent_start_hooks
@@ -902,6 +905,7 @@ class Caracal:
             subject_token=self.config.subject_token,
             parent_id=parent_id,
             parent_ctx=parent_ctx,
+            grant=grant,
             ttl_seconds=ttl_seconds
             if ttl_seconds is not None
             else self.config.default_ttl_seconds,
