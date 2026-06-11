@@ -35,6 +35,10 @@ func (f *fakeServerStore) Search(_ context.Context, params SearchParams) ([]Even
 	return f.searchRows, f.searchErr
 }
 
+func (f *fakeServerStore) RehashChains(context.Context, zerolog.Logger) error {
+	return nil
+}
+
 type fakeServerRedis struct {
 	pingErr       error
 	xrange        []redis.XMessage
