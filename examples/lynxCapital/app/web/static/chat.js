@@ -19,7 +19,9 @@ const AppState = {
   agents: {},
   turns: {},
   blocks: {},
-  lastBlock: null,
+  cards: {},
+  seenEvents: new Set(),
+  runEnded: false,
   pendingTools: {},
   agentMem: {},
   compactions: [],
@@ -37,7 +39,7 @@ const AppState = {
   pendingScrollSmooth: false,
   autoScroll: true,
 
-  metrics: { events: 0, tools: 0, services: 0, audits: 0, approvals: 0 },
+  metrics: { events: 0, tools: 0, services: 0, audits: 0, approvals: 0, denied: 0 },
 
   reconnectTimer: null,
 }
@@ -71,6 +73,7 @@ const sessionDot = $('session-dot')
 const tplUserMessage = $('tpl-user-message')
 const tplAssistantMessage = $('tpl-assistant-message')
 const tplStepGroup = $('tpl-step-group')
+const tplTaskCard = $('tpl-task-card')
 const tplToolCard = $('tpl-tool-card')
 const tplSystemRow = $('tpl-system-row')
 const tplSecurityCard = $('tpl-security-card')
@@ -79,6 +82,7 @@ const tplPlanItem = $('tpl-plan-item')
 const tplEventBlock = $('tpl-event-block')
 
 const PLAN_TOOLS = new Set(['write_todos', 'write_file', 'read_file', 'ls_files'])
+const BLOCK_PATTERN = /lacks scope|denied|forbidden|unauthorized|403/i
 const FRAME_EVENT_LIMIT = 180
 const RUNTIME_FEED_LIMIT = 90
 const MESSAGE_LIMIT = 500
@@ -180,12 +184,32 @@ function flushScroll() {
 }
 
 // AGENT REGISTRY
+const ORCH_LAYERS = new Set(['finance-control', 'regional-orchestrator', 'workflow-orchestrator'])
+
 function registerAgent(payload) {
   AppState.agents[payload.agent_id] = {
     role: payload.role,
     layer: payload.layer,
     region: payload.region || null,
+    parentId: payload.parent_id || null,
+    scope: payload.scope || '',
   }
+}
+
+function isOrchestrator(agent) {
+  return !!agent && ORCH_LAYERS.has(agent.layer)
+}
+
+function orchestratorIdFor(agentId) {
+  let id = agentId
+  let agent = AppState.agents[id]
+  let hops = 0
+  while (agent && !isOrchestrator(agent) && agent.parentId && hops < 8) {
+    id = agent.parentId
+    agent = AppState.agents[id]
+    hops += 1
+  }
+  return id
 }
 
 function layerLabel(agent) {
@@ -197,6 +221,20 @@ function agentLabel(agent) {
   if (!agent) return 'Agent'
   const base = layerLabel(agent)
   return agent.region ? `${base} · ${agent.region}` : base
+}
+
+function taskTitle(agent) {
+  const scope = String(agent.scope || '')
+  if (scope.startsWith('workflow:')) return `${titleCase(scope.slice(9))} workflow`
+  if (scope.startsWith('region:')) return `${scope.slice(7)} region`
+  return agentLabel(agent)
+}
+
+function prettyTool(name) {
+  const words = String(name || '').split(/[\s_-]+/).filter(Boolean)
+  if (!words.length) return 'Tool call'
+  const text = words.join(' ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
 function agentInitials(agent) {
@@ -582,6 +620,9 @@ function renderMessage(type, data = {}, parent = null) {
 
   if (type === 'tool') {
     node.querySelector('.msg-tool-name').textContent = data.name || 'tool_call'
+    const agentTagEl = node.querySelector('.msg-tool-agent')
+    agentTagEl.textContent = data.agentTag || ''
+    agentTagEl.hidden = !data.agentTag
     node.querySelector('.msg-tool-summary').textContent = data.summary || ''
     const badge = node.querySelector('.msg-tool-status-badge')
     badge.textContent = data.status || 'executing'
@@ -625,7 +666,6 @@ function renderMessage(type, data = {}, parent = null) {
     return node
   }
 
-  if (type !== 'assistant') AppState.lastBlock = null
   stream.append(node)
   requestScroll({ smooth: type === 'user' })
 
@@ -638,13 +678,15 @@ function renderMessage(type, data = {}, parent = null) {
   return node
 }
 
-// AGENT BLOCKS — one chat block per contiguous span of agent activity
+// AGENT BLOCKS & TASK CARDS — root orchestrators get one block per run;
+// delegated orchestrators render as nested task cards; workers route to their owner.
 function ensureBlock(agentId, ts) {
   const existing = AppState.blocks[agentId]
-  if (existing && AppState.lastBlock === existing) return existing
+  if (existing) return existing
 
   const node = renderMessage('assistant', { agentId, ts, status: 'Working' })
   const block = {
+    kind: 'block',
     agentId,
     node,
     flowEl: node.querySelector('.msg-flow'),
@@ -655,14 +697,51 @@ function ensureBlock(agentId, ts) {
     streamingTurns: 0,
   }
   AppState.blocks[agentId] = block
-  AppState.lastBlock = block
   return block
 }
 
-function refreshBlockStatus(block) {
-  const busy = block.streamingTurns > 0 || block.runningSteps > 0
-  block.statusEl.textContent = busy ? 'Working' : 'Done'
-  block.node.classList.toggle('is-complete', !busy)
+function ensureCard(agentId, ts) {
+  const existing = AppState.cards[agentId]
+  if (existing) return existing
+
+  const agent = AppState.agents[agentId]
+  const parentCtr = containerFor(agent && agent.parentId, ts)
+  const node = cloneTemplate(tplTaskCard)
+  node.querySelector('.msg-task-title').textContent = taskTitle(agent)
+  node.querySelector('.msg-task-role').textContent = agentLabel(agent)
+  const card = {
+    kind: 'card',
+    agentId,
+    node,
+    flowEl: node.querySelector('.msg-task-body'),
+    statusEl: node.querySelector('.msg-task-status'),
+    modelEl: null,
+    steps: null,
+    runningSteps: 0,
+    streamingTurns: 0,
+  }
+  parentCtr.flowEl.append(node)
+  AppState.cards[agentId] = card
+  requestScroll()
+  return card
+}
+
+function containerFor(agentId, ts) {
+  const ownerId = orchestratorIdFor(agentId)
+  const owner = AppState.agents[ownerId]
+  if (owner && owner.parentId && AppState.agents[owner.parentId]) return ensureCard(ownerId, ts)
+  return ensureBlock(ownerId, ts)
+}
+
+function refreshBlockStatus(ctr) {
+  const busy = ctr.streamingTurns > 0 || ctr.runningSteps > 0
+  if (ctr.kind === 'card') {
+    ctr.statusEl.textContent = busy ? 'Running' : 'Completed'
+    ctr.statusEl.classList.toggle('is-running', busy)
+  } else {
+    ctr.statusEl.textContent = busy ? 'Working' : 'Done'
+  }
+  ctr.node.classList.toggle('is-complete', !busy)
 }
 
 function ensureSteps(block) {
@@ -705,7 +784,7 @@ function ensureTurn(agentId, messageId, ts) {
   const key = `${agentId}:${messageId}`
   if (AppState.turns[key]) return AppState.turns[key]
 
-  const block = ensureBlock(agentId, ts)
+  const block = containerFor(agentId, ts)
   const contentEl = document.createElement('div')
   contentEl.className = 'msg-content'
   block.flowEl.append(contentEl)
@@ -818,6 +897,32 @@ function settleApprovalCard(card, approved) {
     : '<span class="msg-approval-decision decision-rejected">Rejected</span>'
 }
 
+function resultDenied(result, { strict = false } = {}) {
+  const r = result || {}
+  if (r.status === 'denied' || BLOCK_PATTERN.test(String(r.error || ''))) return true
+  if (typeof r.status === 'number' && r.status === 403) return true
+  if (strict) return false
+  let text = ''
+  try {
+    text = JSON.stringify(r)
+  } catch {
+    text = String(r)
+  }
+  return BLOCK_PATTERN.test(text) && r.data === undefined
+}
+
+function renderGovernanceSummary(ts) {
+  const m = AppState.metrics
+  if (!m.services && !m.audits && !m.approvals) return
+  const parts = [
+    `${m.services} provider call${m.services === 1 ? '' : 's'}`,
+    m.denied ? `${m.denied} blocked by Caracal` : 'all allowed',
+    `${m.audits} policy check${m.audits === 1 ? '' : 's'}`,
+    m.approvals ? `${m.approvals} approval${m.approvals === 1 ? '' : 's'} requested` : 'no approvals required',
+  ]
+  renderMessage('system', { ts, kicker: 'CARACAL', text: parts.join(' · ') })
+}
+
 // EVENT PIPELINE
 function queueIncomingEvent(event) {
   AppState.pendingEvents.push(event)
@@ -863,11 +968,12 @@ function handleEvent(event) {
 
     case 'agent_end':
     case 'agent_terminate': {
-      const block = AppState.blocks[payload.agent_id]
-      if (block) {
-        block.streamingTurns = 0
-        block.runningSteps = 0
-        refreshBlockStatus(block)
+      const ctr = AppState.blocks[payload.agent_id] || AppState.cards[payload.agent_id]
+      if (ctr) {
+        ctr.streamingTurns = 0
+        ctr.runningSteps = 0
+        refreshBlockStatus(ctr)
+        if (ctr.kind === 'card') ctr.node.open = false
       }
       break
     }
@@ -892,8 +998,8 @@ function handleEvent(event) {
     }
 
     case 'llm_call': {
-      const block = AppState.blocks[payload.agent_id]
-      if (block && payload.model) block.modelEl.textContent = payload.model
+      const ctr = AppState.blocks[payload.agent_id]
+      if (ctr && ctr.modelEl && payload.model) ctr.modelEl.textContent = payload.model
       break
     }
 
@@ -906,56 +1012,67 @@ function handleEvent(event) {
         break
       }
       setStreamingStatus('tool_executing')
-      const block = ensureBlock(payload.agent_id, event.ts)
-      const steps = ensureSteps(block)
+      const ctr = containerFor(payload.agent_id, event.ts)
+      const steps = ensureSteps(ctr)
+      const executor = AppState.agents[payload.agent_id]
       const node = renderMessage('tool', {
         ts: event.ts,
-        name: payload.tool_name,
+        name: prettyTool(payload.tool_name),
+        agentTag: !isOrchestrator(executor) && executor ? layerLabel(executor) : '',
         summary: summarizeArgs(payload.args),
         args: payload.args,
         status: 'executing',
       }, steps.bodyEl)
-      stepStarted(block, steps, payload.tool_name)
-      trackToolCall(payload, node, { block, steps })
+      stepStarted(ctr, steps, prettyTool(payload.tool_name))
+      trackToolCall(payload, node, { block: ctr, steps })
       break
     }
 
-    case 'tool_result':
+    case 'tool_result': {
       if (PLAN_TOOLS.has(payload.tool_name)) break
       setStreamingStatus('streaming')
-      resolveToolCall(payload, payload.result, 'completed')
+      const denied = resultDenied(payload.result, { strict: true })
+      if (denied) AppState.metrics.denied += 1
+      resolveToolCall(payload, payload.result, denied ? 'blocked' : 'completed')
       break
+    }
 
     case 'tool_retry':
       resolveToolCall(payload, { error: payload.error, attempt: payload.attempt }, 'retrying')
       break
 
     case 'service_call': {
-      const block = ensureBlock(payload.agent_id, event.ts)
-      const steps = ensureSteps(block)
+      const ctr = containerFor(payload.agent_id, event.ts)
+      const steps = ensureSteps(ctr)
+      const executor = AppState.agents[payload.agent_id]
       const node = renderMessage('tool', {
         ts: event.ts,
-        name: `${payload.service_id}.${payload.action}`,
+        name: `${payload.service_id} · ${prettyTool(payload.action)}`,
+        agentTag: !isOrchestrator(executor) && executor ? layerLabel(executor) : '',
         summary: summarizeArgs(payload.payload),
         args: payload.payload,
         status: 'executing',
         serviceCall: true,
       }, steps.bodyEl)
-      stepStarted(block, steps, payload.service_id)
-      trackToolCall(payload, node, { serviceCall: true, block, steps })
+      stepStarted(ctr, steps, payload.service_id)
+      trackToolCall(payload, node, { serviceCall: true, block: ctr, steps })
       break
     }
 
-    case 'service_result':
-      resolveToolCall(payload, payload.result, 'completed', true)
+    case 'service_result': {
+      const denied = resultDenied(payload.result)
+      if (denied) AppState.metrics.denied += 1
+      resolveToolCall(payload, payload.result, denied ? 'blocked' : 'completed', true)
       break
+    }
 
     case 'audit_record': {
       const record = payload.record || {}
       const decision = String(record.decision || '').toLowerCase()
       const denied = /denied|blocked|reject/.test(decision)
-      const sink = !denied && AppState.lastBlock
-        ? ensureSteps(AppState.lastBlock).bodyEl
+      if (denied) AppState.metrics.denied += 1
+      const sink = !denied && payload.agent_id
+        ? ensureSteps(containerFor(payload.agent_id, event.ts)).bodyEl
         : null
       renderMessage('security', {
         ts: event.ts,
@@ -981,6 +1098,7 @@ function handleEvent(event) {
     }
 
     case 'approval_resolved': {
+      if (!payload.approved) AppState.metrics.denied += 1
       const card = approvalCards.get(payload.request_id)
       if (card) {
         settleApprovalCard(card, !!payload.approved)
@@ -1052,6 +1170,7 @@ function handleEvent(event) {
 
     case 'run_end':
       setStreamingStatus(payload.status === 'failed' ? 'error' : 'done')
+      renderGovernanceSummary(event.ts)
       renderMessage('system', {
         ts: event.ts,
         kicker: 'FINISHED',
@@ -1076,6 +1195,11 @@ function attachStream(runId, active) {
   AppState.es.onmessage = (message) => {
     try {
       const event = JSON.parse(message.data)
+      if (event.id) {
+        if (AppState.seenEvents.has(event.id)) return
+        AppState.seenEvents.add(event.id)
+      }
+      if (event.kind === 'run_end' || event.kind === 'run_cancelled') AppState.runEnded = true
       if (AppState.paused) AppState.queue.push(event)
       else queueIncomingEvent(event)
     } catch {
@@ -1086,7 +1210,7 @@ function attachStream(runId, active) {
   AppState.es.onerror = () => {
     AppState.es.close()
     AppState.es = null
-    if (!AppState.active) return
+    if (!AppState.active || AppState.runEnded) return
     setStreamingStatus('error')
     AppState.reconnectTimer = setTimeout(() => attachStream(runId, true), 3000)
   }
@@ -1094,11 +1218,13 @@ function attachStream(runId, active) {
 
 function resetState() {
   AppState.active = false
+  AppState.runEnded = false
   AppState.promptRendered = false
   AppState.agents = {}
   AppState.turns = {}
   AppState.blocks = {}
-  AppState.lastBlock = null
+  AppState.cards = {}
+  AppState.seenEvents = new Set()
   AppState.pendingTools = {}
   AppState.agentMem = {}
   AppState.compactions = []
@@ -1109,7 +1235,7 @@ function resetState() {
   AppState.queue = []
   AppState.pendingEvents = []
   AppState.dirtyTurns.clear()
-  AppState.metrics = { events: 0, tools: 0, services: 0, audits: 0, approvals: 0 }
+  AppState.metrics = { events: 0, tools: 0, services: 0, audits: 0, approvals: 0, denied: 0 }
   approvalCards.clear()
   feedTotal = 0
 
@@ -1147,6 +1273,10 @@ function clearConversation() {
 
 function finishRun() {
   AppState.active = false
+  if (AppState.reconnectTimer) {
+    clearTimeout(AppState.reconnectTimer)
+    AppState.reconnectTimer = null
+  }
   startBtn.hidden = false
   startBtn.disabled = false
   startBtn.classList.remove('is-busy')

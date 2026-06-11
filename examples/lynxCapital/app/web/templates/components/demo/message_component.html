@@ -44,11 +44,26 @@ Demo message templates for user prompts, agent turns, activity step groups, tool
   </details>
 </template>
 
+<template id="tpl-task-card">
+  <details class="msg-task" open>
+    <summary class="msg-task-line">
+      <span class="msg-caret" aria-hidden="true"></span>
+      <span class="msg-task-spinner" aria-hidden="true"></span>
+      <span class="msg-task-title">Task</span>
+      <span class="msg-task-role"></span>
+      <span class="msg-spacer"></span>
+      <span class="msg-task-status is-running">Running</span>
+    </summary>
+    <div class="msg-task-body"></div>
+  </details>
+</template>
+
 <template id="tpl-tool-card">
   <article class="msg msg-tool">
     <details class="msg-detail-shell">
       <summary class="msg-line">
         <span class="msg-caret" aria-hidden="true"></span>
+        <span class="msg-tool-agent" hidden></span>
         <span class="msg-tool-name">tool_call</span>
         <span class="msg-tool-summary"></span>
         <span class="msg-spacer"></span>

@@ -698,6 +698,106 @@ body.is-resizing {
   margin-left: 0;
 }
 
+/* Delegated orchestrator task cards nested inside a parent flow */
+.msg-task {
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-blue);
+  border-radius: 10px;
+  background: var(--surface-base);
+  overflow: hidden;
+}
+
+.msg-task-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px var(--space-3);
+  cursor: pointer;
+  list-style: none;
+}
+
+.msg-task-line::-webkit-details-marker {
+  display: none;
+}
+
+.msg-task .msg-caret {
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 4px solid var(--text-muted);
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  transition: transform 0.12s ease;
+}
+
+.msg-task[open] .msg-caret {
+  transform: rotate(90deg);
+}
+
+.msg-task-spinner {
+  display: none;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--accent-blue);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: chipSpin 0.7s linear infinite;
+}
+
+.msg-task:not(.is-complete) .msg-task-spinner {
+  display: inline-block;
+}
+
+.msg-task-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.msg-task-role {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.msg-task-status {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent-green);
+}
+
+.msg-task-status.is-running {
+  color: var(--accent-blue);
+}
+
+.msg-task.is-complete {
+  border-left-color: var(--border-subtle);
+}
+
+.msg-task-body {
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.msg-tool-agent {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 1px 5px;
+  background: var(--surface-raised);
+}
+
 .msg-avatar {
   flex: none;
   width: 26px;
@@ -862,6 +962,17 @@ body.is-resizing {
 .msg-tool-status-badge.status-retrying {
   color: var(--accent-amber);
   background: var(--accent-amber-surface);
+}
+
+.msg-tool-status-badge.status-blocked {
+  color: var(--accent-red);
+  background: var(--accent-red-surface);
+}
+
+.msg-tool-status-badge.status-blocked::before {
+  content: '✕';
+  font-size: 9px;
+  line-height: 1;
 }
 
 .msg-detail-body {
