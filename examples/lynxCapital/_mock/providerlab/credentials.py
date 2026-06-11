@@ -48,6 +48,7 @@ class ProviderStore:
         if self.path.exists():
             self.data = json.loads(self.path.read_text(encoding="utf-8"))
             self._ensure_seed_mandate()
+            self._ensure_seed_pat()
             return
         self._bootstrap()
 
@@ -98,6 +99,8 @@ class ProviderStore:
             seed["clientId"] = client["clientId"]
             seed["clientSecret"] = client["clientSecret"]
             seed["tokenEndpoint"] = "/oauth/token"
+            pat = self._new_bearer("seed-pat", prefix="pat_")
+            seed["patToken"] = pat["accessToken"]
             if p.audience:
                 seed["audience"] = p.audience
             if p.category == "oauth2_authorization_code":
@@ -144,6 +147,19 @@ class ProviderStore:
         if valid:
             return
         seed["mandate"] = self._mint_seed_mandate()
+        self._save()
+        self._write_index()
+
+    def _ensure_seed_pat(self) -> None:
+        """OAuth-capable partners also issue one long-lived personal access token so
+        gateways that hold server credentials can call without a token exchange."""
+        if self.provider.category not in ("oauth2_client_credentials", "oauth2_authorization_code"):
+            return
+        seed = self.data.get("seed", {})
+        if seed.get("patToken"):
+            return
+        pat = self._new_bearer("seed-pat", prefix="pat_")
+        seed["patToken"] = pat["accessToken"]
         self._save()
         self._write_index()
 

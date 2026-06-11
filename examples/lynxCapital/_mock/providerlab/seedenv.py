@@ -26,6 +26,7 @@ def lines() -> list[str]:
         elif provider.category in ("oauth2_client_credentials", "oauth2_authorization_code"):
             out.append(f"export LYNX_PARTNER_{eid}_CLIENT_ID={seed['clientId']}")
             out.append(f"export LYNX_PARTNER_{eid}_CLIENT_SECRET={seed['clientSecret']}")
+            out.append(f"export LYNX_PARTNER_{eid}_TOKEN={seed['patToken']}")
         elif provider.category == "caracal_mandate" or (provider.category == "mcp" and provider.mcp_auth == "mandate"):
             out.append(f"export LYNX_PARTNER_{eid}_MANDATE={seed['mandate']}")
     return out

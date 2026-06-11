@@ -61,7 +61,13 @@ def authenticate(provider: catalog.Provider, request: Request) -> dict:
 
     if cat in ("oauth2_client_credentials", "oauth2_authorization_code"):
         presented = _bearer_from(request, provider.auth_header, provider.auth_scheme)
-        token = store.valid_access_token(presented) if presented else None
+        if not presented:
+            raise AuthError(401, "invalid_token", "missing or expired access token")
+        rec = store.find_bearer(presented)
+        if rec is not None:
+            store.touch("bearer", presented)
+            return {"principal": rec["tokenId"], "auth": "pat", "scope": list(provider.scopes)}
+        token = store.valid_access_token(presented)
         if token is None:
             raise AuthError(401, "invalid_token", "missing or expired access token")
         if provider.audience and token.get("audience") != provider.audience:
