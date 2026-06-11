@@ -18,6 +18,7 @@ COPY packages/identity/python /tmp/caracalai-identity
 
 RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock \
     && python -m pip install --no-cache-dir --no-deps /tmp/caracalai-core /tmp/caracalai-identity \
+    && python -m pip install --no-cache-dir cryptography \
     && rm -rf /tmp/caracalai-core /tmp/caracalai-identity
 
 ENV PYTHONUNBUFFERED=1 \
