@@ -7,7 +7,7 @@ Demo page template for the Lynx Capital runtime workspace.
 {% extends "layout.html" %}
 {% block title %}{{ company }} - Demo{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/static/demo.css?v=18">
+<link rel="stylesheet" href="/static/demo.css?v=20">
 
 <div class="app-shell">
   <aside class="left-sidebar" aria-label="Runtime session">
@@ -87,41 +87,45 @@ Demo page template for the Lynx Capital runtime workspace.
 
       <div id="split-divider" class="split-divider" role="separator" aria-orientation="vertical" aria-label="Resize chat and graph" title="Drag to resize · double-click to reset"></div>
 
-      <section class="graph-column" aria-label="Workflow map">
+      <section class="graph-column" aria-label="Orchestration map">
         <header class="viewport-header">
           <div class="viewport-header-left">
-            <h2 class="viewport-title">Workflow map</h2>
-            <span class="viewport-subtitle">Agents, services, and the calls between them</span>
+            <h2 class="viewport-title">Orchestration map</h2>
+            <span class="viewport-subtitle">What Caracal allowed, blocked, and audited</span>
           </div>
           <span id="graph-status" class="graph-status-badge">idle</span>
         </header>
 
         <div class="graph-workspace">
-          <aside class="graph-rail" aria-label="Workflow steps">
+          <aside class="graph-rail" aria-label="Execution timeline">
             <div class="graph-rail-head">
-              <span class="graph-rail-eyebrow">Steps</span>
-              <span id="graph-stage-summary" class="graph-rail-summary">Waiting for a task</span>
+              <span class="graph-rail-eyebrow">Execution timeline</span>
+              <span id="graph-timeline-count" class="graph-rail-summary">Waiting for a task</span>
             </div>
-            <div id="graph-stage-rail" class="graph-stage-rail"></div>
+            <ol id="graph-timeline-list" class="graph-timeline-rail"></ol>
           </aside>
 
           <div class="graph-main">
             <div class="graph-toolbar" aria-label="Map controls">
+              <div class="graph-toolbar-group" role="group" aria-label="Filter the map">
+                <button type="button" class="graph-tool-btn graph-filter-btn is-active" data-graphfilter="all">All</button>
+                <button type="button" class="graph-tool-btn graph-filter-btn" data-graphfilter="active">Active</button>
+                <button type="button" class="graph-tool-btn graph-filter-btn" data-graphfilter="blocked">Blocked</button>
+              </div>
               <div class="graph-toolbar-group">
                 <button type="button" id="graph-zoom-out" class="graph-tool-btn" aria-label="Zoom out">-</button>
                 <button type="button" id="graph-zoom-reset" class="graph-tool-btn">100%</button>
                 <button type="button" id="graph-zoom-in" class="graph-tool-btn" aria-label="Zoom in">+</button>
                 <button type="button" id="graph-fit" class="graph-tool-btn">Fit</button>
               </div>
-              <span class="graph-toolbar-hint">Drag to pan · scroll to zoom</span>
             </div>
 
-            <div id="graph-canvas" class="graph-canvas" tabindex="0" aria-label="Workflow map">
+            <div id="graph-canvas" class="graph-canvas" tabindex="0" aria-label="Orchestration map">
               <div class="graph-empty" id="graph-empty">
                 <span class="graph-empty-title">No task running yet</span>
-                <span>Start a task to watch agents coordinate and call the connected services.</span>
+                <span>Start a task to watch agents spawn, providers respond, and Caracal govern every call.</span>
               </div>
-              <svg id="graph-svg" style="display:none" role="img" aria-label="Live workflow map"></svg>
+              <svg id="graph-svg" style="display:none" role="img" aria-label="Live orchestration map"></svg>
             </div>
           </div>
         </div>
@@ -186,18 +190,8 @@ Demo page template for the Lynx Capital runtime workspace.
       </div>
       <div class="section-content graph-inspector" aria-live="polite">
         <h3 id="graph-inspector-title">Nothing selected</h3>
-        <p id="graph-inspector-copy">Select an item on the workflow map to see what it does.</p>
+        <p id="graph-inspector-copy">Select an item on the orchestration map to see what it does.</p>
         <dl id="graph-inspector-metrics" class="graph-metric-list"></dl>
-      </div>
-    </section>
-
-    <section class="inspector-section" id="section-timeline">
-      <div class="section-title-bar">
-        <h3>Activity history</h3>
-        <span id="graph-timeline-count" class="count-badge">0 events</span>
-      </div>
-      <div class="section-content section-content-flush">
-        <ol id="graph-timeline-list" class="graph-timeline-list"></ol>
       </div>
     </section>
   </aside>
@@ -284,6 +278,6 @@ Demo page template for the Lynx Capital runtime workspace.
   })();
 </script>
 
-<script src="/static/chat.js?v=18" type="module"></script>
-<script src="/static/graph.js?v=15" type="module"></script>
+<script src="/static/chat.js?v=19" type="module"></script>
+<script src="/static/graph.js?v=16" type="module"></script>
 {% endblock %}

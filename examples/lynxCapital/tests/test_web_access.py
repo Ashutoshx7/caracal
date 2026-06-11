@@ -313,12 +313,12 @@ def test_demo_workspace_is_end_user_focused():
     assert "Agent workload" in body
     assert "Plan of work" in body
     assert "Live activity" in body
-    assert "Workflow map" in body
-    assert "Activity history" in body
-    assert "Orchestration graph" not in body
+    assert "Orchestration map" in body
+    assert "Execution timeline" in body
+    assert "Workflow map" not in body
+    assert "Activity history" not in body
     assert "Memory pressure" not in body
     assert "Runtime counters" not in body
-    assert "Execution timeline" not in body
 
 
 def test_provision_scripts_exist_and_build_plan():

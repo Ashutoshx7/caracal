@@ -2,7 +2,7 @@
 Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 Caracal, a product of Garudex Labs
 
-Demo message templates for user prompts, agent turns, tool calls, controls, and provider telemetry.
+Demo message templates for user prompts, agent turns, activity step groups, tool calls, and controls.
 #}
 <template id="tpl-user-message">
   <article class="msg msg-user">
@@ -25,12 +25,23 @@ Demo message templates for user prompts, agent turns, tool calls, controls, and 
         <span class="msg-author">Agent</span>
         <span class="msg-model-tag"></span>
         <span class="msg-spacer"></span>
-        <span class="msg-status-indicator">Streaming</span>
+        <span class="msg-status-indicator">Working</span>
         <span class="msg-time"></span>
       </header>
-      <div class="msg-content"></div>
+      <div class="msg-flow"></div>
     </div>
   </article>
+</template>
+
+<template id="tpl-step-group">
+  <details class="msg-steps">
+    <summary class="msg-steps-line">
+      <span class="msg-caret" aria-hidden="true"></span>
+      <span class="msg-steps-spinner" aria-hidden="true"></span>
+      <span class="msg-steps-title">Working</span>
+    </summary>
+    <div class="msg-steps-body"></div>
+  </details>
 </template>
 
 <template id="tpl-tool-card">
@@ -106,23 +117,3 @@ Demo message templates for user prompts, agent turns, tool calls, controls, and 
   </article>
 </template>
 
-<template id="tpl-provider-card">
-  <article class="msg msg-provider">
-    <details class="msg-detail-shell">
-      <summary class="msg-line">
-        <span class="msg-caret" aria-hidden="true"></span>
-        <span class="msg-provider-name">model</span>
-        <span class="msg-provider-tokens">0 tok</span>
-        <span class="msg-spacer"></span>
-        <span class="msg-provider-latency">0ms</span>
-        <span class="msg-time"></span>
-      </summary>
-      <div class="msg-detail-body">
-        <div class="msg-detail-block">
-          <span class="msg-detail-label">Call telemetry</span>
-          <pre class="msg-json-block"></pre>
-        </div>
-      </div>
-    </details>
-  </article>
-</template>
