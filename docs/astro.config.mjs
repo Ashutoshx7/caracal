@@ -461,6 +461,7 @@ export default defineConfig({
               label: 'Versions and Contracts',
               collapsed: true,
               items: [
+                { label: 'Releases', link: '/releases/' },
                 { label: 'Compatibility', link: '/reference/compatibility/' },
                 { label: 'Release Map', link: '/reference/release-package-runtime-map/' },
                 { label: 'Wire Contracts', link: '/reference/interoperability-contracts/' },

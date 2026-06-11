@@ -1,0 +1,533 @@
+---
+/*
+ * Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+ * Caracal, a product of Garudex Labs
+ *
+ * Releases page listing every Caracal version with validation status, artifact versions, and downloads.
+ */
+
+interface ValidationArea {
+  id: string;
+  label: string;
+  pass: number;
+  warn: number;
+  fail: number;
+}
+
+interface Validation {
+  score: number;
+  pass: number;
+  warn: number;
+  fail: number;
+  blockers: number;
+  areas: ValidationArea[];
+  notes: string[];
+}
+
+interface ReleaseRecord {
+  release: string;
+  channel: "rc" | "stable";
+  date: string;
+  sha: string | null;
+  binaries: Record<string, string>;
+  images: Record<string, string>;
+  npm: Record<string, string>;
+  pypi: Record<string, string>;
+  helm: string | null;
+  assets: string[];
+  validation: Validation | null;
+}
+
+const modules = import.meta.glob<ReleaseRecord>("../data/releases/*.json", {
+  eager: true,
+  import: "default",
+});
+const releases = Object.values(modules).sort((a, b) => b.release.localeCompare(a.release));
+const latest = releases[0];
+
+const repo = "https://github.com/Garudex-Labs/caracal";
+const assetUrl = (tag: string, name: string) => `${repo}/releases/download/${tag}/${name}`;
+const releaseUrl = (tag: string) => `${repo}/releases/tag/${tag}`;
+
+const formatDate = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+
+const platformLabel = (name: string) => {
+  const os = name.includes("darwin") ? "macOS" : name.includes("windows") ? "Windows" : "Linux";
+  const arch = name.includes("arm64") ? "arm64" : "amd64";
+  return `${os} ${arch}`;
+};
+
+const groupAssets = (record: ReleaseRecord) => {
+  const archives = record.assets.filter((a) => a.endsWith(".tar.gz") || a.endsWith(".zip"));
+  const binaryGroups = new Map<string, { name: string; label: string }[]>();
+  for (const name of archives) {
+    const kind = name.split("-").slice(0, 2).join("-");
+    const list = binaryGroups.get(kind) ?? [];
+    list.push({ name, label: platformLabel(name) });
+    binaryGroups.set(kind, list);
+  }
+  const extras = record.assets.filter((a) => !archives.includes(a));
+  return { binaryGroups, extras };
+};
+
+const packageSummary = (record: ReleaseRecord) => {
+  const first = (entries: Record<string, string>) => Object.values(entries)[0];
+  const items: { label: string; value: string }[] = [];
+  if (record.binaries.runtime ?? record.binaries.cli) {
+    items.push({ label: "Runtime", value: record.binaries.runtime ?? record.binaries.cli });
+  }
+  if (Object.keys(record.npm).length) items.push({ label: "npm", value: first(record.npm) });
+  if (Object.keys(record.pypi).length) items.push({ label: "PyPI", value: first(record.pypi) });
+  if (record.helm) items.push({ label: "Helm", value: record.helm });
+  return items;
+};
+---
+
+<section class="releases-page" aria-labelledby="releases-heading">
+  <div class="releases-page__inner">
+    <header class="releases-hero">
+      <p class="docs-section__eyebrow">Caracal Releases</p>
+      <h1 id="releases-heading" class="releases-hero__title">Every version, verified</h1>
+      <p class="releases-hero__lede">
+        Each Caracal release ships binaries, container images, SDK packages, and a Helm chart, then runs a
+        post-release validation matrix across registries, installs, installers, containers, and provenance.
+        Browse any version below and download exactly what it published.
+      </p>
+      {latest && (
+        <div class="releases-hero__latest">
+          <span class="release-badge" data-channel={latest.channel}>
+            {latest.channel === "rc" ? "Release candidate" : "Stable"}
+          </span>
+          <a class="releases-hero__tag" href={releaseUrl(latest.release)}>{latest.release}</a>
+          <span class="releases-hero__date">{formatDate(latest.date)}</span>
+        </div>
+      )}
+    </header>
+
+    <ol class="release-list">
+      {releases.map((record) => {
+        const { binaryGroups, extras } = groupAssets(record);
+        const v = record.validation;
+        return (
+          <li class="release-card">
+            <div class="release-card__head">
+              <div class="release-card__id">
+                <a class="release-card__tag" href={releaseUrl(record.release)}>{record.release}</a>
+                <span class="release-badge" data-channel={record.channel}>
+                  {record.channel === "rc" ? "RC" : "Stable"}
+                </span>
+              </div>
+              <div class="release-card__facts">
+                <span>{formatDate(record.date)}</span>
+                {record.sha && <span class="release-card__sha">{record.sha}</span>}
+                {v ? (
+                  <span class="release-score" data-grade={v.fail > 0 ? "fail" : v.warn > 0 ? "warn" : "pass"}>
+                    {v.score}% verified
+                  </span>
+                ) : (
+                  <span class="release-score" data-grade="none">validation pending</span>
+                )}
+              </div>
+            </div>
+
+            <div class="release-card__versions">
+              {packageSummary(record).map((item) => (
+                <span class="release-chip">
+                  <span class="release-chip__label">{item.label}</span>
+                  <code>{item.value}</code>
+                </span>
+              ))}
+            </div>
+
+            {v && (
+              <details class="release-fold">
+                <summary>
+                  Validation
+                  <span class="release-fold__hint">
+                    {v.pass} pass · {v.warn} warn · {v.fail} fail
+                  </span>
+                </summary>
+                <div class="release-areas">
+                  {v.areas.map((area) => (
+                    <div class="release-area" data-grade={area.fail > 0 ? "fail" : area.warn > 0 ? "warn" : "pass"}>
+                      <span class="release-area__label">{area.label}</span>
+                      <span class="release-area__count">
+                        {area.pass}/{area.pass + area.warn + area.fail}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {v.notes.length > 0 && (
+                  <ul class="release-notes">
+                    {v.notes.map((note) => <li>{note}</li>)}
+                  </ul>
+                )}
+              </details>
+            )}
+
+            {record.assets.length > 0 && (
+              <details class="release-fold">
+                <summary>
+                  Downloads
+                  <span class="release-fold__hint">{record.assets.length} assets</span>
+                </summary>
+                <div class="release-downloads">
+                  {[...binaryGroups.entries()].map(([kind, files]) => (
+                    <div class="release-downloads__group">
+                      <span class="release-downloads__kind">{kind}</span>
+                      <div class="release-downloads__links">
+                        {files.map((file) => (
+                          <a href={assetUrl(record.release, file.name)} download>{file.label}</a>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {extras.length > 0 && (
+                    <div class="release-downloads__group">
+                      <span class="release-downloads__kind">metadata &amp; installers</span>
+                      <div class="release-downloads__links">
+                        {extras.map((name) => (
+                          <a href={assetUrl(record.release, name)} download>{name}</a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </details>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+
+    <footer class="releases-footer">
+      <p>
+        Container images are published to <code>ghcr.io/garudex-labs</code>. Verify any download against the
+        release <code>SHA256SUMS</code> — see <a href="/security/verify-releases/">Verify a Release</a>.
+      </p>
+    </footer>
+  </div>
+</section>
+
+<style>
+  .releases-page {
+    padding: clamp(5.5rem, 9vw, 7rem) 1.25rem 4rem;
+  }
+
+  .releases-page__inner {
+    max-width: 56rem;
+    margin: 0 auto;
+    display: grid;
+    gap: clamp(2rem, 4vw, 3rem);
+  }
+
+  .releases-hero__title {
+    margin: 0;
+    font-family: "Space Grotesk", var(--sl-font);
+    font-size: clamp(2.1rem, 4.5vw, 2.8rem);
+    font-weight: 780;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    color: var(--sl-color-text);
+  }
+
+  .releases-hero__lede {
+    margin: 0.75rem 0 0;
+    max-width: 38rem;
+    font-size: 1rem;
+    line-height: 1.6;
+    color: color-mix(in srgb, var(--sl-color-text) 72%, transparent);
+  }
+
+  .releases-hero__latest {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 1.4rem;
+  }
+
+  .releases-hero__tag {
+    font-family: var(--sl-font-mono, monospace);
+    font-size: 1.05rem;
+    font-weight: 640;
+    color: var(--sl-color-text);
+    text-decoration: none;
+  }
+
+  .releases-hero__tag:hover {
+    color: var(--sl-color-text-accent);
+  }
+
+  .releases-hero__date {
+    font-size: 0.85rem;
+    color: var(--sl-color-gray-3);
+  }
+
+  .release-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.14rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 680;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .release-badge[data-channel="stable"] {
+    background: color-mix(in srgb, var(--sl-color-green) 16%, transparent);
+    color: var(--sl-color-green-high, var(--sl-color-green));
+  }
+
+  .release-badge[data-channel="rc"] {
+    background: color-mix(in srgb, var(--sl-color-orange) 16%, transparent);
+    color: var(--sl-color-orange-high, var(--sl-color-orange));
+  }
+
+  .release-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1rem;
+  }
+
+  .release-card {
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 14px;
+    padding: 1.1rem 1.25rem;
+    background: color-mix(in srgb, var(--sl-color-bg-nav) 55%, transparent);
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .release-card__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .release-card__id {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .release-card__tag {
+    font-family: var(--sl-font-mono, monospace);
+    font-size: 1.08rem;
+    font-weight: 660;
+    color: var(--sl-color-text);
+    text-decoration: none;
+  }
+
+  .release-card__tag:hover {
+    color: var(--sl-color-text-accent);
+  }
+
+  .release-card__facts {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    font-size: 0.82rem;
+    color: var(--sl-color-gray-3);
+  }
+
+  .release-card__sha {
+    font-family: var(--sl-font-mono, monospace);
+  }
+
+  .release-score {
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    font-weight: 650;
+  }
+
+  .release-score[data-grade="pass"] {
+    background: color-mix(in srgb, var(--sl-color-green) 14%, transparent);
+    color: var(--sl-color-green-high, var(--sl-color-green));
+  }
+
+  .release-score[data-grade="warn"] {
+    background: color-mix(in srgb, var(--sl-color-orange) 14%, transparent);
+    color: var(--sl-color-orange-high, var(--sl-color-orange));
+  }
+
+  .release-score[data-grade="fail"] {
+    background: color-mix(in srgb, var(--sl-color-red) 14%, transparent);
+    color: var(--sl-color-red-high, var(--sl-color-red));
+  }
+
+  .release-score[data-grade="none"] {
+    background: color-mix(in srgb, var(--sl-color-gray-4) 14%, transparent);
+    color: var(--sl-color-gray-3);
+  }
+
+  .release-card__versions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .release-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.22rem 0.6rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 8px;
+    font-size: 0.78rem;
+  }
+
+  .release-chip__label {
+    color: var(--sl-color-gray-3);
+    font-weight: 620;
+  }
+
+  .release-chip code {
+    background: none;
+    padding: 0;
+    font-size: 0.78rem;
+    color: var(--sl-color-text);
+  }
+
+  .release-fold {
+    border-top: 1px solid var(--sl-color-hairline);
+    padding-top: 0.7rem;
+  }
+
+  .release-fold summary {
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    font-size: 0.86rem;
+    font-weight: 640;
+    color: var(--sl-color-text);
+    cursor: var(--caracal-cursor-pointer, pointer);
+    list-style: none;
+  }
+
+  .release-fold summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .release-fold summary::before {
+    content: "+";
+    font-weight: 600;
+    color: var(--sl-color-gray-3);
+  }
+
+  .release-fold[open] summary::before {
+    content: "–";
+  }
+
+  .release-fold__hint {
+    font-size: 0.78rem;
+    font-weight: 480;
+    color: var(--sl-color-gray-3);
+  }
+
+  .release-areas {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+    gap: 0.45rem;
+    margin-top: 0.8rem;
+  }
+
+  .release-area {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 8px;
+    border: 1px solid var(--sl-color-hairline);
+    font-size: 0.78rem;
+  }
+
+  .release-area[data-grade="warn"] {
+    border-color: color-mix(in srgb, var(--sl-color-orange) 45%, transparent);
+  }
+
+  .release-area[data-grade="fail"] {
+    border-color: color-mix(in srgb, var(--sl-color-red) 55%, transparent);
+  }
+
+  .release-area__label {
+    color: var(--sl-color-text);
+  }
+
+  .release-area__count {
+    font-family: var(--sl-font-mono, monospace);
+    color: var(--sl-color-gray-3);
+  }
+
+  .release-notes {
+    margin: 0.7rem 0 0;
+    padding-left: 1.1rem;
+    display: grid;
+    gap: 0.3rem;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--sl-color-gray-2);
+  }
+
+  .release-downloads {
+    display: grid;
+    gap: 0.7rem;
+    margin-top: 0.8rem;
+  }
+
+  .release-downloads__group {
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .release-downloads__kind {
+    font-family: var(--sl-font-mono, monospace);
+    font-size: 0.74rem;
+    color: var(--sl-color-gray-3);
+  }
+
+  .release-downloads__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .release-downloads__links a {
+    padding: 0.26rem 0.65rem;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 8px;
+    font-size: 0.78rem;
+    color: var(--sl-color-text);
+    text-decoration: none;
+    transition: border-color 140ms ease, color 140ms ease;
+  }
+
+  .release-downloads__links a:hover {
+    border-color: var(--sl-color-text-accent);
+    color: var(--sl-color-text-accent);
+  }
+
+  .releases-footer {
+    font-size: 0.85rem;
+    color: var(--sl-color-gray-3);
+  }
+
+  .releases-footer p {
+    margin: 0;
+  }
+
+  @media (max-width: 40rem) {
+    .release-card__facts {
+      width: 100%;
+      justify-content: flex-start;
+    }
+  }
+</style>
