@@ -847,6 +847,174 @@ class TransportRootGuardTests(unittest.IsolatedAsyncioTestCase):
                 client.get("https://api.example.com/v1/events")
 
 
+class ExplicitContextAndScopesTests(unittest.IsolatedAsyncioTestCase):
+    """transport()/fetch()/sync_transport() honour explicit ctx= and per-call scopes=."""
+
+    def _ctx(self):
+        from caracalai import CaracalContext
+
+        return CaracalContext(
+            subject_token="child-tok",
+            zone_id="z",
+            application_id="app",
+            agent_session_id="agent_7",
+            delegation_edge_id="edge_7",
+        )
+
+    def _scoped_client(self, sts_calls: list[bytes]) -> Caracal:
+        def sts_handler(req: httpx.Request) -> httpx.Response:
+            sts_calls.append(req.content)
+            return httpx.Response(200, json={"access_token": "mandate-tok"})
+
+        return Caracal.from_client_secret(
+            coordinator_url="http://coord",
+            sts_url="http://sts",
+            zone_id="z",
+            application_id="app",
+            client_secret="secret",
+            resources=[ResourceBinding("calendar", "https://api.example.com/v1")],
+            gateway_url="https://gateway.example.com/proxy",
+            http_client=httpx.Client(transport=httpx.MockTransport(sts_handler)),
+        )
+
+    async def test_transport_uses_explicit_ctx_without_binding(self) -> None:
+        c = Caracal(
+            CaracalConfig(
+                coordinator=CoordinatorClient(base_url="http://coord"),
+                zone_id="z",
+                application_id="app",
+                subject_token="tok",
+                gateway_url="https://gateway.example.com/proxy",
+                resources=[ResourceBinding("calendar", "https://api.example.com/v1")],
+            )
+        )
+        seen = {}
+
+        async def handler(request):
+            seen["auth"] = request.headers[HEADER_AUTHORIZATION]
+            seen["agent"] = parse_baggage(request.headers.get(HEADER_BAGGAGE)).get(
+                BAGGAGE_AGENT_SESSION
+            )
+            return httpx.Response(204)
+
+        async with c.transport(
+            transport=httpx.MockTransport(handler), ctx=self._ctx()
+        ) as client:
+            resp = await client.get("https://api.example.com/v1/events")
+
+        self.assertEqual(resp.status_code, 204)
+        self.assertEqual(seen["auth"], "Bearer child-tok")
+        self.assertEqual(seen["agent"], "agent_7")
+
+    async def test_transport_scopes_mint_scoped_mandate(self) -> None:
+        sts_calls: list[bytes] = []
+        c = self._scoped_client(sts_calls)
+        seen = {}
+
+        async def handler(request):
+            seen["auth"] = request.headers[HEADER_AUTHORIZATION]
+            seen["resource"] = request.headers["X-Caracal-Resource"]
+            return httpx.Response(204)
+
+        async with c.transport(
+            transport=httpx.MockTransport(handler),
+            ctx=self._ctx(),
+            scopes=["cal:read"],
+        ) as client:
+            await client.get("https://api.example.com/v1/events")
+
+        self.assertEqual(seen["auth"], "Bearer mandate-tok")
+        self.assertEqual(seen["resource"], "calendar")
+        body = sts_calls[-1].decode()
+        self.assertIn("scope=cal%3Aread", body)
+        self.assertIn("resource=calendar", body)
+        self.assertIn("agent_session_id=agent_7", body)
+        self.assertIn("delegation_edge_id=edge_7", body)
+
+    async def test_fetch_passes_ctx_and_scopes(self) -> None:
+        sts_calls: list[bytes] = []
+        c = self._scoped_client(sts_calls)
+        seen = {}
+
+        async def handler(request):
+            seen["auth"] = request.headers[HEADER_AUTHORIZATION]
+            seen["resource"] = request.headers["X-Caracal-Resource"]
+            return httpx.Response(204)
+
+        resp = await c.fetch(
+            "calendar",
+            "events",
+            ctx=self._ctx(),
+            scopes=["cal:read"],
+            transport=httpx.MockTransport(handler),
+        )
+        self.assertEqual(resp.status_code, 204)
+        self.assertEqual(seen["auth"], "Bearer mandate-tok")
+        self.assertEqual(seen["resource"], "calendar")
+        self.assertIn("agent_session_id=agent_7", sts_calls[-1].decode())
+
+    async def test_sync_transport_explicit_ctx_and_scopes(self) -> None:
+        sts_calls: list[bytes] = []
+        c = self._scoped_client(sts_calls)
+        seen = {}
+
+        def handler(request):
+            seen["auth"] = request.headers[HEADER_AUTHORIZATION]
+            return httpx.Response(204)
+
+        with c.sync_transport(
+            transport=httpx.MockTransport(handler),
+            ctx=self._ctx(),
+            scopes=["cal:write"],
+        ) as client:
+            self.assertEqual(
+                client.get("https://api.example.com/v1/events").status_code, 204
+            )
+        self.assertEqual(seen["auth"], "Bearer mandate-tok")
+        self.assertIn("scope=cal%3Awrite", sts_calls[-1].decode())
+
+    async def test_scopes_without_credentials_raise(self) -> None:
+        c = Caracal(
+            CaracalConfig(
+                coordinator=CoordinatorClient(base_url="http://coord"),
+                zone_id="z",
+                application_id="app",
+                subject_token="tok",
+                gateway_url="https://gateway.example.com/proxy",
+                resources=[ResourceBinding("calendar", "https://api.example.com/v1")],
+            )
+        )
+
+        async def handler(request):
+            return httpx.Response(204)
+
+        async with c.transport(
+            transport=httpx.MockTransport(handler),
+            ctx=self._ctx(),
+            scopes=["cal:read"],
+        ) as client:
+            with self.assertRaises(RuntimeError) as cm:
+                await client.get("https://api.example.com/v1/events")
+        self.assertIn("client-secret", str(cm.exception))
+
+    def test_headers_accept_explicit_ctx(self) -> None:
+        c = _build_caracal()
+        h = c.headers(ctx=self._ctx())
+        self.assertEqual(h[HEADER_AUTHORIZATION], "Bearer child-tok")
+        self.assertEqual(
+            parse_baggage(h.get(HEADER_BAGGAGE)).get(BAGGAGE_AGENT_SESSION), "agent_7"
+        )
+
+    def test_bind_helpers_exported_from_package_root(self) -> None:
+        import caracalai
+
+        self.assertTrue(callable(caracalai.bind))
+        self.assertTrue(callable(caracalai.abind))
+        self.assertTrue(callable(caracalai.current))
+        out = caracalai.bind(self._ctx(), lambda: caracalai.current().agent_session_id)
+        self.assertEqual(out, "agent_7")
+
+
 class FromConfigBindingsTests(unittest.TestCase):
     """CP-2: ``from_config`` must honour ``CARACAL_RESOURCES_FILE`` like ``from_env``."""
 

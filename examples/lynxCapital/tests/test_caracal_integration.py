@@ -75,40 +75,74 @@ def test_worker_grant_is_minimal():
     assert grant.ttl_seconds == caracal.WORKER_TTL_SECONDS
 
 
-class _StubClient:
-    def __init__(self):
-        self.calls: list[tuple] = []
-
-    def mint_mandate(self, resource_id, scopes, *, ctx=None, ttl_seconds=None):
-        self.calls.append((resource_id, tuple(scopes), ctx, ttl_seconds))
-        return f"mandate-{len(self.calls)}"
-
-
 class _StubRuntime:
     key = "payments"
 
-    def __init__(self):
-        self.client = _StubClient()
+    def __init__(self, client):
+        self.client = client
 
 
-class _StubCtx:
-    agent_session_id = "agent_1"
-    delegation_edge_id = "edge_1"
+def test_worker_authority_gateway_post_mints_scoped_mandate():
+    """gateway_post routes one SDK-blessed path: the transport mints a resource
+    mandate narrowed to the agent's session, edge, and requested scopes, then sends
+    it with the resource header through the Gateway."""
+    import httpx
+    from caracalai import Caracal
 
+    sts_calls: list[str] = []
 
-def test_worker_authority_scopes_and_mandate_delegation():
-    runtime = _StubRuntime()
-    ctx = _StubCtx()
-    authority = caracal.WorkerAuthority(runtime, ctx, "payment-execution", ["meridian:payout"])
+    def sts_handler(req):
+        sts_calls.append(req.content.decode())
+        return httpx.Response(200, json={"access_token": "mandate-1", "expires_in": 300})
+
+    client = Caracal.from_client_secret(
+        coordinator_url="http://coord.test",
+        sts_url="http://sts.test",
+        zone_id="zone_demo",
+        application_id="app_payments",
+        client_secret="secret",
+        resources=["resource://payments-meridian"],
+        gateway_url="http://gateway.test",
+        http_client=httpx.Client(transport=httpx.MockTransport(sts_handler)),
+    )
+    ctx = caracal.CaracalContext(
+        subject_token="tok",
+        zone_id="zone_demo",
+        application_id="app_payments",
+        agent_session_id="agent_1",
+        delegation_edge_id="edge_1",
+    )
+    authority = caracal.WorkerAuthority(
+        _StubRuntime(client), ctx, "payment-execution", ["meridian:payout"]
+    )
     assert authority.application == "payments"
     assert authority.agent_session_id == "agent_1"
     assert authority.allows("meridian:payout")
     assert not authority.allows("meridian:charge")
-    token = authority.mandate("resource://payments-meridian", ["meridian:payout"])
-    assert token == "mandate-1"
-    assert runtime.client.calls == [
-        ("resource://payments-meridian", ("meridian:payout",), ctx, caracal.MANDATE_TTL_SECONDS)
-    ]
+
+    seen = {}
+
+    def gateway_handler(req):
+        seen["url"] = str(req.url)
+        seen["auth"] = req.headers["Authorization"]
+        seen["resource"] = req.headers["X-Caracal-Resource"]
+        return httpx.Response(200, json={"ok": True})
+
+    resp = authority.gateway_post(
+        "resource://payments-meridian",
+        "/api/create_payout",
+        {"amount": 100},
+        ["meridian:payout"],
+        transport=httpx.MockTransport(gateway_handler),
+    )
+    assert resp.status_code == 200
+    assert seen["url"] == "http://gateway.test/api/create_payout"
+    assert seen["auth"] == "Bearer mandate-1"
+    assert seen["resource"] == "resource://payments-meridian"
+    body = sts_calls[-1]
+    assert "agent_session_id=agent_1" in body
+    assert "delegation_edge_id=edge_1" in body
+    assert "scope=meridian%3Apayout" in body
 
 
 def test_runner_local_spawn_tracks_identity_without_caracal():

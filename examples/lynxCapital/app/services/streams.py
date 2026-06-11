@@ -86,17 +86,13 @@ async def _governed_stream(symbol: str) -> None:
 async def _stream_once(
     rt: caracal.AppRuntime, ctx: caracal.CaracalContext, symbol: str
 ) -> None:
-    token = rt.client.mint_mandate(
-        PULSE_VIEW, ["pulse:read"], ctx=ctx, ttl_seconds=caracal.MANDATE_TTL_SECONDS
-    )
-    async with httpx.AsyncClient(timeout=None) as http:
+    async with rt.client.transport(
+        ctx=ctx, scopes=["pulse:read"], timeout=None
+    ) as http:
         async with http.stream(
             "GET",
             f"{rt.gateway_url}/stream",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "X-Caracal-Resource": PULSE_VIEW,
-            },
+            headers={"X-Caracal-Resource": PULSE_VIEW},
             params={"symbol": symbol, "ticks": 50},
         ) as resp:
             resp.raise_for_status()
