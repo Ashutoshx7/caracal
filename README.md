@@ -33,59 +33,6 @@ Read the full documentation at [docs.caracal.run](https://docs.caracal.run).
 
 -----
 
-## Community
-
-<div align="center">
-  <table width="100%">
-    <tr>
-      <td align="center" valign="middle" width="25%" height="140">
-        <a href="https://www.youtube.com/live/tZ4FdO-zjeE" target="_blank" rel="noopener">
-          <img src="https://img.youtube.com/vi/tZ4FdO-zjeE/hqdefault.jpg" alt="GitHub Open Source Friday preview" width="165">
-        </a>
-      </td>
-      <td align="center" valign="middle" width="25%" height="140">
-        <a href="https://mentorship.lfx.linuxfoundation.org/project/9cfe285b-7006-4610-84a8-1a52b0dff662" target="_blank" rel="noopener">
-          <img src="public/programs/lfx-mentorship.png" alt="LFX Mentorship 2026" width="90" />
-        </a>
-      </td>
-      <td align="center" valign="middle" width="25%" height="140">
-        <a href="https://www.microsoft.com/startups" target="_blank" rel="noopener">
-          <img src="public/programs/microsoftStartup.png" alt="Microsoft for Startups" width="170" />
-        </a>
-      </td>
-      <td align="center" valign="middle" width="25%" height="140">
-        <a href="https://vercel.com/open-source-program" target="_blank" rel="noopener">
-          <img src="public/programs/verceloss.png" alt="Microsoft for Startups" width="170" />
-        </a>
-      </td>
-    </tr>
-    <tr>
-      <td align="center" valign="top" width="25%" height="40">
-        <a href="https://www.youtube.com/live/tZ4FdO-zjeE" target="_blank" rel="noopener">
-          <strong>GitHub's Open Source Friday</strong>
-        </a>
-      </td>
-      <td align="center" valign="top" width="25%" height="40">
-        <a href="https://mentorship.lfx.linuxfoundation.org/project/9cfe285b-7006-4610-84a8-1a52b0dff662" target="_blank" rel="noopener">
-          <strong>LFX Mentorship 2026</strong>
-        </a>
-      </td>
-      <td align="center" valign="top" width="25%" height="40">
-        <a href="https://www.microsoft.com/startups" target="_blank" rel="noopener">
-          <strong>Microsoft for Startups</strong>
-        </a>
-      </td>
-      <td align="center" valign="top" width="25%" height="40">
-        <a href="https://vercel.com/open-source-program" target="_blank" rel="noopener">
-          <strong>Vercel OSS Program</strong>
-        </a>
-      </td>
-    </tr>
-  </table>
-</div>
-
------
-
 ## Installation & Setup
 
 <details>
@@ -223,6 +170,24 @@ See [CONTRIBUTING.md](./.github/CONTRIBUTING.md) for clone, setup, testing, and 
 ## Contributing
 
 See [CONTRIBUTING.md](./.github/CONTRIBUTING.md) for setup, workflow, tests, and pull request standards.
+
+-----
+
+## Community & Partnerships
+
+Caracal has been part of the following programs and communities, in chronological order.
+
+<div align="center">
+
+| Program | Timeline |
+|:---:|:---:|
+| <a href="https://www.youtube.com/live/tZ4FdO-zjeE"><img src="https://img.shields.io/badge/GitHub-Open%20Source%20Friday-E74C3C?style=for-the-badge&logo=github&logoColor=white" width="240"/></a> | Feb 2026 |
+| <a href="https://vercel.com/open-source-program"><img src="https://img.shields.io/badge/Vercel-OSS%20Program-2ECC71?style=for-the-badge&logo=vercel&logoColor=white" width="240"/></a> | Spring 2026 |
+| <a href="#"><img src="https://img.shields.io/badge/Founders%20Inc.-%20Canopy%20Online-F39C12?style=for-the-badge" width="240"/></a> | Apr – Jun 2026 |
+| <a href="https://www.microsoft.com/startups"><img src="https://img.shields.io/badge/Microsoft%20for%20Startups-Member-0078D4?style=for-the-badge&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMyAyMyI%2BPHJlY3QgeD0iMSIgeT0iMSIgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiBmaWxsPSIjRjI1MDIyIi8%2BPHJlY3QgeD0iMTIiIHk9IjEiIHdpZHRoPSIxMCIgaGVpZ2h0PSIxMCIgZmlsbD0iIzdGQkEwMCIvPjxyZWN0IHg9IjEiIHk9IjEyIiB3aWR0aD0iMTAiIGhlaWdodD0iMTAiIGZpbGw9IiMwMEE0RUYiLz48cmVjdCB4PSIxMiIgeT0iMTIiIHdpZHRoPSIxMCIgaGVpZ2h0PSIxMCIgZmlsbD0iI0ZGQjkwMCIvPjwvc3ZnPg%3D%3D" width="240"/></a> | May 2026 – Present |
+| <a href="https://mentorship.lfx.linuxfoundation.org/project/9cfe285b-7006-4610-84a8-1a52b0dff662"><img src="https://img.shields.io/badge/LFX-Mentorship%202026-8E44AD?style=for-the-badge&logo=linuxfoundation&logoColor=white" width="240"/></a> | Jun 2026 – present |
+
+</div>
 
 -----
 
