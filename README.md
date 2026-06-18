@@ -38,36 +38,46 @@ Read the full documentation at [docs.caracal.run](https://docs.caracal.run).
 <div align="center">
   <table width="100%">
     <tr>
-      <td align="center" valign="middle" width="33%" height="140">
+      <td align="center" valign="middle" width="25%" height="140">
         <a href="https://www.youtube.com/live/tZ4FdO-zjeE" target="_blank" rel="noopener">
           <img src="https://img.youtube.com/vi/tZ4FdO-zjeE/hqdefault.jpg" alt="GitHub Open Source Friday preview" width="165">
         </a>
       </td>
-      <td align="center" valign="middle" width="33%" height="140">
+      <td align="center" valign="middle" width="25%" height="140">
         <a href="https://mentorship.lfx.linuxfoundation.org/project/9cfe285b-7006-4610-84a8-1a52b0dff662" target="_blank" rel="noopener">
           <img src="public/programs/lfx-mentorship.png" alt="LFX Mentorship 2026" width="90" />
         </a>
       </td>
-      <td align="center" valign="middle" width="33%" height="140">
+      <td align="center" valign="middle" width="25%" height="140">
         <a href="https://www.microsoft.com/startups" target="_blank" rel="noopener">
           <img src="public/programs/microsoftStartup.png" alt="Microsoft for Startups" width="170" />
         </a>
       </td>
+      <td align="center" valign="middle" width="25%" height="140">
+        <a href="https://vercel.com/open-source-program" target="_blank" rel="noopener">
+          <img src="public/programs/verceloss.png" alt="Microsoft for Startups" width="170" />
+        </a>
+      </td>
     </tr>
     <tr>
-      <td align="center" valign="top" width="33%" height="40">
+      <td align="center" valign="top" width="25%" height="40">
         <a href="https://www.youtube.com/live/tZ4FdO-zjeE" target="_blank" rel="noopener">
           <strong>GitHub's Open Source Friday</strong>
         </a>
       </td>
-      <td align="center" valign="top" width="33%" height="40">
+      <td align="center" valign="top" width="25%" height="40">
         <a href="https://mentorship.lfx.linuxfoundation.org/project/9cfe285b-7006-4610-84a8-1a52b0dff662" target="_blank" rel="noopener">
           <strong>LFX Mentorship 2026</strong>
         </a>
       </td>
-      <td align="center" valign="top" width="33%" height="40">
+      <td align="center" valign="top" width="25%" height="40">
         <a href="https://www.microsoft.com/startups" target="_blank" rel="noopener">
           <strong>Microsoft for Startups</strong>
+        </a>
+      </td>
+      <td align="center" valign="top" width="25%" height="40">
+        <a href="https://vercel.com/open-source-program" target="_blank" rel="noopener">
+          <strong>Vercel OSS Program</strong>
         </a>
       </td>
     </tr>
