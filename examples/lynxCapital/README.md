@@ -67,8 +67,9 @@ It reads `config/tenancy.yaml` + `policies/` and idempotently creates the seven 
 applications, registers the twenty credential providers in their exact provider-kind
 config shapes, creates the per-application resource views, renders the application-id
 bindings into the policy library, and activates the `lynx-finance-ops` policy set. It
-prints the per-application credential exports for the workload `.env`; each client secret
-is shown exactly once. The Control key has no runtime data authority.
+writes the per-application credential exports to `config/provisioned.env` for the workload
+`.env`; each client secret is returned exactly once. The Control key has no runtime data
+authority.
 
 It also prints the `LYNX_CARACAL_PARTNERSHIP` export: the partnership terms (accepted
 resource-view audiences and Caracal scope-to-operation grants) the mandate-verifying
