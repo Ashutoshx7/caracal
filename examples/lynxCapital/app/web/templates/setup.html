@@ -204,7 +204,7 @@ Lynx Capital guided setup page for Caracal configuration, providers, and launch.
 {{ app.envSecret }}={{ app.secret }}
 {% endfor %}
 OPENAI_API_KEY={{ setup_env.openaiKey }}</pre>
-        <p class="note"><code>scripts/provision.py</code> prints each Application ID and one-time client secret. Lynx loads <code>.env</code> at startup; without Caracal, provider access fails closed. Set <code>LYNX_SIMULATION=1</code> only for the offline simulators.</p>
+        <p class="note"><code>scripts/provision.py</code> writes Application IDs and one-time client secrets to <code>config/provisioned.env</code>. Lynx loads <code>.env</code> at startup; without Caracal, provider access fails closed. Set <code>LYNX_SIMULATION=1</code> only for the offline simulators.</p>
       </aside>
     </div>
   </section>
@@ -332,7 +332,7 @@ OPENAI_API_KEY={{ setup_env.openaiKey }}</pre>
           <h3>Add to examples/lynxCapital/.env.provision</h3>
           <pre class="script">CONTROL_CLIENT_ID="{{ setup_env.controlClient }}"
 CONTROL_CLIENT_SECRET="{{ setup_env.controlSecret }}"</pre>
-          <p class="automation-note">Provisioning credentials stay in <code>.env.provision</code>, separate from the workload <code>.env</code>. The script idempotently creates the applications, providers, resource views, and policy set, then prints the per-application credential exports.</p>
+          <p class="automation-note">Provisioning credentials stay in <code>.env.provision</code>, separate from the workload <code>.env</code>. The script idempotently creates the applications, providers, resource views, and policy set, then writes the per-application credential exports to <code>config/provisioned.env</code>.</p>
         </div>
         <div class="command-block">
           <h3>Run</h3>

@@ -45,11 +45,11 @@ async def validate_setup():
         app_status = "warning"
         app_detail = (
             f"{len(credentialed)} of {len(model.applications)} applications configured. "
-            "Export the LYNX_CARACAL_<APP>_APPLICATION_ID and _CLIENT_SECRET values printed by provision.py."
+            "Merge the LYNX_CARACAL_<APP>_APPLICATION_ID and _CLIENT_SECRET values from config/provisioned.env."
         )
     else:
         app_status = "missing"
-        app_detail = "Run scripts/provision.py and export the printed application credentials."
+        app_detail = "Run scripts/provision.py and merge config/provisioned.env into .env."
     steps.append(_step("applications", "Application boundaries", app_status, app_detail))
 
     provisioned_providers, provisioned_resources = setup_catalog.provisioned_state()
