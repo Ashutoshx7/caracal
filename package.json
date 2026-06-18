@@ -7,7 +7,8 @@
       "brace-expansion": "5.0.6",
       "fast-uri": "3.1.2",
       "devalue": "5.8.1",
-      "qs": "6.15.2"
+      "qs": "6.15.2",
+      "vite": "7.3.5"
     }
   },
   "bin": {
@@ -47,12 +48,12 @@
     "@caracalai/admin": "workspace:*",
     "@changesets/cli": "^2.27.10",
     "@fastify/rate-limit": "^10.3.0",
-    "@vitest/coverage-v8": "4.1.6",
+    "@vitest/coverage-v8": "4.1.9",
     "express": "^5.2.1",
     "fastify": "^5.8.5",
     "knip": "^6.13.1",
     "pg": "^8.20.0",
     "prettier": "^3.8.3",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.9"
   }
 }

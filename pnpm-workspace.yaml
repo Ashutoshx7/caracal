@@ -26,4 +26,5 @@ overrides:
   fast-uri: 3.1.2
   devalue: 5.8.1
   qs: 6.15.2
+  vite: 7.3.5
 reporter: silent
