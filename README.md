@@ -27,7 +27,7 @@
 
 # Overview
 
-**Caracal** is an authority plane for operating AI agents safely in real environments. It solves a concrete platform problem: agents need access to tools, APIs, and providers, but platform teams need that access to be scoped, short-lived, revocable, and auditable without placing provider secrets inside agent code.
+**Caracal** is a security-first **authority and delegation layer** for **autonomous agents**. It solves the platform problem of letting agents act in real environments without exposing long-lived secrets or uncontrolled access. Instead of giving agents broad standing permissions, Caracal lets teams issue scoped authority, delegate it safely, revoke it when needed, and keep a clear audit trail of every sensitive action.
 
 Read the full documentation at [docs.caracal.run](https://docs.caracal.run).
 
