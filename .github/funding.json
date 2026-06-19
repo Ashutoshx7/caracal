@@ -50,6 +50,32 @@
         "address": "https://github.com/sponsors/RAWx18",
         "description": "Support ongoing development and sustainability of Caracal Open Source."
       }
+    ],
+    "plans": [
+      {
+        "guid": "github-sponsors-monthly",
+        "status": "active",
+        "name": "GitHub Sponsors",
+        "description": "Recurring sponsorship for sustained Caracal maintenance, releases, documentation, and infrastructure.",
+        "amount": 0,
+        "currency": "USD",
+        "frequency": "monthly",
+        "channels": [
+          "github-sponsors"
+        ]
+      },
+      {
+        "guid": "github-sponsors-one-time",
+        "status": "active",
+        "name": "GitHub Sponsors One-Time",
+        "description": "One-time sponsorship for targeted Caracal development, issue triage, and community support.",
+        "amount": 0,
+        "currency": "USD",
+        "frequency": "one-time",
+        "channels": [
+          "github-sponsors"
+        ]
+      }
     ]
   }
 }
