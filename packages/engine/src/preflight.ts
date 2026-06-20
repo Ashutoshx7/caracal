@@ -223,7 +223,7 @@ async function tcpProbe(name: string, host: string, port: number, hello?: { send
       if (!hello) return finish({ check: name, status: 'ok', detail: `${host}:${port} reachable` })
       socket.write(hello.send)
     })
-    socket.on('data', (chunk) => {
+    socket.on('data', (chunk: Buffer) => {
       if (!hello) return
       received = Buffer.concat([received, chunk])
       const matchedPrefix = hello.expectPrefix && received.subarray(0, hello.expectPrefix.length).equals(hello.expectPrefix)
