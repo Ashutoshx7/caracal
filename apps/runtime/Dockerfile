@@ -22,7 +22,7 @@ ENV PNPM_HOME=/pnpm \
     CI=1
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+RUN npm install -g corepack@latest && corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 RUN <<'EOF'
 set -eu
 case "${TARGETARCH}" in
