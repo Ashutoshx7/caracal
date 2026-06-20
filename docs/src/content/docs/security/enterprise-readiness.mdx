@@ -102,6 +102,8 @@ All service images are built to run safely with least privilege:
 
 Recommended Kubernetes `securityContext` and runtime hardening settings are in [Harden Security Posture](/security/hardening/).
 
+When a base image carries a CVE that upstream has not yet rebuilt to fix, and no newer pinned digest is available, the finding is tracked in a time-boxed `.trivyignore.yaml` entry with a justification and an expiry date. The suppression expires automatically so the finding resurfaces for re-evaluation once a fixed base image is published, keeping the weekly container scan free of un-actionable noise without losing the audit trail.
+
 ## How the Project Approaches Supply-Chain Trust
 
 Caracal aligns with the SLSA build-provenance model and OpenSSF best practices:

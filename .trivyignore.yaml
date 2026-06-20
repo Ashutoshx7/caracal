@@ -1,0 +1,29 @@
+# Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+# Caracal, a product of Garudex Labs
+#
+# Time-boxed Trivy suppressions for upstream-pending base image CVEs that Caracal cannot remediate by pinning.
+
+# The gcr.io/distroless/nodejs24-debian12:nonroot runtime base ships libssl3
+# 3.0.18-1~deb12u2. Debian has published the fix, but the distroless image has
+# not been rebuilt yet, and the :nonroot tag still resolves to our pinned digest,
+# so there is no newer digest to bump to. These entries expire so the findings
+# resurface for re-evaluation once the base image is rebuilt.
+vulnerabilities:
+  - id: CVE-2026-31789
+    statement: "libssl3 fix pending upstream distroless/nodejs24 rebuild; no newer base digest available."
+    expired_at: 2026-07-21
+  - id: CVE-2026-28387
+    statement: "libssl3 fix pending upstream distroless/nodejs24 rebuild; no newer base digest available."
+    expired_at: 2026-07-21
+  - id: CVE-2026-28388
+    statement: "libssl3 fix pending upstream distroless/nodejs24 rebuild; no newer base digest available."
+    expired_at: 2026-07-21
+  - id: CVE-2026-28389
+    statement: "libssl3 fix pending upstream distroless/nodejs24 rebuild; no newer base digest available."
+    expired_at: 2026-07-21
+  - id: CVE-2026-28390
+    statement: "libssl3 fix pending upstream distroless/nodejs24 rebuild; no newer base digest available."
+    expired_at: 2026-07-21
+  - id: CVE-2026-45447
+    statement: "libssl3 fix pending upstream distroless/nodejs24 rebuild; no newer base digest available."
+    expired_at: 2026-07-21

@@ -6,7 +6,7 @@
 # syntax=docker/dockerfile:1.7
 ARG PNPM_VERSION=11.1.1
 
-FROM golang:1.26-alpine@sha256:f85330846cde1e57ca9ec309382da3b8e6ae3ab943d2739500e08c86393a21b1 AS go-builder
+FROM golang:1.26-alpine@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af011d58b993f6f615648 AS go-builder
 ARG CGO_ENABLED=0
 ARG CC
 ARG CFLAGS
