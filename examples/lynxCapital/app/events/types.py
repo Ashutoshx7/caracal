@@ -96,6 +96,30 @@ def service_result(run_id: str, agent_id: str, service_id: str, action: str, res
     )
 
 
+def caracal_decision(
+    run_id: str,
+    agent_id: str,
+    decision: str,
+    application: str,
+    role: str,
+    session_id: str | None,
+    provider_id: str,
+    operation: str,
+    scope: str | None,
+    view: str | None,
+    status: int | None,
+) -> Event:
+    """A Caracal authority decision for one governed partner call: who acted (application,
+    role, session), the scope and resource view exercised, the provider operation, and whether
+    Caracal allowed or denied it. Surfaces enforcement that is otherwise invisible in the UI."""
+    return _mk(
+        run_id, "service", "caracal_decision",
+        agent_id=agent_id, decision=decision, application=application, role=role,
+        session_id=session_id, provider_id=provider_id, operation=operation,
+        scope=scope, view=view, status=status,
+    )
+
+
 def audit_record(run_id: str, agent_id: str, record: dict) -> Event:
     return _mk(run_id, "audit", "audit_record", agent_id=agent_id, record=record)
 

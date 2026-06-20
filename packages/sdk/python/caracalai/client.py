@@ -899,23 +899,36 @@ class Caracal:
             if self._agent_start_hooks
             else None
         )
-        return await spawn_service(
-            coordinator=self.config.coordinator,
-            zone_id=self.config.zone_id,
-            application_id=self.config.application_id,
-            subject_token=self.config.subject_token,
-            parent_id=parent_id,
-            parent_ctx=parent_ctx,
-            grant=grant,
-            ttl_seconds=ttl_seconds
-            if ttl_seconds is not None
-            else self.config.default_ttl_seconds,
-            metadata=metadata,
-            labels=labels,
-            trace_id=trace_id,
-            heartbeat_interval=heartbeat_interval,
-            on_agent_start=on_start,
-        )
+
+        def opener():
+            return spawn_service(
+                coordinator=self.config.coordinator,
+                zone_id=self.config.zone_id,
+                application_id=self.config.application_id,
+                subject_token=self.config.subject_token,
+                parent_id=parent_id,
+                parent_ctx=parent_ctx,
+                grant=grant,
+                ttl_seconds=ttl_seconds
+                if ttl_seconds is not None
+                else self.config.default_ttl_seconds,
+                metadata=metadata,
+                labels=labels,
+                trace_id=trace_id,
+                heartbeat_interval=heartbeat_interval,
+                on_agent_start=on_start,
+            )
+
+        try:
+            return await opener()
+        except httpx.HTTPStatusError as exc:
+            # A verifier may reject a cached subject token before its exp
+            # (server-side session revocation); exchange a fresh one and retry
+            # the spawn once, matching spawn().
+            if exc.response.status_code != 401 or self.config.exchanger is None:
+                raise
+            self.config.exchanger.invalidate()
+            return await opener()
 
     @asynccontextmanager
     async def delegate(

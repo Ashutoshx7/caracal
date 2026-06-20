@@ -134,7 +134,7 @@ def _build_runtime(app_key: str, model: tenancy.TenancyModel) -> AppRuntime:
     if not application_id or not client_secret:
         raise RuntimeError(
             f"application {app_key} is missing LYNX_CARACAL_{_env_key(app_key)}_APPLICATION_ID "
-            "or _CLIENT_SECRET; provision the zone and merge config/provisioned.env into .env"
+            "or _CLIENT_SECRET; run scripts/provision.py to generate config/provisioned.env"
         )
     zone_id = os.environ["CARACAL_ZONE_ID"]
     sts_url = _service_url("CARACAL_STS_URL", "http://localhost:8080")
