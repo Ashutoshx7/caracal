@@ -1,0 +1,98 @@
+# Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+# Caracal, a product of Garudex Labs
+#
+# Weekly Trivy scan of published container images for Critical and High CVEs.
+
+name: Container image scan
+
+on:
+  schedule:
+    - cron: '51 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to scan; empty resolves the latest release.'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: garudex-labs
+
+jobs:
+  resolveTag:
+    name: Resolve image tag
+    if: github.repository == 'Garudex-Labs/caracal'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_TAG}" ]; then
+            tag="${INPUT_TAG}"
+          else
+            tag="$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName --jq '.tagName' 2>/dev/null || true)"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          if [ -z "${tag}" ]; then
+            echo "::notice::No release tag resolved; image scan will be skipped."
+          else
+            echo "::notice::Scanning images at tag ${tag}."
+          fi
+
+  scan:
+    name: Scan ${{ matrix.image }}
+    needs: resolveTag
+    if: github.repository == 'Garudex-Labs/caracal' && needs.resolveTag.outputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - api
+          - sts
+          - gateway
+          - audit
+          - coordinator
+          - control
+          - postgres
+          - redis
+          - runtime
+    steps:
+      - name: Log in to registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Scan image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/caracal-${{ matrix.image }}:${{ needs.resolveTag.outputs.tag }}
+          format: sarif
+          output: trivy-${{ matrix.image }}.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '0'
+
+      - name: Upload to code scanning
+        uses: github/codeql-action/upload-sarif@68bde559dea0fdcac2102bfdf6230c5f70eb485e # v4.35.4
+        with:
+          sarif_file: trivy-${{ matrix.image }}.sarif
+          category: trivy-${{ matrix.image }}
