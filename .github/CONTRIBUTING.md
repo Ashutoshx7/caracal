@@ -139,10 +139,10 @@ Changes are proposed against `main`, and the review required to merge depends on
 
 ### How review is conducted
 
-- Codeowners listed in `.github/CODEOWNERS` may push directly to `main`.
-- Maintainers in the `Caracal OSS Maintainers` team open a pull request but may merge it without a separate approving review.
-- All other contributors open a pull request that requires at least one approving review before it is merged. Authors must not approve or merge their own changes.
-- Area owners in `.github/CODEOWNERS` are requested automatically and own review for their paths.
+- Repository admins may push directly to `main`.
+- Maintainers listed in `.github/MAINTAINERS` open a pull request but may merge it without a separate approving review.
+- All other contributors open a pull request that requires at least one approving review from a maintainer before it is merged. Authors must not approve or merge their own changes.
+- Maintainers are listed in `.github/CODEOWNERS`, so they are requested automatically and their approval is required to merge a contributor pull request.
 - Release publishing requires `release-approval` from a maintainer other than the one who prepared the release.
 
 ### What reviewers must check
@@ -156,7 +156,7 @@ Changes are proposed against `main`, and the review required to merge depends on
 
 ### What is required to be acceptable
 
-A contributor pull request is acceptable to merge only when it has at least one approving review, all required CI checks pass, review comments are resolved, and the change is judged a worthwhile improvement free of known defects that would argue against inclusion. Maintainers and codeowners are trusted to hold the changes they merge directly to the same standard.
+A contributor pull request is acceptable to merge only when it has at least one approving review from a maintainer, all required CI checks pass, review comments are resolved, and the change is judged a worthwhile improvement free of known defects that would argue against inclusion. Maintainers and admins are trusted to hold the changes they merge directly to the same standard.
 
 ## Releases
 
