@@ -76,6 +76,9 @@ EOF
   cat >"$dir/secrets/gatewayStsHmacKey" <<'EOF'
 730de8c006a7792407a41096c59130ab802fa04e9625cd49f031d3e7ef8e14bb
 EOF
+  cat >"$dir/secrets/metricsBearer" <<'EOF'
+9c1f7b6d2a4e8f0c5b3d9e1a7c2f4b8d6e0a3c5f7b9d1e2a4c6f8b0d3e5a7c9f
+EOF
   cat >"$dir/secrets/databaseUrl" <<'EOF'
 postgres://caracal:5e02824a98a983cf03f4e95ac4cebb610fb1f1e8ed1e92e1@postgres:5432/caracal
 EOF
@@ -97,6 +100,7 @@ secret_names = [
     "auditHmacKey",
     "streamsHmacKey",
     "gatewayStsHmacKey",
+    "metricsBearer",
     "databaseUrl",
     "redisUrl",
 ]
