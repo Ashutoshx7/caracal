@@ -378,6 +378,7 @@ export default defineConfig({
             { label: 'Harden Security Posture', link: '/security/hardening/' },
             { label: 'Verify a Release', link: '/security/verify-releases/' },
             { label: 'Report a Vulnerability', link: '/security/disclosure/' },
+            { label: 'Enterprise Security Readiness', link: '/security/enterprise-readiness/' },
           ],
         },
         {
