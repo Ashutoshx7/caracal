@@ -74,13 +74,9 @@ $EDITOR .env
 pnpm caracal run -- node agent.mjs
 ```
 
-The `.env` file contains only the zone and application identifiers. Local authentication still comes from the auto-detected app client secret at `${XDG_CONFIG_HOME:-$HOME/.config}/caracal/runtime/<zone-id>/<application-id>/client-secret`, and resource injection comes from the sibling `credentials.json` manifest.
-
 #### Control API (optional)
 
-The Console is the primary human product-management surface. The control service is an optional OAuth-protected HTTP API for approved external clients that need to drive Caracal programmatically.
-
-Clients authenticate by exchanging the Control key credentials for a token whose audience matches `CONTROL_AUDIENCE`, which defaults to `caracal-control`. Create the key from the Console Control menu; Caracal generates `client_secret` and shows it once in the create result. Store it, then drive the enabled Control API from the workflow or client that will use it in production.
+The Console is the primary human product-management surface. The Control API is an optional OAuth-protected endpoint served in-process by the API service for approved external clients that need to drive Caracal programmatically.
 
 ## Tests
 

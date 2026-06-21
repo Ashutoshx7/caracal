@@ -40,8 +40,8 @@ In scope:
 - `services/sts`: OAuth 2.0 token exchange, ES256 signing, JWKS, policy evaluation, step-up, replay, revocation, and audit emission.
 - `services/gateway`: reverse proxy that exchanges inbound credentials with STS, validates bindings, enforces replay/revocation checks, and forwards authorized requests.
 - `services/audit`: Redis Streams consumer, append-only PostgreSQL audit ledger, tamper checks, retention, and Parquet export.
-- `apps/control`: optional control invocation endpoint gated by explicit enablement, ES256 bearer auth, per-resource scope checks against the engine catalog, JTI replay, rate limits, and audit.
-- `services/coordinator-relay`: Redis Streams lifecycle relay with signature verification and dedupe.
+- `apps/api/src/control`: optional in-process control invocation plugin gated by explicit enablement, ES256 bearer auth, per-resource scope checks against the engine catalog, JTI replay, rate limits, and audit.
+- `apps/coordinator`: Redis Streams lifecycle relay job with signature verification and dedupe.
 - `packages/*`: shared identity, OAuth, revocation, transport, connector, SDK, admin, and core libraries.
 - `infra/docker`: local-dev and runtime Compose stacks, secrets, hardened containers, PostgreSQL, Redis, migrations, and health checks.
 
@@ -139,7 +139,7 @@ Each threat (T1–T12) states the **problem** an adversary would exploit, **how 
 - **Problem.** Agent lifecycle or delegation state could become inconsistent through races, missing transactions, outbox gaps, or relay replay.
 - **How Caracal handles it.** Graph mutations use transactions and advisory locks; lifecycle, delegation, and invalidation events are published through the outbox; and relay dedupe and idle-claim behavior is bounded.
 - **How we verify.** Coordinator and relay tests confirm graph mutations use transactions/locks and that lifecycle events flow through the outbox or relay-safe paths.
-- **Area & owner.** `apps/coordinator`, `services/coordinator-relay`, Redis Streams — Coordinator/relay maintainers.
+- **Area & owner.** `apps/coordinator`, Redis Streams — Coordinator maintainers.
 
 ### T5 — Secret / sensitive-claim exposure
 
@@ -172,9 +172,9 @@ Each threat (T1–T12) states the **problem** an adversary would exploit, **how 
 ### T9 — Control invocation as a privilege-escalation path
 
 - **Problem.** Optional control invocation could become a command-execution path outside `engine.dispatch`, run without audit, or use remote scopes that expand zone-bound tokens into global admin authority.
-- **How Caracal handles it.** Control is disabled unless `CARACAL_CONTROL_ENABLED=true`; only `POST /v1/control/invoke` is allowed; each call requires the per-resource `control:<command>:<verb>` scope derived from the engine catalog; commands are validated through `engine.dispatch` and never shelled out; zone binding is enforced before any admin call that affects zone-scoped state; zone CRUD and other global operations require an explicit global-control model; and both accepted and rejected requests are audited.
-- **How we verify.** `pnpm --dir apps/control test` and `pnpm --dir packages/engine test` for disabled startup, missing scope, hidden-command refusal, invalid flags, replay, rate limit, upstream failure, audit emission, zone-bound dispatch, and explicit denial or separate governance of global zone operations.
-- **Area & owner.** `apps/control`, `packages/engine`, `packages/admin` — Control maintainers.
+- **How Caracal handles it.** Control is disabled unless `CARACAL_CONTROL_ENABLED=true` and the runtime gate file is present; only `POST /v1/control/invoke` is allowed; each call requires the per-resource `control:<command>:<verb>` scope derived from the engine catalog; commands are validated through `engine.dispatch` and never shelled out; zone binding is enforced before any admin call that affects zone-scoped state; zone CRUD and other global operations require an explicit global-control model; and both accepted and rejected requests are audited.
+- **How we verify.** `pnpm --dir apps/api test` and `pnpm --dir packages/engine test` for disabled startup, missing scope, hidden-command refusal, invalid flags, replay, rate limit, upstream failure, audit emission, zone-bound dispatch, and explicit denial or separate governance of global zone operations.
+- **Area & owner.** `apps/api/src/control`, `packages/engine`, `packages/admin` — Control maintainers.
 
 ### T10 — Supply-chain / release compromise
 

@@ -15,7 +15,7 @@
 - Must keep runtime images pinned to `v${CARACAL_VERSION}` through `CARACAL_REGISTRY`.
 - Must keep healthchecks on long-running services and gate startup with `service_healthy` or `service_completed_successfully`.
 - Must source secrets through Compose secrets, never inline environment literals.
-- Must preserve OSS host ports: 3000, 4000, 5432, 6379, 8080, 8081, 8087, and 9090.
+- Must preserve OSS host ports: 3000, 4000, 5432, 6379, 8080, 8081, and 9090.
 - Must regenerate `dev.env` via `node packages/engine/scripts/render-dev-env.mjs` after every schema change.
 
 ## Forbidden
