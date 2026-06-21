@@ -155,7 +155,7 @@ jobs:
           test -f "$manifest" || { echo "::error::Missing release manifest: $manifest"; exit 1; }
           CARACAL_VALIDATE_HELM_FILES=1 node scripts/validateReleaseManifest.mjs "$manifest"
 
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -193,7 +193,7 @@ jobs:
           ref: ${{ needs.context.outputs.checkoutRef }}
           persist-credentials: false
 
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -335,7 +335,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+      - uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         if: needs.context.outputs.publish == 'true'
         with:
           subject-path: |
