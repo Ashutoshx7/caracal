@@ -75,6 +75,8 @@ Every evaluation receives this exact input shape (`schema_version` `2026-05-20`)
 | `input.resource.identifier` | string | Stable audience URI, e.g. `resource://mercury-bank`. |
 | `input.resource.scopes` | string[] | Scopes the resource defines (the full allowlist). |
 | `input.action.id` | string | The exchange action, currently `TokenExchange`. |
+| `input.action.method` | string | Upstream HTTP method (upper-cased) the gateway is authorizing. Present only on gateway-authenticated exchanges; absent on direct exchanges. Gate operation authority against this. |
+| `input.action.path` | string | Upstream request path the gateway is authorizing. Present only on gateway-authenticated exchanges; absent on direct exchanges. |
 | `input.session.id` | string | Present when the request is bound to a session. |
 | `input.delegation_edge` | object | Present only on delegated exchange (see below). |
 | `input.context.requested_scopes` | string[] | Scopes the caller is requesting now; gate these against the allowlist. |

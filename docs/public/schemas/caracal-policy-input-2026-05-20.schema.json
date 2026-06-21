@@ -79,6 +79,14 @@
         "id": {
           "type": "string",
           "minLength": 1
+        },
+        "method": {
+          "type": "string",
+          "description": "Upstream HTTP method the gateway is authorizing. Present only for gateway-authenticated exchanges; absent for direct token exchanges."
+        },
+        "path": {
+          "type": "string",
+          "description": "Upstream request path the gateway is authorizing. Present only for gateway-authenticated exchanges; absent for direct token exchanges."
         }
       },
       "additionalProperties": true
