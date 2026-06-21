@@ -117,10 +117,38 @@ export function validatePolicySource(content: string): string | null {
   return parseRego(content).error
 }
 
+// A data document carries only policy data (grants, bindings, label maps) that the
+// decision rules in the set's base document read. It is opted into with a top-of-file
+// `# caracal:data-document` directive and is forbidden from defining `result`, so a
+// data document can never itself decide an authorization — eliminating the need for
+// inert always-false decision rules that a typo could flip to allow-all.
+const DATA_DOCUMENT_DIRECTIVE = /(?:^|\n)\s*#\s*caracal:data-document\b/
+
+export function isDataDocumentDirective(content: string): boolean {
+  return DATA_DOCUMENT_DIRECTIVE.test(content)
+}
+
+export function definesResultRule(content: string): boolean {
+  return parseRego(content).rules.has('result')
+}
+
+// True when a `default result := {...}` literal carries an allow decision. A
+// default-allow that is not narrowed by a deny overlay is surfaced as a warning so
+// an operator can confirm the policy set composes it against a base-deny.
+function defaultResultAllows(content: string): boolean {
+  const literal = defaultResultLiteral(content)
+  return literal !== null && /"decision"\s*:\s*"allow"/.test(literal)
+}
+
 export function validateAuthzPolicy(content: string): string | null {
   const check = parseRego(content)
   if (check.error) return check.error
   if (check.packageName !== 'caracal.authz') return 'must_use_package_caracal_authz'
+  if (isDataDocumentDirective(content)) {
+    if (check.rules.has('result')) return 'data_document_must_not_define_result'
+    if (check.rules.size === 0) return 'data_document_must_define_data'
+    return null
+  }
   if (!check.rules.has('result')) return 'must_define_result_rule'
   return null
 }
@@ -160,10 +188,10 @@ function defaultResultLiteral(content: string): string | null {
 
 export function analyzeAuthzPolicy(content: string): string[] {
   if (validateAuthzPolicy(content)) return []
+  if (isDataDocumentDirective(content)) return []
   const { source } = stripCommentsAndStrings(content)
   const warnings: string[] = []
-  const defaultLiteral = defaultResultLiteral(content)
-  if (defaultLiteral !== null && /"decision"\s*:\s*"allow"/.test(defaultLiteral)) {
+  if (defaultResultAllows(content)) {
     warnings.push('default_result_allows_access')
   }
   if (!/\bdefault\s+result\b/.test(source)) {

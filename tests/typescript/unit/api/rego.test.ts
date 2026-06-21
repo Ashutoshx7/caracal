@@ -67,6 +67,30 @@ describe('validateAuthzPolicy', () => {
   it('passes valid policy', () => {
     expect(validateAuthzPolicy('package caracal.authz\nresult := { "allow": true }')).toBeNull()
   })
+
+  it('accepts a data document that defines data and no result rule', () => {
+    expect(
+      validateAuthzPolicy(`# caracal:data-document
+package caracal.authz
+grants := { "agent-1": ["read"] }`),
+    ).toBeNull()
+  })
+
+  it('rejects a data document that defines a result rule', () => {
+    expect(
+      validateAuthzPolicy(`# caracal:data-document
+package caracal.authz
+grants := { "agent-1": ["read"] }
+result := { "decision": "allow" }`),
+    ).toBe('data_document_must_not_define_result')
+  })
+
+  it('rejects an empty data document', () => {
+    expect(
+      validateAuthzPolicy(`# caracal:data-document
+package caracal.authz`),
+    ).toBe('data_document_must_define_data')
+  })
 })
 
 describe('analyzeAuthzPolicy', () => {
@@ -74,6 +98,13 @@ describe('analyzeAuthzPolicy', () => {
     const warnings = analyzeAuthzPolicy(`package caracal.authz
 default result := { "decision": "allow", "evaluation_status": "complete", "determining_policies": [], "diagnostics": [] }`)
     expect(warnings).toEqual(expect.arrayContaining(['default_result_allows_access', 'missing_requested_scope_check']))
+  })
+
+  it('returns no warnings for a data document', () => {
+    const warnings = analyzeAuthzPolicy(`# caracal:data-document
+package caracal.authz
+grants := { "agent-1": ["read"] }`)
+    expect(warnings).toEqual([])
   })
 
   it('warns when no default result deny fallback is declared', () => {
