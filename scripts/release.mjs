@@ -343,11 +343,13 @@ function writeStableManifest(manifest) {
 function assertStableCommit(tag) {
   const manifest = `releases/${tag}/manifest.json`
   if (!existsSync(join(repoRoot, manifest))) die(`manifest missing for ${tag}`)
-  execFileSync('node', ['scripts/validateReleaseManifest.mjs', manifest], { cwd: repoRoot, stdio: 'inherit' })
+  execFileSync('node', ['scripts/validateReleaseManifest.mjs', manifest], {
+    cwd: repoRoot,
+    stdio: 'inherit',
+    env: { ...process.env, CARACAL_VALIDATE_HELM_FILES: '1' },
+  })
   const files = run('git', ['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD']).trim().split('\n')
-  for (const file of [manifest, 'infra/helm/caracal/Chart.yaml', 'infra/helm/caracal/values.yaml']) {
-    if (!files.includes(file)) die(`release commit missing ${file}`)
-  }
+  if (!files.includes(manifest)) die(`release commit missing ${manifest}`)
 }
 
 function stable(options) {

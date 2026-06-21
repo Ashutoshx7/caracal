@@ -5,7 +5,7 @@
 
 global:
   registry: ghcr.io/garudex-labs
-  tag: "2026.06.20-rc.1"
+  tag: "2026.06.21"
   imagePullPolicy: IfNotPresent
   mode: rc
   evaluation: false
