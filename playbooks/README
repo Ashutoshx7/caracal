@@ -11,6 +11,7 @@ Use them inside your own project. You do not need the Caracal repository in your
 | `policies` | Writing Caracal Rego policies and policy-set guidance. |
 | `sdks` | Integrating Caracal SDKs into your application. |
 | `mapping` | Translating provider and resource settings into Caracal fields. |
+| `compliance` | Running a compliance and operations review of a Caracal codebase. |
 
 ## Supported agents
 

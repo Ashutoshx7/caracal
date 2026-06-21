@@ -472,7 +472,14 @@ export default defineConfig({
                 { label: 'Wire Contracts', link: '/reference/interoperability-contracts/' },
               ],
             },
-            { label: 'Compare Editions', link: '/enterprise/' },
+            {
+              label: 'Enterprise Adoption',
+              collapsed: true,
+              items: [
+                { label: 'Compare Editions', link: '/enterprise/' },
+                { label: 'Compliance and Operations Readiness', link: '/enterprise/compliance-readiness/' },
+              ],
+            },
           ],
         },
         {
