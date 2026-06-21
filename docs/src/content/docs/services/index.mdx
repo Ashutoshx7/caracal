@@ -15,7 +15,7 @@ Caracal services are small, explicit runtime components. Each service owns a bou
 | [Issue Mandates](/services/sts/) | `8080` | Token exchange, mandate issuance, JWKS, policy evaluation, step-up status. |
 | [Protect Upstreams](/services/gateway/) | `8081` | Protected reverse proxy, per-request exchange, revocation checks, upstream safety. |
 | [Ingest Audit Evidence](/services/audit/) | `9090` | Audit ingestion, DLQ, tamper checks, retention, search. |
-| [Automate Management](/services/control/) | `8087` | Optional remote management invocation through shared engine dispatch. |
+| [Automate Management](/services/control/) | API `3000` | Optional in-process remote management invocation through shared engine dispatch. |
 
 ## Dependency Map
 
