@@ -122,7 +122,6 @@ jobs:
             ./services/sts/... \
             ./services/audit/... \
             ./services/gateway/... \
-            ./services/coordinator-relay/... \
             ./packages/transport/mcp/go/... \
             ./packages/connectors/nethttp/go/... \
             ./packages/connectors/redis/go/... \
@@ -409,7 +408,6 @@ jobs:
             ./services/sts/... \
             ./services/audit/... \
             ./services/gateway/... \
-            ./services/coordinator-relay/... \
             ./packages/transport/mcp/go/... \
             ./packages/connectors/nethttp/go/... \
             ./packages/connectors/redis/go/... \
