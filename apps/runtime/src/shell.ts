@@ -8,7 +8,7 @@
 import '@caracalai/engine/scrubCwdEnv'
 import { installCrashHandlers } from './crash.ts'
 import { runCommand } from './commands/run.ts'
-import { upCommand, downCommand, statusCommand } from './commands/stack.ts'
+import { upCommand, downCommand, statusCommand, upgradeCommand } from './commands/stack.ts'
 import { purgeCommand } from './commands/purge.ts'
 import { availableInterfaceCommands, consoleDispatch } from './commands/dispatch.ts'
 import { checkMcpGovernance } from './mcp.ts'
@@ -23,6 +23,7 @@ const executors: Record<string, Executor> = {
   up: (argv) => upCommand([...argv]),
   down: (argv) => downCommand([...argv]),
   status: (argv) => statusCommand([...argv]),
+  upgrade: (argv) => upgradeCommand([...argv]),
   purge: (argv) => purgeCommand([...argv]),
   run: (argv, cfg) => {
     const cmdArgs = argv[0] === '--' ? argv.slice(1) : argv
@@ -32,7 +33,7 @@ const executors: Record<string, Executor> = {
   console: (argv) => { consoleDispatch([...argv]) },
 }
 
-const availableCommands = new Set(['up', 'down', 'status', 'purge', 'run', ...availableInterfaceCommands()])
+const availableCommands = new Set(['up', 'down', 'status', 'upgrade', 'purge', 'run', ...availableInterfaceCommands()])
 const shellCommands = SHELL_COMMANDS.filter((command) => availableCommands.has(command.name))
 const shellExecutors = Object.fromEntries(Object.entries(executors).filter(([name]) => availableCommands.has(name)))
 const registry = buildRegistry(shellCommands, shellExecutors)

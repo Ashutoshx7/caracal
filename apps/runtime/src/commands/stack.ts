@@ -5,6 +5,7 @@
 
 import { spawnSync } from 'node:child_process'
 import {
+  composeRun,
   defaultServiceProbes,
   resolveStackPaths,
   stackDown,
@@ -121,6 +122,71 @@ export async function downCommand(argv: string[]): Promise<void> {
   const handle = stackDown({ paths, args: argv, env: composeEnv(paths) })
   const code = await handle.exitCode
   process.exit(code)
+}
+
+async function composeStep(paths: StackPaths, args: string[], env: Record<string, string | undefined>): Promise<boolean> {
+  const handle = composeRun({ paths, args, env })
+  return (await handle.exitCode) === 0
+}
+
+export async function upgradeCommand(argv: string[]): Promise<void> {
+  if (argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') return upgradeHelp()
+  const { flags } = parseArgs(argv)
+  const paths = resolvePaths()
+  requireDockerCompose()
+  if (paths.mode === 'dev') requireBuildKit()
+  printBanner(paths)
+  const env = composeEnv(paths)
+
+  // Stage the new images before touching the running stack. dev rebuilds from
+  // source; rc/stable fetch the release pinned into this binary.
+  if (paths.mode === 'dev') {
+    if (!(await composeStep(paths, ['build'], env))) process.exit(1)
+  } else if (!flagBool(flags, 'no-pull')) {
+    printInfo(`fetching ${CARACAL_VERSION} images`)
+    if (!(await composeStep(paths, ['pull'], env))) process.exit(1)
+  }
+
+  // Apply migrations while the previous version keeps serving. Releases ship
+  // expand-only schema changes, so the running services stay compatible with
+  // the migrated database and no maintenance window is required.
+  printInfo('applying database migrations (expand phase)')
+  if (!(await composeStep(paths, ['run', '--rm', 'dbMigrate'], env))) {
+    printError('migration failed; the stack still runs the previous version')
+    process.exit(1)
+  }
+
+  // Roll services onto the new images. Compose recreates only the containers
+  // whose image changed; expand/contract keeps both versions readable.
+  printInfo('rolling services onto the new version')
+  const handle = stackUp({ paths, args: [], env })
+  const code = await handle.exitCode
+  if (code !== 0) process.exit(code)
+
+  try {
+    await completeRuntimeOnboarding()
+  } catch (err) {
+    printError(err instanceof Error ? err.message : String(err))
+    process.exit(1)
+  }
+  process.exit(0)
+}
+
+function upgradeHelp(): never {
+  return showHelp(
+    [
+      'Usage: caracal upgrade [--no-pull]',
+      '',
+      'Upgrades the local stack to the version pinned in this binary with no',
+      'maintenance window: stage images, apply expand-phase migrations while the',
+      'current version keeps serving, roll services, then gate on readiness.',
+      '',
+      'Flags:',
+      '  --no-pull               Reuse local images instead of pulling the release',
+      '  --help, -h              Show this help',
+      '',
+    ],
+  )
 }
 
 export async function statusCommand(argv: string[] = []): Promise<void> {

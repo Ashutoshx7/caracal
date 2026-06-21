@@ -73,6 +73,16 @@ export const SHELL_COMMANDS: readonly CommandDescriptor[] = Object.freeze([
     summary: 'Clean stack artifacts and local state',
     subcommands: ['stack', 'volumes', 'logs', 'config', 'runtime', 'secrets', 'cache', 'all'],
   },
+  {
+    name: 'upgrade',
+    group: 'stack',
+    summary: 'Migrate and roll the stack onto this version with no maintenance window',
+    flags: {
+      '': [
+        { name: '--no-pull', summary: 'Reuse local images instead of pulling the pinned release' },
+      ],
+    },
+  },
   { name: 'run', group: 'runtime', summary: 'Run a command with just-in-time injected credentials', requiresConfig: true, requiresArgs: true },
   { name: 'console', group: 'runtime', summary: 'Launch the Caracal Console' },
 ]);
