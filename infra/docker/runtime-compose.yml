@@ -319,6 +319,7 @@ services:
       GATEWAY_STS_HMAC_KEY_FILE: /run/secrets/gatewayStsHmacKey
       CARACAL_ADMIN_TOKEN_FILE: /run/secrets/caracalAdminToken
       METRICS_BEARER_FILE: /run/secrets/metricsBearer
+      UPSTREAM_HOST_ALLOWLIST: ${UPSTREAM_HOST_ALLOWLIST:-}
       PORT: 8081
     ports:
       - "127.0.0.1:8081:8081"

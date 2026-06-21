@@ -44,6 +44,8 @@ python -m uvicorn app.main:app --reload --port 8000               # run the app
 
 It must run before the mock providers: `caracal up` creates the `caracalData` Docker network
 they join so mandate-aware providers can verify Caracal mandates against the zone JWKS.
+The provider lab runs on this private Docker network; the Gateway reaches operator-provisioned
+private upstreams by default, so no SSRF allowlist step is required.
 
 Open `http://localhost:8000`.
 
@@ -63,7 +65,9 @@ exercise the offline simulators.
 ## 4. Provision automatically
 
 Create a **scoped Control key** in Console, then replay the whole Console setup from a
-script:
+script. Control keys are minted only through the interactive Console (`Control` menu →
+`key create`): pick the scopes, TTL, and expiry, and Console reveals the `client_id` and
+one-time `client_secret`. Save them into `.env.provision`:
 
 ```bash
 cp -n .env.provision.example .env.provision   # fill in CONTROL_CLIENT_ID / _SECRET
