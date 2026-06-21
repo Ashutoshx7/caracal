@@ -243,7 +243,7 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stsCtx, cancel := context.WithTimeout(r.Context(), p.sts.client.Timeout)
-	out := p.sts.Exchange(stsCtx, bearer, bind, resource, requestID)
+	out := p.sts.Exchange(stsCtx, bearer, bind, resource, r.Method, r.URL.Path, requestID)
 	cancel()
 	p.metrics.STSExchangeLatencyMs.Store(uint64(out.Latency / time.Millisecond))
 	if out.ClientErr != nil {

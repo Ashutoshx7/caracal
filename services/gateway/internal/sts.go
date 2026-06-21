@@ -84,8 +84,10 @@ func (c *stsClient) Health(ctx context.Context) error {
 
 // Exchange performs an RFC 8693 token exchange. The caller's identity is sent as
 // (zone_id, application_id) form fields rather than a positional client_id, so
-// neither value depends on a separator-free encoding.
-func (c *stsClient) Exchange(ctx context.Context, subjectToken string, bind binding, resource, requestID string) exchangeOutcome {
+// neither value depends on a separator-free encoding. The upstream operation
+// (method, path) is forwarded so STS can authorize authority per operation; it is
+// covered by the gateway exchange HMAC and cannot be forged by a direct caller.
+func (c *stsClient) Exchange(ctx context.Context, subjectToken string, bind binding, resource, method, path, requestID string) exchangeOutcome {
 	form := url.Values{
 		"grant_type":         {"urn:ietf:params:oauth:grant-type:token-exchange"},
 		"zone_id":            {bind.ZoneID},
@@ -93,6 +95,8 @@ func (c *stsClient) Exchange(ctx context.Context, subjectToken string, bind bind
 		"subject_token":      {subjectToken},
 		"subject_token_type": {"urn:ietf:params:oauth:token-type:access_token"},
 		"resource":           {resource},
+		"request_method":     {method},
+		"request_path":       {path},
 	}
 	body := form.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,

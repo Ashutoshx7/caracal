@@ -119,6 +119,8 @@ func (s *Server) handleTokenExchange(w http.ResponseWriter, r *http.Request) {
 		SessionID:                  r.FormValue("session_id"),
 		AgentSessionID:             r.FormValue("agent_session_id"),
 		DelegationEdgeID:           r.FormValue("delegation_edge_id"),
+		RequestMethod:              r.FormValue("request_method"),
+		RequestPath:                r.FormValue("request_path"),
 		TTLSeconds:                 ttlSeconds,
 		GatewayAuthenticated:       gatewayAuthenticated,
 		RuntimeCredentialInjection: runtimeCredentialInjection,
@@ -157,6 +159,22 @@ func (s *Server) verifyGatewayExchange(r *http.Request, requestID string) (bool,
 		return false, err
 	}
 	return true, nil
+}
+
+// gatewayActionInput surfaces the upstream operation (HTTP method and path) the
+// gateway is authorizing so a policy can gate authority per operation rather than
+// only per resource view. The operation is trusted only for gateway-authenticated
+// exchanges: the gateway HMAC-signs the request body, so a direct caller cannot
+// forge these fields to steer an operation-gating policy. A non-gateway exchange
+// carries no upstream operation, leaving the fields empty so operation rules
+// fall through to default-deny.
+func gatewayActionInput(req TokenExchangeRequest) OPAAction {
+	action := OPAAction{ID: "TokenExchange"}
+	if req.GatewayAuthenticated {
+		action.Method = strings.ToUpper(strings.TrimSpace(req.RequestMethod))
+		action.Path = strings.TrimSpace(req.RequestPath)
+	}
+	return action
 }
 
 func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, requestID string) (*TokenResponse, *challengeState, int, *sharederr.CaracalError) {
@@ -375,7 +393,7 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 				Identifier: resource.Identifier,
 				Scopes:     resource.Scopes,
 			},
-			Action:         OPAAction{ID: "TokenExchange"},
+			Action:         gatewayActionInput(req),
 			Session:        sessionInput(req.SessionID),
 			DelegationEdge: delegationEdgeInput(delegation),
 			Context: OPAContext{
