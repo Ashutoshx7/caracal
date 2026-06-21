@@ -52,8 +52,8 @@ describe('docker-compose default substitutions', () => {
     const yaml = readFileSync(resolve(repoRoot, 'infra', 'docker', 'docker-compose.yml'), 'utf8')
     expect(yaml).toContain('build:')
     expect(yaml).toContain('${CARACAL_MODE:-dev}')
-    expect(yaml).toContain('localhost/caracal-api:')
-    expect(yaml).not.toContain('ghcr.io/garudex-labs/}caracal-api')
+    expect(yaml).toContain('localhost/caracal-node:')
+    expect(yaml).not.toContain('ghcr.io/garudex-labs/}caracal-node')
   })
 
   it('dev compose uses a network name isolated from the runtime stack', () => {
@@ -97,7 +97,7 @@ describe('runtime-compose default substitutions', () => {
 
   it('runtime compose uses release images, stable defaults, and no build contexts', () => {
     const yaml = readFileSync(resolve(repoRoot, 'infra', 'docker', 'runtime-compose.yml'), 'utf8')
-    expect(yaml).toContain('${CARACAL_REGISTRY:-ghcr.io/garudex-labs/}caracal-api:v${CARACAL_VERSION}')
+    expect(yaml).toContain('${CARACAL_REGISTRY:-ghcr.io/garudex-labs/}caracal-node:v${CARACAL_VERSION}')
     expect(yaml).toContain('${CARACAL_MODE:-stable}')
     expect(yaml).not.toContain('build:')
     expect(yaml).not.toContain('-dev.sha')
