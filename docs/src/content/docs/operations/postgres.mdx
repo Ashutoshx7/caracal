@@ -23,10 +23,12 @@ flowchart TB
 The migration runner:
 
 - applies `/migrations/*.up.sql` files in sorted order;
-- records versions in `schema_migrations`;
+- records versions in `public.schema_migrations` (schema-qualified so it survives migrations that reset `search_path`);
 - serializes concurrent runners with a Postgres advisory lock;
 - rejects unsafe migration filenames;
 - is used by Compose `dbMigrate` and Helm pre-install/pre-upgrade Job.
+
+The schema starts from a single consolidated baseline (`0001_baseline.up.sql`). Later releases append expand-only migrations on top of it. Each migration must be backward compatible with the previous application version so it can be applied while that version still serves traffic; contract-phase changes are deferred to a later release and tagged `-- caracal:phase contract`. `validateMigrations.sh` enforces this, which is what lets [`caracal upgrade`](/operations/upgrade/) migrate without a maintenance window.
 
 ```bash
 PGHOST=localhost PGPORT=5432 PGUSER=caracal PGDATABASE=caracal \
@@ -42,7 +44,7 @@ Production tooling is forward-only and does not reference down migrations.
 bash infra/postgres/scripts/validateMigrations.sh
 ```
 
-The validation script checks migration idempotency, concurrent migrators, expected tables, append-only audit permissions, immutable policy-version trigger, fail-closed row-level security, and the rolling audit partition window.
+The validation script checks migration idempotency, concurrent migrators, expand-only schema discipline, expected tables, append-only audit permissions, immutable policy-version trigger, fail-closed row-level security, and the rolling audit partition window.
 
 ## Capacity Controls
 

@@ -60,7 +60,7 @@ until psql_cmd -c "SELECT 1;" >/dev/null 2>&1; do
 done
 
 psql_cmd -c "
-  CREATE TABLE IF NOT EXISTS schema_migrations (
+  CREATE TABLE IF NOT EXISTS public.schema_migrations (
     version    TEXT PRIMARY KEY,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
   );
@@ -89,7 +89,7 @@ find "${migrations_dir}" -maxdepth 1 -type f -name '*.up.sql' | sort | while IFS
         <<'SQL'
 SELECT pg_advisory_xact_lock(:lock_key);
 SELECT CASE
-    WHEN EXISTS (SELECT 1 FROM schema_migrations WHERE version = :'ver') THEN 'true'
+    WHEN EXISTS (SELECT 1 FROM public.schema_migrations WHERE version = :'ver') THEN 'true'
     ELSE 'false'
 END AS migration_applied;
 \gset
@@ -97,7 +97,8 @@ END AS migration_applied;
 SELECT :'ver' AS already_applied;
 \else
 \i :migration
-INSERT INTO schema_migrations(version) VALUES (:'ver');
+RESET search_path;
+INSERT INTO public.schema_migrations(version) VALUES (:'ver');
 \endif
 SQL
 done

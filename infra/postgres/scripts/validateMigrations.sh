@@ -33,6 +33,32 @@ fi
 echo "  down migrations are not referenced by production tooling"
 
 echo ""
+echo "=== Migration: releases ship expand-only schema changes ==="
+# caracal upgrade applies migrations while the previous version still serves, then
+# rolls services. That is only safe when each release's migrations are backward
+# compatible (expand phase). A migration that drops, renames, retypes, or tightens
+# a column to NOT NULL breaks the running version mid-upgrade and forces a
+# maintenance window. Such contract-phase changes must be split into a later
+# release and tagged so the discipline stays explicit.
+contract_violations=0
+for up in "${MIGRATIONS_DIR}"/*.up.sql; do
+    name="$(basename "${up}" .up.sql)"
+    [ "${name}" = "0001_baseline" ] && continue
+    statements="$(grep -vE '^[[:space:]]*--' "${up}" || true)"
+    if printf '%s\n' "${statements}" | grep -iqE 'DROP[[:space:]]+(TABLE|COLUMN|SCHEMA|TYPE)|[[:space:]]RENAME[[:space:]]|ALTER[[:space:]]+COLUMN[[:space:]]+[^;]*[[:space:]]TYPE[[:space:]]|SET[[:space:]]+NOT[[:space:]]+NULL'; then
+        if ! grep -qE '^--[[:space:]]*caracal:phase[[:space:]]+contract' "${up}"; then
+            echo "  FAIL: ${name} contains a contract-phase change but is not tagged '-- caracal:phase contract'" >&2
+            contract_violations=$((contract_violations + 1))
+        fi
+    fi
+done
+if [ "${contract_violations}" -ne 0 ]; then
+    echo "FAIL: ${contract_violations} migration(s) would break a no-window upgrade; split contract changes into a later release or tag them explicitly" >&2
+    exit 1
+fi
+echo "  migrations are expand-only (or explicitly tagged contract)"
+
+echo ""
 echo "=== Migration: apply all migrations ==="
 "${ROOT}/infra/postgres/scripts/migrate.sh"
 

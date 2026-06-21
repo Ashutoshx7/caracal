@@ -4,7 +4,19 @@ description: Upgrade Caracal safely across images, Helm chart values, migrations
 pageType: workflow
 ---
 
-Caracal upgrades are forward-only at the database layer. Plan upgrades as roll-forward changes with compatibility checks and rollback to the previous application revision only when it remains schema-compatible.
+Caracal upgrades are forward-only at the database layer. Every release ships **expand-only** schema changes: new migrations are backward compatible with the previous application version, so the database can be migrated while the old version is still serving. This removes the maintenance window — the schema moves first, then services roll onto it.
+
+Contract-phase changes (dropping, renaming, retyping, or tightening a column to `NOT NULL`) are split into a later release and must be tagged `-- caracal:phase contract`. CI (`validateMigrations.sh`) rejects untagged contract changes so the no-window guarantee cannot silently regress.
+
+## One-Command Upgrade (Runtime)
+
+For the Compose-based runtime, `caracal upgrade` performs the full expand-then-roll sequence in order:
+
+```bash
+caracal upgrade
+```
+
+It stages the new images (`pull`, or `build` in dev), applies the expand-phase migrations against the running database, then rolls the services and waits for readiness. If the migration step fails it aborts before touching services, leaving the previous version running. Pass `--no-pull` to roll already-staged images without fetching.
 
 ## Pre-Upgrade
 
@@ -26,11 +38,14 @@ kubectl -n caracal rollout status deploy/caracal-api
 
 The migration Job runs as a pre-install/pre-upgrade hook when migrations are enabled.
 
-## Compose Upgrade
+## Compose Upgrade (Manual)
+
+`caracal upgrade` automates this. To run it by hand:
 
 ```bash
 export CARACAL_VERSION=<new-version>
 docker compose -f infra/docker/runtime-compose.yml pull
+docker compose -f infra/docker/runtime-compose.yml run --rm dbMigrate
 docker compose -f infra/docker/runtime-compose.yml up -d
 bash infra/scripts/smokeTest.sh
 ```

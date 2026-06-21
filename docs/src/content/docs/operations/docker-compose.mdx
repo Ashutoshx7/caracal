@@ -64,6 +64,8 @@ bash infra/scripts/smokeTest.sh
 
 The runtime compose file expects secrets under `./secrets/` relative to the compose file unless `CARACAL_SECRETS_DIR` points at a platform-managed secret mount. Keep the secret directory private to the operator account and never place inline secrets in the compose file.
 
+To move an existing runtime onto a newer release, use `caracal upgrade`. It stages the pinned images, applies expand-phase migrations against the running database, then rolls the services and waits for readiness — no maintenance window. See [Upgrade Caracal](/operations/upgrade/).
+
 ## Operator Secret Boundary
 
 Admin, Coordinator, database, Redis, HMAC, and KEK material are operator secrets. Do not place those files in a source workspace, agent workspace, MCP tool workspace, or any directory mounted into untrusted agent containers.
