@@ -492,9 +492,14 @@ def catalog() -> dict[str, PartnerSpec]:
 
 def _gateway_call(s: PartnerSpec, operation: str, payload: dict, authority) -> dict:
     """Route one provider operation through the Caracal Gateway under the calling
-    agent's authority. The agent's mandate must carry the scope that owns the
-    operation, on its application's view of the provider; the Gateway re-evaluates
-    policy, injects the provider credential, and forwards the request."""
+    agent's authority. The agent's mandate is minted for the scope that owns the
+    operation, on its application's view of the provider. Caracal is the authority
+    of record: for a path-addressed (REST) operation the gateway-use policy binds
+    the request path to its required scope and denies a mandate that lacks it, so
+    operation authority holds even if this client preflight is wrong or absent. The
+    role and view checks below are fast-fail preflight that surface a
+    misconfiguration locally before a round trip; they never substitute for the
+    policy decision the Gateway enforces."""
     from app import tenancy
 
     scope = tenancy.operation_scope(s.id, operation)

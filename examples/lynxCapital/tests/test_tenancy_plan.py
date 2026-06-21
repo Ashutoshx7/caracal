@@ -181,6 +181,35 @@ def test_generated_grants_document_is_fresh():
     )
 
 
+def test_generated_operations_document_is_fresh():
+    rendered = tenancy.render_operations_rego()
+    checked_in = (POLICIES_DIR / "03-operations.rego").read_text(encoding="utf-8")
+    assert rendered == checked_in, (
+        "policies/03-operations.rego is stale; regenerate it with app.tenancy.render_operations_rego()"
+    )
+
+
+def test_operations_document_maps_rest_paths_to_scopes_and_omits_mcp():
+    model = tenancy.load_model()
+    rendered = tenancy.render_operations_rego(model)
+    assert "# caracal:data-document" in rendered
+    assert "result :=" not in rendered
+    rest = model.resource("resource://payments-meridian")
+    assert f'"{rest.identifier}"' in rendered
+    assert '"/api/create_payout": "meridian:payout"' in rendered
+    for resource in model.resources:
+        if model.provider(resource.provider).protocol == "mcp":
+            assert f'"{resource.identifier}"' not in rendered, resource.identifier
+
+
+def test_protocol_drift_fails_config_load():
+    model = tenancy.load_model().model_copy(deep=True)
+    rest_provider = next(p for p in model.providers if p.protocol == "rest")
+    rest_provider.protocol = "mcp"
+    with pytest.raises(ValueError, match="transport drift"):
+        tenancy._validate_operation_governance(model)
+
+
 def test_bindings_render_carries_application_ids():
     rendered = tenancy.render_bindings_rego({"operations": "0193a000-aaaa-7000-8000-000000000001"})
     assert "app_ids :=" in rendered

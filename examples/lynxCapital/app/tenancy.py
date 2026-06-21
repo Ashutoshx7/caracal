@@ -196,6 +196,14 @@ def _validate_operation_governance(model: TenancyModel) -> None:
             raise ValueError(
                 f"provider {provider.id}: scopes govern operations the partner does not expose: {phantom}"
             )
+        spec_is_mcp = partners.spec(provider.id).auth in partners._MCP_AUTHS
+        model_is_mcp = provider.protocol == "mcp"
+        if spec_is_mcp != model_is_mcp:
+            raise ValueError(
+                f"provider {provider.id}: transport drift between partner spec "
+                f"(mcp={spec_is_mcp}) and tenancy protocol (mcp={model_is_mcp}); a "
+                "mislabeled protocol would silently skip gateway operation-path enforcement"
+            )
 
 
 def _validate(model: TenancyModel) -> None:
@@ -443,6 +451,57 @@ def render_grants_rego(model: TenancyModel | None = None) -> str:
         'package caracal.authz\n\n'
         'import rego.v1\n\n'
         f'{_rego_grants(grants)}\n'
+    )
+
+
+def _rego_operation_scopes(operations: dict[str, dict[str, str]]) -> str:
+    """Render the per-view operation scope map as canonical opa-fmt Rego."""
+    lines = ["operation_scopes := {"]
+    for identifier in sorted(operations):
+        paths = operations[identifier]
+        if len(paths) == 1:
+            ((path, scope),) = paths.items()
+            lines.append(f'\t"{identifier}": {{"{path}": "{scope}"}},')
+        else:
+            lines.append(f'\t"{identifier}": {{')
+            for path in sorted(paths):
+                lines.append(f'\t\t"{path}": "{paths[path]}",')
+            lines.append("\t},")
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def render_operations_rego(model: TenancyModel | None = None) -> str:
+    """The generated operation-authority data document: for every path-addressed
+    resource view, the scope each upstream operation path requires. The gateway-use
+    decision in 00-base reads this to enforce, server-side, that a mandate may invoke
+    an operation only when it carries that operation's scope — closing the gap where
+    operation authority would otherwise live in the adopter's client code. MCP views
+    address every call at one transport path, so they carry no per-operation map and
+    are constrained by the single scope their mandate was minted with."""
+    model = model or load_model()
+    operations: dict[str, dict[str, str]] = {}
+    for resource in model.resources:
+        provider = model.provider(resource.provider)
+        if provider.protocol != "rest":
+            continue
+        paths: dict[str, str] = {}
+        for scope in resource.scopes:
+            for op in provider.scopes.get(scope, []):
+                paths[f"/api/{op}"] = scope
+        if paths:
+            operations[resource.identifier] = paths
+    return (
+        '# caracal:data-document\n'
+        '# Copyright (C) 2026 Garudex Labs.  All Rights Reserved.\n'
+        '# Caracal, a product of Garudex Labs\n'
+        '#\n'
+        '# Generated operation-authority data: each path-addressed view and the scope its\n'
+        '# upstream operation paths require. Rendered by app.tenancy.render_operations_rego\n'
+        '# from config/tenancy.yaml; do not edit. Read by the gateway-use rule in 00-base.\n'
+        'package caracal.authz\n\n'
+        'import rego.v1\n\n'
+        f'{_rego_operation_scopes(operations)}\n'
     )
 
 
