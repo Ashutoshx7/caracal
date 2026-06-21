@@ -76,7 +76,7 @@ def config_from_env(env: dict[str, str] | None = None) -> ControlConfig:
     ttl = env.get("CONTROL_TTL_SECONDS", "").strip()
     return ControlConfig(
         sts_url=env.get("STS_URL", "http://127.0.0.1:8080").rstrip("/"),
-        control_url=env.get("CONTROL_URL", "http://127.0.0.1:8087").rstrip("/"),
+        control_url=env.get("CONTROL_URL", "http://127.0.0.1:3000").rstrip("/"),
         audience=env.get("CONTROL_AUDIENCE", "caracal-control"),
         client_id=env["CONTROL_CLIENT_ID"],
         client_secret=env["CONTROL_CLIENT_SECRET"],

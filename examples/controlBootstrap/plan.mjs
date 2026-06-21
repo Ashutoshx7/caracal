@@ -64,7 +64,7 @@ export function loadConfig(scopes, env = process.env) {
     : scopes
   return {
     stsUrl: env.STS_URL ?? 'http://127.0.0.1:8080',
-    controlUrl: env.CONTROL_URL ?? 'http://127.0.0.1:8087',
+    controlUrl: env.CONTROL_URL ?? 'http://127.0.0.1:3000',
     audience: env.CONTROL_AUDIENCE ?? 'caracal-control',
     clientId: env.CONTROL_CLIENT_ID,
     clientSecret: env.CONTROL_CLIENT_SECRET,

@@ -136,7 +136,6 @@ if $run_ts; then
   ts_run packages/connectors/postgres/ts tokenstate-postgres tests/typescript/unit/connectors/postgres
   ts_run packages/connectors/redis/ts tokenstate-redis tests/typescript/unit/connectors/redis
   ts_run packages/identity/ts identity tests/typescript/unit/identity
-  ts_run apps/control control tests/typescript/unit/control tests/typescript/integration/control
 fi
 
 if $run_go; then

@@ -264,7 +264,7 @@ def test_setup_page_is_guided_and_provider_backed():
     assert "STS_URL" not in body
     assert "CONTROL_AUDIENCE" not in body
     assert "caracal-control" not in body
-    assert "http://127.0.0.1:8087" not in body
+    assert "http://127.0.0.1:3000" not in body
     assert "http://127.0.0.1:8080" not in body
     assert "http://localhost:9090" not in body
     assert "Service endpoints" not in body
