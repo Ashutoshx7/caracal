@@ -103,3 +103,6 @@ caracal.toml
 packages/engine/src/embedded.ts
 apps/runtime/src/runtime/version.gen.ts
 apps/console/src/version.gen.ts
+
+# Generated evidence packs
+/evidence/

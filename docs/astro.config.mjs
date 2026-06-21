@@ -377,6 +377,7 @@ export default defineConfig({
             { label: 'Review the Threat Model', link: '/security/threat-model/' },
             { label: 'Harden Security Posture', link: '/security/hardening/' },
             { label: 'Verify a Release', link: '/security/verify-releases/' },
+            { label: 'Generate an Evidence Pack', link: '/security/evidence-pack/' },
             { label: 'Report a Vulnerability', link: '/security/disclosure/' },
             { label: 'Enterprise Security Readiness', link: '/security/enterprise-readiness/' },
           ],
