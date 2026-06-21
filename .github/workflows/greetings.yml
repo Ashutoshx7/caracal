@@ -5,6 +5,7 @@ on: [pull_request_target, issues]
 jobs:
   greeting:
     runs-on: ubuntu-latest
+    if: ${{ !endsWith(github.actor, '[bot]') && github.actor != 'dependabot' }}
     permissions:
       issues: write
       pull-requests: write
@@ -45,6 +46,6 @@ jobs:
 
     - uses: actions/first-interaction@1c4688942c71f71d4f5502a26ea67c331730fa4d # v3.1.0
       with:
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
-        issue-message: ${{ steps.greetings.outputs.issue-message }}
-        pr-message: ${{ steps.greetings.outputs.pr-message }}
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        issue_message: ${{ steps.greetings.outputs.issue-message }}
+        pr_message: ${{ steps.greetings.outputs.pr-message }}
