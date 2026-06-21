@@ -268,11 +268,8 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile.go-service
-      args:
-        SERVICE: sts
-        PORT: "8080"
-        STATE_DIRS: "audit-replay"
-    image: localhost/caracal-sts:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.26}-dev.sha${CARACAL_DEV_SHA:-local}}
+    image: localhost/caracal-go:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.26}-dev.sha${CARACAL_DEV_SHA:-local}}
+    command: ["/usr/local/bin/sts"]
     depends_on:
       replayVolumeInit:
         condition: service_completed_successfully
@@ -329,8 +326,9 @@ services:
     <<: [*appService, *appResources]
     build:
       context: ../..
-      dockerfile: apps/api/Dockerfile
-    image: localhost/caracal-api:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.26}-dev.sha${CARACAL_DEV_SHA:-local}}
+      dockerfile: infra/docker/Dockerfile.node-service
+    image: localhost/caracal-node:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.26}-dev.sha${CARACAL_DEV_SHA:-local}}
+    command: ["/app/api/dist/main.js"]
     depends_on:
       sts:
         condition: service_healthy
@@ -391,14 +389,8 @@ services:
 
   gateway:
     <<: [*appService, *appResources]
-    build:
-      context: ../..
-      dockerfile: infra/docker/Dockerfile.go-service
-      args:
-        SERVICE: gateway
-        PORT: "8081"
-        STATE_DIRS: "audit-replay"
-    image: localhost/caracal-gateway:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.26}-dev.sha${CARACAL_DEV_SHA:-local}}
+    image: localhost/caracal-go:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.26}-dev.sha${CARACAL_DEV_SHA:-local}}
+    command: ["/usr/local/bin/gateway"]
     depends_on:
       replayVolumeInit:
         condition: service_completed_successfully
@@ -453,13 +445,8 @@ services:
 
   audit:
     <<: [*appService, *appResources]
-    build:
-      context: ../..
-      dockerfile: infra/docker/Dockerfile.go-service
-      args:
-        SERVICE: audit
-        PORT: "9090"
-    image: localhost/caracal-audit:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.26}-dev.sha${CARACAL_DEV_SHA:-local}}
+    image: localhost/caracal-go:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.26}-dev.sha${CARACAL_DEV_SHA:-local}}
+    command: ["/usr/local/bin/audit"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -502,10 +489,8 @@ services:
 
   coordinator:
     <<: [*appService, *appResources]
-    build:
-      context: ../..
-      dockerfile: apps/coordinator/Dockerfile
-    image: localhost/caracal-coordinator:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.26}-dev.sha${CARACAL_DEV_SHA:-local}}
+    image: localhost/caracal-node:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.26}-dev.sha${CARACAL_DEV_SHA:-local}}
+    command: ["/app/coordinator/dist/main.js"]
     depends_on:
       sts:
         condition: service_healthy
@@ -541,7 +526,7 @@ services:
     ports:
       - "127.0.0.1:4000:4000"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/ready >/dev/null || exit 1"]
+      test: ["CMD", "/healthcheck"]
       interval: 5s
       timeout: 3s
       retries: 20

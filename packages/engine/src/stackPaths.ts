@@ -125,7 +125,7 @@ function stackMode(value: string | undefined): StackMode | undefined {
 }
 
 function imageRuntime(image: string | undefined): Pick<ActiveLocalStackRuntime, 'version' | 'registry'> {
-  const marker = 'caracal-api:'
+  const marker = 'caracal-node:'
   const index = image?.lastIndexOf(marker) ?? -1
   if (!image || index < 0) return {}
   const tag = image.slice(index + marker.length)

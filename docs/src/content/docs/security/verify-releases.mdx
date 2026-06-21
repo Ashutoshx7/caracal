@@ -44,14 +44,14 @@ gh attestation verify caracal-console-*.tar.gz --repo Garudex-Labs/caracal
 Pull the image by digest, then verify its build provenance:
 
 ```sh
-gh attestation verify oci://ghcr.io/garudex-labs/caracal-sts:vYYYY.MM.DD \
+gh attestation verify oci://ghcr.io/garudex-labs/caracal-go:vYYYY.MM.DD \
   --repo Garudex-Labs/caracal
 ```
 
 Inspect the attached SBOM and provenance attestations with the registry tooling:
 
 ```sh
-docker buildx imagetools inspect ghcr.io/garudex-labs/caracal-sts:vYYYY.MM.DD \
+docker buildx imagetools inspect ghcr.io/garudex-labs/caracal-go:vYYYY.MM.DD \
   --format '{{ json .Provenance }}'
 ```
 

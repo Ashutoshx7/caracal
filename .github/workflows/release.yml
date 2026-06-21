@@ -357,32 +357,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: api
+          - name: go
             context: .
-            dockerfile: apps/api/Dockerfile
+            dockerfile: infra/docker/Dockerfile.go-service
             build_args: ""
-          - name: sts
+          - name: node
             context: .
-            dockerfile: infra/docker/Dockerfile.go-service
-            build_args: |
-              SERVICE=sts
-              PORT=8080
-              STATE_DIRS=audit-replay
-          - name: gateway
-            context: .
-            dockerfile: infra/docker/Dockerfile.go-service
-            build_args: |
-              SERVICE=gateway
-              PORT=8081
-          - name: audit
-            context: .
-            dockerfile: infra/docker/Dockerfile.go-service
-            build_args: |
-              SERVICE=audit
-              PORT=9090
-          - name: coordinator
-            context: .
-            dockerfile: apps/coordinator/Dockerfile
+            dockerfile: infra/docker/Dockerfile.node-service
             build_args: ""
           - name: postgres
             context: infra/postgres
@@ -658,7 +639,7 @@ jobs:
         run: |
           set -euo pipefail
           series="${RELEASE_TAG:0:8}"
-          images=(api coordinator audit gateway sts postgres redis runtime)
+          images=(go node postgres redis runtime)
           for name in "${images[@]}"; do
             image="${REGISTRY}/${IMAGE_OWNER}/caracal-${name}"
             docker buildx imagetools create \

@@ -132,7 +132,7 @@ services:
   sts:
     enabled: true
     replicas: 2
-    image: caracal-sts
+    image: caracal-go
     port: 8080
     issuerUrl: ""
     resources:
@@ -153,7 +153,7 @@ services:
   api:
     enabled: true
     replicas: 2
-    image: caracal-api
+    image: caracal-node
     port: 3000
     resources:
       requests:
@@ -173,7 +173,7 @@ services:
   gateway:
     enabled: true
     replicas: 2
-    image: caracal-gateway
+    image: caracal-go
     port: 8081
     resources:
       requests:
@@ -193,7 +193,7 @@ services:
   audit:
     enabled: true
     replicas: 2
-    image: caracal-audit
+    image: caracal-go
     port: 9090
     resources:
       requests:
@@ -213,7 +213,7 @@ services:
   coordinator:
     enabled: true
     replicas: 2
-    image: caracal-coordinator
+    image: caracal-node
     port: 4000
     requiredScope: agent:lifecycle
     resources:

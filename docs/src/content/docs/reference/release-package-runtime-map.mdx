@@ -16,16 +16,21 @@ pageType: reference
 
 ## Service Images
 
-| Component | Image name |
-| --- | --- |
-| API | `caracal-api` |
-| STS | `caracal-sts` |
-| Gateway | `caracal-gateway` |
-| Audit | `caracal-audit` |
-| Coordinator | `caracal-coordinator` |
-| Control | `caracal-control` |
-| Postgres image | `caracal-postgres` |
-| Redis image | `caracal-redis` |
+Caracal ships two application images. Each runs multiple roles selected by the
+container `command`; this keeps the trust boundary (separate processes/pods per
+role) while cutting build, signing, and supply-chain surface.
+
+| Image name | Roles | Runtime |
+| --- | --- | --- |
+| `caracal-node` | API, Coordinator | Node |
+| `caracal-go` | STS, Gateway, Audit | Go |
+| `caracal-postgres` | Postgres | — |
+| `caracal-redis` | Redis | — |
+
+Role selection:
+
+- `caracal-node` → `command: ["/app/api/dist/main.js"]` or `["/app/coordinator/dist/main.js"]`.
+- `caracal-go` → `command: ["/usr/local/bin/sts"]`, `["/usr/local/bin/gateway"]`, or `["/usr/local/bin/audit"]`.
 
 Runtime Compose references `${CARACAL_REGISTRY:-ghcr.io/garudex-labs/}<image>:v${CARACAL_VERSION}`.
 

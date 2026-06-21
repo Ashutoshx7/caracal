@@ -241,7 +241,8 @@ services:
 
   api:
     <<: *appService
-    image: ${CARACAL_REGISTRY:-ghcr.io/garudex-labs/}caracal-api:v${CARACAL_VERSION}
+    image: ${CARACAL_REGISTRY:-ghcr.io/garudex-labs/}caracal-node:v${CARACAL_VERSION}
+    command: ["/app/api/dist/main.js"]
     depends_on:
       sts:
         condition: service_healthy
@@ -387,7 +388,8 @@ services:
 
   coordinator:
     <<: *appService
-    image: ${CARACAL_REGISTRY:-ghcr.io/garudex-labs/}caracal-coordinator:v${CARACAL_VERSION}
+    image: ${CARACAL_REGISTRY:-ghcr.io/garudex-labs/}caracal-node:v${CARACAL_VERSION}
+    command: ["/app/coordinator/dist/main.js"]
     depends_on:
       sts:
         condition: service_healthy
@@ -419,7 +421,7 @@ services:
     ports:
       - "127.0.0.1:4000:4000"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/ready >/dev/null || exit 1"]
+      test: ["CMD", "/healthcheck"]
       interval: 5s
       timeout: 3s
       retries: 20
