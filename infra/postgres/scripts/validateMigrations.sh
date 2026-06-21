@@ -44,7 +44,9 @@ contract_violations=0
 for up in "${MIGRATIONS_DIR}"/*.up.sql; do
     name="$(basename "${up}" .up.sql)"
     [ "${name}" = "0001_baseline" ] && continue
-    statements="$(grep -vE '^[[:space:]]*--' "${up}" || true)"
+    # Flatten to one line so a contract statement split across lines (for example
+    # ALTER COLUMN ... \n TYPE ...) cannot slip past a line-by-line match.
+    statements="$(grep -vE '^[[:space:]]*--' "${up}" | tr '\n' ' ' | tr -s '[:space:]' ' ')"
     if printf '%s\n' "${statements}" | grep -iqE 'DROP[[:space:]]+(TABLE|COLUMN|SCHEMA|TYPE)|[[:space:]]RENAME[[:space:]]|ALTER[[:space:]]+COLUMN[[:space:]]+[^;]*[[:space:]]TYPE[[:space:]]|SET[[:space:]]+NOT[[:space:]]+NULL'; then
         if ! grep -qE '^--[[:space:]]*caracal:phase[[:space:]]+contract' "${up}"; then
             echo "  FAIL: ${name} contains a contract-phase change but is not tagged '-- caracal:phase contract'" >&2

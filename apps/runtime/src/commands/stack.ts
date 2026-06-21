@@ -1,7 +1,8 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// `caracal up | down | status`: docker-compose lifecycle and health probes for the OSS stack.
+// `caracal up | down | status | upgrade`: docker-compose lifecycle, health probes,
+// and no-window upgrades for the OSS stack.
 
 import { spawnSync } from 'node:child_process'
 import {
