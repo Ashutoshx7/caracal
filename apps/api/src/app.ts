@@ -17,6 +17,7 @@ import type { RedisClient } from './redis.js'
 import { redisMinuteBucket } from './redis.js'
 import { adminAuthPlugin } from './auth.js'
 import { registerAdminAuditHook } from './admin-audit.js'
+import { controlPlugin } from './control/plugin.js'
 import {
   isPublished,
   getTraceContext,
@@ -269,6 +270,15 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
   await app.register(policyTemplatesRoutes, { prefix: '/v1' })
   await app.register(zoneEventsRoutes, { prefix: '/v1' })
   await app.register(adminTokensRoutes, { prefix: '/v1' })
+
+  if (cfg.control) {
+    await app.register(controlPlugin, {
+      cfg: cfg.control,
+      redis,
+      auditHmacKey: cfg.auditHmacKey,
+      controlLogLevel: cfg.logLevel,
+    })
+  }
 
   app.get('/health', async () => ({ ok: true }))
   app.get('/metrics', async (req, reply) => {

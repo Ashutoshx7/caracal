@@ -40,6 +40,7 @@ resolveFileSecrets([
   'AUDIT_HMAC_KEY',
   'GATEWAY_STS_HMAC_KEY',
   'METRICS_BEARER',
+  'CONTROL_API_TOKEN',
 ])
 
 export interface Config {
@@ -79,6 +80,34 @@ export interface Config {
   trustProxy: boolean
   enableDocs: boolean
   metricsBearer: string | null
+  control: ControlConfig | null
+}
+
+export interface ControlConfig {
+  jwksUrl: string
+  issuer: string
+  audience: string
+  apiUrl: string
+  apiToken: string
+  rateCapacity: number
+  rateWindowSec: number
+  replayTtlSec: number
+  gateFile: string | undefined
+}
+
+function loadControlConfig(port: number): ControlConfig | null {
+  if (getenv('CARACAL_CONTROL_ENABLED', 'false') !== 'true') return null
+  return {
+    jwksUrl: mustGetenv('STS_JWKS_URL'),
+    issuer: mustGetenv('STS_ISSUER_URL'),
+    audience: mustGetenv('CONTROL_AUDIENCE'),
+    apiUrl: getenv('CARACAL_API_URL', `http://127.0.0.1:${port}`),
+    apiToken: mustGetenv('CONTROL_API_TOKEN'),
+    rateCapacity: intEnv('CONTROL_RATE_CAPACITY', 60, 1),
+    rateWindowSec: intEnv('CONTROL_RATE_WINDOW_SEC', 60, 1),
+    replayTtlSec: intEnv('CONTROL_REPLAY_TTL_SEC', 3600, 1),
+    gateFile: process.env.CONTROL_GATE_FILE || undefined,
+  }
 }
 
 function deriveWorkerId(): string {
@@ -99,8 +128,13 @@ export function loadConfig(): Config {
   if (auditHmacKey && auditHmacKey.length < 32) {
     throw new Error('AUDIT_HMAC_KEY must be hex-encoded with at least 32 bytes')
   }
+  const port = intEnv('PORT', 3000, 1)
+  const control = loadControlConfig(port)
+  if (control && isPublished() && !auditHmacKey) {
+    throw new Error('AUDIT_HMAC_KEY is required when CARACAL_CONTROL_ENABLED=true and CARACAL_MODE=rc or stable')
+  }
   return {
-    port: intEnv('PORT', 3000, 1),
+    port,
     host: getenv('HOST', process.env.CARACAL_MODE === 'rc' || process.env.CARACAL_MODE === 'stable' ? '0.0.0.0' : '127.0.0.1'),
     databaseUrl: mustGetenv('DATABASE_URL'),
     redisUrl: mustGetenv('REDIS_URL'),
@@ -136,5 +170,6 @@ export function loadConfig(): Config {
     trustProxy: boolEnv('TRUST_PROXY', false),
     enableDocs: boolEnv('API_ENABLE_DOCS', !isPublished()),
     metricsBearer: process.env.METRICS_BEARER ?? null,
+    control,
   }
 }

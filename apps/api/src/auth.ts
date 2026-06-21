@@ -79,6 +79,11 @@ function isPublicOAuthCallback(method: string, url: string): boolean {
   return /^\/v1\/zones\/[^/]+\/provider-grants\/oauth\/callback$/.test(path)
 }
 
+function isControlInvoke(method: string, url: string): boolean {
+  if (method !== 'POST') return false
+  return url.split('?')[0] === '/v1/control/invoke'
+}
+
 export async function lookupAdminToken(db: DB, plaintext: string): Promise<Actor | null> {
   const digest = sha256(plaintext)
   const { rows } = await db.query<AdminTokenRow>(
@@ -190,6 +195,7 @@ const adminAuthImpl: FastifyPluginAsync<AuthPluginOptions> = async (fastify, opt
   fastify.addHook('preHandler', async (req, reply) => {
     if (!req.url.startsWith(prefix)) return
     if (isPublicOAuthCallback(req.method, req.url)) return
+    if (isControlInvoke(req.method, req.url)) return
 
     const bearer = extractBearer(req)
     if (!bearer) {
