@@ -53,12 +53,18 @@ importers:
 
   apps/api:
     dependencies:
+      '@caracalai/admin':
+        specifier: workspace:*
+        version: link:../../packages/admin/ts
       '@caracalai/admin-audit':
         specifier: workspace:*
         version: link:../../packages/adminAudit/ts
       '@caracalai/core':
         specifier: workspace:*
         version: link:../../packages/core/ts
+      '@caracalai/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
       '@fastify/swagger':
         specifier: ^9.4.0
         version: 9.7.0
@@ -77,6 +83,9 @@ importers:
       ioredis:
         specifier: ^5.11.1
         version: 5.11.1
+      jose:
+        specifier: ^6.2.3
+        version: 6.2.3
       pg:
         specifier: ^8.22.0
         version: 8.22.0

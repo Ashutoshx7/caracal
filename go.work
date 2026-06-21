@@ -10,7 +10,6 @@ use (
 	./packages/sdk/go
 	./packages/transport/mcp/go
 	./services/audit
-	./services/coordinator-relay
 	./services/gateway
 	./services/sts
 	./tests/go
