@@ -117,39 +117,25 @@ export function validatePolicySource(content: string): string | null {
   return parseRego(content).error
 }
 
-// A data document carries only policy data (grants, bindings, label maps) that the
-// decision rules in the set's base document read. It is opted into with a top-of-file
-// `# caracal:data-document` directive and is forbidden from defining `result`, so a
-// data document can never itself decide an authorization — eliminating the need for
-// inert always-false decision rules that a typo could flip to allow-all.
+// Every adopter authorization policy is a data document: it supplies only policy data
+// (grants, application bindings, confinement, deny overlays) that the signed, versioned
+// platform decision contract reads. It is opted into with a top-of-file
+// `# caracal:data-document` directive and must never define `result`. The platform
+// contract owns every decision, so an adopter can never author — or mistype — the
+// authorization logic itself.
 const DATA_DOCUMENT_DIRECTIVE = /(?:^|\n)\s*#\s*caracal:data-document\b/
 
 export function isDataDocumentDirective(content: string): boolean {
   return DATA_DOCUMENT_DIRECTIVE.test(content)
 }
 
-export function definesResultRule(content: string): boolean {
-  return parseRego(content).rules.has('result')
-}
-
-// True when a `default result := {...}` literal carries an allow decision. A
-// default-allow that is not narrowed by a deny overlay is surfaced as a warning so
-// an operator can confirm the policy set composes it against a base-deny.
-function defaultResultAllows(content: string): boolean {
-  const literal = defaultResultLiteral(content)
-  return literal !== null && /"decision"\s*:\s*"allow"/.test(literal)
-}
-
 export function validateAuthzPolicy(content: string): string | null {
   const check = parseRego(content)
   if (check.error) return check.error
   if (check.packageName !== 'caracal.authz') return 'must_use_package_caracal_authz'
-  if (isDataDocumentDirective(content)) {
-    if (check.rules.has('result')) return 'data_document_must_not_define_result'
-    if (check.rules.size === 0) return 'data_document_must_define_data'
-    return null
-  }
-  if (!check.rules.has('result')) return 'must_define_result_rule'
+  if (!isDataDocumentDirective(content)) return 'must_be_data_document'
+  if (check.rules.has('result')) return 'data_document_must_not_define_result'
+  if (check.rules.size === 0) return 'data_document_must_define_data'
   return null
 }
 
@@ -158,49 +144,6 @@ export function validatePolicySchemaVersion(schemaVersion: string): string | nul
     return `unsupported_schema_version:${schemaVersion}`
   }
   return null
-}
-
-// The default result literal: the balanced object assigned by `default result :=`,
-// with string contents tracked so braces inside strings do not skew the depth.
-function defaultResultLiteral(content: string): string | null {
-  const match = /default\s+result\s*:=\s*\{/.exec(content)
-  if (!match) return null
-  let depth = 0
-  let inString = false
-  let literal = ''
-  for (let i = match.index + match[0].length - 1; i < content.length; i++) {
-    const ch = content[i]
-    literal += ch
-    if (inString) {
-      if (ch === '\\') { literal += content[i + 1] ?? ''; i++; continue }
-      if (ch === '"') inString = false
-      continue
-    }
-    if (ch === '"') { inString = true; continue }
-    if (ch === '{') depth++
-    if (ch === '}') {
-      depth--
-      if (depth === 0) return literal
-    }
-  }
-  return literal
-}
-
-export function analyzeAuthzPolicy(content: string): string[] {
-  if (validateAuthzPolicy(content)) return []
-  if (isDataDocumentDirective(content)) return []
-  const { source } = stripCommentsAndStrings(content)
-  const warnings: string[] = []
-  if (defaultResultAllows(content)) {
-    warnings.push('default_result_allows_access')
-  }
-  if (!/\bdefault\s+result\b/.test(source)) {
-    warnings.push('missing_default_result')
-  }
-  if (!/\brequested_scopes\b/.test(source)) {
-    warnings.push('missing_requested_scope_check')
-  }
-  return warnings
 }
 
 export interface AuthzPolicyPreview {

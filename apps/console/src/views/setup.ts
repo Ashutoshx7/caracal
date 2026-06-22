@@ -238,7 +238,6 @@ interface SetupResult {
     policy_set_id: string
     policy_set_version_id: string
     preview: PolicyPreview | null
-    warnings: string[]
   }
   profile?: {
     path: string
@@ -2388,9 +2387,9 @@ async function createFirstPolicy(
   const content = firstAccessPolicy(applicationId, resourceIdentifier, scopes)
   const validation = await ctx.client.policies.validate(content)
   const policy = await ctx.client.policies.create(zoneId, {
-    name: 'Guided setup access policy',
+    name: 'Guided setup access grant',
     description:
-      'Starter Rego allow-list explicitly approved during guided setup. Allows only the configured agent app to request the configured protected resource with the configured Caracal resource scopes.',
+      'Starter grant data explicitly approved during guided setup. Grants the configured agent app a role on the configured protected resource, limited to the configured Caracal resource scopes; the platform decision contract enforces it.',
     content,
   })
   const policySet = await ctx.client.policySets.create(
@@ -2407,26 +2406,23 @@ async function createFirstPolicy(
     policy_set_id: policySet.id,
     policy_set_version_id: version.id,
     preview: validation.preview,
-    warnings: validation.warnings,
   }
 }
 
 function firstAccessPolicy(applicationId: string, resourceIdentifier: string, scopes: string[]): string {
-  const allowedScopes = scopes.map((scope) => quoteRego(scope)).join(', ')
-  return `package caracal.authz
+  const grantedScopes = scopes.map((scope) => quoteRego(scope)).join(', ')
+  return `# caracal:data-document
+package caracal.authz
 
 import rego.v1
 
-default result := {"decision": "deny", "evaluation_status": "complete", "determining_policies": [], "diagnostics": []}
+app_ids := {"guided-setup": ${quoteRego(applicationId)}}
 
-allowed_scopes := {${allowedScopes}}
-
-result := {"decision": "allow", "evaluation_status": "complete", "determining_policies": [{"policy": "first-access"}], "diagnostics": []} if {
-  input.principal.id == ${quoteRego(applicationId)}
-  input.resource.identifier == ${quoteRego(resourceIdentifier)}
-  every scope in input.context.requested_scopes {
-    scope in allowed_scopes
-  }
+grants := {
+  ${quoteRego(resourceIdentifier)}: {
+    "application": "guided-setup",
+    "roles": {"guided-setup": [${grantedScopes}]},
+  },
 }
 `
 }
@@ -2502,11 +2498,10 @@ function setupSummary(result: SetupResult): Record<string, unknown> {
     const decisions = result.policy.preview?.decisions ?? []
     summary.access_policy = {
       status: 'created and activated',
-      kind: 'starter least-privilege allow-list',
-      summary: 'Denies by default and allows only the selected app to request the selected resource scopes.',
+      kind: 'starter least-privilege grant data',
+      summary: 'Grants only the selected app a role on the selected resource scopes; the platform decision contract denies everything else.',
       ...(decisions.length > 0 ? { decisions } : {}),
       ...(evaluates.length > 0 ? { evaluates } : {}),
-      ...(result.policy.warnings.length > 0 ? { warnings: result.policy.warnings } : {}),
     }
   } else {
     summary.access_policy = {
