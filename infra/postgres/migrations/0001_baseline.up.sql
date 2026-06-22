@@ -2896,6 +2896,13 @@ GRANT SELECT ON TABLE public.zones TO caracalgateway;
 
 
 --
+-- Data for Name: gateway_binding_revision; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+INSERT INTO public.gateway_binding_revision (id, version) VALUES (true, 0) ON CONFLICT (id) DO NOTHING;
+
+
+--
 -- PostgreSQL database dump complete
 --
 
