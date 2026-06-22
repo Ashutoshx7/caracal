@@ -27,7 +27,7 @@ The argument rests on four pillars, each substantiated by the sections and code 
    - *SSRF and unsafe egress:* the gateway resolves and blocks private, loopback, link-local, CGNAT, and metadata addresses and disables redirects before connecting (T3; gateway SSRF tests).
    - *Sensitive data exposure:* secrets resolve from files, logs and responses redact key material and credentials, and the audit ledger never stores plaintext claims (T5, T6; redaction and audit tests).
    - *Tampering / integrity loss:* append-only audit writes with an HMAC chain, HMAC-signed Redis stream messages, and dedupe with ack-after-durable-handling (T6, T7; audit and stream tests).
-   - *Supply-chain compromise:* reviewed lockfiles and module sums, CodeQL/Semgrep/Trivy/Scorecard scanning, and signed, provenance-attested release artifacts verifiable per [Verify a Release](https://caracal.run/security/verify-releases/) (T10; release checks).
+   - *Supply-chain compromise:* reviewed lockfiles and module sums, CodeQL/Trivy/Scorecard scanning, and signed, provenance-attested release artifacts verifiable per [Verify a Release](https://caracal.run/security/verify-releases/) (T10; release checks).
 
 Residual, knowingly-open items are tracked in [Known Limits and How Caracal Contains Them](#known-limits-and-how-caracal-contains-them) so the assurance case stays honest about its current limits and the containment already in place.
 
@@ -179,7 +179,7 @@ Each threat (T1–T12) states the **problem** an adversary would exploit, **how 
 ### T10 — Supply-chain / release compromise
 
 - **Problem.** A compromised dependency, generated artifact, installer, image, or release process could ship malicious or vulnerable code.
-- **How Caracal handles it.** Lockfiles and module sums are reviewed; images and archives are published only from trusted release paths; installers, Dockerfiles, and generated artifacts are checked for embedded secrets and uncontrolled network fetches; and CodeQL, Semgrep, Trivy, and Scorecard scanning plus signed, provenance-attested artifacts make releases independently verifiable per [Verify a Release](https://caracal.run/security/verify-releases/).
+- **How Caracal handles it.** Lockfiles and module sums are reviewed; images and archives are published only from trusted release paths; installers, Dockerfiles, and generated artifacts are checked for embedded secrets and uncontrolled network fetches; and CodeQL, Trivy, and Scorecard scanning plus signed, provenance-attested artifacts make releases independently verifiable per [Verify a Release](https://caracal.run/security/verify-releases/).
 - **How we verify.** Dependency review, lockfile diff review, release smoke tests, image build checks, and installer/archive secret scans before publishing.
 - **Area & owner.** `package.json`, `pnpm-lock.yaml`, Go modules, Dockerfiles, installers, releases — Release maintainers.
 
