@@ -4,8 +4,10 @@ Caracal, a product of Garudex Labs
 
 Scoped Control-key client that drives Lynx Capital provisioning through the Control API.
 """
+
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -138,27 +140,77 @@ class ControlClient:
             raise ControlError("token exchange returned no access_token")
         return access
 
-    def invoke(self, command: str, subcommand: str, flags: dict | None = None) -> object:
-        body = json.dumps({"command": command, "subcommand": subcommand, "flags": flags or {}}).encode("utf-8")
+    def invoke(
+        self, command: str, subcommand: str, flags: dict | None = None
+    ) -> object:
+        body = json.dumps(
+            {"command": command, "subcommand": subcommand, "flags": flags or {}}
+        ).encode("utf-8")
         result = _post(
             f"{self._config.control_url}{CONTROL_INVOKE_PATH}",
             body,
-            {"content-type": "application/json", "authorization": f"Bearer {self.token()}"},
+            {
+                "content-type": "application/json",
+                "authorization": f"Bearer {self.token()}",
+            },
         )
         return result.get("result")
 
+    def bound_zone(self) -> str:
+        """The authoritative zone the Control key is bound to, read from the issued token's
+        zone_id claim. Provisioning records this zone so the workload can detect and refuse a
+        credential set that was minted for a different zone before it fails at token exchange."""
+        zone = str(_jwt_claims(self.token()).get("zone_id", "")).strip()
+        if not zone:
+            raise ControlError("control token did not carry a zone_id claim")
+        return zone
+
     def run(self, command: dict) -> object:
         """Invoke a plan command of the form built by app.tenancy."""
-        return self.invoke(command["command"], command["subcommand"], command.get("flags"))
+        return self.invoke(
+            command["command"], command["subcommand"], command.get("flags")
+        )
+
+
+def _jwt_claims(token: str) -> dict:
+    """Decode the claims segment of a compact JWS without verifying its signature. The token
+    is issued by this deployment's STS to the caller, so reading its own zone_id claim needs
+    no verification; the claim is only used to bind provisioning artifacts to a zone."""
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise ControlError("control token is not a JWT")
+    payload = parts[1]
+    payload += "=" * (-len(payload) % 4)
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise ControlError(f"control token payload is unreadable: {exc}") from None
+    if not isinstance(claims, dict):
+        raise ControlError("control token payload is not an object")
+    return claims
 
 
 def find_by_identifier(items: object, identifier: str) -> dict | None:
     if isinstance(items, list):
-        return next((item for item in items if isinstance(item, dict) and item.get("identifier") == identifier), None)
+        return next(
+            (
+                item
+                for item in items
+                if isinstance(item, dict) and item.get("identifier") == identifier
+            ),
+            None,
+        )
     return None
 
 
 def find_by_name(items: object, name: str) -> dict | None:
     if isinstance(items, list):
-        return next((item for item in items if isinstance(item, dict) and item.get("name") == name), None)
+        return next(
+            (
+                item
+                for item in items
+                if isinstance(item, dict) and item.get("name") == name
+            ),
+            None,
+        )
     return None

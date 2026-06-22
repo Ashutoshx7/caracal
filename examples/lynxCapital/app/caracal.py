@@ -160,6 +160,21 @@ def _build_runtime(app_key: str, model: tenancy.TenancyModel) -> AppRuntime:
     )
 
 
+def _assert_zone_consistency() -> None:
+    """Fail fast when the workload's CARACAL_ZONE_ID disagrees with the zone its loaded
+    credentials were provisioned for. The application ids and secrets in provisioned.env only
+    authenticate inside their own zone, so running against another zone would otherwise fail
+    later at token exchange instead of here, at startup, with a clear cause."""
+    provisioned = os.environ.get("LYNX_CARACAL_ZONE_ID", "").strip()
+    declared = os.environ.get("CARACAL_ZONE_ID", "").strip()
+    if provisioned and declared and provisioned != declared:
+        raise RuntimeError(
+            f"CARACAL_ZONE_ID is {declared}, but config/provisioned.env was generated for zone "
+            f"{provisioned}; the loaded application credentials only authenticate in {provisioned}. "
+            f"Set CARACAL_ZONE_ID={provisioned}, or re-run scripts/provision.py against {declared}."
+        )
+
+
 def startup() -> None:
     """Build the per-application client registry. Fails closed: when Caracal is enabled,
     every application boundary must resolve its credentials."""
@@ -169,6 +184,7 @@ def startup() -> None:
     with _lock:
         if _runtimes is not None:
             return
+        _assert_zone_consistency()
         model = tenancy.load_model()
         _runtimes = {
             app.id: _build_runtime(app.id, model) for app in model.applications

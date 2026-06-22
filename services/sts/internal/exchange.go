@@ -180,6 +180,13 @@ func gatewayActionInput(req TokenExchangeRequest) OPAAction {
 func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, requestID string) (*TokenResponse, *challengeState, int, *sharederr.CaracalError) {
 	app, zoneID, err := s.authenticateApp(ctx, req)
 	if err != nil {
+		var zoneErr *zoneMismatchError
+		if errors.As(err, &zoneErr) {
+			return nil, nil, http.StatusForbidden, sharederr.New(
+				sharederr.ZoneInvalid,
+				fmt.Sprintf("application is registered in zone %s but the request targeted zone %s; use credentials issued for the targeted zone or correct the zone_id", zoneErr.actual, zoneErr.requested),
+			)
+		}
 		return nil, nil, http.StatusUnauthorized, sharederr.New(sharederr.AccessDenied, "invalid client credentials")
 	}
 
@@ -1015,6 +1022,15 @@ func (s *Server) authenticateApp(ctx context.Context, req TokenExchangeRequest) 
 	} else {
 		app, err = s.db.GetApplicationByID(ctx, appID, zoneID)
 		if err != nil {
+			// The zone-scoped lookup missed. The application id may belong to a different
+			// zone (a recreated zone, or credentials copied from another zone's provisioning
+			// artifact). Resolve it globally and, only when the presented secret proves
+			// possession, surface an explicit zone mismatch. Possession is required before
+			// confirming existence so this path never becomes an application-enumeration
+			// oracle for callers that do not already hold the secret.
+			if mismatch := s.detectZoneMismatch(ctx, req, appID, zoneID); mismatch != nil {
+				return nil, "", mismatch
+			}
 			return nil, "", err
 		}
 	}
@@ -1028,18 +1044,53 @@ func (s *Server) authenticateApp(ctx context.Context, req TokenExchangeRequest) 
 		return app, zoneID, nil
 	}
 	if app.ClientSecretHash != nil {
-		credential := req.ClientSecret
-		if credential == "" {
-			credential = req.ClientAssertion
-		}
-		ok := verifyClientSecret(*app.ClientSecretHash, credential)
-		if !ok {
+		if !verifyClientSecret(*app.ClientSecretHash, presentedSecret(req)) {
 			return nil, "", errSecretMismatch
 		}
 	} else {
 		return nil, "", fmt.Errorf("client secret not configured")
 	}
 	return app, zoneID, nil
+}
+
+// presentedSecret returns the credential a client offered, preferring the form-encoded
+// client secret and falling back to a client assertion.
+func presentedSecret(req TokenExchangeRequest) string {
+	if req.ClientSecret != "" {
+		return req.ClientSecret
+	}
+	return req.ClientAssertion
+}
+
+// zoneMismatchError marks an authentication failure where the application id is valid and
+// the presented secret verifies, but the application belongs to a different zone than the
+// request targeted. The caller maps it to an explicit zone_invalid response so a cross-zone
+// credential is not misreported as an invalid secret.
+type zoneMismatchError struct {
+	requested string
+	actual    string
+}
+
+func (e *zoneMismatchError) Error() string {
+	return fmt.Sprintf("application registered in zone %s, not requested zone %s", e.actual, e.requested)
+}
+
+// detectZoneMismatch reports an explicit zone mismatch when the application id exists in a
+// zone other than the requested one and the caller proves possession of its client secret.
+// It returns nil when no such mismatch can be confirmed, leaving the caller to surface the
+// generic credential failure rather than disclosing application existence.
+func (s *Server) detectZoneMismatch(ctx context.Context, req TokenExchangeRequest, appID, zoneID string) error {
+	if req.GatewayAuthenticated {
+		return nil
+	}
+	other, err := s.db.GetApplicationByIDGlobal(ctx, appID)
+	if err != nil || other == nil || other.ZoneID == zoneID || other.ClientSecretHash == nil {
+		return nil
+	}
+	if !verifyClientSecret(*other.ClientSecretHash, presentedSecret(req)) {
+		return nil
+	}
+	return &zoneMismatchError{requested: zoneID, actual: other.ZoneID}
 }
 
 func isZoneDerivedControlTokenRequest(req TokenExchangeRequest) bool {
