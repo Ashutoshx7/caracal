@@ -1,24 +1,24 @@
 ---
-description: "Write a Caracal-compatible Rego policy after requirements and inputs are verified."
+description: "Author a Caracal-compatible policy data document after requirements and inputs are verified."
 argument-hint: "Confirmed requirement, verified input fields, and expected allow/deny behavior"
 tools: [read, search, web]
 ---
 # Write Caracal Policy
 
-Write a production-ready Caracal Rego policy.
+Author a production-ready Caracal policy data document.
 
 Use:
 
+- the `# caracal:data-document` directive on the first line
 - `package caracal.authz`
 - `import rego.v1`
-- deny-by-default `result`
-- `decision`, `evaluation_status`, `determining_policies`, and `diagnostics`
+- only `app_ids`, `grants`, `confinement`, or `restrict` data; never a `result` rule
 
 Return:
 
 - Policy Summary:
 - Assumptions:
-- Rego Policy:
+- Policy Data:
 - Validation:
 
 Use only documented or supplied input fields.

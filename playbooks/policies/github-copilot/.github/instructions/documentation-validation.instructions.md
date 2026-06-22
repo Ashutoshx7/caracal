@@ -1,5 +1,5 @@
 ---
-description: "Use when verifying Caracal policy behavior, policy inputs, policy result contracts, OPA syntax, policy versions, policy sets, simulation, or activation against documentation."
+description: "Use when verifying Caracal policy behavior, policy inputs, platform decision contract, OPA syntax, policy versions, policy sets, simulation, or activation against documentation."
 ---
 # Documentation Validation
 

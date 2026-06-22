@@ -1,7 +1,7 @@
 # Codex configuration guidance for the Caracal policy authoring playbook.
 
 [workflow]
-principle = "Understand first. Write policy second."
+principle = "Understand first. Write data second."
 policy_generation_requires_clear_requirements = true
 policy_updates_require_current_behavior_review = true
 
