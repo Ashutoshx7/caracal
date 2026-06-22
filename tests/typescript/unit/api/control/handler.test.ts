@@ -174,7 +174,7 @@ describe('registerInvokeRoute', () => {
       payload: { command: 'zone', subcommand: 'nope' },
     })
     expect(deniedRes.statusCode).toBe(403)
-    expect(deniedRes.json()).toEqual({ error: 'denied' })
+    expect(deniedRes.json()).toEqual({ ok: false, error: { code: 'denied', reason: expect.any(String) } })
 
     const invalidDeps = deps(vi.fn(async () => claims()))
     invalidDeps.replay.mark = vi.fn(async () => true)
@@ -188,11 +188,19 @@ describe('registerInvokeRoute', () => {
       payload: { command: 'agent', subcommand: 'suspend' },
     })
     expect(invalidRes.statusCode).toBe(400)
-    expect(invalidRes.json()).toEqual({ error: 'invalid request' })
+    expect(invalidRes.json()).toEqual({ ok: false, error: { code: 'invalid', reason: expect.any(String) } })
 
     const upstreamDeps = deps(vi.fn(async () => claims()))
     upstreamDeps.replay.mark = vi.fn(async () => true)
-    upstreamDeps.ctx = { admin: { agents: { list: vi.fn(async () => { throw new Error('api down') }) } } } as DispatchContext
+    upstreamDeps.ctx = {
+      admin: {
+        agents: {
+          list: vi.fn(async () => {
+            throw new Error('api down')
+          }),
+        },
+      },
+    } as DispatchContext
     registerInvokeRoute(upstream, upstreamDeps)
     await upstream.ready()
     const upstreamRes = await upstream.inject({
@@ -202,6 +210,6 @@ describe('registerInvokeRoute', () => {
       payload: { command: 'agent', subcommand: 'list' },
     })
     expect(upstreamRes.statusCode).toBe(502)
-    expect(upstreamRes.json()).toEqual({ error: 'upstream error' })
+    expect(upstreamRes.json()).toEqual({ ok: false, error: { code: 'upstream', reason: 'upstream error' } })
   })
 })

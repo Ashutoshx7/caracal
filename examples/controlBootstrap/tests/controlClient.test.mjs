@@ -72,12 +72,20 @@ describe('control client token exchange', () => {
   it('maps non-2xx responses to ControlError with the status', async () => {
     const fetchImpl = async (url) => {
       if (url.endsWith('/oauth/2/token')) return tokenResponder()
-      return jsonResponse(403, { error: 'denied' })
+      return jsonResponse(403, {
+        ok: false,
+        error: {
+          code: 'denied',
+          reason: 'missing scope control:resource:write',
+          remediation: 'grant the control key control:resource:write',
+        },
+      })
     }
     const client = createControlClient(BASE_CONFIG, { fetch: fetchImpl })
     await assert.rejects(
       () => client.invoke('resource', 'create', { name: 'x' }),
-      (err) => err instanceof ControlError && err.status === 403,
+      (err) =>
+        err instanceof ControlError && err.status === 403 && err.code === 'denied' && err.remediation.includes('control:resource:write'),
     )
   })
 
@@ -184,7 +192,10 @@ describe('apply', () => {
   it('creates the agent, provider, resource, and policy and links the resource to the provider', async () => {
     const zone = new FakeZone()
     const changes = await apply(zone.client(), () => {})
-    assert.deepEqual(changes.map((change) => change.action), ['created', 'created', 'created', 'created'])
+    assert.deepEqual(
+      changes.map((change) => change.action),
+      ['created', 'created', 'created', 'created'],
+    )
     assert.equal(zone.apps[0].name, AGENT.name)
     assert.equal(zone.providers[0].identifier, PROVIDER.identifier)
     assert.equal(zone.resources[0].identifier, RESOURCE.identifier)
@@ -196,7 +207,10 @@ describe('apply', () => {
     const zone = new FakeZone()
     await apply(zone.client(), () => {})
     const changes = await apply(zone.client(), () => {})
-    assert.deepEqual(changes.map((change) => change.action), ['unchanged', 'unchanged', 'unchanged', 'unchanged'])
+    assert.deepEqual(
+      changes.map((change) => change.action),
+      ['unchanged', 'unchanged', 'unchanged', 'unchanged'],
+    )
     assert.equal(zone.apps.length, 1)
     assert.equal(zone.providers.length, 1)
     assert.equal(zone.resources.length, 1)
@@ -227,7 +241,10 @@ describe('verify', () => {
     const zone = new FakeZone()
     await apply(zone.client(), () => {})
     const findings = await verify(zone.client(), () => {})
-    assert.deepEqual(findings.map((item) => item.status), ['ok', 'ok', 'ok', 'ok'])
+    assert.deepEqual(
+      findings.map((item) => item.status),
+      ['ok', 'ok', 'ok', 'ok'],
+    )
   })
 
   it('reports missing and drifted objects', async () => {
