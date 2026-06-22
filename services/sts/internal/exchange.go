@@ -177,6 +177,46 @@ func gatewayActionInput(req TokenExchangeRequest) OPAAction {
 	return action
 }
 
+// mandateScopeSet is the authority a presented mandate carries, parsed from the
+// space-delimited scope claim of the subject token. Empty when no mandate or no
+// scope claim is present, which fails operation authority closed.
+func mandateScopeSet(subjectClaims map[string]any) map[string]struct{} {
+	scopes := map[string]struct{}{}
+	for _, scope := range strings.Fields(claimString(subjectClaims, "scope")) {
+		scopes[scope] = struct{}{}
+	}
+	return scopes
+}
+
+// authorizeOperation is the native operation-authority floor the Gateway relies on.
+// For a resource in enforced mode, the upstream operation (method and path) must be
+// declared on the resource and the presented mandate must carry that operation's
+// scope; an undeclared operation is denied. The floor is unconditional: adopter
+// policy can narrow authority further but can never relax this baseline. A
+// transport_uniform resource declares no per-operation map, so its mandate's
+// mint-time scope is the only boundary and the floor does not apply.
+func authorizeOperation(resource *Resource, method, path string, mandate map[string]struct{}) *sharederr.CaracalError {
+	if resource.OperationEnforcement != OperationEnforcementEnforced {
+		return nil
+	}
+	method = strings.ToUpper(strings.TrimSpace(method))
+	path = strings.TrimSpace(path)
+	for _, op := range resource.Operations {
+		if strings.ToUpper(strings.TrimSpace(op.Method)) != method || strings.TrimSpace(op.Path) != path {
+			continue
+		}
+		if _, held := mandate[op.Scope]; !held {
+			return sharederr.New(sharederr.OperationNotPermitted, fmt.Sprintf(
+				"operation %s %s on resource %s requires scope %s, which the presented mandate does not carry",
+				method, path, resource.Identifier, op.Scope))
+		}
+		return nil
+	}
+	return sharederr.New(sharederr.OperationNotPermitted, fmt.Sprintf(
+		"operation %s %s is not declared on resource %s; declare it on the resource or set operation_enforcement to transport_uniform",
+		method, path, resource.Identifier))
+}
+
 func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, requestID string) (*TokenResponse, *challengeState, int, *sharederr.CaracalError) {
 	app, zoneID, err := s.authenticateApp(ctx, req)
 	if err != nil {
@@ -265,6 +305,8 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 	delegationMeta := delegationAuditMeta(delegation)
 
 	scopes := strings.Fields(req.Scope)
+	action := gatewayActionInput(req)
+	mandate := mandateScopeSet(subjectClaims)
 	var grantedResources []string
 	grantedDirectives := map[string]UpstreamDirective{}
 	grantedResourceRows := map[string]*Resource{}
@@ -294,6 +336,20 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 				return nil, nil, http.StatusInternalServerError, auditErr
 			}
 			continue
+		}
+
+		// Native operation-authority floor. A Gateway-authenticated exchange carries
+		// the trusted upstream operation; an enforced resource denies any operation it
+		// has not declared, before any provider or policy work, with an actionable
+		// error so the gap can never pass silently.
+		if req.GatewayAuthenticated {
+			if opErr := authorizeOperation(resource, action.Method, action.Path, mandate); opErr != nil {
+				if auditErr := s.emitAuditEvent(requestID, zoneID, "deny", "operation_not_permitted", &OPAResult{},
+					mergeAuditMeta(appMeta, map[string]any{"resource": resource.Identifier, "method": action.Method, "path": action.Path})); auditErr != nil {
+					return nil, nil, http.StatusInternalServerError, auditErr
+				}
+				return nil, nil, http.StatusForbidden, opErr
+			}
 		}
 
 		if rateErr := s.checkRateLimit(ctx, zoneID, resource.ID, app.ID); rateErr != nil {
@@ -400,7 +456,7 @@ func (s *Server) exchange(ctx context.Context, req TokenExchangeRequest, request
 				Identifier: resource.Identifier,
 				Scopes:     resource.Scopes,
 			},
-			Action:         gatewayActionInput(req),
+			Action:         action,
 			Session:        sessionInput(req.SessionID),
 			DelegationEdge: delegationEdgeInput(delegation),
 			Context: OPAContext{
