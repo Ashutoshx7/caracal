@@ -10,6 +10,7 @@ import { registerInvokeRoute, type InvokeDeps } from '../../../../../apps/api/sr
 import { RateLimiter } from '../../../../../apps/api/src/control/ratelimit.js'
 import type { EventSink } from '../../../../../apps/api/src/control/audit.js'
 import type { Replay } from '../../../../../apps/api/src/control/replay.js'
+import type { RedisClient } from '../../../../../apps/api/src/redis.js'
 import type { DispatchContext } from '../../../../../packages/engine/src/dispatch.js'
 
 const apps: { close(): Promise<void> }[] = []
@@ -26,6 +27,8 @@ function deps(verify: Authenticator['verify']): InvokeDeps {
     sink: { emit: vi.fn(async () => {}) } as EventSink,
     ctx: { admin: {} } as DispatchContext,
     gate: { enabled: () => true },
+    redis: {} as RedisClient,
+    ipRateLimitPerMin: 0,
   }
 }
 
@@ -102,6 +105,34 @@ describe('registerInvokeRoute', () => {
     expect(res.statusCode).toBe(429)
     expect(res.json()).toEqual({ error: 'rate limited' })
     expect(d.sink.emit).toHaveBeenCalledWith(expect.objectContaining({ decision: 'deny', reason: 'rate limited' }))
+  })
+
+  it('throttles unauthenticated floods per IP before authentication', async () => {
+    const app = Fastify()
+    apps.push(app)
+    const verify = vi.fn(async () => claims())
+    const d = deps(verify)
+    d.ipRateLimitPerMin = 1
+    let count = 0
+    d.redis = {
+      time: async () => ['0', '0'],
+      incr: vi.fn(async () => (count += 1)),
+      expire: vi.fn(async () => 1),
+    } as unknown as RedisClient
+
+    registerInvokeRoute(app, d)
+    await app.ready()
+    const headers = { authorization: 'Bearer token' }
+    const payload = { command: 'agent', subcommand: 'list' }
+
+    const first = await app.inject({ method: 'POST', url: '/v1/control/invoke', headers, payload })
+    expect(first.statusCode).not.toBe(429)
+    const second = await app.inject({ method: 'POST', url: '/v1/control/invoke', headers, payload })
+
+    expect(second.statusCode).toBe(429)
+    expect(second.json()).toEqual({ error: 'rate limited' })
+    expect(d.sink.emit).toHaveBeenCalledWith(expect.objectContaining({ decision: 'deny', reason: 'ip rate limited' }))
+    expect(verify).toHaveBeenCalledTimes(1)
   })
 
   it('dispatches valid control requests and emits allow audit events', async () => {

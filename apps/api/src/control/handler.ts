@@ -10,6 +10,7 @@ import { newRequestId, type EventSink } from './audit.js'
 import type { Replay } from './replay.js'
 import type { RateLimiter } from './ratelimit.js'
 import type { ControlGate } from './gate.js'
+import { redisMinuteBucket, type RedisClient } from '../redis.js'
 
 const MAX_BODY_BYTES = 64 * 1024
 
@@ -26,6 +27,10 @@ export interface InvokeDeps {
   sink: EventSink
   ctx: DispatchContext
   gate: ControlGate
+  redis: RedisClient
+  // Pre-authentication per-IP request ceiling that throttles unauthenticated
+  // floods before they reach JWT verification and JWKS fetches. 0 disables it.
+  ipRateLimitPerMin: number
 }
 
 export function registerInvokeRoute(app: FastifyInstance, deps: InvokeDeps): void {
@@ -44,6 +49,14 @@ async function handle(req: FastifyRequest, reply: FastifyReply, deps: InvokeDeps
       decision: 'deny', reason: 'control disabled', requestId,
     })
     return reply.code(503).send({ error: 'control disabled' })
+  }
+
+  if (await ipRateExceeded(deps.redis, req.ip, deps.ipRateLimitPerMin)) {
+    await deps.sink.emit({
+      at: new Date(), subject: 'anonymous', jti: '',
+      decision: 'deny', reason: 'ip rate limited', requestId,
+    })
+    return reply.code(429).send({ error: 'rate limited' })
   }
 
   let claims
@@ -116,4 +129,13 @@ function describe(err: unknown): string {
   if (err instanceof AuthError) return err.message
   if (err instanceof Error) return err.message
   return String(err)
+}
+
+async function ipRateExceeded(redis: RedisClient, ip: string, limitPerMin: number): Promise<boolean> {
+  if (limitPerMin <= 0) return false
+  const minute = await redisMinuteBucket(redis)
+  const key = `api:control_invoke_ip:${ip}:${minute}`
+  const count = await redis.incr(key)
+  if (count === 1) await redis.expire(key, 90)
+  return count > limitPerMin
 }

@@ -91,6 +91,7 @@ export interface ControlConfig {
   apiToken: string
   rateCapacity: number
   rateWindowSec: number
+  ipRateLimitPerMin: number
   replayTtlSec: number
   gateFile: string | undefined
 }
@@ -105,6 +106,7 @@ function loadControlConfig(port: number): ControlConfig | null {
     apiToken: mustGetenv('CONTROL_API_TOKEN'),
     rateCapacity: intEnv('CONTROL_RATE_CAPACITY', 60, 1),
     rateWindowSec: intEnv('CONTROL_RATE_WINDOW_SEC', 60, 1),
+    ipRateLimitPerMin: intEnv('CONTROL_INVOKE_IP_RATE_LIMIT_PER_MIN', 120, 0),
     replayTtlSec: intEnv('CONTROL_REPLAY_TTL_SEC', 3600, 1),
     gateFile: process.env.CONTROL_GATE_FILE || undefined,
   }

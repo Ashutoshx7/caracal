@@ -33,7 +33,7 @@ const controlPluginImpl: FastifyPluginAsync<ControlPluginOptions> = async (app, 
   const sink = new RedisSink(redis, auditHmacKey ?? undefined, log)
   const gate = fileGate(cfg.gateFile)
 
-  registerInvokeRoute(app, { auth, replay, rate, sink, ctx: { admin }, gate })
+  registerInvokeRoute(app, { auth, replay, rate, sink, ctx: { admin }, gate, redis, ipRateLimitPerMin: cfg.ipRateLimitPerMin })
 }
 
 export const controlPlugin = fp(controlPluginImpl, { name: 'control' })
