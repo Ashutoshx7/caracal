@@ -5,7 +5,7 @@
 # Application bindings: the control-plane application ids each policy keys on.
 # scripts/provision.py authors this document with the created application UUIDs;
 # the committed values are placeholders for offline policy tests.
-# Bindings are data for the shared rules in 00-base; this document never decides.
+# Bindings are data for the platform decision contract; this document never decides.
 package caracal.authz
 
 import rego.v1

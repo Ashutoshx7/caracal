@@ -4,7 +4,7 @@
 #
 # Generated grants data: resource views, owning applications, and role scope sets.
 # Rendered by app.tenancy.render_grants_rego from config/tenancy.yaml; do not edit.
-# Grants are data for the shared rules in 00-base; this document never decides.
+# Grants are data for the platform decision contract; this document never decides.
 package caracal.authz
 
 import rego.v1
