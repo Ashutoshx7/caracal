@@ -247,6 +247,7 @@ describe('first setup workflow', () => {
       gateway_application_id: 'app-1',
       scopes: ['scope-name'],
       credential_provider_id: 'provider-1',
+      operation_enforcement: 'transport_uniform',
     }))
     expect(client.policies.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
       name: 'Guided setup access policy',

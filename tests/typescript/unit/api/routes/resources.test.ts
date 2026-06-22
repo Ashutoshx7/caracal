@@ -231,6 +231,78 @@ describe('POST /v1/zones/:zoneId/resources', () => {
     expect(client.release).toHaveBeenCalled()
   })
 
+  it('rejects operations whose scope is not declared on the resource', async () => {
+    const { app, db } = buildRouteApp(resourcesRoutes)
+    db.query
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/resources',
+      payload: {
+        identifier: 'resource://nucleus',
+        upstream_url: 'https://api.pipernet.example',
+        scopes: ['read'],
+        gateway_application_id: 'app-1',
+        credential_provider_id: 'provider-1',
+        operations: [{ method: 'get', path: '/api/get_payment', scope: 'write' }],
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'operation_scope_not_in_resource_scopes' })
+    expect(db.connect).not.toHaveBeenCalled()
+  })
+
+  it('defaults new gateway resources to enforced operation authority', async () => {
+    const { app, db } = buildRouteApp(resourcesRoutes)
+    const client = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [{
+            id: 'res-1',
+            zone_id: 'z1',
+            identifier: 'resource://nucleus',
+            upstream_url: 'https://api.pipernet.example',
+            scopes: ['read'],
+            operations: [{ method: 'GET', path: '/api/get_payment', scope: 'read' }],
+            operation_enforcement: 'enforced',
+          }],
+        })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] }),
+      release: vi.fn(),
+    }
+    db.query
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+      .mockResolvedValueOnce({ rows: [{ registration_method: 'managed' }] })
+    db.connect.mockResolvedValueOnce(client)
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/resources',
+      payload: {
+        identifier: 'resource://nucleus',
+        upstream_url: 'https://api.pipernet.example',
+        scopes: ['read'],
+        gateway_application_id: 'app-1',
+        credential_provider_id: 'provider-1',
+        operations: [{ method: 'get', path: '/api/get_payment', scope: 'read' }],
+      },
+    })
+
+    const insertValues = client.query.mock.calls[1]![1] as unknown[]
+    expect(res.statusCode).toBe(201)
+    expect(insertValues[7]).toBe(JSON.stringify([{ method: 'GET', path: '/api/get_payment', scope: 'read' }]))
+    expect(insertValues[8]).toBe('enforced')
+  })
+
   it('suffixes generated resource identifiers when the resource name already exists in the zone', async () => {
     const { app, db } = buildRouteApp(resourcesRoutes)
     const client = {

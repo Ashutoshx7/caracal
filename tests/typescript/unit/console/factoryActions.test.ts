@@ -580,6 +580,41 @@ describe('resources actions', () => {
       credential_provider_id: 'provider-1',
     }))
   })
+
+  it('declares native operation authority on resource create', async () => {
+    const { ctx, client } = newCtx()
+    const list = resourcesView(ctx as unknown as Parameters<typeof resourcesView>[0]) as ListView<unknown>
+    const app = fakeApp()
+    const form = await pressKey(list, 'n', app) as FormView
+    const fields = (form as unknown as { fields: { key: string; default?: string }[] }).fields
+    expect(fields.find((f) => f.key === 'operation_enforcement')?.default).toBe('enforced')
+    Object.assign((form as unknown as { values: Record<string, string> }).values, {
+      name: 'PiperNet',
+      scopes: 'read',
+      upstream_url: 'https://api.pipernet.example',
+      gateway_application_id: 'app-1',
+      credential_provider_id: 'provider-1',
+      operation_enforcement: 'enforced',
+      operations: '[{"method":"POST","path":"/api/create_payout","scope":"read"}]',
+    })
+    await (form as unknown as { trySubmit: (app: App) => Promise<void> }).trySubmit(app)
+
+    expect(client.resources.create).toHaveBeenCalledWith('z1', expect.objectContaining({
+      operation_enforcement: 'enforced',
+      operations: [{ method: 'POST', path: '/api/create_payout', scope: 'read' }],
+    }))
+  })
+
+  it('rejects malformed operation JSON on resource create', async () => {
+    const { ctx } = newCtx()
+    const list = resourcesView(ctx as unknown as Parameters<typeof resourcesView>[0]) as ListView<unknown>
+    const pushed = await pressKey(list, 'n', fakeApp()) as FormView
+    const fields = (pushed as unknown as { fields: { key: string; validate?: (v: string) => string | undefined }[] }).fields
+    const validate = fields.find((f) => f.key === 'operations')?.validate
+    expect(validate?.('not json')).toBe('operations must be a JSON array of {method, path, scope}')
+    expect(validate?.('[{"method":"POST"}]')).toBe('each operation must have string method, path, and scope')
+    expect(validate?.('[{"method":"POST","path":"/api/x","scope":"read"}]')).toBeUndefined()
+  })
 })
 
 describe('providers actions', () => {
