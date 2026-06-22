@@ -111,7 +111,7 @@ result = partners.call("meridian-pay", "create_payout", payload, authority=handl
 ## 6. Test
 
 ```bash
-opa test policies/ -v                        # policy decision tests
+opa test policies/ ../../services/sts/internal/decision_contract.rego -v   # policy decision tests
 python -m pytest -q                          # full example suite
 ```
 
