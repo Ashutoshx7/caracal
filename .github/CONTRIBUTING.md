@@ -32,7 +32,6 @@
 
 ```bash
 git clone https://github.com/Garudex-Labs/caracal.git && cd caracal
-pnpm install
 pnpm caracal up                     # Build and start the full stack
 
 # Essential Commands
@@ -41,8 +40,6 @@ pnpm caracal status                 # Check health status of all services
 pnpm caracal down [--help]          # Stop the stack
 pnpm caracal purge                  # Remove stack, volumes, logs, examples, cache, and installed data
 ```
-
-`pnpm install` is the standard dependency install command for the Node workspace. Run `pnpm run setup` when you need the full cross-platform developer environment: it runs `pnpm install`, downloads Go module dependencies, creates `.venv`, installs Python test/style dependencies, and installs local Python packages in editable mode.
 
 <details>
 <summary>Drop the `pnpm` prefix</summary>
@@ -62,7 +59,7 @@ pnpm caracal console          # Human-facing product management
 
 #### Standalone execution
 
-`pnpm caracal run -- <command>` reads validated runtime config from platform environment variables or an explicit runtime profile, exchanges the configured application credentials with STS, injects only the configured scoped resource-token environment variables into the child process, and executes without a shell. The stack does not create zones, applications, client secrets, or runtime profiles. Create a managed application with credential type `token`, copy the one-time client secret from the create result, and store the local secret and credential manifest under the OS Caracal config directory.
+`pnpm caracal run -- <command>` loads runtime config, exchanges application credentials with STS, injects scoped resource tokens into the child process, and runs it directly (no shell). It does not create apps, secrets, zones, or profiles. Create a managed `token` application first, save the one-time client secret, and store credentials in the OS Caracal config directory.
 
 Run example workloads from their example directory:
 
@@ -76,7 +73,8 @@ pnpm caracal run -- node agent.mjs
 
 #### Control API (optional)
 
-The Console is the primary human product-management surface. The Control API is an optional OAuth-protected endpoint served in-process by the API service for approved external clients that need to drive Caracal programmatically.
+The Console is the primary management interface for Caracal. The Control API is an optional OAuth-protected endpoint for approved external automation and can be managed from the **Caracal Console → Runtime → Control** item.
+
 
 ## Tests
 
@@ -103,15 +101,10 @@ This policy is mandatory and is enforced during review:
 
 ## Coding Style
 
-Caracal uses the official language style conventions for its primary implementation languages:
+Caracal follows standard language conventions: TypeScript/JavaScript (TypeScript + Prettier), Go (Effective Go + `gofmt`), and Python (PEP 8 + Ruff). 
 
-| Language | Style guide | Automatic enforcement |
-| --- | --- | --- |
-| TypeScript and JavaScript | TypeScript Handbook style with the repository Prettier profile in `.prettierrc.json` | `pnpm run style` runs Prettier on changed TS/JS source files. |
-| Go | Effective Go and `gofmt` formatting | `pnpm run style` runs `gofmt -l` on changed Go source files. |
-| Python | PEP 8 layout as formatted by Ruff | `pnpm run style` runs `ruff format --check` on changed Python source files. |
+Style checks run automatically in pull requests, with `pnpm run style` for validation and `pnpm run style:fix` for automatic formatting.
 
-Pull requests run the same style gate automatically for changed primary-language files. Use `pnpm run style:fix` to format changed files and `pnpm run style:all` before broad cleanup work.
 
 ## Submitting Changes
 
