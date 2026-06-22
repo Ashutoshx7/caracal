@@ -24,16 +24,26 @@ Scope to review:
 - Focus only on controls and evidence actually relevant to Caracal. Do not pad with generic security advice.
 - Separate Community Edition baseline behavior from Enterprise Edition seams where relevant.
 - Reconcile AARM R1–R9 against the user's authoritative control definitions; if absent, state that your mapping uses a working interpretation that must be reconciled before audit use.
+- For each framework, derive coverage from the standard's actual requirements and from this codebase only. State the requirement, then the evidence, then the status. Do not reuse a status from this prompt or the published docs without re-verifying it against the tree.
 - Do not overstate or understate operational burden. No marketing language.
 
 ## Status Vocabulary
 
-Mark every control: **covered**, **partially covered**, **not covered**, or **not applicable**. Define each term once at the top of your report.
+Mark every requirement with exactly one label. Reproduce these definitions verbatim at the top of your report so a reader knows what each label means. You decide the label yourself from codebase evidence; never carry over a status from this prompt, a prior report, or the published docs.
+
+- **Covered** — Caracal implements the requirement in code, schema, CI, or the release pipeline, verifiable at a cited path.
+- **Partially covered** — Caracal implements part of the requirement or bounds the risk, but full coverage depends on operator configuration or application behavior.
+- **Not covered** — The requirement falls within a domain Caracal could address as a software control, but this codebase does not implement it; it is the adopter's or another system's responsibility.
+- **Not applicable** — The requirement does not map to Caracal's function — for example model behavior, model output, an organizational process, or data-subject content. If Caracal only supplies an input to such a requirement, note that in the row but keep the label Not applicable.
+
+The boundary between Not covered and Not applicable is the **function test**: if the requirement is outside what Caracal does as a software control, it is Not applicable; if it is inside Caracal's domain but unimplemented here, it is Not covered. Apply this test explicitly for every borderline item.
 
 ## Method
 
 1. Inspect the repository, docs, tests, Helm/Compose, CI workflows, governance docs, playbooks, and operational scripts before writing anything.
-2. Ground each mapping in real control points. Expected high-signal locations:
+2. For each framework in scope, first lay out the standard's own requirements in the standard's own terms — every control ID, article, criterion, or item it actually defines (each OWASP ASI item and Agent Traceability, each NIST AI RMF function, each EU AI Act article relevant to a provider or deployer, each SOC 2 Trust Services Criterion, each AARM control R1–R9). Work from the real structure of the standard, not a summary. State each requirement before you judge it. If you are not certain of a requirement's exact identifier or text, say so rather than inventing it.
+3. Evaluate each requirement individually against this codebase and assign a status using the vocabulary above. Drive every decision from what the code, schema, migrations, CI, and docs actually show — not from intent, marketing, or a prior report. Apply the function test for every Not covered vs Not applicable call.
+4. Ground each mapping in real control points. Expected high-signal locations:
    - STS issuance and Gateway enforcement: `services/sts/`, `services/gateway/internal/`
    - Identity verification and token exchange: `packages/identity/`, `packages/oauth/`
    - Zone isolation / RLS: `infra/postgres/migrations/0001_baseline.up.sql`
@@ -44,8 +54,8 @@ Mark every control: **covered**, **partially covered**, **not covered**, or **no
    - Secrets: `packages/engine/src/secrets.ts`
    - Supply chain and release: `.github/workflows/`, `docs/src/content/docs/security/`
    - Governance: `governance/THREAT_MODEL.md`, `governance/INCIDENT_RESPONSE.md`
-3. For every control, give the enterprise a concrete way to verify it on their own copy.
-4. Separate what Caracal protects against from what it does not address. Be explicit about model-behavior threats (prompt injection, hallucination, memory poisoning, goal manipulation) being out of scope.
+5. For every requirement, give the enterprise a concrete way to verify your status on their own copy.
+6. Separate what Caracal protects against from what it does not address. Treat model-behavior items (prompt injection, hallucination, memory poisoning, goal manipulation) under the function test: they are Not applicable to Caracal's function, even though Caracal still bounds the authority an affected agent can exercise.
 
 ## Required Output
 
