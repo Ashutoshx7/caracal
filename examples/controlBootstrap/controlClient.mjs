@@ -18,10 +18,15 @@ const STATUS_REASON = {
 
 export class ControlError extends Error {
   constructor(status, body, context) {
-    super(`${context}: ${status} ${STATUS_REASON[status] ?? 'request failed'}`)
+    const envelope = body && typeof body === 'object' && typeof body.error === 'object' ? body.error : undefined
+    const reason = envelope?.reason ?? STATUS_REASON[status] ?? 'request failed'
+    super(`${context}: ${status} ${reason}`)
     this.name = 'ControlError'
     this.status = status
     this.body = body
+    this.code = envelope?.code
+    this.reason = reason
+    this.remediation = envelope?.remediation
   }
 }
 
@@ -92,7 +97,11 @@ export function createControlClient(config, deps = {}) {
 
 function normalizeScopes(value) {
   if (Array.isArray(value)) return value.map((s) => String(s).trim()).filter(Boolean)
-  if (typeof value === 'string') return value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)
+  if (typeof value === 'string')
+    return value
+      .split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
   return []
 }
 
