@@ -366,7 +366,7 @@ def test_provision_scripts_exist_and_build_plan():
     assert len(resources) == len(model.resources)
 
     policies = tenancy.policy_commands(model)
-    assert policies[0]["flags"]["name"] == "00-base"
+    assert policies[0]["flags"]["name"] == "01-bindings"
     assert all("package caracal.authz" in c["flags"]["content"] for c in policies)
 
     import pytest

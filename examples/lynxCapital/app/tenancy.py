@@ -466,7 +466,7 @@ def render_grants_rego(model: TenancyModel | None = None) -> str:
         '#\n'
         '# Generated grants data: resource views, owning applications, and role scope sets.\n'
         '# Rendered by app.tenancy.render_grants_rego from config/tenancy.yaml; do not edit.\n'
-        '# Grants are data for the shared rules in 00-base; this document never decides.\n'
+        '# Grants are data for the platform decision contract; this document never decides.\n'
         'package caracal.authz\n\n'
         'import rego.v1\n\n'
         f'{_rego_grants(grants)}\n'
@@ -487,7 +487,7 @@ def render_bindings_rego(application_ids: dict[str, str]) -> str:
         '#\n'
         '# Application bindings: the control-plane application ids each policy keys on.\n'
         '# Rendered by scripts/provision.py from the created applications; do not edit.\n'
-        '# Bindings are data for the shared rules in 00-base; this document never decides.\n'
+        '# Bindings are data for the platform decision contract; this document never decides.\n'
         'package caracal.authz\n\n'
         'import rego.v1\n\n'
         f'app_ids := {body}\n'
@@ -498,7 +498,7 @@ def policy_files(
     policies_dir: str | os.PathLike[str] | None = None,
     overrides: dict[str, str] | None = None,
 ) -> list[tuple[str, str]]:
-    """The policy library as ordered (name, content) pairs, 00-base first. `overrides`
+    """The policy library as ordered (name, content) pairs. `overrides`
     replaces a file's content by stem (used to author real bindings at provision time)."""
     directory = Path(policies_dir) if policies_dir is not None else DEFAULT_POLICIES_DIR
     overrides = overrides or {}

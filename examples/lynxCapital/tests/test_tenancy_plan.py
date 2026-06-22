@@ -162,13 +162,13 @@ def test_resource_commands_bind_provider_and_gateway_application():
         assert set(view.scopes) <= set(command["flags"]["scopes"])
 
 
-def test_policy_commands_cover_the_library_base_first():
+def test_policy_commands_cover_the_library():
     model = tenancy.load_model()
     commands = tenancy.policy_commands(model)
     names = [c["flags"]["name"] for c in commands]
     manifest = json.loads((POLICIES_DIR / "manifest.json").read_text(encoding="utf-8"))
     assert names == manifest["policies"]
-    assert names[0] == "00-base"
+    assert names[0] == "01-bindings"
     assert all("package caracal.authz" in c["flags"]["content"] for c in commands)
     assert all(c["flags"]["schema-version"] == model.policySet.schemaVersion for c in commands)
 
