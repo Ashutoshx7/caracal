@@ -103,18 +103,17 @@ function makeClient() {
         output_contract: { package: 'caracal.authz', rule: 'result', decision: ['allow', 'deny'], evaluation_status: ['complete'] },
         preview: {
           package: 'caracal.authz',
-          rules: ['allowed_scopes', 'result'],
-          default_result: true,
-          decisions: ['allow', 'deny'],
-          inputs_referenced: ['input.context.requested_scopes', 'input.principal.id', 'input.resource.identifier'],
+          rules: ['app_ids', 'grants'],
+          default_result: false,
+          decisions: [],
+          inputs_referenced: [],
           data_referenced: [],
         },
-        warnings: [],
       })),
       create: vi.fn(async () => ({
         id: 'pol-1',
         zone_id: 'zone-1',
-        name: 'Guided setup access policy',
+        name: 'Guided setup access grant',
         description: '',
         owner_type: 'system',
         created_by: 'console',
@@ -250,10 +249,10 @@ describe('first setup workflow', () => {
       operation_enforcement: 'transport_uniform',
     }))
     expect(client.policies.create).toHaveBeenCalledWith('zone-1', expect.objectContaining({
-      name: 'Guided setup access policy',
-      content: expect.stringContaining('input.principal.id == "app-1"'),
+      name: 'Guided setup access grant',
+      content: expect.stringContaining('app_ids := {"guided-setup": "app-1"}'),
     }))
-    expect(client.policies.validate).toHaveBeenCalledWith(expect.stringContaining('input.principal.id == "app-1"'))
+    expect(client.policies.validate).toHaveBeenCalledWith(expect.stringContaining('"resource://resource-name"'))
     expect(client.policySets.activate).toHaveBeenCalledWith('zone-1', 'ps-1', 'psv-1')
 
     const pushed = (app as unknown as { _pushed: unknown[] })._pushed
@@ -266,9 +265,8 @@ describe('first setup workflow', () => {
     expect(body).toContain('caracal run --')
     expect(body).toContain('Use CARACAL_RESOURCE_RESOURCE_NAME_TOKEN as the bearer token for Gateway requests.')
     expect(body).toContain('Audit Explanation')
-    expect(body).toContain('starter least-privilege allow-list')
-    expect(body).toContain('Denies by default')
-    expect(body).toContain('input.principal.id')
+    expect(body).toContain('starter least-privilege grant data')
+    expect(body).toContain('Grants only the selected app')
     expect(body).toContain('••••')
     expect(body).not.toContain('cs_')
     expect(body).not.toContain('zone_url')

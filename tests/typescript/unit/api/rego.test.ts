@@ -5,7 +5,6 @@
 
 import { describe, it, expect } from 'vitest'
 import {
-  analyzeAuthzPolicy,
   parseRego,
   previewAuthzPolicy,
   validatePolicySource,
@@ -60,12 +59,8 @@ describe('validateAuthzPolicy', () => {
     expect(validateAuthzPolicy('package other\nresult := true')).toBe('must_use_package_caracal_authz')
   })
 
-  it('requires result rule', () => {
-    expect(validateAuthzPolicy('package caracal.authz\nallow := true')).toBe('must_define_result_rule')
-  })
-
-  it('passes valid policy', () => {
-    expect(validateAuthzPolicy('package caracal.authz\nresult := { "allow": true }')).toBeNull()
+  it('requires the data-document directive', () => {
+    expect(validateAuthzPolicy('package caracal.authz\ngrants := {}')).toBe('must_be_data_document')
   })
 
   it('accepts a data document that defines data and no result rule', () => {
@@ -90,36 +85,6 @@ result := { "decision": "allow" }`),
       validateAuthzPolicy(`# caracal:data-document
 package caracal.authz`),
     ).toBe('data_document_must_define_data')
-  })
-})
-
-describe('analyzeAuthzPolicy', () => {
-  it('warns for broad policies without requested scope checks', () => {
-    const warnings = analyzeAuthzPolicy(`package caracal.authz
-default result := { "decision": "allow", "evaluation_status": "complete", "determining_policies": [], "diagnostics": [] }`)
-    expect(warnings).toEqual(expect.arrayContaining(['default_result_allows_access', 'missing_requested_scope_check']))
-  })
-
-  it('returns no warnings for a data document', () => {
-    const warnings = analyzeAuthzPolicy(`# caracal:data-document
-package caracal.authz
-grants := { "agent-1": ["read"] }`)
-    expect(warnings).toEqual([])
-  })
-
-  it('warns when no default result deny fallback is declared', () => {
-    const warnings = analyzeAuthzPolicy(`package caracal.authz
-result := { "decision": "allow" } if { "read" in input.context.requested_scopes }`)
-    expect(warnings).toContain('missing_default_result')
-  })
-
-  it('does not flag a deny default followed by allow rules', () => {
-    const warnings = analyzeAuthzPolicy(`package caracal.authz
-default result := { "decision": "deny", "evaluation_status": "complete", "determining_policies": [], "diagnostics": [] }
-result := { "decision": "allow", "evaluation_status": "complete", "determining_policies": [], "diagnostics": [] } if {
-  every scope in input.context.requested_scopes { scope in {"read"} }
-}`)
-    expect(warnings).not.toContain('default_result_allows_access')
   })
 })
 

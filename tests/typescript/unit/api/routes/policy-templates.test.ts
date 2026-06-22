@@ -17,20 +17,15 @@ describe('GET /v1/policy-templates', () => {
 
     expect(res.statusCode).toBe(200)
     expect(templates.map((template) => template.id)).toEqual(expect.arrayContaining([
-      'baseline-scope-allowlist',
-      'role-based',
-      'attribute-based',
-      'delegation',
-      'baseline-scopes',
-      'baseline-resource-constraints',
-      'baseline-delegation-constraints',
-      'baseline-session-state',
-      'baseline-step-up-triggers',
-      'baseline-rate-limits',
+      'application-bindings',
+      'resource-grants',
+      'label-confinement',
+      'zone-restriction',
     ]))
     expect(new Set(templates.map((template) => template.id)).size).toBe(templates.length)
-    const delegationConstraints = templates.find((template) => template.id === 'baseline-delegation-constraints')
-    expect(delegationConstraints?.content).toContain('input.context.agent_session_id == edge.target_session_id')
-    expect(delegationConstraints?.content).not.toContain('input.context.agent_session_id == edge.source_session_id')
+    const grants = templates.find((template) => template.id === 'resource-grants')
+    expect(grants?.content).toContain('# caracal:data-document')
+    expect(grants?.content).toContain('grants := {')
+    expect(grants?.content).not.toMatch(/result\s*:=/)
   })
 })

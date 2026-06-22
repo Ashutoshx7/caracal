@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Policy template contract tests for STS-compatible Rego result output.
+// Policy template contract tests for data-document compatibility with the platform decision contract.
 
 import { describe, it, expect } from 'vitest'
 import { policyTemplatesRoutes } from '../../../../apps/api/src/routes/policy-templates.js'
@@ -9,7 +9,7 @@ import { validateAuthzPolicy } from '../../../../apps/api/src/rego.js'
 import { buildRouteApp } from '../../../shared/test-utils/typescript/fastify.js'
 
 describe('policy template Rego contracts', () => {
-  it('publishes templates with package and result documents', async () => {
+  it('publishes data documents the platform decision contract consumes', async () => {
     const { app } = buildRouteApp(policyTemplatesRoutes)
 
     await app.ready()
@@ -19,12 +19,9 @@ describe('policy template Rego contracts', () => {
     expect(templates.length).toBeGreaterThan(0)
     for (const template of templates) {
       expect(template.content).toContain('package caracal.authz')
+      expect(template.content).toContain('# caracal:data-document')
+      expect(template.content).not.toMatch(/result\s*:=/)
       expect(validateAuthzPolicy(template.content)).toBeNull()
-      expect(template.content).toMatch(/result\s*:=\s*\{/)
-      expect(template.content).toContain('"decision"')
-      expect(template.content).toContain('"evaluation_status"')
-      expect(template.content).toContain('"determining_policies"')
-      expect(template.content).toContain('"diagnostics"')
     }
   })
 })
