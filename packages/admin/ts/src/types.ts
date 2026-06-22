@@ -250,7 +250,6 @@ export interface PolicyValidation {
     evaluation_status: string[]
   }
   preview: PolicyPreview | null
-  warnings: string[]
 }
 
 export interface PolicySet {

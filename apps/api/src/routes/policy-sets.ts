@@ -17,7 +17,7 @@ import { STREAM_POLICY_INVALIDATE } from '../redis.js'
 import { enqueueOutbox } from '../outbox.js'
 import { ZoneIdParams, ZoneParams, parseParams } from './params.js'
 import { zoneExists } from '../zone-guard.js'
-import { OPA_INPUT_SCHEMA_VERSION, definesResultRule, validateAuthzPolicy, validatePolicySchemaVersion } from '../rego.js'
+import { OPA_INPUT_SCHEMA_VERSION, validateAuthzPolicy, validatePolicySchemaVersion } from '../rego.js'
 import { appendKeysetCondition, parseListPagination, setNextLink } from './list-pagination.js'
 import type { Queryable } from '../db.js'
 import { withTransaction, TxAbort } from '../db.js'
@@ -449,7 +449,6 @@ async function policySetContract(
     [ids],
   )
   if (rows.length !== ids.length) return { policies: [], error: 'policy set manifest references missing policy versions' }
-  let definesDecision = false
   for (const row of rows) {
     if (row.zone_id !== zoneId) {
       return { policies: [], error: `policy version ${row.id} belongs to a different zone` }
@@ -463,16 +462,15 @@ async function policySetContract(
     if (err === 'must_use_package_caracal_authz') {
       return { policies: [], error: `policy version ${row.id} must use package caracal.authz` }
     }
-    if (err === 'must_define_result_rule') {
-      return { policies: [], error: `policy version ${row.id} must emit data.caracal.authz.result` }
+    if (err === 'must_be_data_document') {
+      return { policies: [], error: `policy version ${row.id} must be a data document marked # caracal:data-document` }
+    }
+    if (err === 'data_document_must_not_define_result') {
+      return { policies: [], error: `policy version ${row.id} must not define result; the platform decision contract owns every decision` }
     }
     if (err) {
       return { policies: [], error: `policy version ${row.id} failed validation: ${err}` }
     }
-    if (definesResultRule(String(row.content))) definesDecision = true
-  }
-  if (!definesDecision) {
-    return { policies: [], error: 'policy set must include at least one decision policy that emits data.caracal.authz.result' }
   }
   return { policies: rows, error: null }
 }
