@@ -181,25 +181,28 @@ def test_generated_grants_document_is_fresh():
     )
 
 
-def test_generated_operations_document_is_fresh():
-    rendered = tenancy.render_operations_rego()
-    checked_in = (POLICIES_DIR / "03-operations.rego").read_text(encoding="utf-8")
-    assert rendered == checked_in, (
-        "policies/03-operations.rego is stale; regenerate it with app.tenancy.render_operations_rego()"
-    )
-
-
-def test_operations_document_maps_rest_paths_to_scopes_and_omits_mcp():
+def test_resource_commands_carry_native_operation_authority():
     model = tenancy.load_model()
-    rendered = tenancy.render_operations_rego(model)
-    assert "# caracal:data-document" in rendered
-    assert "result :=" not in rendered
-    rest = model.resource("resource://payments-meridian")
-    assert f'"{rest.identifier}"' in rendered
-    assert '"/api/create_payout": "meridian:payout"' in rendered
+    provider_ids = {p.identifier: f"cp_{p.id}" for p in model.providers}
+    application_ids = {a.id: f"app_{a.id}" for a in model.applications}
+    commands = {
+        c["flags"]["identifier"]: c["flags"]
+        for c in tenancy.resource_commands(model, provider_ids, application_ids)
+    }
+    rest = commands["resource://payments-meridian"]
+    assert rest["operation-enforcement"] == "enforced"
+    assert {"method": "POST", "path": "/api/create_payout", "scope": "meridian:payout"} in rest["operations"]
+    assert all(op["method"] == "POST" and op["path"].startswith("/api/") for op in rest["operations"])
     for resource in model.resources:
+        flags = commands[resource.identifier]
         if model.provider(resource.provider).protocol == "mcp":
-            assert f'"{resource.identifier}"' not in rendered, resource.identifier
+            assert flags["operations"] == []
+            assert flags["operation-enforcement"] == "transport_uniform"
+        else:
+            assert flags["operations"]
+            assert flags["operation-enforcement"] == "enforced"
+            for op in flags["operations"]:
+                assert op["scope"] in resource.scopes
 
 
 def test_protocol_drift_fails_config_load():

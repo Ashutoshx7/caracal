@@ -372,6 +372,22 @@ def provider_commands(model: TenancyModel, env: dict[str, str] | None = None) ->
     ]
 
 
+def resource_operations(resource: ResourceSpec, provider: ProviderSpec) -> list[dict[str, str]]:
+    """The operation-authority list the Control plane stores on the resource: for a
+    path-addressed (REST) view, each upstream operation path and the scope it requires,
+    invoked through the Gateway with POST. MCP views address every call at one transport
+    path and carry no per-operation map, so their authority is the mandate's mint-time
+    scope. The Gateway and STS enforce this list natively with default-deny on any
+    undeclared operation."""
+    if provider.protocol != "rest":
+        return []
+    paths: dict[str, str] = {}
+    for scope in resource.scopes:
+        for op in provider.scopes.get(scope, []):
+            paths[f"/api/{op}"] = scope
+    return [{"method": "POST", "path": path, "scope": paths[path]} for path in sorted(paths)]
+
+
 def resource_commands(
     model: TenancyModel,
     provider_ids: dict[str, str],
@@ -382,6 +398,7 @@ def resource_commands(
     commands: list[dict] = []
     for resource in model.resources:
         provider = model.provider(resource.provider)
+        operations = resource_operations(resource, provider)
         commands.append({
             "command": "resource",
             "subcommand": "create",
@@ -392,6 +409,8 @@ def resource_commands(
                 "upstream-url": provider.upstream_url(),
                 "credential-provider-id": provider_ids[provider.identifier],
                 "gateway-application-id": application_ids[resource.application],
+                "operations": operations,
+                "operation-enforcement": "enforced" if operations else "transport_uniform",
             },
         })
     return commands
@@ -451,57 +470,6 @@ def render_grants_rego(model: TenancyModel | None = None) -> str:
         'package caracal.authz\n\n'
         'import rego.v1\n\n'
         f'{_rego_grants(grants)}\n'
-    )
-
-
-def _rego_operation_scopes(operations: dict[str, dict[str, str]]) -> str:
-    """Render the per-view operation scope map as canonical opa-fmt Rego."""
-    lines = ["operation_scopes := {"]
-    for identifier in sorted(operations):
-        paths = operations[identifier]
-        if len(paths) == 1:
-            ((path, scope),) = paths.items()
-            lines.append(f'\t"{identifier}": {{"{path}": "{scope}"}},')
-        else:
-            lines.append(f'\t"{identifier}": {{')
-            for path in sorted(paths):
-                lines.append(f'\t\t"{path}": "{paths[path]}",')
-            lines.append("\t},")
-    lines.append("}")
-    return "\n".join(lines)
-
-
-def render_operations_rego(model: TenancyModel | None = None) -> str:
-    """The generated operation-authority data document: for every path-addressed
-    resource view, the scope each upstream operation path requires. The gateway-use
-    decision in 00-base reads this to enforce, server-side, that a mandate may invoke
-    an operation only when it carries that operation's scope — closing the gap where
-    operation authority would otherwise live in the adopter's client code. MCP views
-    address every call at one transport path, so they carry no per-operation map and
-    are constrained by the single scope their mandate was minted with."""
-    model = model or load_model()
-    operations: dict[str, dict[str, str]] = {}
-    for resource in model.resources:
-        provider = model.provider(resource.provider)
-        if provider.protocol != "rest":
-            continue
-        paths: dict[str, str] = {}
-        for scope in resource.scopes:
-            for op in provider.scopes.get(scope, []):
-                paths[f"/api/{op}"] = scope
-        if paths:
-            operations[resource.identifier] = paths
-    return (
-        '# caracal:data-document\n'
-        '# Copyright (C) 2026 Garudex Labs.  All Rights Reserved.\n'
-        '# Caracal, a product of Garudex Labs\n'
-        '#\n'
-        '# Generated operation-authority data: each path-addressed view and the scope its\n'
-        '# upstream operation paths require. Rendered by app.tenancy.render_operations_rego\n'
-        '# from config/tenancy.yaml; do not edit. Read by the gateway-use rule in 00-base.\n'
-        'package caracal.authz\n\n'
-        'import rego.v1\n\n'
-        f'{_rego_operation_scopes(operations)}\n'
     )
 
 

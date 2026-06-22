@@ -222,6 +222,8 @@ def ensure_resources(
                     "gateway-application-id": command["flags"][
                         "gateway-application-id"
                     ],
+                    "operations": command["flags"]["operations"],
+                    "operation-enforcement": command["flags"]["operation-enforcement"],
                 },
             )
             print(f"resource patched: {identifier}")
@@ -238,7 +240,6 @@ def ensure_policy_set(
     overrides = {
         "01-bindings": tenancy.render_bindings_rego(application_ids),
         "02-grants": tenancy.render_grants_rego(model),
-        "03-operations": tenancy.render_operations_rego(model),
     }
     existing_policies = client.invoke("policy", "list")
     version_ids: list[str] = []

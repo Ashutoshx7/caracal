@@ -54,7 +54,7 @@ def test_policy_library_matches_the_manifest_base_first():
     assert files == sorted(manifest["policies"])
     assert manifest["policies"][0] == "00-base"
     assert manifest["policySet"] == "lynx-finance-ops"
-    assert {"00-base", "01-bindings", "02-grants", "03-operations", "10-decisions"} == set(manifest["policies"])
+    assert {"00-base", "01-bindings", "02-grants", "10-decisions"} == set(manifest["policies"])
 
 
 def test_every_policy_satisfies_the_authoring_contract():
