@@ -1,53 +1,48 @@
 ---
-title: Author a Rego Policy
-description: Write a Caracal-compatible Rego policy and validate its decision contract before activation.
+title: Author Policy Data
+description: Author the grant, binding, and confinement data the platform decision contract reads, and validate it before activation.
 ---
 
-Caracal policies run inside the STS during token exchange. A policy must return the Caracal `result` object from `package caracal.authz`.
+The platform decision contract owns every authorization decision inside the STS. You do not write `result` — you author **policy data documents** that tell the contract which application owns a resource, which roles hold which scopes, and how to confine or restrict authority. This guide writes those documents and validates them before activation.
 
 ## Prerequisites
 
 - A zone, application, and resource.
 - Access to the Console or Admin API.
-- The resource identifier and scopes you want to allow.
+- The resource identifier and scopes you want to grant.
 
-## Start from the contract
+## Start from a grant
+
+The core document is `grants`: it names the application that owns a resource view and the scopes each role may hold. Pair it with `app_ids`, which binds the application key you use in `grants` to the control-plane id the STS sees as `input.principal.id`.
 
 ```text
+# caracal:data-document
 package caracal.authz
 
 import rego.v1
 
-default result := {
-  "decision": "deny",
-  "evaluation_status": "complete",
-  "determining_policies": [],
-  "diagnostics": [],
+app_ids := {
+  "pipernet": "app-pipernet",
 }
 
-result := {
-  "decision": "allow",
-  "evaluation_status": "complete",
-  "determining_policies": [{"policy": "pipernet-read"}],
-  "diagnostics": [],
-} if {
-  input.resource.identifier == "resource://pipernet"
-  every scope in input.context.requested_scopes {
-    scope in {"pipernet:read", "pipernet:write"}
-  }
+grants := {
+  "resource://pipernet": {
+    "application": "pipernet",
+    "roles": {"reader": ["pipernet:read", "pipernet:write"]},
+  },
 }
 ```
 
-This is the canonical "application A may call resource B with scopes C" pattern: a
-stable resource identifier and a scope allowlist. The set-membership check allows
-the request only when **every** requested scope is in the allowlist, which is the
-correct shape for multi-scope requests.
+This is the canonical "application A may call resource B with scopes C" pattern,
+expressed as data. The platform contract allows a mint only when the acting
+application owns the view, the agent's role label grants the scope, and the
+delegation edge narrows to it. You declare the grant; the contract enforces the
+narrowing.
 
 ## Start from a template
 
-You do not have to write the skeleton by hand. Caracal ships a built-in template
-catalog for common patterns, served at `/v1/policy-templates` and through the
-Admin SDK:
+You do not have to write each document by hand. Caracal ships a built-in catalog of
+data-document starters, served at `/v1/policy-templates` and through the Admin SDK:
 
 ```ts
 import { AdminClient } from "@caracalai/admin";
@@ -58,35 +53,36 @@ const admin = new AdminClient({
 });
 
 const templates = await admin.policyTemplates.list();
-const starter = await admin.policyTemplates.get("baseline-scope-allowlist");
+const starter = await admin.policyTemplates.get("resource-grants");
 ```
 
 | Template | Use it for |
 | --- | --- |
-| `baseline-scope-allowlist` | One resource with an inline scope allowlist. The simplest standardized start. |
-| `baseline-resource-constraints` | Resources listed per principal with required resource attributes. |
-| `baseline-delegation-constraints` | Delegated exchange gated by graph proof, hop count, and budget. |
-| `baseline-session-state` | Session-bound requests for active, principal-bound sessions. |
-| `baseline-step-up-triggers` | Step-up diagnostics for sensitive resources. |
-| `role-based` / `attribute-based` | Role or attribute checks driven by policy `data`. |
+| `application-bindings` | Map each application key used in `grants` to its control-plane application id. |
+| `resource-grants` | Declare the owning application and per-role scope sets for a resource view. |
+| `label-confinement` | Cap every session carrying a label prefix to a fixed scope set. |
+| `zone-restriction` | A deny overlay that freezes the zone while an entry is present. |
 
-For agent-assisted authoring, use the [policy authoring playbook](https://github.com/Garudex-Labs/caracal/tree/main/playbooks/policies). It guides a coding agent to understand the use case before writing Rego, and to stay inside the documented policy input contract.
+For agent-assisted authoring, use the [policy authoring playbook](https://github.com/Garudex-Labs/caracal/tree/main/playbooks/policies). It guides a coding agent to model the use case as grant, binding, and confinement data inside the documented contract.
 
-## Use the important inputs
+## How your data maps to the request
 
-Policies read a fixed input contract. The acting application is the principal — there is no `input.application` or `input.grant` object. See the full [Policy Input Contract](/concepts/policy/#policy-input-contract) for every field.
+The decision contract evaluates a fixed input contract and resolves it against your
+data. The acting application is the principal — there is no `input.application` or
+`input.grant` object. See the full [Policy Input Contract](/concepts/policy/#policy-input-contract)
+for every field.
 
-| Input | Use it for |
+| Input the contract reads | Resolved against |
 | --- | --- |
-| `input.principal` | User, service, or agent identity checks (`id`, `registration_method`, `lifecycle`, `labels`). |
-| `input.resource` | Resource identifier and resource metadata checks. |
-| `input.context.requested_scopes` | Scope allowlists. |
-| `input.action.id` | The exchange action being authorized. |
-| `input.delegation_edge` | Delegation constraints and graph proof. |
+| `input.principal.id` | `app_ids` — to find the application key used in `grants`. |
+| `input.principal.labels` | `grants[...].roles` and `confinement` label prefixes. |
+| `input.resource.identifier` | the top-level key in `grants`. |
+| `input.context.requested_scopes` | the role's scope set and any matching `confinement` rule. |
+| `input.delegation_edge.scopes` | the narrowing floor every requested scope must sit inside. |
 
 ## Validate before versioning
 
-Use the Console policy workflow to paste the Rego and run validation. For automation, validate through the Admin API or `@caracalai/admin`:
+Use the Console policy workflow to paste the document and run validation. For automation, validate through the Admin API or `@caracalai/admin`:
 
 ```ts
 import { AdminClient } from "@caracalai/admin";
@@ -98,42 +94,64 @@ const admin = new AdminClient({
 
 const validation = await admin.policies.validate(policySource);
 if (!validation.valid) {
-  throw new Error(validation.warnings.join("\n"));
+  throw new Error(validation.detail);
 }
 ```
 
-Validation checks the package (`caracal.authz`), the required `result` rule, the
-schema version, balanced syntax, and forbidden built-ins. It also returns
-`warnings` for risky shapes — `default_result_allows_access`,
-`missing_default_result`, and `missing_requested_scope_check`.
+Validation enforces the data-document contract: the package must be `caracal.authz`,
+the first line must carry the `# caracal:data-document` directive, the document must
+define at least one data rule, and it must **not** define `result`. Validation also
+checks the schema version, balanced syntax, and forbidden built-ins. Because the
+platform contract owns the decision, a data document can never authorize on its own.
 
-## Separate data from decisions
+## Why data, not decisions
 
-A policy set often carries large, generated tables — grants, bindings, label
-maps — that the decision rules read through `data`. Authoring these as ordinary
-policies forces an inert always-false `result` rule just to satisfy the
-contract, and a single typo (`if { false }` → `if { true }`) silently turns a
-data file into an allow-all decision.
+Authorization logic — delegation narrowing, role and grant checks, label
+confinement, bootstrap isolation — is identical for every adopter and is the part
+most dangerous to get wrong. A single typo in a hand-written rule (`if { false }` →
+`if { true }`) silently turns a deny into an allow-all. Caracal removes that footgun
+by owning the logic in a signed, versioned platform decision contract and letting
+you supply only data.
 
-Mark a data-only policy with the `# caracal:data-document` directive on its first
-line. A data document carries only `data` and is **forbidden from defining
-`result`**, so it can never decide an authorization:
+Every policy is a data document marked with `# caracal:data-document` on its first
+line. The document carries only `data` and is **forbidden from defining `result`**,
+so it can never decide an authorization:
 
 ```text
 # caracal:data-document
 package caracal.authz
 
-grants := {
-  "agent-1": ["read"],
-}
+import rego.v1
+
+restrict := {}
 ```
 
-Validation enforces the inverse contract for these files: a data document must
-define at least one data rule and must not define `result`. Every policy set must
-still contain at least one decision document that emits
-`data.caracal.authz.result`, so a set made only of data documents is rejected at
-activation. This keeps the decision surface small and explicit while large data
-tables stay inert by construction.
+A `restrict` entry can only subtract authority, and `confinement` can only narrow it.
+Neither can widen what the contract already allows, so a careless data change fails
+closed.
+
+### Preview how the document parses
+
+A successful validation returns a `preview` describing exactly what the engine
+parsed, so you can confirm the backend reads your data the way you intend before
+activating it:
+
+```ts
+const { preview } = await admin.policies.validate(policySource);
+// preview = {
+//   package: "caracal.authz",
+//   rules: ["app_ids", "grants"],   // the data documents you defined
+//   default_result: false,           // data documents never define result
+//   decisions: [],                   // the platform contract owns every decision
+//   inputs_referenced: [],
+//   data_referenced: [],
+// }
+```
+
+Use `rules` to confirm the document defines the data tables you intended. The
+preview is a static read of the source; for an end-to-end decision run a
+[simulation](/guides/activate-policy-set/) with representative input against the
+platform decision contract.
 
 ### Preview how the policy behaves
 

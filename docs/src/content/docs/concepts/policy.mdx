@@ -1,17 +1,17 @@
 ---
 title: Policies and Policy Sets
-description: Versioned Rego documents evaluated by OPA inside the STS at token-exchange time.
+description: Versioned policy data documents the platform decision contract evaluates inside the STS at token-exchange time.
 sidebar:
   order: 7
 ---
 
-Policies decide whether the STS may issue a mandate. They are written in Rego, versioned immutably, bundled into policy sets, and activated per zone.
+The platform decision contract decides whether the STS may issue a mandate. The contract is a signed, versioned Rego module that Caracal owns and embeds in the STS; it is the only thing that emits an authorization decision. You author **policy data documents** — grants, bindings, confinement, and restrictions — that the contract reads. Policies are versioned immutably, bundled into policy sets, and activated per zone.
 
 ## Policy Objects
 
 | Object | Purpose |
 | --- | --- |
-| Policy | Named Rego document with immutable versions. |
+| Policy | Named policy data document with immutable versions. |
 | Policy version | A specific content hash and schema version. |
 | Policy set | A named bundle of policy versions. |
 | Policy set version | A specific manifest of policy versions. |
@@ -19,35 +19,34 @@ Policies decide whether the STS may issue a mandate. They are written in Rego, v
 
 ## Decision Contract
 
-Caracal policies return a `result` object from `package caracal.authz`.
+The platform decision contract owns the `result` object in `package caracal.authz`. It is deny by default and only allows an exchange that matches one of its vetted rules: a bootstrap mandate, a delegated mint narrowed to the delegation edge, or a mandate presented at the Gateway. You never write `result`; you supply the data the contract reads.
 
 ```text
+# caracal:data-document
 package caracal.authz
 
 import rego.v1
 
-default result := {
-  "decision": "deny",
-  "evaluation_status": "complete",
-  "determining_policies": [],
-  "diagnostics": [],
-}
-
-result := {
-  "decision": "allow",
-  "evaluation_status": "complete",
-  "determining_policies": [{"policy": "baseline-scopes"}],
-  "diagnostics": [],
-} if {
-  # input.principal.id identifies the acting user, service, or agent.
-  # input.resource.identifier names the protected resource.
-  every scope in input.context.requested_scopes {
-    scope in data.allowed_scopes[input.principal.id][input.resource.identifier]
-  }
+grants := {
+  "resource://mercury-bank": {
+    "application": "payments",
+    "roles": {"payment-execution": ["payments:read", "payments:write"]},
+  },
 }
 ```
 
-Example input values:
+The contract reads four adopter documents from `package caracal.authz`:
+
+| Document | Shape | Effect |
+| --- | --- | --- |
+| `app_ids` | `{binding_key: application_id}` | Binds the application key used in `grants` to the control-plane id the STS sees as `input.principal.id`. |
+| `grants` | `{resource: {application, roles: {role: [scopes]}}}` | Declares which application owns a resource view and which scopes each role may hold. |
+| `confinement` | `[{label_prefix, scopes}]` | Caps every agent session whose principal carries a matching label prefix to a fixed scope set. Optional; omitting it confines nothing. |
+| `restrict` | set of reasons | Deny overlay. Any entry denies every exchange in the zone. Optional; keep it empty to authorize normally. |
+
+A zone that supplies no data authorizes nothing: every allow rule collapses to the default deny.
+
+Example input values the contract evaluates:
 
 | Input | Example |
 | --- | --- |
@@ -59,7 +58,7 @@ Example input values:
 
 ## Policy Input Contract
 
-Every evaluation receives this exact input shape (`schema_version` `2026-05-20`). There is no `input.application` or `input.grant` object — the acting application is the principal, and grant bounds are enforced by the STS before the policy runs. Author rules only against the fields below.
+Every evaluation receives this exact input shape (`schema_version` `2026-05-20`). There is no `input.application` or `input.grant` object — the acting application is the principal, and grant bounds are enforced by the STS before the contract runs. The platform decision contract evaluates the fields below; your data documents map applications, roles, and scopes onto them.
 
 | Path | Type | Meaning |
 | --- | --- | --- |
@@ -85,9 +84,9 @@ Every evaluation receives this exact input shape (`schema_version` `2026-05-20`)
 | `input.context.challenge_resolved` | bool | `true` after a step-up challenge is satisfied. |
 | `input.context.trace_id` | string | Request trace id for audit correlation. |
 
-When `input.delegation_edge` is present it carries: `id`, `source_session_id`, `target_session_id`, `issuer_application_id`, `receiver_application_id`, `resource_id`, `scopes` (the narrowed grant), `edge_version`, `path` (the full delegation chain), `graph_epoch`, and `constraints_json` (typed delegation constraints such as a cost budget). Use these to enforce hop count, chain membership, and constraint limits.
+When `input.delegation_edge` is present it carries: `id`, `source_session_id`, `target_session_id`, `issuer_application_id`, `receiver_application_id`, `resource_id`, `scopes` (the narrowed grant), `edge_version`, `path` (the full delegation chain), `graph_epoch`, and `constraints_json` (typed delegation constraints such as a cost budget). The contract enforces hop membership and the scope-subset narrowing against these fields.
 
-External lookup tables are referenced through `data.*` (for example `data.allowed_scopes[principal][resource]`). You supply that data; the policy only reads it.
+The contract reads your data documents through `data.caracal.authz.*` — `grants`, `app_ids`, `confinement`, and `restrict`. You supply that data; the platform contract reads it and decides.
 
 ## Policy Outcomes
 
@@ -101,11 +100,11 @@ Step-up is expressed as a diagnostic such as `{"step_up_required": "mfa"}`. The 
 
 ## Authoring Rules
 
-- Keep policies deterministic and side-effect free.
-- Use the Console or Admin API validation endpoint before activation.
+- Author data documents only; mark each with `# caracal:data-document`. The platform decision contract owns every `result`.
+- Validate through the Console or Admin API before activation — a data document must define data and must not define `result`.
 - Activate through a policy set version, not by editing active content in place.
-- Use diagnostics to explain denies and step-up triggers.
-- Keep reusable decision logic in separate policy versions only when it improves ownership or review.
+- Keep `grants`, `app_ids`, `confinement`, and `restrict` in separate documents so ownership and review stay clear.
+- Tighten authority through `confinement` and `restrict`; neither can widen what the contract already allows.
 
 ## Next Step
 
@@ -113,5 +112,5 @@ Read [Step-Up Challenges](/concepts/step-up/) to understand how policies pause s
 
 ## Related Pages
 
-- [Author a Rego Policy](/guides/author-policy/)
+- [Author Policy Data](/guides/author-policy/)
 - [Activate a Policy Set](/guides/activate-policy-set/)
