@@ -1,7 +1,8 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Decision tests for the Lynx Capital policy library across bootstrap, mint, and use.
+# Conformance tests for the Lynx Capital authorization data against the platform
+# decision contract across bootstrap, mint, and use.
 package caracal.authz_test
 
 import rego.v1
@@ -98,7 +99,7 @@ test_mint_determining_policy_names_application if {
 		"app-payments", ["payment-execution", "lynx-swarm"],
 		"resource://payments-meridian", ["meridian:payout"], ["meridian:payout"],
 	)
-	decided.determining_policies == [{"policy": "lynx-payments-mint"}]
+	decided.determining_policies == [{"policy": "caracal-payments-mint"}]
 }
 
 test_mint_denies_scope_beyond_role if {
@@ -180,7 +181,7 @@ test_use_determining_policy_names_application if {
 		"resource://ledger-ironbark", ["resource://ledger-ironbark"],
 		"/api/match_invoice", "ironbark:post",
 	)
-	decided.determining_policies == [{"policy": "lynx-ledger-use"}]
+	decided.determining_policies == [{"policy": "caracal-ledger-use"}]
 }
 
 test_use_denies_resource_outside_target if {
