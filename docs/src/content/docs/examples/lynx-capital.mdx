@@ -118,8 +118,9 @@ result = partners.call("meridian-pay", "create_payout", payload, authority=handl
 
 Every partner call resolves the operation's scope from the model, verifies the calling
 agent's grant client-side, mints (or reuses) a resource mandate for the agent's view, and
-posts through the Gateway — which re-evaluates policy, injects the provider credential, and
-forwards upstream. Agents never hold partner secrets.
+posts through the Gateway — which re-evaluates policy, natively enforces the resource's
+declared operation authority, injects the provider credential, and forwards upstream. Agents
+never hold partner secrets.
 
 ## Tests
 

@@ -30,6 +30,7 @@ Resource fields should answer “what is being protected and where does Gateway 
 7. Select a `None` provider when Gateway should enforce Caracal access but the upstream expects no credential.
 8. Select `Caracal mandate` for resources that verify Caracal tokens directly, or choose a provider-native type when the upstream needs external credentials.
 9. Attach exactly one upstream credential provider to the resource.
+10. For a path-addressed REST upstream, declare the operations the Gateway may invoke and keep operation authority `enforced`; choose `transport_uniform` for single-surface transports such as MCP.
 
 ## Provider auth modes
 
@@ -54,6 +55,19 @@ Bearer token providers are for static, pre-issued access tokens that Caracal doe
 
 Provider secrets are sealed at creation time and are not returned by list or detail APIs. Every Gateway resource binds one upstream credential provider, and one provider can be reused by many resources. None providers have no secret and send no credential. Caracal mandate providers have no provider-native secret and no `forward_caracal_identity` setting because the mandate is already the upstream credential. Use Caracal mandate for internal services, partner services, external integrations, or network-level resources that choose to trust Caracal mandates through a verifier.
 
+## Operation authority
+
+A resource declares which upstream operations the Gateway may invoke and how strictly that surface is enforced. This authority is native to the platform: the Gateway and STS enforce it directly, so adopters configure data, not policy control flow.
+
+| Field | Meaning |
+| --- | --- |
+| `operations` | The operations the Gateway may forward, each a `{method, path, scope}` triple. `method` and `path` match the upstream call; `scope` is the Caracal resource scope the mandate must carry for that operation, and must be one of the resource's declared scopes. |
+| `operation_enforcement` | `enforced` denies any Gateway operation not listed in `operations` and requires its scope on the mandate. `transport_uniform` treats the upstream as a single surface and relies on the mint-time scope check, for protocols such as MCP that address every call through one transport path. |
+
+When `operation_enforcement` is `enforced`, the Gateway authorizes only declared operations and denies everything else with `operation_not_permitted` before any upstream call. A resource that is `enforced` with an empty `operations` list is fully closed: every Gateway operation is denied until operations are declared. New resources created through the Control API default to `enforced`, so authority stays closed until you describe it; guided Console setup opens resources as `transport_uniform` because it does not collect per-operation detail, and you tighten them from the resource editor once the operation set is known.
+
+Because the floor is enforced in the platform rather than in adopter policy, a policy can further restrict an operation but can never widen authority beyond the declared operations and their scopes.
+
 ## Identifier and scope guidance
 
 | Field | Good pattern |
@@ -63,6 +77,8 @@ Provider secrets are sealed at creation time and are not returned by list or det
 | Upstream URL | The network URL Gateway can reach; it may change without changing policy audiences. |
 | Gateway application | The managed Caracal application identity Gateway exchanges as to obtain this resource's upstream credential. It does not control which agents may call through the Gateway — callers are authorized by policy on their own mandate. DCR applications cannot be bound here — they are short-lived single-session credentials, not durable Gateway identities. |
 | Upstream credential provider | The provider record Gateway uses to attach no credential, a Caracal mandate, OAuth tokens, API keys, or bearer tokens. |
+| Authorized operation | `{method, path, scope}`, such as `{ "method": "POST", "path": "/api/create_payout", "scope": "pipernet:payout" }`; the scope must be one of the resource's Caracal resource scopes. |
+| Operation enforcement | `enforced` for path-addressed REST upstreams; `transport_uniform` for single-surface transports such as MCP. |
 | Provider identifier | `provider://lowercase-slug` stable name for the upstream credential system. |
 
 Do not put provider-specific credential details on a resource. Do not use mutable deployment hostnames as policy identifiers unless they are the actual authority boundary. Keep the resource identifier stable even if the upstream URL or upstream credential provider binding changes.
