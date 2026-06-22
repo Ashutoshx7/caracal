@@ -3,7 +3,7 @@
 //
 // Installed stack helpers: locate $CARACAL_HOME and install bundled assets.
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 import { COMPOSE_YML } from './embedded.js'
@@ -49,17 +49,23 @@ export function installRuntimeAssets(
   mkdirSync(paths.home, { recursive: true })
   let created = false
 
-  const existingCompose = existsSync(paths.composeFile) ? readFileSync(paths.composeFile, 'utf8') : null
+  let existingCompose: string | null = null
+  try {
+    existingCompose = readFileSync(paths.composeFile, 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+  }
   if (existingCompose !== COMPOSE_YML) {
     writeFileSync(paths.composeFile, COMPOSE_YML, { mode: 0o644 })
     created = true
   }
 
   // Only seed the override template if missing; never clobber operator edits.
-  if (!existsSync(paths.overrideEnvFile)) {
-    writeFileSync(paths.overrideEnvFile, renderOperatorTemplate(mode), { mode: 0o600 })
+  try {
+    writeFileSync(paths.overrideEnvFile, renderOperatorTemplate(mode), { mode: 0o600, flag: 'wx' })
     created = true
-  } else {
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
     try { chmodSync(paths.overrideEnvFile, 0o600) } catch { /* perms may be unsupported */ }
   }
 

@@ -4,7 +4,7 @@
 //
 // CI guard that renders infra/docker/dev.env from the schema and fails when the committed file drifts.
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { renderDevEnv, devEnvRelativePath } from '../dist/envRender.js'
@@ -15,7 +15,12 @@ const target = resolve(repoRoot, devEnvRelativePath())
 const rendered = renderDevEnv()
 const check = process.argv.includes('--check')
 
-const existing = existsSync(target) ? readFileSync(target, 'utf8') : null
+let existing = null
+try {
+  existing = readFileSync(target, 'utf8')
+} catch (err) {
+  if (err.code !== 'ENOENT') throw err
+}
 
 if (check) {
   if (existing !== rendered) {

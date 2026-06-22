@@ -74,14 +74,20 @@ function chmodSafe(path: string, mode: number): void {
 }
 
 function readOrCreateSecretFile(path: string, bytes: number): { value: string; created: boolean } {
-  if (existsSync(path)) {
-    const existing = readFileSync(path, 'utf8').trim()
-    if (existing.length > 0) {
-      chmodSafe(path, SECRET_FILE_MODE)
-      return { value: existing, created: false }
-    }
-  }
   const value = randomBytes(bytes).toString('hex')
+  try {
+    writeFileSync(path, value, { mode: SECRET_FILE_MODE, flag: 'wx' })
+    chmodSafe(path, SECRET_FILE_MODE)
+    return { value, created: true }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+  }
+  const existing = readFileSync(path, 'utf8').trim()
+  if (existing.length > 0) {
+    chmodSafe(path, SECRET_FILE_MODE)
+    return { value: existing, created: false }
+  }
+  chmodSafe(path, SECRET_REWRITE_MODE)
   writeFileSync(path, value, { mode: SECRET_FILE_MODE })
   chmodSafe(path, SECRET_FILE_MODE)
   return { value, created: true }
@@ -106,7 +112,12 @@ export function bootstrapSecrets(paths: BootstrapPaths): BootstrapReport {
   for (const derived of DERIVED_SECRETS) {
     const filePath = resolve(paths.secretsDir, derived.fileName)
     const rendered = derived.render(values)
-    const existing = existsSync(filePath) ? readFileSync(filePath, 'utf8').trim() : ''
+    let existing = ''
+    try {
+      existing = readFileSync(filePath, 'utf8').trim()
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+    }
     if (existing !== rendered) {
       if (existing) chmodSafe(filePath, SECRET_REWRITE_MODE)
       writeFileSync(filePath, rendered, { mode: SECRET_FILE_MODE })
