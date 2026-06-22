@@ -378,6 +378,28 @@ export async function reconcile(
   assertZoneAlignment(doc, zoneId)
   authorizeAll(doc, deps, opts)
 
+  // List each declared kind once and index it by identity. Listings are independent reads, so
+  // the at-most-one-per-kind calls run together; every later lookup is in-memory. This keeps a
+  // large document from issuing a list call per object and from re-listing during prune.
+  const kinds = [...new Set(doc.objects.map((object) => object.kind))]
+  const listings = new Map<ObjectKind, LiveObject[]>()
+  const listErrors = new Map<ObjectKind, unknown>()
+  await Promise.all(
+    kinds.map(async (kind) => {
+      try {
+        listings.set(kind, await ADAPTERS[kind].list(deps.admin, zoneId))
+      } catch (err) {
+        listErrors.set(kind, err)
+      }
+    }),
+  )
+  const index = new Map<ObjectKind, Map<string, LiveObject>>()
+  for (const [kind, items] of listings) {
+    const byIdentity = new Map<string, LiveObject>()
+    for (const item of items) byIdentity.set(ADAPTERS[kind].identityOf(item), item)
+    index.set(kind, byIdentity)
+  }
+
   const outcomes: ObjectOutcome[] = []
   const seen = new Map<ObjectKind, Set<string>>()
 
@@ -388,7 +410,9 @@ export async function reconcile(
       identity = adapter.identityOfSpec(object.spec)
       if (!seen.has(object.kind)) seen.set(object.kind, new Set())
       seen.get(object.kind)!.add(identity)
-      const live = (await adapter.list(deps.admin, zoneId)).find((item) => adapter.identityOf(item) === identity)
+      const listError = listErrors.get(object.kind)
+      if (listError) throw listError
+      const live = index.get(object.kind)?.get(identity)
       if (!live) {
         if (dryRun) {
           outcomes.push({ kind: object.kind, identity, action: 'create', applied: false })
@@ -424,13 +448,12 @@ export async function reconcile(
     for (const kind of seen.keys()) {
       const adapter = ADAPTERS[kind]
       const declared = seen.get(kind)!
-      let live: LiveObject[] = []
-      try {
-        live = await adapter.list(deps.admin, zoneId)
-      } catch (err) {
+      if (listErrors.has(kind)) {
+        const err = listErrors.get(kind)
         outcomes.push({ kind, identity: '*', action: 'prune', applied: false, error: { code: errorCode(err), reason: errorReason(err) } })
         continue
       }
+      const live = listings.get(kind) ?? []
       for (const item of live) {
         const identity = adapter.identityOf(item)
         if (declared.has(identity) || adapter.protectedFromPrune(item)) continue

@@ -147,6 +147,24 @@ describe('reconcile', () => {
     expect(admin.applications.create).toHaveBeenCalledTimes(1)
   })
 
+  it('lists each kind once regardless of object count, even with prune', async () => {
+    const store = newStore()
+    const admin = fakeAdmin(store)
+    const deps: ReconcileDeps = { admin, authorize: allowAll() }
+    const doc = parseDesiredState({
+      objects: [
+        { kind: 'resource', spec: { identifier: 'resource://nucleus', scopes: [] } },
+        { kind: 'resource', spec: { identifier: 'resource://piperchat', scopes: [] } },
+        { kind: 'resource', spec: { identifier: 'resource://hoolibox', scopes: [] } },
+        { kind: 'application', spec: { name: 'Son of Anton', traits: [] } },
+      ],
+      prune: true,
+    })
+    await reconcile(ZONE, doc, deps, { prune: true })
+    expect(admin.resources.list).toHaveBeenCalledTimes(1)
+    expect(admin.applications.list).toHaveBeenCalledTimes(1)
+  })
+
   it('patches drifted objects', async () => {
     const store = newStore()
     const admin = fakeAdmin(store)
