@@ -10,15 +10,12 @@ import { useEffect, useState } from "react";
 import { AvatarPicker } from "@/components/onboarding/AvatarPicker";
 import { IdentityCard } from "@/components/onboarding/IdentityCard";
 import { OnboardingLayout, type OnboardingStep } from "@/components/onboarding/OnboardingLayout";
-import { Button, Card, Field, SectionTitle, Textarea } from "@/components/ui";
+import { Button, Card, Field, SectionTitle, useToast } from "@/components/ui";
+import { ConsoleApiError, consoleApi } from "@/platform/api/client";
+import { selectZone } from "@/platform/api/hooks";
 import { useSession } from "@/platform/auth";
 import { requirePendingOnboarding } from "@/platform/auth/guards";
-import {
-  addZone,
-  completeOnboarding,
-  getProfile,
-  type ProfileRecord,
-} from "@/platform/state/localInstall";
+import { completeOnboarding, getProfile, type ProfileRecord } from "@/platform/state/localInstall";
 
 export const Route = createFileRoute("/onboarding")({
   beforeLoad: requirePendingOnboarding,
@@ -55,6 +52,7 @@ const STEP_HEAD = [
 
 function OnboardingPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const session = useSession();
   const ownerEmail = session.data?.user?.email ?? "";
   const sessionName = session.data?.user?.name ?? "";
@@ -67,7 +65,6 @@ function OnboardingPage() {
   const [avatar, setAvatar] = useState("");
 
   const [zoneName, setZoneName] = useState("Production");
-  const [zoneDesc, setZoneDesc] = useState("Live workloads and production agents.");
 
   const [submitting, setSubmitting] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
@@ -97,7 +94,7 @@ function OnboardingPage() {
     setStep((value) => Math.max(value - 1, 0));
   }
 
-  function finish() {
+  async function finish() {
     if (!profileValid || !zoneValid) return;
     setSubmitting(true);
     const profile: ProfileRecord = {
@@ -106,9 +103,32 @@ function OnboardingPage() {
       displayName: displayName.trim(),
       avatar,
     };
-    addZone({ name: zoneName.trim(), description: zoneDesc.trim() });
-    completeOnboarding(profile);
-    navigate({ to: "/app" });
+    try {
+      const zone = await consoleApi.zones.create({ name: zoneName.trim() });
+      selectZone(zone.id);
+      completeOnboarding(profile);
+      navigate({ to: "/app" });
+    } catch (err) {
+      if (
+        err instanceof ConsoleApiError &&
+        (err.notConfigured || err.unreachable || err.status === 0)
+      ) {
+        completeOnboarding(profile);
+        toast({
+          tone: "info",
+          title: "Profile saved",
+          description: "Connect the control plane to create your first zone.",
+        });
+        navigate({ to: "/app" });
+        return;
+      }
+      setSubmitting(false);
+      toast({
+        tone: "error",
+        title: "Could not create zone",
+        description: err instanceof ConsoleApiError ? err.code : "Unexpected error.",
+      });
+    }
   }
 
   const head = STEP_HEAD[step];
@@ -195,13 +215,6 @@ function OnboardingPage() {
               error={showErrors && !zoneValid ? "Zone name is required." : undefined}
               autoFocus
             />
-            <Textarea
-              label="Description"
-              hint="Optional. What this zone is for."
-              placeholder="Live workloads and production agents."
-              value={zoneDesc}
-              onChange={(e) => setZoneDesc(e.target.value)}
-            />
           </div>
           <Card className="h-fit bg-muted/30">
             <SectionTitle>What is a zone</SectionTitle>
@@ -240,10 +253,7 @@ function OnboardingPage() {
           <ReviewSection
             title="First zone"
             onEdit={() => setStep(1)}
-            rows={[
-              ["Name", zoneName.trim()],
-              ["Description", zoneDesc.trim() || "—"],
-            ]}
+            rows={[["Name", zoneName.trim()]]}
           />
           <Card>
             <SectionTitle>Ownership</SectionTitle>

@@ -5,145 +5,83 @@ Caracal, a product of Garudex Labs
 This file defines the Console dashboard overview route.
 */
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { ModulePage } from "@/components/console/ModulePage";
 import { Badge, Button, Card, LockBadge, SectionTitle, Skeleton } from "@/components/ui";
 import { cx } from "@/lib/cx";
 import { LOCKED_FEATURES } from "@/platform/edition/lockedFeatures";
 import {
-  activeZones,
-  getActiveZone,
-  workspaceLabel,
-  type ZoneRecord,
-} from "@/platform/state/localInstall";
+  useActiveZone,
+  useApplications,
+  useConsoleStatus,
+  usePolicySets,
+  useProviders,
+  useResources,
+} from "@/platform/api/hooks";
+import type { ConsoleStatus, Zone } from "@/platform/api/types";
+import { workspaceLabel } from "@/platform/state/localInstall";
 
 export const Route = createFileRoute("/app/")({
   component: DashboardPage,
 });
 
-type Health = "healthy" | "degraded" | "down";
-type AttentionLevel = "warning" | "info";
+type Connection = "connecting" | "not_configured" | "unreachable" | "connected";
 
-interface Snapshot {
-  zones: ZoneRecord[];
-  activeZone: ZoneRecord | null;
-  counts: {
-    applications: number;
-    resources: number;
-    providers: number;
-    policySets: number;
-    agents: number;
-  };
-  audit: { decisions24h: number; allow: number; deny: number };
-  services: { name: string; status: Health }[];
-  attention: { id: string; level: AttentionLevel; title: string; detail: string; to: string }[];
-  activity: {
-    id: string;
-    text: string;
-    when: string;
-    kind: "policy" | "auth" | "object" | "session";
-  }[];
-  setup: { id: string; label: string; done: boolean; to: string }[];
+function connectionOf(status: ConsoleStatus | undefined, isError: boolean): Connection {
+  if (isError || !status) return "unreachable";
+  if (!status.configured) return "not_configured";
+  if (!status.reachable) return "unreachable";
+  return "connected";
 }
 
-/** Build a dashboard snapshot from local state plus representative operational status. */
-function buildSnapshot(): Snapshot {
-  const zones = activeZones();
-  const activeZone = getActiveZone();
-  const hasZone = zones.length > 0;
-
-  const setup = [
-    { id: "zone", label: "Create your first zone", done: hasZone, to: "/app/zones" },
-    { id: "provider", label: "Connect an identity provider", done: false, to: "/app/providers" },
-    { id: "policy", label: "Activate a policy set", done: false, to: "/app/policy-sets" },
-    { id: "control", label: "Issue a Control API key", done: false, to: "/app/control" },
-  ];
-
-  const attention: Snapshot["attention"] = [];
-  if (activeZone) {
-    attention.push({
-      id: "no-policy-set",
-      level: "warning",
-      title: "No active policy set",
-      detail: `Zone ${activeZone.name} has no policy set activated. Requests fall back to deny.`,
-      to: "/app/policy-sets",
-    });
-    attention.push({
-      id: "no-provider",
-      level: "info",
-      title: "No identity provider configured",
-      detail: `Add a provider to ${activeZone.name} so applications can obtain mandates.`,
-      to: "/app/providers",
-    });
-  }
-
-  return {
-    zones,
-    activeZone,
-    counts: { applications: 6, resources: 4, providers: 0, policySets: 2, agents: 3 },
-    audit: { decisions24h: 1284, allow: 1190, deny: 94 },
-    services: [
-      { name: "Gateway", status: "healthy" },
-      { name: "STS", status: "healthy" },
-      { name: "Coordinator", status: "healthy" },
-      { name: "Audit", status: "healthy" },
-    ],
-    attention,
-    activity: [
-      { id: "a1", text: "Policy set v3 activated", when: "2m ago", kind: "policy" },
-      { id: "a2", text: "Agent session delegated read scope", when: "18m ago", kind: "session" },
-      { id: "a3", text: "Application acme-worker created", when: "1h ago", kind: "object" },
-      { id: "a4", text: "Resource billing-api updated", when: "3h ago", kind: "object" },
-      { id: "a5", text: "Control key rotated", when: "5h ago", kind: "auth" },
-    ],
-    setup,
-  };
-}
-
-function relativeTime(from: number): string {
-  const seconds = Math.max(1, Math.round((Date.now() - from) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.round(seconds / 60);
-  return `${minutes}m ago`;
+interface AttentionItem {
+  id: string;
+  level: "warning" | "info";
+  title: string;
+  detail: string;
+  to: string;
 }
 
 function DashboardPage() {
   const workspace = workspaceLabel();
-  const [data, setData] = useState<Snapshot | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [updatedAt, setUpdatedAt] = useState(Date.now());
-  const [, force] = useState(0);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statusQuery = useConsoleStatus();
+  const { zones, activeZone } = useActiveZone();
 
-  const load = useCallback((initial: boolean) => {
-    if (initial) setData(null);
-    else setRefreshing(true);
-    timer.current = setTimeout(
-      () => {
-        setData(buildSnapshot());
-        setUpdatedAt(Date.now());
-        setRefreshing(false);
-      },
-      initial ? 450 : 600,
-    );
-  }, []);
+  const connection = connectionOf(statusQuery.data, statusQuery.isError);
+  const connected = connection === "connected";
+  const zoneId = connected ? (activeZone?.id ?? null) : null;
 
-  useEffect(() => {
-    load(true);
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [load]);
+  const apps = useApplications(zoneId);
+  const resources = useResources(zoneId);
+  const providers = useProviders(zoneId);
+  const policySets = usePolicySets(zoneId);
 
-  // Keep the "updated Xs ago" label fresh without refetching.
-  useEffect(() => {
-    const tick = setInterval(() => force((n) => n + 1), 15000);
-    return () => clearInterval(tick);
-  }, []);
+  const statusLoading = statusQuery.isLoading;
 
-  const loading = data === null;
-  const activeName = data?.activeZone?.name ?? null;
+  const attention: AttentionItem[] = [];
+  if (connected && activeZone) {
+    if ((policySets.data?.length ?? 0) === 0 && !policySets.isLoading) {
+      attention.push({
+        id: "no-policy-set",
+        level: "warning",
+        title: "No active policy set",
+        detail: `Zone ${activeZone.name} has no policy set. Requests fall back to deny.`,
+        to: "/app/policy-sets",
+      });
+    }
+    if ((providers.data?.length ?? 0) === 0 && !providers.isLoading) {
+      attention.push({
+        id: "no-provider",
+        level: "info",
+        title: "No identity provider configured",
+        detail: `Add a provider to ${activeZone.name} so applications can obtain mandates.`,
+        to: "/app/providers",
+      });
+    }
+  }
+
+  const activeName = activeZone?.name ?? null;
 
   return (
     <ModulePage
@@ -153,35 +91,57 @@ function DashboardPage() {
       }
       breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Dashboard" }]}
       actions={
-        <div className="flex items-center gap-3">
-          <span className="hidden text-xs text-muted-foreground sm:inline">
-            {refreshing ? "Refreshing…" : `Updated ${relativeTime(updatedAt)}`}
-          </span>
-          <Button variant="secondary" size="sm" onClick={() => load(false)} loading={refreshing}>
-            Refresh
-          </Button>
-        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => statusQuery.refetch()}
+          loading={statusQuery.isFetching}
+        >
+          Refresh
+        </Button>
       }
     >
-      <StatusHero data={data} loading={loading} />
+      <StatusHero
+        connection={connection}
+        loading={statusLoading}
+        attentionCount={attention.length}
+        zones={zones.length}
+        apps={count(apps.data)}
+        resources={count(resources.data)}
+        providers={count(providers.data)}
+        policySets={count(policySets.data)}
+        countsLoading={connected && (apps.isLoading || resources.isLoading)}
+      />
 
-      <Attention data={data} loading={loading} />
+      <Attention connection={connection} loading={statusLoading} items={attention} />
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="flex flex-col gap-4 lg:col-span-2">
-          <ZonesPanel data={data} loading={loading} />
-          <ActivityPanel data={data} loading={loading} />
+          <ZonesPanel zones={zones} activeId={activeZone?.id ?? null} loading={statusLoading} />
         </div>
         <div className="flex flex-col gap-4">
-          <SetupPanel data={data} loading={loading} />
-          <HealthPanel data={data} loading={loading} />
-          <AuditPanel data={data} loading={loading} />
+          <SetupPanel
+            connected={connected}
+            hasZone={zones.length > 0}
+            hasProvider={count(providers.data) > 0}
+            hasPolicySet={count(policySets.data) > 0}
+            loading={statusLoading}
+          />
+          <ControlPlanePanel
+            status={statusQuery.data}
+            connection={connection}
+            loading={statusLoading}
+          />
         </div>
       </div>
 
       <EnterprisePanel />
     </ModulePage>
   );
+}
+
+function count(rows: unknown[] | undefined): number {
+  return rows?.length ?? 0;
 }
 
 /* ----------------------------------- shared ----------------------------------- */
@@ -204,15 +164,6 @@ function ViewAll({ to, label = "View all" }: { to: string; label?: string }) {
       {label}
     </Link>
   );
-}
-
-function StatusDot({ status }: { status: Health }) {
-  const tone = {
-    healthy: "bg-emerald-500",
-    degraded: "bg-amber-500",
-    down: "bg-destructive",
-  }[status];
-  return <span className={cx("inline-block h-2 w-2 rounded-full", tone)} />;
 }
 
 function Metric({
@@ -245,77 +196,93 @@ function Metric({
 
 /* ----------------------------------- sections ----------------------------------- */
 
-function StatusHero({ data, loading }: { data: Snapshot | null; loading: boolean }) {
-  const allHealthy = data ? data.services.every((s) => s.status === "healthy") : true;
-  const issues = data?.attention.length ?? 0;
-  const status: Health = !data
-    ? "healthy"
-    : !allHealthy
-      ? "down"
-      : issues > 0
-        ? "degraded"
-        : "healthy";
-  const headline = !allHealthy
-    ? "Service disruption detected"
-    : issues > 0
+const HERO: Record<Connection, { tone: string; headline: string; detail: string }> = {
+  connecting: {
+    tone: "bg-muted",
+    headline: "Connecting…",
+    detail: "Checking the control plane connection.",
+  },
+  connected: {
+    tone: "bg-emerald-500/15",
+    headline: "Control plane connected",
+    detail: "Secure authority and control plane for your agents, policies, and zones.",
+  },
+  not_configured: {
+    tone: "bg-amber-500/15",
+    headline: "Control plane not connected",
+    detail: "Start the local stack with `caracal up` to provision admin credentials.",
+  },
+  unreachable: {
+    tone: "bg-destructive/15",
+    headline: "Control plane unreachable",
+    detail: "The control plane is not responding. Confirm the stack is running.",
+  },
+};
+
+function StatusHero({
+  connection,
+  loading,
+  attentionCount,
+  zones,
+  apps,
+  resources,
+  providers,
+  policySets,
+  countsLoading,
+}: {
+  connection: Connection;
+  loading: boolean;
+  attentionCount: number;
+  zones: number;
+  apps: number;
+  resources: number;
+  providers: number;
+  policySets: number;
+  countsLoading: boolean;
+}) {
+  const hero = HERO[loading ? "connecting" : connection];
+  const headline =
+    connection === "connected" && attentionCount > 0
       ? "Operational — items need attention"
-      : "All systems operational";
+      : hero.headline;
 
   return (
     <Card className="bg-card">
-      <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <span
-            className={cx(
-              "grid h-10 w-10 place-items-center rounded-full",
-              status === "healthy" && "bg-emerald-500/15",
-              status === "degraded" && "bg-amber-500/15",
-              status === "down" && "bg-destructive/15",
-            )}
-          >
-            <StatusDot status={status} />
-          </span>
-          <div>
-            <div className="text-base font-semibold tracking-tight text-foreground">{headline}</div>
-            <div className="mt-0.5 text-sm text-muted-foreground">
-              Secure authority and control plane for your agents, policies, and zones.
-            </div>
-          </div>
+      <div className="flex items-center gap-3">
+        <span className={cx("grid h-10 w-10 place-items-center rounded-full", hero.tone)}>
+          <span className="block h-2 w-2 rounded-full bg-current" />
+        </span>
+        <div>
+          <div className="text-base font-semibold tracking-tight text-foreground">{headline}</div>
+          <div className="mt-0.5 text-sm text-muted-foreground">{hero.detail}</div>
         </div>
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        <Metric label="Zones" value={data?.zones.length ?? 0} to="/app/zones" loading={loading} />
-        <Metric
-          label="Applications"
-          value={data?.counts.applications ?? 0}
-          to="/app/applications"
-          loading={loading}
-        />
-        <Metric
-          label="Resources"
-          value={data?.counts.resources ?? 0}
-          to="/app/resources"
-          loading={loading}
-        />
+        <Metric label="Zones" value={zones} to="/app/zones" loading={loading} />
+        <Metric label="Applications" value={apps} to="/app/applications" loading={countsLoading} />
+        <Metric label="Resources" value={resources} to="/app/resources" loading={countsLoading} />
+        <Metric label="Providers" value={providers} to="/app/providers" loading={countsLoading} />
         <Metric
           label="Policy sets"
-          value={data?.counts.policySets ?? 0}
+          value={policySets}
           to="/app/policy-sets"
-          loading={loading}
-        />
-        <Metric
-          label="Agent sessions"
-          value={data?.counts.agents ?? 0}
-          to="/app/agents"
-          loading={loading}
+          loading={countsLoading}
         />
       </div>
     </Card>
   );
 }
 
-function Attention({ data, loading }: { data: Snapshot | null; loading: boolean }) {
+function Attention({
+  connection,
+  loading,
+  items,
+}: {
+  connection: Connection;
+  loading: boolean;
+  items: AttentionItem[];
+}) {
   if (loading) {
     return (
       <Card className="mt-4">
@@ -324,7 +291,29 @@ function Attention({ data, loading }: { data: Snapshot | null; loading: boolean 
       </Card>
     );
   }
-  const items = data?.attention ?? [];
+
+  if (connection !== "connected") {
+    return (
+      <Card className="mt-4">
+        <div className="flex items-center gap-3">
+          <span className="grid h-8 w-8 place-items-center rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400">
+            <span className="block h-2 w-2 rounded-full bg-current" />
+          </span>
+          <div>
+            <div className="text-sm font-medium text-foreground">
+              {connection === "not_configured"
+                ? "Control plane not connected"
+                : "Control plane unreachable"}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Connect the control plane to view live operational status.
+            </div>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
   if (items.length === 0) {
     return (
       <Card className="mt-4">
@@ -351,12 +340,10 @@ function Attention({ data, loading }: { data: Snapshot | null; loading: boolean 
       </Card>
     );
   }
+
   return (
     <Card className="mt-4">
-      <SectionHeader
-        title={`Needs attention · ${items.length}`}
-        action={<ViewAll to="/app/diagnostics" label="Diagnostics" />}
-      />
+      <SectionHeader title={`Needs attention · ${items.length}`} />
       <ul className="mt-3 divide-y divide-border">
         {items.map((item) => (
           <li key={item.id}>
@@ -371,18 +358,6 @@ function Attention({ data, loading }: { data: Snapshot | null; loading: boolean 
                 <span className="block text-sm font-medium text-foreground">{item.title}</span>
                 <span className="block text-xs text-muted-foreground">{item.detail}</span>
               </span>
-              <span className="mt-1 text-muted-foreground">
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="m9 18 6-6-6-6" />
-                </svg>
-              </span>
             </Link>
           </li>
         ))}
@@ -391,7 +366,15 @@ function Attention({ data, loading }: { data: Snapshot | null; loading: boolean 
   );
 }
 
-function ZonesPanel({ data, loading }: { data: Snapshot | null; loading: boolean }) {
+function ZonesPanel({
+  zones,
+  activeId,
+  loading,
+}: {
+  zones: Zone[];
+  activeId: string | null;
+  loading: boolean;
+}) {
   return (
     <Card>
       <SectionHeader title="Zones" action={<ViewAll to="/app/zones" />} />
@@ -401,35 +384,31 @@ function ZonesPanel({ data, loading }: { data: Snapshot | null; loading: boolean
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      ) : data && data.zones.length > 0 ? (
+      ) : zones.length > 0 ? (
         <ul className="mt-3 divide-y divide-border">
-          {data.zones.slice(0, 4).map((zone) => {
-            const isActive = zone.id === data.activeZone?.id;
-            return (
-              <li key={zone.id}>
-                <Link
-                  to="/app/zones"
-                  className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-accent"
-                >
-                  <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
-                    {zone.name.slice(0, 1).toUpperCase()}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-foreground">
-                        {zone.name}
-                      </span>
-                      {isActive ? <Badge tone="success">Active</Badge> : null}
+          {zones.slice(0, 5).map((zone) => (
+            <li key={zone.id}>
+              <Link
+                to="/app/zones"
+                className="-mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-accent"
+              >
+                <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+                  {zone.name.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium text-foreground">
+                      {zone.name}
                     </span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {zone.description || zone.slug}
-                    </span>
+                    {zone.id === activeId ? <Badge tone="success">Active</Badge> : null}
                   </span>
-                  <StatusDot status="healthy" />
-                </Link>
-              </li>
-            );
-          })}
+                  <span className="block truncate font-mono text-xs text-muted-foreground">
+                    {zone.slug}
+                  </span>
+                </span>
+              </Link>
+            </li>
+          ))}
         </ul>
       ) : (
         <div className="mt-3 rounded-md border border-dashed border-border bg-card/40 px-4 py-8 text-center">
@@ -448,55 +427,32 @@ function ZonesPanel({ data, loading }: { data: Snapshot | null; loading: boolean
   );
 }
 
-function ActivityPanel({ data, loading }: { data: Snapshot | null; loading: boolean }) {
-  return (
-    <Card>
-      <SectionHeader
-        title="Recent activity"
-        action={<ViewAll to="/app/audit" label="Open audit" />}
-      />
-      {loading ? (
-        <div className="mt-3 flex flex-col gap-3">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="flex items-center justify-between">
-              <Skeleton className="h-4 w-56" />
-              <Skeleton className="h-3 w-12" />
-            </div>
-          ))}
-        </div>
-      ) : (
-        <ul className="mt-2 divide-y divide-border">
-          {(data?.activity ?? []).map((item) => (
-            <li key={item.id} className="flex items-center gap-3 py-2.5">
-              <ActivityGlyph kind={item.kind} />
-              <span className="min-w-0 flex-1 truncate text-sm text-foreground">{item.text}</span>
-              <span className="flex-shrink-0 text-xs text-muted-foreground">{item.when}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
-  );
-}
-
-function ActivityGlyph({ kind }: { kind: "policy" | "auth" | "object" | "session" }) {
-  const tone = {
-    policy: "text-violet-500",
-    auth: "text-amber-500",
-    object: "text-muted-foreground",
-    session: "text-emerald-500",
-  }[kind];
-  return (
-    <span className={cx("flex-shrink-0", tone)}>
-      <span className="block h-1.5 w-1.5 rounded-full bg-current" />
-    </span>
-  );
-}
-
-function SetupPanel({ data, loading }: { data: Snapshot | null; loading: boolean }) {
-  const setup = data?.setup ?? [];
-  const done = setup.filter((s) => s.done).length;
+function SetupPanel({
+  connected,
+  hasZone,
+  hasProvider,
+  hasPolicySet,
+  loading,
+}: {
+  connected: boolean;
+  hasZone: boolean;
+  hasProvider: boolean;
+  hasPolicySet: boolean;
+  loading: boolean;
+}) {
+  const setup = [
+    { id: "zone", label: "Create your first zone", done: hasZone, to: "/app/zones" },
+    {
+      id: "provider",
+      label: "Connect an identity provider",
+      done: hasProvider,
+      to: "/app/providers",
+    },
+    { id: "policy", label: "Activate a policy set", done: hasPolicySet, to: "/app/policy-sets" },
+  ];
+  const done = connected ? setup.filter((s) => s.done).length : 0;
   const pct = setup.length ? Math.round((done / setup.length) * 100) : 0;
+
   return (
     <Card>
       <SectionHeader title="Continue setup" />
@@ -561,49 +517,54 @@ function SetupPanel({ data, loading }: { data: Snapshot | null; loading: boolean
   );
 }
 
-function HealthPanel({ data, loading }: { data: Snapshot | null; loading: boolean }) {
+function ControlPlanePanel({
+  status,
+  connection,
+  loading,
+}: {
+  status: ConsoleStatus | undefined;
+  connection: Connection;
+  loading: boolean;
+}) {
+  const tone =
+    connection === "connected"
+      ? "bg-emerald-500"
+      : connection === "not_configured"
+        ? "bg-amber-500"
+        : "bg-destructive";
+  const label =
+    connection === "connected"
+      ? "Connected"
+      : connection === "not_configured"
+        ? "Not configured"
+        : "Unreachable";
+
   return (
     <Card>
       <SectionHeader
-        title="Service health"
+        title="Control plane"
         action={<ViewAll to="/app/diagnostics" label="Diagnostics" />}
       />
       {loading ? (
-        <Skeleton className="mt-3 h-24 w-full" />
-      ) : (
-        <ul className="mt-3 flex flex-col gap-2 text-sm">
-          {(data?.services ?? []).map((service) => (
-            <li key={service.name} className="flex items-center justify-between">
-              <span className="text-foreground">{service.name}</span>
-              <span className="flex items-center gap-2">
-                <StatusDot status={service.status} />
-                <span className="text-xs capitalize text-muted-foreground">{service.status}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
-  );
-}
-
-function AuditPanel({ data, loading }: { data: Snapshot | null; loading: boolean }) {
-  return (
-    <Card>
-      <SectionHeader title="Authority decisions" action={<ViewAll to="/app/audit" />} />
-      {loading ? (
         <Skeleton className="mt-3 h-16 w-full" />
       ) : (
-        <div className="mt-3 flex items-center justify-between">
-          <div>
-            <div className="text-2xl font-semibold tracking-tight text-foreground">
-              {data?.audit.decisions24h.toLocaleString()}
-            </div>
-            <div className="text-xs text-muted-foreground">decisions · 24h</div>
+        <div className="mt-3 flex flex-col gap-2 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-foreground">Status</span>
+            <span className="flex items-center gap-2">
+              <span className={cx("inline-block h-2 w-2 rounded-full", tone)} />
+              <span className="text-xs text-muted-foreground">{label}</span>
+            </span>
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <Badge tone="success">{data?.audit.allow.toLocaleString()} allow</Badge>
-            <Badge tone="warning">{data?.audit.deny.toLocaleString()} deny</Badge>
+          <div className="flex items-center justify-between">
+            <span className="text-foreground">Endpoint</span>
+            <span className="truncate font-mono text-xs text-muted-foreground">
+              {status?.apiUrl ?? "—"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-foreground">Edition</span>
+            <Badge tone="neutral">Community</Badge>
           </div>
         </div>
       )}
