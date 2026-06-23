@@ -7,9 +7,9 @@ This file defines the sign-in route.
 import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
-import { AuthLayout } from "@/components/auth/AuthLayout";
+import { AuthSplitLayout } from "@/components/auth/AuthSplitLayout";
 import { SocialButtons } from "@/components/auth/SocialButtons";
-import { Button, Field } from "@/components/ui";
+import { Button, Field, PasswordField } from "@/components/ui";
 import { signIn } from "@/platform/auth";
 import { hasSession } from "@/platform/auth/guards";
 import { content } from "@/platform/content/resolver";
@@ -26,6 +26,9 @@ function SignInPage() {
   const t = content.auth;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [revealed, setRevealed] = useState(false);
+  const [remember, setRemember] = useState(true);
+  const [typing, setTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -33,7 +36,7 @@ function SignInPage() {
     event.preventDefault();
     setBusy(true);
     setError(null);
-    const { error: signInError } = await signIn.email({ email, password });
+    const { error: signInError } = await signIn.email({ email, password, rememberMe: remember });
     setBusy(false);
     if (signInError) {
       setError(signInError.message ?? "Could not sign in.");
@@ -43,11 +46,12 @@ function SignInPage() {
   }
 
   return (
-    <AuthLayout
+    <AuthSplitLayout
       title={t.signInTitle}
       subtitle={t.signInSubtitle}
+      characters={{ typing, passwordLength: password.length, revealed }}
       footer={
-        <Link to="/sign-up" className="hover:text-foreground">
+        <Link to="/sign-up" className="font-medium text-foreground hover:underline">
           {t.toSignUp}
         </Link>
       }
@@ -59,30 +63,45 @@ function SignInPage() {
             label={t.emailLabel}
             type="email"
             autoComplete="email"
+            placeholder="you@company.com"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            onFocus={() => setTyping(true)}
+            onBlur={() => setTyping(false)}
           />
-          <Field
+          <PasswordField
             label={t.passwordLabel}
-            type="password"
             autoComplete="current-password"
+            placeholder="••••••••"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            onRevealChange={setRevealed}
           />
+
+          <div className="flex items-center justify-between">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-input accent-[var(--color-foreground)]"
+              />
+              Remember me
+            </label>
+            <Link to="/reset" className="text-sm text-muted-foreground hover:text-foreground">
+              {t.forgot}
+            </Link>
+          </div>
+
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          <Button type="submit" disabled={busy}>
+
+          <Button type="submit" loading={busy} className="w-full">
             {busy ? "Signing in…" : t.signInCta}
           </Button>
-          <Link
-            to="/reset"
-            className="text-center text-xs text-muted-foreground hover:text-foreground"
-          >
-            {t.forgot}
-          </Link>
         </form>
       </div>
-    </AuthLayout>
+    </AuthSplitLayout>
   );
 }

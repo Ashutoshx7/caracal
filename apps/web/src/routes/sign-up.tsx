@@ -7,9 +7,9 @@ This file defines the sign-up route.
 import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
-import { AuthLayout } from "@/components/auth/AuthLayout";
+import { AuthSplitLayout } from "@/components/auth/AuthSplitLayout";
 import { SocialButtons } from "@/components/auth/SocialButtons";
-import { Button, Field } from "@/components/ui";
+import { Button, Field, PasswordField } from "@/components/ui";
 import { signUp } from "@/platform/auth";
 import { hasSession } from "@/platform/auth/guards";
 import { content } from "@/platform/content/resolver";
@@ -27,6 +27,8 @@ function SignUpPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [revealed, setRevealed] = useState(false);
+  const [typing, setTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -44,11 +46,12 @@ function SignUpPage() {
   }
 
   return (
-    <AuthLayout
+    <AuthSplitLayout
       title={t.signUpTitle}
       subtitle={t.signUpSubtitle}
+      characters={{ typing, passwordLength: password.length, revealed }}
       footer={
-        <Link to="/sign-in" className="hover:text-foreground">
+        <Link to="/sign-in" className="font-medium text-foreground hover:underline">
           {t.toSignIn}
         </Link>
       }
@@ -59,34 +62,43 @@ function SignUpPage() {
           <Field
             label={t.nameLabel}
             autoComplete="name"
+            placeholder="Ada Lovelace"
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
+            onFocus={() => setTyping(true)}
+            onBlur={() => setTyping(false)}
           />
           <Field
             label={t.emailLabel}
             type="email"
             autoComplete="email"
+            placeholder="you@company.com"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            onFocus={() => setTyping(true)}
+            onBlur={() => setTyping(false)}
           />
-          <Field
+          <PasswordField
             label={t.passwordLabel}
-            type="password"
             autoComplete="new-password"
+            placeholder="••••••••"
             required
             minLength={8}
-            hint="At least 8 characters."
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            onRevealChange={setRevealed}
           />
+          <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          <Button type="submit" disabled={busy}>
+
+          <Button type="submit" loading={busy} className="w-full">
             {busy ? "Creating account…" : t.signUpCta}
           </Button>
         </form>
       </div>
-    </AuthLayout>
+    </AuthSplitLayout>
   );
 }

@@ -4,6 +4,7 @@ Caracal, a product of Garudex Labs
 
 This file provides the shared presentational primitives for the Console UI.
 */
+import { useState } from "react";
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -131,6 +132,74 @@ export function Field({
       ) : hint ? (
         <span className="mt-1 block text-xs text-muted-foreground">{hint}</span>
       ) : null}
+    </label>
+  );
+}
+
+export function PasswordField({
+  label,
+  id,
+  className,
+  onRevealChange,
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
+  label?: string;
+  onRevealChange?: (revealed: boolean) => void;
+}) {
+  const [show, setShow] = useState(false);
+  function toggle() {
+    setShow((value) => {
+      const next = !value;
+      onRevealChange?.(next);
+      return next;
+    });
+  }
+  return (
+    <label className="block" htmlFor={id}>
+      {label ? (
+        <span className="mb-1.5 block text-sm font-medium text-foreground">{label}</span>
+      ) : null}
+      <div className="relative">
+        <input
+          id={id}
+          type={show ? "text" : "password"}
+          className={cx(fieldBase, "h-9 pr-9", className)}
+          {...props}
+        />
+        <button
+          type="button"
+          aria-label={show ? "Hide password" : "Show password"}
+          aria-pressed={show}
+          onClick={toggle}
+          className="absolute right-2 top-1/2 -translate-y-1/2 grid h-6 w-6 place-items-center rounded text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          {show ? (
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c7 0 10 8 10 8a18 18 0 0 1-2.16 3.19M6.6 6.6A18 18 0 0 0 2 12s3 8 10 8a9 9 0 0 0 5.4-1.6" />
+              <path d="m2 2 20 20M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+            </svg>
+          ) : (
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M2 12s3-8 10-8 10 8 10 8-3 8-10 8-10-8-10-8Z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          )}
+        </button>
+      </div>
     </label>
   );
 }
