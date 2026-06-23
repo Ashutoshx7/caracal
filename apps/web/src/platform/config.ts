@@ -8,6 +8,8 @@ const env = import.meta.env;
 
 export const config = {
   authBaseUrl: (env.VITE_CARACAL_AUTH_URL as string | undefined) ?? "http://localhost:3002",
+  consoleBaseUrl:
+    ((env.VITE_CARACAL_AUTH_URL as string | undefined) ?? "http://localhost:3002") + "/api/console",
   docsUrl: "https://docs.caracal.run",
   enterpriseUrl: "https://caracal.run/enterprise",
 };
