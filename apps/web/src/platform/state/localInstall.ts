@@ -99,10 +99,3 @@ export function completeOnboarding(profile: ProfileRecord): void {
   setProfile(profile);
   setInstallation({ name: workspaceLabel(), onboarded: true });
 }
-
-export function resetInstallation(): void {
-  if (typeof localStorage === "undefined") return;
-  localStorage.removeItem(INSTALL_KEY);
-  localStorage.removeItem(ACTIVE_ZONE_KEY);
-  localStorage.removeItem(PROFILE_KEY);
-}
