@@ -7,11 +7,10 @@ This file defines the guided onboarding route.
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
-import { AvatarPicker } from "@/components/onboarding/AvatarPicker";
 import { DcrField } from "@/components/console/DcrField";
 import { IdentityCard } from "@/components/onboarding/IdentityCard";
 import { OnboardingLayout, type OnboardingStep } from "@/components/onboarding/OnboardingLayout";
-import { Button, Card, Field, SectionTitle, useToast } from "@/components/ui";
+import { AvatarPicker, Button, Card, Field, SectionTitle, useToast } from "@/components/ui";
 import { ConsoleApiError, consoleApi } from "@/platform/api/client";
 import { selectZone } from "@/platform/api/hooks";
 import { useSession } from "@/platform/auth";

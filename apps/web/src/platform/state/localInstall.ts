@@ -4,6 +4,8 @@ Caracal, a product of Garudex Labs
 
 This file holds browser-local Community Edition identity: the operator profile, onboarding state, and active-zone selection.
 */
+import { useSyncExternalStore } from "react";
+
 export interface InstallationRecord {
   name: string;
   onboarded: boolean;
@@ -19,6 +21,8 @@ export interface ProfileRecord {
 const INSTALL_KEY = "caracal.install";
 const ACTIVE_ZONE_KEY = "caracal.activeZone";
 const PROFILE_KEY = "caracal.profile";
+const profileListeners = new Set<() => void>();
+let profileSnapshot: ProfileRecord | null = null;
 
 function read<T>(key: string, fallback: T): T {
   if (typeof localStorage === "undefined") return fallback;
@@ -34,6 +38,20 @@ function read<T>(key: string, fallback: T): T {
 function write(key: string, value: unknown): void {
   if (typeof localStorage === "undefined") return;
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+function remove(key: string): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.removeItem(key);
+}
+
+function emitProfileChange(): void {
+  for (const listener of profileListeners) listener();
+}
+
+function subscribeProfile(listener: () => void): () => void {
+  profileListeners.add(listener);
+  return () => profileListeners.delete(listener);
 }
 
 export function getInstallation(): InstallationRecord {
@@ -70,6 +88,7 @@ function generateAccountId(): string {
 }
 
 export function getProfile(): ProfileRecord {
+  if (profileSnapshot) return profileSnapshot;
   const stored = read<Partial<ProfileRecord>>(PROFILE_KEY, {});
   const accountId =
     stored.accountId && stored.accountId.startsWith("CRC-")
@@ -82,11 +101,26 @@ export function getProfile(): ProfileRecord {
     avatar: stored.avatar ?? "",
   };
   if (stored.accountId !== accountId) write(PROFILE_KEY, profile);
+  profileSnapshot = profile;
   return profile;
 }
 
 export function setProfile(record: ProfileRecord): void {
+  profileSnapshot = record;
   write(PROFILE_KEY, record);
+  emitProfileChange();
+}
+
+export function useProfile(): ProfileRecord {
+  return useSyncExternalStore(subscribeProfile, getProfile, getProfile);
+}
+
+export function clearLocalIdentity(): void {
+  profileSnapshot = null;
+  remove(INSTALL_KEY);
+  remove(ACTIVE_ZONE_KEY);
+  remove(PROFILE_KEY);
+  emitProfileChange();
 }
 
 /** Human label for the active workspace shown in the Console chrome. */
