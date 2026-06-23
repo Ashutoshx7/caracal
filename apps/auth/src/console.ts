@@ -4,18 +4,24 @@
 // Session-guarded backend-for-frontend that proxies the Community Edition web client to the Caracal admin API.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { discoverAdminToken } from "@caracalai/core";
+import { discoverAdminToken, discoverCoordinatorToken } from "@caracalai/core";
 
 import { auth } from "./auth.ts";
 
 const API_PREFIX = "/api/console";
+const COORD_PREFIX = "/api/console/coord";
 const DEFAULT_API_URL = "http://localhost:3000";
+const DEFAULT_COORDINATOR_URL = "http://localhost:4000";
 const PROBE_TIMEOUT_MS = 2_500;
 const PROXY_TIMEOUT_MS = 30_000;
 const MAX_BODY_BYTES = 1_000_000;
 
 function apiUrl(): string {
   return (process.env.CARACAL_API_URL ?? DEFAULT_API_URL).replace(/\/$/, "");
+}
+
+function coordinatorUrl(): string {
+  return (process.env.CARACAL_COORDINATOR_URL ?? DEFAULT_COORDINATOR_URL).replace(/\/$/, "");
 }
 
 function isLocalUrl(value: string): boolean {
@@ -29,6 +35,10 @@ function isLocalUrl(value: string): boolean {
 
 function adminToken(): string | undefined {
   return discoverAdminToken(undefined, { preferGenerated: isLocalUrl(apiUrl()) });
+}
+
+function coordinatorToken(): string | undefined {
+  return discoverCoordinatorToken(undefined, { preferGenerated: isLocalUrl(coordinatorUrl()) });
 }
 
 function toWebHeaders(req: IncomingMessage): Headers {
