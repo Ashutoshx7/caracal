@@ -36,7 +36,10 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: "policy",
     label: "Policy",
-    items: [{ id: "policies", label: "Policies", to: "/app/policies", zoneScoped: true }],
+    items: [
+      { id: "policies", label: "Policies", to: "/app/policies", zoneScoped: true },
+      { id: "governance", label: "Governance", to: "/app/enterprise/governance", locked: true },
+    ],
   },
   {
     id: "runtime",
@@ -52,6 +55,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Observability",
     items: [
       { id: "audit", label: "Audit", to: "/app/audit", zoneScoped: true },
+      { id: "analytics", label: "Analytics", to: "/app/enterprise/analytics", locked: true },
+      { id: "compliance", label: "Compliance", to: "/app/enterprise/compliance", locked: true },
       { id: "diagnostics", label: "Diagnostics", to: "/app/diagnostics" },
     ],
   },
@@ -64,38 +69,5 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "settings",
     label: "Settings",
     items: [{ id: "settings", label: "Settings", to: "/app/settings" }],
-  },
-  {
-    id: "enterprise",
-    label: "Enterprise",
-    items: [
-      {
-        id: "organizations",
-        label: "Organizations",
-        to: "/app/enterprise/organizations",
-        locked: true,
-      },
-      {
-        id: "teams-roles",
-        label: "Teams & Roles",
-        to: "/app/enterprise/teams-roles",
-        locked: true,
-      },
-      { id: "sso", label: "SSO & Directory Sync", to: "/app/enterprise/sso", locked: true },
-      {
-        id: "compliance",
-        label: "Compliance Center",
-        to: "/app/enterprise/compliance",
-        locked: true,
-      },
-      { id: "analytics", label: "Analytics", to: "/app/enterprise/analytics", locked: true },
-      { id: "governance", label: "Governance", to: "/app/enterprise/governance", locked: true },
-      {
-        id: "connectors",
-        label: "Enterprise Connectors",
-        to: "/app/enterprise/connectors",
-        locked: true,
-      },
-    ],
   },
 ];

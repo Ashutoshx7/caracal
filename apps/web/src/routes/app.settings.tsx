@@ -8,16 +8,19 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { ModulePage } from "@/components/console/ModulePage";
+import { EnterpriseUpsell } from "@/components/console/EnterpriseUpsell";
 import {
   AvatarPicker,
   Badge,
   Button,
   Field,
+  LockBadge,
   Modal,
   Skeleton,
   Tooltip,
   useToast,
 } from "@/components/ui";
+import { LOCKED_FEATURES } from "@/platform/edition/lockedFeatures";
 import { consoleApi } from "@/platform/api/client";
 import { useZones } from "@/platform/api/hooks";
 import {
@@ -41,15 +44,76 @@ import { setTheme, useTheme } from "@/platform/theme";
 const NAME_MAX = 40;
 const HANDLE_MAX = 24;
 
-const SECTIONS = [
-  { id: "profile", label: "Profile", description: "Identity, avatar, and operator naming." },
-  { id: "access", label: "Access", description: "Password and sign-in security." },
-  { id: "sessions", label: "Sessions", description: "Authenticated devices and expiry." },
-  { id: "preferences", label: "Preferences", description: "Theme defaults." },
-  { id: "lifecycle", label: "Account deletion", description: "Delete the authenticated account." },
-] as const;
+interface SettingsSection {
+  id: string;
+  label: string;
+  description: string;
+  featureSlug?: string;
+}
 
-type SectionId = (typeof SECTIONS)[number]["id"];
+interface SettingsNavGroup {
+  id: string;
+  label: string;
+  items: SettingsSection[];
+}
+
+const SETTINGS_GROUPS: SettingsNavGroup[] = [
+  {
+    id: "account",
+    label: "Account",
+    items: [
+      { id: "profile", label: "Profile", description: "Identity, avatar, and operator naming." },
+      { id: "access", label: "Access", description: "Password and sign-in security." },
+      { id: "sessions", label: "Sessions", description: "Authenticated devices and expiry." },
+      { id: "preferences", label: "Preferences", description: "Theme defaults." },
+    ],
+  },
+  {
+    id: "administration",
+    label: "Administration",
+    items: [
+      {
+        id: "sso",
+        label: "SSO & Directory Sync",
+        description: LOCKED_FEATURES.sso.summary,
+        featureSlug: "sso",
+      },
+      {
+        id: "members",
+        label: "Members & Roles",
+        description: LOCKED_FEATURES["teams-roles"].summary,
+        featureSlug: "teams-roles",
+      },
+      {
+        id: "organization",
+        label: "Organization",
+        description: LOCKED_FEATURES.organizations.summary,
+        featureSlug: "organizations",
+      },
+      {
+        id: "integrations",
+        label: "Integrations",
+        description: LOCKED_FEATURES.connectors.summary,
+        featureSlug: "connectors",
+      },
+    ],
+  },
+  {
+    id: "danger",
+    label: "Danger zone",
+    items: [
+      {
+        id: "lifecycle",
+        label: "Account deletion",
+        description: "Delete the authenticated account.",
+      },
+    ],
+  },
+];
+
+const ALL_SECTIONS = SETTINGS_GROUPS.flatMap((group) => group.items);
+
+type SectionId = string;
 
 export const Route = createFileRoute("/app/settings")({
   component: SettingsPage,
@@ -57,36 +121,49 @@ export const Route = createFileRoute("/app/settings")({
 
 function SettingsPage() {
   const [section, setSection] = useState<SectionId>("profile");
-  const current = SECTIONS.find((item) => item.id === section) ?? SECTIONS[0];
+  const current = ALL_SECTIONS.find((item) => item.id === section) ?? ALL_SECTIONS[0];
+  const feature = current.featureSlug ? LOCKED_FEATURES[current.featureSlug] : undefined;
 
   return (
     <ModulePage
       title="Settings"
-      description="Account controls."
+      description="Account and administration controls."
       breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Settings" }]}
     >
       <div className="grid gap-8 xl:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="xl:sticky xl:top-20 xl:self-start">
           <div className="border border-border bg-card">
-            <nav className="grid sm:grid-cols-2 xl:grid-cols-1">
-              {SECTIONS.map((item) => {
-                const active = item.id === section;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => setSection(item.id)}
-                    className={[
-                      "border-b border-border px-4 py-3 text-left transition-colors last:border-b-0 sm:border-r sm:last:border-r-0 xl:border-r-0",
-                      active
-                        ? "bg-foreground text-background"
-                        : "text-muted-foreground hover:bg-surface hover:text-foreground",
-                    ].join(" ")}
-                  >
-                    <span className="block text-sm font-semibold">{item.label}</span>
-                  </button>
-                );
-              })}
-            </nav>
+            {SETTINGS_GROUPS.map((group) => (
+              <div key={group.id} className="border-b border-border last:border-b-0">
+                <div className="px-4 pb-1.5 pt-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  {group.label}
+                </div>
+                <nav className="grid">
+                  {group.items.map((item) => {
+                    const active = item.id === section;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => setSection(item.id)}
+                        className={[
+                          "flex items-center justify-between gap-2 px-4 py-2.5 text-left transition-colors",
+                          active
+                            ? "bg-foreground text-background"
+                            : "text-muted-foreground hover:bg-surface hover:text-foreground",
+                        ].join(" ")}
+                      >
+                        <span className="text-sm font-semibold">{item.label}</span>
+                        {item.featureSlug ? (
+                          <span className={active ? "opacity-80" : ""}>
+                            <LockBadge />
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </nav>
+              </div>
+            ))}
           </div>
         </aside>
 
@@ -99,7 +176,7 @@ function SettingsPage() {
               <h2 className="text-2xl font-semibold tracking-tight text-foreground">
                 {current.label}
               </h2>
-              <HelpTip label={current.description} />
+              {feature ? <LockBadge /> : <HelpTip label={current.description} />}
             </div>
           </div>
 
@@ -109,6 +186,11 @@ function SettingsPage() {
             {section === "sessions" ? <SessionsSection /> : null}
             {section === "preferences" ? <PreferencesSection /> : null}
             {section === "lifecycle" ? <LifecycleSection /> : null}
+            {feature ? (
+              <div className="py-6">
+                <EnterpriseUpsell feature={feature} heading={false} />
+              </div>
+            ) : null}
           </div>
         </section>
       </div>
