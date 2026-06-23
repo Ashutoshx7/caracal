@@ -5,62 +5,21 @@ Caracal, a product of Garudex Labs
 This file defines the Sessions route.
 */
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
 
-import { ModulePage } from "@/components/console/ModulePage";
-import { Badge, Card, EmptyState, SectionTitle, Tabs } from "@/components/ui";
+import { ModulePlaceholder } from "@/components/console/ModulePlaceholder";
 
 export const Route = createFileRoute("/app/sessions")({
   component: SessionsPage,
 });
 
 function SessionsPage() {
-  const [tab, setTab] = useState("overview");
   return (
-    <ModulePage
+    <ModulePlaceholder
       title="Sessions"
-      description="Inspect active authority sessions."
+      description="Active authority sessions issued in this zone."
       breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Sessions" }]}
-      actions={<Badge tone="muted">UI in progress</Badge>}
-    >
-      <div className="mb-5">
-        <Tabs
-          tabs={[
-            { id: "overview", label: "Overview" },
-            { id: "activity", label: "Activity" },
-          ]}
-          active={tab}
-          onChange={setTab}
-        />
-      </div>
-
-      {tab === "overview" ? (
-        <Card>
-          <SectionTitle>Planned capabilities</SectionTitle>
-          <ul className="mt-3 flex flex-col gap-2.5">
-            <li className="flex items-start gap-2 text-sm text-foreground">
-              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground" />
-              <span>List sessions by subject and status</span>
-            </li>
-            <li className="flex items-start gap-2 text-sm text-foreground">
-              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground" />
-              <span>View issued scopes and TTL</span>
-            </li>
-            <li className="flex items-start gap-2 text-sm text-foreground">
-              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground" />
-              <span>Trace session to its originating authority</span>
-            </li>{" "}
-          </ul>
-          <p className="mt-4 text-xs text-muted-foreground">
-            These mirror the terminal Console and connect to the Control API in a later step.
-          </p>
-        </Card>
-      ) : (
-        <EmptyState
-          title="No activity yet"
-          description="Activity for this module appears here once it is connected to the Control API."
-        />
-      )}
-    </ModulePage>
+      emptyTitle="No active sessions"
+      emptyDescription="Authority sessions appear here once agents begin acting in this zone."
+    />
   );
 }
