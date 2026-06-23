@@ -584,7 +584,6 @@ function LifecycleSection() {
             label="Zones"
             value={zones.isLoading ? "..." : zones.isError ? "!" : String(zoneCount)}
           />
-          <Metric label="Deletion state" value={blocked ? "Unavailable" : "Ready"} />
           <Metric label="Owner email" value={email || "—"} mono />
         </div>
       </SettingsGroup>

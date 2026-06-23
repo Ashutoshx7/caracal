@@ -71,8 +71,10 @@ export function DataTable<T>({
   empty?: ReactNode;
   onRowClick?: (row: T) => void;
 }) {
+  const minHeight = 45 + Math.max(skeletonRows, 1) * 49;
+
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="overflow-hidden rounded-lg border border-border bg-card" style={{ minHeight }}>
       <div className="scrollbar-thin overflow-x-auto">
         <table className="w-full min-w-full text-sm">
           <thead>

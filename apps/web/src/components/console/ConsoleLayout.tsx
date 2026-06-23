@@ -7,6 +7,8 @@ This file is the authenticated Console shell: a left-attached collapsible sideba
 import { Outlet, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
+import { CommandPalette } from "@/components/console/CommandPalette";
+import { CommandTrigger } from "@/components/console/CommandTrigger";
 import { ProfileMenu } from "@/components/console/ProfileMenu";
 import { LanguageMenu } from "@/components/console/LanguageMenu";
 import { Sidebar } from "@/components/console/Sidebar";
@@ -24,6 +26,7 @@ export function ConsoleLayout() {
 
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
     if (typeof localStorage !== "undefined") {
@@ -34,6 +37,17 @@ export function ConsoleLayout() {
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
@@ -86,7 +100,9 @@ export function ConsoleLayout() {
               <path d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <div className="hidden md:block" />
+          <div className="hidden md:block">
+            <CommandTrigger onOpen={() => setPaletteOpen(true)} />
+          </div>
 
           <div className="flex items-center gap-2">
             <ProfileMenu />
@@ -95,11 +111,13 @@ export function ConsoleLayout() {
         </header>
 
         <main className="scrollbar-thin min-w-0 flex-1 overflow-y-auto px-5 py-6 md:px-8">
-          <div className="mx-auto w-full max-w-6xl">
+          <div className="w-full">
             <Outlet />
           </div>
         </main>
       </div>
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }
