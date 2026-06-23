@@ -20,7 +20,7 @@ export function Tooltip({ label, children }: { label: string; children: ReactNod
       {open ? (
         <span
           role="tooltip"
-          className="animate-fade-in pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs font-medium text-popover-foreground shadow-md"
+          className="animate-fade-in pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 block w-80 max-w-[calc(100vw-2rem)] -translate-x-1/2 whitespace-normal rounded-md border border-border bg-popover px-3 py-2 text-left text-xs font-normal leading-5 text-popover-foreground shadow-lg"
         >
           {label}
         </span>
