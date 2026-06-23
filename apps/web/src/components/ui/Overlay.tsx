@@ -68,7 +68,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="animate-pop-in relative z-10 w-full max-w-lg rounded-lg border border-border bg-card shadow-xl"
+        className="animate-pop-in relative z-10 w-full max-w-lg border border-border bg-card shadow-xl"
       >
         <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
           <div>
