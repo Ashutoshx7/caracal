@@ -27,7 +27,7 @@ async function toAvatarDataUrl(file: File): Promise<string> {
   const w = bitmap.width * scale;
   const h = bitmap.height * scale;
   ctx.drawImage(bitmap, (size - w) / 2, (size - h) / 2, w, h);
-  return canvas.toDataURL("image/webp", 0.85);
+  return canvas.toDataURL("image/webp", 0.82);
 }
 
 export function AvatarPicker({
@@ -50,8 +50,8 @@ export function AvatarPicker({
       setError("Choose an image file.");
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Image must be under 5 MB.");
+    if (file.size > 2 * 1024 * 1024) {
+      setError("Image must be under 2 MB.");
       return;
     }
     setError(null);
@@ -107,7 +107,7 @@ export function AvatarPicker({
             </Button>
           ) : null}
         </div>
-        <p className="text-xs text-muted-foreground">PNG, JPG, or WEBP. Up to 5 MB. Optional.</p>
+        <p className="text-xs text-muted-foreground">PNG, JPG, or WEBP. Up to 2 MB. Optional.</p>
         {error ? <p className="text-xs text-destructive">{error}</p> : null}
       </div>
 

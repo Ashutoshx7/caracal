@@ -72,13 +72,17 @@ function SettingsPage() {
             <Field
               label="Full name"
               value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
+              maxLength={40}
+              onChange={(e) => setFullName(e.target.value.slice(0, 40))}
             />
             <Field
               label="Display name"
               hint="Optional. How you appear in the Console."
               value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
+              maxLength={24}
+              onChange={(e) =>
+                setDisplayName(e.target.value.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 24))
+              }
             />
             <Field
               label="Account ID"
