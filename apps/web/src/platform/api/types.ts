@@ -269,4 +269,71 @@ export interface ConsoleStatus {
   configured: boolean;
   reachable: boolean;
   apiUrl: string;
+  coordinatorConfigured?: boolean;
+  coordinatorReachable?: boolean;
+  coordinatorUrl?: string;
+}
+
+export type AgentStatus = "active" | "suspended" | "terminated";
+
+export interface Agent {
+  agent_session_id: string;
+  zone_id: string;
+  application_id: string;
+  parent_id: string | null;
+  subject_session_id: string | null;
+  lifecycle: string;
+  labels: string[];
+  status: AgentStatus;
+  depth: number;
+  ttl_seconds: number | null;
+  metadata: Record<string, unknown> | null;
+  spawned_at: string;
+  terminated_at: string | null;
+  last_heartbeat_at: string | null;
+  heartbeat_deadline_at: string | null;
+}
+
+export interface CoordinatorList<T> {
+  items: T[];
+  next_cursor: string | null;
+}
+
+export interface EffectiveAuthority {
+  agent_session_id: string;
+  inbound_edges: DelegationEdge[];
+  effective_scopes: string[];
+  effective_resources: string[];
+  effective_max_hops: number;
+  effective_ttl_seconds: number | null;
+  earliest_expires_at: string | null;
+}
+
+export interface DelegationEdge {
+  id: string;
+  zone_id: string;
+  source_session_id: string;
+  target_session_id: string;
+  issuer_application_id: string | null;
+  receiver_application_id: string | null;
+  parent_edge_id: string | null;
+  resource_id: string | null;
+  scopes: string[];
+  constraints_json: Record<string, unknown> | null;
+  status: string;
+  edge_version: number;
+  expires_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+}
+
+export interface DelegationHop {
+  id: string;
+  source_session_id: string;
+  target_session_id: string;
+  depth: number;
+}
+
+export interface DelegationImpactRow extends DelegationHop {
+  subject_session_id: string | null;
 }

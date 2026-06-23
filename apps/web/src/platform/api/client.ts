@@ -265,6 +265,72 @@ export const consoleApi = {
     },
   },
 
+  agents: {
+    list: async (zoneId: string) => {
+      const res = await request<CoordinatorList<Agent>>(
+        `/coord/zones/${encodeURIComponent(zoneId)}/agents`,
+      );
+      return res.items;
+    },
+    get: (zoneId: string, id: string) =>
+      request<Agent>(`/coord/zones/${encodeURIComponent(zoneId)}/agents/${encodeURIComponent(id)}`),
+    children: async (zoneId: string, id: string) => {
+      const res = await request<CoordinatorList<Agent>>(
+        `/coord/zones/${encodeURIComponent(zoneId)}/agents/${encodeURIComponent(id)}/children`,
+      );
+      return res.items;
+    },
+    effectiveAuthority: (zoneId: string, id: string) =>
+      request<EffectiveAuthority>(
+        `/coord/zones/${encodeURIComponent(zoneId)}/agents/${encodeURIComponent(id)}/effective-authority`,
+      ),
+    suspend: (zoneId: string, id: string) =>
+      request<Agent>(
+        `/coord/zones/${encodeURIComponent(zoneId)}/agents/${encodeURIComponent(id)}/suspend`,
+        { method: "PATCH", body: JSON.stringify({}) },
+      ),
+    resume: (zoneId: string, id: string) =>
+      request<Agent>(
+        `/coord/zones/${encodeURIComponent(zoneId)}/agents/${encodeURIComponent(id)}/resume`,
+        { method: "PATCH", body: JSON.stringify({}) },
+      ),
+    terminate: (zoneId: string, id: string) =>
+      request<void>(
+        `/coord/zones/${encodeURIComponent(zoneId)}/agents/${encodeURIComponent(id)}`,
+        { method: "DELETE" },
+      ),
+  },
+
+  delegations: {
+    active: async (zoneId: string) => {
+      const res = await request<CoordinatorList<DelegationEdge>>(
+        `/coord/zones/${encodeURIComponent(zoneId)}/delegations/active`,
+      );
+      return res.items;
+    },
+    inbound: (zoneId: string, sessionId: string) =>
+      request<DelegationEdge[]>(
+        `/coord/zones/${encodeURIComponent(zoneId)}/delegations/inbound/${encodeURIComponent(sessionId)}`,
+      ),
+    outbound: (zoneId: string, sessionId: string) =>
+      request<DelegationEdge[]>(
+        `/coord/zones/${encodeURIComponent(zoneId)}/delegations/outbound/${encodeURIComponent(sessionId)}`,
+      ),
+    traverse: (zoneId: string, id: string) =>
+      request<DelegationHop[]>(
+        `/coord/zones/${encodeURIComponent(zoneId)}/delegations/${encodeURIComponent(id)}/traverse`,
+      ),
+    impact: (zoneId: string, id: string) =>
+      request<DelegationImpactRow[]>(
+        `/coord/zones/${encodeURIComponent(zoneId)}/delegations/${encodeURIComponent(id)}/impact`,
+      ),
+    revoke: (zoneId: string, id: string) =>
+      request<DelegationEdge>(
+        `/coord/zones/${encodeURIComponent(zoneId)}/delegations/${encodeURIComponent(id)}/revoke`,
+        { method: "PATCH", body: JSON.stringify({}) },
+      ),
+  },
+
   audit: {
     list: async (zoneId: string, limit = 100) => {
       const res = await request<RowList<AuditEvent>>(

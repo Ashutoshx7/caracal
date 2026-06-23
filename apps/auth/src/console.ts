@@ -97,21 +97,38 @@ async function probeReachable(base: string, token: string): Promise<boolean> {
 async function handleStatus(res: ServerResponse): Promise<void> {
   const base = apiUrl();
   const token = adminToken();
+  const coordBase = coordinatorUrl();
+  const coordTok = coordinatorToken();
+  const coordinatorConfigured = Boolean(coordTok);
+  const coordinatorReachable = coordTok ? await probeReachable(coordBase, coordTok) : false;
   if (!token) {
-    sendJson(res, 200, { configured: false, reachable: false, apiUrl: base });
+    sendJson(res, 200, {
+      configured: false,
+      reachable: false,
+      apiUrl: base,
+      coordinatorConfigured,
+      coordinatorReachable,
+      coordinatorUrl: coordBase,
+    });
     return;
   }
   const reachable = await probeReachable(base, token);
-  sendJson(res, 200, { configured: true, reachable, apiUrl: base });
+  sendJson(res, 200, {
+    configured: true,
+    reachable,
+    apiUrl: base,
+    coordinatorConfigured,
+    coordinatorReachable,
+    coordinatorUrl: coordBase,
+  });
 }
 
-async function handleProxy(req: IncomingMessage, res: ServerResponse, rest: string): Promise<void> {
-  const token = adminToken();
-  if (!token) {
-    sendJson(res, 503, { error: "control_plane_not_configured" });
-    return;
-  }
-  const target = `${apiUrl()}${rest}`;
+async function forwardProxy(
+  req: IncomingMessage,
+  res: ServerResponse,
+  target: string,
+  token: string,
+): Promise<void> {
   const method = req.method ?? "GET";
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
 
@@ -136,10 +153,33 @@ async function handleProxy(req: IncomingMessage, res: ServerResponse, rest: stri
     res.setHeader("Cache-Control", "no-store");
     res.end(text);
   } catch {
-    sendJson(res, 502, { error: "control_plane_unreachable" });
+    sendJson(res, 502, { error: "upstream_unreachable" });
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function handleProxy(req: IncomingMessage, res: ServerResponse, rest: string): Promise<void> {
+  const token = adminToken();
+  if (!token) {
+    sendJson(res, 503, { error: "control_plane_not_configured" });
+    return;
+  }
+  await forwardProxy(req, res, `${apiUrl()}${rest}`, token);
+}
+
+// Proxies the agent and delegation runtime surfaces served by the Coordinator.
+async function handleCoordProxy(
+  req: IncomingMessage,
+  res: ServerResponse,
+  rest: string,
+): Promise<void> {
+  const token = coordinatorToken();
+  if (!token) {
+    sendJson(res, 503, { error: "coordinator_not_configured" });
+    return;
+  }
+  await forwardProxy(req, res, `${coordinatorUrl()}${rest}`, token);
 }
 
 // Returns true when the request was a console route and has been handled.
@@ -150,6 +190,11 @@ export async function handleConsole(req: IncomingMessage, res: ServerResponse): 
   const session = await auth.api.getSession({ headers: toWebHeaders(req) });
   if (!session) {
     sendJson(res, 401, { error: "unauthenticated" });
+    return true;
+  }
+
+  if (url.startsWith(`${COORD_PREFIX}/`)) {
+    await handleCoordProxy(req, res, url.slice(COORD_PREFIX.length));
     return true;
   }
 
