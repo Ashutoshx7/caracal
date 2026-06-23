@@ -6,11 +6,21 @@ This file renders the mouse-aware animated characters shown beside the authentic
 */
 import { useEffect, useRef, useState, type RefObject } from "react";
 
+const PALETTE = {
+  violet: "#6C3FF5",
+  periwinkle: "#9D7BF4",
+  lilac: "#ECE7FB",
+  mauve: "#C9A9EC",
+  blush: "#FF9DB0",
+  ink: "#241F2E",
+  white: "#FFFFFF",
+};
+
 interface EyeProps {
   size: number;
   pupilSize: number;
   maxDistance: number;
-  blinking: boolean;
+  lid: number; // 0 = fully shut, 1 = fully open
   forceLookX?: number;
   forceLookY?: number;
 }
@@ -41,34 +51,36 @@ function offsetToward(
   return { x: Math.cos(angle) * distance, y: Math.sin(angle) * distance };
 }
 
-function Eye({ size, pupilSize, maxDistance, blinking, forceLookX, forceLookY }: EyeProps) {
+function Eye({ size, pupilSize, maxDistance, lid, forceLookX, forceLookY }: EyeProps) {
   const mouse = useMouse();
   const ref = useRef<HTMLDivElement>(null);
   const forced = forceLookX !== undefined && forceLookY !== undefined;
   const offset = forced ? { x: forceLookX, y: forceLookY } : offsetToward(ref, mouse, maxDistance);
+  const height = Math.max(2, size * lid);
+  const pupilVisible = lid > 0.22;
 
   return (
     <div
       ref={ref}
-      className="flex items-center justify-center overflow-hidden rounded-full transition-all duration-150"
+      className="flex items-center justify-center overflow-hidden rounded-full"
       style={{
         width: size,
-        height: blinking ? 2 : size,
-        backgroundColor: "#FFFFFF",
+        height,
+        backgroundColor: PALETTE.white,
+        transition: "height 0.16s ease-out",
       }}
     >
-      {blinking ? null : (
-        <div
-          className="rounded-full"
-          style={{
-            width: pupilSize,
-            height: pupilSize,
-            backgroundColor: "#2D2D2D",
-            transform: `translate(${offset.x}px, ${offset.y}px)`,
-            transition: "transform 0.1s ease-out",
-          }}
-        />
-      )}
+      <div
+        className="rounded-full"
+        style={{
+          width: pupilSize,
+          height: pupilSize,
+          backgroundColor: PALETTE.ink,
+          opacity: pupilVisible ? 1 : 0,
+          transform: `translate(${offset.x}px, ${offset.y}px)`,
+          transition: "transform 0.1s ease-out, opacity 0.12s ease-out",
+        }}
+      />
     </div>
   );
 }
@@ -84,7 +96,7 @@ function useBlink() {
           setTimeout(() => {
             setBlinking(false);
             schedule();
-          }, 150);
+          }, 140);
         },
         Math.random() * 4000 + 3000,
       );
@@ -109,6 +121,59 @@ function useFaceLean(ref: RefObject<HTMLDivElement | null>, mouse: { x: number; 
   };
 }
 
+/**
+ * Eye behaviour while a password is being entered, expressed as a continuous lid fraction.
+ * - Hidden password: lids stay shut and lift into a slow recurring "peek" then settle again.
+ * - Revealed password: lids open, watching the form, with an occasional wider, leaning peek.
+ */
+function usePasswordEyes(passwordLength: number, revealed: boolean) {
+  const active = passwordLength > 0;
+  const [phase, setPhase] = useState<"rest" | "peek">("rest");
+
+  useEffect(() => {
+    if (!active) {
+      setPhase("rest");
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout>;
+    const loop = (next: "rest" | "peek") => {
+      setPhase(next);
+      const hold =
+        next === "peek"
+          ? (revealed ? 1100 : 620) + Math.random() * 300
+          : (revealed ? 1400 : 1700) + Math.random() * 1200;
+      timer = setTimeout(() => loop(next === "peek" ? "rest" : "peek"), hold);
+    };
+    timer = setTimeout(() => loop("peek"), 900);
+    return () => clearTimeout(timer);
+  }, [active, revealed]);
+
+  if (!active) {
+    return {
+      engaged: false,
+      lid: 1,
+      lookX: undefined as number | undefined,
+      lookY: undefined as number | undefined,
+    };
+  }
+  if (revealed) {
+    // Watching the typed password: open, peek a touch wider and lean toward it.
+    return {
+      engaged: true,
+      lid: phase === "peek" ? 1 : 0.82,
+      lookX: phase === "peek" ? -5 : -4,
+      lookY: phase === "peek" ? 5 : 3,
+    };
+  }
+  // Hidden: shut, then lift to a half "peek" and settle.
+  return {
+    engaged: true,
+    lid: phase === "peek" ? 0.5 : 0.06,
+    lookX: phase === "peek" ? -4 : undefined,
+    lookY: phase === "peek" ? 3 : undefined,
+  };
+}
+
 export function AnimatedCharacters({
   typing,
   passwordLength,
@@ -119,19 +184,16 @@ export function AnimatedCharacters({
   revealed: boolean;
 }) {
   const mouse = useMouse();
+  const violetBlink = useBlink();
   const tealBlink = useBlink();
-  const inkBlink = useBlink();
+  const pw = usePasswordEyes(passwordLength, revealed);
 
+  const violetRef = useRef<HTMLDivElement>(null);
   const tealRef = useRef<HTMLDivElement>(null);
-  const inkRef = useRef<HTMLDivElement>(null);
   const archRef = useRef<HTMLDivElement>(null);
-  const sideRef = useRef<HTMLDivElement>(null);
+  const amberRef = useRef<HTMLDivElement>(null);
 
   const [glance, setGlance] = useState(false);
-  const [peek, setPeek] = useState(false);
-  const hidingPassword = passwordLength > 0 && !revealed;
-  const watchingPassword = passwordLength > 0 && revealed;
-
   useEffect(() => {
     if (!typing) {
       setGlance(false);
@@ -142,123 +204,162 @@ export function AnimatedCharacters({
     return () => clearTimeout(timer);
   }, [typing]);
 
-  useEffect(() => {
-    if (!watchingPassword) {
-      setPeek(false);
-      return;
-    }
-    const timer = setTimeout(
-      () => {
-        setPeek(true);
-        setTimeout(() => setPeek(false), 800);
-      },
-      Math.random() * 3000 + 2000,
-    );
-    return () => clearTimeout(timer);
-  }, [watchingPassword, peek]);
-
+  const violet = useFaceLean(violetRef, mouse);
   const teal = useFaceLean(tealRef, mouse);
-  const ink = useFaceLean(inkRef, mouse);
   const arch = useFaceLean(archRef, mouse);
-  const side = useFaceLean(sideRef, mouse);
+  const amber = useFaceLean(amberRef, mouse);
 
-  const shy = watchingPassword;
+  const engaged = pw.engaged;
+  const tallHeightBoost = passwordLength > 0 && !revealed;
+  const lidFor = (blink: boolean) => (engaged ? pw.lid : blink ? 0 : 1);
 
   return (
     <div className="relative" style={{ width: 520, height: 380 }}>
-      {/* Accent-purple tall character — back */}
+      {/* Violet operator — back, wearing a soft beanie */}
       <div
-        ref={tealRef}
+        ref={violetRef}
         className="absolute bottom-0 transition-all duration-700 ease-in-out"
         style={{
           left: 70,
           width: 170,
-          height: typing || hidingPassword ? 410 : 376,
-          backgroundColor: "#6C3FF5",
-          borderRadius: "12px 12px 0 0",
+          height: typing || tallHeightBoost ? 410 : 376,
+          backgroundColor: PALETTE.violet,
+          borderRadius: "18px 18px 0 0",
           zIndex: 1,
-          transform: shy
+          transform: engaged
             ? "skewX(0deg)"
-            : typing || hidingPassword
-              ? `skewX(${teal.skew - 12}deg) translateX(36px)`
-              : `skewX(${teal.skew}deg)`,
+            : typing || tallHeightBoost
+              ? `skewX(${violet.skew - 12}deg) translateX(36px)`
+              : `skewX(${violet.skew}deg)`,
           transformOrigin: "bottom center",
         }}
       >
         <div
           className="absolute flex gap-7 transition-all duration-700 ease-in-out"
           style={{
-            left: shy ? 18 : glance ? 52 : 42 + teal.faceX,
-            top: shy ? 34 : glance ? 62 : 38 + teal.faceY,
+            left: engaged ? 44 : glance ? 52 : 42 + violet.faceX,
+            top: engaged ? 44 : glance ? 62 : 40 + violet.faceY,
           }}
         >
           <Eye
-            size={18}
+            size={19}
             pupilSize={7}
             maxDistance={5}
-            blinking={tealBlink}
-            forceLookX={shy ? (peek ? 4 : -4) : glance ? 3 : undefined}
-            forceLookY={shy ? (peek ? 5 : -4) : glance ? 4 : undefined}
+            lid={lidFor(violetBlink)}
+            forceLookX={engaged ? pw.lookX : glance ? 3 : undefined}
+            forceLookY={engaged ? pw.lookY : glance ? 4 : undefined}
           />
           <Eye
-            size={18}
+            size={19}
             pupilSize={7}
             maxDistance={5}
-            blinking={tealBlink}
-            forceLookX={shy ? (peek ? 4 : -4) : glance ? 3 : undefined}
-            forceLookY={shy ? (peek ? 5 : -4) : glance ? 4 : undefined}
+            lid={lidFor(violetBlink)}
+            forceLookX={engaged ? pw.lookX : glance ? 3 : undefined}
+            forceLookY={engaged ? pw.lookY : glance ? 4 : undefined}
+          />
+        </div>
+        <div
+          className="pointer-events-none absolute flex transition-all duration-700 ease-in-out"
+          style={{
+            gap: 46,
+            left: engaged ? 36 : glance ? 44 : 34 + violet.faceX,
+            top: engaged ? 70 : glance ? 88 : 66 + violet.faceY,
+          }}
+        >
+          <span
+            style={{
+              width: 16,
+              height: 9,
+              borderRadius: 9999,
+              backgroundColor: PALETTE.blush,
+              opacity: 0.5,
+            }}
+          />
+          <span
+            style={{
+              width: 16,
+              height: 9,
+              borderRadius: 9999,
+              backgroundColor: PALETTE.blush,
+              opacity: 0.5,
+            }}
           />
         </div>
       </div>
 
-      {/* Ink tall character — middle */}
+      {/* Periwinkle character — middle */}
       <div
-        ref={inkRef}
+        ref={tealRef}
         className="absolute bottom-0 transition-all duration-700 ease-in-out"
         style={{
           left: 230,
-          width: 116,
-          height: 296,
-          backgroundColor: "#B69CFF",
-          borderRadius: "10px 10px 0 0",
+          width: 118,
+          height: 300,
+          backgroundColor: PALETTE.periwinkle,
+          borderRadius: "16px 16px 0 0",
           zIndex: 2,
-          transform: shy
+          transform: engaged
             ? "skewX(0deg)"
             : glance
-              ? `skewX(${ink.skew * 1.5 + 10}deg) translateX(18px)`
-              : typing || hidingPassword
-                ? `skewX(${ink.skew * 1.5}deg)`
-                : `skewX(${ink.skew}deg)`,
+              ? `skewX(${teal.skew * 1.5 + 10}deg) translateX(18px)`
+              : `skewX(${teal.skew * 1.5}deg)`,
           transformOrigin: "bottom center",
         }}
       >
         <div
-          className="absolute flex gap-5 transition-all duration-700 ease-in-out"
+          className="absolute flex gap-2.5 transition-all duration-700 ease-in-out"
           style={{
-            left: shy ? 10 : glance ? 30 : 24 + ink.faceX,
-            top: shy ? 26 : glance ? 12 : 30 + ink.faceY,
+            left: engaged ? 18 : glance ? 30 : 24 + teal.faceX,
+            top: engaged ? 36 : glance ? 16 : 36 + teal.faceY,
           }}
         >
           <Eye
             size={15}
             pupilSize={6}
             maxDistance={4}
-            blinking={inkBlink}
-            forceLookX={shy ? -4 : glance ? 0 : undefined}
-            forceLookY={shy ? -4 : glance ? -4 : undefined}
+            lid={lidFor(tealBlink)}
+            forceLookX={engaged ? pw.lookX : glance ? 0 : undefined}
+            forceLookY={engaged ? pw.lookY : glance ? -4 : undefined}
           />
           <Eye
             size={15}
             pupilSize={6}
             maxDistance={4}
-            blinking={inkBlink}
-            forceLookX={shy ? -4 : glance ? 0 : undefined}
-            forceLookY={shy ? -4 : glance ? -4 : undefined}
+            lid={lidFor(tealBlink)}
+            forceLookX={engaged ? pw.lookX : glance ? 0 : undefined}
+            forceLookY={engaged ? pw.lookY : glance ? -4 : undefined}
+          />
+        </div>
+        <div
+          className="pointer-events-none absolute flex transition-all duration-700 ease-in-out"
+          style={{
+            gap: 30,
+            left: engaged ? 12 : glance ? 24 : 18 + teal.faceX,
+            top: engaged ? 56 : glance ? 38 : 56 + teal.faceY,
+          }}
+        >
+          <span
+            style={{
+              width: 12,
+              height: 7,
+              borderRadius: 9999,
+              backgroundColor: PALETTE.blush,
+              opacity: 0.6,
+            }}
+          />
+          <span
+            style={{
+              width: 12,
+              height: 7,
+              borderRadius: 9999,
+              backgroundColor: PALETTE.blush,
+              opacity: 0.6,
+            }}
           />
         </div>
       </div>
 
-      {/* Soft arch character — front left */}
+      {/* Lilac guardian — front left arch, with a shield crest */}
       <div
         ref={archRef}
         className="absolute bottom-0 transition-all duration-700 ease-in-out"
@@ -267,79 +368,121 @@ export function AnimatedCharacters({
           width: 228,
           height: 188,
           zIndex: 3,
-          backgroundColor: "#EDE9F5",
+          backgroundColor: PALETTE.lilac,
           borderRadius: "114px 114px 0 0",
-          transform: shy ? "skewX(0deg)" : `skewX(${arch.skew}deg)`,
+          transform: engaged ? "skewX(0deg)" : `skewX(${arch.skew}deg)`,
           transformOrigin: "bottom center",
         }}
       >
         <div
+          className="pointer-events-none absolute flex transition-all duration-200 ease-out"
+          style={{
+            gap: 52,
+            left: engaged ? 60 : 68 + arch.faceX,
+            top: engaged ? 96 : 98 + arch.faceY,
+          }}
+        >
+          <span
+            style={{
+              width: 14,
+              height: 8,
+              borderRadius: 9999,
+              backgroundColor: PALETTE.blush,
+              opacity: 0.55,
+            }}
+          />
+          <span
+            style={{
+              width: 14,
+              height: 8,
+              borderRadius: 9999,
+              backgroundColor: PALETTE.blush,
+              opacity: 0.55,
+            }}
+          />
+        </div>
+        <div
           className="absolute flex gap-7 transition-all duration-200 ease-out"
-          style={{ left: shy ? 48 : 78 + arch.faceX, top: shy ? 80 : 86 + arch.faceY }}
+          style={{ left: engaged ? 70 : 78 + arch.faceX, top: engaged ? 82 : 84 + arch.faceY }}
         >
           <Eye
             size={12}
             pupilSize={12}
             maxDistance={5}
-            blinking={false}
-            forceLookX={shy ? -5 : undefined}
-            forceLookY={shy ? -4 : undefined}
+            lid={engaged ? pw.lid : 1}
+            forceLookX={engaged ? pw.lookX : undefined}
+            forceLookY={engaged ? pw.lookY : undefined}
           />
           <Eye
             size={12}
             pupilSize={12}
             maxDistance={5}
-            blinking={false}
-            forceLookX={shy ? -5 : undefined}
-            forceLookY={shy ? -4 : undefined}
+            lid={engaged ? pw.lid : 1}
+            forceLookX={engaged ? pw.lookX : undefined}
+            forceLookY={engaged ? pw.lookY : undefined}
           />
         </div>
       </div>
 
-      {/* Accent arch character — front right */}
+      {/* Mauve character — front right */}
       <div
-        ref={sideRef}
+        ref={amberRef}
         className="absolute bottom-0 transition-all duration-700 ease-in-out"
         style={{
           left: 300,
           width: 132,
           height: 218,
-          backgroundColor: "#CFCAE0",
+          backgroundColor: PALETTE.mauve,
           borderRadius: "66px 66px 0 0",
           zIndex: 4,
-          transform: shy ? "skewX(0deg)" : `skewX(${side.skew}deg)`,
+          transform: engaged ? "skewX(0deg)" : `skewX(${amber.skew}deg)`,
           transformOrigin: "bottom center",
         }}
       >
         <div
-          className="absolute flex gap-5 transition-all duration-200 ease-out"
-          style={{ left: shy ? 18 : 48 + side.faceX, top: shy ? 32 : 38 + side.faceY }}
+          className="absolute flex gap-3 transition-all duration-200 ease-out"
+          style={{ left: engaged ? 42 : 48 + amber.faceX, top: engaged ? 38 : 40 + amber.faceY }}
         >
           <Eye
             size={12}
             pupilSize={12}
             maxDistance={5}
-            blinking={false}
-            forceLookX={shy ? -5 : undefined}
-            forceLookY={shy ? -4 : undefined}
+            lid={engaged ? pw.lid : 1}
+            forceLookX={engaged ? pw.lookX : undefined}
+            forceLookY={engaged ? pw.lookY : undefined}
           />
           <Eye
             size={12}
             pupilSize={12}
             maxDistance={5}
-            blinking={false}
-            forceLookX={shy ? -5 : undefined}
-            forceLookY={shy ? -4 : undefined}
+            lid={engaged ? pw.lid : 1}
+            forceLookX={engaged ? pw.lookX : undefined}
+            forceLookY={engaged ? pw.lookY : undefined}
           />
         </div>
         <div
-          className="absolute h-1 w-16 rounded-full transition-all duration-200 ease-out"
-          style={{
-            backgroundColor: "#2D2D2D",
-            left: shy ? 10 : 38 + side.faceX,
-            top: 84 + side.faceY,
-          }}
-        />
+          className="pointer-events-none absolute flex transition-all duration-200 ease-out"
+          style={{ gap: 40, left: engaged ? 30 : 36 + amber.faceX, top: 64 + amber.faceY }}
+        >
+          <span
+            style={{
+              width: 13,
+              height: 8,
+              borderRadius: 9999,
+              backgroundColor: PALETTE.blush,
+              opacity: 0.5,
+            }}
+          />
+          <span
+            style={{
+              width: 13,
+              height: 8,
+              borderRadius: 9999,
+              backgroundColor: PALETTE.blush,
+              opacity: 0.5,
+            }}
+          />
+        </div>
       </div>
     </div>
   );

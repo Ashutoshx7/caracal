@@ -28,14 +28,14 @@ export function AuthSplitLayout({
         className="relative hidden flex-col justify-between overflow-hidden border-r border-border p-10 text-white lg:flex"
         style={{ backgroundColor: "#121016" }}
       >
-        <Link to="/" className="relative z-10 flex items-center gap-2">
-          <div
-            className="grid h-7 w-7 place-items-center rounded-sm bg-white text-sm font-bold"
-            style={{ color: "#121016" }}
-          >
-            C
-          </div>
-          <span className="font-mono text-sm font-semibold tracking-tight">Caracal</span>
+        <Link to="/" className="relative z-10 flex items-center">
+          <img
+            src="/caracal_dark.png"
+            alt="Caracal"
+            className="h-36 w-auto"
+            width={280}
+            height={64}
+          />
         </Link>
 
         <div className="relative z-10 flex items-end justify-center">
@@ -46,11 +46,18 @@ export function AuthSplitLayout({
           />
         </div>
 
-        <div className="relative z-10 max-w-sm">
-          <p className="text-sm leading-relaxed text-white/65">
-            Authority infrastructure for agents and services. Short-lived, policy-approved mandates
-            with a complete decision trail.
-          </p>
+        <div className="relative z-10 max-w-sm space-y-4">
+          <nav className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-white/55">
+            <Link to="/legal" className="transition-colors hover:text-white">
+              Privacy Policy
+            </Link>
+            <Link to="/legal" className="transition-colors hover:text-white">
+              Terms of Service
+            </Link>
+            <Link to="/legal" className="transition-colors hover:text-white">
+              Licensing
+            </Link>
+          </nav>
         </div>
 
         <div
