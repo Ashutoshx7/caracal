@@ -18,6 +18,8 @@ import type {
   PolicyDetail,
   PolicySet,
   Provider,
+  ProviderInput,
+  ProviderPatchInput,
   Resource,
   RowList,
   Session,
@@ -133,6 +135,20 @@ export const consoleApi = {
       request<Provider>(
         `/v1/zones/${encodeURIComponent(zoneId)}/providers/${encodeURIComponent(id)}`,
       ),
+    create: (zoneId: string, input: ProviderInput) =>
+      request<Provider>(`/v1/zones/${encodeURIComponent(zoneId)}/providers`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    patch: (zoneId: string, id: string, input: ProviderPatchInput) =>
+      request<Provider>(
+        `/v1/zones/${encodeURIComponent(zoneId)}/providers/${encodeURIComponent(id)}`,
+        { method: "PATCH", body: JSON.stringify(input) },
+      ),
+    delete: (zoneId: string, id: string) =>
+      request<void>(`/v1/zones/${encodeURIComponent(zoneId)}/providers/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      }),
   },
 
   policies: {

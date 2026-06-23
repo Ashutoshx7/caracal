@@ -14,6 +14,9 @@ import type {
   Application,
   ApplicationInput,
   ApplicationPatchInput,
+  Provider,
+  ProviderInput,
+  ProviderPatchInput,
   Zone,
   ZoneInput,
   ZonePatchInput,
@@ -148,6 +151,42 @@ export function useProviders(zoneId: string | null) {
     queryKey: keys.providers(zoneId),
     queryFn: () => consoleApi.providers.list(zoneId as string),
     enabled: Boolean(zoneId),
+  });
+}
+
+export function useCreateProvider(zoneId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ProviderInput) => consoleApi.providers.create(zoneId as string, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.providers(zoneId) }),
+  });
+}
+
+export function useUpdateProvider(zoneId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: ProviderPatchInput }) =>
+      consoleApi.providers.patch(zoneId as string, id, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.providers(zoneId) }),
+  });
+}
+
+export function useDeleteProvider(zoneId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => consoleApi.providers.delete(zoneId as string, id),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: keys.providers(zoneId) });
+      const previous = qc.getQueryData<Provider[]>(keys.providers(zoneId));
+      qc.setQueryData<Provider[]>(keys.providers(zoneId), (old) =>
+        old?.filter((provider) => provider.id !== id),
+      );
+      return { previous };
+    },
+    onError: (_error, _id, context) => {
+      if (context?.previous) qc.setQueryData(keys.providers(zoneId), context.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.providers(zoneId) }),
   });
 }
 

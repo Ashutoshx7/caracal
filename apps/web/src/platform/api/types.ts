@@ -104,6 +104,20 @@ export interface Provider {
   updated_at: string;
 }
 
+export interface ProviderInput {
+  name?: string;
+  identifier?: string;
+  kind: ProviderKind;
+  config_json?: Record<string, unknown>;
+}
+
+export interface ProviderPatchInput {
+  name?: string;
+  identifier?: string;
+  kind?: ProviderKind;
+  config_json?: Record<string, unknown>;
+}
+
 export interface Policy {
   id: string;
   zone_id: string;
