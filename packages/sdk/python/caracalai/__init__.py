@@ -18,12 +18,34 @@ from .context import (
 )
 from .coordinator import CoordinatorClient, DelegationConstraints
 from .envelope import Envelope
+from .errors import (
+    AccessDenied,
+    CaracalError,
+    DelegationRequired,
+    InvalidRequest,
+    InvalidToken,
+    OperationNotPermitted,
+    ResourceNotFound,
+    ScopeInsufficient,
+    ServiceUnavailable,
+    ZoneMismatch,
+)
 from .http import CaracalASGIMiddleware, TokenVerifier
 from .json_types import JsonObject, JsonPrimitive, JsonValue
 from .primitives import Grant, LifecycleHook, ServiceAgent
 
 __all__ = [
     "ApprovalRequired",
+    "AccessDenied",
+    "CaracalError",
+    "DelegationRequired",
+    "InvalidRequest",
+    "InvalidToken",
+    "OperationNotPermitted",
+    "ResourceNotFound",
+    "ScopeInsufficient",
+    "ServiceUnavailable",
+    "ZoneMismatch",
     "Caracal",
     "CaracalConfig",
     "CaracalContext",

@@ -16,6 +16,8 @@ from collections.abc import Callable
 
 import httpx
 
+from .errors import ApprovalRequired, raise_for_caracal_error
+
 GRANT_TYPE = "urn:ietf:params:oauth:grant-type:token-exchange"
 REFRESH_LEEWAY_SECONDS = 60
 DEFAULT_TIMEOUT_SECONDS = 5.0
@@ -23,20 +25,7 @@ DEFAULT_TIMEOUT_SECONDS = 5.0
 
 TokenSource = Callable[[], str]
 
-
-class ApprovalRequired(Exception):
-    """Raised when minting a mandate is gated on human approval. The platform has
-    recorded a durable, single-use approval challenge that an authenticated approver
-    must satisfy out-of-band before the mandate can be minted; an agent can never
-    satisfy its own approval. Retry ``mint_mandate`` with ``approval_id`` set to
-    ``challenge_id`` until the approver grants it: the same challenge id is returned
-    while the approval is still pending, and the mint succeeds once it is satisfied."""
-
-    def __init__(self, challenge_id: str, expires_at: str = "") -> None:
-        super().__init__(f"human approval required (challenge {challenge_id})")
-        self.challenge_id = challenge_id
-        self.expires_at = expires_at
-
+__all__ = ["ApprovalRequired", "ClientSecretExchanger", "TokenSource"]
 
 
 def _decode_jwt_exp(token: str) -> float | None:
@@ -167,20 +156,7 @@ class ClientSecretExchanger:
         else:
             with httpx.Client(timeout=self._timeout) as http:
                 resp = http.post(f"{self._sts_url}/oauth/2/token", data=data)
-        if resp.status_code == 401:
-            try:
-                pending = resp.json()
-            except ValueError:
-                pending = {}
-            if (
-                pending.get("error") == "interaction_required"
-                and pending.get("challenge_type") == "human_approval"
-            ):
-                raise ApprovalRequired(
-                    challenge_id=str(pending.get("challenge_id", "")),
-                    expires_at=str(pending.get("challenge_expires_at", "")),
-                )
-        resp.raise_for_status()
+        raise_for_caracal_error(resp)
         body = resp.json()
         token = body.get("access_token")
         if not isinstance(token, str) or not token:
