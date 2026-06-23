@@ -14,6 +14,21 @@ export interface OnboardingStep {
   summary: string;
 }
 
+function CheckIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
 function StepRail({ steps, current }: { steps: OnboardingStep[]; current: number }) {
   return (
     <ol className="flex flex-col gap-1">
@@ -29,20 +44,7 @@ function StepRail({ steps, current }: { steps: OnboardingStep[]; current: number
                 state === "todo" && "border-white/25 text-white/40",
               )}
             >
-              {state === "done" ? (
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                >
-                  <path d="M20 6 9 17l-5-5" />
-                </svg>
-              ) : (
-                index + 1
-              )}
+              {state === "done" ? <CheckIcon /> : index + 1}
             </span>
             <span className="min-w-0">
               <span
@@ -69,6 +71,27 @@ function StepRail({ steps, current }: { steps: OnboardingStep[]; current: number
   );
 }
 
+function MobileProgress({ steps, current }: { steps: OnboardingStep[]; current: number }) {
+  return (
+    <div className="flex items-center gap-3 border-b border-border px-4 py-3 sm:px-6 lg:hidden">
+      <div className="flex flex-1 items-center gap-1.5">
+        {steps.map((step, index) => (
+          <span
+            key={step.title}
+            className={cx(
+              "h-1 flex-1 rounded-full transition-colors",
+              index <= current ? "bg-foreground" : "bg-border",
+            )}
+          />
+        ))}
+      </div>
+      <span className="shrink-0 text-xs font-medium text-muted-foreground">
+        {current + 1}/{steps.length}
+      </span>
+    </div>
+  );
+}
+
 export function OnboardingLayout({
   steps,
   current,
@@ -87,9 +110,9 @@ export function OnboardingLayout({
   footer: ReactNode;
 }) {
   return (
-    <div className="grid min-h-screen lg:grid-cols-[360px_1fr]">
+    <div className="grid h-screen overflow-hidden lg:grid-cols-[340px_1fr] xl:grid-cols-[380px_1fr]">
       <aside
-        className="relative hidden flex-col justify-between overflow-hidden p-10 text-white lg:flex"
+        className="relative hidden flex-col justify-between overflow-hidden p-8 text-white lg:flex xl:p-10"
         style={{ backgroundColor: "#121016" }}
       >
         <Link to="/" className="relative z-10 flex items-center">
@@ -117,32 +140,32 @@ export function OnboardingLayout({
         />
       </aside>
 
-      <main className="flex min-h-screen flex-col bg-background">
-        <div className="border-b border-border px-6 py-3 lg:hidden">
-          <span className="text-xs font-medium text-muted-foreground">
-            Step {current + 1} of {steps.length} · {steps[current]?.title}
-          </span>
-        </div>
+      <main className="flex min-h-0 flex-col bg-background">
+        <MobileProgress steps={steps} current={current} />
 
-        <div className="flex flex-1 flex-col px-6 py-10 sm:px-10 md:px-14 lg:py-14">
-          <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col">
-            <header className="mb-8 animate-fade-in">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                {eyebrow}
-              </span>
-              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground">
-                {title}
-              </h1>
-              <p className="mt-2 max-w-xl text-sm text-muted-foreground">{description}</p>
-            </header>
+        <header className="shrink-0 border-b border-border px-5 py-5 sm:px-8 md:px-12 md:py-6">
+          <div className="mx-auto w-full max-w-2xl animate-fade-in">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              {eyebrow}
+            </span>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+              {title}
+            </h1>
+            <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">{description}</p>
+          </div>
+        </header>
 
-            <div className="flex-1 animate-fade-in">{children}</div>
-
-            <footer className="mt-10 flex items-center justify-between border-t border-border pt-6">
-              {footer}
-            </footer>
+        <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-8 md:px-12">
+          <div key={current} className="mx-auto w-full max-w-2xl animate-fade-in">
+            {children}
           </div>
         </div>
+
+        <footer className="shrink-0 border-t border-border bg-background/95 px-5 py-4 backdrop-blur sm:px-8 md:px-12">
+          <div className="mx-auto flex w-full max-w-2xl items-center justify-between gap-3">
+            {footer}
+          </div>
+        </footer>
       </main>
     </div>
   );

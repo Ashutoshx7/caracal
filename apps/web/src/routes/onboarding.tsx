@@ -8,16 +8,25 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { AvatarPicker } from "@/components/onboarding/AvatarPicker";
+import { IdentityCard } from "@/components/onboarding/IdentityCard";
 import { OnboardingLayout, type OnboardingStep } from "@/components/onboarding/OnboardingLayout";
 import { Button, Card, Field, SectionTitle, Textarea } from "@/components/ui";
 import { useSession } from "@/platform/auth";
 import { requirePendingOnboarding } from "@/platform/auth/guards";
-import { addZone, completeOnboarding, type ProfileRecord } from "@/platform/state/localInstall";
+import {
+  addZone,
+  completeOnboarding,
+  getProfile,
+  type ProfileRecord,
+} from "@/platform/state/localInstall";
 
 export const Route = createFileRoute("/onboarding")({
   beforeLoad: requirePendingOnboarding,
   component: OnboardingPage,
 });
+
+const NAME_MAX = 40;
+const HANDLE_MAX = 24;
 
 const STEPS: OnboardingStep[] = [
   { title: "Profile", summary: "Tell us who you are" },
@@ -52,9 +61,9 @@ function OnboardingPage() {
 
   const [step, setStep] = useState(0);
 
+  const [accountId] = useState(() => getProfile().accountId);
   const [fullName, setFullName] = useState(sessionName);
   const [displayName, setDisplayName] = useState("");
-  const [organization, setOrganization] = useState("");
   const [avatar, setAvatar] = useState("");
 
   const [zoneName, setZoneName] = useState("Production");
@@ -92,9 +101,9 @@ function OnboardingPage() {
     if (!profileValid || !zoneValid) return;
     setSubmitting(true);
     const profile: ProfileRecord = {
+      accountId,
       fullName: fullName.trim(),
       displayName: displayName.trim(),
-      organization: organization.trim(),
       avatar,
     };
     addZone({ name: zoneName.trim(), description: zoneDesc.trim() });
@@ -122,36 +131,55 @@ function OnboardingPage() {
       }
     >
       {step === 0 ? (
-        <div className="flex flex-col gap-6">
-          <AvatarPicker
-            value={avatar}
-            fallbackName={fullName || displayName}
-            onChange={setAvatar}
+        <div className="flex flex-col gap-8">
+          <IdentityCard
+            accountId={accountId}
+            fullName={fullName}
+            displayName={displayName}
+            email={ownerEmail}
+            avatar={avatar}
           />
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <Field
-              label="Full name"
-              placeholder="Ada Lovelace"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              error={showErrors && !profileValid ? "Full name is required." : undefined}
-              autoFocus
+          <div className="flex flex-col gap-6">
+            <AvatarPicker
+              value={avatar}
+              fallbackName={fullName || displayName}
+              onChange={setAvatar}
             />
-            <Field
-              label="Display name"
-              hint="Optional. How you appear in the Console."
-              placeholder="ada"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-            />
-            <Field
-              label="Organization"
-              hint="Optional. Your company or team name."
-              placeholder="Acme"
-              value={organization}
-              onChange={(e) => setOrganization(e.target.value)}
-            />
-            <Field label="Email" value={ownerEmail} readOnly disabled hint="From your account." />
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <Field
+                label="Full name"
+                placeholder="Ada Lovelace"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value.slice(0, NAME_MAX))}
+                maxLength={NAME_MAX}
+                error={showErrors && !profileValid ? "Full name is required." : undefined}
+                autoFocus
+              />
+              <Field
+                label="Display name"
+                hint="Optional. How you appear in the Console."
+                placeholder="ada"
+                value={displayName}
+                onChange={(e) =>
+                  setDisplayName(
+                    e.target.value.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, HANDLE_MAX),
+                  )
+                }
+                maxLength={HANDLE_MAX}
+              />
+              <Field label="Email" value={ownerEmail} readOnly disabled hint="From your account." />
+              <Field
+                label="Account ID"
+                value={accountId}
+                readOnly
+                disabled
+                hint="Generated and locked. Your internal identifier."
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The Community Edition links all zones directly to your account. There are no
+              organizations or teams.
+            </p>
           </div>
         </div>
       ) : null}
@@ -203,8 +231,8 @@ function OnboardingPage() {
             rows={[
               ["Full name", fullName.trim()],
               ["Display name", displayName.trim() || "—"],
-              ["Organization", organization.trim() || "—"],
               ["Email", ownerEmail || "—"],
+              ["Account ID", accountId],
             ]}
             avatar={avatar}
             avatarName={fullName || displayName}
@@ -223,8 +251,8 @@ function OnboardingPage() {
               You are the single owner of this environment.
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              The Community Edition runs as a single user. There are no teams, roles, or invitations
-              to manage.
+              The Community Edition runs as a single user. All zones link directly to your account.
+              There are no organizations, teams, roles, or invitations to manage.
             </p>
           </Card>
         </div>
