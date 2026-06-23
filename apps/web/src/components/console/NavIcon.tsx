@@ -124,8 +124,9 @@ const PATHS: Record<string, ReactNode> = {
   ),
   compliance: (
     <>
-      <path d="M12 3 4 6v5c0 4.5 3.2 7.8 8 10 4.8-2.2 8-5.5 8-10V6l-8-3Z" />
-      <path d="m9 12 2 2 4-4" />
+      <path d="M9 4h6a1 1 0 0 1 1 1v1h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h2V5a1 1 0 0 1 1-1Z" />
+      <path d="M9 5h6v2H9z" />
+      <path d="m9.5 14 2 2 3.5-4" />
     </>
   ),
   analytics: (
