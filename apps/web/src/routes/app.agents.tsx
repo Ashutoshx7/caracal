@@ -13,7 +13,6 @@ import {
   Mono,
   ResourceWorkspace,
 } from "@/components/console/ResourceWorkspace";
-import { LiveBadge } from "@/components/console/LiveBadge";
 import { ModulePage } from "@/components/console/ModulePage";
 import { ZoneScopedPage } from "@/components/console/ZoneScope";
 import { Badge, Button, ConfirmDialog, Skeleton, useToast, type Column } from "@/components/ui";
@@ -213,15 +212,12 @@ function AgentsPage({ zoneId }: { zoneId: string }) {
         description="Live agent sessions and their delegation lineage in this zone."
         breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Agents" }]}
         headerExtra={
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <StatusFilterBar
-              filter={filter}
-              total={allRows.length}
-              counts={counts}
-              onSelect={setFilter}
-            />
-            <LiveBadge label="Live · refreshes every 10s" />
-          </div>
+          <StatusFilterBar
+            filter={filter}
+            total={allRows.length}
+            counts={counts}
+            onSelect={setFilter}
+          />
         }
         rows={rows}
         loading={query.isLoading}

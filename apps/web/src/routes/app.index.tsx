@@ -8,7 +8,6 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { SectionLabel } from "@/components/SiteShell";
-import { LiveBadge } from "@/components/console/LiveBadge";
 import { ModulePage } from "@/components/console/ModulePage";
 import { Badge, Button, EmptyState, Skeleton } from "@/components/ui";
 import { cx } from "@/lib/cx";
@@ -16,40 +15,25 @@ import {
   useActiveZone,
   useApplications,
   useAudit,
-  useConsoleStatus,
   usePolicySets,
   useProviders,
   useResources,
   useSessions,
+  useZones,
 } from "@/platform/api/hooks";
-import type { Application, AuditEvent, ConsoleStatus, Zone } from "@/platform/api/types";
+import type { Application, AuditEvent, Zone } from "@/platform/api/types";
 import { workspaceLabel } from "@/platform/state/localInstall";
 
 export const Route = createFileRoute("/app/")({
   component: DashboardPage,
 });
 
-type Connection = "connecting" | "not_configured" | "unreachable" | "connected";
 type Tone = "ok" | "warn" | "danger" | "muted";
-
-function connectionOf(
-  status: ConsoleStatus | undefined,
-  isLoading: boolean,
-  isError: boolean,
-): Connection {
-  if (isLoading) return "connecting";
-  if (isError || !status) return "unreachable";
-  if (!status.configured) return "not_configured";
-  if (!status.reachable) return "unreachable";
-  return "connected";
-}
 
 function DashboardPage() {
   const workspace = workspaceLabel();
-  const statusQuery = useConsoleStatus();
+  const zonesQuery = useZones();
   const { zones, activeZone } = useActiveZone();
-
-  const connection = connectionOf(statusQuery.data, statusQuery.isLoading, statusQuery.isError);
 
   const frame = (body: ReactNode, actions?: ReactNode) => (
     <ModulePage
@@ -62,28 +46,8 @@ function DashboardPage() {
     </ModulePage>
   );
 
-  if (connection === "connecting") {
+  if (zonesQuery.isLoading) {
     return frame(<DashboardSkeleton />);
-  }
-
-  if (connection === "not_configured") {
-    return frame(
-      <EmptyState
-        title="Control plane not connected"
-        description="No admin credentials were found. Start the local stack with `caracal up` to provision the control plane, then reload."
-        action={<Button onClick={() => statusQuery.refetch()}>Check again</Button>}
-      />,
-    );
-  }
-
-  if (connection === "unreachable") {
-    return frame(
-      <EmptyState
-        title="Control plane unreachable"
-        description={`The control plane at ${statusQuery.data?.apiUrl ?? "the configured endpoint"} is not responding. Confirm the stack is running, then retry.`}
-        action={<Button onClick={() => statusQuery.refetch()}>Retry</Button>}
-      />,
-    );
   }
 
   if (zones.length === 0 || !activeZone) {
@@ -100,24 +64,10 @@ function DashboardPage() {
     );
   }
 
-  return (
-    <ConnectedDashboard
-      zone={activeZone}
-      refreshing={statusQuery.isFetching}
-      onRefresh={() => statusQuery.refetch()}
-    />
-  );
+  return <ConnectedDashboard zone={activeZone} />;
 }
 
-function ConnectedDashboard({
-  zone,
-  refreshing,
-  onRefresh,
-}: {
-  zone: Zone;
-  refreshing: boolean;
-  onRefresh: () => void;
-}) {
+function ConnectedDashboard({ zone }: { zone: Zone }) {
   const workspace = workspaceLabel();
   const zoneId = zone.id;
 
@@ -169,14 +119,6 @@ function ConnectedDashboard({
       title="Dashboard"
       description={`${workspace} · ${zone.name}`}
       breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Dashboard" }]}
-      actions={
-        <div className="flex items-center gap-2">
-          <LiveBadge label="Live" />
-          <Button variant="secondary" size="sm" onClick={onRefresh} loading={refreshing}>
-            Refresh
-          </Button>
-        </div>
-      }
     >
       <div className="space-y-6">
         <PostureStrip

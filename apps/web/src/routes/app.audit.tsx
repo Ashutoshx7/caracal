@@ -12,7 +12,6 @@ import {
   Mono,
   ResourceWorkspace,
 } from "@/components/console/ResourceWorkspace";
-import { LiveBadge } from "@/components/console/LiveBadge";
 import { ZoneScopedPage } from "@/components/console/ZoneScope";
 import { Badge, Skeleton, type Column } from "@/components/ui";
 import { ConsoleApiError } from "@/platform/api/client";
@@ -105,7 +104,6 @@ function AuditPage({ zoneId }: { zoneId: string }) {
       title="Audit"
       description="Authority decisions and security events recorded in this zone. Showing the latest 100 events."
       breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Audit" }]}
-      headerExtra={<LiveBadge label="Live · refreshes every 10s" />}
       rows={rows}
       loading={query.isLoading}
       columns={columns}
