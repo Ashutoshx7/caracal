@@ -10,6 +10,7 @@ import { toNodeHandler } from "better-auth/node";
 import { auth } from "./auth.ts";
 import { handleAccount } from "./account.ts";
 import { loadConfig } from "./config.ts";
+import { authDatabaseKind, closeAuthDatabase } from "./database.ts";
 import { handleConsole } from "./console.ts";
 import { enabledProviders } from "./providers.ts";
 
@@ -81,5 +82,22 @@ const server = createServer((req, res) => {
 });
 
 server.listen(cfg.port, () => {
-  console.log(`caracal-auth listening on ${cfg.baseURL}`);
+  console.log(`caracal-auth listening on ${cfg.baseURL} (database: ${authDatabaseKind})`);
 });
+
+// Release the database connection pool on shutdown so a Postgres-backed deployment does
+// not leak server-side connections across restarts and rolling deploys.
+let closing = false;
+async function shutdown(): Promise<void> {
+  if (closing) return;
+  closing = true;
+  server.close();
+  try {
+    await closeAuthDatabase();
+  } finally {
+    process.exit(0);
+  }
+}
+
+process.on("SIGINT", () => void shutdown());
+process.on("SIGTERM", () => void shutdown());
