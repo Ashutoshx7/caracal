@@ -14,7 +14,7 @@ const CAL_LINK = "rawx18/caracal-enterprise-sales";
 export const Route = createFileRoute("/enterprise")({
   head: () => ({
     meta: [
-      { title: "Enterprise — Caracal" },
+      { title: "Enterprise · Caracal" },
       {
         name: "description",
         content:

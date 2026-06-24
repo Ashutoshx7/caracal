@@ -249,8 +249,8 @@ function OnboardingPage() {
             onEdit={() => setStep(0)}
             rows={[
               ["Full name", fullName.trim()],
-              ["Display name", resolveDisplayName(fullName, displayName) || "—"],
-              ["Email", ownerEmail || "—"],
+              ["Display name", resolveDisplayName(fullName, displayName) || "-"],
+              ["Email", ownerEmail || "-"],
               ["Account ID", accountId],
             ]}
             avatar={avatar}

@@ -17,7 +17,7 @@ export const Route = createFileRoute("/")({
         content:
           "Authority infrastructure for agents and services. Caracal issues short-lived, policy-approved mandates for protected resources and records the decision trail.",
       },
-      { property: "og:title", content: "Caracal — README" },
+      { property: "og:title", content: "Caracal · README" },
       {
         property: "og:description",
         content: "Authority infrastructure for agents and services.",
