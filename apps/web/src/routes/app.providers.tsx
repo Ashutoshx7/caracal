@@ -89,6 +89,22 @@ function errorMessage(error: unknown): string {
   return "Unexpected error.";
 }
 
+// Surfaces the concrete blast radius of deleting a provider: the resources bound to it as
+// their credential source will lose upstream access the moment it is removed.
+function deleteProviderDescription(provider: Provider | null, resources: Resource[]): string {
+  if (!provider) return "";
+  const bound = resources.filter((r) => r.credential_provider_id === provider.id);
+  if (bound.length === 0) {
+    return `Deleting "${provider.name}" removes its credential routing. No resources are bound to it. This cannot be undone.`;
+  }
+  const names = bound
+    .slice(0, 3)
+    .map((r) => r.name)
+    .join(", ");
+  const more = bound.length > 3 ? ` and ${bound.length - 3} more` : "";
+  return `Deleting "${provider.name}" will break upstream access for ${bound.length} bound resource${bound.length === 1 ? "" : "s"} (${names}${more}). They will fail until rebound to another provider. This cannot be undone.`;
+}
+
 function routingSummary(provider: Provider): string {
   const config = provider.config_json ?? {};
   const endpoint = config.token_endpoint ?? config.authorization_endpoint;
@@ -110,6 +126,7 @@ function routingSummary(provider: Provider): string {
 function ProvidersPage({ zoneId, zoneName }: { zoneId: string; zoneName: string }) {
   const toast = useToast();
   const query = useProviders(zoneId);
+  const resourcesQuery = useResources(zoneId);
   const createProvider = useCreateProvider(zoneId);
   const updateProvider = useUpdateProvider(zoneId);
   const deleteProvider = useDeleteProvider(zoneId);
@@ -296,7 +313,7 @@ function ProvidersPage({ zoneId, zoneName }: { zoneId: string; zoneName: string 
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
         title="Delete provider"
-        description={`Deleting "${deleteTarget?.name ?? ""}" removes its credential routing. Resources bound to it will lose upstream access. This cannot be undone.`}
+        description={deleteProviderDescription(deleteTarget, resourcesQuery.data ?? [])}
         confirmLabel="Delete provider"
         tone="danger"
         onConfirm={async () => {

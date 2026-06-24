@@ -151,7 +151,9 @@ function ConnectedDashboard({ zone }: { zone: Zone }) {
 
         {!setupComplete ? (
           <SetupStrip
+            hasApplication={appRows.length > 0}
             hasProvider={providerRows.length > 0}
+            hasResource={resourceRows.length > 0}
             hasPolicySet={policySetRows.some((ps) => ps.active_version_id)}
           />
         ) : null}

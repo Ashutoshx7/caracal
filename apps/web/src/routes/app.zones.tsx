@@ -53,6 +53,19 @@ function errorMessage(error: unknown): string {
   return "Unexpected error.";
 }
 
+// The control plane is the authority on live dynamic clients: a PATCH that disables DCR
+// while clients are still live returns 409 dcr_shutdown_required with the live count under
+// a FOR UPDATE lock. Reading it back lets the UI force an explicit keep/revoke decision even
+// when the optimistic pre-check could not see the clients (status fetch failed or raced).
+function liveDcrFromError(error: unknown): number | null {
+  if (error instanceof ConsoleApiError && error.code === "dcr_shutdown_required") {
+    const detail = error.detail as { live_dcr_applications?: unknown } | undefined;
+    const count = detail?.live_dcr_applications;
+    return typeof count === "number" ? count : 0;
+  }
+  return null;
+}
+
 function ZonesPage() {
   const toast = useToast();
   const session = useSession();
@@ -306,25 +319,34 @@ function ZonesPage() {
           };
           // Disabling DCR on a zone that still has live dynamic clients forces an
           // explicit operator decision: keep them running through a drain window, or
-          // revoke them now. Only prompt when there is something to lose.
+          // revoke them now. Pre-check so the prompt appears before the write; if the
+          // status is known to be zero, send keep_live so the backend skips the gate.
+          // If the status is unknown (fetch failed/raced), do NOT assume zero — send
+          // without a shutdown choice and let the backend's authoritative 409 drive the
+          // keep/revoke prompt, so live clients are never silently kept.
           if (editTarget.dcr_enabled && !values.dcrEnabled) {
-            let liveCount = 0;
+            let liveCount: number | null = null;
             try {
               liveCount = (await consoleApi.zones.dcrStatus(editTarget.id)).live_dcr_applications;
             } catch {
-              liveCount = 0;
+              liveCount = null;
             }
-            if (liveCount > 0) {
+            if (liveCount !== null && liveCount > 0) {
               setDcrShutdown({ zone: editTarget, input, liveCount });
               return;
             }
-            input.dcr_shutdown = "keep_live";
+            if (liveCount === 0) input.dcr_shutdown = "keep_live";
           }
           try {
             await updateZone.mutateAsync({ id: editTarget.id, input });
             setEditTarget(null);
             toast({ tone: "success", title: "Zone updated", description: values.name });
           } catch (err) {
+            const live = liveDcrFromError(err);
+            if (live !== null) {
+              setDcrShutdown({ zone: editTarget, input, liveCount: live });
+              return;
+            }
             toast({ tone: "error", title: "Update failed", description: errorMessage(err) });
           }
         }}
@@ -334,6 +356,19 @@ function ZonesPage() {
         zone={deleteTarget}
         isActive={deleteTarget?.id === activeId}
         busy={deleteZone.isPending}
+        revoking={updateZone.isPending}
+        onRevokeDcr={async () => {
+          if (!deleteTarget) return;
+          await updateZone.mutateAsync({
+            id: deleteTarget.id,
+            input: { dcr_enabled: false, dcr_shutdown: "revoke_live" },
+          });
+          toast({
+            tone: "info",
+            title: "Dynamic clients revoked",
+            description: "Live DCR clients and their sessions were revoked.",
+          });
+        }}
         onClose={() => setDeleteTarget(null)}
         onConfirm={async () => {
           if (!deleteTarget) return;
@@ -365,9 +400,7 @@ function ZonesPage() {
               tone: mode === "revoke_live" ? "info" : "success",
               title: "Zone updated",
               description:
-                mode === "revoke_live"
-                  ? "Dynamic clients revoked."
-                  : "Dynamic clients kept live.",
+                mode === "revoke_live" ? "Dynamic clients revoked." : "Dynamic clients kept live.",
             });
           } catch (err) {
             toast({ tone: "error", title: "Update failed", description: errorMessage(err) });
