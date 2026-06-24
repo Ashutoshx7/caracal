@@ -7,6 +7,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { printError, printInfo, printWarn, style } from '../style.ts'
+import { devAuthDatabaseUrl, devAuthSecret } from './authStore.ts'
 
 const EXT = process.platform === 'win32' ? '.exe' : ''
 const PNPM_BIN = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
@@ -25,6 +26,20 @@ function apiUrl(): string {
 
 function coordinatorUrl(): string {
   return (process.env.CARACAL_COORDINATOR_URL ?? DEFAULT_COORDINATOR_URL).replace(/\/$/, '')
+}
+
+// The auth backend runs on PostgreSQL in every environment. For a local `caracal web`
+// session, point it at the dev stack's Postgres on localhost and provision its signing
+// secret automatically, so the operator never configures a database or secret by hand.
+// Explicit operator-provided values always win.
+function authStoreEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {}
+  if (!process.env.CARACAL_AUTH_DATABASE_URL && !process.env.DATABASE_URL) {
+    const url = devAuthDatabaseUrl()
+    if (url) env.CARACAL_AUTH_DATABASE_URL = url
+  }
+  if (!process.env.CARACAL_AUTH_SECRET) env.CARACAL_AUTH_SECRET = devAuthSecret()
+  return env
 }
 
 // Probe a service's public health endpoint. The admin API and Coordinator both expose
@@ -230,7 +245,11 @@ export async function webCommand(argv: string[]): Promise<void> {
     backend: {
       label: 'backend-for-frontend',
       args: backendArgs,
-      env: { CARACAL_AUTH_PORT: String(parsed.authPort), CARACAL_WEB_ORIGIN: webOrigin },
+      env: {
+        CARACAL_AUTH_PORT: String(parsed.authPort),
+        CARACAL_WEB_ORIGIN: webOrigin,
+        ...authStoreEnv(),
+      },
     },
     web: { label: 'web UI', args: webArgs, env: { VITE_CARACAL_AUTH_URL: authUrl } },
   }

@@ -463,10 +463,10 @@ export interface Paged<T> {
 
 export interface AuditQuery {
   decision?: string;
-  subject_id?: string;
-  action?: string;
-  occurred_after?: string;
-  occurred_before?: string;
+  event_type?: string;
+  request_id?: string;
+  since?: string;
+  until?: string;
   limit?: number;
   cursor?: string;
 }

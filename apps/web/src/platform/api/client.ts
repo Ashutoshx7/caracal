@@ -427,18 +427,28 @@ export const consoleApi = {
   },
 
   sessions: {
-    list: async (zoneId: string, limit = 100) => {
+    list: async (zoneId: string, query: SessionQuery = {}): Promise<Paged<Session>> => {
       const res = await request<RowList<Session>>(
-        `/v1/zones/${encodeURIComponent(zoneId)}/sessions?limit=${limit}`,
+        `/v1/zones/${encodeURIComponent(zoneId)}/sessions${queryString({
+          limit: query.limit ?? 100,
+          cursor: query.cursor,
+          status: query.status,
+          subject_id: query.subject_id,
+        })}`,
       );
-      return res.rows;
+      return { rows: res.rows, nextCursor: res.next_cursor };
     },
   },
 
   agents: {
-    list: async (zoneId: string) => {
+    list: async (zoneId: string, query: AgentQuery = {}) => {
       const res = await request<CoordinatorList<Agent>>(
-        `/coord/zones/${encodeURIComponent(zoneId)}/agents`,
+        `/coord/zones/${encodeURIComponent(zoneId)}/agents${queryString({
+          status: query.status,
+          lifecycle: query.lifecycle,
+          application_id: query.application_id,
+          label: query.label,
+        })}`,
       );
       return res.items;
     },
@@ -500,11 +510,19 @@ export const consoleApi = {
   },
 
   audit: {
-    list: async (zoneId: string, limit = 100) => {
+    list: async (zoneId: string, query: AuditQuery = {}): Promise<Paged<AuditEvent>> => {
       const res = await request<RowList<AuditEvent>>(
-        `/v1/zones/${encodeURIComponent(zoneId)}/audit?limit=${limit}`,
+        `/v1/zones/${encodeURIComponent(zoneId)}/audit${queryString({
+          limit: query.limit ?? 100,
+          cursor: query.cursor,
+          decision: query.decision,
+          event_type: query.event_type,
+          request_id: query.request_id,
+          since: query.since,
+          until: query.until,
+        })}`,
       );
-      return res.rows;
+      return { rows: res.rows, nextCursor: res.next_cursor };
     },
     byRequest: (zoneId: string, requestId: string) =>
       request<AuditDetail[]>(
@@ -515,4 +533,108 @@ export const consoleApi = {
         `/v1/zones/${encodeURIComponent(zoneId)}/audit/by-request/${encodeURIComponent(requestId)}/explain`,
       ),
   },
+
+  providerGrants: {
+    list: async (zoneId: string, query: ProviderGrantListQuery = {}) => {
+      const res = await request<RowList<ProviderGrant>>(
+        `/v1/zones/${encodeURIComponent(zoneId)}/grants${queryString({
+          provider_id: query.provider_id,
+          resource_id: query.resource_id,
+          user_id: query.user_id,
+          status: query.status,
+        })}`,
+      );
+      return res.rows;
+    },
+    authorize: (zoneId: string, input: ProviderGrantAuthorizeInput) =>
+      request<ProviderGrantAuthorizeResult>(
+        `/v1/zones/${encodeURIComponent(zoneId)}/provider-grants/oauth/authorize`,
+        { method: "POST", body: JSON.stringify(input) },
+      ),
+    revoke: (zoneId: string, input: ProviderGrantRevokeInput) =>
+      request<ProviderGrant>(`/v1/zones/${encodeURIComponent(zoneId)}/provider-grants/revoke`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+  },
+
+  control: {
+    list: async (zoneId: string): Promise<ControlKey[]> => {
+      const apps = (await fetchAllPages<Application>(
+        `/v1/zones/${encodeURIComponent(zoneId)}/applications`,
+      )).rows;
+      return apps.filter(isControlKeyApplication).map(controlKeyFromApplication);
+    },
+    create: async (
+      zoneId: string,
+      input: ControlKeyCreateInput,
+    ): Promise<ControlKeyCreateResult> => {
+      await ensureControlResource(zoneId);
+      const traits = [
+        CONTROL_INVOKE_TRAIT,
+        ...input.scopes.map((scope) => `${CONTROL_SCOPE_PREFIX}${scope}`),
+        ...(input.maxTtlSeconds ? [`${CONTROL_MAX_TTL_PREFIX}${input.maxTtlSeconds}`] : []),
+        ...(input.expiresAt ? [`${CONTROL_EXPIRES_PREFIX}${input.expiresAt}`] : []),
+      ];
+      const app = await request<Application>(
+        `/v1/zones/${encodeURIComponent(zoneId)}/applications`,
+        {
+          method: "POST",
+          body: JSON.stringify({ name: input.name, registration_method: "managed", traits }),
+        },
+      );
+      if (!app.client_secret) throw new ConsoleApiError(500, "missing_client_secret");
+      return {
+        id: app.id,
+        name: app.name,
+        clientSecret: app.client_secret,
+        scopes: [...input.scopes].sort(),
+        maxTtlSeconds: input.maxTtlSeconds,
+        expiresAt: input.expiresAt,
+      };
+    },
+    rotate: async (zoneId: string, id: string): Promise<{ id: string; clientSecret: string }> => {
+      const clientSecret = generateClientSecret();
+      await request<{ id: string; name: string }>(
+        `/v1/zones/${encodeURIComponent(zoneId)}/applications/${encodeURIComponent(id)}`,
+        { method: "PATCH", body: JSON.stringify({ client_secret: clientSecret }) },
+      );
+      return { id, clientSecret };
+    },
+    revoke: (zoneId: string, id: string) =>
+      request<void>(
+        `/v1/zones/${encodeURIComponent(zoneId)}/applications/${encodeURIComponent(id)}`,
+        { method: "DELETE" },
+      ),
+  },
 };
+
+// Ensures the zone-bound control resource exists with the full permission surface so STS
+// can validate control tokens. Mirrors the engine's ensureControlResource for the browser.
+async function ensureControlResource(zoneId: string): Promise<void> {
+  const resources = (await fetchAllPages<Resource>(
+    `/v1/zones/${encodeURIComponent(zoneId)}/resources`,
+  )).rows;
+  const current = resources.find((resource) => resource.identifier === CONTROL_AUDIENCE);
+  if (!current) {
+    await request<Resource>(`/v1/zones/${encodeURIComponent(zoneId)}/resources`, {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Control API",
+        identifier: CONTROL_AUDIENCE,
+        scopes: CONTROL_SCOPES,
+      }),
+    });
+    return;
+  }
+  const currentScopes = [...current.scopes].sort();
+  const matches =
+    currentScopes.length === CONTROL_SCOPES.length &&
+    CONTROL_SCOPES.every((scope, index) => scope === currentScopes[index]);
+  if (!matches) {
+    await request<Resource>(
+      `/v1/zones/${encodeURIComponent(zoneId)}/resources/${encodeURIComponent(current.id)}`,
+      { method: "PATCH", body: JSON.stringify({ scopes: CONTROL_SCOPES }) },
+    );
+  }
+}
