@@ -5,6 +5,7 @@ Caracal, a product of Garudex Labs
 This file defines the Audit route.
 */
 import { createFileRoute } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 
 import {
   DetailField,
@@ -13,10 +14,11 @@ import {
   ResourceWorkspace,
 } from "@/components/console/ResourceWorkspace";
 import { ZoneScopedPage } from "@/components/console/ZoneScope";
-import { Badge, Skeleton, type Column } from "@/components/ui";
+import { Badge, Button, Field, Select, Skeleton, type Column } from "@/components/ui";
+import { cx } from "@/lib/cx";
 import { ConsoleApiError } from "@/platform/api/client";
-import { useAudit, useDecisionTrace } from "@/platform/api/hooks";
-import type { AuditEvent } from "@/platform/api/types";
+import { useAuditFeed, useDecisionTrace } from "@/platform/api/hooks";
+import type { AuditEvent, AuditQuery } from "@/platform/api/types";
 
 export const Route = createFileRoute("/app/audit")({
   component: AuditRoute,
@@ -51,8 +53,31 @@ function decisionTone(decision: string | null): "success" | "danger" | "warning"
 }
 
 function AuditPage({ zoneId }: { zoneId: string }) {
-  const query = useAudit(zoneId);
-  const rows = query.data ?? [];
+  const [decision, setDecision] = useState<string>("all");
+  const [eventType, setEventType] = useState("");
+  const [since, setSince] = useState("");
+  const [until, setUntil] = useState("");
+
+  const serverQuery = useMemo<AuditQuery>(() => {
+    const q: AuditQuery = {};
+    if (decision !== "all") q.decision = decision;
+    if (eventType.trim()) q.event_type = eventType.trim();
+    if (since) {
+      const ts = Date.parse(since);
+      if (Number.isFinite(ts)) q.since = new Date(ts).toISOString();
+    }
+    if (until) {
+      const ts = Date.parse(until);
+      if (Number.isFinite(ts)) q.until = new Date(ts).toISOString();
+    }
+    return q;
+  }, [decision, eventType, since, until]);
+
+  const feed = useAuditFeed(zoneId, serverQuery);
+  const rows = useMemo(
+    () => (feed.data?.pages ?? []).flatMap((page) => page.rows),
+    [feed.data],
+  );
 
   const columns: Column<AuditEvent>[] = [
     {
@@ -102,15 +127,31 @@ function AuditPage({ zoneId }: { zoneId: string }) {
   return (
     <ResourceWorkspace
       title="Audit"
-      description="Authority decisions and security events recorded in this zone. Showing the latest 100 events."
+      description="Authority decisions and security events recorded in this zone."
       breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Audit" }]}
       rows={rows}
-      loading={query.isLoading}
+      loading={feed.isLoading}
       columns={columns}
       rowKey={(e) => e.id}
       pageSize={12}
+      headerExtra={
+        <AuditFilterBar
+          decision={decision}
+          eventType={eventType}
+          since={since}
+          until={until}
+          loaded={rows.length}
+          hasMore={Boolean(feed.hasNextPage)}
+          fetchingMore={feed.isFetchingNextPage}
+          onDecision={setDecision}
+          onEventType={setEventType}
+          onSince={setSince}
+          onUntil={setUntil}
+          onLoadMore={() => feed.fetchNextPage()}
+        />
+      }
       search={{
-        placeholder: "Search by event or request ID…",
+        placeholder: "Search loaded events by type or request ID…",
         match: (e, q) =>
           e.event_type.toLowerCase().includes(q) ||
           (e.request_id ?? "").toLowerCase().includes(q) ||
@@ -118,9 +159,9 @@ function AuditPage({ zoneId }: { zoneId: string }) {
       }}
       sortOptions={[{ id: "recent", label: "Most recent" }]}
       empty={{
-        title: query.isError ? "Could not load audit" : "No audit events",
-        description: query.isError
-          ? errorMessage(query.error)
+        title: feed.isError ? "Could not load audit" : "No audit events",
+        description: feed.isError
+          ? errorMessage(feed.error)
           : "Authority decisions and security events will appear here as traffic flows through this zone.",
       }}
       detail={{
@@ -130,6 +171,83 @@ function AuditPage({ zoneId }: { zoneId: string }) {
         render: (e) => <AuditDetailView zoneId={zoneId} event={e} />,
       }}
     />
+  );
+}
+
+// Server-side audit filters keep large zones searchable: filters run against the control
+// plane and the cursor "Load more" pulls additional pages on demand, rather than scanning
+// only the latest page client-side.
+function AuditFilterBar({
+  decision,
+  eventType,
+  since,
+  until,
+  loaded,
+  hasMore,
+  fetchingMore,
+  onDecision,
+  onEventType,
+  onSince,
+  onUntil,
+  onLoadMore,
+}: {
+  decision: string;
+  eventType: string;
+  since: string;
+  until: string;
+  loaded: number;
+  hasMore: boolean;
+  fetchingMore: boolean;
+  onDecision: (v: string) => void;
+  onEventType: (v: string) => void;
+  onSince: (v: string) => void;
+  onUntil: (v: string) => void;
+  onLoadMore: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border border-border bg-muted/20 p-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Select label="Decision" value={decision} onChange={(e) => onDecision(e.target.value)}>
+          <option value="all">All decisions</option>
+          <option value="allow">Allow</option>
+          <option value="deny">Deny</option>
+          <option value="partial">Partial</option>
+        </Select>
+        <Field
+          label="Event type"
+          placeholder="TokenExchange"
+          value={eventType}
+          onChange={(e) => onEventType(e.target.value)}
+        />
+        <Field
+          label="Since"
+          type="datetime-local"
+          value={since}
+          onChange={(e) => onSince(e.target.value)}
+        />
+        <Field
+          label="Until"
+          type="datetime-local"
+          value={until}
+          onChange={(e) => onUntil(e.target.value)}
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs text-muted-foreground">
+          {loaded} event{loaded === 1 ? "" : "s"} loaded
+          {hasMore ? " · more available" : ""}
+        </span>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onLoadMore}
+          disabled={!hasMore}
+          loading={fetchingMore}
+        >
+          {hasMore ? "Load more" : "All loaded"}
+        </Button>
+      </div>
+    </div>
   );
 }
 

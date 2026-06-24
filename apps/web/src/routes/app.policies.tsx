@@ -121,11 +121,15 @@ function PolicySetsTab({
   );
   const [simulateTarget, setSimulateTarget] = useState<PolicySet | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PolicySet | null>(null);
+  const [confirmActivation, setConfirmActivation] = useState<{
+    set: PolicySet;
+    result: ComposerResult;
+  } | null>(null);
 
   const rows = query.data ?? [];
   const busy = createSet.isPending || addVersion.isPending || activate.isPending;
 
-  async function handleCompose(result: ComposerResult) {
+  async function runCompose(result: ComposerResult) {
     try {
       if (composer?.mode === "create") {
         const set = await createSet.mutateAsync({
@@ -155,6 +159,18 @@ function PolicySetsTab({
     } catch (err) {
       toast({ tone: "error", title: "Compose failed", description: errorMessage(err) });
     }
+  }
+
+  // Activating a new version that replaces a live one rewrites enforcement for the whole
+  // zone, so confirm that specific case. First activations (zone currently deny-all) are
+  // the desired safe path and proceed without an extra gate.
+  async function handleCompose(result: ComposerResult) {
+    if (result.activateNow && composer?.mode === "version" && composer.set?.active_version_id) {
+      setComposer(null);
+      setConfirmActivation({ set: composer.set, result });
+      return;
+    }
+    await runCompose(result);
   }
 
   const columns: Column<PolicySet>[] = [
@@ -274,6 +290,33 @@ function PolicySetsTab({
             toast({ tone: "info", title: "Policy set deleted", description: deleteTarget.name });
           } catch (err) {
             toast({ tone: "error", title: "Delete failed", description: errorMessage(err) });
+          }
+        }}
+      />
+      <ConfirmDialog
+        open={confirmActivation !== null}
+        onClose={() => setConfirmActivation(null)}
+        title="Replace active enforcement"
+        description={`"${confirmActivation?.set.name ?? ""}" already governs this zone. Activating the new version immediately replaces the live policy for every request. Simulate first if you are unsure.`}
+        confirmLabel="Activate new version"
+        tone="danger"
+        onConfirm={async () => {
+          const pending = confirmActivation;
+          if (!pending) return;
+          setConfirmActivation(null);
+          try {
+            const version = await addVersion.mutateAsync({
+              id: pending.set.id,
+              manifest: pending.result.manifest,
+            });
+            await activate.mutateAsync({ id: pending.set.id, versionId: version.version_id });
+            toast({
+              tone: "success",
+              title: "Version composed and activated",
+              description: pending.set.name,
+            });
+          } catch (err) {
+            toast({ tone: "error", title: "Compose failed", description: errorMessage(err) });
           }
         }}
       />

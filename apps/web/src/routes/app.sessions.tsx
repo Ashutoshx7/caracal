@@ -5,6 +5,7 @@ Caracal, a product of Garudex Labs
 This file defines the Sessions route.
 */
 import { createFileRoute } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 
 import {
   DetailField,
@@ -13,10 +14,10 @@ import {
   ResourceWorkspace,
 } from "@/components/console/ResourceWorkspace";
 import { ZoneScopedPage } from "@/components/console/ZoneScope";
-import { Badge, type Column } from "@/components/ui";
+import { Badge, Button, Field, Select, type Column } from "@/components/ui";
 import { ConsoleApiError } from "@/platform/api/client";
-import { useSessions } from "@/platform/api/hooks";
-import type { Session } from "@/platform/api/types";
+import { useSessionsFeed } from "@/platform/api/hooks";
+import type { Session, SessionQuery } from "@/platform/api/types";
 
 export const Route = createFileRoute("/app/sessions")({
   component: SessionsRoute,
@@ -50,8 +51,21 @@ function statusTone(status: string): "success" | "muted" | "danger" {
 }
 
 function SessionsPage({ zoneId }: { zoneId: string }) {
-  const query = useSessions(zoneId);
-  const rows = query.data ?? [];
+  const [status, setStatus] = useState<string>("all");
+  const [subject, setSubject] = useState("");
+
+  const serverQuery = useMemo<SessionQuery>(() => {
+    const q: SessionQuery = {};
+    if (status !== "all") q.status = status;
+    if (subject.trim()) q.subject_id = subject.trim();
+    return q;
+  }, [status, subject]);
+
+  const feed = useSessionsFeed(zoneId, serverQuery);
+  const rows = useMemo(
+    () => (feed.data?.pages ?? []).flatMap((page) => page.rows),
+    [feed.data],
+  );
 
   const columns: Column<Session>[] = [
     {
@@ -97,11 +111,23 @@ function SessionsPage({ zoneId }: { zoneId: string }) {
       description="Authenticated subject sessions issued in this zone. Sessions end by expiry, grant revocation, or agent termination."
       breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Sessions" }]}
       rows={rows}
-      loading={query.isLoading}
+      loading={feed.isLoading}
       columns={columns}
       rowKey={(s) => s.id}
+      headerExtra={
+        <SessionFilterBar
+          status={status}
+          subject={subject}
+          loaded={rows.length}
+          hasMore={Boolean(feed.hasNextPage)}
+          fetchingMore={feed.isFetchingNextPage}
+          onStatus={setStatus}
+          onSubject={setSubject}
+          onLoadMore={() => feed.fetchNextPage()}
+        />
+      }
       search={{
-        placeholder: "Search by subject…",
+        placeholder: "Search loaded sessions by subject…",
         match: (s, q) =>
           s.subject_id.toLowerCase().includes(q) || s.session_type.toLowerCase().includes(q),
       }}
@@ -110,9 +136,9 @@ function SessionsPage({ zoneId }: { zoneId: string }) {
         { id: "subject", label: "Subject" },
       ]}
       empty={{
-        title: query.isError ? "Could not load sessions" : "No sessions",
-        description: query.isError
-          ? errorMessage(query.error)
+        title: feed.isError ? "Could not load sessions" : "No sessions",
+        description: feed.isError
+          ? errorMessage(feed.error)
           : "Sessions appear here once subjects authenticate in this zone.",
       }}
       detail={{
@@ -121,6 +147,61 @@ function SessionsPage({ zoneId }: { zoneId: string }) {
         render: (s) => <SessionDetail session={s} />,
       }}
     />
+  );
+}
+
+// Server-side session filters and cursor pagination so operators can locate a subject's
+// session in enterprise-scale zones instead of scanning only the first page.
+function SessionFilterBar({
+  status,
+  subject,
+  loaded,
+  hasMore,
+  fetchingMore,
+  onStatus,
+  onSubject,
+  onLoadMore,
+}: {
+  status: string;
+  subject: string;
+  loaded: number;
+  hasMore: boolean;
+  fetchingMore: boolean;
+  onStatus: (v: string) => void;
+  onSubject: (v: string) => void;
+  onLoadMore: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border border-border bg-muted/20 p-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Select label="Status" value={status} onChange={(e) => onStatus(e.target.value)}>
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="revoked">Revoked</option>
+          <option value="expired">Expired</option>
+        </Select>
+        <Field
+          label="Subject"
+          placeholder="user@example.com"
+          value={subject}
+          onChange={(e) => onSubject(e.target.value)}
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs text-muted-foreground">
+          {loaded} session{loaded === 1 ? "" : "s"} loaded{hasMore ? " · more available" : ""}
+        </span>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onLoadMore}
+          disabled={!hasMore}
+          loading={fetchingMore}
+        >
+          {hasMore ? "Load more" : "All loaded"}
+        </Button>
+      </div>
+    </div>
   );
 }
 
