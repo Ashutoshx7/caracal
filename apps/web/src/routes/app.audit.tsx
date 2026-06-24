@@ -164,14 +164,14 @@ function AuditPage({
         e.decision ? (
           <Badge tone={decisionTone(e.decision)}>{e.decision}</Badge>
         ) : (
-          <span className="text-sm text-muted-foreground">—</span>
+          <span className="text-sm text-muted-foreground">-</span>
         ),
     },
     {
       id: "status",
       header: "Status",
       cell: (e) => (
-        <span className="text-xs text-muted-foreground">{e.evaluation_status ?? "—"}</span>
+        <span className="text-xs text-muted-foreground">{e.evaluation_status ?? "-"}</span>
       ),
     },
     {
@@ -388,7 +388,7 @@ function AuditDetailView({ zoneId, event }: { zoneId: string; event: AuditEvent 
             <Mono>{event.request_id}</Mono>
           </DetailField>
         ) : null}
-        <DetailField label="Evaluation">{event.evaluation_status ?? "—"}</DetailField>
+        <DetailField label="Evaluation">{event.evaluation_status ?? "-"}</DetailField>
         <DetailField label="Occurred">{new Date(event.occurred_at).toLocaleString()}</DetailField>
       </DetailGroup>
 
@@ -447,7 +447,7 @@ function DecisionTraceView({ zoneId, requestId }: { zoneId: string; requestId: s
                 {ev.decision ? (
                   <Badge tone={decisionTone(ev.decision)}>{ev.decision}</Badge>
                 ) : (
-                  <span className="text-muted-foreground">{ev.evaluation_status ?? "—"}</span>
+                  <span className="text-muted-foreground">{ev.evaluation_status ?? "-"}</span>
                 )}
               </li>
             ))}
@@ -535,7 +535,7 @@ function AdminAuditPage({
       header: "Actor",
       cell: (e) => (
         <div className="min-w-0">
-          <div className="truncate text-sm text-foreground">{e.actor_name ?? "—"}</div>
+          <div className="truncate text-sm text-foreground">{e.actor_name ?? "-"}</div>
           <div className="truncate text-[11px] text-muted-foreground">{e.actor_scope ?? ""}</div>
         </div>
       ),
@@ -549,7 +549,7 @@ function AdminAuditPage({
         if (fields.length === 0 && !secret) {
           return (
             <span className="text-xs text-muted-foreground">
-              {e.method === "DELETE" ? "deleted" : "—"}
+              {e.method === "DELETE" ? "deleted" : "-"}
             </span>
           );
         }
@@ -675,8 +675,8 @@ function AdminAuditDetailView({ event }: { event: AdminAuditEvent }) {
       </DetailGroup>
 
       <DetailGroup title="Actor">
-        <DetailField label="Name">{event.actor_name ?? "—"}</DetailField>
-        <DetailField label="Scope">{event.actor_scope ?? "—"}</DetailField>
+        <DetailField label="Name">{event.actor_name ?? "-"}</DetailField>
+        <DetailField label="Scope">{event.actor_scope ?? "-"}</DetailField>
         {event.actor_id ? (
           <DetailField label="Actor ID">
             <Mono>{event.actor_id}</Mono>
@@ -711,7 +711,7 @@ function AdminAuditDetailView({ event }: { event: AdminAuditEvent }) {
           </p>
         )}
         <p className="mt-3 text-[11px] text-muted-foreground">
-          Field values are never stored in the audit log — only which fields changed.
+          Field values are never stored in the audit log, only which fields changed.
         </p>
       </section>
     </div>

@@ -9,7 +9,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ErrorState } from "@/components/ErrorState";
 
 export const Route = createFileRoute("/429")({
-  head: () => ({ meta: [{ title: "429 — Too many requests · Caracal" }] }),
+  head: () => ({ meta: [{ title: "429: Too many requests · Caracal" }] }),
   component: RateLimitedPage,
 });
 

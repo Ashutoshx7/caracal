@@ -9,7 +9,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ErrorState } from "@/components/ErrorState";
 
 export const Route = createFileRoute("/503")({
-  head: () => ({ meta: [{ title: "503 — Service unavailable · Caracal" }] }),
+  head: () => ({ meta: [{ title: "503: Service unavailable · Caracal" }] }),
   component: ServiceUnavailablePage,
 });
 
