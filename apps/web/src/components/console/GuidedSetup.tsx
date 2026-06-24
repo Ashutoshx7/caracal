@@ -15,7 +15,11 @@ import {
   useProviders,
   useResources,
 } from "@/platform/api/hooks";
-import { getGuidedSetup, setGuidedSetup, type GuidedSetupRecord } from "@/platform/state/localInstall";
+import {
+  getGuidedSetup,
+  setGuidedSetup,
+  type GuidedSetupRecord,
+} from "@/platform/state/localInstall";
 
 interface SetupStep extends Step {
   to: string;
@@ -49,8 +53,26 @@ export function GuidedSetup() {
   const providers = useProviders(zoneId);
   const policySets = usePolicySets(zoneId);
 
+  // Until the four inventory queries resolve, every count reads 0 and steps look
+  // incomplete. Track settle state so completion-dependent UI (auto-finish, the launcher)
+  // doesn't act on that transient "all incomplete" snapshot and flash for returning users.
+  const settled =
+    !applications.isLoading &&
+    !resources.isLoading &&
+    !providers.isLoading &&
+    !policySets.isLoading;
+
   const [open, setOpen] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
+  // The persisted dismiss/finish preference lives in React state, not read straight from
+  // localStorage during render: writing it through `updatePref` re-renders, so the panel
+  // and launcher hide immediately when setup is finished instead of waiting for an
+  // unrelated state change. `null` means "not yet hydrated".
+  const [pref, setPref] = useState<GuidedSetupRecord | null>(null);
+
+  function updatePref(next: GuidedSetupRecord) {
+    setGuidedSetup(next);
+    setPref(next);
+  }
 
   const steps: SetupStep[] = useMemo(() => {
     const hasApps = (applications.data?.length ?? 0) > 0;
@@ -102,26 +124,27 @@ export function GuidedSetup() {
 
   // Decide the initial visibility once, after the persisted preference is read: open
   // automatically for a fresh operator who still has work to do; otherwise stay parked
-  // behind the launcher unless they finished, in which case the launcher hides too.
+  // behind the launcher unless they finished, in which case nothing shows.
   useEffect(() => {
-    if (hydrated) return;
+    if (pref) return;
     const record = getGuidedSetup();
     if (!record.dismissed && !record.finished) setOpen(true);
-    setHydrated(true);
-  }, [hydrated]);
+    setPref(record);
+  }, [pref]);
 
   // Persist completion so a returning operator who has already done everything is not
-  // nagged by the launcher.
+  // nagged by the launcher. Only acts once queries have settled so it never trusts the
+  // transient all-incomplete snapshot; `updatePref` re-renders so the surface hides at once.
   useEffect(() => {
-    if (!hydrated || !allComplete) return;
-    const record = getGuidedSetup();
-    if (!record.finished) setGuidedSetup({ dismissed: record.dismissed, finished: true });
-  }, [hydrated, allComplete]);
+    if (!pref || pref.finished || !settled || !allComplete) return;
+    updatePref({ dismissed: pref.dismissed, finished: true });
+  }, [pref, settled, allComplete]);
 
-  if (!zoneId || !hydrated) return null;
+  if (!zoneId || !pref) return null;
 
-  const finished = getGuidedSetup().finished;
-  if (finished && allComplete) return null;
+  // Once finished (explicitly or because everything is complete), neither the panel nor
+  // the launcher should reappear, even while a later page load has queries in flight.
+  if (pref.finished) return null;
 
   return (
     <>
@@ -131,19 +154,16 @@ export function GuidedSetup() {
         manualCompletion={false}
         onOpenChange={(next) => {
           setOpen(next);
-          if (!next) {
-            const record = getGuidedSetup();
-            setGuidedSetup({ dismissed: true, finished: record.finished });
-          }
+          if (!next) updatePref({ dismissed: true, finished: pref.finished });
         }}
         onActivateStep={(id) => {
           const step = steps.find((s) => s.id === id);
           if (step) navigate({ to: step.to });
         }}
-        onFinish={() => setGuidedSetup({ dismissed: true, finished: true })}
+        onFinish={() => updatePref({ dismissed: true, finished: true })}
       />
 
-      {!open ? (
+      {!open && settled ? (
         <button
           onClick={() => setOpen(true)}
           aria-label="Open guided setup"
