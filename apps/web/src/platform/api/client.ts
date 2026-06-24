@@ -9,6 +9,8 @@ import { config } from "@/platform/config";
 import type {
   Agent,
   AgentService,
+  AdminAuditEvent,
+  AdminAuditQuery,
   Application,
   ApplicationInput,
   ApplicationPatchInput,
@@ -618,6 +620,8 @@ export const consoleApi = {
           decision: query.decision,
           event_type: query.event_type,
           request_id: query.request_id,
+          agent_session_id: query.agent_session_id,
+          label: query.label,
           since: query.since,
           until: query.until,
         })}`,
@@ -632,6 +636,24 @@ export const consoleApi = {
       request<DecisionTrace>(
         `/v1/zones/${encodeURIComponent(zoneId)}/audit/by-request/${encodeURIComponent(requestId)}/explain`,
       ),
+  },
+
+  adminAudit: {
+    list: async (zoneId: string, query: AdminAuditQuery = {}): Promise<Paged<AdminAuditEvent>> => {
+      const res = await request<RowList<AdminAuditEvent>>(
+        `/v1/zones/${encodeURIComponent(zoneId)}/admin-audit${queryString({
+          limit: query.limit ?? 100,
+          cursor: query.cursor,
+          actor_id: query.actor_id,
+          entity_type: query.entity_type,
+          entity_id: query.entity_id,
+          method: query.method,
+          since: query.since,
+          until: query.until,
+        })}`,
+      );
+      return { rows: res.rows, nextCursor: res.next_cursor };
+    },
   },
 
   providerGrants: {

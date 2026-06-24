@@ -22,6 +22,10 @@ function buildApp() {
   app.get('/zones/:zoneId/agents', async (req) => ({ auth: req.caracalAuth }))
   app.patch('/zones/:zoneId/agents/:id/suspend', async (req) => ({ auth: req.caracalAuth }))
   app.post('/zones/:zoneId/agents', async () => ({ ok: true }))
+  app.get('/zones/:zoneId/agent-services', async (req) => ({ auth: req.caracalAuth }))
+  app.get('/zones/:zoneId/invocations', async (req) => ({ auth: req.caracalAuth }))
+  app.get('/zones/:zoneId/invocations/:id', async (req) => ({ auth: req.caracalAuth }))
+  app.post('/zones/:zoneId/invocations', async () => ({ ok: true }))
   return app
 }
 
@@ -92,6 +96,24 @@ describe('coordinator bearer authentication', () => {
     expect(create.statusCode).toBe(401)
     expect(secure.statusCode).toBe(401)
     expect(secure.json()).toEqual({ error: 'invalid_token' })
+  })
+
+  it('grants the operator token read-only access to the execution layer but not detail or mutation', async () => {
+    const app = buildApp()
+    await app.ready()
+    const zone = '019e5da7-7834-7309-857f-b983bbcd40e3'
+    const auth = { authorization: 'Bearer coordinator-operator-token' }
+
+    const services = await app.inject({ method: 'GET', url: `/zones/${zone}/agent-services`, headers: auth })
+    const invocations = await app.inject({ method: 'GET', url: `/zones/${zone}/invocations`, headers: auth })
+    const invocationDetail = await app.inject({ method: 'GET', url: `/zones/${zone}/invocations/i1`, headers: auth })
+    const invocationCreate = await app.inject({ method: 'POST', url: `/zones/${zone}/invocations`, headers: auth })
+
+    expect(services.statusCode).toBe(200)
+    expect(invocations.statusCode).toBe(200)
+    expect(invocations.json().auth.scopes).toContain('coordinator.admin')
+    expect(invocationDetail.statusCode).toBe(401)
+    expect(invocationCreate.statusCode).toBe(401)
   })
 
   it('requires the managed operator token for metrics routes', async () => {

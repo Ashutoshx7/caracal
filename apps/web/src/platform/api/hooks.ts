@@ -14,6 +14,7 @@ import type {
   Application,
   ApplicationInput,
   ApplicationPatchInput,
+  AdminAuditQuery,
   AgentQuery,
   AuditQuery,
   ControlKeyCreateInput,
@@ -72,6 +73,7 @@ const keys = {
   audit: (zoneId: string | null) => ["console", "audit", zoneId] as const,
   auditExplain: (zoneId: string | null, requestId: string | null) =>
     ["console", "audit-explain", zoneId, requestId] as const,
+  adminAudit: (zoneId: string | null) => ["console", "admin-audit", zoneId] as const,
   agents: (zoneId: string | null) => ["console", "agents", zoneId] as const,
   agent: (zoneId: string | null, id: string | null) => ["console", "agent", zoneId, id] as const,
   delegationsActive: (zoneId: string | null) => ["console", "delegations-active", zoneId] as const,
@@ -434,8 +436,9 @@ export function useAudit(zoneId: string | null) {
   });
 }
 
-// Filtered, cursor-paginated audit feed for the Audit workspace.
-export function useAuditFeed(zoneId: string | null, query: AuditQuery) {
+// Filtered, cursor-paginated audit feed for the Audit workspace. `live` toggles
+// background polling so an investigator can pause the stream while reading.
+export function useAuditFeed(zoneId: string | null, query: AuditQuery, live = true) {
   return useInfiniteQuery({
     queryKey: [...keys.audit(zoneId), "feed", query],
     queryFn: ({ pageParam }) =>
@@ -443,7 +446,21 @@ export function useAuditFeed(zoneId: string | null, query: AuditQuery) {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     enabled: Boolean(zoneId),
-    refetchInterval: LIVE_MS,
+    refetchInterval: live ? LIVE_MS : false,
+  });
+}
+
+// Cursor-paginated admin audit feed: the tamper-evident record of every admin
+// mutation (who changed what), with server-side filters for actor/entity/method.
+export function useAdminAuditFeed(zoneId: string | null, query: AdminAuditQuery, live = true) {
+  return useInfiniteQuery({
+    queryKey: [...keys.adminAudit(zoneId), "feed", query],
+    queryFn: ({ pageParam }) =>
+      consoleApi.adminAudit.list(zoneId as string, { ...query, cursor: pageParam ?? undefined }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    enabled: Boolean(zoneId),
+    refetchInterval: live ? LIVE_MS : false,
   });
 }
 
@@ -517,7 +534,10 @@ export function useAgentInvocations(zoneId: string | null, sessionId: string | n
   return useQuery({
     queryKey: ["console", "invocations", zoneId, sessionId],
     queryFn: () =>
-      consoleApi.execution.invocations(zoneId as string, { session_id: sessionId as string, limit: 50 }),
+      consoleApi.execution.invocations(zoneId as string, {
+        session_id: sessionId as string,
+        limit: 50,
+      }),
     enabled: Boolean(zoneId && sessionId),
     refetchInterval: LIVE_MS,
   });
