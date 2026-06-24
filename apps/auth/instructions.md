@@ -7,8 +7,15 @@
 - `src/auth.ts` owns the Better Auth instance and enabled capabilities.
 - `src/providers.ts` owns provider credential resolution and the enabled-provider report.
 - `src/server.ts` exposes the Better Auth handler over HTTP with CORS for the web client.
-- `src/config.ts` owns runtime configuration and defaults.
-- `src/migrate.ts` creates or updates the local authentication schema.
+- `src/config.ts` owns runtime configuration and defaults, including database backend selection.
+- `src/database.ts` builds the database handle: PostgreSQL (production) or SQLite (local dev).
+- `src/migrate.ts` creates or updates the authentication schema.
+
+## Database
+- Selects the backend from configuration: a Postgres connection string (`CARACAL_AUTH_DATABASE_URL`, falling back to `DATABASE_URL`, both `_FILE`-secret aware) chooses PostgreSQL; otherwise an embedded SQLite file is used for local development.
+- Better Auth detects the dialect from the handle and runs schema migrations for either backend.
+- A Postgres-backed deployment must set `BETTER_AUTH_SECRET`; the service fails closed otherwise.
+- Account deletion goes through Better Auth's adapter so the cascade works on both backends.
 
 ## Required
 - Must own operator identity only: authentication, sessions, and Better Auth capabilities.
