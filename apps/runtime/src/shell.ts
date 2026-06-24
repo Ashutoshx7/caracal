@@ -32,7 +32,9 @@ const executors: Record<string, Executor> = {
     return runCommand([...argv], cfg)
   },
   console: (argv) => { consoleDispatch([...argv]) },
-  web: (argv) => { webCommand([...argv]) },
+  web: (argv) => {
+    void webCommand([...argv])
+  },
 }
 
 // `web` is a workspace-only launcher: include it only when both the descriptor

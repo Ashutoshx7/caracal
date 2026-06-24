@@ -6,12 +6,46 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
-import { printError, printInfo, style } from '../style.ts'
+import { printError, printInfo, printWarn, style } from '../style.ts'
 
 const EXT = process.platform === 'win32' ? '.exe' : ''
 const PNPM_BIN = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const DEFAULT_WEB_PORT = 3001
 const DEFAULT_AUTH_PORT = 3002
+// The web console is a control-plane surface: its backend-for-frontend only proxies
+// the local stack started by `caracal up`. Mirror the BFF's own service-URL defaults
+// so the launcher gates on the same endpoints the running console will use.
+const DEFAULT_API_URL = 'http://localhost:3000'
+const DEFAULT_COORDINATOR_URL = 'http://localhost:4000'
+const PREFLIGHT_TIMEOUT_MS = 2500
+
+function apiUrl(): string {
+  return (process.env.CARACAL_API_URL ?? DEFAULT_API_URL).replace(/\/$/, '')
+}
+
+function coordinatorUrl(): string {
+  return (process.env.CARACAL_COORDINATOR_URL ?? DEFAULT_COORDINATOR_URL).replace(/\/$/, '')
+}
+
+// Probe a service's public health endpoint. The admin API and Coordinator both expose
+// an unauthenticated `/health`, so the launcher never needs an admin token to decide
+// whether the stack is up. A single retry absorbs cold-connection false negatives so a
+// transient blip never wrongly blocks launch.
+async function serviceUp(base: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), PREFLIGHT_TIMEOUT_MS)
+    try {
+      const res = await fetch(`${base}/health`, { signal: controller.signal })
+      if (res.ok) return true
+    } catch {
+      /* retry once */
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  return false
+}
 
 function repoRoot(): string | undefined {
   return process.env.CARACAL_REPO_ROOT
@@ -63,14 +97,21 @@ interface WebOptions {
   webPort: number
   authPort: number
   build: boolean
+  allowOffline: boolean
 }
 
 function parseArgs(argv: string[]): WebOptions | 'help' {
-  const opts: WebOptions = { webPort: DEFAULT_WEB_PORT, authPort: DEFAULT_AUTH_PORT, build: false }
+  const opts: WebOptions = {
+    webPort: DEFAULT_WEB_PORT,
+    authPort: DEFAULT_AUTH_PORT,
+    build: false,
+    allowOffline: false,
+  }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '-h' || arg === '--help' || arg === 'help') return 'help'
     else if (arg === '--build') opts.build = true
+    else if (arg === '--allow-offline') opts.allowOffline = true
     else if (arg === '--web-port') opts.webPort = Number(argv[++i])
     else if (arg === '--auth-port') opts.authPort = Number(argv[++i])
     else if (arg.startsWith('--web-port=')) opts.webPort = Number(arg.split('=')[1])
@@ -102,13 +143,18 @@ function printWebUsage(): void {
     '  --web-port <port>    Port for the web UI (default 3001)',
     '  --auth-port <port>   Port for the backend-for-frontend (default 3002)',
     '  --build              Serve the production build instead of the dev server',
+    '  --allow-offline      Launch even if the stack is not running (UI/sign-in only)',
     '  -h, --help           Show help',
+    '',
+    'The web console proxies the local control plane started by `caracal up`.',
+    'Without a running stack it cannot manage zones, applications, policies, or agents;',
+    'run `caracal up` first, or pass --allow-offline to launch the UI on its own.',
     '',
   ]
   process.stdout.write(lines.join('\n') + '\n')
 }
 
-export function webCommand(argv: string[]): void {
+export async function webCommand(argv: string[]): Promise<void> {
   const parsed = parseArgs(argv)
   if (parsed === 'help') {
     printWebUsage()
@@ -119,6 +165,26 @@ export function webCommand(argv: string[]): void {
   if (!root || !webInterfaceAvailable()) {
     printError('web: the web console is only available inside the Caracal workspace.')
     process.exit(127)
+  }
+
+  // The web console is only useful against a running control plane. Refuse to launch
+  // when the stack is down so operators get a clear pointer to `caracal up` instead of
+  // a console that cannot reach anything. `--allow-offline` opts out for UI-only work.
+  if (!parsed.allowOffline) {
+    const base = apiUrl()
+    const apiReady = await serviceUp(base)
+    if (!apiReady) {
+      printError(`web: the Caracal stack is not running (no response from ${base}).`)
+      printInfo('The web console proxies the local control plane, which is started by `caracal up`.')
+      printInfo('Start the stack first:')
+      printInfo(`  ${style.code('caracal up')}`)
+      printInfo('Or launch the UI without a backend (sign-in only):')
+      printInfo(`  ${style.code('caracal web --allow-offline')}`)
+      process.exit(1)
+    }
+    if (!(await serviceUp(coordinatorUrl()))) {
+      printWarn('Coordinator is not responding; Agents and Delegation will be unavailable until the stack is fully up.')
+    }
   }
 
   const pnpm = pnpmInvocation()

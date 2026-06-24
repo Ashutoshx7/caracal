@@ -625,24 +625,43 @@ function LifecycleSection() {
   const [deleting, setDeleting] = useState(false);
 
   const zoneCount = zones.data?.length ?? 0;
-  const blocked = zones.isLoading || zones.isError;
+  const blocked = zones.isLoading;
   const confirmReady = confirm.trim() === email;
 
   async function confirmDelete() {
     setDeleting(true);
     try {
-      const latest = await zones.refetch();
-      if (latest.isError) throw new Error("zone_state_unavailable");
-      for (const zone of latest.data ?? []) {
-        await consoleApi.zones.delete(zone.id);
+      // Profile deletion must be the guaranteed outcome: clean up owned zones on a
+      // best-effort basis so a single zone failure (e.g. a 404 for an already
+      // archived zone) can never leave the operator's profile behind.
+      let zoneFailures = 0;
+      try {
+        const latest = await zones.refetch();
+        for (const zone of latest.data ?? []) {
+          try {
+            await consoleApi.zones.delete(zone.id);
+          } catch {
+            zoneFailures += 1;
+          }
+        }
+      } catch {
+        zoneFailures += 1;
       }
+
       await deleteAccount(confirm);
       clearLocalIdentity();
+      if (zoneFailures > 0) {
+        toast({
+          tone: "info",
+          title: "Profile deleted",
+          description: `${zoneFailures} zone${zoneFailures === 1 ? "" : "s"} could not be removed and may need manual cleanup.`,
+        });
+      }
       navigate({ to: "/sign-in" });
     } catch (err) {
       toast({
         tone: "error",
-        title: "Could not delete account",
+        title: "Could not delete profile",
         description:
           err instanceof AuthApiError
             ? err.code
