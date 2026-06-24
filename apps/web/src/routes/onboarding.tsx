@@ -15,15 +15,20 @@ import { ConsoleApiError, consoleApi } from "@/platform/api/client";
 import { selectZone } from "@/platform/api/hooks";
 import { useSession } from "@/platform/auth";
 import { requirePendingOnboarding } from "@/platform/auth/guards";
-import { completeOnboarding, getProfile, type ProfileRecord } from "@/platform/state/localInstall";
+import {
+  completeOnboarding,
+  getProfile,
+  HANDLE_MAX,
+  NAME_MAX,
+  resolveDisplayName,
+  sanitizeHandle,
+  type ProfileRecord,
+} from "@/platform/state/localInstall";
 
 export const Route = createFileRoute("/onboarding")({
   beforeLoad: requirePendingOnboarding,
   component: OnboardingPage,
 });
-
-const NAME_MAX = 40;
-const HANDLE_MAX = 24;
 
 const STEPS: OnboardingStep[] = [
   { title: "Profile", summary: "Tell us who you are" },
@@ -101,7 +106,7 @@ function OnboardingPage() {
     const profile: ProfileRecord = {
       accountId,
       fullName: fullName.trim(),
-      displayName: displayName.trim(),
+      displayName: resolveDisplayName(fullName, displayName),
       avatar,
     };
     try {
@@ -181,14 +186,10 @@ function OnboardingPage() {
               />
               <Field
                 label="Display name"
-                hint="Optional. How you appear in the Console."
+                hint="Optional. Defaults to your first name. How you appear in the Console."
                 placeholder="ada"
                 value={displayName}
-                onChange={(e) =>
-                  setDisplayName(
-                    e.target.value.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, HANDLE_MAX),
-                  )
-                }
+                onChange={(e) => setDisplayName(sanitizeHandle(e.target.value))}
                 maxLength={HANDLE_MAX}
               />
               <Field label="Email" value={ownerEmail} readOnly disabled hint="From your account." />
@@ -248,7 +249,7 @@ function OnboardingPage() {
             onEdit={() => setStep(0)}
             rows={[
               ["Full name", fullName.trim()],
-              ["Display name", displayName.trim() || "—"],
+              ["Display name", resolveDisplayName(fullName, displayName) || "—"],
               ["Email", ownerEmail || "—"],
               ["Account ID", accountId],
             ]}

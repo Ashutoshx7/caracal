@@ -36,13 +36,14 @@ import {
 import {
   clearLocalIdentity,
   getProfile,
+  HANDLE_MAX,
+  NAME_MAX,
+  resolveDisplayName,
+  sanitizeHandle,
   setProfile,
   useProfile,
 } from "@/platform/state/localInstall";
 import { setTheme, useTheme } from "@/platform/theme";
-
-const NAME_MAX = 40;
-const HANDLE_MAX = 24;
 
 interface SettingsSection {
   id: string;
@@ -269,7 +270,7 @@ function ProfileSection() {
 
   async function save() {
     const name = fullName.trim() || "Owner";
-    const handle = displayName.trim();
+    const handle = resolveDisplayName(fullName, displayName);
     setSaving(true);
     try {
       const result = await updateUser({ name, image: avatar || undefined });
@@ -314,12 +315,10 @@ function ProfileSection() {
           />
           <Field
             label="Display name"
-            hint="Shown in the profile menu."
+            hint="Optional. Defaults to your first name. Shown in the profile menu."
             value={displayName}
             maxLength={HANDLE_MAX}
-            onChange={(e) =>
-              setDisplayName(e.target.value.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, HANDLE_MAX))
-            }
+            onChange={(e) => setDisplayName(sanitizeHandle(e.target.value))}
           />
         </div>
       </SettingsGroup>
