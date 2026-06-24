@@ -10,10 +10,12 @@
   "ignore": [
     "@caracalai/admin-audit",
     "@caracalai/api",
+    "@caracalai/auth",
     "@caracalai/console",
     "@caracalai/coordinator",
     "@caracalai/docs",
     "@caracalai/engine",
-    "@caracalai/runtime"
+    "@caracalai/runtime",
+    "@caracalai/web"
   ]
 }
