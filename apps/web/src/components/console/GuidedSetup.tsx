@@ -7,7 +7,7 @@ This file wires the in-app guided setup: a short, element-anchored walkthrough t
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 
-import { InteractiveOnboardingChecklist, type Step } from "@/components/ui";
+import { InteractiveOnboardingChecklist, type Step, type StepMedia } from "@/components/ui";
 import {
   useActiveZone,
   useApplications,
@@ -25,6 +25,20 @@ interface SetupStep extends Step {
   to?: string;
   search?: Record<string, string>;
 }
+
+// Per-step media shown above each coachmark. Attach an image or a clickable YouTube video
+// to any step by its id; omit an id (or leave it undefined) to show no media and reclaim the
+// space. Examples:
+//   application: { type: "image", src: "/guides/register-app.png", alt: "Application form" }
+//   provider:    { type: "video", href: "https://youtu.be/VIDEO_ID", alt: "Connecting a provider" }
+const STEP_MEDIA: Record<string, StepMedia | undefined> = {
+  orientation: { type: "image", src: "/steps/1.png", alt: "Zone access building blocks" },
+  application: { type: "image", src: "/steps/2.png", alt: "Register an application" },
+  provider: { type: "image", src: "/steps/3.png", alt: "Connect a provider" },
+  resource: { type: "image", src: "/steps/4.png", alt: "Define a resource" },
+  policy: { type: "image", src: "/steps/5.png", alt: "Activate a policy" },
+  verify: { type: "image", src: "/steps/6.png", alt: "Verify access" },
+};
 
 function PlayIcon({ className }: { className?: string }) {
   return (
@@ -125,6 +139,7 @@ export function GuidedSetup() {
         description: "A zone authorizes a request once it has these four things.",
         targetSelector: "",
         actionLabel: "Start",
+        media: STEP_MEDIA.orientation,
         advanceOnAction: true,
         hideInList: true,
         completed: ackOrientation || anyBuilt,
@@ -146,6 +161,7 @@ export function GuidedSetup() {
         to: "/app/applications",
         search: { create: "1" },
         actionLabel: "Open the form",
+        media: STEP_MEDIA.application,
         completed: hasApps,
         details: (
           <Fields
@@ -164,6 +180,7 @@ export function GuidedSetup() {
         to: "/app/providers",
         search: { create: "1" },
         actionLabel: "Open the form",
+        media: STEP_MEDIA.provider,
         completed: hasProviders,
         details: (
           <Fields
@@ -182,6 +199,7 @@ export function GuidedSetup() {
         to: "/app/resources",
         search: { create: "1" },
         actionLabel: "Open the form",
+        media: STEP_MEDIA.resource,
         completed: hasResources,
         details: (
           <Fields
@@ -200,6 +218,7 @@ export function GuidedSetup() {
         to: "/app/policies",
         search: { create: "policy" },
         actionLabel: "Open the editor",
+        media: STEP_MEDIA.policy,
         completed: hasActivePolicy,
         details: (
           <Fields
@@ -219,6 +238,7 @@ export function GuidedSetup() {
         targetSelector: "",
         to: "/app",
         actionLabel: buildComplete ? "Go to dashboard" : "Done for now",
+        media: STEP_MEDIA.verify,
         advanceOnAction: true,
         hideInList: true,
         completed: ackVerify,

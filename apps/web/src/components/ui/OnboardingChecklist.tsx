@@ -10,6 +10,10 @@ import { createPortal } from "react-dom";
 import { cx } from "@/lib/cx";
 import { Button } from "./Primitives";
 
+export type StepMedia =
+  | { type: "image"; src: string; alt?: string }
+  | { type: "video"; href: string; poster?: string; alt?: string };
+
 export type Step = {
   id: string;
   title: string;
@@ -21,6 +25,12 @@ export type Step = {
   actionLabel?: string;
   /** Rich teaching content rendered in the coachmark below the description. */
   details?: ReactNode;
+  /**
+   * Optional media shown above the title. "image" renders inline; "video" renders a
+   * clickable poster that opens the YouTube link in a new tab. Omit for no media (the
+   * media area collapses entirely so steps without it lose no space).
+   */
+  media?: StepMedia;
   /**
    * When true, the primary action advances the tour to the next incomplete step in place
    * (used for informational steps whose CTA does not navigate away). When false (default),
@@ -152,6 +162,113 @@ const CARD_MARGIN = 16;
 const PANEL_RESERVE_W = 340;
 const PANEL_RESERVE_H = 420;
 
+// Pulls the 11-character YouTube id out of the common URL shapes so a video step can show
+// the official thumbnail without the caller supplying a poster.
+function youtubeId(href: string): string | null {
+  try {
+    const url = new URL(href);
+    const host = url.hostname.replace(/^www\./, "");
+    if (host === "youtu.be") return url.pathname.slice(1) || null;
+    if (host.endsWith("youtube.com")) {
+      if (url.pathname === "/watch") return url.searchParams.get("v");
+      const parts = url.pathname.split("/").filter(Boolean);
+      if (parts[0] === "embed" || parts[0] === "shorts") return parts[1] ?? null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function PlayBadge() {
+  return (
+    <span className="pointer-events-none grid h-12 w-12 place-items-center rounded-full bg-foreground/70 text-background shadow-lg transition-transform group-hover:scale-105">
+      <svg viewBox="0 0 24 24" className="ml-0.5 h-6 w-6" fill="currentColor" aria-hidden="true">
+        <path d="M8 5v14l11-7z" />
+      </svg>
+    </span>
+  );
+}
+
+function BrokenMediaPlaceholder() {
+  return (
+    <div className="grid h-full w-full place-items-center bg-muted text-muted-foreground">
+      <svg
+        viewBox="0 0 24 24"
+        className="h-7 w-7"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        aria-hidden="true"
+      >
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="m3 16 5-5 4 4 3-3 6 6" />
+        <circle cx="9" cy="9" r="1.5" />
+      </svg>
+    </div>
+  );
+}
+
+// Renders the optional media strip above a coachmark's title. Images load lazily over a
+// neutral box (no layout shift on slow networks) and fall back to a placeholder when the
+// source is missing or fails. Videos render a clickable poster that opens YouTube in a new
+// tab, keyboard and screen-reader accessible.
+function StepMedia({ media }: { media: StepMedia }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [media]);
+
+  if (media.type === "image") {
+    return (
+      <div className="mb-3 aspect-video max-h-48 w-full shrink-0 overflow-hidden rounded-lg border border-border bg-muted">
+        {failed ? (
+          <BrokenMediaPlaceholder />
+        ) : (
+          <img
+            src={media.src}
+            alt={media.alt ?? ""}
+            loading="lazy"
+            draggable={false}
+            onError={() => setFailed(true)}
+            className="h-full w-full object-cover"
+          />
+        )}
+      </div>
+    );
+  }
+
+  const poster =
+    media.poster ??
+    (youtubeId(media.href)
+      ? `https://i.ytimg.com/vi/${youtubeId(media.href)}/hqdefault.jpg`
+      : undefined);
+
+  return (
+    <a
+      href={media.href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={media.alt ? `Play video: ${media.alt}` : "Play video in a new tab"}
+      className="group relative mb-3 grid aspect-video max-h-48 w-full shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+    >
+      {poster && !failed ? (
+        <img
+          src={poster}
+          alt={media.alt ?? ""}
+          loading="lazy"
+          draggable={false}
+          onError={() => setFailed(true)}
+          className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+        />
+      ) : null}
+      <span className="absolute inset-0 bg-foreground/10 transition-colors group-hover:bg-foreground/20" />
+      <PlayBadge />
+    </a>
+  );
+}
+
 // Chooses the least-bad anchor for the coachmark card: prefer below the target, then
 // above, then to the sides; never overlap the bottom-right checklist panel; finally clamp
 // into the viewport so the card is always reachable even for edge-hugging targets.
@@ -243,6 +360,7 @@ function CoachmarkOverlay({
 
   const cardBody = (
     <>
+      {step.media ? <StepMedia media={step.media} /> : null}
       <h3 id="coachmark-title" className="mb-2 shrink-0 text-sm font-semibold text-foreground">
         {step.title}
       </h3>
@@ -287,7 +405,7 @@ function CoachmarkOverlay({
   if (isIntro || !rect) {
     return (
       <div
-        className="animate-fade-in fixed inset-0 z-[60] flex items-center justify-center bg-foreground/45 p-4 backdrop-blur-[1px]"
+        className="animate-fade-in fixed inset-0 z-[60] flex items-center justify-center bg-overlay/50 p-4 backdrop-blur-[1px]"
         role="dialog"
         aria-modal="true"
         aria-labelledby="coachmark-title"
