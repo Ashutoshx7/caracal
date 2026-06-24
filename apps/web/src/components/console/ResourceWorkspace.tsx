@@ -111,7 +111,11 @@ export function ResourceWorkspace<T>({
     );
   }
 
-  const showToolbar = loading || rows.length > 0;
+  // The toolbar is always present so the page frame never reflows between empty, loading,
+  // and populated states. Its controls lock when there is nothing to act on (loading, or no
+  // data at all) and unlock as soon as real rows arrive. A zero-result search still keeps
+  // them enabled so the operator can edit or clear the query.
+  const controlsLocked = loading || rows.length === 0;
 
   return (
     <ModulePage
@@ -126,31 +130,32 @@ export function ResourceWorkspace<T>({
     >
       {headerExtra ? <div className="mb-4">{headerExtra}</div> : null}
 
-      {showToolbar ? (
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <SearchInput
-            placeholder={search.placeholder}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="w-full sm:w-72"
-          />
-          {sortOptions && sortOptions.length > 0 ? (
-            <div className="w-44">
-              <Select
-                value={sortChoice}
-                onChange={(e) => setSortChoice(e.target.value)}
-                aria-label="Sort by"
-              >
-                {sortOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <SearchInput
+          placeholder={search.placeholder}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          disabled={controlsLocked}
+          aria-label={search.placeholder}
+          className="w-full sm:w-72"
+        />
+        {sortOptions && sortOptions.length > 0 ? (
+          <div className="w-44">
+            <Select
+              value={sortChoice}
+              onChange={(e) => setSortChoice(e.target.value)}
+              disabled={controlsLocked}
+              aria-label="Sort by"
+            >
+              {sortOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+        ) : null}
+      </div>
 
       <DataTable
         columns={columns}

@@ -241,9 +241,13 @@ export function Select({
   );
 }
 
-export function SearchInput({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+export function SearchInput({
+  className,
+  disabled,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement>) {
   return (
-    <div className={cx("relative", className)}>
+    <div className={cx("relative", disabled && "opacity-50", className)}>
       <svg
         className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
         width="14"
@@ -257,7 +261,7 @@ export function SearchInput({ className, ...props }: InputHTMLAttributes<HTMLInp
         <circle cx="11" cy="11" r="7" />
         <path d="m21 21-4.3-4.3" />
       </svg>
-      <input type="search" className={cx(fieldBase, "h-9 pl-8")} {...props} />
+      <input type="search" disabled={disabled} className={cx(fieldBase, "h-9 pl-8")} {...props} />
     </div>
   );
 }

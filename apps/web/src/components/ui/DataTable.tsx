@@ -75,14 +75,23 @@ export function DataTable<T>({
   empty?: ReactNode;
   onRowClick?: (row: T) => void;
 }) {
-  const minHeight = 45 + Math.max(skeletonRows, 1) * 49;
+  // The box stays a consistent height regardless of the selected page size: it reserves
+  // space for a capped number of rows and scrolls vertically when more are shown, so picking
+  // "50" scrolls within the same frame instead of stretching the page to 50 rows tall.
+  const HEAD_H = 45;
+  const ROW_H = 49;
+  const VISIBLE_ROWS = 8;
+  const reservedRows = Math.min(Math.max(skeletonRows, 1), VISIBLE_ROWS);
+  const minHeight = HEAD_H + reservedRows * ROW_H;
+  const maxBodyHeight = VISIBLE_ROWS * ROW_H;
+  const skeletonCount = Math.min(skeletonRows, VISIBLE_ROWS);
 
   return (
     <div className="overflow-hidden border border-border bg-card" style={{ minHeight }}>
-      <div className="scrollbar-thin overflow-x-auto">
+      <div className="scrollbar-thin overflow-auto" style={{ maxHeight: HEAD_H + maxBodyHeight }}>
         <table className="w-full min-w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-muted/40 text-left">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-muted text-left">
               {columns.map((col) => {
                 const active = sort?.column === col.id;
                 return (
@@ -90,7 +99,7 @@ export function DataTable<T>({
                     key={col.id}
                     style={col.width ? { width: col.width } : undefined}
                     className={cx(
-                      "px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground whitespace-nowrap",
+                      "border-b border-border px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground whitespace-nowrap",
                       col.align === "right" && "text-right",
                       col.truncate && "max-w-0",
                     )}
@@ -116,7 +125,7 @@ export function DataTable<T>({
           </thead>
           <tbody className="divide-y divide-border">
             {loading
-              ? Array.from({ length: skeletonRows }).map((_, rowIndex) => (
+              ? Array.from({ length: skeletonCount }).map((_, rowIndex) => (
                   <tr key={`skeleton-${rowIndex}`}>
                     {columns.map((col) => (
                       <td key={col.id} className={cx("px-4 py-3", col.truncate && "max-w-0")}>
