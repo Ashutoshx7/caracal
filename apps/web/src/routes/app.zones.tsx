@@ -504,6 +504,7 @@ function ZoneFormModal({
       <div className="flex flex-col gap-4">
         <Field
           label="Zone name"
+          info="Human-readable name for this zone, shown across the console. A zone is your primary trust boundary, isolating its own applications, resources, policies, and audit."
           placeholder="Production"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -511,6 +512,7 @@ function ZoneFormModal({
         />
         <Field
           label="Slug"
+          info="Lowercase identifier used in URLs and tokens to reference this zone. Generated from the name; must be unique."
           hint="Lowercase identifier used in URLs and tokens."
           placeholder="production"
           value={effectiveSlug}
