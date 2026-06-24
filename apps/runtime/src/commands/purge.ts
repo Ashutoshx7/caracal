@@ -32,7 +32,41 @@ import {
   printHeader,
 } from '../style.ts'
 
-type TargetId = 'stack' | 'volumes' | 'logs' | 'config' | 'runtime' | 'secrets' | 'cache' | 'examples' | 'images' | 'binary'
+type TargetId =
+  | 'stack'
+  | 'volumes'
+  | 'logs'
+  | 'config'
+  | 'runtime'
+  | 'secrets'
+  | 'web'
+  | 'cache'
+  | 'examples'
+  | 'images'
+  | 'binary'
+
+type GroupId = 'services' | 'state' | 'dev' | 'artifacts'
+
+const GROUPS: { id: GroupId; label: string }[] = [
+  { id: 'services', label: 'Runtime services & data' },
+  { id: 'state', label: 'Local install & operator state' },
+  { id: 'dev', label: 'Developer artifacts (dev only)' },
+  { id: 'artifacts', label: 'Cached images & binaries' },
+]
+
+const TARGET_GROUP: Record<TargetId, GroupId> = {
+  stack: 'services',
+  volumes: 'services',
+  logs: 'services',
+  config: 'state',
+  runtime: 'state',
+  secrets: 'state',
+  web: 'state',
+  cache: 'dev',
+  examples: 'dev',
+  images: 'artifacts',
+  binary: 'artifacts',
+}
 
 interface Target {
   id: TargetId
@@ -89,30 +123,56 @@ function uniqueSecretTargets(ctx: PurgeContext): SecretCleanupTarget[] {
   return targets
 }
 
+// The web console keeps its operator accounts and sessions in a local SQLite
+// database owned by the auth backend-for-frontend. It resolves to
+// $CARACAL_AUTH_DB, or apps/auth/caracal-auth.sqlite under the repo root for the
+// workspace-only web console. SQLite may leave -wal/-shm/-journal sidecars.
+function webConsoleStateBase(ctx: PurgeContext): string | undefined {
+  if (process.env.CARACAL_AUTH_DB) return process.env.CARACAL_AUTH_DB
+  if (ctx.repoRoot) return join(ctx.repoRoot, 'apps', 'auth', 'caracal-auth.sqlite')
+  return undefined
+}
+
+function webConsoleStatePaths(ctx: PurgeContext): string[] {
+  const base = webConsoleStateBase(ctx)
+  if (!base) return []
+  return [base, `${base}-wal`, `${base}-shm`, `${base}-journal`]
+}
+
 function purgeHelp(): never {
   return showHelp(
     [
       'Usage: caracal purge [targets...] [options]',
       '',
       'Centralized cleanup for selectable resources. Without targets, prompts interactively.',
+      'Pass individual target names, a group name (selects the whole group), or "all".',
       '',
-      'Targets:',
+      'Runtime services & data (services):',
       '  stack       Stop and remove containers + network (compose down)',
       '  volumes     Remove data volumes: DESTROYS Postgres and Redis state',
       '  logs        Truncate container log files via `compose down` + recreate',
+      '',
+      'Local install & operator state (state):',
       '  config      Remove caracal.toml (zone client secret and config)',
       '  runtime     Remove runtime assets at $CARACAL_HOME (.env, compose.yml)',
       '  secrets     Remove operator overrides and generated secret files',
-      '  cache       Remove build artifacts: apps/*/dist, coverage/, node_modules/.cache (dev only)',
-      '  examples    Remove example containers, volumes, networks, and example-built images (dev only)',
+      '  web         Remove web console operator accounts and sessions ($CARACAL_AUTH_DB / apps/auth SQLite)',
+      '',
+      'Developer artifacts (dev) — dev only:',
+      '  cache       Remove build artifacts: apps/*/dist, coverage/, node_modules/.cache',
+      '  examples    Remove example containers, volumes, networks, and example-built images',
+      '',
+      'Cached images & binaries (artifacts):',
       '  images      Remove cached Caracal docker images (caracal/*, ghcr.io/garudex-labs/caracal-*)',
-      '  binary      Uninstall Caracal runtime and Console binaries from $CARACAL_INSTALL_DIR (default ~/.local/bin)',
-      '  all         Purge every applicable target (destructive: wipes volumes, runtime, config, examples, images, binary)',
+      '  binary      Uninstall Caracal runtime, Console, and web console binaries from $CARACAL_INSTALL_DIR (default ~/.local/bin)',
+      '',
+      'Aggregate:',
+      '  all         Purge every applicable target (destructive: wipes volumes, runtime, config, web, examples, images, binary)',
       '',
       'Options:',
       '  --yes, -y                Skip confirmation prompt',
       '  --dry-run                Show what would be removed without doing it',
-      '  --safe                   With `all`, skip destructive targets (volumes, runtime)',
+      '  --safe                   With `all`, skip destructive targets (volumes, runtime, secrets, web, …)',
       '  --help, -h               Show this help',
       '',
     ],
@@ -346,6 +406,20 @@ const TARGETS: Target[] = [
     },
   },
   {
+    id: 'web',
+    label: 'Remove web console accounts & sessions (DESTRUCTIVE)',
+    describe: (ctx) => {
+      const base = webConsoleStateBase(ctx)
+      return base ? `${base}: web console operator accounts and sessions (SQLite)` : '(no web console state found)'
+    },
+    available: (ctx) => webConsoleStateBase(ctx) !== undefined,
+    run: async (ctx) => {
+      for (const path of webConsoleStatePaths(ctx)) {
+        removePath(path, ctx, `web/${path.split('/').pop()}`)
+      }
+    },
+  },
+  {
     id: 'cache',
     label: 'Remove build artifacts (dev only)',
     describe: (ctx) =>
@@ -461,30 +535,69 @@ async function selectInteractively(ctx: PurgeContext): Promise<Target[]> {
   if (!ctx.composeAvailable) {
     printWarn(`Docker Compose unavailable; stack, volumes, logs, and examples are hidden. ${composeUnavailableReason()}.`)
   }
-  process.stdout.write(style.label('Enter comma-separated numbers, "all" for full reset, "safe" to skip destructive, or "q" to quit.\n'))
-  usable.forEach((t, i) => {
-    const destructive = isDestructive(t)
-    const labelStr = destructive ? style.warn(t.label) : t.label
-    process.stdout.write(`  ${style.title(`${i + 1}.`)} ${labelStr} ${style.label(`- ${t.describe(ctx)}`)}\n`)
-  })
-  const answer = (await prompt(style.prompt('> '))).toLowerCase()
+  process.stdout.write(
+    style.label(
+      'Enter comma-separated numbers (e.g. "1,4"), a group name to select it whole, "all" for full reset, "safe" to skip destructive, or "q" to quit.\n',
+    ),
+  )
+  // Render targets grouped by component area, preserving the flat selection
+  // index so a typed number always maps to usable[n - 1].
+  for (const group of GROUPS) {
+    const inGroup = usable.filter((t) => TARGET_GROUP[t.id] === group.id)
+    if (inGroup.length === 0) continue
+    process.stdout.write(`\n${style.header(group.label)} ${style.label(`(${group.id})`)}\n`)
+    for (const t of inGroup) {
+      const i = usable.indexOf(t)
+      const labelStr = isDestructive(t) ? style.warn(t.label) : t.label
+      process.stdout.write(`  ${style.title(`${i + 1}.`)} ${labelStr} ${style.label(`- ${t.describe(ctx)}`)}\n`)
+    }
+  }
+  const answer = (await prompt(`\n${style.prompt('> ')}`)).toLowerCase()
   if (answer === '' || answer === 'q') return []
   if (answer === 'all') return usable
   if (answer === 'safe') return usable.filter((t) => !isDestructive(t))
-  const picks = answer.split(',').map((s) => parseInt(s.trim(), 10))
+
   const selected: Target[] = []
-  for (const n of picks) {
+  const seen = new Set<TargetId>()
+  const addTarget = (t: Target) => {
+    if (seen.has(t.id)) return
+    seen.add(t.id)
+    selected.push(t)
+  }
+  for (const raw of answer.split(',')) {
+    const token = raw.trim()
+    if (!token) continue
+    const group = GROUPS.find((g) => g.id === token)
+    if (group) {
+      const inGroup = usable.filter((t) => TARGET_GROUP[t.id] === group.id)
+      if (inGroup.length === 0) {
+        printError(`no available targets in group "${token}"`)
+        process.exit(1)
+      }
+      inGroup.forEach(addTarget)
+      continue
+    }
+    const n = parseInt(token, 10)
     if (!Number.isInteger(n) || n < 1 || n > usable.length) {
-      printError(`invalid selection: ${n}`)
+      printError(`invalid selection: ${token}`)
       process.exit(1)
     }
-    selected.push(usable[n - 1]!)
+    addTarget(usable[n - 1]!)
   }
   return selected
 }
 
 function isDestructive(t: Target): boolean {
-  return t.id === 'volumes' || t.id === 'runtime' || t.id === 'secrets' || t.id === 'config' || t.id === 'examples' || t.id === 'images' || t.id === 'binary'
+  return (
+    t.id === 'volumes' ||
+    t.id === 'runtime' ||
+    t.id === 'secrets' ||
+    t.id === 'web' ||
+    t.id === 'config' ||
+    t.id === 'examples' ||
+    t.id === 'images' ||
+    t.id === 'binary'
+  )
 }
 
 function expandAll(safe: boolean): Target[] {

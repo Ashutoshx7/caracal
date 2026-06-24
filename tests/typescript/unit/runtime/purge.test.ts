@@ -240,4 +240,39 @@ describe('purgeCommand', () => {
       rmSync(devSecrets, { recursive: true, force: true })
     }
   })
+
+  it('removes web console accounts and sessions including sqlite sidecars', async () => {
+    const authDir = join(repoRoot, 'apps', 'auth')
+    mkdirSync(authDir, { recursive: true })
+    const dbBase = join(authDir, 'caracal-auth.sqlite')
+    for (const suffix of ['', '-wal', '-shm', '-journal']) {
+      writeFileSync(`${dbBase}${suffix}`, '')
+    }
+
+    await purgeCommand(['web', '--yes'])
+
+    const removed = engineMocks.removeFsPath.mock.calls.map((call) => call[0])
+    expect(removed).toContain(dbBase)
+    expect(removed).toContain(`${dbBase}-wal`)
+    expect(removed).toContain(`${dbBase}-shm`)
+    expect(removed).toContain(`${dbBase}-journal`)
+  })
+
+  it('honors CARACAL_AUTH_DB override for the web target', async () => {
+    const custom = mkdtempSync(join(tmpdir(), 'caracal-auth-db-'))
+    const dbBase = join(custom, 'auth.sqlite')
+    try {
+      process.env.CARACAL_AUTH_DB = dbBase
+      writeFileSync(dbBase, '')
+      writeFileSync(`${dbBase}-wal`, '')
+
+      await purgeCommand(['web', '--yes'])
+
+      const removed = engineMocks.removeFsPath.mock.calls.map((call) => call[0])
+      expect(removed).toContain(dbBase)
+      expect(removed).toContain(`${dbBase}-wal`)
+    } finally {
+      rmSync(custom, { recursive: true, force: true })
+    }
+  })
 })
