@@ -93,3 +93,33 @@ describe('reconcileLocalIdentity', () => {
     expect(localStorage.getItem(OWNER_KEY)).toBeNull()
   })
 })
+
+describe('sanitizeHandle', () => {
+  it('drops spaces and disallowed characters', () => {
+    expect(mod.sanitizeHandle('Ada Lovelace')).toBe('AdaLovelace')
+    expect(mod.sanitizeHandle('a@d#a!.b_c-d')).toBe('ada.b_c-d')
+  })
+
+  it('caps the handle at the shared maximum', () => {
+    expect(mod.sanitizeHandle('x'.repeat(50))).toHaveLength(mod.HANDLE_MAX)
+  })
+})
+
+describe('resolveDisplayName', () => {
+  it('uses an explicit display name when provided', () => {
+    expect(mod.resolveDisplayName('Ada Lovelace', 'ada')).toBe('ada')
+  })
+
+  it('falls back to the first name when the display name is blank', () => {
+    expect(mod.resolveDisplayName('Ada Lovelace', '')).toBe('Ada')
+    expect(mod.resolveDisplayName('Ada Lovelace', '   ')).toBe('Ada')
+  })
+
+  it('never returns a handle containing a space', () => {
+    expect(mod.resolveDisplayName('Mary Jane Watson', '')).toBe('Mary')
+  })
+
+  it('returns an empty string when there is no name at all', () => {
+    expect(mod.resolveDisplayName('', '')).toBe('')
+  })
+})
