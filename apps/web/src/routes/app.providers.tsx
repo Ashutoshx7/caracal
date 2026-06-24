@@ -28,8 +28,8 @@ import {
   Spinner,
   useToast,
   type Column,
+  type FilterGroup,
 } from "@/components/ui";
-import { cx } from "@/lib/cx";
 import { ConsoleApiError } from "@/platform/api/client";
 import {
   useAuthorizeProviderGrant,
@@ -161,6 +161,21 @@ function ProvidersPage({ zoneId, zoneName }: { zoneId: string; zoneName: string 
     [allRows, kindFilter],
   );
 
+  const filters: FilterGroup[] = [
+    {
+      id: "kind",
+      label: "Type",
+      value: kindFilter,
+      onChange: (v) => setKindFilter(v as ProviderKind | "all"),
+      options: [
+        { id: "all", label: "All types", count: allRows.length },
+        ...(Object.keys(KIND_LABEL) as ProviderKind[])
+          .filter((k) => kindCounts.has(k))
+          .map((k) => ({ id: k, label: KIND_LABEL[k], count: kindCounts.get(k) ?? 0 })),
+      ],
+    },
+  ];
+
   const columns: Column<Provider>[] = [
     {
       id: "name",
@@ -237,16 +252,7 @@ function ProvidersPage({ zoneId, zoneName }: { zoneId: string; zoneName: string 
         loading={query.isLoading}
         columns={columns}
         rowKey={(p) => p.id}
-        headerExtra={
-          allRows.length > 0 ? (
-            <KindFilter
-              counts={kindCounts}
-              total={allRows.length}
-              selected={kindFilter}
-              onSelect={setKindFilter}
-            />
-          ) : undefined
-        }
+        filters={allRows.length > 0 ? filters : undefined}
         search={{
           placeholder: "Search providers…",
           match: (p, q) =>
@@ -254,10 +260,11 @@ function ProvidersPage({ zoneId, zoneName }: { zoneId: string; zoneName: string 
             p.identifier.toLowerCase().includes(q) ||
             KIND_LABEL[p.kind].toLowerCase().includes(q),
         }}
-        sortOptions={[
-          { id: "name", label: "Name" },
-          { id: "recent", label: "Newest" },
-        ]}
+        initialSort={{ column: "created", direction: "desc" }}
+        sortValues={{
+          name: (p) => p.name.toLowerCase(),
+          created: (p) => Date.parse(p.created_at) || 0,
+        }}
         empty={{
           title: query.isError ? "Could not load providers" : "No providers configured",
           description: query.isError
@@ -341,44 +348,6 @@ function ProvidersPage({ zoneId, zoneName }: { zoneId: string; zoneName: string 
         }}
       />
     </>
-  );
-}
-
-function KindFilter({
-  counts,
-  total,
-  selected,
-  onSelect,
-}: {
-  counts: Map<ProviderKind, number>;
-  total: number;
-  selected: ProviderKind | "all";
-  onSelect: (kind: ProviderKind | "all") => void;
-}) {
-  const present = (Object.keys(KIND_LABEL) as ProviderKind[]).filter((k) => counts.has(k));
-  const chips: { id: ProviderKind | "all"; label: string; count: number }[] = [
-    { id: "all", label: "All", count: total },
-    ...present.map((k) => ({ id: k, label: KIND_SHORT[k], count: counts.get(k) ?? 0 })),
-  ];
-
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {chips.map((chip) => (
-        <button
-          key={chip.id}
-          onClick={() => onSelect(chip.id)}
-          className={cx(
-            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-            selected === chip.id
-              ? "border-foreground/20 bg-accent text-foreground"
-              : "border-border text-muted-foreground hover:bg-surface hover:text-foreground",
-          )}
-        >
-          {chip.label}
-          <span className="font-mono text-[10px] text-muted-foreground">{chip.count}</span>
-        </button>
-      ))}
-    </div>
   );
 }
 

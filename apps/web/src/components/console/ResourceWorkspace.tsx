@@ -12,14 +12,17 @@ import {
   DataTable,
   Drawer,
   EmptyState,
+  FilterMenu,
   Pagination,
   SearchInput,
   Select,
   Skeleton,
   type Column,
   type Crumb,
+  type FilterGroup,
   type SortState,
 } from "@/components/ui";
+import { cx } from "@/lib/cx";
 
 export interface SortOption {
   id: string;
@@ -43,8 +46,10 @@ export function ResourceWorkspace<T>({
   columns,
   rowKey,
   search,
+  filters,
   sortOptions,
   sortComparators,
+  sortValues,
   initialSort,
   pageSize = 8,
   empty,
@@ -60,11 +65,19 @@ export function ResourceWorkspace<T>({
   columns: Column<T>[];
   rowKey: (row: T) => string;
   search: { placeholder: string; match: (row: T, query: string) => boolean };
+  // Single-select filter groups rendered as one uniform funnel dropdown in the toolbar.
+  // Filtering itself is applied by the caller (the rows passed in are already filtered);
+  // this only renders the shared control and reports selections via each group's onChange.
+  filters?: FilterGroup[];
   sortOptions?: SortOption[];
-  // Comparator per sort option id. When provided, the selected option actually orders the
+  // Comparator per sort option id. When provided, the selected dropdown option orders the
   // rows; without it the sort dropdown is inert (legacy behavior preserved for callers that
   // do not pass comparators).
   sortComparators?: Record<string, (a: T, b: T) => number>;
+  // Value accessor per sortable column id. When provided, clicking that column header sorts
+  // the rows by the returned value and toggles direction, so column-header sorting is real
+  // rather than a cosmetic glyph. Takes precedence over the dropdown while a column is active.
+  sortValues?: Partial<Record<string, (row: T) => string | number>>;
   initialSort?: SortState;
   pageSize?: number;
   empty: WorkspaceEmpty;
@@ -93,10 +106,20 @@ export function ResourceWorkspace<T>({
   }, [rows, query, search]);
 
   const sorted = useMemo(() => {
+    const accessor = sort ? sortValues?.[sort.column] : undefined;
+    if (sort && accessor) {
+      const dir = sort.direction === "asc" ? 1 : -1;
+      return [...filtered].sort((a, b) => {
+        const av = accessor(a);
+        const bv = accessor(b);
+        if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+        return String(av).localeCompare(String(bv)) * dir;
+      });
+    }
     const comparator = sortComparators?.[sortChoice];
     if (!comparator) return filtered;
     return [...filtered].sort(comparator);
-  }, [filtered, sortComparators, sortChoice]);
+  }, [filtered, sort, sortValues, sortComparators, sortChoice]);
 
   const paged = useMemo(
     () => sorted.slice((page - 1) * pageSizeValue, page * pageSizeValue),
@@ -130,6 +153,7 @@ export function ResourceWorkspace<T>({
           aria-label={search.placeholder}
           className="w-full sm:w-72"
         />
+        {filters && filters.length > 0 && !controlsLocked ? <FilterMenu groups={filters} /> : null}
         {sortOptions && sortOptions.length > 0 ? (
           <div className="w-44">
             <Select
@@ -227,12 +251,13 @@ export function Monogram({ label }: { label: string }) {
 }
 
 // A hero row pinned to the top of a detail panel: status badges on the left, primary
-// actions (e.g. Edit) pushed to the right, with a hairline separating it from the body.
+// actions (e.g. Edit) pushed to the right. The badges and the action live in separate groups
+// so a long row of badges wraps on its own without ever colliding with the action button.
 export function DetailHeader({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-border pb-4">
-      {children}
-      {action ? <div className="ml-auto flex items-center gap-2">{action}</div> : null}
+    <div className="flex items-start justify-between gap-3 border-b border-border pb-4">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">{children}</div>
+      {action ? <div className="flex flex-shrink-0 items-center gap-2">{action}</div> : null}
     </div>
   );
 }
@@ -317,29 +342,35 @@ export function Mono({ children }: { children: ReactNode }) {
 }
 
 // An inline value with a copy affordance, for identifiers and other reference strings that
-// operators routinely copy out of a detail panel.
+// operators routinely copy out of a detail panel. The value sits in a subtle field and the
+// copy button is a clearly bordered control that never overlaps the text.
 export function CopyValue({ value, mono = true }: { value: string; mono?: boolean }) {
   const [copied, setCopied] = useState(false);
   return (
-    <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+    <span className="flex min-w-0 max-w-full items-stretch gap-1.5">
       <span
-        className={
-          mono
-            ? "min-w-0 break-all font-mono text-xs text-foreground"
-            : "min-w-0 break-words text-sm text-foreground"
-        }
+        className={cx(
+          "min-w-0 flex-1 self-center break-all",
+          mono ? "font-mono text-xs text-foreground" : "break-words text-sm text-foreground",
+        )}
       >
         {value}
       </span>
       <button
         type="button"
         aria-label={copied ? "Copied" : "Copy"}
+        title={copied ? "Copied" : "Copy"}
         onClick={() => {
           void navigator.clipboard?.writeText(value);
           setCopied(true);
           window.setTimeout(() => setCopied(false), 1200);
         }}
-        className="grid h-5 w-5 flex-shrink-0 place-items-center rounded text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+        className={cx(
+          "grid h-6 w-6 flex-shrink-0 place-items-center self-start rounded border outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40",
+          copied
+            ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+            : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+        )}
       >
         {copied ? (
           <svg

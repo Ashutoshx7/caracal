@@ -5,7 +5,7 @@ Caracal, a product of Garudex Labs
 This file defines the Applications route.
 */
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   CopyValue,
@@ -14,9 +14,9 @@ import {
   DetailGroup,
   DetailHeader,
   DetailSection,
-  Mono,
   ResourceWorkspace,
 } from "@/components/console/ResourceWorkspace";
+import type { FilterGroup } from "@/components/ui";
 import { ZoneScopedPage } from "@/components/console/ZoneScope";
 import { Badge, Button, ConfirmDialog, Field, Modal, useToast, type Column } from "@/components/ui";
 import { ConsoleApiError } from "@/platform/api/client";
@@ -63,6 +63,16 @@ function isManaged(app: Application): boolean {
   return app.registration_method !== "dcr";
 }
 
+type TypeFilter = "all" | "managed" | "dynamic";
+type CredentialFilter = "all" | "active" | "expiring" | "expired";
+
+// Ranks credential states for sorting so the most urgent (expired) sorts to one end and
+// healthy identities to the other.
+function credentialRank(app: Application): number {
+  const state = credentialState(app);
+  return state === "expired" ? 0 : state === "expiring" ? 1 : 2;
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof ConsoleApiError) {
     if (error.notConfigured) return "Control plane not connected.";
@@ -92,8 +102,64 @@ function ApplicationsPage({ zoneId, zoneName }: { zoneId: string; zoneName: stri
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Application | null>(null);
   const [rotateTarget, setRotateTarget] = useState<Application | null>(null);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [credentialFilter, setCredentialFilter] = useState<CredentialFilter>("all");
 
-  const rows = query.data ?? [];
+  const allRows = useMemo(() => query.data ?? [], [query.data]);
+
+  const counts = useMemo(() => {
+    let managed = 0;
+    let dynamic = 0;
+    let active = 0;
+    let expiring = 0;
+    let expired = 0;
+    for (const app of allRows) {
+      if (isManaged(app)) managed += 1;
+      else dynamic += 1;
+      const state = credentialState(app);
+      if (state === "active") active += 1;
+      else if (state === "expiring") expiring += 1;
+      else expired += 1;
+    }
+    return { managed, dynamic, active, expiring, expired };
+  }, [allRows]);
+
+  const rows = useMemo(
+    () =>
+      allRows.filter((app) => {
+        if (typeFilter === "managed" && !isManaged(app)) return false;
+        if (typeFilter === "dynamic" && isManaged(app)) return false;
+        if (credentialFilter !== "all" && credentialState(app) !== credentialFilter) return false;
+        return true;
+      }),
+    [allRows, typeFilter, credentialFilter],
+  );
+
+  const filters: FilterGroup[] = [
+    {
+      id: "type",
+      label: "Type",
+      value: typeFilter,
+      onChange: (v) => setTypeFilter(v as TypeFilter),
+      options: [
+        { id: "all", label: "All types", count: allRows.length },
+        { id: "managed", label: "Managed", count: counts.managed },
+        { id: "dynamic", label: "Dynamic (DCR)", count: counts.dynamic },
+      ],
+    },
+    {
+      id: "credential",
+      label: "Credential",
+      value: credentialFilter,
+      onChange: (v) => setCredentialFilter(v as CredentialFilter),
+      options: [
+        { id: "all", label: "Any credential", count: allRows.length },
+        { id: "active", label: "Active", count: counts.active },
+        { id: "expiring", label: "Expiring", count: counts.expiring },
+        { id: "expired", label: "Expired", count: counts.expired },
+      ],
+    },
+  ];
 
   const columns: Column<Application>[] = [
     {
@@ -116,11 +182,13 @@ function ApplicationsPage({ zoneId, zoneName }: { zoneId: string; zoneName: stri
     {
       id: "type",
       header: "Type",
+      sortable: true,
       cell: (app) => <Badge tone="neutral">{isManaged(app) ? "Managed" : "Dynamic (DCR)"}</Badge>,
     },
     {
       id: "credential",
       header: "Credential",
+      sortable: true,
       cell: (app) => <CredentialBadge app={app} />,
     },
     {
@@ -147,14 +215,18 @@ function ApplicationsPage({ zoneId, zoneName }: { zoneId: string; zoneName: stri
         loading={query.isLoading}
         columns={columns}
         rowKey={(app) => app.id}
+        filters={allRows.length > 0 ? filters : undefined}
         search={{
           placeholder: "Search applications…",
           match: (app, q) => app.name.toLowerCase().includes(q) || app.id.toLowerCase().includes(q),
         }}
-        sortOptions={[
-          { id: "recent", label: "Recently created" },
-          { id: "name", label: "Name" },
-        ]}
+        initialSort={{ column: "created", direction: "desc" }}
+        sortValues={{
+          name: (app) => app.name.toLowerCase(),
+          type: (app) => (isManaged(app) ? "0" : "1"),
+          credential: (app) => credentialRank(app),
+          created: (app) => Date.parse(app.created_at) || 0,
+        }}
         empty={{
           title: query.isError ? "Could not load applications" : "No applications yet",
           description: query.isError
@@ -288,7 +360,7 @@ function ApplicationDetail({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center gap-2">
+      <DetailHeader>
         <CredentialBadge app={app} />
         <Badge tone="neutral">{managed ? "Managed" : "Dynamic (DCR)"}</Badge>
         {app.expires_at ? (
@@ -297,7 +369,7 @@ function ApplicationDetail({
             {new Date(app.expires_at).toLocaleString()}
           </span>
         ) : null}
-      </div>
+      </DetailHeader>
 
       {managed ? (
         <IdentitySection app={app} busy={busy} onRename={onRename} />
@@ -305,7 +377,7 @@ function ApplicationDetail({
         <DetailGroup title="Identity">
           <DetailField label="Name">{app.name}</DetailField>
           <DetailField label="Application ID">
-            <Mono>{app.id}</Mono>
+            <CopyValue value={app.id} />
           </DetailField>
           <DetailField label="Created">{new Date(app.created_at).toLocaleString()}</DetailField>
         </DetailGroup>
@@ -321,19 +393,11 @@ function ApplicationDetail({
       )}
 
       {managed ? (
-        <section className="border-t border-border pt-4">
-          <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-destructive">
-            Danger zone
-          </h3>
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <p className="text-xs text-muted-foreground">
-              Permanently revoke this identity. This cannot be undone.
-            </p>
-            <Button variant="danger" size="sm" onClick={onDelete}>
-              Delete
-            </Button>
-          </div>
-        </section>
+        <DangerZone
+          description="Permanently revoke this identity. This cannot be undone."
+          actionLabel="Delete"
+          onAction={onDelete}
+        />
       ) : null}
     </div>
   );
@@ -358,11 +422,9 @@ function IdentitySection({
 
   return (
     <DetailGroup title="Identity">
-      <div className="flex flex-col gap-1 py-2.5">
-        <dt className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-          Name
-        </dt>
-        <dd>
+      <div className="grid grid-cols-1 gap-0.5 px-3 py-2.5 sm:grid-cols-[8.5rem_minmax(0,1fr)] sm:gap-3">
+        <dt className="text-xs font-medium text-muted-foreground sm:pt-2">Name</dt>
+        <dd className="min-w-0">
           {editing ? (
             <div className="flex items-center gap-2">
               <Field
@@ -399,8 +461,8 @@ function IdentitySection({
               </Button>
             </div>
           ) : (
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm text-foreground">{app.name}</span>
+            <div className="flex min-h-9 items-center justify-between gap-2">
+              <span className="min-w-0 break-words text-sm text-foreground">{app.name}</span>
               <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
                 Rename
               </Button>
@@ -409,7 +471,7 @@ function IdentitySection({
         </dd>
       </div>
       <DetailField label="Application ID">
-        <Mono>{app.id}</Mono>
+        <CopyValue value={app.id} />
       </DetailField>
       <DetailField label="Created">{new Date(app.created_at).toLocaleString()}</DetailField>
     </DetailGroup>
@@ -418,20 +480,17 @@ function IdentitySection({
 
 function CredentialsSection({ onRotate }: { onRotate: () => void }) {
   return (
-    <section className="border-t border-border pt-4">
-      <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        Credentials
-      </h3>
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
+    <DetailSection title="Credentials">
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-3">
+        <p className="min-w-0 text-xs text-muted-foreground">
           The client secret is shown only once. Rotate to issue a new secret and invalidate the old
           one immediately.
         </p>
-        <Button variant="secondary" size="sm" onClick={onRotate}>
+        <Button variant="secondary" size="sm" onClick={onRotate} className="flex-shrink-0">
           Rotate secret
         </Button>
       </div>
-    </section>
+    </DetailSection>
   );
 }
 
