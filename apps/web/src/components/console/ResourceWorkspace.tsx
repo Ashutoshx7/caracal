@@ -15,6 +15,7 @@ import {
   Pagination,
   SearchInput,
   Select,
+  Skeleton,
   type Column,
   type Crumb,
   type SortState,
@@ -173,7 +174,11 @@ export function ResourceWorkspace<T>({
         }
       />
 
-      {!loading && filtered.length > 0 ? (
+      {loading ? (
+        <div className="flex h-[49px] items-center justify-end gap-2 border-x border-b border-border bg-card px-4">
+          <Skeleton className="h-4 w-40" />
+        </div>
+      ) : filtered.length > 0 ? (
         <div className="border-x border-b border-border bg-card">
           <Pagination
             page={page}
@@ -204,11 +209,11 @@ export function ResourceWorkspace<T>({
 
 export function DetailField({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-1 py-2.5">
+    <div className="flex min-w-0 flex-col gap-1 py-2.5">
       <dt className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
         {label}
       </dt>
-      <dd className="text-sm text-foreground">{children}</dd>
+      <dd className="min-w-0 break-words text-sm text-foreground">{children}</dd>
     </div>
   );
 }
@@ -225,5 +230,5 @@ export function DetailGroup({ title, children }: { title: string; children: Reac
 }
 
 export function Mono({ children }: { children: ReactNode }) {
-  return <span className="font-mono text-xs text-foreground">{children}</span>;
+  return <span className="break-all font-mono text-xs text-foreground">{children}</span>;
 }

@@ -95,7 +95,6 @@ function MobileProgress({ steps, current }: { steps: OnboardingStep[]; current: 
 export function OnboardingLayout({
   steps,
   current,
-  eyebrow,
   title,
   description,
   children,
@@ -103,33 +102,32 @@ export function OnboardingLayout({
 }: {
   steps: OnboardingStep[];
   current: number;
-  eyebrow: string;
   title: string;
   description: string;
   children: ReactNode;
   footer: ReactNode;
 }) {
   return (
-    <div className="grid h-screen overflow-hidden lg:grid-cols-[340px_1fr] xl:grid-cols-[380px_1fr]">
+    <div className="grid h-[100dvh] overflow-hidden lg:grid-cols-[340px_1fr] xl:grid-cols-[380px_1fr]">
       <aside
-        className="relative hidden flex-col justify-between overflow-hidden p-8 text-white lg:flex xl:p-10"
+        className="relative hidden flex-col overflow-hidden p-8 text-white lg:flex xl:p-10"
         style={{ backgroundColor: "#121016" }}
       >
-        <Link to="/" className="relative z-10 flex items-center">
+        <Link to="/" className="relative z-10 flex shrink-0 items-center">
           <img
             src="/caracal_dark.png"
             alt="Caracal"
-            className="h-8 w-auto"
-            width={140}
-            height={32}
+            className="h-24 w-auto max-w-full object-contain xl:h-28"
+            width={144}
+            height={144}
           />
         </Link>
 
-        <div className="relative z-10 -mx-3">
+        <div className="scrollbar-thin relative z-10 -mx-3 my-6 min-h-0 flex-1 overflow-y-auto">
           <StepRail steps={steps} current={current} />
         </div>
 
-        <p className="relative z-10 max-w-xs text-xs leading-relaxed text-white/45">
+        <p className="relative z-10 max-w-xs shrink-0 text-xs leading-relaxed text-white/45">
           You own this environment. Caracal runs entirely under your control.
         </p>
 
@@ -143,28 +141,42 @@ export function OnboardingLayout({
       <main className="flex min-h-0 flex-col bg-background">
         <MobileProgress steps={steps} current={current} />
 
-        <header className="shrink-0 border-b border-border px-5 py-5 sm:px-8 md:px-12 md:py-6">
-          <div className="mx-auto w-full max-w-2xl animate-fade-in">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              {eyebrow}
-            </span>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+        <header className="relative shrink-0 border-b border-border px-6 pb-6 pt-6 sm:px-10 md:px-14 md:pb-7 md:pt-8">
+          <div className="w-full animate-fade-in">
+            <div className="flex items-center gap-2.5 text-xs font-semibold uppercase tracking-[0.2em]">
+              <span className="tabular-nums text-primary">
+                {String(current + 1).padStart(2, "0")}
+              </span>
+              <span className="tabular-nums text-muted-foreground/40">
+                / {String(steps.length).padStart(2, "0")}
+              </span>
+              <span aria-hidden="true" className="h-3 w-px bg-border" />
+              <span className="truncate text-muted-foreground">{steps[current]?.title}</span>
+            </div>
+            <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
               {title}
             </h1>
-            <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">{description}</p>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              {description}
+            </p>
+          </div>
+
+          <div className="absolute inset-x-0 bottom-0 h-0.5 bg-border/50">
+            <div
+              className="h-full bg-primary transition-[width] duration-500 ease-out"
+              style={{ width: `${((current + 1) / steps.length) * 100}%` }}
+            />
           </div>
         </header>
 
-        <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-8 md:px-12">
-          <div key={current} className="mx-auto w-full max-w-2xl animate-fade-in">
+        <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-6 py-8 sm:px-10 md:px-14">
+          <div key={current} className="w-full animate-fade-in">
             {children}
           </div>
         </div>
 
-        <footer className="shrink-0 border-t border-border bg-background/95 px-5 py-4 backdrop-blur sm:px-8 md:px-12">
-          <div className="mx-auto flex w-full max-w-2xl items-center justify-between gap-3">
-            {footer}
-          </div>
+        <footer className="shrink-0 border-t border-border bg-background/95 px-6 py-4 backdrop-blur sm:px-10 md:px-14">
+          <div className="flex w-full items-center justify-between gap-3">{footer}</div>
         </footer>
       </main>
     </div>

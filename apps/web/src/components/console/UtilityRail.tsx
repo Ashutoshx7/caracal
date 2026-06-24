@@ -43,71 +43,73 @@ export function UtilityRail() {
   return (
     <aside
       ref={rootRef}
-      className="hidden w-12 flex-shrink-0 flex-col items-center gap-1.5 border-l border-border py-3 md:flex"
+      className="hidden w-12 flex-shrink-0 flex-col items-center border-l border-border md:flex"
     >
-      <RailButton
-        label={theme === "dark" ? "Light mode" : "Dark mode"}
-        onClick={toggleTheme}
-        icon={
-          theme === "dark" ? (
-            <>
-              <circle cx="12" cy="12" r="4" />
-              <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-            </>
-          ) : (
-            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
-          )
-        }
-      />
-
-      <div className="my-1 h-px w-5 bg-border" />
-
-      <RailButton
-        label="Contact us"
-        active={open === "contact"}
-        onClick={() => setOpen((v) => (v === "contact" ? null : "contact"))}
-        panel={open === "contact" ? <ContactPanel /> : null}
-        icon={
-          <>
-            <path d="M3 8.5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-            <path d="m3.5 8 8.5 6 8.5-6" />
-          </>
-        }
-      />
-
-      <RailButton
-        label="Customize"
-        active={open === "customize"}
-        onClick={() => setOpen((v) => (v === "customize" ? null : "customize"))}
-        panel={open === "customize" ? <CustomizePanel /> : null}
-        icon={
-          <>
-            <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" />
-            <path d="M1 14h6M9 8h6M17 16h6" />
-          </>
-        }
-      />
-
-      <RailButton
-        label="Report an issue"
-        href={ISSUE_LINK}
-        icon={
-          <>
-            <rect x="8" y="6" width="8" height="12" rx="4" />
-            <path d="M19 7l-2 1.5M5 7l2 1.5M3 12h3M18 12h3M19 17l-2-1.5M5 17l2-1.5M12 3v2M9 5l1 1.5h4L15 5" />
-          </>
-        }
-      />
-
-      {isCommunity() ? (
+      <div className="flex h-14 w-full flex-shrink-0 items-center justify-center border-b border-border">
         <RailButton
-          label="Sponsor us"
-          href={SPONSOR_LINK}
+          label={theme === "dark" ? "Light mode" : "Dark mode"}
+          onClick={toggleTheme}
           icon={
-            <path d="M19 14c1.5-1.5 3-3.3 3-5.5A4.5 4.5 0 0 0 12 5 4.5 4.5 0 0 0 2 8.5C2 12 6 15 12 20c2-1.7 4.5-3.7 7-6Z" />
+            theme === "dark" ? (
+              <>
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+              </>
+            ) : (
+              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+            )
           }
         />
-      ) : null}
+      </div>
+
+      <div className="flex flex-col items-center gap-1.5 py-3">
+        <RailButton
+          label="Contact us"
+          active={open === "contact"}
+          onClick={() => setOpen((v) => (v === "contact" ? null : "contact"))}
+          panel={open === "contact" ? <ContactPanel /> : null}
+          icon={
+            <>
+              <path d="M3 8.5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+              <path d="m3.5 8 8.5 6 8.5-6" />
+            </>
+          }
+        />
+
+        <RailButton
+          label="Customize"
+          active={open === "customize"}
+          onClick={() => setOpen((v) => (v === "customize" ? null : "customize"))}
+          panel={open === "customize" ? <CustomizePanel /> : null}
+          icon={
+            <>
+              <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" />
+              <path d="M1 14h6M9 8h6M17 16h6" />
+            </>
+          }
+        />
+
+        <RailButton
+          label="Report an issue"
+          href={ISSUE_LINK}
+          icon={
+            <>
+              <rect x="8" y="6" width="8" height="12" rx="4" />
+              <path d="M19 7l-2 1.5M5 7l2 1.5M3 12h3M18 12h3M19 17l-2-1.5M5 17l2-1.5M12 3v2M9 5l1 1.5h4L15 5" />
+            </>
+          }
+        />
+
+        {isCommunity() ? (
+          <RailButton
+            label="Sponsor us"
+            href={SPONSOR_LINK}
+            icon={
+              <path d="M19 14c1.5-1.5 3-3.3 3-5.5A4.5 4.5 0 0 0 12 5 4.5 4.5 0 0 0 2 8.5C2 12 6 15 12 20c2-1.7 4.5-3.7 7-6Z" />
+            }
+          />
+        ) : null}
+      </div>
     </aside>
   );
 }
