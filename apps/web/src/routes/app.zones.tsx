@@ -4,7 +4,7 @@ Caracal, a product of Garudex Labs
 
 This file defines the zones management route.
 */
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 
 import { DcrField } from "@/components/console/DcrField";
@@ -28,7 +28,6 @@ import {
 import { ConsoleApiError, consoleApi } from "@/platform/api/client";
 import {
   selectZone,
-  useConsoleStatus,
   useCreateZone,
   useDeleteZone,
   useUpdateZone,
@@ -57,7 +56,6 @@ function errorMessage(error: unknown): string {
 function ZonesPage() {
   const toast = useToast();
   const session = useSession();
-  const status = useConsoleStatus();
   const zonesQuery = useZones();
   const createZone = useCreateZone();
   const updateZone = useUpdateZone();
@@ -182,7 +180,7 @@ function ZonesPage() {
     },
   ];
 
-  if (status.isLoading) {
+  if (zonesQuery.isLoading) {
     return (
       <ModulePage
         title="Zones"
@@ -197,14 +195,7 @@ function ZonesPage() {
     );
   }
 
-  const disconnected = status.isError || !status.data?.configured || !status.data?.reachable;
-  if (disconnected) {
-    const title = !status.data?.configured
-      ? "Control plane not connected"
-      : "Control plane unreachable";
-    const description = !status.data?.configured
-      ? "No admin credentials were found. Start the local stack with `caracal up` to provision the control plane, then reload."
-      : `The control plane at ${status.data?.apiUrl ?? ""} is not responding. Confirm it is running, then retry.`;
+  if (zonesQuery.isError) {
     return (
       <ModulePage
         title="Zones"
@@ -212,9 +203,13 @@ function ZonesPage() {
         breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Zones" }]}
       >
         <EmptyState
-          title={title}
-          description={description}
-          action={<Button onClick={() => status.refetch()}>Retry</Button>}
+          title="Zones unavailable"
+          description="The control plane did not respond, so zones could not be loaded. Check platform health in Diagnostics; this view recovers automatically once the control plane is reachable."
+          action={
+            <Link to="/app/diagnostics">
+              <Button variant="secondary">Open Diagnostics</Button>
+            </Link>
+          }
         />
       </ModulePage>
     );
@@ -246,24 +241,14 @@ function ZonesPage() {
         onSortChange={toggleSort}
         empty={
           <EmptyState
-            title={
-              zonesQuery.isError
-                ? "Could not load zones"
-                : query
-                  ? "No matching zones"
-                  : "No zones yet"
-            }
+            title={query ? "No matching zones" : "No zones yet"}
             description={
-              zonesQuery.isError
-                ? errorMessage(zonesQuery.error)
-                : query
-                  ? "Try a different search term."
-                  : "Create your first zone to start managing applications, resources, and policies."
+              query
+                ? "Try a different search term."
+                : "Create your first zone to start managing applications, resources, and policies."
             }
             action={
-              !query && !zonesQuery.isError ? (
-                <Button onClick={() => setCreateOpen(true)}>Create zone</Button>
-              ) : undefined
+              !query ? <Button onClick={() => setCreateOpen(true)}>Create zone</Button> : undefined
             }
           />
         }

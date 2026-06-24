@@ -102,12 +102,7 @@ function DiagnosticsConsole({
           const checks = report.checks.filter((check) => check.section === section);
           if (checks.length === 0) return null;
           return (
-            <SectionTable
-              key={section}
-              section={section}
-              checks={checks}
-              zoneNames={zoneNames}
-            />
+            <SectionTable key={section} section={section} checks={checks} zoneNames={zoneNames} />
           );
         })}
       </div>
@@ -138,10 +133,17 @@ function OverviewBar({ report, health }: { report: DiagnosticsReport; health: Pl
       </div>
       <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-3 lg:grid-cols-6 [&>*]:bg-background">
         <Metric label="Failing" value={summary.fail} tone={summary.fail > 0 ? "fail" : undefined} />
-        <Metric label="Warnings" value={summary.warn} tone={summary.warn > 0 ? "warn" : undefined} />
+        <Metric
+          label="Warnings"
+          value={summary.warn}
+          tone={summary.warn > 0 ? "warn" : undefined}
+        />
         <Metric label="Passing" value={summary.ok} />
         <Metric label="Checks" value={summary.total} />
-        <Metric label="Zone scope" text={zoneScopeText(context.zoneScope, context.zoneIds.length)} />
+        <Metric
+          label="Zone scope"
+          text={zoneScopeText(context.zoneScope, context.zoneIds.length)}
+        />
         <Metric label="Admin API" text={context.apiUrl} mono />
       </div>
     </div>
@@ -408,7 +410,9 @@ function PanelHeader({ title, hint, count }: { title: string; hint: string; coun
         <p className="text-xs text-muted-foreground">{hint}</p>
       </div>
       {count !== undefined && count > 0 ? (
-        <span className="font-mono text-sm font-semibold tabular-nums text-foreground">{count}</span>
+        <span className="font-mono text-sm font-semibold tabular-nums text-foreground">
+          {count}
+        </span>
       ) : null}
     </div>
   );
@@ -438,7 +442,9 @@ function SyncIndicator({
 function StatusDot({ status, className }: { status: DiagnosticStatus; className?: string }) {
   const tone =
     status === "fail" ? "bg-destructive" : status === "warn" ? "bg-amber-500" : "bg-emerald-500";
-  return <span className={cx("inline-block h-2 w-2 flex-shrink-0 rounded-full", tone, className)} />;
+  return (
+    <span className={cx("inline-block h-2 w-2 flex-shrink-0 rounded-full", tone, className)} />
+  );
 }
 
 function StatusPill({ status }: { status: DiagnosticStatus }) {
