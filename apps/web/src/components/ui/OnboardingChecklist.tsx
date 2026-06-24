@@ -27,6 +27,8 @@ export type Step = {
    * the primary action closes the coachmark so the operator can act on the page it opened.
    */
   advanceOnAction?: boolean;
+  /** Hide this step from the side checklist (still shown as a coachmark in the tour). */
+  hideInList?: boolean;
 };
 
 export interface InteractiveOnboardingChecklistProps {
@@ -187,8 +189,6 @@ function placeCard(rect: TargetRect): { top: number; left: number } {
 
 function CoachmarkOverlay({
   step,
-  stepIndex,
-  totalSteps,
   isFirst,
   isLast,
   manualCompletion,
@@ -198,8 +198,6 @@ function CoachmarkOverlay({
   onClose,
 }: {
   step: Step;
-  stepIndex: number;
-  totalSteps: number;
   isFirst: boolean;
   isLast: boolean;
   manualCompletion: boolean;
@@ -245,14 +243,9 @@ function CoachmarkOverlay({
 
   const cardBody = (
     <>
-      <div className="mb-2">
-        <h3 id="coachmark-title" className="text-sm font-semibold text-foreground">
-          {step.title}
-        </h3>
-        <p className="mt-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Step {stepIndex + 1} of {totalSteps}
-        </p>
-      </div>
+      <h3 id="coachmark-title" className="mb-2 text-sm font-semibold text-foreground">
+        {step.title}
+      </h3>
 
       <div className="scrollbar-thin max-h-[min(56vh,30rem)] overflow-y-auto pr-0.5">
         {step.description ? <p className="text-sm text-foreground">{step.description}</p> : null}
@@ -306,7 +299,7 @@ function CoachmarkOverlay({
         >
           {!isIntro ? (
             <p className="mb-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              Open the related page to see this in context — the lesson stays the same.
+              Open the related page to see this in context. The lesson stays the same.
             </p>
           ) : null}
           {cardBody}
@@ -384,9 +377,15 @@ export function InteractiveOnboardingChecklist({
   );
 
   const totalSteps = steps.length;
-  const completedCount = steps.filter((s) => completed.has(s.id)).length;
-  const progress = totalSteps === 0 ? 0 : (completedCount / totalSteps) * 100;
-  const allComplete = totalSteps > 0 && completedCount === totalSteps;
+
+  // The side checklist and its progress count only the visible (build) steps, so bookend
+  // coachmarks like an intro or summary do not inflate "2/6". The coachmark sequence still
+  // walks the full steps array.
+  const listSteps = useMemo(() => steps.filter((s) => !s.hideInList), [steps]);
+  const listTotal = listSteps.length;
+  const listDone = listSteps.filter((s) => completed.has(s.id)).length;
+  const progress = listTotal === 0 ? 0 : (listDone / listTotal) * 100;
+  const buildAllComplete = listTotal > 0 && listDone === listTotal;
 
   const setOpen = useCallback(
     (next: boolean) => {
@@ -490,7 +489,7 @@ export function InteractiveOnboardingChecklist({
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Progress</span>
               <span className="font-medium text-foreground">
-                {completedCount}/{totalSteps}
+                {listDone}/{listTotal}
               </span>
             </div>
             <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
@@ -502,7 +501,7 @@ export function InteractiveOnboardingChecklist({
           </div>
 
           <ul className="scrollbar-thin flex-1 overflow-y-auto p-3">
-            {steps.map((step) => {
+            {listSteps.map((step) => {
               const isDone = completed.has(step.id);
               const isActive = activeId === step.id;
               return (
@@ -551,7 +550,7 @@ export function InteractiveOnboardingChecklist({
             })}
           </ul>
 
-          {allComplete ? (
+          {buildAllComplete ? (
             <div className="border-t border-border p-4">
               <Button
                 className="w-full"
@@ -571,8 +570,6 @@ export function InteractiveOnboardingChecklist({
       {activeStep ? (
         <CoachmarkOverlay
           step={activeStep}
-          stepIndex={activeIndex}
-          totalSteps={totalSteps}
           isFirst={!hasPrevIncomplete}
           isLast={!hasNextIncomplete}
           manualCompletion={manualCompletion}

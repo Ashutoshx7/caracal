@@ -20,8 +20,8 @@ import type { Provider, ProviderInput, ProviderKind } from "@/platform/api/types
 
 const KIND_OPTIONS: { value: ProviderKind; label: string }[] = [
   { value: "caracal_mandate", label: "Caracal mandate" },
-  { value: "oauth2_authorization_code", label: "OAuth 2.0 — authorization code" },
-  { value: "oauth2_client_credentials", label: "OAuth 2.0 — client credentials" },
+  { value: "oauth2_authorization_code", label: "OAuth 2.0: authorization code" },
+  { value: "oauth2_client_credentials", label: "OAuth 2.0: client credentials" },
   { value: "api_key", label: "API key" },
   { value: "bearer_token", label: "Bearer token" },
   { value: "none", label: "None" },

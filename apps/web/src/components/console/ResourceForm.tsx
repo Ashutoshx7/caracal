@@ -279,9 +279,9 @@ export function ResourceFormModal({
               value={enforcement}
               onChange={(e) => setEnforcement(e.target.value as ResourceOperationEnforcement)}
             >
-              <option value="enforced">Enforced — only listed operations are authorized</option>
+              <option value="enforced">Enforced: only listed operations are authorized</option>
               <option value="transport_uniform">
-                Transport uniform — trust a single upstream surface (MCP-style)
+                Transport uniform: trust a single upstream surface (MCP-style)
               </option>
             </Select>
 
