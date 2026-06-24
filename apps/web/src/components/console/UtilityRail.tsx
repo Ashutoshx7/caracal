@@ -5,6 +5,7 @@ Caracal, a product of Garudex Labs
 This file renders the right-edge utility rail: Contact us, Customize, and Sponsor us actions.
 */
 import Cal, { getCalApi } from "@calcom/embed-react";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { cx } from "@/lib/cx";
@@ -23,6 +24,7 @@ export function UtilityRail() {
   const [open, setOpen] = useState<OpenPanel>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const theme = useTheme();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   useEffect(() => {
     if (!open) return;
@@ -64,19 +66,6 @@ export function UtilityRail() {
 
       <div className="flex flex-col items-center gap-1.5 py-3">
         <RailButton
-          label="Contact us"
-          active={open === "contact"}
-          onClick={() => setOpen((v) => (v === "contact" ? null : "contact"))}
-          panel={open === "contact" ? <ContactPanel /> : null}
-          icon={
-            <>
-              <path d="M3 8.5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-              <path d="m3.5 8 8.5 6 8.5-6" />
-            </>
-          }
-        />
-
-        <RailButton
           label="Customize"
           active={open === "customize"}
           onClick={() => setOpen((v) => (v === "customize" ? null : "customize"))}
@@ -85,6 +74,34 @@ export function UtilityRail() {
             <>
               <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" />
               <path d="M1 14h6M9 8h6M17 16h6" />
+            </>
+          }
+        />
+
+        <RailButton
+          label="AI Governor"
+          to="/app/ai"
+          active={pathname.startsWith("/app/ai")}
+          locked
+          icon={
+            <>
+              <path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9z" />
+              <path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17z" />
+            </>
+          }
+        />
+      </div>
+
+      <div className="mt-auto flex flex-col items-center gap-1.5 border-t border-border py-3">
+        <RailButton
+          label="Contact us"
+          active={open === "contact"}
+          onClick={() => setOpen((v) => (v === "contact" ? null : "contact"))}
+          panel={open === "contact" ? <ContactPanel /> : null}
+          icon={
+            <>
+              <path d="M3 8.5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+              <path d="m3.5 8 8.5 6 8.5-6" />
             </>
           }
         />
@@ -120,6 +137,8 @@ function RailButton({
   active,
   onClick,
   href,
+  to,
+  locked,
   panel,
 }: {
   label: string;
@@ -127,6 +146,8 @@ function RailButton({
   active?: boolean;
   onClick?: () => void;
   href?: string;
+  to?: string;
+  locked?: boolean;
   panel?: ReactNode;
 }) {
   const content = (
@@ -149,16 +170,48 @@ function RailButton({
     active && "bg-accent text-foreground",
   );
 
+  const lockDot = locked ? (
+    <span className="absolute -right-0.5 -top-0.5 grid h-3 w-3 place-items-center rounded-full bg-background text-muted-foreground">
+      <svg
+        width="9"
+        height="9"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+      >
+        <rect x="5" y="11" width="14" height="9" rx="2" />
+        <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+      </svg>
+    </span>
+  ) : null;
+
   const floatingLabel = (
-    <span className="pointer-events-none absolute right-full top-1/2 z-50 mr-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs font-medium text-popover-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100">
+    <span className="pointer-events-none absolute right-full top-1/2 z-50 mr-2 -translate-y-1/2 flex items-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs font-medium text-popover-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100">
       {label}
+      {locked ? (
+        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          Enterprise
+        </span>
+      ) : null}
     </span>
   );
+
+  if (to) {
+    return (
+      <Link to={to} aria-label={label} className={className}>
+        {content}
+        {lockDot}
+        {floatingLabel}
+      </Link>
+    );
+  }
 
   if (href) {
     return (
       <a href={href} target="_blank" rel="noreferrer" aria-label={label} className={className}>
         {content}
+        {lockDot}
         {floatingLabel}
       </a>
     );
@@ -167,6 +220,7 @@ function RailButton({
   return (
     <button onClick={onClick} aria-label={label} className={className}>
       {content}
+      {lockDot}
       {!active ? floatingLabel : null}
       {panel}
     </button>
@@ -186,7 +240,7 @@ function ContactPanel() {
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className="absolute right-full top-0 z-40 mr-2 w-[34rem] max-w-[calc(100vw-5rem)] cursor-default overflow-hidden rounded-xl border border-border bg-popover text-left shadow-xl"
+      className="absolute bottom-0 right-full z-40 mr-2 w-[34rem] max-w-[calc(100vw-5rem)] cursor-default overflow-hidden rounded-xl border border-border bg-popover text-left shadow-xl"
     >
       <div className="border-b border-border px-4 py-3">
         <p className="text-sm font-semibold text-foreground">Talk to sales</p>

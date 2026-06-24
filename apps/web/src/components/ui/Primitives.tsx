@@ -299,21 +299,42 @@ export function SectionTitle({ children }: { children: ReactNode }) {
 
 type BadgeTone = "neutral" | "success" | "warning" | "danger" | "muted";
 
-export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: BadgeTone }) {
+export function Badge({
+  children,
+  tone = "neutral",
+  dot,
+}: {
+  children: ReactNode;
+  tone?: BadgeTone;
+  dot?: boolean;
+}) {
   const tones: Record<BadgeTone, string> = {
-    neutral: "border-border bg-secondary text-secondary-foreground",
-    success: "border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-    warning: "border-transparent bg-amber-500/15 text-amber-600 dark:text-amber-400",
-    danger: "border-transparent bg-destructive/15 text-destructive",
+    neutral: "border-border bg-secondary/60 text-secondary-foreground",
+    success: "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    warning: "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+    danger: "border-destructive/25 bg-destructive/10 text-destructive",
     muted: "border-border bg-muted text-muted-foreground",
   };
+  const dotTones: Record<BadgeTone, string> = {
+    neutral: "bg-muted-foreground",
+    success: "bg-emerald-500",
+    warning: "bg-amber-500",
+    danger: "bg-destructive",
+    muted: "bg-muted-foreground",
+  };
+  // Colored tones convey live status, so they carry a small status dot by default; neutral
+  // and muted badges are plain category labels with no dot. Either can be overridden.
+  const showDot = dot ?? (tone === "success" || tone === "warning" || tone === "danger");
   return (
     <span
       className={cx(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-1.5 rounded-[5px] border px-1.5 py-0.5 text-[11px] font-medium leading-none",
         tones[tone],
       )}
     >
+      {showDot ? (
+        <span className={cx("h-1.5 w-1.5 flex-shrink-0 rounded-full", dotTones[tone])} />
+      ) : null}
       {children}
     </span>
   );
@@ -321,7 +342,7 @@ export function Badge({ children, tone = "neutral" }: { children: ReactNode; ton
 
 export function LockBadge() {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+    <span className="inline-flex items-center gap-1 rounded-[5px] border border-border bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
       <svg
         width="10"
         height="10"
