@@ -14,7 +14,8 @@ import {
   ResourceWorkspace,
 } from "@/components/console/ResourceWorkspace";
 import { ZoneScopedPage } from "@/components/console/ZoneScope";
-import { Badge, Button, Field, Select, type Column } from "@/components/ui";
+import { Badge, Button, Field, Select, Tooltip, type Column } from "@/components/ui";
+import { cx } from "@/lib/cx";
 import { ConsoleApiError } from "@/platform/api/client";
 import { useSessionsFeed } from "@/platform/api/hooks";
 import type { Session, SessionQuery } from "@/platform/api/types";
@@ -101,6 +102,7 @@ function SessionsPage({ zoneId, initialSubject }: { zoneId: string; initialSubje
 
   const feed = useSessionsFeed(zoneId, serverQuery);
   const rows = useMemo(() => (feed.data?.pages ?? []).flatMap((page) => page.rows), [feed.data]);
+  const now = Date.now();
 
   const columns: Column<Session>[] = [
     {
@@ -115,8 +117,22 @@ function SessionsPage({ zoneId, initialSubject }: { zoneId: string; initialSubje
     },
     {
       id: "status",
-      header: "Status",
-      cell: (s) => <Badge tone={statusTone(s.status)}>{s.status}</Badge>,
+      header: "Authority",
+      cell: (s) => {
+        const eff = effectiveStatus(s, now);
+        return (
+          <div className="flex items-center gap-1.5">
+            <Badge tone={statusTone(eff)}>{eff}</Badge>
+            {isStaleActive(s, now) ? (
+              <Tooltip label="The stored status is still 'active', but this session's expiry has passed. The runtime already rejects it; it will be reaped to 'expired'.">
+                <span className="cursor-help text-[10px] uppercase tracking-wide text-amber-600 dark:text-amber-500">
+                  lapsed
+                </span>
+              </Tooltip>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       id: "authenticated",
@@ -132,11 +148,21 @@ function SessionsPage({ zoneId, initialSubject }: { zoneId: string; initialSubje
       id: "expires",
       header: "Expires",
       align: "right",
-      cell: (s) => (
-        <span className="text-xs text-muted-foreground">
-          {new Date(s.expires_at).toLocaleString()}
-        </span>
-      ),
+      cell: (s) => {
+        const eff = effectiveStatus(s, now);
+        const lapsed = eff !== "active" && Date.parse(s.expires_at) <= now;
+        return (
+          <span
+            className={cx(
+              "text-xs",
+              lapsed ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground",
+            )}
+            title={new Date(s.expires_at).toLocaleString()}
+          >
+            {relativeTime(s.expires_at, now)}
+          </span>
+        );
+      },
     },
   ];
 
@@ -236,17 +262,29 @@ function SessionFilterBar({
           {hasMore ? "Load more" : "All loaded"}
         </Button>
       </div>
+      <p className="text-[11px] text-muted-foreground">
+        Status filters by the stored value. A session stored as{" "}
+        <span className="font-mono">active</span> whose expiry has passed shows as{" "}
+        <span className="font-medium">expired</span> here because the runtime already rejects it.
+      </p>
     </div>
   );
 }
 
 function SessionDetail({ session }: { session: Session }) {
+  const now = Date.now();
+  const eff = effectiveStatus(session, now);
+  const stale = isStaleActive(session, now);
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-center gap-2">
-        <Badge tone={statusTone(session.status)}>{session.status}</Badge>
+        <Badge tone={statusTone(eff)}>{eff}</Badge>
         <Badge tone="neutral">{session.session_type}</Badge>
+        {stale ? <Badge tone="warning">awaiting reap</Badge> : null}
       </div>
+
+      <AuthoritySummary session={session} effective={eff} stale={stale} now={now} />
 
       <DetailGroup title="Session">
         <DetailField label="Session ID">
@@ -267,11 +305,63 @@ function SessionDetail({ session }: { session: Session }) {
           {new Date(session.authenticated_at).toLocaleString()}
         </DetailField>
         <DetailField label="Created">{new Date(session.created_at).toLocaleString()}</DetailField>
-        <DetailField label="Expires">{new Date(session.expires_at).toLocaleString()}</DetailField>
+        <DetailField label="Expires">
+          {new Date(session.expires_at).toLocaleString()}
+          <span className="ml-2 text-xs text-muted-foreground">
+            ({relativeTime(session.expires_at, now)})
+          </span>
+        </DetailField>
       </DetailGroup>
 
       <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-        Sessions are read-only here. They end by expiry, grant revocation, or agent termination.
+        Sessions are read-only here. They end by expiry, grant revocation, or agent termination. To
+        cut off authority now, revoke the delegation or terminate the holding agent.
+      </p>
+    </div>
+  );
+}
+
+// States the authority this session currently carries, derived from the same rule the
+// STS enforces at token mint time, so an operator can trust the console's verdict rather
+// than inferring it from a raw status string.
+function AuthoritySummary({
+  session,
+  effective,
+  stale,
+  now,
+}: {
+  session: Session;
+  effective: EffectiveStatus;
+  stale: boolean;
+  now: number;
+}) {
+  if (effective === "active") {
+    return (
+      <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400">
+        <div className="font-medium">Carries live authority</div>
+        <p className="mt-0.5 text-emerald-700/80 dark:text-emerald-400/80">
+          This session can mint tokens until it expires {relativeTime(session.expires_at, now)}.
+        </p>
+      </div>
+    );
+  }
+  if (effective === "revoked") {
+    return (
+      <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="font-medium">No authority — revoked</div>
+        <p className="mt-0.5 text-destructive/80">
+          The runtime rejects every exchange for this session. Revocation is irreversible.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+      <div className="font-medium">No authority — expired</div>
+      <p className="mt-0.5 text-amber-700/80 dark:text-amber-400/80">
+        Expiry passed {relativeTime(session.expires_at, now)}, so the runtime rejects every
+        exchange.
+        {stale ? " The stored status is still 'active'; it will be reaped to 'expired'." : ""}
       </p>
     </div>
   );

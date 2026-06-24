@@ -32,6 +32,7 @@ import {
   useDeleteApplication,
   useUpdateApplication,
 } from "@/platform/api/hooks";
+import { parseList, privilegedTraits, validateTraits } from "@/platform/api/validation";
 import type { Application } from "@/platform/api/types";
 import { parseList, privilegedTraits, validateTraits } from "@/platform/api/validation";
 
@@ -262,7 +263,7 @@ function ApplicationsPage({ zoneId, zoneName }: { zoneId: string; zoneName: stri
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
         title="Delete application"
-        description={`Deleting "${deleteTarget?.name ?? ""}" permanently revokes its identity. This cannot be undone.`}
+        description={`Archiving "${deleteTarget?.name ?? ""}" revokes its identity: it can no longer obtain tokens, any agent using its credentials stops authenticating, and any resource bound to it as a Gateway application loses that route. The record is retained for audit.`}
         confirmLabel="Delete application"
         tone="danger"
         onConfirm={async () => {
