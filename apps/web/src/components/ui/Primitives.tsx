@@ -14,6 +14,7 @@ import type {
 } from "react";
 
 import { cx } from "@/lib/cx";
+import { InfoHint } from "./InfoHint";
 
 export function Spinner({ className }: { className?: string }) {
   return (
@@ -104,19 +105,35 @@ export function IconButton({
 const fieldBase =
   "w-full rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-ring focus:ring-2 focus:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-50";
 
+// A field label with an optional info tooltip, so every form control can carry the same
+// inline help the console TUI surfaces on its fields.
+export function FieldLabel({ label, info }: { label?: string; info?: string }) {
+  if (!label) return null;
+  return (
+    <span className="mb-1.5 flex items-center gap-1.5">
+      <span className="text-sm font-medium text-foreground">{label}</span>
+      {info ? <InfoHint label={info} /> : null}
+    </span>
+  );
+}
+
 export function Field({
   label,
+  info,
   hint,
   error,
   className,
   id,
   ...props
-}: InputHTMLAttributes<HTMLInputElement> & { label?: string; hint?: string; error?: string }) {
+}: InputHTMLAttributes<HTMLInputElement> & {
+  label?: string;
+  info?: string;
+  hint?: string;
+  error?: string;
+}) {
   return (
     <label className="block" htmlFor={id}>
-      {label ? (
-        <span className="mb-1.5 block text-sm font-medium text-foreground">{label}</span>
-      ) : null}
+      <FieldLabel label={label} info={info} />
       <input
         id={id}
         className={cx(
@@ -138,12 +155,14 @@ export function Field({
 
 export function PasswordField({
   label,
+  info,
   id,
   className,
   onRevealChange,
   ...props
 }: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & {
   label?: string;
+  info?: string;
   onRevealChange?: (revealed: boolean) => void;
 }) {
   const [show, setShow] = useState(false);
@@ -156,9 +175,7 @@ export function PasswordField({
   }
   return (
     <label className="block" htmlFor={id}>
-      {label ? (
-        <span className="mb-1.5 block text-sm font-medium text-foreground">{label}</span>
-      ) : null}
+      <FieldLabel label={label} info={info} />
       <div className="relative">
         <input
           id={id}
@@ -206,16 +223,19 @@ export function PasswordField({
 
 export function Textarea({
   label,
+  info,
   hint,
   className,
   id,
   ...props
-}: TextareaHTMLAttributes<HTMLTextAreaElement> & { label?: string; hint?: string }) {
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & {
+  label?: string;
+  info?: string;
+  hint?: string;
+}) {
   return (
     <label className="block" htmlFor={id}>
-      {label ? (
-        <span className="mb-1.5 block text-sm font-medium text-foreground">{label}</span>
-      ) : null}
+      <FieldLabel label={label} info={info} />
       <textarea id={id} className={cx(fieldBase, "min-h-20 py-2", className)} {...props} />
       {hint ? <span className="mt-1 block text-xs text-muted-foreground">{hint}</span> : null}
     </label>
@@ -224,16 +244,15 @@ export function Textarea({
 
 export function Select({
   label,
+  info,
   className,
   id,
   children,
   ...props
-}: SelectHTMLAttributes<HTMLSelectElement> & { label?: string }) {
+}: SelectHTMLAttributes<HTMLSelectElement> & { label?: string; info?: string }) {
   return (
     <label className="block" htmlFor={id}>
-      {label ? (
-        <span className="mb-1.5 block text-sm font-medium text-foreground">{label}</span>
-      ) : null}
+      <FieldLabel label={label} info={info} />
       <select id={id} className={cx(fieldBase, "h-9 cursor-pointer pr-8", className)} {...props}>
         {children}
       </select>

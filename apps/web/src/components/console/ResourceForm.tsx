@@ -199,6 +199,7 @@ export function ResourceFormModal({
         ) : null}
         <Field
           label="Name"
+          info="Human-readable name for this protected upstream, shown across the console. Use a short operational name, not an internal ID."
           placeholder="payments-api"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -208,6 +209,7 @@ export function ResourceFormModal({
         <div>
           <Field
             label="Scopes"
+            info="The grantable permissions this resource exposes. Policies grant these scopes to applications, and operations below map to them. At least one is required."
             placeholder="invoices:read, invoices:write"
             hint="Comma-separated authorization scopes. At least one is required."
             value={scopesText}
@@ -238,12 +240,14 @@ export function ResourceFormModal({
           <div className="mt-3 flex flex-col gap-4">
             <Field
               label="Upstream URL"
+              info="The base URL the Gateway proxies authorized requests to. Use the internal address of the protected service."
               placeholder="https://api.internal.example.com"
               value={upstreamUrl}
               onChange={(e) => setUpstreamUrl(e.target.value)}
             />
             <Select
               label="Gateway application"
+              info="The managed application that fronts this resource at the Gateway. Requests are authorized as this identity before reaching the upstream."
               value={gatewayApp}
               onChange={(e) => setGatewayApp(e.target.value)}
             >
@@ -256,6 +260,7 @@ export function ResourceFormModal({
             </Select>
             <Select
               label="Credential provider"
+              info="The provider that supplies upstream credentials at runtime when the Gateway calls this resource."
               value={credentialProvider}
               onChange={(e) => setCredentialProvider(e.target.value)}
             >
@@ -276,6 +281,7 @@ export function ResourceFormModal({
           <div className="mt-3 flex flex-col gap-3">
             <Select
               label="Enforcement"
+              info="Enforced authorizes only the operations you list below. Transport uniform trusts the whole upstream surface as one unit (MCP-style), without per-operation rules."
               value={enforcement}
               onChange={(e) => setEnforcement(e.target.value as ResourceOperationEnforcement)}
             >
@@ -391,6 +397,7 @@ export function ResourceFormModal({
             <div className="mt-4">
               <Field
                 label="Identifier"
+                info="The stable audience URI used in tokens and policy. Generated from the name when blank; must use the resource:// namespace or be an absolute URI."
                 placeholder="resource://payments-api"
                 hint="Optional. Generated from the name when blank. Must match resource:// or an absolute URI."
                 value={identifier}
