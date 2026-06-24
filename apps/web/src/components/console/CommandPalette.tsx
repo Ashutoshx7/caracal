@@ -88,6 +88,15 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
     const actions: Command[] = [
       {
+        id: "action:diagnostics",
+        section: "Actions",
+        label: "Open Diagnostics",
+        hint: "Platform health",
+        icon: <NavIcon name="diagnostics" />,
+        keywords: "diagnostics health status doctor incident troubleshoot",
+        run: go("/app/diagnostics"),
+      },
+      {
         id: "action:zones",
         section: "Actions",
         label: "Manage zones",

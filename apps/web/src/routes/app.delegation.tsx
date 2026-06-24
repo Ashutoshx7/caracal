@@ -7,7 +7,6 @@ This file defines the Delegation workspace for authority relationships, chains, 
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
-import { LiveBadge } from "@/components/console/LiveBadge";
 import {
   DetailField,
   DetailGroup,
@@ -152,7 +151,6 @@ function DelegationPage({ zoneId }: { zoneId: string }) {
         title="Delegation"
         description="Active delegation edges. Each edge grants one agent session authority to act on another's behalf within scope."
         breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Delegation" }]}
-        headerExtra={<LiveBadge label="Live · refreshes every 10s" />}
         rows={rows}
         loading={query.isLoading}
         columns={columns}
