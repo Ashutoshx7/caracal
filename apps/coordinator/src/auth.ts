@@ -113,6 +113,15 @@ function operatorZone(method: string, path: string): string | undefined {
     if (method === 'GET' && parts.length === 5 && (parts[4] === 'traverse' || parts[4] === 'impact')) return parts[1]
     if (method === 'PATCH' && parts.length === 5 && parts[4] === 'revoke') return parts[1]
   }
+  // Read-only operator visibility into the execution layer. List endpoints only; the
+  // detail and all mutation routes stay runtime-identity gated, and the invocation list
+  // omits call payloads.
+  if (parts[2] === 'agent-services') {
+    if (method === 'GET' && parts.length === 3) return parts[1]
+  }
+  if (parts[2] === 'invocations') {
+    if (method === 'GET' && parts.length === 3) return parts[1]
+  }
   return undefined
 }
 

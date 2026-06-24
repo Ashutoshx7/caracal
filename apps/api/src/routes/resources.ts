@@ -25,7 +25,7 @@ const ResourceOperation = z.object({
 })
 
 const ResourceBodyBase = z.object({
-  name: z.string().min(1).optional(),
+  name: z.string().min(1).max(200).optional(),
   identifier: z.string().min(1).optional(),
   upstream_url: HttpURL.nullable().optional(),
   scopes: z.array(z.string()).min(1),

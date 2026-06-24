@@ -234,6 +234,49 @@ export const zoneEventsRoutes: FastifyPluginAsync = async (fastify) => {
     }
   })
 
+  fastify.get('/zones/:zoneId/admin-audit', async (req, reply) => {
+    const params = parseParams(ZoneParams, req, reply)
+    if (!params) return
+    const parsed = AdminAuditQuery.safeParse(req.query ?? {})
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_query' })
+    const q = parsed.data
+
+    const conds = ['zone_id = $1']
+    const values: (string | number)[] = [params.zoneId]
+    if (q.since) { values.push(q.since); conds.push(`occurred_at >= $${values.length}`) }
+    if (q.until) { values.push(q.until); conds.push(`occurred_at < $${values.length}`) }
+    if (q.actor_id) { values.push(q.actor_id); conds.push(`actor_id = $${values.length}`) }
+    if (q.entity_type) { values.push(q.entity_type); conds.push(`entity_type = $${values.length}`) }
+    if (q.entity_id) { values.push(q.entity_id); conds.push(`entity_id = $${values.length}`) }
+    if (q.method) { values.push(q.method); conds.push(`method = $${values.length}`) }
+
+    const cursor = q.cursor ? decodeCursor(q.cursor) : null
+    if (q.cursor && !cursor) return reply.code(400).send({ error: 'invalid_cursor' })
+    if (cursor) {
+      values.push(cursor.ts)
+      values.push(cursor.id)
+      conds.push(`(occurred_at, id) < ($${values.length - 1}, $${values.length})`)
+    }
+    values.push(q.limit)
+
+    const { rows } = await fastify.db.query(
+      `SELECT id, request_id, actor_id, actor_name, actor_scope, action, method, path,
+              entity_type, entity_id, status_code, payload_json, occurred_at,
+              chain_seq, (chain_hmac IS NOT NULL) AS signed
+       FROM admin_audit_events
+       WHERE ${conds.join(' AND ')}
+       ORDER BY occurred_at DESC, id DESC
+       LIMIT $${values.length}`,
+      values,
+    )
+    const redacted = rows.map((r) => ({ ...r, payload_json: redactSensitive(r.payload_json) }))
+    const last = redacted[redacted.length - 1]
+    const next = redacted.length === q.limit && last
+      ? encodeCursor(new Date(last.occurred_at).toISOString(), last.id)
+      : null
+    return { rows: redacted, next_cursor: next }
+  })
+
   fastify.get('/zones/:zoneId/sessions', async (req, reply) => {
     const params = parseParams(ZoneParams, req, reply)
     if (!params) return
