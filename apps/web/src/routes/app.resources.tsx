@@ -19,8 +19,14 @@ import {
   ResourceWorkspace,
 } from "@/components/console/ResourceWorkspace";
 import { ZoneScopedPage } from "@/components/console/ZoneScope";
-import { Badge, Button, ConfirmDialog, useToast, type Column } from "@/components/ui";
-import { cx } from "@/lib/cx";
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  useToast,
+  type Column,
+  type FilterGroup,
+} from "@/components/ui";
 import { ConsoleApiError } from "@/platform/api/client";
 import {
   useApplications,
@@ -104,6 +110,20 @@ function ResourcesPage({ zoneId }: { zoneId: string }) {
     return { enforced, uniform };
   }, [allRows]);
 
+  const filters: FilterGroup[] = [
+    {
+      id: "enforcement",
+      label: "Authority",
+      value: filter,
+      onChange: (v) => setFilter(v as EnforcementFilter),
+      options: [
+        { id: "all", label: "All resources", count: allRows.length },
+        { id: "enforced", label: "Operation enforced", count: counts.enforced },
+        { id: "transport_uniform", label: "Transport uniform", count: counts.uniform },
+      ],
+    },
+  ];
+
   const columns: Column<Resource>[] = [
     {
       id: "name",
@@ -162,6 +182,7 @@ function ResourcesPage({ zoneId }: { zoneId: string }) {
       id: "scopes",
       header: "Scopes",
       align: "right",
+      sortable: true,
       cell: (r) => (
         <span className="font-mono text-xs text-muted-foreground">{(r.scopes ?? []).length}</span>
       ),
@@ -179,17 +200,7 @@ function ResourcesPage({ zoneId }: { zoneId: string }) {
         loading={query.isLoading}
         columns={columns}
         rowKey={(r) => r.id}
-        headerExtra={
-          allRows.length > 0 ? (
-            <EnforcementFilterBar
-              filter={filter}
-              total={allRows.length}
-              enforced={counts.enforced}
-              uniform={counts.uniform}
-              onSelect={setFilter}
-            />
-          ) : undefined
-        }
+        filters={allRows.length > 0 ? filters : undefined}
         search={{
           placeholder: "Search resources, scopes, upstreams…",
           match: (r, q) =>
@@ -198,10 +209,11 @@ function ResourcesPage({ zoneId }: { zoneId: string }) {
             (r.upstream_url ?? "").toLowerCase().includes(q) ||
             (r.scopes ?? []).some((s) => s.toLowerCase().includes(q)),
         }}
-        sortOptions={[
-          { id: "name", label: "Name" },
-          { id: "recent", label: "Newest" },
-        ]}
+        initialSort={{ column: "name", direction: "asc" }}
+        sortValues={{
+          name: (r) => r.name.toLowerCase(),
+          scopes: (r) => (r.scopes ?? []).length,
+        }}
         empty={{
           title: query.isError ? "Could not load resources" : "No resources yet",
           description: query.isError
@@ -337,45 +349,6 @@ function RelationCell({
       </span>
       <span className="text-muted-foreground/50">-</span>
     </span>
-  );
-}
-
-function EnforcementFilterBar({
-  filter,
-  total,
-  enforced,
-  uniform,
-  onSelect,
-}: {
-  filter: EnforcementFilter;
-  total: number;
-  enforced: number;
-  uniform: number;
-  onSelect: (filter: EnforcementFilter) => void;
-}) {
-  const chips: { id: EnforcementFilter; label: string; count: number }[] = [
-    { id: "all", label: "All", count: total },
-    { id: "enforced", label: "Enforced", count: enforced },
-    { id: "transport_uniform", label: "Transport", count: uniform },
-  ];
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {chips.map((chip) => (
-        <button
-          key={chip.id}
-          onClick={() => onSelect(chip.id)}
-          className={cx(
-            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-            filter === chip.id
-              ? "border-foreground/20 bg-accent text-foreground"
-              : "border-border text-muted-foreground hover:bg-surface hover:text-foreground",
-          )}
-        >
-          {chip.label}
-          <span className="font-mono text-[10px] text-muted-foreground">{chip.count}</span>
-        </button>
-      ))}
-    </div>
   );
 }
 
