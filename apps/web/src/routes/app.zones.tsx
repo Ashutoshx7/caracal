@@ -213,14 +213,14 @@ function ZonesPage() {
         title="Zones"
         description="Zones are Caracal's primary trust boundary."
         breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Zones" }]}
-        actions={
-          <Button disabled aria-disabled>
-            New zone
-          </Button>
-        }
       >
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <SearchInput placeholder="Search zones…" disabled className="w-full sm:w-64" />
+          <div className="ml-auto">
+            <Button disabled aria-disabled>
+              New zone
+            </Button>
+          </div>
         </div>
         <DataTable
           columns={columns}
@@ -261,15 +261,19 @@ function ZonesPage() {
       title="Zones"
       description="Zones are Caracal's primary trust boundary. Each zone is owned by your account and isolates its own applications, resources, policies, and audit."
       breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Zones" }]}
-      actions={<Button onClick={() => setCreateOpen(true)}>New zone</Button>}
     >
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <SearchInput
           placeholder="Search zones…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          disabled={zones.length === 0}
+          aria-label="Search zones"
           className="w-full sm:w-64"
         />
+        <div className="ml-auto">
+          <Button onClick={() => setCreateOpen(true)}>New zone</Button>
+        </div>
       </div>
 
       <DataTable

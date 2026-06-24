@@ -118,16 +118,7 @@ export function ResourceWorkspace<T>({
   const controlsLocked = loading || rows.length === 0;
 
   return (
-    <ModulePage
-      title={title}
-      description={description}
-      breadcrumbs={breadcrumbs}
-      actions={
-        primaryAction ? (
-          <Button onClick={primaryAction.onClick}>{primaryAction.label}</Button>
-        ) : undefined
-      }
-    >
+    <ModulePage title={title} description={description} breadcrumbs={breadcrumbs}>
       {headerExtra ? <div className="mb-4">{headerExtra}</div> : null}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -153,6 +144,11 @@ export function ResourceWorkspace<T>({
                 </option>
               ))}
             </Select>
+          </div>
+        ) : null}
+        {primaryAction ? (
+          <div className="ml-auto">
+            <Button onClick={primaryAction.onClick}>{primaryAction.label}</Button>
           </div>
         ) : null}
       </div>

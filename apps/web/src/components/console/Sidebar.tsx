@@ -9,7 +9,6 @@ import { useState } from "react";
 
 import { NavIcon } from "@/components/console/NavIcon";
 import { ProfileMenu } from "@/components/console/ProfileMenu";
-import { LockBadge } from "@/components/ui";
 import { cx } from "@/lib/cx";
 import { NAV_GROUPS } from "@/platform/nav/navModel";
 import { useHiddenNavItems } from "@/platform/state/sidebarPrefs";
@@ -18,6 +17,24 @@ import { useTheme } from "@/platform/theme";
 function isActive(pathname: string, to: string): boolean {
   if (to === "/app") return pathname === "/app";
   return pathname === to || pathname.startsWith(`${to}/`);
+}
+
+function LockGlyph({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
+  );
 }
 
 function SidebarItem({
@@ -60,13 +77,17 @@ function SidebarItem({
         <span className="relative flex-shrink-0">
           <NavIcon name={iconName} />
           {locked && collapsed ? (
-            <span className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+            <span className="absolute -right-1 -top-1 grid h-3 w-3 place-items-center rounded-full bg-background text-muted-foreground">
+              <LockGlyph className="h-2.5 w-2.5" />
+            </span>
           ) : null}
         </span>
         {!collapsed ? (
           <>
             <span className="flex-1 truncate">{label}</span>
-            {locked ? <LockBadge /> : null}
+            {locked ? (
+              <LockGlyph className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/70" />
+            ) : null}
           </>
         ) : null}
       </Link>
@@ -76,7 +97,12 @@ function SidebarItem({
           className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 flex -translate-y-1/2 items-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs font-medium text-popover-foreground shadow-md"
         >
           {label}
-          {locked ? <LockBadge /> : null}
+          {locked ? (
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <LockGlyph className="h-3 w-3" />
+              Enterprise
+            </span>
+          ) : null}
         </span>
       ) : null}
     </li>
