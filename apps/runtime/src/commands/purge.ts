@@ -6,10 +6,9 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { spawnSync } from 'node:child_process'
-import { DatabaseSync } from 'node:sqlite'
 import { createInterface } from 'node:readline'
 import { dirname, join, relative } from 'node:path'
-import { devSecretsHome } from '@caracalai/core'
+import { devSecretsHome, silenceSqliteExperimentalWarning } from '@caracalai/core'
 import { resolveRuntimeConfigPath } from '@caracalai/engine/runtime-config'
 import {
   caracalBinaries as caracalBinariesCore,
@@ -145,13 +144,17 @@ function webConsoleStatePaths(ctx: PurgeContext): string[] {
 // cached identity. Mirror the web "Delete profile" command (apps/auth account
 // endpoint) by clearing every row in-place first, so a live auth connection sees
 // an empty database immediately, then the file itself is removed for a clean slate.
-function clearAuthDatabase(path: string, ctx: PurgeContext, label: string): void {
+async function clearAuthDatabase(path: string, ctx: PurgeContext, label: string): Promise<void> {
   if (!existsSync(path)) return
   if (ctx.dryRun) {
     process.stdout.write(`  ${style.label('[dry-run]')} clear identity rows ${style.code(label)}: ${path}\n`)
     return
   }
   try {
+    // node:sqlite emits its experimental warning on first load; install the targeted
+    // filter before importing it so the cleanup stays quiet without muting other warnings.
+    silenceSqliteExperimentalWarning()
+    const { DatabaseSync } = await import('node:sqlite')
     const db = new DatabaseSync(path)
     try {
       const tables = db
@@ -446,7 +449,7 @@ const TARGETS: Target[] = [
     available: (ctx) => webConsoleStateBase(ctx) !== undefined,
     run: async (ctx) => {
       const base = webConsoleStateBase(ctx)
-      if (base) clearAuthDatabase(base, ctx, `web/${base.split('/').pop()}`)
+      if (base) await clearAuthDatabase(base, ctx, `web/${base.split('/').pop()}`)
       for (const path of webConsoleStatePaths(ctx)) {
         removePath(path, ctx, `web/${path.split('/').pop()}`)
       }

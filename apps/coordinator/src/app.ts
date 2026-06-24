@@ -151,19 +151,26 @@ export async function buildApp({ cfg, db, redis, isDraining }: CoordinatorDeps) 
       reply.code(503)
       return { ok: false, draining: true }
     }
-    try {
-      await withTimeout(app.db.query('SELECT 1'), READY_CHECK_TIMEOUT_MS, 'ready postgres check timed out')
-    } catch (err) {
+    // Probe Postgres and Redis concurrently so the endpoint responds in the time of the
+    // slowest single dependency rather than their sum, keeping readiness fast even when a
+    // connection is briefly cold. Postgres precedence is preserved when both fail.
+    const [postgres, redisPing] = await Promise.allSettled([
+      withTimeout(app.db.query('SELECT 1'), READY_CHECK_TIMEOUT_MS, 'ready postgres check timed out'),
+      withTimeout(app.redis.ping(), READY_CHECK_TIMEOUT_MS, 'ready redis check timed out'),
+    ])
+    if (postgres.status === 'rejected') {
       reply.code(503)
-      req.log.warn({ err }, 'ready_postgres_unreachable')
+      req.log.warn({ err: postgres.reason }, 'ready_postgres_unreachable')
       return { ok: false, error: 'postgres_unreachable', dependency: 'postgres' }
     }
-    try {
-      const pong = await withTimeout(app.redis.ping(), READY_CHECK_TIMEOUT_MS, 'ready redis check timed out')
-      if (pong !== 'PONG') throw new Error(`unexpected redis ping reply: ${pong}`)
-    } catch (err) {
+    if (redisPing.status === 'rejected') {
       reply.code(503)
-      req.log.warn({ err }, 'ready_redis_unreachable')
+      req.log.warn({ err: redisPing.reason }, 'ready_redis_unreachable')
+      return { ok: false, error: 'redis_unreachable', dependency: 'redis' }
+    }
+    if (redisPing.value !== 'PONG') {
+      reply.code(503)
+      req.log.warn({ err: `unexpected redis ping reply: ${redisPing.value}` }, 'ready_redis_unreachable')
       return { ok: false, error: 'redis_unreachable', dependency: 'redis' }
     }
     return { ok: true }
