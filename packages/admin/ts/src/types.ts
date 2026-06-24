@@ -430,6 +430,36 @@ export interface AuditQuery {
   event_type?: string
   agent_session_id?: string
   label?: string
+  cursor?: string
+  limit?: number
+}
+
+export interface AdminAuditEvent {
+  id: string
+  request_id: string | null
+  actor_id: string | null
+  actor_name: string | null
+  actor_scope: string | null
+  action: string
+  method: string
+  path: string
+  entity_type: string | null
+  entity_id: string | null
+  status_code: number
+  payload_json: JsonObject | null
+  occurred_at: string
+  chain_seq: number | null
+  signed: boolean
+}
+
+export interface AdminAuditQuery {
+  since?: string
+  until?: string
+  actor_id?: string
+  entity_type?: string
+  entity_id?: string
+  method?: 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+  cursor?: string
   limit?: number
 }
 

@@ -11,6 +11,8 @@ import type {
   Application,
   ApplicationInput,
   ApplicationPatchInput,
+  AdminAuditEvent,
+  AdminAuditQuery,
   AuditDetail,
   AuditEvent,
   AuditQuery,
@@ -383,6 +385,14 @@ export class AdminClient {
       this.request<AuditDetail[]>(`/v1/zones/${zoneId}/audit/by-request/${requestId}`),
     explain: (zoneId: string, requestId: string) =>
       this.request<DecisionTrace>(`/v1/zones/${zoneId}/audit/by-request/${requestId}/explain`),
+  }
+
+  adminAudit = {
+    list: async (zoneId: string, query?: AdminAuditQuery) => {
+      const response = await this.request<RowListResponse<AdminAuditEvent>>(`/v1/zones/${zoneId}/admin-audit`, { query: { ...query } })
+      if (!Array.isArray(response.rows)) throw new Error('admin audit response missing rows')
+      return response.rows
+    },
   }
 
   stepUpChallenges = {

@@ -39,6 +39,14 @@ const CancelBody = z.object({
   reason: z.string().min(1).optional(),
 })
 
+const InvocationListQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+  cursor: z.string().min(1).optional(),
+  status: z.enum(['pending', 'running', 'succeeded', 'failed', 'cancel_requested', 'canceled', 'timed_out', 'dead']).optional(),
+  service_id: z.string().min(1).optional(),
+  session_id: z.string().min(1).optional(),
+})
+
 const INVOCATION_RETURNING = `RETURNING id, zone_id, service_id, source_session_id, target_session_id, idempotency_key,
                  method, params_json, metadata_json, status, attempts, max_attempts, timeout_ms,
                  retry_policy_json, deadline_at, cancel_requested_at, started_at, completed_at, created_at`
@@ -134,6 +142,46 @@ export const invocationsRoutes: FastifyPluginAsync = async (fastify) => {
     )
     if (!rows[0]) return reply.code(404).send({ error: 'invocation_not_found' })
     return rows[0]
+  })
+
+  // Operator-facing read of invocation lifecycle. Returns only operational columns
+  // (status, attempts, timing) and never params_json/metadata_json/error_json bodies,
+  // so a zone operator can observe execution health without seeing call payloads.
+  fastify.get('/zones/:zoneId/invocations', async (req, reply) => {
+    const params = parseParams(ZoneParams, req, reply)
+    if (!params) return
+    const { zoneId } = params
+    const query = InvocationListQuery.safeParse(req.query)
+    if (!query.success) return reply.code(400).send({ error: 'invalid_query' })
+    const { limit, cursor, status, service_id, session_id } = query.data
+    if (cursor) {
+      const { rows: probe } = await fastify.db.query(
+        `SELECT 1 FROM agent_invocations WHERE id = $1 AND zone_id = $2`,
+        [cursor, zoneId],
+      )
+      if (!probe[0]) return reply.code(400).send({ error: 'invalid_cursor' })
+    }
+    const conds = ['zone_id = $1']
+    const values: unknown[] = [zoneId]
+    if (status) { values.push(status); conds.push(`status = $${values.length}`) }
+    if (service_id) { values.push(service_id); conds.push(`service_id = $${values.length}`) }
+    if (session_id) {
+      values.push(session_id)
+      conds.push(`(source_session_id = $${values.length} OR target_session_id = $${values.length})`)
+    }
+    if (cursor) { values.push(cursor); conds.push(`id < $${values.length}`) }
+    values.push(limit)
+    const { rows } = await fastify.db.query(
+      `SELECT id, zone_id, service_id, source_session_id, target_session_id, method,
+              status, attempts, max_attempts, timeout_ms, deadline_at,
+              started_at, completed_at, created_at
+       FROM agent_invocations
+       WHERE ${conds.join(' AND ')}
+       ORDER BY id DESC LIMIT $${values.length}`,
+      values,
+    )
+    const nextCursor = rows.length === limit ? (rows[rows.length - 1] as { id: string }).id : null
+    return { items: rows, next_cursor: nextCursor }
   })
 
   fastify.patch('/zones/:zoneId/invocations/:id/start', async (req, reply) => {
