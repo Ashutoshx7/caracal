@@ -103,6 +103,7 @@ function ConnectedDashboard({ zone }: { zone: Zone }) {
   const attention = buildAttention({
     enforcing,
     policySetsLoading: policySets.isLoading,
+    hasProtectables: appRows.length > 0 || resourceRows.length > 0,
     providerCount: providerRows.length,
     providersLoading: providers.isLoading,
     expired,
@@ -124,6 +125,7 @@ function ConnectedDashboard({ zone }: { zone: Zone }) {
         <PostureStrip
           loading={policySets.isLoading || sessions.isLoading || apps.isLoading}
           enforcing={enforcing}
+          hasProtectables={appRows.length > 0 || resourceRows.length > 0}
           activePolicySet={activePolicySetName(policySetRows)}
           allowed={allowed}
           denied={denied}
@@ -167,6 +169,7 @@ function ConnectedDashboard({ zone }: { zone: Zone }) {
 function PostureStrip({
   loading,
   enforcing,
+  hasProtectables,
   activePolicySet,
   allowed,
   denied,
@@ -176,6 +179,7 @@ function PostureStrip({
 }: {
   loading: boolean;
   enforcing: boolean;
+  hasProtectables: boolean;
   activePolicySet: string | null;
   allowed: number;
   denied: number;
@@ -193,12 +197,14 @@ function PostureStrip({
           to="/app/policy-sets"
           label="Enforcement"
           loading={loading}
-          value={enforcing ? "Enforcing" : "Deny-all"}
-          tone={enforcing ? "ok" : "danger"}
+          value={enforcing ? "Enforcing" : "Default-deny"}
+          tone={enforcing ? "ok" : hasProtectables ? "warn" : "muted"}
           sub={
             enforcing
               ? (activePolicySet ?? "Active policy set")
-              : "No active policy set — requests deny"
+              : hasProtectables
+                ? "Secure default · activate a policy set to allow access"
+                : "Secure default · nothing to enforce yet"
           }
         />
         <PostureCell
@@ -360,6 +366,7 @@ interface AttentionItem {
 function buildAttention({
   enforcing,
   policySetsLoading,
+  hasProtectables,
   providerCount,
   providersLoading,
   expired,
@@ -369,6 +376,7 @@ function buildAttention({
 }: {
   enforcing: boolean;
   policySetsLoading: boolean;
+  hasProtectables: boolean;
   providerCount: number;
   providersLoading: boolean;
   expired: number;
@@ -377,12 +385,17 @@ function buildAttention({
   denied: number;
 }): AttentionItem[] {
   const items: AttentionItem[] = [];
-  if (!enforcing && !policySetsLoading) {
+  // Default-deny with no active policy set is the secure baseline, not a failure. Only flag it
+  // once the zone actually has applications or resources that requests cannot reach yet — and
+  // as attention (amber), never an alarming error. A brand-new empty zone is guided by the
+  // setup checklist instead.
+  if (!enforcing && !policySetsLoading && hasProtectables) {
     items.push({
       id: "deny-all",
-      tone: "danger",
-      title: "No active policy set",
-      detail: "Every request in this zone denies by default. Activate a policy set.",
+      tone: "warn",
+      title: "No policy set active",
+      detail:
+        "Requests deny by default until a policy set is activated. Activate one to allow access.",
       to: "/app/policy-sets",
     });
   }

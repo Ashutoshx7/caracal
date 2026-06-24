@@ -9,94 +9,71 @@ import { useNavigate } from "@tanstack/react-router";
 import { cx } from "@/lib/cx";
 import { platformHealthOf, useDiagnostics, type PlatformHealth } from "@/platform/api/hooks";
 
-interface Tone {
-  dot: string;
-  glow: string;
-  pill: string;
+interface Meter {
+  active: number;
+  bar: string;
   text: string;
-  pulse: boolean;
-  label: string;
 }
 
-const TONE: Record<PlatformHealth, Tone> = {
-  healthy: {
-    dot: "bg-emerald-500",
-    glow: "ring-2 ring-emerald-500/20",
-    pill: "border-emerald-500/20 bg-emerald-500/[0.07] hover:bg-emerald-500/10 hover:border-emerald-500/30",
-    text: "text-emerald-700 dark:text-emerald-300",
-    pulse: true,
-    label: "All systems healthy",
-  },
-  attention: {
-    dot: "bg-amber-500",
-    glow: "ring-2 ring-amber-500/25",
-    pill: "border-amber-500/25 bg-amber-500/[0.08] hover:bg-amber-500/[0.12] hover:border-amber-500/35",
-    text: "text-amber-700 dark:text-amber-300",
-    pulse: true,
-    label: "Degraded",
-  },
-  unhealthy: {
-    dot: "bg-destructive",
-    glow: "ring-2 ring-destructive/25",
-    pill: "border-destructive/25 bg-destructive/[0.08] hover:bg-destructive/[0.12] hover:border-destructive/35",
-    text: "text-destructive",
-    pulse: true,
-    label: "Failures",
-  },
-  unknown: {
-    dot: "bg-muted-foreground/60",
-    glow: "",
-    pill: "border-border bg-background hover:bg-accent hover:border-ring/50",
-    text: "text-muted-foreground",
-    pulse: false,
-    label: "Checking…",
-  },
+const BAR_HEIGHTS = ["h-1.5", "h-2.5", "h-3.5"];
+
+const METER: Record<PlatformHealth, Meter> = {
+  healthy: { active: 3, bar: "bg-foreground", text: "text-foreground" },
+  attention: { active: 2, bar: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" },
+  unhealthy: { active: 1, bar: "bg-destructive", text: "text-destructive" },
+  unknown: { active: 0, bar: "bg-muted-foreground", text: "text-muted-foreground" },
 };
 
 export function PlatformStatus() {
   const navigate = useNavigate();
   const diagnostics = useDiagnostics();
-  const health = diagnostics.isError ? "unhealthy" : platformHealthOf(diagnostics.data);
-  const tone = TONE[health];
-
+  const offline = diagnostics.isError;
+  const health = offline ? "unhealthy" : platformHealthOf(diagnostics.data);
+  const meter = METER[health];
   const summary = diagnostics.data?.summary;
-  const label = diagnostics.isError
-    ? "Diagnostics unavailable"
-    : summary
-      ? health === "healthy"
-        ? "All systems operational"
-        : [
-            summary.fail > 0 ? `${summary.fail} failing` : null,
-            summary.warn > 0 ? `${summary.warn} degraded` : null,
-          ]
-            .filter(Boolean)
-            .join(" · ")
-      : tone.label;
+
+  const label = offline
+    ? "Diagnostics offline"
+    : health === "healthy"
+      ? "Operational"
+      : health === "unknown"
+        ? "Checking"
+        : summary
+          ? [
+              summary.fail > 0 ? `${summary.fail} failing` : null,
+              summary.warn > 0 ? `${summary.warn} degraded` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          : health === "unhealthy"
+            ? "Failing"
+            : "Degraded";
 
   return (
     <button
       onClick={() => navigate({ to: "/app/diagnostics" })}
-      aria-label={`Platform status: ${tone.label}. Open Diagnostics.`}
-      title={`${tone.label} — open Diagnostics`}
+      aria-label={`Platform status: ${label}. Open Diagnostics.`}
+      title={`${label} — open Diagnostics`}
       className={cx(
-        "group inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-medium tabular-nums",
-        "shadow-sm outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-ring/40",
-        tone.pill,
+        "group inline-flex h-9 items-center gap-2 rounded-md px-2.5 text-xs font-medium",
+        "outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/40",
       )}
     >
-      <span className="relative flex h-2 w-2 flex-shrink-0 items-center justify-center">
-        {tone.pulse ? (
+      <span className="flex items-end gap-[2px]" aria-hidden="true">
+        {BAR_HEIGHTS.map((h, i) => (
           <span
+            key={h}
             className={cx(
-              "absolute inline-flex h-2 w-2 rounded-full opacity-60",
-              tone.dot,
-              health === "healthy" ? "animate-ping" : "animate-pulse",
+              "w-[3px] rounded-[1px] transition-colors",
+              h,
+              i < meter.active ? meter.bar : "bg-border",
             )}
           />
-        ) : null}
-        <span className={cx("relative h-1.5 w-1.5 rounded-full", tone.dot, tone.glow)} />
+        ))}
       </span>
-      <span className={cx("hidden whitespace-nowrap lg:inline", tone.text)}>{label}</span>
+      <span className={cx("hidden whitespace-nowrap tabular-nums lg:inline", meter.text)}>
+        {label}
+      </span>
     </button>
   );
 }

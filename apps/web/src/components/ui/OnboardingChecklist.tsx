@@ -14,11 +14,19 @@ export type Step = {
   id: string;
   title: string;
   description?: string;
-  /** CSS selector for the element this step spotlights. */
+  /** CSS selector for the element this step spotlights. Empty string renders a centered card. */
   targetSelector: string;
   completed?: boolean;
   /** Optional label for the coachmark's primary action (defaults to "Take me there"). */
   actionLabel?: string;
+  /** Rich teaching content rendered in the coachmark below the description. */
+  details?: ReactNode;
+  /**
+   * When true, the primary action advances the tour to the next incomplete step in place
+   * (used for informational steps whose CTA does not navigate away). When false (default),
+   * the primary action closes the coachmark so the operator can act on the page it opened.
+   */
+  advanceOnAction?: boolean;
 };
 
 export interface InteractiveOnboardingChecklistProps {
