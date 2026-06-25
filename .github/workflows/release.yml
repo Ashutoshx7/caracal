@@ -262,6 +262,7 @@ jobs:
             rm -rf "$stage"
           done
           cp "releases/${RELEASE_TAG}/manifest.json" release-dist/manifest.json
+          cp install.sh install.ps1 release-dist/
           ls -la release-dist/
 
       - name: Verify reproducibility
@@ -296,7 +297,7 @@ jobs:
 
       - name: Generate checksums
         working-directory: release-dist
-        run: sha256sum caracal-runtime-*.tar.gz caracal-runtime-*.zip manifest.json > SHA256SUMS
+        run: sha256sum caracal-runtime-*.tar.gz caracal-runtime-*.zip manifest.json install.sh install.ps1 > SHA256SUMS
 
       - name: Verify assets
         env:
@@ -513,6 +514,8 @@ jobs:
             dist/caracal-runtime-*
             dist/manifest.json
             dist/SHA256SUMS
+            dist/install.sh
+            dist/install.ps1
 
   dryRunSummary:
     name: Dry-run summary
