@@ -181,6 +181,13 @@ def _instant(rng: random.Random, lo: int, hi: int) -> str:
     return moment.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _shift_iso(stamp: str, *, hours: int) -> str:
+    """Add hours to an ISO-8601 UTC timestamp, preserving the trailing Z."""
+    moment = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    moment += timedelta(hours=hours)
+    return moment.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 def _iban(rng: random.Random, country: str, account_number: str) -> str:
     check = f"{rng.randint(2, 98):02d}"
     bank = "HLCY"
@@ -286,12 +293,87 @@ _ATLAS_CONTACT_ROLES = (
     "Account Manager",
     "Support",
 )
+_ATLAS_DIVERSITY = (
+    "minority_owned",
+    "women_owned",
+    "veteran_owned",
+    "small_business",
+    "lgbtq_owned",
+)
+_ATLAS_SCREENING_PROVIDERS = ("Dow Jones Risk & Compliance", "Refinitiv World-Check",
+                              "LexisNexis Bridger", "ComplyAdvantage")
+_ATLAS_SANCTIONS_LISTS = ("OFAC SDN", "EU Consolidated", "UN Consolidated", "UK HMT")
+_ATLAS_OWNERSHIP_TYPES = ("individual", "entity")
 
 
 def _atlas_tax_id(rng: random.Random, country: str) -> str:
     if country == "US":
         return f"{rng.randint(10, 99)}-{rng.randint(10**6, 10**7 - 1)}"
     return f"{country}{rng.randint(10**8, 10**9 - 1)}"
+
+
+def _atlas_beneficial_owners(rng: random.Random, country: str) -> list[dict]:
+    """Ultimate beneficial owners with ownership percentages, as a KYB file would carry."""
+    owners = []
+    remaining = 100
+    for n in range(rng.randint(1, 3)):
+        if remaining <= 0:
+            break
+        share = remaining if n == 2 else rng.randint(15, min(60, remaining))
+        remaining -= share
+        owners.append({
+            "ownerId": f"UBO-{rng.randint(10**4, 10**5 - 1)}",
+            "name": _person(rng),
+            "type": "individual",
+            "ownershipPercent": share,
+            "nationality": country,
+            "screened": rng.random() > 0.1,
+            "pep": rng.random() < 0.06,
+        })
+    return owners
+
+
+def _atlas_events(rng: random.Random, vendor_id: str, stage: str,
+                  created: str, checklist: list[dict]) -> list[dict]:
+    """A reverse-chronological change history for the vendor record."""
+    events: list[dict] = []
+    seq = 0
+
+    def add(kind: str, summary: str, when: str, actor: str = "intake-queue") -> None:
+        nonlocal seq
+        seq += 1
+        events.append({
+            "eventId": f"EVT-{vendor_id.split('-')[-1]}-{seq:03d}",
+            "type": kind, "summary": summary, "actor": actor, "occurredAt": when,
+        })
+
+    add("vendor.registered", "Vendor master record created", created)
+    for step in checklist:
+        if step["status"] == "completed" and step.get("completedAt"):
+            add(f"onboarding.{step['step']}.completed", step["label"], step["completedAt"])
+    if stage in ("active", "suspended"):
+        add("compliance.screening.completed", "KYB and sanctions screening cleared",
+            _instant(rng, -200, -20), actor=rng.choice(_ATLAS_SCREENING_PROVIDERS))
+    if stage == "active":
+        add("vendor.activated", "Vendor activated for transacting", _instant(rng, -180, -5),
+            actor=_person(rng))
+    if stage == "suspended":
+        add("vendor.suspended", "Vendor suspended pending review", _instant(rng, -30, -2),
+            actor=_person(rng))
+    events.sort(key=lambda e: e["occurredAt"], reverse=True)
+    return events
+
+
+def _atlas_classifications(rng: random.Random, stage: str) -> dict:
+    diversity = (rng.sample(_ATLAS_DIVERSITY, rng.randint(1, 2))
+                 if rng.random() < 0.25 else [])
+    return {
+        "diversity": diversity,
+        "diversityCertified": bool(diversity),
+        "smallBusiness": "small_business" in diversity or rng.random() < 0.2,
+        "esgScore": rng.randint(28, 95),
+        "strategic": rng.random() < 0.15 and stage == "active",
+    }
 
 
 def _atlas_onboarding(
@@ -1663,7 +1745,7 @@ _CARDS = (
     ("amex", "0005", "credit", "American Express"),
     ("discover", "1117", "credit", "Discover"),
 )
-_WALLETS = ("apple_pay", "google_pay", "link")
+_WALLETS = ("apple_pay", "google_pay", "samsung_pay")
 _DISPUTE_REASONS = (
     "fraudulent",
     "duplicate",
@@ -1745,6 +1827,7 @@ def _outcome(rng: random.Random, risk: str) -> dict:
         "riskScore": score,
         "sellerMessage": "Payment complete.",
         "type": "authorized",
+        "networkDeclineCode": None,
     }
 
 
@@ -1771,9 +1854,13 @@ def _new_charge(rng: random.Random, idx: int, currency: str, created: int) -> di
         "disputed": False,
         "description": f"LynxCapital receivable {created}",
         "statementDescriptor": "MERIDIAN* LYNXCAPITAL",
+        "statementDescriptorSuffix": f"INV{idx:05d}",
+        "calculatedStatementDescriptor": f"MERIDIAN* LYNXCAPITAL INV{idx:05d}",
         "source": f"tok_{pm['card']['brand']}",
+        "paymentIntent": f"pi_{rng.getrandbits(56):014x}",
         "paymentMethod": f"pm_{rng.getrandbits(56):014x}",
         "paymentMethodDetails": pm,
+        "authorizationCode": f"{rng.randint(0, 999999):06d}",
         "billingDetails": {
             "name": name,
             "email": f"{name.split()[0].lower()}.{name.split()[1].lower()}@payer.example",
@@ -1787,9 +1874,16 @@ def _new_charge(rng: random.Random, idx: int, currency: str, created: int) -> di
         "processingFee": fee,
         "net": round(amount - fee, 2),
         "balanceTransaction": f"txn_{rng.getrandbits(56):014x}",
+        "failureCode": None,
+        "failureMessage": None,
+        "failureBalanceTransaction": None,
+        "fraudDetails": {},
+        "receiptEmail": None,
+        "receiptNumber": None,
         "receiptUrl": f"https://pay.meridianpay.test/receipts/{charge_id}",
         "customer": f"cus_{customer_no:08x}",
         "metadata": {"invoiceId": f"INV-{idx:05d}", "region": pm["card"]["country"]},
+        "captureBefore": None,
         "settlementId": None,
         "payoutId": None,
         "created": created,
@@ -1902,12 +1996,16 @@ def meridian_dataset(seed: str) -> dict[str, dict]:
                 net=0.0,
                 processingFee=0.0,
                 balanceTransaction=None,
+                authorizationCode=None,
+                failureCode="card_declined",
+                failureMessage="The bank declined this charge.",
             )
             charge["outcome"].update(
                 networkStatus="declined_by_network",
                 type="issuer_declined",
                 reason="card_declined",
                 sellerMessage="The bank declined this charge.",
+                networkDeclineCode="05",
             )
             charge["source"] = "tok_chargeDeclined"
         elif roll < 0.10:
@@ -1916,6 +2014,7 @@ def meridian_dataset(seed: str) -> dict[str, dict]:
                 captured=False,
                 paid=False,
                 amountCaptured=0.0,
+                captureBefore=created + 7 * 86_400,
             )
             charge["outcome"]["type"] = "manual"
         events[charge["id"]] = _event(
@@ -2530,6 +2629,29 @@ def _junction_approval_chain(manager: dict, steps: int) -> list[dict]:
     ]
 
 
+def _junction_tax_registrations(country: str, tax_id: str) -> list[dict]:
+    kind = {
+        "US": "EIN", "CA": "BN", "GB": "VAT", "DE": "VAT", "FR": "VAT",
+        "BR": "CNPJ", "SG": "GST", "JP": "CN",
+    }.get(country, "VAT")
+    return [{"country": country, "type": kind, "number": tax_id}]
+
+
+def _junction_compliance_documents(rng: random.Random, status: str) -> list[dict]:
+    """W-9 / tax form and certificate of insurance with realistic validity windows."""
+    docs = []
+    for doc_type, valid in (("taxForm", "W-9"), ("insuranceCertificate", "COI")):
+        expired = status == "on_hold" and rng.random() < 0.6
+        days = rng.randint(-90, -10) if expired else rng.randint(30, 540)
+        docs.append({
+            "type": doc_type,
+            "documentName": valid,
+            "status": "expired" if expired else "valid",
+            "expiresOn": (_EPOCH + timedelta(days=days)).isoformat(),
+        })
+    return docs
+
+
 def _junction_supplier(seed: str, i: int) -> dict:
     rng = _rng(seed, "jp_supplier", i)
     name = _company(rng)
@@ -2541,19 +2663,32 @@ def _junction_supplier(seed: str, i: int) -> dict:
     )[0]
     contact = _person(rng)
     handle = _slug(name).split("-")[0]
+    tax_id = f"{country}{rng.randint(10**8, 10**9 - 1)}"
+    preferred = rng.random() < 0.35 and status == "active"
+    diversity = rng.sample(_JUNCTION_DIVERSITY, rng.randint(1, 2)) if rng.random() < 0.22 else []
+    on_time = round(rng.uniform(0.86, 0.998), 3)
+    quality = round(rng.uniform(3.4, 5.0), 1)
+    contract_ref = f"CW-2026-{rng.randint(1000, 9999)}" if (preferred or rng.random() < 0.3) else None
     return {
         "supplierId": f"SUP-{100000 + i}",
+        "supplierNumber": f"V{100000 + i}",
         "displayName": name,
         "legalName": f"{name} {_LEGAL_SUFFIX.get(country, 'Ltd.')}",
         "status": status,
         "category": commodity[2],
         "commodityCode": commodity[0],
-        "taxId": f"{country}{rng.randint(10**8, 10**9 - 1)}",
+        "dunsNumber": f"{rng.randint(0, 99):02d}-{rng.randint(0, 999):03d}-{rng.randint(0, 9999):04d}",
+        "taxId": tax_id,
+        "taxRegistrations": _junction_tax_registrations(country, tax_id),
         "currency": currency,
         "paymentTerms": rng.choice(_TERMS),
-        "preferred": rng.random() < 0.35 and status == "active",
+        "paymentMethod": rng.choice(_JUNCTION_PAYMENT_METHODS),
+        "preferred": preferred,
         "riskRating": rng.choices(("low", "medium", "high"), weights=(64, 28, 8))[0],
-        "diversityCertified": rng.random() < 0.22,
+        "diversityCertified": bool(diversity),
+        "diversityClassifications": diversity,
+        "leadTimeDays": rng.randint(3, 45),
+        "contractReference": contract_ref,
         "primaryContact": {
             "name": contact,
             "email": f"{contact.split()[0].lower()}.{contact.split()[1].lower()}@{handle}.example",
@@ -2565,12 +2700,19 @@ def _junction_supplier(seed: str, i: int) -> dict:
             "postalCode": f"{rng.randint(10000, 99999)}",
             "country": country,
         },
+        "complianceDocuments": _junction_compliance_documents(rng, status),
+        "performance": {
+            "onTimeDeliveryRate": on_time,
+            "qualityScore": quality,
+            "totalSpendYtd": round(rng.uniform(15_000, 1_400_000), 2),
+            "openOrders": rng.randint(0, 9),
+        },
         "onboardedDate": _instant(rng, -900, -45),
     }
 
 
 def _junction_req_lines(
-    rng: random.Random, currency: str, suppliers: list[dict]
+    rng: random.Random, currency: str, cost_center: dict, suppliers: list[dict]
 ) -> tuple[list[dict], float]:
     lines, subtotal = [], 0.0
     for n in range(1, rng.randint(1, 4) + 1):
@@ -2580,18 +2722,22 @@ def _junction_req_lines(
         unit_price = round(rng.uniform(35, 3_500), 2)
         line_total = round(quantity * unit_price, 2)
         subtotal += line_total
+        project = f"PRJ-{rng.randint(100, 999)}" if rng.random() < 0.4 else None
         lines.append(
             {
                 "lineNumber": n,
                 "description": commodity[1],
                 "commodityCode": commodity[0],
+                "commodityName": commodity[1],
                 "quantity": quantity,
                 "unitOfMeasure": rng.choice(_JUNCTION_UOM),
                 "unitPrice": unit_price,
                 "lineTotal": line_total,
                 "currency": currency,
                 "supplierId": supplier["supplierId"] if supplier else None,
+                "costCenter": cost_center["costCenter"],
                 "glAccount": rng.choice(("6100", "6200", "6300", "1500", "5000")),
+                "projectCode": project,
                 "quantityReceived": 0,
             }
         )
@@ -2603,7 +2749,7 @@ def _junction_requisition(
 ) -> dict:
     rng = _rng(seed, "jp_req", idx)
     currency = "USD"
-    lines, subtotal = _junction_req_lines(rng, currency, suppliers)
+    lines, subtotal = _junction_req_lines(rng, currency, cost_center, suppliers)
     tax = round(subtotal * 0.0, 2)
     total = round(subtotal + tax, 2)
     steps = junction_required_approval_steps(total)
@@ -2612,6 +2758,11 @@ def _junction_requisition(
     created = _instant(rng, -180, -3)
     approval_status = "not_required" if steps == 0 else "pending"
     submitted_at = None if status == "draft" else created
+    purchase_type = rng.choice(_JUNCTION_PURCHASE_TYPES)
+    priority = rng.choice(_JUNCTION_PRIORITIES)
+    for step in chain:
+        if step["slaHours"] is not None and submitted_at is not None:
+            step["dueBy"] = _shift_iso(created, hours=step["slaHours"])
 
     if status in ("approved", "ordered"):
         for step in chain:
@@ -2639,6 +2790,8 @@ def _junction_requisition(
         "requisitionNumber": f"REQ-2026-{idx:06d}",
         "title": lines[0]["description"] if lines else "Purchase requisition",
         "status": status,
+        "purchaseType": purchase_type,
+        "priority": priority,
         "department": cost_center["department"],
         "costCenter": cost_center["costCenter"],
         "requestedBy": requester,
@@ -3413,8 +3566,20 @@ _KEYSTONE_COUNTERPARTIES = (
     "Northwind Bank",
     "Sterling National",
 )
+_KEYSTONE_CPTY_RATING = {
+    "Halcyon Bank": "A+",
+    "Corvus Bank": "A",
+    "Northwind Bank": "AA-",
+    "Sterling National": "A-",
+}
+_KEYSTONE_HEDGE_DESIGNATIONS = (
+    "cash_flow_hedge",
+    "balance_sheet_hedge",
+    "net_investment_hedge",
+)
 _KEYSTONE_HEDGE_STATUS_FLOW = ("booked", "confirmed", "settled")
 _KEYSTONE_TRANSFER_STATUS_FLOW = ("pending", "value_dated", "executed", "settled")
+_KEYSTONE_CHARGE_BEARERS = ("OUR", "SHA", "BEN")
 _KEYSTONE_OPERATION_TYPES = (
     "cash_sweep",
     "money_market_investment",
@@ -3422,6 +3587,14 @@ _KEYSTONE_OPERATION_TYPES = (
     "commercial_paper",
     "intercompany_loan",
 )
+# Day-count conventions money-market desks quote against by instrument.
+_KEYSTONE_DAY_COUNT = {
+    "cash_sweep": "ACT/360",
+    "money_market_investment": "ACT/360",
+    "term_deposit": "ACT/360",
+    "commercial_paper": "ACT/360",
+    "intercompany_loan": "ACT/365",
+}
 
 
 def keystone_usd(amount: float, currency: str) -> float:
@@ -3606,9 +3779,22 @@ def _keystone_transfer(seed: str, idx: int) -> dict:
     status = _KEYSTONE_TRANSFER_STATUS_FLOW[stage]
     fee = 0.0 if same_entity else round(rng.uniform(3, 25), 2)
     transfer_type = "internal_sweep" if same_entity else "intercompany"
+    cross_border = src[2] != dst[2]
+    if same_entity:
+        method = "book_transfer"
+    elif cross_border:
+        method = "swift"
+    else:
+        method = rng.choice(("rtgs", "ach"))
+    history = [
+        {"status": _KEYSTONE_TRANSFER_STATUS_FLOW[s],
+         "at": _fx_iso(initiated + timedelta(hours=s * 6))}
+        for s in range(stage + 1)
+    ]
     return {
         "transferId": f"tr_{rng.getrandbits(48):012x}",
         "reference": f"TT{initiated:%Y%m%d}-{2000 + idx}",
+        "endToEndId": f"E2E{initiated:%Y%m%d}{2000 + idx}",
         "type": transfer_type,
         "fromAccountId": f"acct_{src[0].lower()}_concentration",
         "fromEntityId": src[0],
@@ -3620,9 +3806,18 @@ def _keystone_transfer(seed: str, idx: int) -> dict:
         "amount": amount,
         "valueDate": value_date.date().isoformat(),
         "status": status,
+        "approvalState": "approved",
+        "settlementMethod": method,
+        "settlementRail": "ISO20022_pain.001" if method == "swift" else method.upper(),
+        "crossBorder": cross_border,
+        "chargeBearer": "OUR" if same_entity else rng.choice(_KEYSTONE_CHARGE_BEARERS),
+        "correspondentBank": rng.choice(_KEYSTONE_COUNTERPARTIES) if cross_border else None,
         "purposeCode": rng.choice(("INTC", "CASH", "TREA", "LOAN")),
+        "regulatoryReportingRequired": cross_border and amount > 1_000_000,
         "fee": fee,
         "feeCurrency": currency,
+        "statusHistory": history,
+        "initiatedBy": "treasury-batch",
         "initiatedAt": _fx_iso(initiated),
         "settledAt": _fx_iso(value_date) if stage == 3 else None,
     }
@@ -3650,18 +3845,45 @@ def _keystone_exposure(seed: str, currency: str, positions: dict, hedges: dict) 
     unhedged = round(net - hedged, 2)
     ratio = round(min(1.0, hedged / net), 4) if net > 0 else 0.0
     var = round(abs(unhedged) * rng.uniform(0.008, 0.018), 2)
+    # Split the net exposure across maturity buckets the risk desk reports on.
+    weights = [rng.uniform(0.2, 0.5), rng.uniform(0.2, 0.4),
+               rng.uniform(0.1, 0.3), rng.uniform(0.05, 0.2)]
+    total_w = sum(weights)
+    buckets = ("0-30d", "31-90d", "91-180d", "180d+")
+    by_tenor = [
+        {"bucket": b,
+         "netExposure": round(net * w / total_w, 2),
+         "netExposureBase": round(keystone_usd(net * w / total_w, currency), 2)}
+        for b, w in zip(buckets, weights)
+    ]
+    translation = round(net * rng.uniform(0.25, 0.5), 2)
+    limit_base = round(abs(keystone_usd(net, currency)) * rng.uniform(1.1, 1.6), 2)
+    unhedged_base = round(keystone_usd(unhedged, currency), 2)
     return {
         "currency": currency,
         "asOf": _fx_iso(_KEYSTONE_EPOCH - timedelta(hours=rng.randint(1, 12))),
+        "receivables": receivables,
+        "payables": payables,
+        "cashExposure": round(cash, 2),
         "grossLong": gross_long,
         "grossShort": gross_short,
         "netExposure": net,
+        "transactionExposure": round(net - translation, 2),
+        "translationExposure": translation,
         "hedgedAmount": hedged,
         "unhedgedAmount": unhedged,
         "hedgeRatio": ratio,
+        "byTenor": by_tenor,
         "valueAtRisk1d95": var,
+        "varMethodology": "parametric",
+        "varConfidence": 0.95,
+        "varHorizonDays": 1,
+        "exposureLimitBase": limit_base,
+        "limitUtilization": round(min(1.0, abs(unhedged_base) / limit_base), 4) if limit_base else 0.0,
+        "withinLimit": abs(unhedged_base) <= limit_base,
         "reportingCurrency": _KEYSTONE_REPORTING_CCY,
         "netExposureBase": round(keystone_usd(net, currency), 2),
+        "unhedgedAmountBase": unhedged_base,
     }
 
 
@@ -3678,6 +3900,12 @@ def _keystone_operation(seed: str, idx: int) -> dict:
     maturity = value_date + timedelta(days=tenor)
     matured = maturity <= _KEYSTONE_EPOCH
     rate = round(rng.uniform(0.5, 5.25), 3)
+    day_count = _KEYSTONE_DAY_COUNT[op_type]
+    day_basis = 365 if day_count == "ACT/365" else 360
+    interest = round(principal * (rate / 100.0) * (tenor / day_basis), 2)
+    elapsed = tenor if matured else max(0, (_KEYSTONE_EPOCH - value_date).days)
+    accrued = round(principal * (rate / 100.0) * (min(elapsed, tenor) / day_basis), 2)
+    counterparty = rng.choice(_KEYSTONE_COUNTERPARTIES)
     return {
         "operationId": f"op_{rng.getrandbits(40):010x}",
         "type": op_type,
@@ -3689,10 +3917,18 @@ def _keystone_operation(seed: str, idx: int) -> dict:
         "currency": currency,
         "principal": principal,
         "rate": rate,
+        "rateType": "fixed",
+        "dayCountConvention": day_count,
         "tenorDays": tenor,
+        "interestAmount": interest,
+        "accruedInterest": accrued,
+        "maturityValue": round(principal + interest, 2),
         "valueDate": value_date.date().isoformat(),
         "maturityDate": maturity.date().isoformat(),
-        "counterparty": rng.choice(_KEYSTONE_COUNTERPARTIES),
+        "counterparty": counterparty,
+        "counterpartyRating": _KEYSTONE_CPTY_RATING.get(counterparty, "A"),
+        "settlementAccountId": f"acct_{entity[0].lower()}_concentration",
+        "autoRollover": op_type in ("cash_sweep", "money_market_investment"),
         "reference": f"OP{value_date:%Y%m%d}-{3000 + idx}",
         "createdAt": _fx_iso(value_date),
     }
@@ -6436,6 +6672,64 @@ _SABRE_US_JURISDICTIONS = {
         "city": ("ATLANTA", 0.0150),
         "special": ("", 0.0000),
     },
+    "NJ": {
+        "stateName": "NEW JERSEY",
+        "stateRate": 0.0663,
+        "county": ("", 0.0000),
+        "city": ("", 0.0000),
+        "special": ("", 0.0000),
+    },
+    "PA": {
+        "stateName": "PENNSYLVANIA",
+        "stateRate": 0.0600,
+        "county": ("PHILADELPHIA", 0.0200),
+        "city": ("", 0.0000),
+        "special": ("", 0.0000),
+    },
+    "OH": {
+        "stateName": "OHIO",
+        "stateRate": 0.0575,
+        "county": ("FRANKLIN", 0.0125),
+        "city": ("", 0.0000),
+        "special": ("COTA", 0.0050),
+    },
+    "AZ": {
+        "stateName": "ARIZONA",
+        "stateRate": 0.0560,
+        "county": ("MARICOPA", 0.0070),
+        "city": ("PHOENIX", 0.0230),
+        "special": ("", 0.0000),
+    },
+    "TN": {
+        "stateName": "TENNESSEE",
+        "stateRate": 0.0700,
+        "county": ("DAVIDSON", 0.0225),
+        "city": ("", 0.0000),
+        "special": ("", 0.0000),
+    },
+}
+
+# region -> ANSI state FIPS code, surfaced on per-jurisdiction tax detail lines
+_SABRE_STATE_FIPS = {
+    "CA": "06", "NY": "36", "TX": "48", "WA": "53", "IL": "17", "FL": "12",
+    "CO": "08", "MA": "25", "GA": "13", "NJ": "34", "PA": "42", "OH": "39",
+    "AZ": "04", "TN": "47",
+}
+
+# Representative rooftop coordinates returned by address resolution, keyed by
+# US region and by country for international single-jurisdiction regimes.
+_SABRE_STATE_CENTROID = {
+    "CA": (33.6846, -117.8265), "NY": (40.7128, -74.0060), "TX": (30.2672, -97.7431),
+    "WA": (47.6062, -122.3321), "IL": (41.8781, -87.6298), "FL": (25.7617, -80.1918),
+    "CO": (39.7392, -104.9903), "MA": (42.3601, -71.0589), "GA": (33.7490, -84.3880),
+    "NJ": (40.0583, -74.4057), "PA": (39.9526, -75.1652), "OH": (39.9612, -82.9988),
+    "AZ": (33.4484, -112.0740), "TN": (36.1627, -86.7816),
+}
+_SABRE_COUNTRY_CENTROID = {
+    "GB": (51.5074, -0.1278), "DE": (52.5200, 13.4050), "FR": (48.8566, 2.3522),
+    "NL": (52.3676, 4.9041), "IE": (53.3498, -6.2603), "SG": (1.3521, 103.8198),
+    "JP": (35.6762, 139.6503), "BR": (-23.5505, -46.6333), "IN": (19.0760, 72.8777),
+    "CA": (45.4215, -75.6972), "AU": (-33.8688, 151.2093),
 }
 
 # ISO country -> single transaction-tax (VAT/GST/consumption) regime

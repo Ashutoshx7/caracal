@@ -127,8 +127,15 @@ def create_charge(ctx: Ctx) -> dict:
     idem = ctx.get("idempotencyKey")
     keys = ctx.state.table("idempotency")
     charges = ctx.state.table("charges")
+    fingerprint = _fingerprint(ctx.payload)
     if idem and idem in keys:
-        return charges[keys[idem]]
+        record = keys[idem]
+        if record["fingerprint"] != fingerprint:
+            raise DomainError(
+                400, "idempotency_error",
+                "Keys for idempotent requests can only be used with the same parameters "
+                "they were first used with.")
+        return charges[record["chargeId"]]
 
     source = ctx.payload["source"]
     decline = _DECLINE_TOKENS.get(_norm(source))
@@ -150,6 +157,8 @@ def create_charge(ctx: Ctx) -> dict:
     else:
         status, captured, paid, captured_amount, net = "succeeded", True, True, amount, round(amount - fee, 2)
 
+    descriptor = ctx.get("statementDescriptor", "MERIDIAN* LYNXCAPITAL")
+    suffix = ctx.get("statementDescriptorSuffix")
     charge = {
         "id": charge_id,
         "chargeId": charge_id,
@@ -164,11 +173,15 @@ def create_charge(ctx: Ctx) -> dict:
         "refunded": False,
         "disputed": False,
         "description": ctx.get("description", ""),
-        "statementDescriptor": ctx.get("statementDescriptor", "MERIDIAN* LYNXCAPITAL"),
+        "statementDescriptor": descriptor,
+        "statementDescriptorSuffix": suffix,
+        "calculatedStatementDescriptor": f"{descriptor} {suffix}".strip() if suffix else descriptor,
         "source": source,
+        "paymentIntent": base.new_id("pi"),
         "paymentMethod": base.new_id("pm"),
         "paymentMethodDetails": pm,
-        "billingDetails": ctx.get("billingDetails", {"name": None, "email": None, "address": {}}),
+        "authorizationCode": None if needs_action else _auth_code(charge_id),
+        "billingDetails": ctx.get("billingDetails", {"name": None, "email": None, "phone": None, "address": {}}),
         "outcome": {
             "networkStatus": "approved_by_network",
             "reason": None,
@@ -176,24 +189,33 @@ def create_charge(ctx: Ctx) -> dict:
             "riskScore": 78 if amount > _REQUIRES_ACTION_THRESHOLD else 24,
             "sellerMessage": "Payment requires authentication." if needs_action else "Payment complete.",
             "type": "manual" if status == "requires_capture" else "authorized",
+            "networkDeclineCode": None,
         },
         "processingFee": 0.0 if status != "succeeded" else fee,
         "net": net,
         "balanceTransaction": base.new_id("txn") if status == "succeeded" else None,
+        "failureCode": None,
+        "failureMessage": None,
+        "failureBalanceTransaction": None,
+        "fraudDetails": {},
+        "receiptEmail": ctx.get("receiptEmail"),
+        "receiptNumber": None,
         "receiptUrl": f"https://pay.meridianpay.test/receipts/{charge_id}",
         "customer": ctx.get("customer"),
         "metadata": ctx.get("metadata", {}),
+        "captureBefore": created + _CAPTURE_WINDOW if status == "requires_capture" else None,
         "settlementId": None,
         "payoutId": None,
         "created": created,
         "livemode": False,
     }
     if needs_action:
-        charge["nextAction"] = {"type": "use_stripe_sdk", "redirectToUrl":
-                                {"url": f"https://pay.meridianpay.test/3ds/{charge_id}"}}
+        charge["nextAction"] = {"type": "redirect_to_url", "redirectToUrl":
+                                {"url": f"https://pay.meridianpay.test/3ds/{charge_id}",
+                                 "returnUrl": None}}
     charges[charge_id] = charge
     if idem:
-        keys[idem] = charge_id
+        keys[idem] = {"chargeId": charge_id, "fingerprint": fingerprint}
     return charge
 
 
@@ -218,9 +240,10 @@ def capture_charge(ctx: Ctx) -> dict:
     if amount <= 0 or amount > charge["amount"] + 1e-6:
         raise DomainError(422, "invalid_amount", "capture amount exceeds the authorized amount")
     fee = gen._processing_fee(amount, charge["currency"])
+    released = round(charge["amount"] - amount, 2)
     charge.update(status="succeeded", captured=True, paid=True, amountCaptured=amount,
-                  processingFee=fee, net=round(amount - fee, 2),
-                  balanceTransaction=base.new_id("txn"))
+                  amountRefunded=released, processingFee=fee, net=round(amount - fee, 2),
+                  balanceTransaction=base.new_id("txn"), captureBefore=None)
     charge["outcome"]["type"] = "authorized"
     return charge
 
@@ -263,10 +286,14 @@ def refund_charge(ctx: Ctx) -> dict:
         "amount": amount,
         "currency": charge["currency"],
         "chargeId": charge["chargeId"],
+        "paymentIntent": charge.get("paymentIntent"),
         "status": "succeeded",
         "reason": ctx.get("reason", "requested_by_customer"),
         "receiptNumber": None,
         "balanceTransaction": base.new_id("txn"),
+        "destinationDetails": {"card": {"type": "refund", "referenceStatus": "pending"},
+                               "type": "card"},
+        "failureReason": None,
         "created": base.now(),
         "metadata": ctx.get("metadata", {}),
     }
@@ -302,10 +329,13 @@ def create_payout(ctx: Ctx) -> dict:
         "statementDescriptor": ctx.get("statementDescriptor", "MERIDIAN PAYOUT"),
         "sourceType": "card",
         "automatic": False,
+        "balanceTransaction": base.new_id("txn"),
+        "reconciliationStatus": "not_applicable",
         "arrivalDate": now + (0 if method == "instant" else 2 * 86_400),
         "settlementId": None,
         "failureCode": None,
         "failureMessage": None,
+        "failureBalanceTransaction": None,
         "created": now,
         "metadata": ctx.get("metadata", {}),
     }

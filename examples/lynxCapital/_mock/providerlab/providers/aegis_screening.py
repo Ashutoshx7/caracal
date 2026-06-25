@@ -103,13 +103,29 @@ def _watchlist_subjects(state: base.State) -> list[dict]:
     ]
 
 
-def _match(state: base.State, name: str, etype: str, country: str | None) -> list[dict]:
-    """Resolve a subject against the watchlist index, returning ranked candidate hits."""
+def _whitelist_key(name: str) -> str:
+    return _norm(name)
+
+
+def _whitelisted_targets(state: base.State, name: str) -> set[str]:
+    """Entity ids an analyst has discounted for this subject name, so a confirmed
+    false positive is not re-raised on every subsequent screening."""
+    entry = state.table("whitelist").get(_whitelist_key(name))
+    return set(entry["matchedEntityIds"]) if entry else set()
+
+
+def _match(state: base.State, subject: dict) -> list[dict]:
+    """Resolve a screened subject against the watchlist index, returning ranked
+    candidate hits with name-match and secondary-identifier corroboration."""
+    name = str(subject.get("name") or "")
     target = _tokens(name)
     target_norm = _norm(name)
+    whitelisted = _whitelisted_targets(state, name)
     hits: list[dict] = []
-    for subject in _watchlist_subjects(state):
-        names = [subject["legalName"], *subject.get("aliases", [])]
+    for record in _watchlist_subjects(state):
+        if record["entityId"] in whitelisted:
+            continue
+        names = [record["legalName"], *record.get("aliases", [])]
         best = 0.0
         match_type = None
         for candidate in names:
@@ -124,37 +140,83 @@ def _match(state: base.State, name: str, etype: str, country: str | None) -> lis
                 best = jaccard
                 match_type = "fuzzy"
         if match_type == "exact" or best >= 0.5:
-            score = round(best if match_type == "exact" else 0.74 + best * 0.2, 2)
-            hits.append(_hit(subject, match_type or "fuzzy", min(score, 0.99)))
+            name_score = round(best if match_type == "exact" else 0.74 + best * 0.2, 2)
+            hits.append(_hit(record, match_type or "fuzzy", min(name_score, 0.99), subject))
 
     if not hits:
-        rng = gen._rng(ID, "noise", _norm(name))
+        rng = gen._rng(ID, "noise", target_norm)
         if rng.random() < 0.12:
-            subject = rng.choice(_watchlist_subjects(state))
-            if "ADVERSE_MEDIA" in subject.get("programs", []) or "PEP" in subject.get(
-                "programs", []
+            record = rng.choice(_watchlist_subjects(state))
+            programs = record.get("programs", [])
+            if (
+                record["entityId"] not in whitelisted
+                and ("ADVERSE_MEDIA" in programs or "PEP" in programs)
             ):
-                hits.append(_hit(subject, "fuzzy", round(rng.uniform(0.74, 0.84), 2)))
+                hits.append(
+                    _hit(record, "fuzzy", round(rng.uniform(0.74, 0.84), 2), subject)
+                )
     hits.sort(key=lambda h: h["matchScore"], reverse=True)
     return hits
 
 
-def _hit(subject: dict, match_type: str, score: float) -> dict:
+def _matched_fields(record: dict, subject: dict, name_score: float) -> list[dict]:
+    """Field-by-field corroboration between the screened subject and the listed record,
+    the way a screening analyst confirms or discounts a name hit on secondary data."""
+    fields = [{"field": "name", "matched": True, "strength": name_score}]
+    sub_dob = subject.get("dateOfBirth")
+    rec_dob = record.get("dateOfBirth")
+    if sub_dob and rec_dob:
+        fields.append({"field": "dateOfBirth", "matched": sub_dob == rec_dob})
+    sub_country = subject.get("country")
+    rec_country = record.get("country") or record.get("nationality")
+    if sub_country and rec_country:
+        fields.append({"field": "country", "matched": sub_country == rec_country})
+    sub_ids = {
+        str(i.get("value")) for i in subject.get("identifiers", []) if i.get("value")
+    }
+    rec_ids = {
+        str(i.get("value")) for i in record.get("identifiers", []) if i.get("value")
+    }
+    if sub_ids and rec_ids:
+        fields.append({"field": "identifier", "matched": bool(sub_ids & rec_ids)})
+    return fields
+
+
+def _hit(record: dict, match_type: str, score: float, subject: dict) -> dict:
+    matched_fields = _matched_fields(record, subject, score)
+    corroborated = sum(1 for f in matched_fields[1:] if f["matched"])
+    secondary = len(matched_fields) - 1
+    if match_type == "exact" and corroborated == secondary and secondary:
+        strength = "confirmed"
+    elif match_type == "exact":
+        strength = "strong"
+    elif corroborated:
+        strength = "potential"
+    else:
+        strength = "weak"
+    fp = max(0.02, 1 - score) * (0.4 if match_type == "exact" else 0.8)
+    if secondary:
+        fp *= max(0.2, 1 - corroborated / max(1, secondary))
     return {
-        "matchedEntityId": subject["entityId"],
-        "matchedName": subject["legalName"],
+        "matchedEntityId": record["entityId"],
+        "matchedName": record["legalName"],
         "matchType": match_type,
         "matchScore": score,
-        "entityType": subject["type"],
-        "programs": list(subject.get("programs", [])),
-        "watchlists": list(subject.get("watchlists", [])),
-        "aliases": list(subject.get("aliases", [])),
-        "country": subject.get("country"),
-        "sanctionType": subject.get("sanctionType"),
-        "dateOfBirth": subject.get("dateOfBirth"),
-        "falsePositiveProbability": round(
-            max(0.02, 1 - score) * (0.4 if match_type == "exact" else 0.8), 2
-        ),
+        "matchStrength": strength,
+        "matchedFields": matched_fields,
+        "entityType": record["type"],
+        "programs": list(record.get("programs", [])),
+        "watchlists": list(record.get("watchlists", [])),
+        "listingReferences": list(record.get("listingReferences", [])),
+        "aliases": list(record.get("aliases", [])),
+        "country": record.get("country"),
+        "nationality": record.get("nationality"),
+        "sanctionType": record.get("sanctionType"),
+        "pepPosition": record.get("pepPosition"),
+        "pepTier": record.get("pepTier"),
+        "adverseMedia": list(record.get("adverseMedia", [])),
+        "dateOfBirth": record.get("dateOfBirth"),
+        "falsePositiveProbability": round(fp, 2),
     }
 
 
@@ -209,21 +271,54 @@ def _decision(hits: list[dict], band: str) -> tuple[str, str]:
 
 
 # --------------------------------------------------------------------------- #
+# delegation + actor context
+# --------------------------------------------------------------------------- #
+def _actor(ctx) -> str:
+    return str(ctx.principal.get("principal") or "anonymous")
+
+
+def _delegation(ctx) -> dict:
+    """Capture the verified mandate chain that authorized this action, so every
+    screening, case, and monitor is traceable to the delegated mandate it ran under."""
+    p = ctx.principal
+    return {
+        "subject": p.get("principal"),
+        "subjectType": p.get("subjectType"),
+        "zone": p.get("zone"),
+        "agentSessionId": p.get("agentSessionId"),
+        "rootSessionId": p.get("rootSessionId"),
+        "sessionId": p.get("sessionId"),
+        "delegationEdgeId": p.get("delegationEdgeId"),
+        "mandateId": p.get("mandateId"),
+    }
+
+
+def _public(record: dict) -> dict:
+    """Strip internal bookkeeping keys before returning a record on the wire."""
+    return {k: v for k, v in record.items() if not k.startswith("_")}
+
+
+# --------------------------------------------------------------------------- #
 # persistence helpers
 # --------------------------------------------------------------------------- #
-def _audit(state: base.State, case: dict, kind: str, actor: str, details: dict) -> dict:
-    """Append a tamper-evident audit event, hash-chained to the case's prior event."""
+def _audit(state: base.State, case: dict, kind: str, ctx, details: dict) -> dict:
+    """Append a tamper-evident audit event, hash-chained to the case's prior event and
+    bound to the delegation edge that authorized it."""
     prev = case["auditTrail"][-1]["hash"] if case["auditTrail"] else "genesis"
+    actor = _actor(ctx)
+    delegation = _delegation(ctx)
+    edge = delegation.get("delegationEdgeId") or "none"
     at = _ts()
     event_id = base.new_id("evt")
     digest = hashlib.sha256(
-        f"{case['caseId']}|{kind}|{actor}|{at}|{prev}".encode()
+        f"{case['caseId']}|{kind}|{actor}|{edge}|{at}|{prev}".encode()
     ).hexdigest()[:16]
     event = {
         "eventId": event_id,
         "caseId": case["caseId"],
         "type": kind,
         "actor": actor,
+        "delegation": delegation,
         "at": at,
         "details": details,
         "prevHash": prev,
@@ -234,9 +329,7 @@ def _audit(state: base.State, case: dict, kind: str, actor: str, details: dict) 
     return event
 
 
-def _open_case(
-    state: base.State, screening: dict, hits: list[dict], actor: str
-) -> dict:
+def _open_case(state: base.State, screening: dict, hits: list[dict], ctx) -> dict:
     band = screening["riskBand"]
     priority = {"critical": "critical", "high": "high", "medium": "medium"}.get(
         band, "low"
@@ -264,16 +357,20 @@ def _open_case(
                 "matchedName": h["matchedName"],
                 "matchScore": h["matchScore"],
                 "matchType": h["matchType"],
+                "matchStrength": h.get("matchStrength"),
+                "disposition": None,
             }
             for h in hits
         ],
         "disposition": None,
         "dispositionReason": None,
+        "delegation": _delegation(ctx),
         "auditTrail": [],
         "createdAt": created,
         "updatedAt": created,
         "resolvedAt": None,
         "resolvedBy": None,
+        "reopenCount": 0,
         "summary": intelligence.narrative(
             "You are a sanctions and AML analyst. Summarize the screening alert in one sentence.",
             f"Subject {screening['subject']['name']} produced {len(hits)} watchlist match(es) "
@@ -285,7 +382,7 @@ def _open_case(
     }
     state.table("cases")[case["caseId"]] = case
     _audit(
-        state, case, "case_opened", actor, {"riskBand": band, "matchCount": len(hits)}
+        state, case, "case_opened", ctx, {"riskBand": band, "matchCount": len(hits)}
     )
     return case
 
@@ -294,11 +391,12 @@ def _persist_screen(
     state: base.State,
     subject: dict,
     screen_type: str,
-    actor: str,
+    ctx,
     entity_id: str | None = None,
+    client_reference: str | None = None,
 ) -> dict:
     start = time.time()
-    raw_hits = _match(state, subject["name"], subject["type"], subject.get("country"))
+    raw_hits = _match(state, subject)
     screening_id = base.new_id("scr")
     stored_hits: list[dict] = []
     for raw in raw_hits:
@@ -316,9 +414,11 @@ def _persist_screen(
     screened_lists = sorted(
         {w for h in stored_hits for w in h.get("watchlists", [])}
     ) or list(state.table("watchlists"))
+    meta = _meta(state)
     screening = {
         "screeningId": screening_id,
         "requestId": base.new_id("req"),
+        "clientReference": client_reference,
         "type": screen_type,
         "subject": subject,
         "entityId": entity_id,
@@ -330,8 +430,11 @@ def _persist_screen(
         "riskFactors": factors,
         "decision": decision,
         "recommendedAction": recommended,
+        "scoreModel": meta["scoreModel"],
+        "matchModel": meta["matchModel"],
         "status": "completed",
-        "screenedBy": actor,
+        "screenedBy": _actor(ctx),
+        "delegation": _delegation(ctx),
         "createdAt": _ts(),
         "completedAt": _ts(),
         "processingMs": max(1, int((time.time() - start) * 1000)),
@@ -339,7 +442,7 @@ def _persist_screen(
     }
     state.table("screenings")[screening_id] = screening
     if decision != "clear":
-        case = _open_case(state, screening, stored_hits, actor)
+        case = _open_case(state, screening, stored_hits, ctx)
         screening["caseId"] = case["caseId"]
     return screening
 
