@@ -330,7 +330,13 @@ def _aggregate_cash(state: base.State, txn: dict) -> dict | None:
 # alert + case persistence
 # --------------------------------------------------------------------------- #
 def _open_alert(
-    state: base.State, txn: dict, score: int, signals: list[dict], ctx: Ctx
+    state: base.State,
+    txn: dict,
+    score: int,
+    signals: list[dict],
+    ctx: Ctx,
+    *,
+    ctr_reportable: bool = False,
 ) -> dict:
     band = _band(score)
     primary = max(signals, key=lambda s: s["weight"]) if signals else None
@@ -356,6 +362,7 @@ def _open_alert(
         "assignee": None,
         "disposition": None,
         "dispositionReason": None,
+        "ctrReportable": ctr_reportable,
         "caseId": None,
         "filingId": None,
         "detectedAt": detected,
@@ -388,8 +395,10 @@ def _open_case(state: base.State, alert: dict, ctx: Ctx, reason: str) -> dict:
     created = _ts()
     case = {
         "caseId": base.new_id("case"),
+        "caseNumber": _next_number(state, "caseSeq", "CASE"),
         "title": f"{alert['typology']} investigation — {alert['transactionId']}",
         "customerId": alert.get("customerId"),
+        "subjectCustomerIds": [alert["customerId"]] if alert.get("customerId") else [],
         "status": "open",
         "priority": alert["priority"],
         "queue": "aml_l2",
@@ -421,7 +430,35 @@ def _open_case(state: base.State, alert: dict, ctx: Ctx, reason: str) -> dict:
 # --------------------------------------------------------------------------- #
 # regulatory filing lifecycle
 # --------------------------------------------------------------------------- #
-def _prepare_filing(state: base.State, alert: dict, filing_type: str, ctx: Ctx) -> dict:
+def _prior_submitted_filing(
+    state: base.State, customer_id: str | None, filing_type: str, exclude: str | None
+) -> dict | None:
+    """The most recent acknowledged filing of the same type against a subject, used to
+    flag a SAR as continuing activity within the 90-day review window."""
+    if not customer_id:
+        return None
+    candidates = [
+        f
+        for f in state.table("filings").values()
+        if f.get("filingId") != exclude
+        and f.get("filingType") == filing_type
+        and f.get("status") == "acknowledged"
+        and (f.get("subject") or {}).get("customerId") == customer_id
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda f: f.get("filedAt") or f.get("createdAt") or "")
+
+
+def _prepare_filing(
+    state: base.State,
+    alert: dict,
+    filing_type: str,
+    ctx: Ctx,
+    *,
+    amends: dict | None = None,
+    amendment_reason: str | None = None,
+) -> dict:
     meta = _meta(state)
     customer = state.table("customers").get(alert.get("customerId") or "")
     deadline_days = _FILING_DEADLINE_DAYS[filing_type]
@@ -436,18 +473,28 @@ def _prepare_filing(state: base.State, alert: dict, filing_type: str, ctx: Ctx) 
         .replace("+00:00", "Z")
     )
     created = _ts()
+    prior = (
+        None
+        if amends
+        else _prior_submitted_filing(state, alert.get("customerId"), filing_type, None)
+    )
+    form = "FinCEN SAR (111)" if filing_type == "SAR" else "FinCEN CTR (112)"
     filing = {
         "filingId": base.new_id("fil"),
+        "filingNumber": _next_number(state, "filingSeq", filing_type),
         "filingType": filing_type,
         "alertId": alert["alertId"],
         "caseId": alert.get("caseId"),
         "status": "draft",
         "regulator": "FinCEN",
-        "form": "FinCEN SAR (111)" if filing_type == "SAR" else "FinCEN CTR (112)",
+        "form": ("Corrected " + form) if amends else form,
+        "filingInstitution": dict(_FILING_INSTITUTION),
         "subject": {
             "customerId": alert.get("customerId"),
             "legalName": (customer or {}).get("legalName"),
+            "type": (customer or {}).get("type"),
             "country": (customer or {}).get("country"),
+            "kycRiskRating": (customer or {}).get("kycRiskRating"),
         },
         "amount": alert["amount"],
         "currency": alert.get("currency", "USD"),
@@ -455,6 +502,13 @@ def _prepare_filing(state: base.State, alert: dict, filing_type: str, ctx: Ctx) 
         "thresholdApplied": meta["sarThreshold"]
         if filing_type == "SAR"
         else meta["ctrThreshold"],
+        "continuingActivity": bool(prior),
+        "priorFilingId": prior["filingId"] if prior else None,
+        "priorConfirmationNumber": prior["confirmationNumber"] if prior else None,
+        "correctsFilingId": amends["filingId"] if amends else None,
+        "correctsConfirmationNumber": amends["confirmationNumber"] if amends else None,
+        "amendmentReason": amendment_reason,
+        "amendedByFilingId": None,
         "detectedAt": detected,
         "deadlineAt": deadline,
         "filedAt": None,
@@ -469,7 +523,8 @@ def _prepare_filing(state: base.State, alert: dict, filing_type: str, ctx: Ctx) 
         "narrative": intelligence.narrative(
             "You are an AML investigator drafting a regulatory filing narrative in one sentence.",
             f"Draft a {filing_type} narrative for {filing_type} on alert {alert['alertId']} "
-            f"({alert['typology']}, {alert['amount']:.0f} {alert.get('currency', 'USD')}).",
+            f"({alert['typology']}, {alert['amount']:.0f} {alert.get('currency', 'USD')})"
+            f"{'; continuing activity on a prior report' if prior else ''}.",
             f"{filing_type} {('documents suspicious ' + alert['typology'] + ' activity') if filing_type == 'SAR' else 'reports a reportable currency transaction'} "
             f"of {alert['amount']:.0f} {alert.get('currency', 'USD')} tied to alert {alert['alertId']}.",
         ),
@@ -477,7 +532,8 @@ def _prepare_filing(state: base.State, alert: dict, filing_type: str, ctx: Ctx) 
     }
     filing["_auditKey"] = filing["filingId"]
     state.table("filings")[filing["filingId"]] = filing
-    alert["filingId"] = filing["filingId"]
+    if not amends:
+        alert["filingId"] = filing["filingId"]
     if alert.get("caseId"):
         case = state.table("cases").get(alert["caseId"])
         if case is not None:
@@ -485,12 +541,14 @@ def _prepare_filing(state: base.State, alert: dict, filing_type: str, ctx: Ctx) 
     _audit(
         state,
         filing,
-        "filing_prepared",
+        "filing_amended" if amends else "filing_prepared",
         ctx,
         {
             "filingType": filing_type,
             "alertId": alert["alertId"],
             "deadlineAt": deadline,
+            "continuingActivity": filing["continuingActivity"],
+            "correctsFilingId": filing["correctsFilingId"],
         },
     )
     return filing
@@ -704,6 +762,57 @@ def _record_attestation(
 def _public(record: dict) -> dict:
     """Strip internal bookkeeping keys before returning a record on the wire."""
     return {k: v for k, v in record.items() if not k.startswith("_")}
+
+
+def _note_count(record: dict) -> int:
+    return sum(1 for e in record.get("auditTrail", []) if e.get("type") == "note_added")
+
+
+def _alert_tags(alert: dict) -> list[str]:
+    tags = ["aml", alert.get("typology", "unspecified")]
+    if alert.get("riskBand") in ("high", "critical"):
+        tags.append("priority_review")
+    if alert.get("country") and alert["country"] in _HIGH_RISK_TAG_CACHE:
+        tags.append("high_risk_geo")
+    if alert.get("ctrReportable"):
+        tags.append("ctr_reportable")
+    if alert.get("assignee"):
+        tags.append("assigned")
+    return sorted(set(tags))
+
+
+# Populated lazily on first alert view so tag derivation stays cheap.
+_HIGH_RISK_TAG_CACHE: set[str] = set()
+
+
+def _view_alert(state: base.State, alert: dict) -> dict:
+    """Return an alert with read-time aging and SLA posture a monitoring queue shows."""
+    _HIGH_RISK_TAG_CACHE.update(_meta(state)["highRisk"])
+    pub = _public(alert)
+    resolved = alert.get("status") in ("resolved", "escalated")
+    due = alert.get("slaDueAt")
+    pub["ageHours"] = _age_hours(alert.get("detectedAt"))
+    pub["slaBreached"] = bool(due and not resolved and _ts() > due)
+    pub["tags"] = _alert_tags(alert)
+    return pub
+
+
+def _view_case(case: dict) -> dict:
+    """Return a case with read-time aging, SLA posture, and note count."""
+    pub = _public(case)
+    closed = case.get("status") in ("resolved", "closed")
+    due = case.get("slaDueAt")
+    pub["ageHours"] = _age_hours(case.get("createdAt"))
+    pub["slaBreached"] = bool(due and not closed and _ts() > due)
+    pub["noteCount"] = _note_count(case)
+    return pub
+
+
+def _next_number(state: base.State, kind: str, prefix: str) -> str:
+    meta = _meta(state)
+    meta[kind] = int(meta.get(kind, 0)) + 1
+    year = datetime.now(timezone.utc).year
+    return f"{prefix}-{year}-{meta[kind]:06d}"
 
 
 # --------------------------------------------------------------------------- #

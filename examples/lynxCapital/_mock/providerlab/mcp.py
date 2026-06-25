@@ -22,6 +22,18 @@ _SERVER_INSTRUCTIONS = {
         "advance_onboarding, verify banking with verify_vendor_banking, and gate payments "
         "on get_compliance_status. Vendor identifiers look like VEND-00042."
     ),
+    "relay-automation": (
+        "Relay Automation runs finance-operations workflows as asynchronous, long-running "
+        "jobs. Discover automations with list_workflows and get_workflow, then dispatch one "
+        "with start_execution (pass an idempotencyKey to de-duplicate retries). Executions "
+        "are asynchronous: poll get_execution to advance a run, and read its disposition "
+        "with get_execution_logs and get_execution_result. Control a run with "
+        "signal_execution (approve/reject an approval gate), retry_execution, "
+        "pause_execution/resume_execution, and cancel_execution. Inspect backpressure with "
+        "list_queues and get_queue, and prove provenance with get_execution_audit, which "
+        "returns the hash-chained trail bound to the mandate subject and delegation lineage "
+        "that triggered the run. Execution identifiers look like exec_3f2a1b9c4d5e."
+    ),
 }
 
 

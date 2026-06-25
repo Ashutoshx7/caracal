@@ -2478,6 +2478,22 @@ _JUNCTION_FINANCE_PARTNER = {"id": "EMP-2201", "name": "Priya Okafor"}
 _JUNCTION_CFO = {"id": "EMP-1000", "name": "Marco Bianchi"}
 _JUNCTION_REQ_STATUS = ("draft", "pending_approval", "approved", "ordered", "rejected")
 
+_JUNCTION_PAYMENT_METHODS = ("ach", "wire", "check", "virtual_card")
+_JUNCTION_DIVERSITY = (
+    "minorityOwned",
+    "womanOwned",
+    "veteranOwned",
+    "smallBusiness",
+    "disabilityOwned",
+)
+# Per-tier approval authority ceiling: how much spend each step may release.
+_JUNCTION_APPROVAL_LIMITS = (25_000.0, 100_000.0, None)
+# Hours a pending approval step has before it breaches its routing SLA.
+_JUNCTION_APPROVAL_SLA_HOURS = (24, 48, 72)
+_JUNCTION_PURCHASE_TYPES = ("catalog", "non_catalog", "services", "contract")
+_JUNCTION_PRIORITIES = ("standard", "standard", "standard", "high", "urgent")
+_JUNCTION_RECEIPT_CONDITIONS = ("good", "good", "good", "good", "damaged")
+
 
 def junction_required_approval_steps(total: float) -> int:
     """Coupa-style approval matrix: more signatures as spend climbs through tiers."""
@@ -2502,7 +2518,11 @@ def _junction_approval_chain(manager: dict, steps: int) -> list[dict]:
             "role": role,
             "approverId": person["id"],
             "approverName": person["name"],
+            "approvalLimit": _JUNCTION_APPROVAL_LIMITS[i],
+            "slaHours": _JUNCTION_APPROVAL_SLA_HOURS[i],
             "status": "pending",
+            "delegatedTo": None,
+            "dueBy": None,
             "decidedAt": None,
             "comment": None,
         }
@@ -3437,6 +3457,7 @@ def _keystone_position(seed: str, entity: tuple, purpose: str) -> dict:
     bank_name, bic_prefix = _KEYSTONE_BANKS[country]
     account_number = _keystone_account_number(rng)
     is_reserve = purpose == "Reserve"
+    is_concentration = purpose == "Operating"
     floor, ceiling = (8_000_000, 60_000_000) if is_reserve else (500_000, 28_000_000)
     if currency == "JPY":
         floor, ceiling = floor * 150, ceiling * 150
@@ -3449,12 +3470,19 @@ def _keystone_position(seed: str, entity: tuple, purpose: str) -> dict:
         rng.uniform(-400_000, 600_000) * (1 if currency != "JPY" else 150), 2
     )
     overdraft = 0.0 if is_reserve else round(ceiling * 0.1, 2)
+    # Operating cushion the cash desk keeps on the account before sweeping the rest.
+    minimum_balance = round(available * rng.uniform(0.08, 0.2), 2)
+    target_balance = round(minimum_balance * rng.uniform(1.4, 2.2), 2)
+    accrued_interest = round(available * rng.uniform(0.0001, 0.0009), 2)
+    float_amount = round(holds * rng.uniform(0.2, 0.6), 2)
+    prior_day_closing = round(available - intraday * rng.uniform(0.3, 0.9), 2)
     as_of = _KEYSTONE_EPOCH - timedelta(hours=rng.randint(1, 18))
     return {
         "accountId": f"acct_{bic_prefix[:4].lower()}_{account_number[-6:]}",
         "accountName": f"{name} {purpose} {currency}",
         "accountType": _KEYSTONE_ACCOUNT_TYPE[purpose],
         "purpose": purpose,
+        "isConcentrationAccount": is_concentration,
         "bankId": f"bank_{_slug(bank_name)}",
         "bankName": bank_name,
         "bic": f"{bic_prefix}",
@@ -3469,13 +3497,25 @@ def _keystone_position(seed: str, entity: tuple, purpose: str) -> dict:
         "currency": currency,
         "ledgerBalance": ledger,
         "holdsAndUncleared": holds,
+        "floatAmount": float_amount,
         "availableBalance": available,
         "valueDatedBalance": round(available + intraday, 2),
         "projectedBalance": round(available + intraday * rng.uniform(0.8, 1.4), 2),
+        "priorDayClosingBalance": prior_day_closing,
+        "minimumOperatingBalance": minimum_balance,
+        "targetBalance": target_balance,
+        "investableSurplus": round(max(0.0, available - target_balance), 2),
+        "sweepEligible": not is_reserve,
         "overdraftLimit": overdraft,
+        "overdraftUsed": 0.0,
         "creditInterestRate": round(rng.uniform(0.5, 4.25), 3),
+        "accruedInterestMtd": accrued_interest,
+        "interestBasis": "ACT/360",
+        "balanceSource": rng.choice(("camt.053", "BAI2", "MT940")),
+        "lastStatementId": f"stmt_{as_of:%Y%m%d}_{account_number[-4:]}",
         "asOf": _fx_iso(as_of),
         "lastMovementAt": _fx_iso(as_of - timedelta(hours=rng.randint(1, 40))),
+        "lastReconciledAt": _fx_iso(as_of - timedelta(days=rng.randint(1, 3))),
         "status": "active",
     }
 
@@ -5598,6 +5638,29 @@ _AEGIS_WATCHLISTS = (
 # High-risk and sanctioned jurisdictions weighted up by the risk model.
 AEGIS_HIGH_RISK = ("IR", "KP", "SY", "RU", "BY", "CU", "VE", "MM")
 
+# Versioned matching/scoring model the engine reports on every screening, the way
+# a real screening vendor versions its name-matching and risk methodology.
+AEGIS_SCORE_MODEL = "aegis-risk-2026.2"
+AEGIS_MATCH_MODEL = "aegis-match-3.4"
+
+# Political-exposure positions and tiers used to enrich PEP subjects.
+_AEGIS_PEP_POSITIONS = (
+    ("Deputy Finance Minister", 1),
+    ("Member of Parliament", 2),
+    ("State Bank Board Member", 2),
+    ("Regional Governor", 2),
+    ("Senior Military Officer", 1),
+    ("Head of State-Owned Enterprise", 3),
+)
+
+# Adverse-media categories used to enrich adverse-media subjects.
+_AEGIS_ADVERSE_CATEGORIES = (
+    ("financial_crime", "Reported in connection with a cross-border fraud investigation."),
+    ("corruption", "Named in procurement bribery allegations by regional press."),
+    ("money_laundering", "Linked to a shell-company layering scheme under inquiry."),
+    ("regulatory_action", "Subject of a securities regulator enforcement notice."),
+)
+
 # Deterministic fictional watchlist subjects for the simulated ecosystem. Each
 # screening that resolves to one of these produces a true exact/strong match.
 _AEGIS_SANCTIONED = (
@@ -5725,20 +5788,53 @@ def aegis_reference(seed: str) -> dict:
             "legalName": name,
             "type": etype,
             "country": country,
+            "nationality": country,
             "aliases": list(aliases),
             "watchlists": list(lists),
             "programs": list(programs),
             "sanctionType": stype,
             "listedAt": _day(rng, -900, -120),
+            "listingReferences": [
+                {
+                    "list": lid,
+                    "reference": f"{lid.upper().replace('-', '')}-{rng.randint(10000, 99999)}",
+                    "listedAt": _day(rng, -900, -120),
+                }
+                for lid in lists
+            ],
+            "identifiers": [],
             "source": "watchlist",
             "verificationStatus": "watchlisted",
             "status": "active",
         }
         if etype == "individual":
             record["dateOfBirth"] = _day(rng, -22000, -12000)
+            record["placeOfBirth"] = country
+            record["identifiers"] = [
+                {"type": "passport", "value": f"{country}{rng.randint(1000000, 9999999)}"}
+            ]
         else:
             record["incorporationDate"] = _day(rng, -7000, -1500)
             record["registrationNumber"] = _aegis_registration(rng, country)
+            record["identifiers"] = [
+                {"type": "registration", "value": record["registrationNumber"]}
+            ]
+        if "PEP" in programs:
+            position, tier = rng.choice(_AEGIS_PEP_POSITIONS)
+            record["pepPosition"] = position
+            record["pepTier"] = tier
+        if "ADVERSE_MEDIA" in programs:
+            category, summary = rng.choice(_AEGIS_ADVERSE_CATEGORIES)
+            record["adverseMedia"] = [
+                {
+                    "category": category,
+                    "summary": summary,
+                    "publishedAt": _day(rng, -1200, -30),
+                    "source": rng.choice(
+                        ("Reuters", "Financial Times", "Local Wire", "Regional Press")
+                    ),
+                }
+            ]
         sanctioned.append(record)
 
     businesses: list[dict] = []
@@ -5771,6 +5867,10 @@ def aegis_reference(seed: str) -> dict:
                 "type": "organization",
                 "country": country,
                 "registrationNumber": _aegis_registration(rng, country),
+                "taxId": f"{country}-TAX-{rng.randint(1000000, 9999999)}",
+                "incorporationType": rng.choice(
+                    ("LLC", "PLC", "GmbH", "Private Limited", "Corporation")
+                ),
                 "incorporationDate": _day(rng, -6000, -400),
                 "registeredAddress": {
                     "line1": f"{rng.randint(1, 400)} {rng.choice(_ROOTS)} Street",
@@ -5797,6 +5897,9 @@ def aegis_reference(seed: str) -> dict:
         "watchlists": watchlists,
         "sanctioned": sanctioned,
         "businesses": businesses,
+        "scoreModel": AEGIS_SCORE_MODEL,
+        "matchModel": AEGIS_MATCH_MODEL,
+        "highRisk": list(AEGIS_HIGH_RISK),
     }
 
 

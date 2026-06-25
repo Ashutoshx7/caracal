@@ -6,6 +6,9 @@ Meridian Pay domain: card and wallet charge acceptance with refunds, disputes, s
 """
 from __future__ import annotations
 
+import hashlib
+import json
+
 from _mock.providerlab.data import generators as gen
 from _mock.providerlab.providers import base
 from _mock.providerlab.providers.base import Ctx, DomainError
@@ -13,6 +16,16 @@ from _mock.providerlab.providers.base import Ctx, DomainError
 ID = "meridian-pay"
 
 _REQUIRES_ACTION_THRESHOLD = 75000.0
+
+# An uncaptured authorization expires after this window, after which the held
+# funds are released back to the cardholder, exactly as card networks require.
+_CAPTURE_WINDOW = 7 * 86_400
+
+# Fields that define a charge request. Two calls that carry the same idempotency
+# key but differ on any of these are a client bug, and the platform rejects the
+# replay rather than silently returning the first result.
+_IDEMPOTENT_FIELDS = ("amount", "currency", "source", "capture", "customer",
+                      "description", "metadata")
 
 # Canonical decline tokens, shaped after the test-card scheme real card platforms
 # publish. Each maps to the gateway decline code and HTTP status a live charge
@@ -52,6 +65,18 @@ def _norm(token: str) -> str:
     return str(token or "").strip().lower()
 
 
+def _auth_code(seed: str) -> str:
+    """The six-digit authorization code the issuer returns on an approval."""
+    return f"{int(hashlib.sha1(seed.encode()).hexdigest(), 16) % 1_000_000:06d}"
+
+
+def _fingerprint(payload: dict) -> str:
+    """Stable hash of the request fields an idempotency key is bound to."""
+    relevant = {k: payload.get(k) for k in _IDEMPOTENT_FIELDS}
+    return hashlib.sha256(
+        json.dumps(relevant, sort_keys=True, default=str).encode()).hexdigest()
+
+
 def _card_for(source: str) -> dict:
     brand, last4, network = _CARD_BY_TOKEN.get(_norm(source), ("visa", "4242", "Visa"))
     return {
@@ -64,7 +89,9 @@ def _card_for(source: str) -> dict:
             "funding": "credit",
             "network": network,
             "country": "US",
+            "fingerprint": f"fp_{hashlib.sha1(f'{brand}{last4}'.encode()).hexdigest()[:16]}",
             "threeDSecure": "not_required",
+            "wallet": None,
             "checks": {"cvcCheck": "pass", "addressLine1Check": "pass",
                        "addressPostalCodeCheck": "pass"},
         },

@@ -129,7 +129,8 @@ def _iso(dt: datetime) -> str:
 def _currency(ctx: Ctx, field: str) -> str:
     value = str(ctx.payload[field]).upper()
     if not gen.fx_supported(value):
-        raise DomainError(422, "currency_not_supported", f"{field} {value!r} is not a supported currency")
+        raise _fail("INVALID_ARGUMENT", "currency_not_supported",
+                    f"{field} {value!r} is not a supported currency")
     return value
 
 
@@ -137,9 +138,9 @@ def _amount(ctx: Ctx, field: str = "amount") -> float:
     try:
         value = float(ctx.payload[field])
     except (TypeError, ValueError):
-        raise DomainError(422, "invalid_amount", f"{field} must be a number")
+        raise _fail("INVALID_ARGUMENT", "invalid_amount", f"{field} must be a number")
     if value <= 0:
-        raise DomainError(422, "invalid_amount", f"{field} must be greater than zero")
+        raise _fail("INVALID_ARGUMENT", "invalid_amount", f"{field} must be greater than zero")
     return value
 
 
@@ -155,9 +156,10 @@ def _value_date(ctx: Ctx, base_dt: datetime) -> datetime:
     try:
         parsed = datetime.fromisoformat(str(raw)).replace(tzinfo=timezone.utc)
     except ValueError:
-        raise DomainError(422, "invalid_value_date", "valueDate must be ISO-8601 (YYYY-MM-DD)")
+        raise _fail("INVALID_ARGUMENT", "invalid_value_date", "valueDate must be ISO-8601 (YYYY-MM-DD)")
     if parsed.date() < base_dt.date():
-        raise DomainError(422, "value_date_in_past", "valueDate cannot precede the current treasury date")
+        raise _fail("FAILED_PRECONDITION", "value_date_in_past",
+                    "valueDate cannot precede the current treasury date")
     return parsed
 
 
@@ -191,11 +193,11 @@ def list_positions(ctx: Ctx) -> dict:
 @base.op(ID, "get_position")
 def get_position(ctx: Ctx) -> dict:
     """Aggregate cash position for one currency across every group account."""
-    ctx.require("currency")
+    _require(ctx, "currency")
     currency = _currency(ctx, "currency")
     accounts = _accounts_for(ctx, currency)
     if not accounts:
-        raise DomainError(404, "position_not_found", f"no accounts hold {currency}")
+        raise _fail("NOT_FOUND", "position_not_found", f"no accounts hold {currency}")
     ledger = _money(sum(a["ledgerBalance"] for a in accounts), currency)
     available = _money(sum(a["availableBalance"] for a in accounts), currency)
     value_dated = _money(sum(a["valueDatedBalance"] for a in accounts), currency)
@@ -223,10 +225,10 @@ def get_position(ctx: Ctx) -> dict:
 @base.op(ID, "get_account")
 def get_account(ctx: Ctx) -> dict:
     """Full position for one bank account."""
-    ctx.require("accountId")
+    _require(ctx, "accountId")
     account = ctx.state.table("positions").get(ctx.payload["accountId"])
     if account is None:
-        raise DomainError(404, "account_not_found", ctx.payload["accountId"])
+        raise _fail("NOT_FOUND", "account_not_found", ctx.payload["accountId"])
     return account
 
 
@@ -260,11 +262,11 @@ def get_position_summary(ctx: Ctx) -> dict:
 @base.op(ID, "watch_positions")
 def watch_positions(ctx: Ctx) -> dict:
     """Server-streaming snapshot of intraday position movements for one currency."""
-    ctx.require("currency")
+    _require(ctx, "currency")
     currency = _currency(ctx, "currency")
     accounts = _accounts_for(ctx, currency)
     if not accounts:
-        raise DomainError(404, "position_not_found", f"no accounts hold {currency}")
+        raise _fail("NOT_FOUND", "position_not_found", f"no accounts hold {currency}")
     ticks = max(1, min(int(ctx.get("snapshots", 6)), 24))
     base_available = sum(a["availableBalance"] for a in accounts)
     updates = []
@@ -290,20 +292,20 @@ def watch_positions(ctx: Ctx) -> dict:
 @base.op(ID, "forecast_liquidity")
 def forecast_liquidity(ctx: Ctx) -> dict:
     """Project cash flow over a horizon for one currency under a named scenario."""
-    ctx.require("currency", "horizonDays")
+    _require(ctx, "currency", "horizonDays")
     currency = _currency(ctx, "currency")
     accounts = _accounts_for(ctx, currency)
     if not accounts:
-        raise DomainError(404, "position_not_found", f"no accounts hold {currency}")
+        raise _fail("NOT_FOUND", "position_not_found", f"no accounts hold {currency}")
     try:
         horizon = int(ctx.payload["horizonDays"])
     except (TypeError, ValueError):
-        raise DomainError(422, "invalid_horizon", "horizonDays must be an integer")
+        raise _fail("INVALID_ARGUMENT", "invalid_horizon", "horizonDays must be an integer")
     if horizon <= 0 or horizon > 365:
-        raise DomainError(422, "invalid_horizon", "horizonDays must be 1..365")
+        raise _fail("INVALID_ARGUMENT", "invalid_horizon", "horizonDays must be 1..365")
     scenario = str(ctx.get("scenario", "base")).lower()
     if scenario not in _FORECAST_SCENARIOS:
-        raise DomainError(422, "invalid_scenario",
+        raise _fail("INVALID_ARGUMENT", "invalid_scenario",
                           f"scenario must be one of {', '.join(_FORECAST_SCENARIOS)}")
 
     bias = {"base": 1.0, "optimistic": 1.4, "stress": 0.55}[scenario]
@@ -353,13 +355,13 @@ def forecast_liquidity(ctx: Ctx) -> dict:
 def _parse_pair(value: str) -> tuple[str, str]:
     parts = str(value).upper().replace("-", "/").split("/")
     if len(parts) != 2 or not all(parts):
-        raise DomainError(422, "invalid_pair", "pair must be formatted 'BUY/SELL'")
+        raise _fail("INVALID_ARGUMENT", "invalid_pair", "pair must be formatted 'BUY/SELL'")
     buy, sell = parts
     if buy == sell:
-        raise DomainError(422, "same_currency_pair", "pair currencies must differ")
+        raise _fail("INVALID_ARGUMENT", "same_currency_pair", "pair currencies must differ")
     for ccy in (buy, sell):
         if not gen.fx_supported(ccy):
-            raise DomainError(422, "currency_not_supported", f"{ccy} is not a tradeable currency")
+            raise _fail("INVALID_ARGUMENT", "currency_not_supported", f"{ccy} is not a tradeable currency")
     return buy, sell
 
 
@@ -379,19 +381,19 @@ def list_hedges(ctx: Ctx) -> dict:
 @base.op(ID, "place_hedge")
 def place_hedge(ctx: Ctx) -> dict:
     """Book an FX hedge (forward, swap, or NDF) against a currency exposure."""
-    ctx.require("pair", "notional", "side")
+    _require(ctx, "pair", "notional", "side")
     buy, sell = _parse_pair(ctx.payload["pair"])
     side = str(ctx.payload["side"]).lower()
     if side not in ("buy", "sell"):
-        raise DomainError(422, "invalid_side", "side must be 'buy' or 'sell'")
+        raise _fail("INVALID_ARGUMENT", "invalid_side", "side must be 'buy' or 'sell'")
     notional = _amount(ctx, "notional")
     instrument = str(ctx.get("instrument", "forward")).lower()
     if instrument not in _HEDGE_INSTRUMENTS:
-        raise DomainError(422, "invalid_instrument",
+        raise _fail("INVALID_ARGUMENT", "invalid_instrument",
                           f"instrument must be one of {', '.join(_HEDGE_INSTRUMENTS)}")
     tenor_days = int(ctx.get("tenorDays", 90))
     if tenor_days <= 0 or tenor_days > 730:
-        raise DomainError(422, "invalid_tenor", "tenorDays must be 1..730")
+        raise _fail("INVALID_ARGUMENT", "invalid_tenor", "tenorDays must be 1..730")
 
     now = _now()
     value_date = _value_date(ctx, now)
@@ -428,22 +430,22 @@ def place_hedge(ctx: Ctx) -> dict:
 
 @base.op(ID, "get_hedge")
 def get_hedge(ctx: Ctx) -> dict:
-    ctx.require("hedgeId")
+    _require(ctx, "hedgeId")
     hedge = ctx.state.table("hedges").get(ctx.payload["hedgeId"])
     if hedge is None:
-        raise DomainError(404, "hedge_not_found", ctx.payload["hedgeId"])
+        raise _fail("NOT_FOUND", "hedge_not_found", ctx.payload["hedgeId"])
     return hedge
 
 
 @base.op(ID, "cancel_hedge")
 def cancel_hedge(ctx: Ctx) -> dict:
     """Cancel an unsettled hedge; settled trades can no longer be unwound here."""
-    ctx.require("hedgeId")
+    _require(ctx, "hedgeId")
     hedge = ctx.state.table("hedges").get(ctx.payload["hedgeId"])
     if hedge is None:
-        raise DomainError(404, "hedge_not_found", ctx.payload["hedgeId"])
+        raise _fail("NOT_FOUND", "hedge_not_found", ctx.payload["hedgeId"])
     if hedge["status"] == "settled":
-        raise DomainError(409, "hedge_not_cancellable", "a settled hedge cannot be cancelled")
+        raise _fail("FAILED_PRECONDITION", "hedge_not_cancellable", "a settled hedge cannot be cancelled")
     if hedge["status"] == "cancelled":
         return hedge
     hedge["status"] = "cancelled"
@@ -457,23 +459,23 @@ def cancel_hedge(ctx: Ctx) -> dict:
 @base.op(ID, "transfer_funds")
 def transfer_funds(ctx: Ctx) -> dict:
     """Move cash intercompany or between a group entity's own accounts."""
-    ctx.require("currency", "amount")
+    _require(ctx, "currency", "amount")
     currency = _currency(ctx, "currency")
     amount = _amount(ctx)
     accounts = _accounts_for(ctx, currency)
     if not accounts:
-        raise DomainError(404, "position_not_found", f"no accounts hold {currency}")
+        raise _fail("NOT_FOUND", "position_not_found", f"no accounts hold {currency}")
 
     source = max(accounts, key=lambda a: a["availableBalance"])
     if ctx.get("fromAccountId"):
         source = ctx.state.table("positions").get(ctx.payload["fromAccountId"])
         if source is None:
-            raise DomainError(404, "account_not_found", ctx.payload["fromAccountId"])
+            raise _fail("NOT_FOUND", "account_not_found", ctx.payload["fromAccountId"])
         if source["currency"] != currency:
-            raise DomainError(422, "currency_mismatch",
+            raise _fail("INVALID_ARGUMENT", "currency_mismatch",
                               f"source account holds {source['currency']}, not {currency}")
     if amount > source["availableBalance"]:
-        raise DomainError(402, "insufficient_liquidity",
+        raise _fail("FAILED_PRECONDITION", "insufficient_liquidity",
                           f"amount exceeds {source['availableBalance']} available on {source['accountId']}")
 
     dest_entity = gen.keystone_entity(region=str(ctx.get("destination", "")),
@@ -482,7 +484,7 @@ def transfer_funds(ctx: Ctx) -> dict:
     if to_account:
         dest = ctx.state.table("positions").get(to_account)
         if dest is None:
-            raise DomainError(404, "account_not_found", to_account)
+            raise _fail("NOT_FOUND", "account_not_found", to_account)
         to_account_id, to_entity_id, to_entity = dest["accountId"], dest["legalEntityId"], dest["legalEntity"]
     elif dest_entity is not None:
         to_account_id = f"acct_{dest_entity[0].lower()}_concentration"
@@ -492,7 +494,7 @@ def transfer_funds(ctx: Ctx) -> dict:
         to_entity_id, to_entity = "EXTERNAL", str(ctx.get("destination", "external"))
 
     if to_account_id == source["accountId"]:
-        raise DomainError(422, "same_account_transfer", "source and destination accounts are identical")
+        raise _fail("INVALID_ARGUMENT", "same_account_transfer", "source and destination accounts are identical")
 
     now = _now()
     value_date = _value_date(ctx, now)
@@ -526,10 +528,10 @@ def transfer_funds(ctx: Ctx) -> dict:
 
 @base.op(ID, "get_transfer")
 def get_transfer(ctx: Ctx) -> dict:
-    ctx.require("transferId")
+    _require(ctx, "transferId")
     transfer = ctx.state.table("transfers").get(ctx.payload["transferId"])
     if transfer is None:
-        raise DomainError(404, "transfer_not_found", ctx.payload["transferId"])
+        raise _fail("NOT_FOUND", "transfer_not_found", ctx.payload["transferId"])
     return transfer
 
 
@@ -552,11 +554,11 @@ def list_transfers(ctx: Ctx) -> dict:
 @base.op(ID, "get_exposure")
 def get_exposure(ctx: Ctx) -> dict:
     """Current FX exposure for one currency, netting cash, receivables, payables, and hedges."""
-    ctx.require("currency")
+    _require(ctx, "currency")
     currency = _currency(ctx, "currency")
     exposure = ctx.state.table("exposures").get(currency)
     if exposure is None:
-        raise DomainError(404, "exposure_not_found", currency)
+        raise _fail("NOT_FOUND", "exposure_not_found", currency)
     return exposure
 
 
@@ -593,8 +595,8 @@ def list_operations(ctx: Ctx) -> dict:
 
 @base.op(ID, "get_operation")
 def get_operation(ctx: Ctx) -> dict:
-    ctx.require("operationId")
+    _require(ctx, "operationId")
     operation = ctx.state.table("operations").get(ctx.payload["operationId"])
     if operation is None:
-        raise DomainError(404, "operation_not_found", ctx.payload["operationId"])
+        raise _fail("NOT_FOUND", "operation_not_found", ctx.payload["operationId"])
     return operation

@@ -29,6 +29,9 @@ _PROGRAM_WEIGHT = {
 _BANDS = (("critical", 75), ("high", 50), ("medium", 25), ("low", 0))
 _SLA_HOURS = {"critical": 4, "high": 24, "medium": 72, "low": 168}
 _DISPOSITIONS = ("false_positive", "true_match", "no_match", "escalate")
+_ENTITY_TYPES = ("individual", "organization")
+_MONITOR_FREQUENCIES = ("realtime", "daily", "weekly")
+_MONITOR_INTERVALS = {"realtime": 0, "daily": 86_400, "weekly": 604_800}
 
 
 def _ts(offset_seconds: int = 0) -> str:
@@ -77,7 +80,18 @@ def seed(state: base.State) -> None:
     state.tables["cases"] = {}
     state.tables["audit_events"] = {}
     state.tables["monitors"] = {}
+    state.tables["whitelist"] = {}
+    state.scalars = {
+        "scoreModel": ref["scoreModel"],
+        "matchModel": ref["matchModel"],
+        "programWeights": dict(_PROGRAM_WEIGHT),
+        "highRisk": set(ref["highRisk"]),
+    }
     _seed_history(state)
+
+
+def _meta(state: base.State) -> dict:
+    return getattr(state, "scalars")
 
 
 # --------------------------------------------------------------------------- #
