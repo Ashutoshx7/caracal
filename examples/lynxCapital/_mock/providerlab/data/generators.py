@@ -2791,10 +2791,13 @@ def _junction_tax_registrations(country: str, tax_id: str) -> list[dict]:
 
 
 def _junction_compliance_documents(rng: random.Random, status: str) -> list[dict]:
-    """W-9 / tax form and certificate of insurance with realistic validity windows."""
+    """W-9 / tax form and certificate of insurance with realistic validity windows.
+    A small share of otherwise-active suppliers carry a lapsed certificate, the way a
+    real platform flags a compliance hold independent of the supplier's active state."""
     docs = []
     for doc_type, valid in (("taxForm", "W-9"), ("insuranceCertificate", "COI")):
-        expired = status == "on_hold" and rng.random() < 0.6
+        lapse_rate = 0.6 if status == "on_hold" else 0.08
+        expired = rng.random() < lapse_rate
         days = rng.randint(-90, -10) if expired else rng.randint(30, 540)
         docs.append({
             "type": doc_type,
@@ -6627,7 +6630,6 @@ _CRM_OWNER_ROLES = (
     "Customer Success Manager",
 )
 _CRM_OWNER_TEAMS = ("Enterprise", "Mid-Market", "SMB", "Partnerships")
-# The connected CRM tenant (portal) Beacon serves for LynxCapital. Owner identities
 # live in this portal, the way a HubSpot hub or Pipedrive company scopes its users.
 CRM_PORTAL_ID = "portal-48213307"
 CRM_PORTAL_DOMAIN = "lynxcapital.example"

@@ -325,12 +325,14 @@ def check_transaction(run_id: str, agent_id: str, vendor_id: str, amount: float,
 
 
 def get_withholding_rate(run_id: str, agent_id: str, region: str, currency: str) -> dict[str, object]:
+    """Determine the cross-border withholding rate on a services payment to a
+    vendor in this region, modeling the vendor as a treaty-documented business."""
     country = _REGION_TAX.get(region, "US")
     documentation = "W-9" if country == "US" else "W-8BEN"
-    payee = {"country": country, "documentationType": documentation,
-             "treatyClaim": country != "US"}
+    payee = {"country": country, "entityType": "corporation",
+             "documentationType": documentation, "treatyClaim": country != "US"}
     return _run(run_id, agent_id, "get_withholding_rate", "sabre-tax", "determine_withholding",
-                {"paymentType": "services", "currencyCode": currency, "payee": payee})
+                {"paymentType": "independent_services", "currencyCode": currency, "payee": payee})
 
 
 def validate_tax_id(run_id: str, agent_id: str, vendor_id: str) -> dict[str, object]:

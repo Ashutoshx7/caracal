@@ -75,7 +75,7 @@ grants := {
 		"application": "intake",
 		"roles": {
 			"invoice-intake": ["atlas:read"],
-			"partner-integration": ["atlas:onboard", "atlas:read"],
+			"partner-integration": ["atlas:onboard", "atlas:read", "atlas:write"],
 			"vendor-lifecycle": ["atlas:onboard", "atlas:read"],
 		},
 	},

@@ -108,8 +108,8 @@ providers:
     config:
       bearer_token: "${LYNX_PARTNER_SLATE_LEDGER_TOKEN}"
     scopes:
-      slate:read: ["list_accounts", "get_account", "get_entry", "list_entries", "get_reconciliation", "trial_balance", "get_period", "list_periods"]
-      slate:post: ["post_entry", "reverse_entry", "reconcile_account", "create_accrual", "close_period"]
+      slate:read: ["list_accounts", "get_account", "get_entry", "list_entries", "get_reconciliation", "list_reconciliations", "list_accruals", "get_accrual", "trial_balance", "get_period", "list_periods"]
+      slate:post: ["post_entry", "approve_entry", "reverse_entry", "reconcile_account", "create_accrual", "post_accrual", "close_period", "reopen_period"]
   - id: "inkwell-ocr"
     name: "Inkwell OCR"
     kind: "api_key"
