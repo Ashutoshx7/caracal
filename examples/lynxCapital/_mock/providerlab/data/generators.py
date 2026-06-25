@@ -7943,7 +7943,7 @@ _VELA_MESSAGE_PLAN: tuple[tuple[str, str, str, bool], ...] = (
     ("sms", "dunning_reminder", "delivered", False),
     ("sms", "otp_verification", "delivered", False),
     ("sms", "dunning_second_notice", "undelivered", False),
-    ("sms", "dunning_final_notice", "carrier_rejected", False),
+    ("sms", "dunning_final_notice", "failed", False),
     ("sms", "otp_verification", "sending", False),
     ("sms", "payment_confirmation", "queued", False),
 )
@@ -7960,7 +7960,7 @@ _VELA_SOFTBOUNCE_DETAIL = {
 }
 _VELA_SMS_ERRORS = {
     "undelivered": (30003, "Unreachable destination handset"),
-    "carrier_rejected": (30007, "Message filtered by carrier"),
+    "failed": (30007, "Message filtered by carrier"),
 }
 _VELA_SMS_CARRIERS = ("Verizon", "AT&T", "Vodafone", "Deutsche Telekom", "Singtel")
 _VELA_SMS_PRICE = {"US": 0.0079, "GB": 0.04, "DE": 0.075, "SG": 0.045}
@@ -8122,17 +8122,16 @@ def _vela_messages(
                            "price": message["price"]})
             elif terminal in _VELA_SMS_ERRORS:
                 code, reason = _VELA_SMS_ERRORS[terminal]
-                final = "undelivered" if terminal == "undelivered" else "failed"
                 add_event(
                     rng,
                     message,
-                    final,
+                    terminal,
                     submitted,
                     7,
                     {"errorCode": code, "reason": reason,
                      "carrier": message["carrier"]},
                 )
-                message["status"] = final
+                message["status"] = terminal
                 message["errorCode"] = code
                 message["error"] = reason
 

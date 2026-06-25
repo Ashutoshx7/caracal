@@ -2,7 +2,7 @@
 Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 Caracal, a product of Garudex Labs
 
-Beacon CRM domain: accounts, contacts, a sales deal pipeline, and the engagement history of activities, notes, and contact relationships.
+Beacon CRM domain: accounts, contacts, a sales deal pipeline, portal owners, and the engagement history of activities, notes, and contact relationships.
 """
 from __future__ import annotations
 
@@ -456,3 +456,30 @@ def list_relationships(ctx: Ctx) -> dict:
     if account_id:
         items = [r for r in items if r["accountId"] == account_id]
     return ctx.paginate(items, size_default=25)
+
+
+# --------------------------------------------------------------------------- #
+# Owners (CRM portal users)
+# --------------------------------------------------------------------------- #
+@base.op(ID, "list_owners")
+def list_owners(ctx: Ctx) -> dict:
+    ctx.require_scope("owners.read")
+    items = list(ctx.state.table("owners").values())
+    if ctx.get("active") is not None:
+        active = bool(ctx.payload["active"])
+        items = [o for o in items if o["active"] == active]
+    team = ctx.get("team")
+    if team:
+        items = [o for o in items if o["team"] == team]
+    items.sort(key=lambda o: o["id"])
+    return ctx.paginate(items, size_default=25)
+
+
+@base.op(ID, "get_owner")
+def get_owner(ctx: Ctx) -> dict:
+    ctx.require_scope("owners.read")
+    ctx.require("ownerId")
+    owner = ctx.state.table("owners").get(ctx.payload["ownerId"])
+    if owner is None:
+        raise DomainError(404, "owner_not_found", ctx.payload["ownerId"])
+    return owner
