@@ -81,7 +81,10 @@ def _config_rows(provider: catalog.Provider) -> list[tuple[str, str]]:
             where = "query parameter" if provider.apikey_location == "query" else "request header"
         rows.append(("API key parameter", f"{provider.apikey_field} ({where})"))
     if catalog.bearer_auth(provider) or (c == "mcp" and provider.mcp_auth == "bearer"):
-        rows.append(("Token header", f"{provider.auth_header}: {provider.auth_scheme} <token>"))
+        if provider.auth_scheme:
+            rows.append(("Token header", f"{provider.auth_header}: {provider.auth_scheme} <token>"))
+        else:
+            rows.append(("Token header", f"{provider.auth_header}: <token>"))
     if c in ("oauth2_client_credentials", "oauth2_authorization_code"):
         rows.append(("Token endpoint", f"{base_url}/oauth/token"))
         rows.append(("Revocation endpoint", f"{base_url}/oauth/revoke"))

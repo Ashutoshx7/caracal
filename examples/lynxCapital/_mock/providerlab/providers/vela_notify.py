@@ -509,7 +509,8 @@ def get_webhook(ctx: Ctx) -> dict:
 
 @base.op(ID, "create_webhook")
 def create_webhook(ctx: Ctx) -> dict:
-    """Register a webhook endpoint subscribed to a set of delivery events."""
+    """Register a webhook endpoint subscribed to a set of delivery events, with optional
+    custom HTTP headers and per-event triggers."""
     ctx.require("url", "events")
     events = ctx.payload["events"]
     if not isinstance(events, list) or not set(events).issubset(_VALID_EVENTS):
@@ -521,7 +522,10 @@ def create_webhook(ctx: Ctx) -> dict:
         "url": ctx.payload["url"],
         "messageStream": ctx.get("messageStream", "outbound-transactional"),
         "events": list(events),
+        "triggers": ctx.get("triggers") or {e: {"enabled": True} for e in events},
         "enabled": bool(ctx.get("enabled", True)),
+        "httpAuth": ctx.get("httpAuth"),
+        "httpHeaders": list(ctx.get("httpHeaders", [])),
         "secret": f"whsec_{secrets.token_hex(16)}",
         "createdAt": _iso(base.now()),
         "deliveries": [],
@@ -530,25 +534,114 @@ def create_webhook(ctx: Ctx) -> dict:
     return webhook
 
 
+@base.op(ID, "update_webhook")
+def update_webhook(ctx: Ctx) -> dict:
+    """Edit a webhook's URL, subscribed events, headers, or enabled state."""
+    ctx.require("webhookId")
+    webhook = ctx.state.table("webhooks").get(ctx.payload["webhookId"])
+    if webhook is None:
+        raise DomainError(404, "webhook_not_found", ctx.payload["webhookId"])
+    if "events" in ctx.payload:
+        events = ctx.payload["events"]
+        if not isinstance(events, list) or not set(events).issubset(_VALID_EVENTS):
+            raise DomainError(422, "invalid_events",
+                              f"events must be a subset of {list(_VALID_EVENTS)}")
+        webhook["events"] = list(events)
+        webhook["triggers"] = ctx.get("triggers") or {e: {"enabled": True} for e in events}
+    for field in ("url", "messageStream", "httpAuth", "httpHeaders", "triggers"):
+        if field in ctx.payload:
+            webhook[field] = ctx.payload[field]
+    if "enabled" in ctx.payload:
+        webhook["enabled"] = bool(ctx.payload["enabled"])
+    return webhook
+
+
+@base.op(ID, "delete_webhook")
+def delete_webhook(ctx: Ctx) -> dict:
+    """Remove a webhook endpoint so it stops receiving delivery callbacks."""
+    ctx.require("webhookId")
+    removed = ctx.state.table("webhooks").pop(ctx.payload["webhookId"], None)
+    if removed is None:
+        raise DomainError(404, "webhook_not_found", ctx.payload["webhookId"])
+    return {"webhookId": removed["webhookId"], "deleted": True}
+
+
+# --------------------------------------------------------------------------- #
+# message streams
+# --------------------------------------------------------------------------- #
+@base.op(ID, "list_message_streams")
+def list_message_streams(ctx: Ctx) -> dict:
+    """List the transactional, broadcast, and inbound message streams traffic is sent on."""
+    items = list(ctx.state.table("message_streams").values())
+    stream_type = ctx.get("messageStreamType")
+    if stream_type:
+        items = [s for s in items if s["messageStreamType"] == stream_type]
+    return {"items": items}
+
+
+@base.op(ID, "get_message_stream")
+def get_message_stream(ctx: Ctx) -> dict:
+    """Fetch one message stream by its id."""
+    ctx.require("streamId")
+    stream = ctx.state.table("message_streams").get(ctx.payload["streamId"])
+    if stream is None:
+        raise DomainError(404, "stream_not_found", ctx.payload["streamId"])
+    return stream
+
+
 # --------------------------------------------------------------------------- #
 # analytics
 # --------------------------------------------------------------------------- #
 @base.op(ID, "get_delivery_stats")
 def get_delivery_stats(ctx: Ctx) -> dict:
-    """Aggregate outbound counts by channel and status for delivery reporting."""
+    """Aggregate outbound counts and engagement rates by channel and status, mirroring an
+    ESP/carrier outbound overview (delivery, bounce, complaint, open, and click rates)."""
     channel = ctx.get("channel")
     counts: dict[str, dict[str, int]] = {}
-    totals = {"sent": 0, "delivered": 0, "bounced": 0, "undelivered": 0,
-              "queued": 0, "opened": 0}
+    totals = {"submitted": 0, "sent": 0, "delivered": 0, "bounced": 0,
+              "undelivered": 0, "failed": 0, "queued": 0, "sending": 0}
     events = list(ctx.state.table("events").values())
-    opens = sum(1 for e in events if e["type"] == "Open"
-                and (channel is None or e["channel"] == channel))
+
+    opens, unique_openers = 0, set()
+    clicks, complaints = 0, 0
+    for e in events:
+        if channel is not None and e["channel"] != channel:
+            continue
+        if e["type"] == "Open":
+            opens += 1
+            unique_openers.add(e["messageId"])
+        elif e["type"] == "Click":
+            clicks += 1
+        elif e["type"] == "SpamComplaint":
+            complaints += 1
+
     for message in ctx.state.table("messages").values():
         if channel and message["channel"] != channel:
             continue
+        totals["submitted"] += 1
         bucket = counts.setdefault(message["channel"], {})
         bucket[message["status"]] = bucket.get(message["status"], 0) + 1
         if message["status"] in totals:
             totals[message["status"]] += 1
+
+    delivered = totals["delivered"]
+    submitted = totals["submitted"] or 1
+
+    def rate(part: int, whole: int) -> float:
+        return round(part / whole, 4) if whole else 0.0
+
+    rates = {
+        "deliveryRate": rate(delivered, submitted),
+        "bounceRate": rate(totals["bounced"], submitted),
+        "complaintRate": rate(complaints, delivered or 1),
+        "openRate": rate(len(unique_openers), delivered or 1),
+        "clickRate": rate(clicks, delivered or 1),
+    }
+    engagement = {
+        "opens": opens,
+        "uniqueOpens": len(unique_openers),
+        "totalClicks": clicks,
+        "spamComplaints": complaints,
+    }
     totals["opened"] = opens
-    return {"byChannel": counts, "totals": totals}
+    return {"byChannel": counts, "totals": totals, "engagement": engagement, "rates": rates}

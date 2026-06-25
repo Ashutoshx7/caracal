@@ -48,8 +48,9 @@ class _Activity:
 
 def _auth_error_response(exc: auth.AuthError, provider: catalog.Provider) -> JSONResponse:
     headers = {}
-    if provider.category in ("bearer_token", "oauth2_client_credentials",
-                             "oauth2_authorization_code", "caracal_mandate"):
+    if (provider.auth_header == "Authorization"
+            and provider.category in ("bearer_token", "oauth2_client_credentials",
+                                      "oauth2_authorization_code", "caracal_mandate")):
         headers["WWW-Authenticate"] = f'{provider.auth_scheme} error="{exc.code}"'
     body = {"error": exc.code, "message": exc.message}
     if getattr(exc, "details", None):

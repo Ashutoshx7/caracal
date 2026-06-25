@@ -364,8 +364,13 @@ def log_activity(ctx: Ctx) -> dict:
     deal_id = ctx.get("dealId")
     if deal_id and deal_id not in ctx.state.table("deals"):
         raise DomainError(404, "deal_not_found", deal_id)
+    priority = ctx.get("priority", "medium")
+    if priority not in _PRIORITIES:
+        raise DomainError(422, "invalid_priority",
+                          f"priority must be one of {', '.join(_PRIORITIES)}")
     note = ctx.get("note", "")
     now = base.now()
+    status = ctx.get("status", "scheduled" if kind == "task" else "completed")
     activity = {
         "activityId": ctx.state.next_id("ACT"),
         "type": kind,
@@ -379,12 +384,18 @@ def log_activity(ctx: Ctx) -> dict:
             note or f"{kind.title()} recorded for contact {contact['id']}."),
         "direction": ctx.get("direction", "outbound"),
         "outcome": ctx.get("outcome", "completed"),
+        "status": status,
+        "priority": priority,
         "ownerId": contact["ownerId"],
         "at": _iso(now),
         "createdAt": _iso(now),
     }
+    if kind == "task" and ctx.get("dueDate"):
+        activity["dueDate"] = ctx.payload["dueDate"]
     ctx.state.table("activities")[activity["activityId"]] = activity
     contact["lastActivityAt"] = activity["at"]
+    if status == "completed":
+        contact["lastContactedAt"] = activity["at"]
     return activity
 
 
