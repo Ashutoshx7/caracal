@@ -40,8 +40,12 @@ def _api(c: TestClient, token: str, op: str, body: dict):
 
 
 def _active_supplier(c: TestClient, token: str) -> dict:
-    body = _api(c, token, "list_suppliers", {"status": "active", "pageSize": 1}).json()
-    return body["data"]["items"][0]
+    """An active supplier whose compliance documents are all valid, so it can transact."""
+    items = _api(c, token, "list_suppliers", {"status": "active", "pageSize": 100}).json()["data"]["items"]
+    for supplier in items:
+        if all(d["status"] == "valid" for d in supplier.get("complianceDocuments", [])):
+            return supplier
+    return items[0]
 
 
 # --------------------------------------------------------------------------- #
@@ -326,6 +330,22 @@ def test_purchase_order_rejects_inactive_supplier():
     denied = _api(c, token, "create_purchase_order",
                   {"requisitionId": req["requisitionId"], "supplierId": inactive["supplierId"]})
     assert denied.status_code == 409 and denied.json()["error"] == "supplier_inactive"
+
+
+def test_purchase_order_blocks_supplier_with_expired_compliance():
+    c = _client()
+    token = _token(c)
+    items = _api(c, token, "list_suppliers", {"status": "active", "pageSize": 100}).json()["data"]["items"]
+    lapsed = next((s for s in items
+                   if any(d["status"] == "expired" for d in s.get("complianceDocuments", []))), None)
+    if lapsed is None:
+        return
+    req = _api(c, token, "create_requisition",
+               {"department": "facilities", "amount": 7000, "description": "HVAC filters"}).json()["data"]
+    _api(c, token, "approve_requisition", {"requisitionId": req["requisitionId"]})
+    denied = _api(c, token, "create_purchase_order",
+                  {"requisitionId": req["requisitionId"], "supplierId": lapsed["supplierId"]})
+    assert denied.status_code == 409 and denied.json()["error"] == "supplier_compliance_hold"
 
 
 def test_partial_receipt_keeps_order_open():

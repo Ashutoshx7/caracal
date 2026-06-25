@@ -98,6 +98,20 @@ def test_market_snapshot_reachable(providerlab):
     assert "mid" in res["data"]
 
 
+def test_market_conversion_reachable(providerlab):
+    res = tool_fns.convert_currency("r", "a", "USD", "EUR", 1000.0)
+    assert _provider_of(res) == "pulse-market"
+    data = res["data"]
+    assert data["fromCurrency"] == "USD" and data["toCurrency"] == "EUR"
+    assert data["toAmount"] == round(1000.0 * data["rate"], 2)
+
+
+def test_market_movers_reachable(providerlab):
+    res = tool_fns.get_market_movers("r", "a", 3)
+    assert _provider_of(res) == "pulse-market"
+    assert len(res["data"]["gainers"]) == 3 and len(res["data"]["losers"]) == 3
+
+
 def test_crm_activity_reachable(providerlab):
     res = tool_fns.log_supplier_activity("r", "a", "CONT-00001", "call")
     assert _provider_of(res) == "beacon-crm"

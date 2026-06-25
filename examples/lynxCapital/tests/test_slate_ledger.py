@@ -13,7 +13,16 @@ os.environ.setdefault("PROVIDERLAB_FAST", "1")
 from fastapi.testclient import TestClient
 
 from _mock.providerlab import catalog, credentials
+from _mock.providerlab import netsim
 from _mock.providerlab.app import build_app
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limit():
+    netsim._buckets.clear()
+    yield
 
 
 def _client() -> TestClient:
@@ -126,3 +135,97 @@ def test_close_is_gated_then_locks_the_period():
     assert _api(c, "close_period", {"period": "2026-02"}).status_code == 409
     locked = _api(c, "post_entry", {"period": "2026-02", "lines": [{"debit": 1}, {"credit": 1}]})
     assert locked.status_code == 409 and locked.json()["error"] == "period_closed"
+
+
+def test_accounts_carry_realistic_master_fields():
+    c = _client()
+    cash = _api(c, "get_account", {"accountId": "1000"}).json()["data"]
+    assert cash["classification"] == "balance_sheet"
+    assert cash["isBankAccount"] is True and len(cash["bankAccountLast4"]) == 4
+    assert cash["reconciliationRequired"] is True and "openingBalance" in cash
+    accum = _api(c, "get_account", {"accountId": "1510"}).json()["data"]
+    assert accum["parentAccountNo"] == "1500"
+
+
+def test_post_entry_is_idempotent_on_key():
+    c = _client()
+    body = {"period": "2026-03", "idempotencyKey": "close-je-1",
+            "lines": [{"accountNo": "6200", "debit": 800}, {"accountNo": "2000", "credit": 800}]}
+    first = _api(c, "post_entry", body).json()["data"]
+    again = _api(c, "post_entry", body).json()["data"]
+    assert first["journalId"] == again["journalId"]
+    balance = _api(c, "get_account", {"accountId": "6200"}).json()["data"]["balance"]
+    third = _api(c, "post_entry", body)
+    assert _api(c, "get_account", {"accountId": "6200"}).json()["data"]["balance"] == balance
+
+
+def test_post_entry_rejects_line_with_debit_and_credit():
+    c = _client()
+    bad = _api(c, "post_entry", {"lines": [{"accountNo": "6200", "debit": 10, "credit": 10},
+                                           {"accountNo": "2000", "credit": 10}]})
+    assert bad.status_code == 422 and bad.json()["error"] == "invalid_line"
+
+
+def test_draft_entry_routes_through_maker_checker():
+    c = _client()
+    before = _api(c, "get_account", {"accountId": "6300"}).json()["data"]["balance"]
+    draft = _api(c, "post_entry", {
+        "period": "2026-03", "status": "draft", "createdBy": "maker@lynx.test",
+        "lines": [{"accountNo": "6300", "debit": 2000}, {"accountNo": "2100", "credit": 2000}],
+    }).json()["data"]
+    assert draft["status"] == "pending_approval" and draft["approvalStatus"] == "pending"
+    assert _api(c, "get_account", {"accountId": "6300"}).json()["data"]["balance"] == before
+    self_appr = _api(c, "approve_entry", {"entryId": draft["journalId"], "approvedBy": "maker@lynx.test"})
+    assert self_appr.status_code == 409 and self_appr.json()["error"] == "self_approval"
+    posted = _api(c, "approve_entry", {"entryId": draft["journalId"], "approvedBy": "checker@lynx.test"}).json()["data"]
+    assert posted["status"] == "posted" and posted["approvedBy"] == "checker@lynx.test"
+    assert round(_api(c, "get_account", {"accountId": "6300"}).json()["data"]["balance"] - before, 2) == 2000.0
+
+
+def test_draft_entry_blocks_close():
+    c = _client()
+    _api(c, "post_entry", {"period": "2026-03", "status": "draft", "createdBy": "maker@lynx.test",
+                           "lines": [{"accountNo": "6300", "debit": 50}, {"accountNo": "2100", "credit": 50}]})
+    blocked = _api(c, "close_period", {"period": "2026-03"})
+    assert blocked.status_code == 409 and blocked.json()["error"] == "entries_unapproved"
+
+
+def test_list_reconciliations_filters():
+    c = _client()
+    started = _api(c, "reconcile_account", {"accountId": "1000", "period": "2026-03"}).json()["data"]
+    listed = _api(c, "list_reconciliations", {"status": "in_progress"}).json()["data"]
+    assert any(r["reconciliationId"] == started["reconciliationId"] for r in listed["items"])
+    assert all(r["status"] == "in_progress" for r in listed["items"])
+
+
+def test_accrual_schedule_posts_and_advances():
+    c = _client()
+    accruals = _api(c, "list_accruals", {"status": "active"}).json()["data"]["items"]
+    target = accruals[0]
+    fetched = _api(c, "get_accrual", {"accrualId": target["accrualId"]}).json()["data"]
+    assert fetched["accrualId"] == target["accrualId"] and "remainingAmount" in fetched
+    posted = _api(c, "post_accrual", {"accrualId": target["accrualId"], "period": "2026-03"}).json()["data"]
+    assert posted["entry"]["type"] == "accrual" and posted["entry"]["status"] == "posted"
+    assert posted["accrual"]["postedPeriods"] == fetched["postedPeriods"] + 1
+
+
+def test_soft_close_then_reopen():
+    c = _client()
+    soft = _api(c, "close_period", {"period": "2026-05", "softClose": True}).json()["data"]
+    assert soft["status"] == "soft_closed" and soft["closeType"] == "soft"
+    assert _api(c, "post_entry", {"period": "2026-05", "lines": [{"debit": 1}, {"credit": 1}]}).status_code == 409
+    reopened = _api(c, "reopen_period", {"period": "2026-05"}).json()["data"]
+    assert reopened["status"] == "open" and reopened["reopenedBy"]
+    assert _api(c, "post_entry", {"period": "2026-05",
+                                  "lines": [{"accountNo": "6200", "debit": 5}, {"accountNo": "2000", "credit": 5}]}).status_code == 200
+
+
+def test_hard_close_reopen_requires_force_and_locked_blocks():
+    c = _client()
+    _api(c, "close_period", {"period": "2026-06"})
+    guarded = _api(c, "reopen_period", {"period": "2026-06"})
+    assert guarded.status_code == 409 and guarded.json()["error"] == "hard_close_locked"
+    forced = _api(c, "reopen_period", {"period": "2026-06", "force": True}).json()["data"]
+    assert forced["status"] == "open"
+    locked = _api(c, "reopen_period", {"period": "2025-11"})
+    assert locked.status_code == 409 and locked.json()["error"] == "period_locked"

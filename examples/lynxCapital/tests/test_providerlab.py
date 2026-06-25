@@ -109,13 +109,14 @@ def test_grpc_metadata_token_accept_and_reject():
         c.post("/api/get_position", json={"currency": "USD"}, headers=md).status_code
         == 200
     )
-    assert (
-        c.post(
-            "/api/get_position", json={"currency": "USD"}, headers={"x-api-key": "bad"}
-        ).status_code
-        == 401
+    bad = c.post(
+        "/api/get_position", json={"currency": "USD"}, headers={"x-api-key": "bad"}
     )
-    assert c.post("/api/get_position", json={"currency": "USD"}).status_code == 401
+    assert bad.status_code == 401
+    # A gRPC service rejects the metadata token at the protocol level with UNAUTHENTICATED.
+    assert bad.json()["grpcStatus"] == "UNAUTHENTICATED" and bad.json()["grpcCode"] == 16
+    missing = c.post("/api/get_position", json={"currency": "USD"})
+    assert missing.status_code == 401 and missing.json()["grpcStatus"] == "UNAUTHENTICATED"
 
 
 def test_grpc_service_descriptor_registered():
@@ -455,6 +456,144 @@ def test_pulse_stream_emits_typed_events():
     assert events[0] == "subscribed"
     assert "tick" in events and "heartbeat" in events
     assert c.get("/stream", params={"symbol": "USD/EUR"}).status_code == 401
+
+
+def test_pulse_instrument_reference_depth():
+    c, h = _pulse()
+    inst = _pulse_data(c, h, "get_instrument", {"symbol": "USD/CAD"})
+    for field in (
+        "displayName",
+        "baseCurrencyNumeric",
+        "quoteCurrencyNumeric",
+        "pipLocation",
+        "marginRate",
+        "settlementDays",
+        "minTradeSize",
+        "maxTradeSize",
+        "tradingHours",
+        "tradeable",
+    ):
+        assert field in inst, field
+    # USD/CAD settles T+1; the rest of the book settles T+2.
+    assert inst["settlementDays"] == 1
+    assert _pulse_data(c, h, "get_instrument", {"symbol": "EUR/JPY"})["settlementDays"] == 2
+    # pipLocation is the power-of-ten position of one pip.
+    assert _pulse_data(c, h, "get_instrument", {"symbol": "USD/JPY"})["pipLocation"] == -2
+    assert inst["pipLocation"] == -4
+
+
+def test_pulse_snapshot_market_microstructure():
+    c, h = _pulse()
+    snap = _pulse_data(c, h, "get_snapshot", {"symbol": "USD/EUR"})
+    for field in ("last", "lastSize", "vwap", "closeoutBid", "closeoutAsk",
+                  "tickDirection", "tradeable"):
+        assert field in snap, field
+    # Closeout prices sit beyond the inside market a position trades out against.
+    assert snap["closeoutBid"] <= snap["bid"] and snap["closeoutAsk"] >= snap["ask"]
+    assert snap["dayLow"] <= snap["vwap"] <= snap["dayHigh"]
+    assert snap["tickDirection"] in ("up", "down", "zero")
+
+
+def test_pulse_bars_carry_vwap_and_trade_count():
+    c, h = _pulse()
+    bars = _pulse_data(c, h, "get_bars", {"symbol": "USD/EUR", "resolution": "1h", "count": 3})
+    first = bars["bars"][0]
+    assert {"vwap", "tradeCount", "complete"} <= set(first)
+    assert first["low"] <= first["vwap"] <= first["high"]
+    assert first["tradeCount"] > 0 and first["complete"] is True
+
+
+def test_pulse_convert_rates_and_validation():
+    c, h = _pulse()
+    conv = _pulse_data(c, h, "convert", {"from": "USD", "to": "EUR", "amount": 1000})
+    assert conv["fromCurrency"] == "USD" and conv["toCurrency"] == "EUR"
+    assert conv["bid"] < conv["rate"] < conv["ask"]
+    assert conv["toAmount"] == round(1000 * conv["rate"], 2)
+    assert round(conv["rate"] * conv["inverseRate"], 4) == 1.0
+    bad_ccy = c.post("/api/convert", json={"from": "USD", "to": "ZZZ", "amount": 10}, headers=h)
+    assert bad_ccy.status_code == 422 and bad_ccy.json()["error"] == "unsupported_currency"
+    bad_amt = c.post("/api/convert", json={"from": "USD", "to": "EUR", "amount": -5}, headers=h)
+    assert bad_amt.status_code == 422 and bad_amt.json()["error"] == "invalid_amount"
+
+
+def test_pulse_movers_rank_gainers_and_losers():
+    c, h = _pulse()
+    movers = _pulse_data(c, h, "list_movers", {"limit": 4})
+    assert len(movers["gainers"]) == 4 and len(movers["losers"]) == 4
+    gain_pct = [m["changePct"] for m in movers["gainers"]]
+    loss_pct = [m["changePct"] for m in movers["losers"]]
+    assert gain_pct == sorted(gain_pct, reverse=True)
+    assert loss_pct == sorted(loss_pct)
+    assert movers["gainers"][0]["changePct"] >= movers["losers"][0]["changePct"]
+
+
+def test_pulse_usage_reports_plan_and_quota():
+    c, h = _pulse()
+    usage = _pulse_data(c, h, "get_usage")
+    assert usage["plan"] == "business"
+    assert "streaming" in usage["entitlements"]
+    assert usage["dailyQuota"]["remaining"] == usage["dailyQuota"]["limit"] - usage["dailyQuota"]["used"]
+    assert usage["rateLimit"]["limit"] > 0
+    assert usage["subscriptions"]["limit"] == 50
+
+
+def test_pulse_reference_fixing_two_sided():
+    c, h = _pulse()
+    latest = _pulse_data(c, h, "get_reference_rate", {"symbol": "USD/EUR"})
+    for field in ("bidRate", "askRate", "fixingType", "fixingTime", "status", "change"):
+        assert field in latest, field
+    assert latest["bidRate"] < latest["rate"] < latest["askRate"]
+    assert latest["status"] == "published"
+
+
+def test_pulse_subscription_modify_and_limit():
+    c, h = _pulse()
+    sub = _pulse_data(
+        c, h, "create_subscription", {"symbols": ["USD/EUR"], "channel": "trades"}
+    )
+    assert sub["snapshotOnSubscribe"] is True and sub["channel"] == "trades"
+    sub_id = sub["subscriptionId"]
+    updated = _pulse_data(
+        c, h, "update_subscription",
+        {"subscriptionId": sub_id, "add": ["USD/JPY"], "remove": ["USD/EUR"]},
+    )
+    assert updated["symbols"] == ["USD/JPY"]
+    # An unknown instrument on update is rejected like create.
+    bad = c.post(
+        "/api/update_subscription",
+        json={"subscriptionId": sub_id, "add": ["ZZZ/YYY"]}, headers=h,
+    )
+    assert bad.status_code == 404
+    _pulse_data(c, h, "cancel_subscription", {"subscriptionId": sub_id})
+    closed = c.post(
+        "/api/update_subscription",
+        json={"subscriptionId": sub_id, "add": ["USD/EUR"]}, headers=h,
+    )
+    assert closed.status_code == 409 and closed.json()["error"] == "subscription_closed"
+
+
+def test_pulse_stream_trades_channel_payload():
+    c, h = _pulse()
+    window = _pulse_data(
+        c, h, "stream_rates", {"symbol": "USD/EUR", "channel": "trades", "ticks": 3}
+    )
+    assert window["channel"] == "trades" and window["count"] == 3
+    trade = window["ticks"][0]
+    assert {"tradeId", "price", "size", "side", "aggressor"} <= set(trade)
+    assert trade["side"] in ("buy", "sell")
+    bad = c.post(
+        "/api/stream_rates", json={"symbol": "USD/EUR", "channel": "options"}, headers=h
+    )
+    assert bad.status_code == 422 and bad.json()["error"] == "invalid_channel"
+
+
+def test_pulse_market_status_sessions_and_schedule():
+    c, h = _pulse()
+    status = _pulse_data(c, h, "get_market_status")
+    assert status["market"] == "fx" and status["status"] == "open"
+    assert {s["name"] for s in status["sessions"]} == {"sydney", "tokyo", "london", "newyork"}
+    assert status["nextOpen"] and status["nextClose"]
+    assert "USD" in status["currencies"] and "EUR" in status["currencies"]
 
 
 def test_bearer_standard_header():
