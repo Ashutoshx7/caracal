@@ -686,15 +686,26 @@ def consent_page(provider: catalog.Provider, params: dict) -> str:
         f'<input type="hidden" name="{_esc(k)}" value="{_esc(params.get(k, ""))}">'
         for k in ("client_id", "redirect_uri", "scope", "state", "code_challenge", "code_challenge_method")
     )
+    company_row = (
+        f'<span class="k">Company</span><span><code>{_esc(provider.realm_id)}</code></span>'
+        if provider.realm_id else ""
+    )
+    offline_note = (
+        '<p class="muted" style="margin-top:8px">Approving keeps this app connected; '
+        'it can refresh access without prompting you again until the connection is revoked.</p>'
+        if provider.offline_access else ""
+    )
     body = f"""
 <section style="max-width:440px;margin:48px auto 0">
   <h2>Authorize application</h2>
   <div class="panel">
     <div class="kv-grid">
       <span class="k">Application</span><span><code>{_esc(params.get('client_id', ''))}</code></span>
+      {company_row}
       <span class="k">Scopes</span><span class="chips">{scopes}</span>
       <span class="k">Redirects to</span><span><code>{_esc(params.get('redirect_uri', ''))}</code></span>
     </div>
+    {offline_note}
     <form class="inline" method="post" action="/oauth/authorize">
       {hidden}
       <button class="primary" type="submit">Approve</button>

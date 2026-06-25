@@ -18,7 +18,8 @@ ACCOUNTING = "com.intuit.quickbooks.accounting"
 PAYMENT = "com.intuit.quickbooks.payment"
 
 _REPORTS = ("ProfitAndLoss", "BalanceSheet", "AgedPayables",
-            "AgedReceivables", "TrialBalance")
+            "AgedReceivables", "TrialBalance",
+            "CustomerBalance", "VendorBalance")
 
 
 def _iso(epoch: int) -> str:
@@ -221,15 +222,21 @@ def create_customer(ctx: Ctx) -> dict:
                               f"another customer already uses the name {name!r}")
     now = base.now()
     currency = ctx.get("currency", "USD")
+    taxable = bool(ctx.get("taxable", currency == "USD"))
     customer = {
         "Id": _qid(ctx),
         "DisplayName": name,
         "CompanyName": ctx.get("companyName", name),
         "Active": True,
-        "Taxable": bool(ctx.get("taxable", currency == "USD")),
+        "Job": False,
+        "BillWithParent": False,
+        "Level": 0,
+        "Taxable": taxable,
+        "DefaultTaxCodeRef": {"value": "3"} if taxable else None,
         "Balance": 0.0,
         "BalanceWithJobs": 0.0,
         "PrimaryEmailAddr": {"Address": ctx.get("email", "")},
+        "PreferredDeliveryMethod": ctx.get("deliveryMethod", "Email"),
         "CurrencyRef": gen._ccy_ref(currency),
         "domain": "QBO",
         "sparse": False,
@@ -467,12 +474,18 @@ def create_invoice(ctx: Ctx) -> dict:
         "CurrencyRef": gen._ccy_ref(currency),
         "Line": lines + [{"Amount": subtotal, "DetailType": "SubTotalLineDetail",
                           "SubTotalLineDetail": {}}],
-        "TxnTaxDetail": {"TotalTax": tax},
+        "TxnTaxDetail": gen._qbo_tax_detail(tax, currency, customer["Taxable"]),
         "TotalAmt": total,
         "Balance": total,
+        "ApplyTaxAfterDiscount": False,
+        "PrintStatus": "NeedToPrint",
         "EmailStatus": "NeedToSend",
+        "BillAddr": customer.get("BillAddr"),
+        "ShipAddr": customer.get("ShipAddr"),
         "BillEmail": customer.get("PrimaryEmailAddr", {"Address": ""}),
+        "CustomerMemo": {"value": ctx.get("customerMemo", "Thank you for your business.")},
         "AllowOnlineCreditCardPayment": True,
+        "AllowOnlineACHPayment": currency == gen._QBO_HOME_CCY,
         "PrivateNote": ctx.get("memo", ""),
         "LinkedTxn": [],
         "domain": "QBO",
@@ -715,6 +728,8 @@ def get_report(ctx: Ctx) -> dict:
         "AgedPayables": _report_aged_payables,
         "AgedReceivables": _report_aged_receivables,
         "TrialBalance": _report_trial_balance,
+        "CustomerBalance": _report_customer_balance,
+        "VendorBalance": _report_vendor_balance,
     }[name]
     return builder(ctx)
 
@@ -870,6 +885,36 @@ def _report_trial_balance(ctx: Ctx) -> dict:
         "Rows": {"Row": rows},
         "Summary": {"Debit": round(debit_total, 2), "Credit": round(credit_total, 2)},
     }
+
+
+def _entity_balance(records, name: str, ref_label: str) -> dict:
+    """A QBO balance summary: one row per party carrying an open balance, plus the
+    rolled-up total that ties to the A/R or A/P control account."""
+    rows, total = [], 0.0
+    for rec in sorted(records, key=lambda r: r["DisplayName"]):
+        balance = round(rec["Balance"], 2)
+        if balance == 0.0:
+            continue
+        total += balance
+        rows.append({"type": "Data", "ColData": [
+            {"value": rec["DisplayName"], "id": rec["Id"]},
+            {"value": f"{balance:.2f}"},
+        ]})
+    return {
+        "Header": _report_header(name),
+        "Columns": {"Column": [{"ColTitle": ref_label, "ColType": "String"},
+                               {"ColTitle": "Total", "ColType": "Money"}]},
+        "Rows": {"Row": rows},
+        "Summary": {"ColData": [{"value": "TOTAL"}, {"value": f"{round(total, 2):.2f}"}]},
+    }
+
+
+def _report_customer_balance(ctx: Ctx) -> dict:
+    return _entity_balance(ctx.state.table("customers").values(), "CustomerBalance", "Customer")
+
+
+def _report_vendor_balance(ctx: Ctx) -> dict:
+    return _entity_balance(ctx.state.table("vendors").values(), "VendorBalance", "Vendor")
 
 
 # --------------------------------------------------------------------------- #

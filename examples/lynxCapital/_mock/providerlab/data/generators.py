@@ -949,6 +949,7 @@ def bank_statements(
         closing = account["balances"]["booked"]
         for p in range(periods):
             serial += 1
+            rng = _rng(seed, "bank_statement", account_id, p)
             end = _EPOCH - timedelta(days=30 * p)
             start = end - timedelta(days=30)
             window = [
@@ -1782,13 +1783,6 @@ _LUMEN_STATUSES = (
 )
 # Lifecycle states whose accounts can authenticate; all others are disabled in the directory.
 _LUMEN_ENABLED_STATES = frozenset({"active", "on_leave", "offboarding"})
-_LUMEN_JOB_FUNCTIONS = (
-    "Finance",
-    "Risk & Compliance",
-    "Engineering",
-    "Operations",
-    "Corporate",
-)
 
 
 def _toplevel_dept(dept_id: str, parents: dict[str, str | None]) -> str:
@@ -5212,6 +5206,27 @@ def _ccy_ref(currency: str) -> dict:
     return {"value": currency, "name": _QBO_CCY_NAME.get(currency, currency)}
 
 
+def _qbo_tax_detail(tax: float, currency: str, taxable: bool) -> dict:
+    """Shape a QBO TxnTaxDetail: the applied tax code, the rolled-up tax, and the
+    per-rate tax line that backs it, the way the Sales Tax Center returns them."""
+    detail: dict = {"TotalTax": tax}
+    if not taxable:
+        detail["TxnTaxCodeRef"] = {"value": "NON"}
+        return detail
+    detail["TxnTaxCodeRef"] = {"value": "TAX"}
+    detail["TaxLine"] = [{
+        "Amount": tax,
+        "DetailType": "TaxLineDetail",
+        "TaxLineDetail": {
+            "TaxRateRef": {"value": "1"},
+            "PercentBased": True,
+            "TaxPercent": 8.25,
+            "NetAmountTaxable": _qbo_round(tax / 0.0825, currency) if tax else 0.0,
+        },
+    }]
+    return detail
+
+
 def _qbo_meta(rng: random.Random, lo: int, hi: int) -> dict:
     created = _instant(rng, lo, hi)
     return {"CreateTime": created, "LastUpdatedTime": created}
@@ -5289,6 +5304,7 @@ def _qbo_customer(seed: str, i: int) -> dict:
     person = _person(rng)
     given, family = person.split()
     active = rng.random() > 0.08
+    taxable = currency == "USD"
     return {
         "Id": str(i),
         "DisplayName": name,
@@ -5297,7 +5313,12 @@ def _qbo_customer(seed: str, i: int) -> dict:
         "FamilyName": family,
         "FullyQualifiedName": name,
         "Active": active,
-        "Taxable": currency == "USD",
+        "Job": False,
+        "BillWithParent": False,
+        "Level": 0,
+        "Taxable": taxable,
+        "DefaultTaxCodeRef": {"value": "3"} if taxable else None,
+        "ResaleNum": f"RS-{rng.randint(10**5, 10**6 - 1)}" if not taxable else None,
         "Balance": 0.0,
         "BalanceWithJobs": 0.0,
         "PrimaryEmailAddr": {
@@ -5447,24 +5468,32 @@ def _qbo_invoice(
         "DetailType": "SubTotalLineDetail",
         "SubTotalLineDetail": {},
     }
+    term = rng.choice(_TERMS)
     invoice = {
         "Id": str(2000 + idx),
         "DocNumber": f"INV-{1000 + idx}",
         "CustomerRef": {"value": customer["Id"], "name": customer["DisplayName"]},
         "ARAccountRef": {"value": ar["Id"], "name": ar["Name"]},
+        "SalesTermRef": {"value": str(_TERMS.index(term) + 1), "name": _QBO_TERMS[term][0]},
         "TxnDate": issued.isoformat(),
         "DueDate": due.isoformat(),
         "CurrencyRef": _ccy_ref(currency),
         "Line": lines + [summary_line],
-        "TxnTaxDetail": {"TotalTax": tax},
+        "TxnTaxDetail": _qbo_tax_detail(tax, currency, customer["Taxable"]),
         "TotalAmt": total,
         "Balance": balance,
         "HomeBalance": balance
         if currency == _QBO_HOME_CCY
         else _qbo_round(balance * 1.0, _QBO_HOME_CCY),
+        "ApplyTaxAfterDiscount": False,
+        "PrintStatus": "NeedToPrint" if rng.random() > 0.5 else "NotSet",
         "EmailStatus": "EmailSent" if rng.random() > 0.3 else "NeedToSend",
+        "BillAddr": customer.get("BillAddr"),
+        "ShipAddr": customer.get("ShipAddr"),
         "BillEmail": customer["PrimaryEmailAddr"],
+        "CustomerMemo": {"value": "Thank you for your business."},
         "AllowOnlineCreditCardPayment": True,
+        "AllowOnlineACHPayment": customer["CurrencyRef"]["value"] == _QBO_HOME_CCY,
         "PrivateNote": "",
         "LinkedTxn": [],
         "domain": "QBO",
@@ -5579,12 +5608,20 @@ def quickbooks_company(seed: str) -> dict:
         "LegalAddr": _qbo_addr(rng, "US", 1),
         "Country": "US",
         "Email": {"Address": "books@lynxcapital.example"},
+        "PrimaryPhone": {"FreeFormNumber": "+1 (415) 555-0142"},
         "WebAddr": {"URI": "https://lynxcapital.example"},
         "SupportedLanguages": "en",
         "FiscalYearStartMonth": "January",
         "CompanyStartDate": (_EPOCH - timedelta(days=1825)).isoformat(),
         "MultiCurrencyEnabled": True,
         "HomeCurrency": _ccy_ref(_QBO_HOME_CCY),
+        "NameValue": [
+            {"Name": "NeoEnabled", "Value": "true"},
+            {"Name": "IndustryType", "Value": "Retail Trade"},
+            {"Name": "IndustryCode", "Value": "4400"},
+            {"Name": "AccountingMethod", "Value": "Accrual"},
+            {"Name": "QBOEnabledTime", "Value": (_EPOCH - timedelta(days=1825)).isoformat()},
+        ],
         "realmId": _QBO_REALM,
         "domain": "QBO",
         "sparse": False,

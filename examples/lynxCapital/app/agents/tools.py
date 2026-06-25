@@ -335,7 +335,7 @@ def quickbooks_apply_payment(run_id: str, agent_id: str, invoice_id: str,
 
 def quickbooks_run_report(run_id: str, agent_id: str, report_type: str = "ProfitAndLoss") -> dict[str, object]:
     """Pull a financial report (P&L, BalanceSheet, AgedPayables, AgedReceivables,
-    TrialBalance) from the QuickBooks company file."""
+    TrialBalance, CustomerBalance, VendorBalance) from the QuickBooks company file."""
     return _run(run_id, agent_id, "quickbooks_run_report", "tallyhall-books", "get_report",
                 {"reportType": report_type})
 
@@ -518,7 +518,8 @@ def get_payout_batch_status(run_id: str, agent_id: str, batch_id: str) -> dict[s
 
 
 def create_outbound_payment(run_id: str, agent_id: str, vendor_id: str, amount: float, currency: str, rail: str, reference: str) -> dict[str, object]:
-    """Open-banking rail: draw from a currency-matched enabled account and pay the creditor."""
+    """Open-banking rail: draw from a currency-matched enabled account, confirm funds
+    are available (CBPII) before instructing, then pay the creditor."""
     accounts = _run(run_id, agent_id, "create_outbound_payment", "halcyon-bank", "list_accounts",
                     {"status": "Enabled"})
     data = accounts.get("data") if isinstance(accounts, dict) else None
@@ -528,10 +529,17 @@ def create_outbound_payment(run_id: str, agent_id: str, vendor_id: str, amount: 
         matched = next((a for a in items if a.get("currency") == currency
                         and a.get("accountSubType") == "CurrentAccount"), None)
         from_account = (matched or items[0])["accountId"]
+        check = _run(run_id, agent_id, "create_outbound_payment", "halcyon-bank", "confirm_funds",
+                     {"accountId": from_account, "amount": amount, "currency": currency,
+                      "reference": reference or vendor_id})
+        check_data = check.get("data") if isinstance(check, dict) else None
+        if isinstance(check_data, dict) and check_data.get("fundsAvailable") is False:
+            return check
     return _run(run_id, agent_id, "create_outbound_payment", "halcyon-bank", "initiate_payment",
                 {"fromAccount": from_account, "amount": amount, "currency": currency,
                  "rail": (rail or "").upper(), "creditor": vendor_id,
-                 "reference": reference or vendor_id})
+                 "reference": reference or vendor_id,
+                 "paymentContextCode": "TransferToThirdParty"})
 
 
 # -- audit tools --
