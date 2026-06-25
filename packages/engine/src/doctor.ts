@@ -436,7 +436,7 @@ async function runZoneChecks(checks: DoctorCheck[], ctx: AdminContext, zoneId: s
     'zones',
     `${zoneId} lookup`,
     async () => zoneLabel(await ctx.client.zones.get(zoneId)),
-    'Open `pnpm caracal console`, select Zones, and retry with a visible zone id.',
+    'Open the web console with `caracal web`, select Zones, and retry with a visible zone id.',
   )
   if (zoneCheck.status !== 'ok') return
 

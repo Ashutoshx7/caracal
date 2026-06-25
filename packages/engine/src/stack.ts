@@ -356,7 +356,7 @@ export function caracalBinaries(installDir: string, extraDirs: readonly string[]
   const dirs = new Set<string>([installDir, ...extraDirs])
   const found: string[] = []
   for (const dir of dirs) {
-    for (const name of ['caracal', 'caracal-console', 'caracal-web']) {
+    for (const name of ['caracal', 'caracal-web']) {
       const p = `${dir}/${name}`
       if (existsSync(p)) found.push(p)
     }

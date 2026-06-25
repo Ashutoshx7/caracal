@@ -59,7 +59,7 @@ const BLOCKED_CREDENTIAL_ENV = new Set([
   'DYLD_LIBRARY_PATH',
 ]);
 
-const CONFIG_MISSING_MESSAGE = 'runtime config not found; caracal run needs workload identity from env/secret files. Create or select a zone, application, resource, and policy in caracal console; store local credentials under the OS Caracal config directory, set CARACAL_ZONE_ID and CARACAL_APPLICATION_ID, and set CARACAL_STS_URL only when STS is not the local default. Use deployment docs for explicit custom or cloud paths.';
+const CONFIG_MISSING_MESSAGE = 'runtime config not found; caracal run needs workload identity from env/secret files. Create or select a zone, application, resource, and policy in the Caracal web console; store local credentials under the OS Caracal config directory, set CARACAL_ZONE_ID and CARACAL_APPLICATION_ID, and set CARACAL_STS_URL only when STS is not the local default. Use deployment docs for explicit custom or cloud paths.';
 
 const RUNTIME_CONFIG_KEYS = new Set([
   'zone_url',
