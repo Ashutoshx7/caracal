@@ -200,8 +200,9 @@ def _seed_payout(seed: str, i: int, recipients: list[dict]) -> dict:
                          weights=(64, 12, 10, 8, 6))[0]
     purpose = rng.choice(("supplier invoice", "services", "goods", "payroll"))
     delivery = _delivery(method, created)
+    payout_id = f"po_{rng.getrandbits(48):012x}"
     payout = {
-        "id": f"po_{rng.getrandbits(48):012x}",
+        "id": payout_id,
         "object": "payout",
         "recipientId": rec["id"],
         "recipientName": rec["name"],
@@ -213,11 +214,16 @@ def _seed_payout(seed: str, i: int, recipients: list[dict]) -> dict:
         "fee": fee["total"],
         "feeCurrency": source,
         "method": method,
+        "scheme": _scheme(method, source, target),
         "reference": f"INV-{rng.randint(10000, 99999)}",
+        "trackingReference": _tracking_reference(payout_id),
+        "statementDescriptor": "QUETZAL PAYOUT",
         "purpose": purpose,
         "purposeCode": _purpose_code(purpose),
+        "complianceStatus": "cleared",
         "status": status,
-        "failureReason": None,
+        "failureCode": None,
+        "failureMessage": None,
         "estimatedDelivery": delivery["estimatedDelivery"],
         "createdAt": created,
         "updatedAt": created,
@@ -225,10 +231,10 @@ def _seed_payout(seed: str, i: int, recipients: list[dict]) -> dict:
         "batchId": None,
     }
     if status == "failed":
-        payout["failureReason"] = rng.choice(
-            ("recipient_account_closed", "invalid_bank_details", "compliance_hold"))
+        payout.update(_failure(rng.choice(
+            ("recipient_account_closed", "invalid_bank_details", "compliance_hold"))))
     elif status == "returned":
-        payout["failureReason"] = "bank_returned_funds"
+        payout.update(_failure("bank_returned_funds"))
     return payout
 
 

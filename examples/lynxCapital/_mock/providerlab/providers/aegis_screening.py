@@ -664,14 +664,18 @@ def screen_party(ctx: Ctx) -> dict:
     ctx.require("name")
     subject = {
         "name": str(ctx.payload["name"]),
-        "type": ctx.get("type", "organization"),
+        "type": _entity_type(ctx.get("entityType") or ctx.get("type")),
         "country": ctx.get("country"),
     }
     if ctx.get("dateOfBirth"):
         subject["dateOfBirth"] = ctx.get("dateOfBirth")
+    if ctx.get("nationality"):
+        subject["nationality"] = ctx.get("nationality")
     if ctx.get("identifiers"):
         subject["identifiers"] = ctx.get("identifiers")
-    return _persist_screen(ctx.state, subject, "sanctions", _actor(ctx))
+    return _persist_screen(
+        ctx.state, subject, "sanctions", ctx, client_reference=ctx.get("clientReference")
+    )
 
 
 @base.op(ID, "verify_business")
@@ -682,7 +686,7 @@ def verify_business(ctx: Ctx) -> dict:
     legal = str(ctx.payload["legalName"])
     country = ctx.get("country", "US")
     entity = _resolve_entity(ctx.state, legal, country, ctx.payload)
-    screening = _verify_entity(ctx.state, entity, _actor(ctx))
+    screening = _verify_entity(ctx.state, entity, ctx)
     return {
         "entity": entity,
         "verificationStatus": entity["verificationStatus"],
@@ -707,12 +711,11 @@ def screen_batch(ctx: Ctx) -> dict:
         parties = _batch_parties(ctx.state, str(batch_id))
     if not isinstance(parties, list) or not parties:
         raise DomainError(422, "invalid_request", "'parties' must be a non-empty list")
-    actor = _actor(ctx)
     results = []
     counts = {"clear": 0, "review": 0, "block": 0}
     for party in parties:
         subject = _party_subject(party)
-        screening = _persist_screen(ctx.state, subject, "batch_item", actor)
+        screening = _persist_screen(ctx.state, subject, "batch_item", ctx)
         counts[screening["decision"]] = counts.get(screening["decision"], 0) + 1
         results.append(
             {
@@ -743,17 +746,13 @@ def rescreen_entity(ctx: Ctx) -> dict:
         raise DomainError(404, "entity_not_found", ctx.payload["entityId"])
     previous = entity.get("lastDecision")
     if entity.get("source") == "registry":
-        screening = _verify_entity(ctx.state, entity, _actor(ctx))
+        screening = _verify_entity(ctx.state, entity, ctx)
     else:
         screening = _persist_screen(
             ctx.state,
-            {
-                "name": entity["legalName"],
-                "type": entity["type"],
-                "country": entity.get("country"),
-            },
+            _subject_of(entity),
             "rescreen",
-            _actor(ctx),
+            ctx,
             entity_id=entity["entityId"],
         )
         entity["lastDecision"] = screening["decision"]

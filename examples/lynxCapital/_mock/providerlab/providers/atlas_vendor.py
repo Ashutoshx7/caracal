@@ -163,31 +163,49 @@ def register_vendor(ctx: Ctx) -> dict:
     if not legal:
         raise DomainError(422, "invalid_request", "missing required field(s): legalName")
     ctx.require("country")
+    country = str(ctx.payload["country"]).strip().upper()
+    if len(country) != 2 or not country.isalpha():
+        raise DomainError(422, "invalid_country",
+                          "country must be an ISO 3166-1 alpha-2 code")
     vendors = ctx.state.table("vendors")
+    duplicate = next((v for v in vendors.values()
+                      if v.get("legalName", "").lower() == legal.lower()
+                      and v.get("country") == country), None)
+    if duplicate is not None:
+        raise DomainError(409, "vendor_exists",
+                          f"a vendor with this legal name already exists: {duplicate['id']}")
     vid = f"VEND-{len(vendors) + 1:05d}"
     checklist = [{"step": s, "label": label,
                   "status": "completed" if s == "profile" else "pending",
                   "completedAt": _now() if s == "profile" else None}
                  for s, label in zip(_ONBOARDING_STEPS, _STEP_LABELS)]
     vendor = {
-        "id": vid, "legalName": legal, "displayName": legal,
+        "id": vid, "legalName": legal, "displayName": ctx.get("name") or legal,
         "slug": legal.lower().replace(" ", "-"),
-        "taxId": ctx.get("taxId"), "country": ctx.payload["country"],
+        "taxId": ctx.get("taxId"), "country": country,
         "currency": ctx.get("currency", "USD"),
         "category": ctx.get("category", "Professional Services"),
         "status": "pending_review", "lifecycleStage": "onboarding",
         "riskTier": "medium", "riskScore": 50, "paymentTerms": "NET30",
         "primaryContact": {"email": ctx.get("contactEmail")} if ctx.get("contactEmail") else None,
         "contacts": [], "documents": [],
+        "beneficialOwners": [],
+        "classifications": {"diversity": [], "diversityCertified": False,
+                            "smallBusiness": False, "esgScore": None, "strategic": False},
         "banking": {"status": "unverified", "method": "micro_deposit"},
-        "compliance": {"kyb": "pending", "sanctions": "pending", "taxValidation": "pending",
-                       "insurance": "missing", "w9OnFile": False},
+        "compliance": {"kyb": "pending", "sanctions": "pending", "adverseMedia": "pending",
+                       "watchlistHits": 0, "taxValidation": "pending", "uboVerified": False,
+                       "insurance": "missing", "w9OnFile": False,
+                       "screeningProvider": _SCREENING_PROVIDER, "lastScreenedAt": None},
         "onboarding": {"caseId": f"ONB-{vid.split('-')[-1]}", "stage": "tax",
                        "status": "in_progress", "checklist": checklist,
                        "owner": "intake-queue", "startedAt": _now(), "completedAt": None},
+        "events": [],
         "createdAt": _now(), "updatedAt": _now(),
     }
     vendors[vid] = vendor
+    _record_event(vendor, "vendor.registered",
+                  f"Vendor master record created for {legal}", actor="intake-queue")
     return _summary(vendor)
 
 
@@ -195,7 +213,7 @@ def register_vendor(ctx: Ctx) -> dict:
     ID, "get_onboarding_status",
     title="Get onboarding status",
     description="Return the onboarding case and step-by-step checklist for a vendor.",
-    input_schema=_VENDOR_REF,
+    input_schema=_VENDOR_REF, output_schema=_ONBOARDING_OUTPUT,
     annotations={"readOnlyHint": True, "idempotentHint": True})
 def get_onboarding_status(ctx: Ctx) -> dict:
     vendor = _vendor(ctx)

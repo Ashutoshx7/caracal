@@ -2929,12 +2929,15 @@ def junction_dataset(seed: str) -> dict[str, dict]:
     cost_centers: dict[str, dict] = {}
     for code, name, dept, budget in _JUNCTION_COST_CENTERS:
         rng = _rng(seed, "jp_cc", code)
+        manager = {"id": f"EMP-{rng.randint(1000, 1099)}", "name": _person(rng)}
         cost_centers[dept] = {
             "costCenter": code,
             "name": name,
             "department": dept,
-            "manager": {"id": f"EMP-{rng.randint(1000, 1099)}", "name": _person(rng)},
+            "manager": manager,
+            "budgetOwner": manager,
             "fiscalYear": "FY2026",
+            "fiscalPeriod": "FY2026-Q3",
             "currency": "USD",
             "budgetAmount": budget,
             "committedAmount": 0.0,
@@ -2970,6 +2973,10 @@ def junction_dataset(seed: str) -> dict[str, dict]:
                 "role": step["role"],
                 "approverId": step["approverId"],
                 "approverName": step["approverName"],
+                "approvalLimit": step.get("approvalLimit"),
+                "slaHours": step.get("slaHours"),
+                "dueBy": step.get("dueBy"),
+                "delegatedTo": step.get("delegatedTo"),
                 "status": step["status"],
                 "decidedAt": step["decidedAt"],
                 "comment": step["comment"],
@@ -6951,6 +6958,18 @@ _SABRE_INCOME_CODES = {
     "scholarship": "16",
 }
 
+# 1042-S income code -> human description, surfaced alongside the numeric code
+_SABRE_INCOME_CODE_DESC = {
+    "01": "Interest paid by U.S. obligors",
+    "06": "Dividends paid by U.S. corporations",
+    "10": "Industrial royalties",
+    "12": "Other royalties (copyrights, software)",
+    "14": "Real property income and natural resources royalties",
+    "16": "Compensation for independent personal services",
+    "17": "Compensation for dependent personal services",
+    "50": "Other income",
+}
+
 # payee country -> bilateral treaty: income type -> (treatyRate, treatyArticle).
 # Countries with no US income-tax treaty (BR, SG) are intentionally absent so the
 # 30% statutory rate applies.
@@ -7038,6 +7057,8 @@ _SABRE_ENTITY_USE_CODES = {
     "K": "Direct mail",
     "L": "Other",
     "N": "Local government",
+    "P": "Commercial aquaculture",
+    "Q": "Commercial fishery",
     "R": "Non-resident",
 }
 _SABRE_EXEMPT_ZONES = ("CA", "NY", "TX", "WA", "IL", "FL", "CO", "MA", "GA")
