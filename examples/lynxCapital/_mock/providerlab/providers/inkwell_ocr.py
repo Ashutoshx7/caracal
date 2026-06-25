@@ -108,8 +108,9 @@ def submit_document(ctx: Ctx) -> dict:
     idem = ctx.get("idempotencyKey")
     keys = ctx.state.table("idempotency")
     documents = ctx.state.table("documents")
-    if idem and idem in keys:
-        prior = documents.get(keys[idem])
+    scoped = f"document:{idem}" if idem else None
+    if scoped and scoped in keys:
+        prior = documents.get(keys[scoped])
         if prior is not None:
             return prior
 
@@ -120,8 +121,8 @@ def submit_document(ctx: Ctx) -> dict:
                    size_bytes=ctx.get("sizeBytes"),
                    page_count=ctx.get("pages"),
                    idempotency_key=idem)
-    if idem:
-        keys[idem] = doc["documentId"]
+    if scoped:
+        keys[scoped] = doc["documentId"]
     return doc
 
 
@@ -138,8 +139,9 @@ def submit_documents_batch(ctx: Ctx) -> dict:
     idem = ctx.get("idempotencyKey")
     keys = ctx.state.table("idempotency")
     batches = ctx.state.table("batches")
-    if idem and idem in keys:
-        prior = batches.get(keys[idem])
+    scoped = f"batch:{idem}" if idem else None
+    if scoped and scoped in keys:
+        prior = batches.get(keys[scoped])
         if prior is not None:
             return prior
 
@@ -189,8 +191,8 @@ def submit_documents_batch(ctx: Ctx) -> dict:
         "selfUrl": f"https://{_HOST}/v1/batches/{batch_id}",
     }
     batches[batch_id] = batch
-    if idem:
-        keys[idem] = batch_id
+    if scoped:
+        keys[scoped] = batch_id
     return batch
 
 
