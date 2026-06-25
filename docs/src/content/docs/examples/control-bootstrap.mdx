@@ -11,21 +11,21 @@ Control Bootstrap is the canonical Control API automation example under `example
 | Area | Behavior |
 | --- | --- |
 | Automation surface | Calls `/v1/control/invoke` instead of using a root admin token. |
-| Identity model | Uses scoped, short-lived control keys created in Console, one scope tier per pipeline stage. |
+| Identity model | Uses scoped, short-lived control keys created in the web console, one scope tier per pipeline stage. |
 | Reconciliation | `apply` creates missing objects, patches drifted ones, and publishes a new policy version on content drift. |
 | CI gating | `verify` is a read-only drift check that exits non-zero when the zone does not match the plan. |
 | Safety model | Uses replay protection, rate limits, scoped control permissions, and audit. |
 
 The plan describes the PiperNet reporter agent's environment: the agent application, the `provider://pipernet-mandate` provider, the `resource://pipernet` resource wired to it, and the baseline policy that allows `read`.
 
-## Console setup
+## Web Console Setup
 
-1. Start the runtime and open Console:
+1. Start the runtime and open the web console:
 
    ```bash
    caracal up
    caracal status --ready
-   caracal console
+   caracal web
    ```
 
 2. Create or select the target zone.

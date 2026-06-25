@@ -31,15 +31,15 @@ flowchart LR
   Activate --> Audit["Audit policy decisions"]
 ```
 
-## Console workflow
+## Web Console Workflow
 
-1. Open `caracal console`.
-2. Select `policy` and create or update the Rego policy.
-3. Select `policy set` and create a set for the zone.
+1. Open `caracal web`.
+2. Select **Policies** and create or update the Rego policy.
+3. Select **Policy Sets** and create a set for the zone.
 4. Add the policy version to a new policy-set version.
 5. Simulate the version with a representative input.
 6. Activate the version when the simulated decision matches the intended behavior.
-7. Use `audit` and `request trace` after the first real request.
+7. Use **Audit** and **Request Traces** after the first real request.
 
 ## Automation workflow
 

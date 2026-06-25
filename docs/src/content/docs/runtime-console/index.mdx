@@ -1,25 +1,26 @@
 ---
-title: Operate Runtime and Console
-description: Start the local stack, run Console setup, configure workloads, run agents, and inspect operations.
+title: Operate Runtime and the Web Console
+description: Start the local stack, launch the web console, configure workloads, run agents, and inspect operations.
 pageType: landing
 ---
 
 Use this section after installation when you need to operate Caracal locally or understand which operator surface owns a task.
 
-Caracal has two local operator surfaces:
+Caracal has three operator surfaces:
 
 | Surface | Use it for | Do not use it for |
 | --- | --- | --- |
-| `caracal` | Local stack lifecycle, readiness checks, local reset, token-injected process execution, and Console launch. | Zones, applications, providers, resources, policies, audit, agents, delegation, or Control setup. |
-| `caracal console` / `caracal-console` | Human management for zones, applications, providers, resources, policies, policy sets, authority sessions, Control, audit, request traces, agent sessions, delegation, and diagnostics. | Starting or stopping the stack, purging local runtime state, or running workloads. |
+| `caracal` | Local stack lifecycle, readiness checks, local reset, token-injected process execution, and launching the web console with `caracal web`. | Creating or changing zones, applications, providers, resources, policies, audit queries, agents, delegation, or Control setup. |
+| Web console (`caracal web`) | Human product management for zones, applications, providers, resources, policies, policy sets, authority sessions, Control, audit, request traces, agent sessions, delegation, and diagnostics. | Starting or stopping the stack, purging local runtime state, running workloads, or CI automation. |
+| Control API / Admin SDK | Scripted product management from trusted operator automation. | Local lifecycle, workload execution, or browser-based guided setup. |
 
-The runtime CLI stays small so lifecycle and workload execution do not depend on admin tokens, zone selection, or Control credentials. Product management belongs to the Console, Control API, or Admin SDK.
+The runtime CLI stays small so lifecycle and workload execution do not depend on admin tokens, zone selection, or Control credentials. Human product management belongs to the web console; automation belongs to the Control API or Admin SDK.
 
 ## Recommended Path
 
-1. [Choose the Right Surface](/runtime-console/cli-and-console/) to confirm whether a task belongs in `caracal`, Console, Control API, or Admin SDK.
+1. [Choose the Right Surface](/runtime-console/cli-and-console/) to confirm whether a task belongs in `caracal`, the web console, Control API, or Admin SDK.
 2. [Start and Check the Stack](/runtime-console/stack/) with `caracal up` and `caracal status --ready`.
-3. [Use the Console](/runtime-console/console/) to run guided setup and create the first runtime profile.
+3. [Use the Web Console](/runtime-console/console/) to run guided setup and create the first runtime profile.
 4. [Configure Workloads](/runtime-console/config-file/) when a workload needs explicit profile, credential, or service endpoint settings.
 5. [Run Workloads](/runtime-console/runtime/) with `caracal run -- <command>`.
 6. [Manage Product Objects](/runtime-console/admin/) for ongoing zone, application, provider, resource, policy, policy-set, and Control work.
@@ -30,13 +31,13 @@ The runtime CLI stays small so lifecycle and workload execution do not depend on
 
 | Outcome | Surface |
 | --- | --- |
-| Start, stop, check, or purge the local runtime stack | `caracal` |
-| Launch the terminal Console | `caracal console` |
+| Start, stop, check, upgrade, or purge the local runtime stack | `caracal` |
+| Launch the web console | `caracal web` |
 | Run an agent process with scoped resource tokens | `caracal run -- <command>` |
-| Create a zone, app, provider, resource, policy, or policy set | Console |
-| Enable Control automation | Console `control` |
+| Create a zone, app, provider, resource, policy, or policy set | Web console |
+| Enable Control automation | Web console **Control** section |
 | Script management workflows | Control API or Admin SDK |
-| Inspect audit events, request traces, diagnostics, agents, or delegation | Console |
+| Inspect audit events, request traces, diagnostics, agents, or delegation | Web console |
 
 ## Next Step
 
