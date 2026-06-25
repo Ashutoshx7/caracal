@@ -3,15 +3,14 @@
 //
 // Optional interface launcher that runs the Caracal web console (UI) and its session-guarded backend-for-frontend together.
 
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { type ChildProcess } from 'node:child_process'
 import { existsSync, statSync } from 'node:fs'
-import { delimiter, join } from 'node:path'
+import { join } from 'node:path'
 import { scrubTokens } from '@caracalai/engine/crash'
 import { printError, printInfo, printWarn, style } from '../style.ts'
 import { devAuthDatabaseUrl, devAuthSecret } from './authStore.ts'
+import { killTree, resolvePnpm, spawnSyncTree, spawnTree } from '../processTree.ts'
 
-const EXT = process.platform === 'win32' ? '.exe' : ''
-const PNPM_BIN = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const DEFAULT_WEB_PORT = 3001
 const DEFAULT_AUTH_PORT = 3002
 // The web console is a control-plane surface: its backend-for-frontend only proxies
@@ -85,30 +84,6 @@ export function webInterfaceAvailable(): boolean {
   return workspaceDirExists('apps/web') && workspaceDirExists('apps/auth')
 }
 
-function locate(binName: string): string | undefined {
-  const path = process.env.PATH ?? ''
-  for (const dir of path.split(delimiter)) {
-    if (!dir) continue
-    const candidate = join(dir, `${binName}${EXT}`)
-    try {
-      if (existsSync(candidate) && statSync(candidate).isFile()) return candidate
-    } catch {
-      /* ignore */
-    }
-  }
-  return undefined
-}
-
-// Resolve a pnpm invocation without going through a shell: prefer the pnpm that
-// launched this process, otherwise the one on PATH.
-function pnpmInvocation(): { cmd: string; prefix: string[] } | undefined {
-  const execpath = process.env.npm_execpath
-  if (execpath && /pnpm/i.test(execpath)) return { cmd: process.execPath, prefix: [execpath] }
-  const onPath = locate(PNPM_BIN)
-  if (onPath) return { cmd: onPath, prefix: [] }
-  return undefined
-}
-
 // The launcher aggregates two child servers (the web UI and the backend-for-frontend)
 // into one terminal. Their raw output is noisy: the backend logs structured JSON and
 // the UI logs free text, with no source attribution and no redaction. Every line is
@@ -173,9 +148,7 @@ function tryRecord(text: string): Record<string, unknown> | null {
   if (!(text.startsWith('{') && text.endsWith('}'))) return null
   try {
     const parsed = JSON.parse(text) as unknown
-    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null
   } catch {
     return null
   }
@@ -310,7 +283,7 @@ export async function webCommand(argv: string[]): Promise<void> {
     }
   }
 
-  const pnpm = pnpmInvocation()
+  const pnpm = resolvePnpm()
   if (!pnpm) {
     printError("web: 'pnpm' was not found; install pnpm to launch the web console.")
     process.exit(127)
@@ -323,7 +296,7 @@ export async function webCommand(argv: string[]): Promise<void> {
 
   if (parsed.build) {
     printInfo('Building the web UI…')
-    const build = spawnSync(pnpmCmd, [...pnpmPrefix, '--dir', 'apps/web', 'build'], {
+    const build = spawnSyncTree(pnpmCmd, [...pnpmPrefix, '--dir', 'apps/web', 'build'], {
       cwd: root,
       stdio: 'inherit',
     })
@@ -332,7 +305,7 @@ export async function webCommand(argv: string[]): Promise<void> {
       process.exit(build.status ?? 1)
     }
     printInfo('Building the backend-for-frontend…')
-    const authBuild = spawnSync(pnpmCmd, [...pnpmPrefix, '--dir', 'apps/auth', 'build'], {
+    const authBuild = spawnSyncTree(pnpmCmd, [...pnpmPrefix, '--dir', 'apps/auth', 'build'], {
       cwd: root,
       stdio: 'inherit',
     })
@@ -370,24 +343,10 @@ export async function webCommand(argv: string[]): Promise<void> {
     web: { label: 'web UI', tag: 'web', args: webArgs, env: { VITE_CARACAL_AUTH_URL: authUrl } },
   }
 
-  // Each child is a detached process-group leader (see spawnRole), so the pnpm
-  // wrapper and its vite/tsx/node descendants share one group. Signalling the whole
-  // group is the only reliable way to take the entire tree down — a plain
-  // `child.kill()` hits only the pnpm wrapper and orphans the real servers.
-  function killTree(child: ChildProcess, signal: NodeJS.Signals): void {
-    const pid = child.pid
-    if (pid === undefined) return
-    try {
-      process.kill(-pid, signal)
-    } catch {
-      try {
-        child.kill(signal)
-      } catch {
-        /* already gone */
-      }
-    }
-  }
-
+  // Each child is spawned as a killable process tree (see processTree.ts): on POSIX it
+  // leads its own process group so a single Ctrl+C reaches only the launcher and the whole
+  // tree can be torn down together; on Windows the tree is reaped with taskkill. Either way
+  // a plain child.kill() would orphan the real vite/tsx/node servers, so killTree is used.
   async function shutdown(code: number): Promise<void> {
     if (shuttingDown) {
       // A second interrupt force-kills anything still winding down.
@@ -416,15 +375,11 @@ export async function webCommand(argv: string[]): Promise<void> {
 
   function spawnRole(role: Role): void {
     const spec = SPEC[role]
-    const child = spawn(pnpmCmd, [...pnpmPrefix, ...spec.args], {
+    const child = spawnTree(pnpmCmd, [...pnpmPrefix, ...spec.args], {
       cwd: root,
       // The parent owns stdin so it can handle restart keys; child output is captured
       // and re-rendered through the formatter rather than inherited raw.
       stdio: ['ignore', 'pipe', 'pipe'],
-      // Detach so each child leads its own process group: it stays out of the TTY's
-      // foreground group (a single Ctrl+C reaches only the launcher) and can be torn
-      // down as a whole group, descendants included.
-      detached: true,
       // Children pipe to a non-TTY, which makes tools like Vite drop their colors.
       // Force color on when the launcher itself owns a TTY so the aggregated stream
       // stays readable; respect an explicit operator override.
@@ -521,18 +476,10 @@ export async function webCommand(argv: string[]): Promise<void> {
 
   process.on('SIGINT', () => void shutdown(0))
   process.on('SIGTERM', () => void shutdown(0))
-  // Final safety net: if the launcher exits for any other reason, take the detached
-  // service groups down with it rather than leaking ports and an open database.
+  // Final safety net: if the launcher exits for any other reason, take the child service
+  // trees down with it rather than leaking ports and an open database.
   process.on('exit', () => {
-    for (const child of children) {
-      const pid = child.pid
-      if (pid === undefined) continue
-      try {
-        process.kill(-pid, 'SIGKILL')
-      } catch {
-        /* already gone */
-      }
-    }
+    for (const child of children) killTree(child, 'SIGKILL')
   })
   listenForKeys()
 }
