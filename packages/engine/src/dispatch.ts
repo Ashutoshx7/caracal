@@ -481,7 +481,7 @@ export async function dispatch(req: DispatchRequest, principal: Principal, ctx: 
   const desc = findCommand(MANAGEMENT_COMMANDS, req.command)
   if (!desc) denied(`unknown command "${req.command}"`)
   if (desc.hidden && principal.kind === 'remote') denied(`command "${req.command}" not exposed`)
-  if (desc.localOnly && principal.kind === 'remote') denied(`command "${req.command}" is available only through the Console`)
+  if (desc.localOnly && principal.kind === 'remote') denied(`command "${req.command}" is available only on the local control plane`)
   assertRemoteZoneBound(principal, desc)
   if (desc.subcommands && desc.subcommands.length > 0) {
     if (!desc.subcommands.includes(req.subcommand)) {

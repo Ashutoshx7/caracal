@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
 //
-// Shared doctor diagnostics for Console operator health checks.
+// Shared doctor diagnostics for operator health checks.
 
 import type { Zone } from '@caracalai/admin'
 import { discoverCoordinatorToken, discoverMetricsBearer } from '@caracalai/core'
