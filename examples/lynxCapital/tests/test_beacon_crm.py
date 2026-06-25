@@ -17,7 +17,7 @@ from _mock.providerlab.app import build_app
 
 REDIRECT = "http://127.0.0.1:8000/callback"
 ALL_SCOPES = ("contacts.read contacts.write accounts.read "
-              "deals.read deals.write activities.read activities.write")
+              "deals.read deals.write activities.read activities.write owners.read")
 
 
 def _client() -> TestClient:
@@ -249,3 +249,153 @@ def test_list_relationships_for_account():
     account_id = _api(c, token, "list_accounts", {"pageSize": 1}).json()["data"]["items"][0]["id"]
     rels = _api(c, token, "list_relationships", {"accountId": account_id}).json()["data"]
     assert all(r["accountId"] == account_id for r in rels["items"])
+
+
+# --------------------------------------------------------------------------- #
+# Enriched object fields (real-CRM shapes)
+# --------------------------------------------------------------------------- #
+def test_account_carries_lifecycle_address_and_rollups():
+    c = _client()
+    token = _token(c)
+    account = _api(c, token, "list_accounts", {"pageSize": 1}).json()["data"]["items"][0]
+    for field in ("lifecycleStage", "billingAddress", "linkedinUrl",
+                  "contactCount", "openDealCount", "lastActivityAt"):
+        assert field in account
+    assert {"city", "state", "country", "postalCode"} <= set(account["billingAddress"])
+
+
+def test_contact_carries_marketing_and_seniority_fields():
+    c = _client()
+    token = _token(c)
+    contact = _api(c, token, "get_contact", {"contactId": "CONT-00001"}).json()["data"]
+    for field in ("mobilePhone", "marketingStatus", "optedOut", "seniority",
+                  "linkedinUrl", "lastContactedAt"):
+        assert field in contact
+    assert contact["marketingStatus"] in ("subscribed", "unsubscribed", "non_marketing")
+
+
+def test_deal_carries_forecast_and_weighted_amount():
+    c = _client()
+    token = _token(c)
+    deal = _open_deal(c, token)
+    assert {"dealType", "forecastCategory", "weightedAmount", "priority"} <= set(deal)
+    assert deal["weightedAmount"] == round(deal["amount"] * deal["probability"] / 100, 2)
+
+
+# --------------------------------------------------------------------------- #
+# Pipelines (discoverable stage metadata)
+# --------------------------------------------------------------------------- #
+def test_list_pipelines_exposes_ordered_stages():
+    c = _client()
+    token = _token(c)
+    pipelines = _api(c, token, "list_pipelines", {}).json()["data"]["items"]
+    sales = next(p for p in pipelines if p["id"] == "sales")
+    stages = sales["stages"]
+    assert [s["id"] for s in stages] == ["prospect", "qualified", "proposal",
+                                         "negotiation", "won", "lost"]
+    won = next(s for s in stages if s["id"] == "won")
+    assert won["isClosed"] and won["isWon"] and won["probability"] == 100
+
+
+# --------------------------------------------------------------------------- #
+# Owners (CRM portal users)
+# --------------------------------------------------------------------------- #
+def test_list_owners_filters_active_and_team():
+    c = _client()
+    token = _token(c)
+    page = _api(c, token, "list_owners", {"active": True, "pageSize": 50}).json()["data"]
+    assert page["items"] and all(o["active"] for o in page["items"])
+    assert all("portalId" in o and "@" in o["email"] for o in page["items"])
+
+
+def test_get_owner_resolves_deal_owner():
+    c = _client()
+    token = _token(c)
+    deal = _open_deal(c, token)
+    owner = _api(c, token, "get_owner", {"ownerId": deal["ownerId"]}).json()["data"]
+    assert owner["id"] == deal["ownerId"] and owner["role"]
+
+
+def test_get_owner_not_found():
+    c = _client()
+    token = _token(c)
+    assert _api(c, token, "get_owner", {"ownerId": "USR-999"}).status_code == 404
+
+
+def test_owners_require_owners_scope():
+    c = _client()
+    token = _token(c, "deals.read")
+    denied = _api(c, token, "list_owners", {})
+    assert denied.status_code == 403 and denied.json()["error"] == "insufficient_scope"
+
+
+# --------------------------------------------------------------------------- #
+# Deal creation
+# --------------------------------------------------------------------------- #
+def test_create_deal_opens_pipeline_entry():
+    c = _client()
+    token = _token(c)
+    account = _api(c, token, "list_accounts", {"pageSize": 1}).json()["data"]["items"][0]
+    before = _api(c, token, "get_account", {"accountId": account["id"]}).json()["data"]["openDealCount"]
+    created = _api(c, token, "create_deal", {
+        "accountId": account["id"], "title": "Managed Services Renewal",
+        "amount": 48000, "dealType": "renewal"}).json()["data"]
+    assert created["status"] == "open" and created["stage"] == "prospect"
+    assert created["probability"] == 10 and created["forecastCategory"] == "pipeline"
+    assert created["weightedAmount"] == 4800.0
+    after = _api(c, token, "get_account", {"accountId": account["id"]}).json()["data"]["openDealCount"]
+    assert after == before + 1
+
+
+def test_create_deal_validates_account_and_stage():
+    c = _client()
+    token = _token(c)
+    missing = _api(c, token, "create_deal", {
+        "accountId": "ACC-9999", "title": "x", "amount": 1000})
+    assert missing.status_code == 404 and missing.json()["error"] == "account_not_found"
+    account = _api(c, token, "list_accounts", {"pageSize": 1}).json()["data"]["items"][0]
+    bad_stage = _api(c, token, "create_deal", {
+        "accountId": account["id"], "title": "x", "amount": 1000, "stage": "won"})
+    assert bad_stage.status_code == 422 and bad_stage.json()["error"] == "invalid_stage"
+
+
+def test_create_deal_requires_write_scope():
+    c = _client()
+    token = _token(c, "deals.read accounts.read")
+    account = _api(c, token, "list_accounts", {"pageSize": 1}).json()["data"]["items"][0]
+    denied = _api(c, token, "create_deal", {
+        "accountId": account["id"], "title": "x", "amount": 1000})
+    assert denied.status_code == 403 and denied.json()["error"] == "insufficient_scope"
+
+
+# --------------------------------------------------------------------------- #
+# Contact updates (email change with dedupe, marketing status)
+# --------------------------------------------------------------------------- #
+def test_update_contact_changes_marketing_status():
+    c = _client()
+    token = _token(c)
+    updated = _api(c, token, "update_contact", {
+        "contactId": "CONT-00001", "marketingStatus": "unsubscribed"}).json()["data"]
+    assert updated["marketingStatus"] == "unsubscribed" and updated["optedOut"] is True
+
+
+def test_update_contact_email_rejects_duplicate():
+    c = _client()
+    token = _token(c)
+    other = _api(c, token, "get_contact", {"contactId": "CONT-00002"}).json()["data"]
+    dup = _api(c, token, "update_contact", {
+        "contactId": "CONT-00001", "email": other["email"]})
+    assert dup.status_code == 409 and dup.json()["error"] == "duplicate_contact"
+
+
+# --------------------------------------------------------------------------- #
+# Task activities carry status and due date
+# --------------------------------------------------------------------------- #
+def test_log_task_activity_carries_due_date_and_status():
+    c = _client()
+    token = _token(c)
+    task = _api(c, token, "log_activity", {
+        "contactId": "CONT-00001", "type": "task", "subject": "Follow up on renewal",
+        "dueDate": "2026-07-01", "priority": "high"}).json()["data"]
+    assert task["status"] == "scheduled" and task["dueDate"] == "2026-07-01"
+    assert task["priority"] == "high"
