@@ -6722,24 +6722,49 @@ def _crm_account(seed: str, idx: int) -> dict:
         "enterprise": rng.randint(2_000, 50_000),
     }[tier]
     domain = f"{_slug(name).split('-')[0]}.example"
+    account_type = rng.choices(_CRM_ACCOUNT_TYPES, weights=(4, 3, 1, 2))[0]
+    lifecycle = {
+        "customer": "customer",
+        "prospect": "prospect",
+        "partner": "opportunity",
+        "vendor": "vendor",
+    }[account_type]
+    city, state = _crm_city_state(rng, country)
     return {
         "id": f"ACC-{idx:04d}",
         "name": name,
         "domain": domain,
         "website": f"https://www.{domain}",
         "industry": rng.choice(_CRM_INDUSTRIES),
-        "accountType": rng.choices(_CRM_ACCOUNT_TYPES, weights=(4, 3, 1, 2))[0],
+        "accountType": account_type,
+        "lifecycleStage": lifecycle,
         "tier": tier,
         "employeeCount": employees,
         "annualRevenue": employees * rng.randint(80_000, 220_000),
         "currency": currency,
         "country": country,
+        "billingAddress": {
+            "city": city,
+            "state": state,
+            "country": country,
+            "postalCode": f"{rng.randint(10_000, 99_999)}",
+        },
         "phone": _phone(rng, country),
-        "ownerId": f"USR-{rng.randint(1, 25):03d}",
+        "linkedinUrl": f"https://www.linkedin.com/company/{_slug(name)}",
+        "description": f"{name} is a {tier.replace('_', '-')} {rng.choice(_CRM_INDUSTRIES).lower()} account.",
+        "ownerId": f"USR-{rng.randint(1, 22):03d}",
+        "parentAccountId": None,
         "openDealCount": 0,
+        "contactCount": 0,
         "createdAt": _instant(rng, -540, -120),
         "updatedAt": _instant(rng, -110, -1),
+        "lastActivityAt": _instant(rng, -45, -1),
     }
+
+
+def _crm_city_state(rng: random.Random, country: str) -> tuple[str, str]:
+    cities = _CRM_CITIES.get(country, _CRM_CITIES["US"])
+    return rng.choice(cities)
 
 
 def _crm_contact(seed: str, idx: int, account: dict, primary: bool) -> dict:
@@ -6748,13 +6773,17 @@ def _crm_contact(seed: str, idx: int, account: dict, primary: bool) -> dict:
     tags = rng.sample(_CRM_TAGS, rng.randint(0, 3))
     if primary and "decision_maker" not in tags:
         tags.append("decision_maker")
+    marketing = rng.choices(_CRM_MARKETING_STATUS, weights=(5, 2, 3))[0]
+    city, state = account["billingAddress"]["city"], account["billingAddress"]["state"]
     return {
         "id": f"CONT-{idx:05d}",
         "firstName": first,
         "lastName": last,
         "email": f"{first.lower()}.{last.lower()}@{account['domain']}",
         "phone": _phone(rng, account["country"]),
+        "mobilePhone": _phone(rng, account["country"]),
         "jobTitle": rng.choice(_CRM_JOB_TITLES),
+        "seniority": rng.choice(_CRM_SENIORITY),
         "company": account["name"],
         "accountId": account["id"],
         "lifecycleStage": rng.choice(_CRM_LIFECYCLE),
@@ -6762,11 +6791,17 @@ def _crm_contact(seed: str, idx: int, account: dict, primary: bool) -> dict:
         "source": rng.choice(_CRM_SOURCES),
         "ownerId": account["ownerId"],
         "tags": tags,
+        "marketingStatus": marketing,
+        "optedOut": marketing == "unsubscribed",
+        "city": city,
+        "state": state,
         "country": account["country"],
+        "linkedinUrl": f"https://www.linkedin.com/in/{first.lower()}-{last.lower()}",
         "isPrimary": primary,
         "createdAt": _instant(rng, -400, -40),
         "updatedAt": _instant(rng, -39, -1),
         "lastActivityAt": _instant(rng, -39, -1),
+        "lastContactedAt": _instant(rng, -39, -1),
     }
 
 
@@ -6775,6 +6810,7 @@ def _crm_deal(seed: str, idx: int, account: dict, contact: dict) -> dict:
     stage, probability = rng.choice(CRM_STAGES)
     status = {"won": "won", "lost": "lost"}.get(stage, "open")
     created = _instant(rng, -300, -25)
+    amount = round(rng.uniform(5_000, 400_000), 2)
     deal = {
         "id": f"DEAL-{idx:05d}",
         "title": f"{account['name']} — {rng.choice(_CRM_DEAL_THEMES)}",
@@ -6783,9 +6819,14 @@ def _crm_deal(seed: str, idx: int, account: dict, contact: dict) -> dict:
         "pipeline": CRM_PIPELINE,
         "stage": stage,
         "status": status,
-        "amount": round(rng.uniform(5_000, 400_000), 2),
+        "dealType": rng.choice(_CRM_DEAL_TYPES),
+        "amount": amount,
         "currency": account["currency"],
         "probability": probability,
+        "weightedAmount": round(amount * probability / 100, 2),
+        "forecastCategory": crm_forecast_category(stage),
+        "priority": rng.choice(_CRM_PRIORITIES),
+        "nextStep": rng.choice(_CRM_NEXT_STEPS) if status == "open" else "",
         "expectedCloseDate": _day(rng, -20, 120),
         "ownerId": account["ownerId"],
         "source": rng.choice(_CRM_SOURCES),
@@ -6815,12 +6856,17 @@ def _crm_activity(seed: str, idx: int, contact: dict, deal_id: str | None) -> di
         "summary": f"{kind.title()} logged for {contact['company']}.",
         "direction": rng.choice(("inbound", "outbound")),
         "outcome": rng.choice(_CRM_ACTIVITY_OUTCOMES),
+        "status": "completed",
+        "priority": rng.choice(_CRM_PRIORITIES),
         "ownerId": contact["ownerId"],
         "at": at,
         "createdAt": at,
     }
     if kind in ("call", "meeting"):
         activity["durationMinutes"] = rng.choice((15, 30, 45, 60))
+    if kind == "task":
+        activity["status"] = rng.choice(("completed", "scheduled", "overdue"))
+        activity["dueDate"] = _day(rng, -10, 30)
     return activity
 
 

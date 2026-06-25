@@ -525,6 +525,30 @@ def _build_regional_domain_tools(run_id, runner, parent, region, board):
             _finish(w, {"symbol": symbol})
 
     @tool
+    def convert_amount(from_currency: str, to_currency: str, amount: float) -> str:
+        """Convert an amount between two currencies at the live mid rate from the market
+        data feed (e.g. 1000 USD to EUR) to size a payment or exposure. Spawns a
+        route-optimization worker."""
+        w = _worker("route-optimization", f"fx:{from_currency}:{to_currency}")
+        try:
+            return json.dumps(
+                tool_fns.convert_currency(run_id, w.id, from_currency, to_currency, amount)
+            )
+        finally:
+            _finish(w, {"from": from_currency, "to": to_currency})
+
+    @tool
+    def lookup_market_movers(limit: int = 5) -> str:
+        """Fetch the top FX gainers and losers by session change from the market data
+        feed to spot pairs that moved most before booking. Spawns a route-optimization
+        worker."""
+        w = _worker("route-optimization", f"movers:{limit}")
+        try:
+            return json.dumps(tool_fns.get_market_movers(run_id, w.id, limit))
+        finally:
+            _finish(w, {"limit": limit})
+
+    @tool
     async def submit_payment(
         vendor_id: str, amount: float, currency: str, rail: str, reference: str
     ) -> str:
@@ -580,7 +604,7 @@ def _build_regional_domain_tools(run_id, runner, parent, region, board):
         vela-notify (transactional email/SMS, templates, delivery tracking, suppressions, webhooks), cordoba-fx (fx quotes/conversions/settlement payments), ironbark-erp/tallyhall-books (vendors/bills),
         beacon-crm (CRM accounts/contacts/deal pipeline/activities), core-billing (internal AR: customers/invoices/payments/dunning/collections/aging), lumen-identity (directory),
         atlas-vendor (vendor MDM/onboarding/verification/compliance/contracts over MCP),
-        sabre-tax, pulse-market (market data: instruments, quotes, OHLC bars, end-of-day reference fixings, streaming subscriptions), junction-procure (procure-to-pay: suppliers, commodity catalog, cost-center budgets, tiered requisition approvals, purchase orders, goods receipts),
+        sabre-tax, pulse-market (market data: instruments, quotes, OHLC bars, conversions, top movers, end-of-day reference fixings, streaming subscriptions), junction-procure (procure-to-pay: suppliers, commodity catalog, cost-center budgets, tiered requisition approvals, purchase orders, goods receipts),
         relay-automation, aegis-screening, and verafin-monitor.
         Every call routes through the Caracal Gateway under the worker's own narrowed mandate.
         `payload_json` is a JSON object string of operation arguments. Spawns a partner-integration worker.
@@ -629,6 +653,8 @@ def _build_regional_domain_tools(run_id, runner, parent, region, board):
         lookup_withholding_rate,
         lookup_market_rate,
         lookup_reference_rate,
+        convert_amount,
+        lookup_market_movers,
         submit_payment,
         record_audit,
         call_partner,
@@ -1728,7 +1754,7 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id, board):
 
         Use for partner operations beyond the dedicated tools: cordoba-fx (fx quotes/
         conversions/settlement payments), ironbark-erp/tallyhall-books (vendors/bills),
-        pulse-market (quotes, OHLC bars, end-of-day reference fixings), inkwell-ocr
+        pulse-market (quotes, OHLC bars, conversions, movers, end-of-day reference fixings), inkwell-ocr
         (document extraction), slate-ledger (journals), vela-notify (notifications),
         meridian-pay/quetzal-payouts/halcyon-bank (payments, payouts, open banking),
         beacon-crm (CRM), core-billing (internal AR), lumen-identity (directory),

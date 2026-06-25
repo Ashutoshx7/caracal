@@ -370,6 +370,8 @@ def create_template(ctx: Ctx) -> dict:
         "templateId": base.new_id("tmpl"),
         "alias": alias,
         "name": ctx.payload["name"],
+        "templateType": ctx.get("templateType", "Standard"),
+        "layoutTemplate": ctx.get("layoutTemplate"),
         "channels": list(channels),
         "messageStream": ctx.get("messageStream", "outbound-transactional"),
         "category": ctx.get("category", "transactional"),
@@ -384,6 +386,40 @@ def create_template(ctx: Ctx) -> dict:
         "updatedAt": now,
     }
     templates[alias] = template
+    return template
+
+
+@base.op(ID, "update_template")
+def update_template(ctx: Ctx) -> dict:
+    """Edit an existing template's content, activation, or routing, bumping its version
+    the way Postmark increments a template revision on edit."""
+    ctx.require("template")
+    templates = ctx.state.table("templates")
+    template = templates.get(ctx.payload["template"])
+    if template is None:
+        raise DomainError(404, "template_not_found", ctx.payload["template"])
+    editable = ("name", "subject", "htmlBody", "textBody", "smsBody",
+                "category", "messageStream", "layoutTemplate")
+    changed = False
+    for field in editable:
+        if field in ctx.payload:
+            template[field] = ctx.payload[field]
+            changed = True
+    if "active" in ctx.payload:
+        template["active"] = bool(ctx.payload["active"])
+        changed = True
+    if "channels" in ctx.payload:
+        channels = ctx.payload["channels"]
+        if not isinstance(channels, list) or not set(channels).issubset(_CHANNELS):
+            raise DomainError(422, "invalid_channels", "channels must be a subset of [email, sms]")
+        template["channels"] = list(channels)
+        changed = True
+    if "variables" in ctx.payload:
+        template["variables"] = list(ctx.payload["variables"])
+        changed = True
+    if changed:
+        template["version"] += 1
+        template["updatedAt"] = _iso(base.now())
     return template
 
 

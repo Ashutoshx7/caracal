@@ -105,6 +105,7 @@ def _config_rows(provider: catalog.Provider) -> list[tuple[str, str]]:
         rows.append(("Stream endpoint", f"{base_url}/stream"))
     if provider.sdk_package:
         rows.append(("SDK package", provider.sdk_package))
+        rows.append(("SDK environment", "sandbox"))
     rows.append(("Health check", f"{base_url}/healthz"))
     return rows
 
@@ -393,6 +394,10 @@ def _auth_summary(provider: catalog.Provider) -> str:
     if c == "sdk" and catalog.bearer_auth(provider):
         return (f"Initialize the {_esc(provider.sdk_package)} SDK with your secret key; "
                 f"the SDK sends it as <code>{_esc(provider.auth_header)}: {_esc(provider.auth_scheme)} &lt;secret&gt;</code>.")
+    if c == "sdk" and catalog.apikey_auth(provider):
+        return (f"Initialize the {_esc(provider.sdk_package)} SDK with your API key and "
+                f"environment; the SDK attaches it as <code>{_esc(provider.apikey_field)}: &lt;key&gt;</code> "
+                "on every call.")
     if catalog.apikey_auth(provider):
         if provider.protocol == "grpc":
             return (f"Attach the API key as the <code>{_esc(provider.apikey_field)}</code> "
