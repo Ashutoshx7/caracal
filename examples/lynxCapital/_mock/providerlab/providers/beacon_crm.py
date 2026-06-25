@@ -19,6 +19,13 @@ _STAGE_PROB = dict(gen.CRM_STAGES)
 _STAGES = tuple(name for name, _ in gen.CRM_STAGES)
 _OPEN_STAGES = tuple(name for name in _STAGES if name not in ("won", "lost"))
 _ACTIVITY_TYPES = ("call", "email", "meeting", "note", "task")
+_MARKETING_STATUS = ("subscribed", "unsubscribed", "non_marketing")
+_DEAL_TYPES = ("new_business", "renewal", "upsell", "expansion")
+_PRIORITIES = ("low", "medium", "high")
+
+
+def _weighted(amount: float, probability: int) -> float:
+    return round(float(amount) * probability / 100, 2)
 
 
 def _iso(epoch: int) -> str:
@@ -78,6 +85,10 @@ def create_contact(ctx: Ctx) -> dict:
     account = ctx.state.table("accounts").get(account_id) if account_id else None
     if account_id and account is None:
         raise DomainError(404, "account_not_found", account_id)
+    marketing_status = ctx.get("marketingStatus", "subscribed")
+    if marketing_status not in _MARKETING_STATUS:
+        raise DomainError(422, "invalid_marketing_status",
+                          f"marketingStatus must be one of {', '.join(_MARKETING_STATUS)}")
     now = base.now()
     contact = {
         "id": ctx.state.next_id("CONT"),
@@ -85,7 +96,9 @@ def create_contact(ctx: Ctx) -> dict:
         "lastName": ctx.payload["lastName"],
         "email": email,
         "phone": ctx.get("phone", ""),
+        "mobilePhone": ctx.get("mobilePhone", ""),
         "jobTitle": ctx.get("jobTitle", ""),
+        "seniority": ctx.get("seniority", "individual_contributor"),
         "company": account["name"] if account else ctx.get("company", ""),
         "accountId": account_id,
         "lifecycleStage": ctx.get("lifecycleStage", "lead"),
@@ -93,11 +106,17 @@ def create_contact(ctx: Ctx) -> dict:
         "source": ctx.get("source", "inbound"),
         "ownerId": ctx.get("ownerId", account["ownerId"] if account else "USR-001"),
         "tags": list(ctx.get("tags", [])),
+        "marketingStatus": marketing_status,
+        "optedOut": marketing_status == "unsubscribed",
+        "city": ctx.get("city", account["billingAddress"]["city"] if account else ""),
+        "state": ctx.get("state", account["billingAddress"]["state"] if account else ""),
         "country": account["country"] if account else ctx.get("country", ""),
+        "linkedinUrl": ctx.get("linkedinUrl", ""),
         "isPrimary": False,
         "createdAt": _iso(now),
         "updatedAt": _iso(now),
         "lastActivityAt": _iso(now),
+        "lastContactedAt": None,
     }
     contacts[contact["id"]] = contact
     return contact
@@ -107,10 +126,29 @@ def create_contact(ctx: Ctx) -> dict:
 def update_contact(ctx: Ctx) -> dict:
     ctx.require_scope("contacts.write")
     ctx.require("contactId")
-    contact = ctx.state.table("contacts").get(ctx.payload["contactId"])
+    contacts = ctx.state.table("contacts")
+    contact = contacts.get(ctx.payload["contactId"])
     if contact is None:
         raise DomainError(404, "contact_not_found", ctx.payload["contactId"])
-    for field in ("jobTitle", "phone", "lifecycleStage", "leadStatus", "ownerId", "tags"):
+    if ctx.get("email") is not None:
+        email = str(ctx.payload["email"])
+        if "@" not in email:
+            raise DomainError(422, "invalid_email", "email is not a valid address")
+        if any(c["id"] != contact["id"] and c["email"].lower() == email.lower()
+               for c in contacts.values()):
+            raise DomainError(409, "duplicate_contact",
+                              f"a contact with email {email} already exists")
+        contact["email"] = email
+    if ctx.get("marketingStatus") is not None:
+        status = ctx.payload["marketingStatus"]
+        if status not in _MARKETING_STATUS:
+            raise DomainError(422, "invalid_marketing_status",
+                              f"marketingStatus must be one of {', '.join(_MARKETING_STATUS)}")
+        contact["marketingStatus"] = status
+        contact["optedOut"] = status == "unsubscribed"
+    for field in ("firstName", "lastName", "jobTitle", "seniority", "phone",
+                  "mobilePhone", "lifecycleStage", "leadStatus", "ownerId",
+                  "tags", "city", "state", "linkedinUrl"):
         if ctx.get(field) is not None:
             contact[field] = ctx.payload[field]
     contact["updatedAt"] = _iso(base.now())
@@ -178,6 +216,57 @@ def get_deal(ctx: Ctx) -> dict:
     return deal
 
 
+@base.op(ID, "create_deal")
+def create_deal(ctx: Ctx) -> dict:
+    ctx.require_scope("deals.write")
+    ctx.require("accountId", "title", "amount")
+    account = ctx.state.table("accounts").get(ctx.payload["accountId"])
+    if account is None:
+        raise DomainError(404, "account_not_found", ctx.payload["accountId"])
+    try:
+        amount = round(float(ctx.payload["amount"]), 2)
+    except (TypeError, ValueError):
+        raise DomainError(422, "invalid_amount", "amount must be a number")
+    stage = ctx.get("stage", "prospect")
+    if stage not in _OPEN_STAGES:
+        raise DomainError(422, "invalid_stage",
+                          f"a new deal opens in an open stage, not {stage!r}")
+    deal_type = ctx.get("dealType", "new_business")
+    if deal_type not in _DEAL_TYPES:
+        raise DomainError(422, "invalid_deal_type",
+                          f"dealType must be one of {', '.join(_DEAL_TYPES)}")
+    contact_id = ctx.get("contactId")
+    if contact_id and contact_id not in ctx.state.table("contacts"):
+        raise DomainError(404, "contact_not_found", contact_id)
+    probability = _STAGE_PROB[stage]
+    now = base.now()
+    deal = {
+        "id": ctx.state.next_id("DEAL"),
+        "title": ctx.payload["title"],
+        "accountId": account["id"],
+        "contactId": contact_id,
+        "pipeline": gen.CRM_PIPELINE,
+        "stage": stage,
+        "status": "open",
+        "dealType": deal_type,
+        "amount": amount,
+        "currency": ctx.get("currency", account["currency"]),
+        "probability": probability,
+        "weightedAmount": _weighted(amount, probability),
+        "forecastCategory": gen.crm_forecast_category(stage),
+        "priority": ctx.get("priority", "medium"),
+        "nextStep": ctx.get("nextStep", ""),
+        "expectedCloseDate": ctx.get("expectedCloseDate", ""),
+        "ownerId": ctx.get("ownerId", account["ownerId"]),
+        "source": ctx.get("source", "outbound"),
+        "createdAt": _iso(now),
+        "updatedAt": _iso(now),
+    }
+    ctx.state.table("deals")[deal["id"]] = deal
+    account["openDealCount"] = account.get("openDealCount", 0) + 1
+    return deal
+
+
 @base.op(ID, "update_deal")
 def update_deal(ctx: Ctx) -> dict:
     ctx.require_scope("deals.write")
@@ -200,24 +289,45 @@ def update_deal(ctx: Ctx) -> dict:
             account["openDealCount"] = max(0, account["openDealCount"] - 1)
         deal["stage"] = stage
         deal["probability"] = _STAGE_PROB[stage]
+        deal["forecastCategory"] = gen.crm_forecast_category(stage)
         deal["status"] = {"won": "won", "lost": "lost"}.get(stage, "open")
         if stage == "won":
             deal["wonAt"] = _iso(base.now())
             deal["closedAt"] = deal["wonAt"]
+            deal["nextStep"] = ""
         elif stage == "lost":
             deal["lostReason"] = ctx.payload["lostReason"]
             deal["closedAt"] = _iso(base.now())
+            deal["nextStep"] = ""
 
     if ctx.get("amount") is not None:
         try:
             deal["amount"] = round(float(ctx.payload["amount"]), 2)
         except (TypeError, ValueError):
             raise DomainError(422, "invalid_amount", "amount must be a number")
+    if ctx.get("priority") is not None:
+        if ctx.payload["priority"] not in _PRIORITIES:
+            raise DomainError(422, "invalid_priority",
+                              f"priority must be one of {', '.join(_PRIORITIES)}")
+        deal["priority"] = ctx.payload["priority"]
+    if ctx.get("nextStep") is not None:
+        deal["nextStep"] = ctx.payload["nextStep"]
     if ctx.get("expectedCloseDate") is not None:
         deal["expectedCloseDate"] = ctx.payload["expectedCloseDate"]
 
+    deal["weightedAmount"] = _weighted(deal["amount"], deal["probability"])
     deal["updatedAt"] = _iso(base.now())
     return deal
+
+
+# --------------------------------------------------------------------------- #
+# Pipelines
+# --------------------------------------------------------------------------- #
+@base.op(ID, "list_pipelines")
+def list_pipelines(ctx: Ctx) -> dict:
+    ctx.require_scope("deals.read")
+    items = list(ctx.state.table("pipelines").values())
+    return {"items": items, "total": len(items)}
 
 
 # --------------------------------------------------------------------------- #

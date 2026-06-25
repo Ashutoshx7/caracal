@@ -6630,9 +6630,20 @@ _CRM_OWNER_ROLES = (
     "Customer Success Manager",
 )
 _CRM_OWNER_TEAMS = ("Enterprise", "Mid-Market", "SMB", "Partnerships")
+# The connected CRM tenant (portal) Beacon serves for LynxCapital. Owner identities
 # live in this portal, the way a HubSpot hub or Pipedrive company scopes its users.
 CRM_PORTAL_ID = "portal-48213307"
 CRM_PORTAL_DOMAIN = "lynxcapital.example"
+_CRM_CITIES = {
+    "US": (("San Francisco", "CA"), ("Austin", "TX"), ("New York", "NY"), ("Chicago", "IL")),
+    "GB": (("London", "England"), ("Manchester", "England"), ("Bristol", "England")),
+    "DE": (("Berlin", "Berlin"), ("Munich", "Bavaria"), ("Hamburg", "Hamburg")),
+    "FR": (("Paris", "Île-de-France"), ("Lyon", "Auvergne-Rhône-Alpes")),
+    "BR": (("São Paulo", "SP"), ("Rio de Janeiro", "RJ")),
+    "SG": (("Singapore", "Central"),),
+    "JP": (("Tokyo", "Tokyo"), ("Osaka", "Osaka")),
+    "CA": (("Toronto", "ON"), ("Vancouver", "BC")),
+}
 
 CRM_PIPELINE = "sales"
 # Ordered pipeline stages with the win probability each implies.
@@ -6917,6 +6928,7 @@ def crm_dataset(seed: str) -> dict[str, dict]:
             contact = _crm_contact(seed, contact_idx, account, primary=(member == 0))
             contacts[contact["id"]] = contact
             committee.append(contact)
+        account["contactCount"] = len(committee)
 
         primary = committee[0]
         for member in committee[1:]:
@@ -6949,6 +6961,7 @@ def crm_dataset(seed: str) -> dict[str, dict]:
                 note = _crm_note(seed, note_idx, member, deal_id)
                 notes[note["noteId"]] = note
 
+    pipeline = crm_pipeline_definition()
     return {
         "accounts": accounts,
         "contacts": contacts,
@@ -6956,6 +6969,8 @@ def crm_dataset(seed: str) -> dict[str, dict]:
         "activities": activities,
         "notes": notes,
         "relationships": relationships,
+        "owners": _crm_owners(seed),
+        "pipelines": {pipeline["id"]: pipeline},
     }
 
 
@@ -8136,7 +8151,7 @@ def _vela_suppressions(seed: str) -> dict[str, dict]:
     )
     for idx, (channel, reason, origin) in enumerate(plan):
         rng = _rng(seed, "vela-suppression", idx)
-        _, address = _vela_recipient(rng, channel)
+        _, address, _region = _vela_recipient(rng, channel)
         key = f"{channel}:{address.lower()}"
         rows[key] = {
             "recipient": address,
