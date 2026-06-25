@@ -3,6 +3,9 @@
 //
 // Unit tests for the web console launcher's stack-readiness preflight.
 
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const spawnMock = vi.hoisted(() => vi.fn())
@@ -16,6 +19,10 @@ vi.mock('node:child_process', async (importOriginal) => ({
 
 import { webCommand } from '../../../../apps/runtime/src/commands/web.ts'
 
+// Repo root resolved from this test's own location (tests/typescript/unit/runtime), so the
+// preflight finds apps/web and apps/auth regardless of the runner's working directory.
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
+
 const ORIG_ENV = { ...process.env }
 
 describe('webCommand stack preflight', () => {
@@ -28,7 +35,7 @@ describe('webCommand stack preflight', () => {
     vi.clearAllMocks()
     // The launcher only runs inside the workspace; point CARACAL_REPO_ROOT at this
     // repo so apps/web and apps/auth resolve.
-    process.env = { ...ORIG_ENV, CARACAL_REPO_ROOT: process.cwd() }
+    process.env = { ...ORIG_ENV, CARACAL_REPO_ROOT: REPO_ROOT }
     stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
