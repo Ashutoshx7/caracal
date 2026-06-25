@@ -7,6 +7,7 @@ This file defines the Control API developer workspace: keys, scopes, authenticat
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { ModulePage } from "@/components/console/ModulePage";
 import {
   DetailField,
   DetailGroup,
@@ -17,6 +18,7 @@ import { ZoneScopedPage } from "@/components/console/ZoneScope";
 import {
   Badge,
   Button,
+  Card,
   ConfirmDialog,
   Field,
   Modal,
@@ -25,6 +27,7 @@ import {
   type Column,
 } from "@/components/ui";
 import { cx } from "@/lib/cx";
+import { highlightCode, TERMINAL_HIGHLIGHT } from "@/lib/codeHighlight";
 import {
   CONTROL_MAX_TTL_SECONDS,
   CONTROL_MIN_TTL_SECONDS,
@@ -69,7 +72,7 @@ function errorMessage(error: unknown): string {
   return "Unexpected error.";
 }
 
-type TabId = "keys" | "auth" | "reference";
+type TabId = "keys" | "auth" | "reference" | "settings";
 
 function ControlPage({ zoneId, zoneSlug }: { zoneId: string; zoneSlug: string }) {
   const [tab, setTab] = useState<TabId>("keys");
@@ -82,6 +85,7 @@ function ControlPage({ zoneId, zoneSlug }: { zoneId: string; zoneSlug: string })
         { id: "keys", label: "Keys", count: keys.length },
         { id: "auth", label: "Authentication" },
         { id: "reference", label: "Reference" },
+        { id: "settings", label: "Settings" },
       ]}
       active={tab}
       onChange={(id) => setTab(id as TabId)}
@@ -102,7 +106,13 @@ function ControlPage({ zoneId, zoneSlug }: { zoneId: string; zoneSlug: string })
 
   return (
     <ResourceWorkspaceShell headerExtra={tabs}>
-      {tab === "auth" ? <AuthTab zoneId={zoneId} /> : <ReferenceTab zoneSlug={zoneSlug} />}
+      {tab === "auth" ? (
+        <AuthTab zoneId={zoneId} />
+      ) : tab === "reference" ? (
+        <ReferenceTab zoneSlug={zoneSlug} />
+      ) : (
+        <SettingsTab />
+      )}
     </ResourceWorkspaceShell>
   );
 }
@@ -115,16 +125,14 @@ function ResourceWorkspaceShell({
   children: ReactNode;
 }) {
   return (
-    <div className="animate-fade-in">
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">Control API</h1>
-        <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
-          Programmatic, scoped automation of zone management.
-        </p>
-      </div>
-      <div className="mb-4">{headerExtra}</div>
+    <ModulePage
+      title="Control API"
+      description="Programmatic, scoped automation of zone management."
+      breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Control API" }]}
+    >
+      <div className="mb-6">{headerExtra}</div>
       {children}
-    </div>
+    </ModulePage>
   );
 }
 
@@ -203,12 +211,7 @@ function ControlKeysTab({
         description="Programmatic, scoped automation of zone management."
         breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Control API" }]}
         primaryAction={{ label: "New control key", onClick: () => setCreateOpen(true) }}
-        headerExtra={
-          <div className="flex flex-col gap-4">
-            {headerExtra}
-            <EndpointStatusBar />
-          </div>
-        }
+        headerExtra={headerExtra}
         rows={keys}
         loading={loading}
         columns={columns}
@@ -869,72 +872,143 @@ function TokenResultModal({
   );
 }
 
+/* ------------------------------- Settings tab ------------------------------- */
+
+function SettingsTab() {
+  return (
+    <div className="flex max-w-3xl flex-col gap-2">
+      <h2 className="text-base font-semibold tracking-tight text-foreground">Control endpoint</h2>
+      <p className="text-sm text-muted-foreground">
+        The Control endpoint is the local gate that lets authenticated automation reach the Control
+        API. It stays closed until you enable it, and you&apos;ll confirm before the gate opens.
+        Disable it at any time to immediately stop all Control API traffic.
+      </p>
+      <div className="mt-4">
+        <EndpointStatusBar />
+      </div>
+    </div>
+  );
+}
+
 function EndpointStatusBar() {
   const toast = useToast();
   const statusQuery = useControlStatus();
   const enable = useEnableControl();
   const disable = useDisableControl();
   const [confirmAction, setConfirmAction] = useState<"enable" | "disable" | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
   const status = statusQuery.data;
 
   if (statusQuery.isLoading) {
     return (
-      <div className="border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
-        Checking Control endpoint…
-      </div>
+      <Card>
+        <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-muted-foreground/50" />
+          Checking Control endpoint…
+        </div>
+      </Card>
     );
   }
   if (!status || !status.manageable) {
     return (
-      <div className="border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
-        Control endpoint management is unavailable on this host. Keys can still be created and used
-        against a running Control endpoint.
-      </div>
+      <Card>
+        <div className="text-sm font-medium text-foreground">Management unavailable</div>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Control endpoint management is unavailable on this host. Keys can still be created and
+          used against a running Control endpoint.
+        </p>
+      </Card>
     );
   }
 
   const enabled = status.enabled === true;
   const runtimeTone =
-    status.service === "ok" ? "success" : status.service === "down" ? "danger" : "neutral";
+    status.service === "ok" ? "success" : status.service === "down" ? "danger" : "warning";
+  const url = status.invokeUrl ?? null;
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3 border border-border bg-muted/30 px-4 py-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <Badge tone={enabled ? "success" : "neutral"}>
-              {enabled ? "Endpoint enabled" : "Endpoint disabled"}
-            </Badge>
-            {enabled ? <Badge tone={runtimeTone}>{status.service ?? "unknown"}</Badge> : null}
+      <Card className="p-0">
+        <div className="flex flex-wrap items-start justify-between gap-4 p-5">
+          <div className="flex min-w-0 flex-col gap-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={enabled ? "success" : "muted"}>{enabled ? "Enabled" : "Disabled"}</Badge>
+              {enabled ? <Badge tone={runtimeTone}>{status.service ?? "unknown"}</Badge> : null}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {enabled
+                ? "The gate is open. Automation with a valid token can reach the Control API."
+                : "The gate is closed. All Control API calls are rejected until you enable it."}
+            </p>
           </div>
-          <span className="truncate font-mono text-xs text-muted-foreground">
-            {enabled ? status.invokeUrl : `not exposed (${status.invokeUrl ?? "—"})`}
-          </span>
+          <Button
+            size="sm"
+            variant={enabled ? "danger" : "primary"}
+            loading={enable.isPending || disable.isPending}
+            onClick={() => setConfirmAction(enabled ? "disable" : "enable")}
+          >
+            {enabled ? "Disable endpoint" : "Enable endpoint"}
+          </Button>
         </div>
-        <Button
-          size="sm"
-          variant={enabled ? "danger" : "primary"}
-          loading={enable.isPending || disable.isPending}
-          onClick={() => setConfirmAction(enabled ? "disable" : "enable")}
-        >
-          {enabled ? "Disable endpoint" : "Enable endpoint"}
-        </Button>
-      </div>
 
-      <details className="border border-t-0 border-border bg-muted/30 px-4 pb-3">
-        <summary className="cursor-pointer py-2 text-xs font-medium text-muted-foreground">
-          Endpoint details
-        </summary>
-        <dl className="grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
-          <StatusRow label="Lifecycle" value={status.lifecycle} />
-          <StatusRow label="Runtime" value={status.service} />
-          <StatusRow label="Health" value={status.detail} />
-          <StatusRow label="Optimization" value={status.optimization} />
-          <StatusRow label="Health URL" value={status.healthUrl} mono />
-          <StatusRow label="Ready URL" value={status.readyUrl} mono />
-          <StatusRow label="Gate file" value={status.marker} mono />
-        </dl>
-      </details>
+        <div className="flex items-center justify-between gap-3 border-t border-border px-5 py-3">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Invoke URL
+            </span>
+            <span className="truncate font-mono text-xs text-foreground">
+              {url ?? "—"}
+              {!enabled && url ? (
+                <span className="ml-2 not-italic text-muted-foreground">(not exposed)</span>
+              ) : null}
+            </span>
+          </div>
+          {url ? (
+            <button
+              onClick={() => {
+                void navigator.clipboard?.writeText(url);
+                toast({ tone: "success", title: "Copied" });
+              }}
+              className="shrink-0 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              Copy
+            </button>
+          ) : null}
+        </div>
+
+        <div className="border-t border-border">
+          <button
+            onClick={() => setShowDetails((v) => !v)}
+            aria-expanded={showDetails}
+            className="flex w-full items-center justify-between px-5 py-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Technical details
+            <svg
+              viewBox="0 0 24 24"
+              className={cx("h-4 w-4 transition-transform", showDetails && "rotate-180")}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {showDetails ? (
+            <dl className="grid border-t border-border sm:grid-cols-2">
+              <StatusRow label="Lifecycle" value={status.lifecycle} />
+              <StatusRow label="Runtime" value={status.service} />
+              <StatusRow label="Health" value={status.detail} />
+              <StatusRow label="Optimization" value={status.optimization} />
+              <StatusRow label="Health URL" value={status.healthUrl} mono />
+              <StatusRow label="Ready URL" value={status.readyUrl} mono />
+              <StatusRow label="Gate file" value={status.marker} mono />
+            </dl>
+          ) : null}
+        </div>
+      </Card>
 
       <ConfirmDialog
         open={confirmAction !== null}
@@ -973,9 +1047,13 @@ function EndpointStatusBar() {
 function StatusRow({ label, value, mono }: { label: string; value?: string; mono?: boolean }) {
   if (!value) return null;
   return (
-    <div className="flex gap-2 py-0.5">
-      <dt className="shrink-0 text-muted-foreground">{label}</dt>
-      <dd className={cx("min-w-0 truncate text-foreground", mono && "font-mono")}>{value}</dd>
+    <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-2 last:border-b-0">
+      <dt className="shrink-0 text-xs text-muted-foreground">{label}</dt>
+      <dd
+        className={cx("min-w-0 truncate text-right text-xs text-foreground", mono && "font-mono")}
+      >
+        {value}
+      </dd>
     </div>
   );
 }
@@ -983,6 +1061,50 @@ function StatusRow({ label, value, mono }: { label: string; value?: string; mono
 /* --------------------------- Authentication tab --------------------------- */
 
 function AuthTab({ zoneId }: { zoneId: string }) {
+  const examples = [
+    {
+      id: "curl",
+      label: "cURL",
+      lang: "Shell",
+      code: `# 1. Issue a token from the Keys tab (or exchange at STS directly)
+TOKEN=...
+
+# 2. Call the Control API
+curl -s https://gateway.caracal.run/v1/control/invoke \\
+  -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"noun":"agent","verb":"read","zone":"${zoneId}"}'`,
+    },
+    {
+      id: "node",
+      label: "Node",
+      lang: "TypeScript",
+      code: `import { ControlClient } from "@caracalai/sdk";
+
+const control = new ControlClient({
+  zone: "${zoneId}",
+  clientId: process.env.CARACAL_CONTROL_ID,
+  clientSecret: process.env.CARACAL_CONTROL_SECRET,
+});
+
+const agents = await control.agents.list();`,
+    },
+    {
+      id: "python",
+      label: "Python",
+      lang: "Python",
+      code: `from caracalai import ControlClient
+
+control = ControlClient(
+    zone="${zoneId}",
+    client_id=os.environ["CARACAL_CONTROL_ID"],
+    client_secret=os.environ["CARACAL_CONTROL_SECRET"],
+)
+
+agents = control.agents.list()`,
+    },
+  ];
+
   return (
     <div className="grid gap-px border border-border bg-border lg:grid-cols-2 [&>*]:bg-background">
       <Panel title="How control authentication works">
@@ -995,51 +1117,47 @@ function AuthTab({ zoneId }: { zoneId: string }) {
             Exchange the key for a short-lived, least-privilege STS token scoped as{" "}
             <Mono>control:&lt;noun&gt;:&lt;verb&gt;</Mono> — use{" "}
             <span className="font-medium text-foreground">Issue token</span> on a key, or the STS
-            client-credentials grant shown below.
+            client-credentials grant shown alongside.
           </Step>
           <Step n={3}>
             Call the Control API with the STS token. Every call is zone-bound and recorded in Audit.
           </Step>
         </ol>
       </Panel>
-      <Panel title="Invoke an endpoint">
-        <CodeBlock
-          code={`# 1. Issue a token from the Keys tab (or exchange at STS directly)
-TOKEN=...
-
-# 2. Call the Control API
-curl -s https://gateway.caracal.run/v1/control/invoke \\
-  -H "Authorization: Bearer $TOKEN" \\
-  -H "Content-Type: application/json" \\
-  -d '{"noun":"agent","verb":"read","zone":"${zoneId}"}'`}
-        />
+      <Panel title="Call the Control API">
+        <CodeTabs examples={examples} />
       </Panel>
-      <Panel title="Node SDK">
-        <CodeBlock
-          code={`import { ControlClient } from "@caracalai/sdk";
+    </div>
+  );
+}
 
-const control = new ControlClient({
-  zone: "${zoneId}",
-  clientId: process.env.CARACAL_CONTROL_ID,
-  clientSecret: process.env.CARACAL_CONTROL_SECRET,
-});
+function CodeTabs({
+  examples,
+}: {
+  examples: { id: string; label: string; lang: string; code: string }[];
+}) {
+  const [active, setActive] = useState(examples[0]?.id ?? "");
+  const current = examples.find((e) => e.id === active) ?? examples[0];
 
-const agents = await control.agents.list();`}
-        />
-      </Panel>
-      <Panel title="Python SDK">
-        <CodeBlock
-          code={`from caracalai import ControlClient
-
-control = ControlClient(
-    zone="${zoneId}",
-    client_id=os.environ["CARACAL_CONTROL_ID"],
-    client_secret=os.environ["CARACAL_CONTROL_SECRET"],
-)
-
-agents = control.agents.list()`}
-        />
-      </Panel>
+  return (
+    <div className="overflow-hidden rounded-md border border-border">
+      <div className="flex items-center gap-1 border-b border-border bg-muted/40 px-1.5 py-1">
+        {examples.map((example) => (
+          <button
+            key={example.id}
+            onClick={() => setActive(example.id)}
+            className={cx(
+              "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+              example.id === current?.id
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {example.label}
+          </button>
+        ))}
+      </div>
+      {current ? <CodeBlock code={current.code} lang={current.lang} /> : null}
     </div>
   );
 }
@@ -1131,21 +1249,21 @@ function ReferenceTab({ zoneSlug }: { zoneSlug: string }) {
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="p-6">
+    <div className="p-5">
       <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         {title}
       </h3>
-      <div className="mt-4">{children}</div>
+      <div className="mt-3">{children}</div>
     </div>
   );
 }
 
-function CodeBlock({ code }: { code: string }) {
+function CodeBlock({ code, lang }: { code: string; lang: string }) {
   const toast = useToast();
   return (
     <div className="group relative">
-      <pre className="scrollbar-thin overflow-x-auto border border-border bg-[#0d1117] p-3 font-mono text-xs leading-relaxed text-[#e6edf3]">
-        {code}
+      <pre className="scrollbar-thin overflow-x-auto bg-[#0d1117] p-3 font-mono text-xs leading-relaxed text-[#e6edf3]">
+        {highlightCode(code, lang, TERMINAL_HIGHLIGHT)}
       </pre>
       <button
         onClick={() => {

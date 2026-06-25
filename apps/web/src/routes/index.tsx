@@ -7,6 +7,7 @@ This file defines the primary landing page.
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { SectionLabel } from "@/components/SiteShell";
+import { ADAPTIVE_HIGHLIGHT, highlightCode } from "@/lib/codeHighlight";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -531,124 +532,6 @@ function ZoneChip() {
   );
 }
 
-const CODE_KEYWORDS: Record<string, Set<string>> = {
-  TypeScript: new Set([
-    "import",
-    "from",
-    "const",
-    "let",
-    "var",
-    "await",
-    "async",
-    "function",
-    "return",
-    "new",
-    "if",
-    "else",
-    "for",
-    "of",
-    "in",
-    "true",
-    "false",
-    "null",
-    "undefined",
-    "export",
-    "default",
-  ]),
-  Python: new Set([
-    "import",
-    "from",
-    "async",
-    "def",
-    "await",
-    "with",
-    "as",
-    "return",
-    "if",
-    "else",
-    "for",
-    "in",
-    "None",
-    "True",
-    "False",
-    "class",
-    "lambda",
-    "and",
-    "or",
-    "not",
-  ]),
-  Go: new Set([
-    "func",
-    "return",
-    "if",
-    "else",
-    "defer",
-    "var",
-    "nil",
-    "package",
-    "import",
-    "range",
-    "type",
-    "struct",
-    "go",
-    "chan",
-    "map",
-    "const",
-    "for",
-  ]),
-};
-
-const CODE_TOKENIZER =
-  /(\/\/[^\n]*|#[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d[\d_.]*\b)|([A-Za-z_$][\w$]*)|(\s+|[^A-Za-z_$\s]+)/g;
-
-function highlight(code: string, lang: string): ReactNode[] {
-  const keywords = CODE_KEYWORDS[lang] ?? new Set<string>();
-  const out: ReactNode[] = [];
-  const re = new RegExp(CODE_TOKENIZER);
-  let key = 0;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(code)) !== null) {
-    const [full, comment, str, num, ident] = match;
-    if (comment) {
-      out.push(
-        <span key={key++} className="italic text-muted-foreground/60">
-          {comment}
-        </span>,
-      );
-    } else if (str) {
-      out.push(
-        <span key={key++} className="text-emerald-600 dark:text-emerald-400">
-          {str}
-        </span>,
-      );
-    } else if (num) {
-      out.push(
-        <span key={key++} className="text-amber-600 dark:text-amber-400">
-          {num}
-        </span>,
-      );
-    } else if (ident) {
-      const isCall = /^\s*\(/.test(code.slice(re.lastIndex));
-      let cls = "";
-      if (keywords.has(ident)) cls = "text-accent-purple";
-      else if (isCall) cls = "text-sky-600 dark:text-sky-400";
-      else if (/^[A-Z]/.test(ident)) cls = "text-cyan-600 dark:text-cyan-400";
-      if (cls) {
-        out.push(
-          <span key={key++} className={cls}>
-            {ident}
-          </span>,
-        );
-      } else {
-        out.push(ident);
-      }
-    } else {
-      out.push(full);
-    }
-  }
-  return out;
-}
-
 function FrameworkSection() {
   const langs = {
     TypeScript: { file: "ts agent.ts", install: "npm install @caracalai/sdk" },
@@ -834,7 +717,7 @@ defer resp.Body.Close()`,
             $ {current.install}
           </div>
           <pre className="h-80 overflow-auto p-5 font-mono text-[12.5px] leading-6 text-foreground/90">
-            {highlight(steps[active].code[lang], lang)}
+            {highlightCode(steps[active].code[lang], lang, ADAPTIVE_HIGHLIGHT)}
           </pre>
         </div>
 
