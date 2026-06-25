@@ -62,6 +62,7 @@ class Provider:
     audience: str | None = None
     use_pkce: bool = False
     offline_access: bool = False
+    realm_id: str = ""                       # oauth2_authorization_code: company/tenant the token binds to
     require_delegation: bool = False
     mcp_auth: str = "bearer"                 # mcp: bearer | mandate
     sdk_package: str | None = None
@@ -73,10 +74,19 @@ CATALOG: tuple[Provider, ...] = (
         id="halcyon-bank", brand="Halcyon Bank", category="oauth2_authorization_code",
         protocol="rest", port=9400, industry="Banking",
         tagline="Open banking accounts, payments, and statements",
-        resources=("accounts", "transactions", "payments", "statements"),
-        operations=("list_accounts", "get_account", "list_transactions",
-                    "initiate_payment", "get_payment", "get_statement"),
-        failure_profile="flaky", scopes=("accounts.read", "payments.write"), use_pkce=True,
+        resources=("accounts", "balances", "transactions", "beneficiaries",
+                   "standing_orders", "direct_debits", "scheduled_payments",
+                   "statements", "payments"),
+        operations=("list_accounts", "get_account", "get_balances",
+                    "list_transactions", "list_beneficiaries", "list_standing_orders",
+                    "list_direct_debits", "list_scheduled_payments",
+                    "list_statements", "get_statement",
+                    "initiate_payment", "get_payment", "confirm_funds"),
+        failure_profile="flaky",
+        scopes=("accounts", "balances", "transactions", "beneficiaries",
+                "standing_orders", "direct_debits", "statements",
+                "payments", "fundsconfirmations", "offline_access"),
+        use_pkce=True, offline_access=True,
     ),
     Provider(
         id="meridian-pay", brand="Meridian Pay", category="api_key",
@@ -134,7 +144,7 @@ CATALOG: tuple[Provider, ...] = (
                     "list_journal_entries", "get_journal_entry", "post_journal_entry",
                     "get_report"),
         scopes=("com.intuit.quickbooks.accounting", "com.intuit.quickbooks.payment"),
-        offline_access=True,
+        offline_access=True, realm_id="9341734250293847",
     ),
     Provider(
         id="slate-ledger", brand="Slate Ledger", category="bearer_token",
@@ -200,8 +210,10 @@ CATALOG: tuple[Provider, ...] = (
         tagline="Internal directory and IAM: employees, org chart, RBAC roles, groups, and service accounts",
         resources=("users", "roles", "groups", "teams", "departments", "service_accounts"),
         operations=("get_user", "lookup_user", "list_users", "get_user_access",
+                    "get_user_entitlements", "check_segregation_of_duties",
                     "list_direct_reports", "get_manager_chain",
-                    "list_roles", "get_role", "list_groups", "get_group",
+                    "list_roles", "get_role", "list_role_members", "list_privileged_users",
+                    "list_groups", "get_group",
                     "list_teams", "get_team", "list_departments", "get_department",
                     "list_service_accounts", "get_service_account"),
     ),
@@ -297,13 +309,15 @@ CATALOG: tuple[Provider, ...] = (
         tagline="Internal accounts-receivable platform: customer billing, cash application, AR aging, dunning, and collections",
         resources=("customers", "invoices", "payments", "credit_memos",
                    "dunning", "collections", "audit_events"),
-        operations=("list_customers", "get_customer",
-                    "create_invoice", "get_invoice", "list_invoices",
-                    "void_invoice", "write_off_invoice", "dispute_invoice",
-                    "apply_payment", "record_payment", "get_payment", "list_payments",
-                    "issue_credit_memo", "apply_credit_memo",
+        operations=("list_customers", "get_customer", "get_customer_statement",
+                    "create_invoice", "send_invoice", "get_invoice", "list_invoices",
+                    "void_invoice", "write_off_invoice", "dispute_invoice", "resolve_dispute",
+                    "apply_payment", "record_payment", "reverse_payment",
+                    "get_payment", "list_payments",
+                    "issue_credit_memo", "apply_credit_memo", "get_credit_memo", "list_credit_memos",
                     "issue_dunning", "run_dunning_cycle", "list_dunning",
-                    "open_collection_case", "list_collections",
+                    "open_collection_case", "get_collection_case", "add_collection_note",
+                    "close_collection_case", "list_collections",
                     "get_ar_aging", "get_ar_summary", "get_audit_trail"),
     ),
     Provider(

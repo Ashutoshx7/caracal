@@ -602,7 +602,7 @@ def _build_regional_domain_tools(run_id, runner, parent, region, board):
         Use for third-party services beyond the core flow: meridian-pay/quetzal-payouts/halcyon-bank
         (payments, payouts, open banking), inkwell-ocr (document extraction), slate-ledger (journals),
         vela-notify (transactional email/SMS, templates, delivery tracking, suppressions, webhooks), cordoba-fx (fx quotes/conversions/settlement payments), ironbark-erp (NetSuite-style vendors/purchase-orders/item-receipts/bills/payments/AP-aging/ledger)/tallyhall-books (vendors/bills),
-        beacon-crm (CRM accounts/contacts/deal pipeline/owners/activities), core-billing (internal AR: customers/invoices/payments/dunning/collections/aging), lumen-identity (directory),
+        beacon-crm (CRM accounts/contacts/deal pipeline/owners/activities), core-billing (internal AR: customers/invoices/payments/dunning/collections/aging), lumen-identity (internal directory/IAM: employees, org chart, RBAC roles, groups, service accounts, effective access, segregation-of-duties, privileged-access reviews),
         atlas-vendor (vendor MDM/onboarding/verification/compliance over MCP: search/list/update vendors, register and progress onboarding, screen KYB/sanctions, verify banking, review documents, audit change history, contracts),
         sabre-tax, pulse-market (market data: instruments, quotes, OHLC bars, conversions, top movers, end-of-day reference fixings, streaming subscriptions), junction-procure (procure-to-pay: suppliers, commodity catalog, cost-center budgets, tiered requisition approvals, purchase orders, goods receipts),
         relay-automation, aegis-screening, and verafin-monitor.
@@ -1876,7 +1876,7 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id, board):
         pulse-market (quotes, OHLC bars, conversions, movers, end-of-day reference fixings), inkwell-ocr
         (document extraction), slate-ledger (journals), vela-notify (notifications),
         meridian-pay/quetzal-payouts/halcyon-bank (payments, payouts, open banking),
-        beacon-crm (CRM), core-billing (internal AR), lumen-identity (directory),
+        beacon-crm (CRM), core-billing (internal AR), lumen-identity (internal directory/IAM: directory, org chart, RBAC, segregation-of-duties, privileged-access reviews),
         atlas-vendor (vendor MDM over MCP), sabre-tax, junction-procure (procure-to-pay),
         relay-automation, aegis-screening, and verafin-monitor.
         Every call routes through the Caracal Gateway under the worker's own narrowed mandate.
