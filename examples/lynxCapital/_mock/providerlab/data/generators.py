@@ -12,6 +12,8 @@ import random
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 
+from _mock.providerlab import catalog
+
 _LEGAL = (
     "Holdings",
     "Industries",
@@ -607,9 +609,11 @@ def bank_accounts(seed: str, count: int) -> list[dict]:
         account_number = f"{rng.randint(10**7, 10**8 - 1)}"
         booked = round(rng.uniform(25_000, 4_500_000), 2)
         available = round(booked * rng.uniform(0.6, 0.99), 2)
+        credit_limit = round(rng.choice((0, 50_000, 250_000)) * 1.0, 2)
         if subtype == "Loan":
             booked = -round(rng.uniform(50_000, 2_000_000), 2)
             available = 0.0
+            credit_limit = 0.0
         identification: dict = {"name": "LynxCapital Group Ltd"}
         if country == "US":
             identification["scheme"] = "US.RoutingNumberAccountNumber"
@@ -626,34 +630,198 @@ def bank_accounts(seed: str, count: int) -> list[dict]:
             identification["scheme"] = "IBAN"
             identification["iban"] = _iban(rng, country, account_number)
             identification["accountNumber"] = account_number
+        identification["secondaryIdentification"] = f"LYNX-{purpose[:3].upper()}-{i:02d}"
+        as_of = _instant(rng, -1, 0)
         balances = {
             "available": available,
             "booked": booked,
             "currency": currency,
-            "creditLimit": round(rng.choice((0, 50_000, 250_000)) * 1.0, 2),
-            "asOf": _instant(rng, -1, 0),
+            "creditLimit": credit_limit,
+            "asOf": as_of,
         }
         planned = i <= len(_BANK_ACCOUNT_PLAN)
         status = "Enabled" if planned or rng.random() > 0.1 else "Disabled"
-        out.append(
-            {
-                "accountId": f"ACC-{i:04d}",
-                "nickname": f"{purpose} {currency}",
-                "accountType": "Business",
-                "accountSubType": subtype,
-                "product": _ACCOUNT_PRODUCTS[subtype],
-                "status": status,
-                "currency": currency,
-                "country": country,
-                "identification": identification,
-                "servicer": {
-                    "scheme": "BICFI",
-                    "bic": _BIC_BY_COUNTRY.get(country, "HLCYGB2LXXX"),
+        opening_date = _day(rng, -1460, -200)
+        account = {
+            "accountId": f"ACC-{i:04d}",
+            "nickname": f"{purpose} {currency}",
+            "description": f"{_ACCOUNT_PRODUCTS[subtype]} — {purpose}",
+            "accountType": "Business",
+            "accountSubType": subtype,
+            "usageType": "ORGA",
+            "product": _ACCOUNT_PRODUCTS[subtype],
+            "status": status,
+            "statusUpdateDateTime": as_of,
+            "currency": currency,
+            "country": country,
+            "accountHolderName": "LynxCapital Group Ltd",
+            "switchStatus": "UK.CASS.NotSwitched" if country == "GB" else "NotSwitched",
+            "identification": identification,
+            "servicer": {
+                "scheme": "BICFI",
+                "bic": _BIC_BY_COUNTRY.get(country, "HLCYGB2LXXX"),
+                "name": "Halcyon Bank plc",
+            },
+            "openingDate": opening_date,
+            "balances": balances,
+        }
+        if subtype == "Loan":
+            account["maturityDate"] = _day(rng, 200, 1460)
+        out.append(account)
+    return out
+
+
+def bank_balances(account: dict) -> list[dict]:
+    """The typed balance list a real open-banking /balances endpoint returns for an
+    account: interim and closing booked/available figures with credit-debit
+    indicators and any agreed credit line, modeled on the OBIE Balance resource."""
+    rng = _rng("bank_balance", account["accountId"])
+    currency = account["currency"]
+    booked = account["balances"]["booked"]
+    available = account["balances"]["available"]
+    credit_limit = account["balances"].get("creditLimit", 0.0)
+    as_of = account["balances"]["asOf"]
+
+    def _entry(btype: str, amount: float, credit_line: bool = False) -> dict:
+        entry = {
+            "accountId": account["accountId"],
+            "type": btype,
+            "creditDebitIndicator": "Credit" if amount >= 0 else "Debit",
+            "amount": {"amount": round(abs(amount), 2), "currency": currency},
+            "dateTime": as_of,
+        }
+        if credit_line and credit_limit:
+            entry["creditLine"] = [
+                {"included": True, "type": "Pre-Agreed",
+                 "amount": {"amount": credit_limit, "currency": currency}},
+            ]
+        return entry
+
+    interim_booked = round(booked + rng.uniform(-2_500, 2_500), 2)
+    return [
+        _entry("InterimAvailable", available, credit_line=True),
+        _entry("InterimBooked", interim_booked),
+        _entry("ClosingBooked", booked),
+        _entry("OpeningBooked", round(booked - rng.uniform(-15_000, 15_000), 2)),
+    ]
+
+
+def bank_beneficiaries(seed: str, accounts_index: dict[str, dict],
+                       per_account: int = 3) -> list[dict]:
+    """Trusted payee beneficiaries saved against accounts, as a real open-banking
+    /beneficiaries endpoint exposes them for pre-authorized payment routing."""
+    out = []
+    serial = 0
+    for account_id, account in accounts_index.items():
+        if account["accountSubType"] == "Loan":
+            continue
+        rng = _rng(seed, "bank_beneficiary", account_id)
+        for _ in range(per_account):
+            serial += 1
+            name = _company(rng)
+            country = account["country"]
+            number = f"{rng.randint(10**7, 10**8 - 1)}"
+            creditor: dict = {"scheme": "IBAN", "name": name,
+                              "iban": _iban(rng, country, number)}
+            if country == "US":
+                creditor = {"scheme": "US.RoutingNumberAccountNumber", "name": name,
+                            "routingNumber": f"{rng.randint(10**8, 10**9 - 1)}",
+                            "accountNumber": number}
+            elif country == "GB":
+                creditor = {"scheme": "UK.OBIE.SortCodeAccountNumber", "name": name,
+                            "sortCode": f"{rng.randint(0, 99):02d}-{rng.randint(0, 99):02d}-{rng.randint(0, 99):02d}",
+                            "accountNumber": number}
+            out.append({
+                "beneficiaryId": f"BEN-{serial:05d}",
+                "accountId": account_id,
+                "reference": f"{name.split()[0].upper()}-{rng.randint(100, 999)}",
+                "beneficiaryType": "Trusted",
+                "currency": account["currency"],
+                "creditorAccount": creditor,
+                "createdDateTime": _instant(rng, -720, -30),
+            })
+    return out
+
+
+def bank_standing_orders(seed: str, accounts_index: dict[str, dict]) -> list[dict]:
+    """Recurring fixed-amount standing orders scheduled against accounts, as the
+    OBIE /standing-orders resource models them."""
+    out = []
+    serial = 0
+    freqs = ("EvryDay", "EvryWorkgDay", "IntrvlWkDay:01:01", "WkInMnthDay:01:01",
+             "IntrvlMnthDay:01:01", "IntrvlMnthDay:03:01")
+    for account_id, account in accounts_index.items():
+        if account["accountSubType"] != "CurrentAccount":
+            continue
+        rng = _rng(seed, "bank_standing_order", account_id)
+        for _ in range(rng.randint(1, 3)):
+            serial += 1
+            amount = round(rng.uniform(500, 45_000), 2)
+            out.append({
+                "standingOrderId": f"STO-{serial:05d}",
+                "accountId": account_id,
+                "creditorName": _company(rng),
+                "frequency": rng.choice(freqs),
+                "reference": f"STO-{rng.randint(1000, 9999)}",
+                "firstPaymentDateTime": _instant(rng, -365, -90),
+                "nextPaymentDateTime": _instant(rng, 1, 30),
+                "finalPaymentDateTime": _instant(rng, 200, 720),
+                "firstPaymentAmount": {"amount": amount, "currency": account["currency"]},
+                "nextPaymentAmount": {"amount": amount, "currency": account["currency"]},
+                "standingOrderStatusCode": "Active",
+            })
+    return out
+
+
+def bank_direct_debits(seed: str, accounts_index: dict[str, dict]) -> list[dict]:
+    """Authorized direct-debit mandates drawn on accounts, modeled on the OBIE
+    /direct-debits resource."""
+    out = []
+    serial = 0
+    for account_id, account in accounts_index.items():
+        if account["accountSubType"] != "CurrentAccount":
+            continue
+        rng = _rng(seed, "bank_direct_debit", account_id)
+        for _ in range(rng.randint(1, 4)):
+            serial += 1
+            amount = round(rng.uniform(120, 12_000), 2)
+            out.append({
+                "directDebitId": f"DDI-{serial:05d}",
+                "accountId": account_id,
+                "mandateIdentification": f"DDM-{rng.randint(10**5, 10**6 - 1)}",
+                "directDebitStatusCode": rng.choice(("Active", "Active", "Inactive")),
+                "name": _company(rng),
+                "previousPaymentDateTime": _instant(rng, -60, -1),
+                "previousPaymentAmount": {"amount": amount, "currency": account["currency"]},
+                "frequency": rng.choice(("Monthly", "Quarterly", "Annual")),
+            })
+    return out
+
+
+def bank_scheduled_payments(seed: str, accounts_index: dict[str, dict]) -> list[dict]:
+    """Future-dated one-off scheduled payments queued on accounts, as the OBIE
+    /scheduled-payments resource exposes them."""
+    out = []
+    serial = 0
+    for account_id, account in accounts_index.items():
+        if account["accountSubType"] != "CurrentAccount":
+            continue
+        rng = _rng(seed, "bank_scheduled_payment", account_id)
+        for _ in range(rng.randint(0, 2)):
+            serial += 1
+            amount = round(rng.uniform(1_000, 250_000), 2)
+            out.append({
+                "scheduledPaymentId": f"SPM-{serial:05d}",
+                "accountId": account_id,
+                "scheduledType": rng.choice(("Execution", "Arrival")),
+                "scheduledPaymentDateTime": _instant(rng, 2, 45),
+                "instructedAmount": {"amount": amount, "currency": account["currency"]},
+                "reference": f"SP-{rng.randint(1000, 9999)}",
+                "creditorAccount": {
+                    "scheme": "IBAN", "name": _company(rng),
+                    "iban": _iban(rng, account["country"], f"{rng.randint(10**7, 10**8 - 1)}"),
                 },
-                "openingDate": _day(rng, -1460, -200),
-                "balances": balances,
-            }
-        )
+            })
     return out
 
 
@@ -699,34 +867,54 @@ def bank_transactions(
         booking_day = rng.randint(-180, 0)
         status = "Pending" if booking_day == 0 and rng.random() < 0.5 else "Booked"
         counterparty = _company(rng)
-        drafts.append(
-            (
-                booking_day,
-                {
-                    "transactionId": f"TXN-{i:06d}",
-                    "accountId": account_id,
-                    "creditDebitIndicator": indicator,
-                    "status": status,
-                    "amount": amount,
-                    "currency": currency,
-                    "bookingDateTime": _instant(rng, booking_day, booking_day),
-                    "valueDateTime": _instant(
-                        rng, booking_day, min(0, booking_day + 1)
-                    ),
-                    "transactionReference": f"E2E-{rng.randint(10**9, 10**10 - 1)}",
-                    "bankTransactionCode": {"code": code, "subCode": sub_code},
-                    "proprietaryBankTransactionCode": code,
-                    "merchantName": counterparty,
-                    "merchantCategoryCode": mcc,
-                    "merchantCategory": mcc_label,
-                    "remittanceInformation": f"Invoice {rng.choice(_ROOTS)[:3].upper()}-{rng.randint(1000, 9999)}",
-                    "counterparty": {
-                        "name": counterparty,
-                        "accountIdentification": f"****{rng.randint(1000, 9999)}",
-                    },
+        is_card = code == "CARD"
+        is_fee = code == "FEE"
+        is_xborder = code in ("WIRE", "SEPA")
+        txn = {
+            "transactionId": f"TXN-{i:06d}",
+            "accountId": account_id,
+            "creditDebitIndicator": indicator,
+            "status": status,
+            "amount": amount,
+            "currency": currency,
+            "bookingDateTime": _instant(rng, booking_day, booking_day),
+            "valueDateTime": _instant(
+                rng, booking_day, min(0, booking_day + 1)
+            ),
+            "transactionReference": f"E2E-{rng.randint(10**9, 10**10 - 1)}",
+            "bankTransactionCode": {"code": code, "subCode": sub_code},
+            "proprietaryBankTransactionCode": {"code": code, "issuer": "Halcyon"},
+            "transactionInformation": f"{sub_code} · {counterparty}",
+            "merchantName": counterparty,
+            "merchantCategoryCode": mcc,
+            "merchantCategory": mcc_label,
+            "remittanceInformation": f"Invoice {rng.choice(_ROOTS)[:3].upper()}-{rng.randint(1000, 9999)}",
+            "counterparty": {
+                "name": counterparty,
+                "accountIdentification": f"****{rng.randint(1000, 9999)}",
+                "postalAddress": {
+                    "country": account["country"],
+                    "addressLine": f"{rng.randint(1, 200)} {rng.choice(_ROOTS)} Street",
                 },
-            )
-        )
+            },
+        }
+        if is_fee:
+            txn["chargeAmount"] = {"amount": round(amount * 0.0, 2), "currency": currency}
+        if is_card:
+            txn["cardInstrument"] = {
+                "cardSchemeName": rng.choice(("Visa", "Mastercard", "Amex")),
+                "authorisationType": "ConsumerDevice",
+                "identification": f"************{rng.randint(1000, 9999)}",
+            }
+        if is_xborder:
+            rate = round(rng.uniform(0.7, 1.4), 5)
+            txn["currencyExchange"] = {
+                "sourceCurrency": currency,
+                "targetCurrency": rng.choice([c for _, c in _COUNTRIES if c != currency]),
+                "exchangeRate": rate,
+                "quotationDate": txn["bookingDateTime"],
+            }
+        drafts.append((booking_day, txn))
     out = []
     for booking_day, txn in sorted(drafts, key=lambda d: d[0]):
         if txn["status"] == "Booked":
@@ -782,10 +970,13 @@ def bank_statements(
                 2,
             )
             opening = round(closing - credits + debits, 2)
+            fees = round(rng.uniform(0, 350), 2)
+            interest = round(rng.uniform(0, 1_200), 2)
             out.append(
                 {
                     "statementId": f"STMT-{serial:05d}",
                     "accountId": account_id,
+                    "statementReference": f"{end.strftime('%Y%m')}-{account_id}",
                     "type": "RegularPeriodic",
                     "currency": currency,
                     "startDateTime": f"{start.isoformat()}T00:00:00Z",
@@ -802,6 +993,16 @@ def bank_statements(
                         1 for t in window if t["creditDebitIndicator"] == "Debit"
                     ),
                     "transactionCount": len(window),
+                    "statementAmounts": [
+                        {"type": "ServiceCharge",
+                         "amount": {"amount": fees, "currency": currency},
+                         "creditDebitIndicator": "Debit"},
+                        {"type": "InterestEarned",
+                         "amount": {"amount": interest, "currency": currency},
+                         "creditDebitIndicator": "Credit"},
+                    ],
+                    "formats": ["application/json", "application/pdf"],
+                    "downloadUrl": f"/api/get_statement?statementId=STMT-{serial:05d}&format=pdf",
                 }
             )
             closing = opening
@@ -865,7 +1066,8 @@ _LUMEN_DEPARTMENTS = (
     ("DEPT-people", "People & Talent", None, "CC-6000", "Chief People Officer"),
 )
 
-# (id, name, description, category, permissions)
+# (id, name, description, category, permissions, ownerTeamId, riskLevel, requiresApproval, requiresMfa)
+# riskLevel: low | medium | high | critical. category: birthright | standard | privileged.
 _LUMEN_ROLES = (
     (
         "ROLE-employee",
@@ -873,6 +1075,10 @@ _LUMEN_ROLES = (
         "Birthright access granted to every active employee.",
         "birthright",
         ("directory:read",),
+        "TEAM-hr",
+        "low",
+        False,
+        False,
     ),
     (
         "ROLE-treasury-analyst",
@@ -880,6 +1086,10 @@ _LUMEN_ROLES = (
         "Reads cash positions and payment activity.",
         "standard",
         ("directory:read", "treasury:read", "payments:read", "reports:read"),
+        "TEAM-treasury-ops",
+        "medium",
+        True,
+        False,
     ),
     (
         "ROLE-treasury-operator",
@@ -893,6 +1103,10 @@ _LUMEN_ROLES = (
             "payments:read",
             "payments:initiate",
         ),
+        "TEAM-treasury-ops",
+        "high",
+        True,
+        True,
     ),
     (
         "ROLE-treasury-manager",
@@ -909,6 +1123,10 @@ _LUMEN_ROLES = (
             "payments:approve",
             "reports:read",
         ),
+        "TEAM-treasury-ops",
+        "critical",
+        True,
+        True,
     ),
     (
         "ROLE-controller",
@@ -923,6 +1141,10 @@ _LUMEN_ROLES = (
             "ap:approve",
             "reports:read",
         ),
+        "TEAM-gl",
+        "critical",
+        True,
+        True,
     ),
     (
         "ROLE-gl-accountant",
@@ -930,6 +1152,10 @@ _LUMEN_ROLES = (
         "Posts journal entries to the ledger.",
         "standard",
         ("directory:read", "ledger:read", "ledger:post", "reports:read"),
+        "TEAM-gl",
+        "medium",
+        True,
+        False,
     ),
     (
         "ROLE-ap-clerk",
@@ -937,6 +1163,10 @@ _LUMEN_ROLES = (
         "Enters and processes supplier bills.",
         "standard",
         ("directory:read", "ap:read", "ap:write", "vendor:read"),
+        "TEAM-ap",
+        "medium",
+        True,
+        False,
     ),
     (
         "ROLE-ap-approver",
@@ -951,6 +1181,10 @@ _LUMEN_ROLES = (
             "payments:initiate",
             "vendor:read",
         ),
+        "TEAM-ap",
+        "high",
+        True,
+        True,
     ),
     (
         "ROLE-ar-specialist",
@@ -958,6 +1192,10 @@ _LUMEN_ROLES = (
         "Manages invoicing and collections.",
         "standard",
         ("directory:read", "ar:read", "ar:write", "reports:read"),
+        "TEAM-ar",
+        "medium",
+        True,
+        False,
     ),
     (
         "ROLE-fpa-analyst",
@@ -965,6 +1203,10 @@ _LUMEN_ROLES = (
         "Builds forecasts and management reporting.",
         "standard",
         ("directory:read", "ledger:read", "reports:read"),
+        "TEAM-fpa",
+        "medium",
+        True,
+        False,
     ),
     (
         "ROLE-compliance-analyst",
@@ -972,6 +1214,10 @@ _LUMEN_ROLES = (
         "Runs screening and works alert cases.",
         "standard",
         ("directory:read", "screening:read", "screening:run", "cases:write"),
+        "TEAM-aml",
+        "medium",
+        True,
+        False,
     ),
     (
         "ROLE-compliance-officer",
@@ -987,6 +1233,10 @@ _LUMEN_ROLES = (
             "filings:submit",
             "audit:read",
         ),
+        "TEAM-aml",
+        "high",
+        True,
+        True,
     ),
     (
         "ROLE-regulatory-reporter",
@@ -994,6 +1244,10 @@ _LUMEN_ROLES = (
         "Prepares and submits regulatory filings.",
         "standard",
         ("directory:read", "filings:read", "filings:submit", "reports:read"),
+        "TEAM-reg-reporting",
+        "medium",
+        True,
+        False,
     ),
     (
         "ROLE-internal-auditor",
@@ -1001,6 +1255,10 @@ _LUMEN_ROLES = (
         "Read-only assurance across finance systems.",
         "privileged",
         ("directory:read", "audit:read", "ledger:read", "reports:read"),
+        "TEAM-audit",
+        "high",
+        True,
+        True,
     ),
     (
         "ROLE-platform-engineer",
@@ -1008,6 +1266,10 @@ _LUMEN_ROLES = (
         "Builds and deploys platform services.",
         "standard",
         ("directory:read", "infra:read", "infra:deploy"),
+        "TEAM-platform",
+        "medium",
+        True,
+        False,
     ),
     (
         "ROLE-data-engineer",
@@ -1015,6 +1277,10 @@ _LUMEN_ROLES = (
         "Operates ingestion and analytics pipelines.",
         "standard",
         ("directory:read", "infra:read", "ledger:read", "reports:read"),
+        "TEAM-data",
+        "medium",
+        True,
+        False,
     ),
     (
         "ROLE-security-engineer",
@@ -1022,6 +1288,10 @@ _LUMEN_ROLES = (
         "Runs security operations and tooling.",
         "privileged",
         ("directory:read", "infra:read", "audit:read", "secops:read", "secops:admin"),
+        "TEAM-secops",
+        "critical",
+        True,
+        True,
     ),
     (
         "ROLE-it-admin",
@@ -1029,6 +1299,10 @@ _LUMEN_ROLES = (
         "Administers corporate systems and accounts.",
         "privileged",
         ("directory:read", "directory:write", "iam:admin"),
+        "TEAM-itops",
+        "critical",
+        True,
+        True,
     ),
     (
         "ROLE-directory-admin",
@@ -1036,6 +1310,10 @@ _LUMEN_ROLES = (
         "Administers Lumen directory and IAM.",
         "privileged",
         ("directory:read", "directory:write", "iam:admin"),
+        "TEAM-itops",
+        "critical",
+        True,
+        True,
     ),
     (
         "ROLE-hr-partner",
@@ -1043,6 +1321,10 @@ _LUMEN_ROLES = (
         "Maintains employee records and lifecycle.",
         "standard",
         ("directory:read", "directory:write"),
+        "TEAM-hr",
+        "high",
+        True,
+        True,
     ),
     (
         "ROLE-executive",
@@ -1050,7 +1332,29 @@ _LUMEN_ROLES = (
         "Oversight and reporting across the organisation.",
         "privileged",
         ("directory:read", "reports:read", "audit:read"),
+        "TEAM-exec",
+        "high",
+        True,
+        True,
     ),
+)
+
+# Segregation-of-duties: role pairs that must not be held by the same identity.
+# Each pair is a maker/checker or grant/review conflict an access review must catch.
+# (roleId, conflictingRoleId, rationale)
+_LUMEN_SOD_CONFLICTS = (
+    ("ROLE-ap-clerk", "ROLE-ap-approver",
+     "Entering supplier bills and approving their payment is an AP maker/checker conflict."),
+    ("ROLE-treasury-operator", "ROLE-treasury-manager",
+     "Initiating and approving the same payment removes dual control over cash movement."),
+    ("ROLE-gl-accountant", "ROLE-controller",
+     "Posting journals and owning the close lets one identity self-approve ledger entries."),
+    ("ROLE-ap-approver", "ROLE-controller",
+     "Releasing payments and closing the ledger concentrates spend and reporting control."),
+    ("ROLE-it-admin", "ROLE-internal-auditor",
+     "Granting access and auditing it lets an administrator conceal their own changes."),
+    ("ROLE-directory-admin", "ROLE-internal-auditor",
+     "Administering identities and auditing them undermines independent assurance."),
 )
 
 # (id, name, deptId, function, memberRole, managerRole, groupId, managerTitle, memberTitle, size)
@@ -1341,7 +1645,8 @@ _LUMEN_GROUPS = (
     ),
 )
 
-# (id, username, purpose, ownerTeamId, roleId, environment)
+# (id, username, purpose, ownerTeamId, roleId, environment, credentialType)
+# credentialType: oauth_client | api_key | mtls_certificate.
 _LUMEN_SERVICE_ACCOUNTS = (
     (
         "SVC-ap-bot",
@@ -1350,6 +1655,7 @@ _LUMEN_SERVICE_ACCOUNTS = (
         "TEAM-ap",
         "ROLE-ap-clerk",
         "production",
+        "oauth_client",
     ),
     (
         "SVC-ar-bot",
@@ -1358,6 +1664,7 @@ _LUMEN_SERVICE_ACCOUNTS = (
         "TEAM-ar",
         "ROLE-ar-specialist",
         "production",
+        "oauth_client",
     ),
     (
         "SVC-treasury-sweep",
@@ -1366,6 +1673,7 @@ _LUMEN_SERVICE_ACCOUNTS = (
         "TEAM-cash-management",
         "ROLE-treasury-operator",
         "production",
+        "mtls_certificate",
     ),
     (
         "SVC-close-runner",
@@ -1374,6 +1682,7 @@ _LUMEN_SERVICE_ACCOUNTS = (
         "TEAM-close",
         "ROLE-gl-accountant",
         "production",
+        "oauth_client",
     ),
     (
         "SVC-ledger-poster",
@@ -1382,6 +1691,7 @@ _LUMEN_SERVICE_ACCOUNTS = (
         "TEAM-gl",
         "ROLE-gl-accountant",
         "production",
+        "mtls_certificate",
     ),
     (
         "SVC-ingest-pipeline",
@@ -1390,6 +1700,7 @@ _LUMEN_SERVICE_ACCOUNTS = (
         "TEAM-data",
         "ROLE-data-engineer",
         "production",
+        "oauth_client",
     ),
     (
         "SVC-screening-connector",
@@ -1398,6 +1709,7 @@ _LUMEN_SERVICE_ACCOUNTS = (
         "TEAM-aml",
         "ROLE-compliance-analyst",
         "production",
+        "api_key",
     ),
     (
         "SVC-reg-filer",
@@ -1406,6 +1718,7 @@ _LUMEN_SERVICE_ACCOUNTS = (
         "TEAM-reg-reporting",
         "ROLE-regulatory-reporter",
         "production",
+        "mtls_certificate",
     ),
     (
         "SVC-directory-sync",
@@ -1414,6 +1727,7 @@ _LUMEN_SERVICE_ACCOUNTS = (
         "TEAM-itops",
         "ROLE-directory-admin",
         "production",
+        "oauth_client",
     ),
     (
         "SVC-notify-dispatcher",
@@ -1422,6 +1736,7 @@ _LUMEN_SERVICE_ACCOUNTS = (
         "TEAM-platform",
         "ROLE-platform-engineer",
         "production",
+        "api_key",
     ),
     (
         "SVC-ci-deployer",
@@ -1430,6 +1745,7 @@ _LUMEN_SERVICE_ACCOUNTS = (
         "TEAM-platform",
         "ROLE-platform-engineer",
         "staging",
+        "oauth_client",
     ),
     (
         "SVC-metrics-scraper",
@@ -1438,6 +1754,7 @@ _LUMEN_SERVICE_ACCOUNTS = (
         "TEAM-secops",
         "ROLE-security-engineer",
         "production",
+        "api_key",
     ),
 )
 
@@ -1460,6 +1777,17 @@ _LUMEN_STATUSES = (
     "on_leave",
     "suspended",
     "offboarding",
+    "preboarding",
+    "deprovisioned",
+)
+# Lifecycle states whose accounts can authenticate; all others are disabled in the directory.
+_LUMEN_ENABLED_STATES = frozenset({"active", "on_leave", "offboarding"})
+_LUMEN_JOB_FUNCTIONS = (
+    "Finance",
+    "Risk & Compliance",
+    "Engineering",
+    "Operations",
+    "Corporate",
 )
 
 
@@ -1468,6 +1796,11 @@ def _toplevel_dept(dept_id: str, parents: dict[str, str | None]) -> str:
     while parents.get(cur):
         cur = parents[cur]
     return cur
+
+
+def lumen_sod_rules() -> dict[tuple[str, str], str]:
+    """Segregation-of-duties rules as an unordered role-pair -> rationale map."""
+    return {frozenset((a, b)): rationale for a, b, rationale in _LUMEN_SOD_CONFLICTS}
 
 
 def lumen_directory(seed: str) -> dict[str, dict]:
@@ -1480,12 +1813,19 @@ def lumen_directory(seed: str) -> dict[str, dict]:
     role_perms = {r[0]: list(r[4]) for r in _LUMEN_ROLES}
     dept_parents = {d[0]: d[2] for d in _LUMEN_DEPARTMENTS}
     dept_cc = {d[0]: d[3] for d in _LUMEN_DEPARTMENTS}
+    dept_name = {d[0]: d[1] for d in _LUMEN_DEPARTMENTS}
+
+    sod_conflicts: dict[str, list[dict]] = {}
+    for a, b, rationale in _LUMEN_SOD_CONFLICTS:
+        sod_conflicts.setdefault(a, []).append({"roleId": b, "rationale": rationale})
+        sod_conflicts.setdefault(b, []).append({"roleId": a, "rationale": rationale})
 
     departments = {
         d[0]: {
             "id": d[0],
             "name": d[1],
             "parentDepartmentId": d[2],
+            "division": dept_name[_toplevel_dept(d[0], dept_parents)],
             "costCenter": d[3],
             "headEmployeeId": None,
             "headcount": 0,
@@ -1497,6 +1837,8 @@ def lumen_directory(seed: str) -> dict[str, dict]:
             "id": t[0],
             "name": t[1],
             "departmentId": t[2],
+            "division": dept_name[_toplevel_dept(t[2], dept_parents)],
+            "costCenter": dept_cc.get(t[2], "CC-0000"),
             "function": t[3],
             "managerId": None,
             "memberCount": 0,
@@ -1510,7 +1852,14 @@ def lumen_directory(seed: str) -> dict[str, dict]:
             "description": r[2],
             "category": r[3],
             "permissions": list(r[4]),
+            "ownerTeamId": r[5],
+            "riskLevel": r[6],
+            "requiresApproval": r[7],
+            "requiresMfa": r[8],
+            "privileged": r[3] == "privileged",
             "assignable": r[3] != "birthright",
+            "sodConflictRoleIds": sorted(c["roleId"] for c in sod_conflicts.get(r[0], [])),
+            "assignedCount": 0,
         }
         for r in _LUMEN_ROLES
     }
@@ -1561,10 +1910,34 @@ def lumen_directory(seed: str) -> dict[str, dict]:
         if not leader and rng.random() < 0.12:
             emp_type = rng.choice(("contractor", "contractor", "part_time", "intern"))
         hire = _instant(rng, -1600, -45)
+        start = hire
         terminated = None
+        contract_end = None
         last_login = _instant(rng, -7, 0)
         if status == "offboarding":
             last_login = _instant(rng, -30, -8)
+        elif status == "deprovisioned":
+            last_login = _instant(rng, -120, -40)
+            terminated = _instant(rng, -35, -5)[:10]
+        elif status == "preboarding":
+            start = _instant(rng, 3, 40)
+            last_login = None
+        if emp_type in ("contractor", "intern") and terminated is None:
+            contract_end = _instant(rng, 30, 400)[:10]
+        enabled = status in _LUMEN_ENABLED_STATES
+        if leader:
+            job_level = "EXEC" if title.startswith("Chief") or title.endswith("Officer") else "M4"
+        elif role_ids and role_ids[0].endswith(("manager", "officer", "controller")):
+            job_level = rng.choice(("M2", "M3"))
+        else:
+            job_level = rng.choice(("IC1", "IC2", "IC2", "IC3", "IC4"))
+        mfa_methods: list[str] = []
+        if enabled and (privileged or rng.random() > 0.07):
+            mfa_methods = ["totp"]
+            if privileged or rng.random() > 0.5:
+                mfa_methods.append("webauthn")
+        pwd_changed = _instant(rng, -180, -3) if enabled else None
+        review_due = _instant(rng, 10, 180)[:10]
         record = {
             "id": eid,
             "employeeNumber": str(emp_no),
@@ -1572,25 +1945,37 @@ def lumen_directory(seed: str) -> dict[str, dict]:
             "userPrincipalName": f"{username}@{_LUMEN_DOMAIN}",
             "displayName": f"{given} {family}",
             "givenName": given,
+            "preferredName": given,
             "familyName": family,
             "workEmail": f"{username}@{_LUMEN_DOMAIN}",
+            "workPhone": f"+44 20 7{rng.randint(100, 999)} {rng.randint(1000, 9999)}",
             "status": status,
+            "accountEnabled": enabled,
             "employmentType": emp_type,
             "jobTitle": title,
+            "jobLevel": job_level,
+            "division": dept_name[_toplevel_dept(dept_id, dept_parents)],
             "departmentId": dept_id,
             "teamId": team_id,
             "managerId": manager_id,
             "isManager": leader,
             "location": {"office": office, "country": country, "timezone": tz},
             "costCenter": dept_cc.get(dept_id, "CC-0000"),
+            "badgeId": f"BDG-{rng.randint(10000, 99999)}",
+            "provisioningSource": "people-hcm",
             "hireDate": hire[:10],
+            "startDate": start[:10],
             "terminationDate": terminated,
+            "contractEndDate": contract_end,
             "roleIds": sorted(set(["ROLE-employee", *role_ids])),
             "groupIds": sorted(set(group_ids)),
-            "mfaEnabled": True if privileged else rng.random() > 0.07,
+            "mfaEnabled": bool(mfa_methods),
+            "mfaMethods": mfa_methods,
+            "lastPasswordChangeAt": pwd_changed,
+            "accessReviewDueDate": review_due,
             "lastLoginAt": last_login,
             "createdAt": hire,
-            "updatedAt": last_login,
+            "updatedAt": last_login or hire,
         }
         users[eid] = record
         for gid in record["groupIds"]:
@@ -1671,6 +2056,24 @@ def lumen_directory(seed: str) -> dict[str, dict]:
                 leader=False,
             )
 
+    # Privilege creep: a small number of long-tenured staff have accumulated a
+    # second role that conflicts with their primary one. These are real
+    # segregation-of-duties violations an access review is expected to surface.
+    sod_seed_plan = (
+        ("TEAM-ap", "ROLE-ap-approver"),
+        ("TEAM-treasury-ops", "ROLE-treasury-manager"),
+        ("TEAM-gl", "ROLE-controller"),
+    )
+    for team_id, extra_role in sod_seed_plan:
+        member = next(
+            (u for u in sorted(users.values(), key=lambda u: u["id"])
+             if u["teamId"] == team_id and not u["isManager"]
+             and u["status"] == "active"),
+            None,
+        )
+        if member and extra_role not in member["roleIds"]:
+            member["roleIds"] = sorted(set([*member["roleIds"], extra_role]))
+
     for tid, team in teams.items():
         team["memberCount"] = sum(1 for u in users.values() if u["teamId"] == tid)
     for did, dept in departments.items():
@@ -1678,13 +2081,21 @@ def lumen_directory(seed: str) -> dict[str, dict]:
     for g in groups.values():
         g["members"] = sorted(set(g["members"]))
         g["memberCount"] = len(g["members"])
+    for rid, role in roles.items():
+        role["assignedCount"] = sum(1 for u in users.values() if rid in u["roleIds"])
 
     service_accounts = {}
-    for sid, uname, purpose, owner_team, role_id, env in _LUMEN_SERVICE_ACCOUNTS:
+    for sid, uname, purpose, owner_team, role_id, env, cred_type in _LUMEN_SERVICE_ACCOUNTS:
         rng = _rng(seed, "svc", sid)
         owner_emp = teams.get(owner_team, {}).get("managerId")
-        rotated = _instant(rng, -120, -20)
+        rotation_interval = 90 if env == "production" else 180
+        rotated = _instant(rng, -rotation_interval + 5, -5)
+        expires_in = rng.randint(20, rotation_interval)
         status = "active" if rng.random() > 0.12 else "disabled"
+        last_used = _instant(rng, -3, 0) if status == "active" else rotated
+        stale = status == "active" and rng.random() < 0.15
+        if stale:
+            last_used = _instant(rng, -75, -45)
         service_accounts[sid] = {
             "id": sid,
             "username": uname,
@@ -1697,9 +2108,15 @@ def lumen_directory(seed: str) -> dict[str, dict]:
             "environment": env,
             "status": status,
             "interactive": False,
+            "credentialType": cred_type,
+            "rotationIntervalDays": rotation_interval,
             "secretRotatedAt": rotated,
-            "secretExpiresAt": _instant(rng, 60, 240),
-            "lastUsedAt": _instant(rng, -3, 0) if status == "active" else rotated,
+            "secretExpiresAt": _instant(rng, expires_in, expires_in + 1),
+            "secretExpiresInDays": expires_in,
+            "lastRotatedBy": owner_emp,
+            "lastUsedAt": last_used,
+            "stale": stale,
+            "accessReviewDueDate": _instant(rng, 15, 120)[:10],
             "createdBy": owner_emp,
             "createdAt": _instant(rng, -700, -200),
         }
@@ -4693,7 +5110,7 @@ def slate_dataset(seed: str) -> dict[str, dict]:
 # file. Money is the home currency unless a transaction carries its own
 # CurrencyRef, mirroring QBO multicurrency company files.
 # --------------------------------------------------------------------------- #
-_QBO_REALM = "9341734250293847"
+_QBO_REALM = catalog.get("tallyhall-books").realm_id
 _QBO_HOME_CCY = "USD"
 _QBO_CCY_NAME = {
     "USD": "United States Dollar",
@@ -8344,12 +8761,29 @@ _CB_PRODUCTS = (
     ("PRO-SVC", "Professional services - day rate", 1850.0),
 )
 _CB_TAX_RATE = {"US": 0.0, "GB": 0.20, "DE": 0.19, "SG": 0.09}
+# Revenue recognition account each billed SKU posts to in the general ledger.
+_CB_REVENUE_ACCOUNT = {
+    "PLT-CORE": "4000-SubscriptionRevenue",
+    "PLT-ENT": "4000-SubscriptionRevenue",
+    "SEAT-USR": "4000-SubscriptionRevenue",
+    "API-OVG": "4010-UsageRevenue",
+    "IMPL-SVC": "4200-ServicesRevenue",
+    "SUP-PREM": "4100-SupportRevenue",
+    "DATA-FEED": "4010-UsageRevenue",
+    "PRO-SVC": "4200-ServicesRevenue",
+}
 _CB_COLLECTIONS_OWNERS = (
     "Priya Whitfield",
     "Marco Bianchi",
     "Lena Novak",
     "Hassan Haddad",
 )
+_CB_RISK_RATING = {
+    "strategic": "low",
+    "enterprise": "low",
+    "mid_market": "medium",
+    "smb": "high",
+}
 
 
 def _cb_term_days(term: str) -> int:
@@ -8393,6 +8827,9 @@ def _cb_customer(seed: str, idx: int) -> dict:
     contact = _person(rng)
     slug = _slug(name)
     status = "inactive" if rng.random() < 0.05 else "active"
+    # Strategic and enterprise accounts are managed directly and exempted from
+    # the automated dunning sweep; their collections owner works them by hand.
+    dunning_exempt = segment in ("strategic", "enterprise") and rng.random() < 0.5
     return {
         "customerId": f"CUST-{idx:04d}",
         "name": name,
@@ -8402,8 +8839,11 @@ def _cb_customer(seed: str, idx: int) -> dict:
         "currency": currency,
         "country": country,
         "paymentTerms": terms,
+        "paymentTermsDays": _cb_term_days(terms),
         "creditLimit": float(credit_limit),
         "creditHold": False,
+        "riskRating": _CB_RISK_RATING[segment],
+        "dunningExempt": dunning_exempt,
         "taxId": f"{country}{rng.randint(10_000_000, 99_999_999)}",
         "billingContact": {
             "name": contact,
@@ -8424,6 +8864,10 @@ def _cb_customer(seed: str, idx: int) -> dict:
         "collectionsStatus": "current",
         "arBalance": 0.0,
         "overdueBalance": 0.0,
+        "unappliedCredit": 0.0,
+        "lastInvoiceDate": None,
+        "lastPaymentDate": None,
+        "daysToPayAvg": None,
         "createdAt": _instant(rng, -540, -200),
     }
 
@@ -8450,6 +8894,7 @@ def _cb_line_items(rng: random.Random, segment: str) -> tuple[list[dict], float]
                 "quantity": qty,
                 "unitPrice": unit,
                 "amount": amount,
+                "revenueAccount": _CB_REVENUE_ACCOUNT.get(sku, "4000-SubscriptionRevenue"),
             }
         )
     return lines, round(subtotal, 2)
@@ -8500,7 +8945,16 @@ def _cb_invoice(seed: str, idx: int, customer: dict, inv_no: int) -> dict:
 
     amount_due = round(total - amount_paid, 2)
     outstanding = amount_due if status not in ("paid", "void", "draft") else 0.0
-    return {
+    # Subscription lines bill a service period; one-off services do not.
+    recurring = any(l["sku"].startswith(("PLT", "SUP", "DATA", "SEAT")) for l in lines)
+    billing_period = None
+    if recurring:
+        period_start = issue_date
+        billing_period = {
+            "start": period_start.isoformat(),
+            "end": (period_start + timedelta(days=30)).isoformat(),
+        }
+    invoice = {
         "invoiceId": f"INV-2026-{inv_no:06d}",
         "customerId": customer["customerId"],
         "customerName": customer["name"],
@@ -8509,7 +8963,10 @@ def _cb_invoice(seed: str, idx: int, customer: dict, inv_no: int) -> dict:
         "terms": terms,
         "issueDate": issue_date.isoformat(),
         "dueDate": due_date.isoformat(),
+        "billingPeriod": billing_period,
         "poNumber": f"PO-{rng.randint(40_000, 99_999)}" if rng.random() < 0.6 else None,
+        "salesRep": customer["accountManager"],
+        "revenueAccount": lines[0]["revenueAccount"],
         "lineItems": lines,
         "subtotal": subtotal,
         "taxRate": tax_rate,
@@ -8530,6 +8987,13 @@ def _cb_invoice(seed: str, idx: int, customer: dict, inv_no: int) -> dict:
         ),
         "updatedAt": _instant(rng, max(issue_offset, -30), -1),
     }
+    if status == "disputed":
+        invoice["disputeReason"] = rng.choice(
+            ("billing_amount_disputed", "service_not_delivered",
+             "duplicate_charge", "pricing_discrepancy")
+        )
+        invoice["disputedAt"] = invoice["updatedAt"]
+    return invoice
 
 
 def core_billing_dataset(seed: str) -> dict[str, dict]:
@@ -8590,7 +9054,9 @@ def core_billing_dataset(seed: str) -> dict[str, dict]:
                 "amount": inv["amountPaid"],
                 "method": method,
                 "reference": f"{method.upper()}-{prng.randint(100000, 999999)}",
+                "bankReference": f"DEP-{prng.randint(700000, 999999)}",
                 "receivedDate": received.isoformat(),
+                "depositDate": min(received + timedelta(days=1), _CB_AS_OF).isoformat(),
                 "appliedAmount": inv["amountPaid"],
                 "unappliedAmount": 0.0,
                 "status": "applied",
@@ -8627,6 +9093,36 @@ def core_billing_dataset(seed: str) -> dict[str, dict]:
         cust["arBalance"] = round(cust["arBalance"] + inv["amountDue"], 2)
         if inv["daysPastDue"] > 0:
             cust["overdueBalance"] = round(cust["overdueBalance"] + inv["amountDue"], 2)
+
+    # Derive last-activity dates and average days-to-pay from the sub-ledger.
+    for cust in customers.values():
+        cid = cust["customerId"]
+        inv_dates = [
+            inv["issueDate"] for inv in invoices.values()
+            if inv["customerId"] == cid and inv["status"] != "draft"
+        ]
+        if inv_dates:
+            cust["lastInvoiceDate"] = max(inv_dates)
+        pay_dates = [
+            p["receivedDate"] for p in payments.values() if p["customerId"] == cid
+        ]
+        if pay_dates:
+            cust["lastPaymentDate"] = max(pay_dates)
+        days_to_pay = [
+            (date.fromisoformat(p["allocations"][0]["appliedAt"])
+             - date.fromisoformat(invoices[p["allocations"][0]["invoiceId"]]["issueDate"])).days
+            for p in payments.values()
+            if p["customerId"] == cid and p["allocations"]
+            and p["allocations"][0]["invoiceId"] in invoices
+        ]
+        if days_to_pay:
+            cust["daysToPayAvg"] = round(sum(days_to_pay) / len(days_to_pay), 1)
+
+    # A few accounts carry an overpayment on file as unapplied credit.
+    for cust in (customers[c] for c in active_ids):
+        crng = _rng(seed, "unapplied", cust["customerId"])
+        if crng.random() < 0.12:
+            cust["unappliedCredit"] = round(crng.uniform(150, 4_200), 2)
 
     # Derive collections posture and a credit hold for the worst accounts.
     for cust in customers.values():
@@ -8695,6 +9191,30 @@ def core_billing_dataset(seed: str) -> dict[str, dict]:
             and inv["status"] not in ("paid", "void", "draft")
         ]
         cid = f"COL-2026-{col_no:04d}"
+        # Open the case against the oldest qualifying invoice and set a realistic
+        # promise-to-pay on roughly half of the worked accounts.
+        opened = _day(rng, -60, -10)
+        promise = None
+        notes = [
+            {
+                "at": _instant(rng, -30, -10),
+                "author": cust["collectionsOwner"],
+                "note": "Escalated from automated dunning; awaiting customer response.",
+            }
+        ]
+        if rng.random() < 0.5:
+            promise = (_CB_AS_OF + timedelta(days=rng.randint(5, 25))).isoformat()
+            notes.append(
+                {
+                    "at": _instant(rng, -9, -1),
+                    "author": cust["collectionsOwner"],
+                    "note": f"Spoke with AP; customer committed to pay by {promise}.",
+                    "promiseToPayDate": promise,
+                    "promiseAmount": round(
+                        sum(invoices[i]["amountDue"] for i in case_invoices), 2
+                    ),
+                }
+            )
         collections[cid] = {
             "caseId": cid,
             "customerId": cust["customerId"],
@@ -8706,15 +9226,11 @@ def core_billing_dataset(seed: str) -> dict[str, dict]:
             "totalOutstanding": round(
                 sum(invoices[i]["amountDue"] for i in case_invoices), 2
             ),
-            "openedDate": _day(rng, -60, -10),
-            "promiseToPayDate": None,
-            "notes": [
-                {
-                    "at": _instant(rng, -30, -1),
-                    "author": cust["collectionsOwner"],
-                    "note": "Escalated from automated dunning; awaiting customer response.",
-                }
-            ],
+            "openedDate": opened,
+            "promiseToPayDate": promise,
+            "resolution": None,
+            "closedDate": None,
+            "notes": notes,
         }
 
     credit_memos: dict[str, dict] = {}
@@ -8723,17 +9239,29 @@ def core_billing_dataset(seed: str) -> dict[str, dict]:
         cust = customers[active_ids[i % len(active_ids)]]
         amount = round(rng.uniform(250, 9_500), 2)
         cmid = f"CM-2026-{i:04d}"
+        # Vary application state so the credit-memo ledger is not uniformly open.
+        roll = rng.random()
+        if roll < 0.25:
+            applied = amount
+            status = "applied"
+        elif roll < 0.45:
+            applied = round(amount * rng.uniform(0.3, 0.7), 2)
+            status = "partially_applied"
+        else:
+            applied = 0.0
+            status = "open"
         credit_memos[cmid] = {
             "creditMemoId": cmid,
             "customerId": cust["customerId"],
+            "customerName": cust["name"],
             "currency": cust["currency"],
             "amount": amount,
-            "appliedAmount": 0.0,
-            "remainingAmount": amount,
+            "appliedAmount": applied,
+            "remainingAmount": round(amount - applied, 2),
             "reason": rng.choice(
                 ("billing_error", "service_credit", "goodwill", "overcharge")
             ),
-            "status": "open",
+            "status": status,
             "issueDate": _day(rng, -90, -5),
         }
 

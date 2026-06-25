@@ -18,6 +18,7 @@ from _mock.providerlab import catalog, jwtmini, mandate
 STORE_DIR = Path(__file__).resolve().parent / "_store"
 SEED_INDEX = STORE_DIR / "_seed_index.json"
 ZONE = "lynx-zone"
+REFRESH_TOKEN_TTL = 100 * 24 * 3600          # rolling 100-day refresh-token validity
 
 _locks: dict[str, threading.Lock] = {}
 _cache: dict[str, "ProviderStore"] = {}
@@ -353,7 +354,9 @@ class ProviderStore:
         cutoff = _now() - 86400
         self.data["tokens"] = [
             t for t in self.data["tokens"]
-            if t["expiresAt"] >= cutoff or (t.get("refreshToken") and not t.get("refreshConsumed"))
+            if t["expiresAt"] >= cutoff
+            or (t.get("refreshToken") and not t.get("refreshConsumed")
+                and t.get("refreshExpiresAt", 0) >= _now())
         ]
         token = {
             "accessToken": f"at_{secrets.token_urlsafe(28)}",
@@ -367,6 +370,7 @@ class ProviderStore:
         }
         if refresh:
             token["refreshToken"] = f"rt_{secrets.token_urlsafe(28)}"
+            token["refreshExpiresAt"] = _now() + REFRESH_TOKEN_TTL
         self.data["tokens"].append(token)
         self._save()
         return token
@@ -387,12 +391,16 @@ class ProviderStore:
         return False
 
     def refresh(self, refresh_token: str) -> dict | None:
-        """Exchange a refresh token, rotating it the way QuickBooks and Xero do:
-        each refresh token is single-use, so the presented one is consumed and a
-        fresh refresh token is issued alongside the new access token. Replaying a
-        consumed refresh token no longer grants a session."""
+        """Exchange a refresh token for a fresh access token, rotating the refresh
+        token on each use per the OAuth 2.0 Security BCP (RFC 9700): the presented
+        token is consumed and a new one is issued alongside the access token, so a
+        replayed refresh token no longer grants a session. Refresh tokens carry a
+        rolling 100-day validity the way QuickBooks Online does; an expired refresh
+        token forces the client back through interactive authorization."""
         for t in self.data["tokens"]:
             if t.get("refreshToken") == refresh_token and not t.get("refreshConsumed"):
+                if t.get("refreshExpiresAt", 0) < _now():
+                    return None
                 t["refreshConsumed"] = True
                 t["refreshConsumedAt"] = _now()
                 return self.issue_token(t["clientId"], t["scope"], subject=t["subject"],

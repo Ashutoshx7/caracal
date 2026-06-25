@@ -135,8 +135,10 @@ _SPECS: dict[str, PartnerSpec] = {
     "lumen-identity": PartnerSpec(
         "lumen-identity", "none", 9409,
         ("get_user", "lookup_user", "list_users", "get_user_access",
+         "get_user_entitlements", "check_segregation_of_duties",
          "list_direct_reports", "get_manager_chain",
-         "list_roles", "get_role", "list_groups", "get_group",
+         "list_roles", "get_role", "list_role_members", "list_privileged_users",
+         "list_groups", "get_group",
          "list_teams", "get_team", "list_departments", "get_department",
          "list_service_accounts", "get_service_account")),
     "beacon-crm": PartnerSpec(
@@ -198,13 +200,15 @@ _SPECS: dict[str, PartnerSpec] = {
         auth_header="X-Vela-Token", auth_scheme=""),
     "core-billing": PartnerSpec(
         "core-billing", "none", 9416,
-        ("list_customers", "get_customer",
-         "create_invoice", "get_invoice", "list_invoices",
-         "void_invoice", "write_off_invoice", "dispute_invoice",
-         "apply_payment", "record_payment", "get_payment", "list_payments",
-         "issue_credit_memo", "apply_credit_memo",
+        ("list_customers", "get_customer", "get_customer_statement",
+         "create_invoice", "send_invoice", "get_invoice", "list_invoices",
+         "void_invoice", "write_off_invoice", "dispute_invoice", "resolve_dispute",
+         "apply_payment", "record_payment", "reverse_payment",
+         "get_payment", "list_payments",
+         "issue_credit_memo", "apply_credit_memo", "get_credit_memo", "list_credit_memos",
          "issue_dunning", "run_dunning_cycle", "list_dunning",
-         "open_collection_case", "list_collections",
+         "open_collection_case", "get_collection_case", "add_collection_note",
+         "close_collection_case", "list_collections",
          "get_ar_aging", "get_ar_summary", "get_audit_trail")),
     "relay-automation": PartnerSpec(
         "relay-automation", "mcp_mandate", 9417,
@@ -262,6 +266,7 @@ class _OAuthToken:
 class _Session:
     client: httpx.Client
     token: _OAuthToken | None = None
+    realm: str | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -371,9 +376,13 @@ def _fetch_authorization_code_token(spec: PartnerSpec, sess: _Session) -> _OAuth
     if decision.status_code not in (302, 303):
         raise PartnerError(spec.id, f"authorization failed ({decision.status_code})")
     location = decision.headers.get("location", "")
-    code = parse_qs(urlsplit(location).query).get("code", [""])[0]
+    query = parse_qs(urlsplit(location).query)
+    code = query.get("code", [""])[0]
     if not code:
         raise PartnerError(spec.id, "authorization returned no code")
+    realm = query.get("realmId", [""])[0]
+    if realm:
+        sess.realm = realm
     data = {"grant_type": "authorization_code", "code": code,
             "redirect_uri": spec.redirect_uri, "client_id": client_id,
             "client_secret": client_secret}
@@ -430,6 +439,10 @@ def _call_oauth(spec: PartnerSpec, operation: str, payload: dict) -> dict:
     sess = _session(spec)
     access_token = _oauth_token(spec, sess)
     headers = {spec.auth_header: f"{spec.auth_scheme} {access_token}".strip()}
+    # An authorization-code grant binds the token to the company file it was
+    # consented for; carry that realm on every call the way a QBO client does.
+    if sess.realm and "realmId" not in payload:
+        payload = {**payload, "realmId": sess.realm}
     resp = sess.client.post(f"/api/{operation}", json=payload, headers=headers)
     return _result(spec.id, operation, resp)
 
