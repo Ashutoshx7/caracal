@@ -85,8 +85,8 @@ providers:
     config:
       bearer_token: "${LYNX_PARTNER_IRONBARK_ERP_TOKEN}"
     scopes:
-      ironbark:read: ["list_vendors", "get_vendor", "list_purchase_orders", "get_purchase_order", "list_bills", "get_bill", "get_journal_entry", "list_journal_entries", "list_accounts", "get_account"]
-      ironbark:post: ["match_invoice", "create_purchase_order", "create_bill", "approve_bill", "post_journal_entry"]
+      ironbark:read: ["list_vendors", "get_vendor", "list_purchase_orders", "get_purchase_order", "list_item_receipts", "list_bills", "get_bill", "list_payments", "get_payment", "get_journal_entry", "list_journal_entries", "list_accounts", "get_account", "get_ap_aging"]
+      ironbark:post: ["match_invoice", "create_purchase_order", "receive_purchase_order", "create_bill", "approve_bill", "pay_bill", "post_journal_entry"]
   - id: "tallyhall-books"
     name: "Tallyhall Books"
     kind: "bearer_token"
