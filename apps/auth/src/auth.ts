@@ -31,12 +31,21 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
+    // Email/password registration asserts an email the registrant has not proven they own, which
+    // would otherwise grant allowlisted admin to whoever claims the address first. Disable sign-up
+    // in production by default (operators bootstrap through a provider-verified identity) and
+    // require a verified email before a session is issued where sign-up is permitted.
+    disableSignUp: !cfg.passwordSignup,
+    requireEmailVerification: cfg.requireEmailVerification,
   },
   socialProviders: socialProviders(),
   account: {
     accountLinking: {
       enabled: true,
-      trustedProviders: ['email-password', 'google', 'github'],
+      // Only provider-verified identities are trusted for automatic linking. Trusting
+      // email-password here would let an unverified password registration auto-link to an
+      // existing Google/GitHub account that shares the address — an account-takeover path.
+      trustedProviders: ['google', 'github'],
     },
   },
   // Registration is an authority boundary: a signed-in operator is proxied with the shared global

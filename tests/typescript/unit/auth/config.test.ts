@@ -189,3 +189,36 @@ describe('isOperatorAllowed', () => {
     expect(isOperatorAllowed('   ', cfg)).toBe(false)
   })
 })
+
+describe('password sign-up gating', () => {
+  it('is enabled in development for usability', () => {
+    const cfg = loadConfig()
+    expect(cfg.passwordSignup).toBe(true)
+    expect(cfg.requireEmailVerification).toBe(false)
+  })
+
+  it('is disabled in production by default and requires verified email', () => {
+    reset({ NODE_ENV: 'production' })
+    const cfg = loadConfig()
+    expect(cfg.passwordSignup).toBe(false)
+    expect(cfg.requireEmailVerification).toBe(true)
+  })
+
+  it('honors an explicit opt-in even in production', () => {
+    reset({ NODE_ENV: 'production', CARACAL_PASSWORD_SIGNUP: 'true' })
+    expect(loadConfig().passwordSignup).toBe(true)
+  })
+})
+
+describe('web origin defaults', () => {
+  it('seeds the localhost dev origin outside production', () => {
+    expect(loadConfig().webOrigins).toContain('http://localhost:3001')
+  })
+
+  it('does not seed a localhost dev origin in production', () => {
+    reset({ NODE_ENV: 'production', CARACAL_AUTH_URL: 'https://app.example.com' })
+    const origins = loadConfig().webOrigins
+    expect(origins).toContain('https://app.example.com')
+    expect(origins).not.toContain('http://localhost:3001')
+  })
+})

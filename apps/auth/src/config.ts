@@ -24,6 +24,8 @@ export interface AuthConfig {
   autoProvisionDatabase: boolean
   operatorAllowlist: string[]
   openRegistration: boolean
+  passwordSignup: boolean
+  requireEmailVerification: boolean
 }
 
 function resolveDatabaseUrl(): string {
@@ -75,11 +77,13 @@ function originOf(value: string): string | undefined {
 // production image the SPA is served by this service, so its own origin is always trusted;
 // CARACAL_WEB_ORIGIN additionally accepts a comma-separated allowlist for split deployments
 // (apex+www, staging) and for local development where the Vite dev server is a separate origin.
-function resolveWebOrigins(baseURL: string): string[] {
+// The localhost dev origin is only seeded outside production so a production allowlist never
+// silently trusts a developer machine's origin.
+function resolveWebOrigins(baseURL: string, production: boolean): string[] {
   const origins = new Set<string>()
   const self = originOf(baseURL)
   if (self) origins.add(self)
-  const configured = process.env.CARACAL_WEB_ORIGIN ?? 'http://localhost:3001'
+  const configured = process.env.CARACAL_WEB_ORIGIN ?? (production ? '' : 'http://localhost:3001')
   for (const entry of configured.split(',')) {
     const origin = originOf(entry.trim())
     if (origin) origins.add(origin)
@@ -131,11 +135,22 @@ export function loadConfig(): AuthConfig {
       : process.env.CARACAL_OPEN_REGISTRATION !== undefined
         ? /^(1|true|yes|on)$/i.test(process.env.CARACAL_OPEN_REGISTRATION)
         : !production
+  // Email/password sign-up grants admin on a self-asserted email that no one has proven the
+  // registrant owns. With a domain-suffix allowlist that is an open admin door, and even an
+  // exact-email allowlist is beatable by registering the address before its owner does. So
+  // password sign-up is disabled in production by default — operators sign in through a
+  // provider-verified identity (Google/GitHub) on the allowlist — and stays on in development for
+  // usability. CARACAL_PASSWORD_SIGNUP forces it either way for self-hosts that wire email
+  // verification. When it is on in production, email verification is required so an unverified
+  // claim cannot mint a session.
+  const passwordSignup =
+    process.env.CARACAL_PASSWORD_SIGNUP !== undefined ? /^(1|true|yes|on)$/i.test(process.env.CARACAL_PASSWORD_SIGNUP) : !production
+  const requireEmailVerification = production
   return {
     port,
     host,
     baseURL,
-    webOrigins: resolveWebOrigins(baseURL),
+    webOrigins: resolveWebOrigins(baseURL, production),
     webRoot,
     databaseUrl: resolveDatabaseUrl(),
     ssl: resolveSsl(production),
@@ -144,6 +159,8 @@ export function loadConfig(): AuthConfig {
     autoProvisionDatabase,
     operatorAllowlist,
     openRegistration,
+    passwordSignup,
+    requireEmailVerification,
     secret: resolveSecret(),
   }
 }
