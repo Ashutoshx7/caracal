@@ -2278,27 +2278,45 @@ def _erp_vendor(seed: str, i: int) -> dict:
     internal = 1000 + i
     status = rng.choices(("active", "inactive", "onHold"), weights=(86, 8, 6))[0]
     contact = _person(rng)
+    email = f"{contact.split()[0].lower()}.{contact.split()[1].lower()}@{_slug(name).split('-')[0]}.example"
+    phone = f"+1-{rng.randint(200, 989)}-{rng.randint(200, 989)}-{rng.randint(1000, 9999)}"
+    legal_name = f"{name} {_LEGAL_SUFFIX.get(country, 'Ltd.')}"
+    terms = rng.choice(_TERMS)
     return {
         "id": f"VEND-{internal:05d}",
         "internalId": str(internal),
+        "externalId": f"VEND-EXT-{internal:05d}",
         "entityId": f"V{internal:05d} {name}",
         "companyName": name,
-        "legalName": f"{name} {_LEGAL_SUFFIX.get(country, 'Ltd.')}",
+        "legalName": legal_name,
+        "printOnCheckAs": legal_name,
+        "accountNumber": f"LYNX-{internal:05d}",
         "taxId": f"{country}{rng.randint(10**8, 10**9 - 1)}",
+        "taxRegistrationNumber": (
+            f"{country}{rng.randint(10**8, 10**9 - 1)}" if country != "US" else None
+        ),
         "category": rng.choice(_VENDOR_CATEGORIES),
         "subsidiary": rng.choice(_SUBSIDIARIES),
         "currency": currency,
-        "terms": rng.choice(_TERMS),
+        "terms": terms,
         "status": status,
         "isInactive": status == "inactive",
         "is1099Eligible": country == "US" and rng.random() < 0.3,
+        "incoterm": rng.choice(_INCOTERMS),
+        "paymentMethod": rng.choice(_VENDOR_PAYMENT_METHODS),
         "defaultPayablesAccount": "2000",
+        "defaultExpenseAccount": "6300",
         "creditLimit": float(rng.choice((25_000, 50_000, 100_000, 250_000, 500_000))),
         "balancePrimary": 0.0,
+        "unbilledOrdersPrimary": 0.0,
+        "overdueBalancePrimary": 0.0,
+        "openBillCount": 0,
+        "email": email,
+        "phone": phone,
         "primaryContact": {
             "name": contact,
-            "email": f"{contact.split()[0].lower()}.{contact.split()[1].lower()}@{_slug(name).split('-')[0]}.example",
-            "phone": f"+1-{rng.randint(200, 989)}-{rng.randint(200, 989)}-{rng.randint(1000, 9999)}",
+            "email": email,
+            "phone": phone,
         },
         "addressBook": [
             {
@@ -2309,6 +2327,7 @@ def _erp_vendor(seed: str, i: int) -> dict:
                 "country": country,
             }
         ],
+        "comments": f"Master record for {legal_name}; terms {terms}.",
         "createdDate": _instant(rng, -720, -120),
         "lastModifiedDate": _instant(rng, -119, -1),
     }

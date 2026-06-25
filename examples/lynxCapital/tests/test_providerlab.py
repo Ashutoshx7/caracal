@@ -2504,7 +2504,11 @@ def test_sdk_pair_distinct_cases():
     calc = t.post(
         "/api/calculate_tax",
         json={
-            "addresses": {"shipTo": {"country": "US", "region": "NY"}},
+            "addresses": {
+                "shipFrom": {"country": "US", "region": "CA"},
+                "shipTo": {"country": "US", "region": "NY"},
+            },
+            "currencyCode": "USD",
             "lines": [
                 {"number": "1", "amount": 1000, "taxCode": "P0000000"},
                 {"number": "2", "amount": 200, "taxCode": "NT"},
@@ -2516,6 +2520,14 @@ def test_sdk_pair_distinct_cases():
     assert calc["totalExempt"] == 200.0 and any(
         s["jurisType"] == "City" for s in calc["summary"]
     )
+    # AvaTax-shaped transaction: numeric id, resolved addresses, and per-jurisdiction
+    # detail carrying its sourcing and tax-authority classification.
+    assert isinstance(calc["id"], int) and calc["totalTaxCalculated"] == calc["totalTax"]
+    assert {a["addressTypeId"] for a in calc["addresses"]} == {"ShipFrom", "ShipTo"}
+    taxable_line = next(line for line in calc["lines"] if line["isItemTaxable"])
+    assert taxable_line["sourcing"] == "Destination"
+    assert all("taxAuthorityType" in d for d in taxable_line["details"])
+    assert any(s["taxSubType"] == "S" for s in calc["summary"])
     # A booked transaction can be retrieved, committed, and voided.
     got = t.post("/api/get_transaction", json={"code": calc["code"]}, headers=tk)
     assert got.status_code == 200
@@ -2540,6 +2552,8 @@ def test_sdk_pair_distinct_cases():
         headers=tk,
     ).json()["data"]
     assert de["withholdingRate"] == 0.0 and de["isTreatyApplicable"]
+    assert de["formType"] == "1042-S" and de["treatyArticle"] == "Article 12"
+    assert de["incomeCodeDescription"]
     br = t.post(
         "/api/determine_withholding",
         json={
@@ -2553,13 +2567,29 @@ def test_sdk_pair_distinct_cases():
         headers=tk,
     ).json()["data"]
     assert br["withholdingRate"] == pytest.approx(0.30)
-    # Tax-ID validation and an unresolvable jurisdiction.
+    # Tax-ID validation resolves a registered name via the VAT registry source.
     vat = t.post(
         "/api/validate_tax_id",
         json={"taxId": "DE123456789", "country": "DE"},
         headers=tk,
     ).json()["data"]
-    assert vat["isValid"] and vat["businessName"]
+    assert vat["isValid"] and vat["name"]
+    assert vat["matchStatus"] == "Match" and vat["validatedWith"] == "VIES"
+    # A malformed identifier is rejected without a registry match.
+    bad = t.post(
+        "/api/validate_tax_id",
+        json={"taxId": "DE12", "country": "DE"},
+        headers=tk,
+    ).json()["data"]
+    assert bad["isValid"] is False and bad["name"] is None
+    # Address resolution returns the validated address, coordinates, and authorities.
+    jr = t.post(
+        "/api/resolve_jurisdiction",
+        json={"address": {"country": "US", "region": "WA"}},
+        headers=tk,
+    ).json()["data"]
+    assert jr["coordinates"] and jr["validatedAddresses"][0]["region"] == "WA"
+    assert jr["taxAuthorities"]
     nf = t.post(
         "/api/resolve_jurisdiction", json={"address": {"country": "ZZ"}}, headers=tk
     )

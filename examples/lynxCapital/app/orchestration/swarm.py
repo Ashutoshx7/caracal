@@ -1804,6 +1804,7 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id, board):
         capture_receivable,
         refund_receivable,
         list_payment_disputes,
+        get_payment_dispute,
         respond_to_payment_dispute,
         get_acceptance_balance,
         reconcile_acceptance_settlements,
