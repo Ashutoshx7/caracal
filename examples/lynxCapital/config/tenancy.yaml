@@ -50,8 +50,8 @@ providers:
     config:
       bearer_token: "${LYNX_PARTNER_HALCYON_BANK_TOKEN}"
     scopes:
-      halcyon:read: ["list_accounts", "get_account", "list_transactions", "get_statement"]
-      halcyon:pay: ["initiate_payment", "get_payment"]
+      halcyon:read: ["list_accounts", "get_account", "get_balances", "list_transactions", "list_beneficiaries", "list_standing_orders", "list_direct_debits", "list_scheduled_payments", "list_statements", "get_statement"]
+      halcyon:pay: ["initiate_payment", "get_payment", "confirm_funds"]
   - id: "meridian-pay"
     name: "Meridian Pay"
     kind: "api_key"
@@ -229,9 +229,9 @@ providers:
     integrationView: "ledger-corebilling"
     config: {}
     scopes:
-      corebilling:read: ["list_customers", "get_customer", "get_invoice", "list_invoices", "get_payment", "list_payments", "list_dunning", "list_collections", "get_ar_aging", "get_ar_summary", "get_audit_trail"]
-      corebilling:post: ["create_invoice", "apply_payment", "record_payment", "write_off_invoice", "void_invoice", "dispute_invoice", "issue_credit_memo", "apply_credit_memo"]
-      corebilling:collect: ["issue_dunning", "run_dunning_cycle", "open_collection_case"]
+      corebilling:read: ["list_customers", "get_customer", "get_customer_statement", "get_invoice", "list_invoices", "get_payment", "list_payments", "get_credit_memo", "list_credit_memos", "get_collection_case", "list_dunning", "list_collections", "get_ar_aging", "get_ar_summary", "get_audit_trail"]
+      corebilling:post: ["create_invoice", "send_invoice", "apply_payment", "record_payment", "reverse_payment", "write_off_invoice", "void_invoice", "dispute_invoice", "resolve_dispute", "issue_credit_memo", "apply_credit_memo"]
+      corebilling:collect: ["issue_dunning", "run_dunning_cycle", "open_collection_case", "add_collection_note", "close_collection_case"]
   - id: "relay-automation"
     name: "Relay Automation"
     kind: "caracal_mandate"

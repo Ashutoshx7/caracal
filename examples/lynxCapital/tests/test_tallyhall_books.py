@@ -317,3 +317,107 @@ def test_lynxcapital_quickbooks_tools_reach_tallyhall(providerlab):
     expense = tool_fns.quickbooks_record_expense("r", "a", vendor["Id"], 150.0,
                                                  vendor["CurrencyRef"]["value"])
     assert expense["provider"] == "tallyhall-books" and expense["operation"] == "create_expense"
+
+
+# --------------------------------------------------------------------------- #
+# OAuth: realm binding and refresh-token lifetime
+# --------------------------------------------------------------------------- #
+def test_authorization_callback_carries_realm():
+    c = _client()
+    s = _seed()
+    r = c.post("/oauth/authorize", data={
+        "client_id": s["clientId"], "redirect_uri": REDIRECT,
+        "scope": ACCOUNTING, "state": "xyz",
+    }, follow_redirects=False)
+    location = r.headers["location"]
+    realm = location.split("realmId=")[1].split("&")[0]
+    assert realm == catalog.get("tallyhall-books").realm_id
+
+
+def test_token_response_advertises_refresh_token_lifetime():
+    bundle = _token_bundle(_client())
+    assert "x_refresh_token_expires_in" in bundle
+    # QBO refresh tokens carry a rolling ~100-day validity.
+    assert bundle["x_refresh_token_expires_in"] > 80 * 24 * 3600
+
+
+def test_expired_refresh_token_is_rejected():
+    c = _client()
+    bundle = _token_bundle(c)
+    store = credentials.load("tallyhall-books")
+    token = next(t for t in store.data["tokens"]
+                 if t.get("refreshToken") == bundle["refresh_token"])
+    token["refreshExpiresAt"] = credentials._now() - 1
+    res = c.post("/oauth/token", data={
+        "grant_type": "refresh_token", "refresh_token": bundle["refresh_token"]})
+    assert res.status_code == 400
+
+
+def test_lynxcapital_call_binds_company_realm(providerlab):
+    import app.services.partners as partners
+
+    info = partners.call("tallyhall-books", "get_company_info", {})["data"]
+    assert info["realmId"] == catalog.get("tallyhall-books").realm_id
+    sess = partners._SESSIONS["tallyhall-books"]
+    assert sess.realm == catalog.get("tallyhall-books").realm_id
+
+
+# --------------------------------------------------------------------------- #
+# Entity-field realism
+# --------------------------------------------------------------------------- #
+def test_company_info_exposes_preferences():
+    info = _api(_client(), _token(_client()), "get_company_info", {}).json()["data"]
+    prefs = {nv["Name"] for nv in info["NameValue"]}
+    assert {"AccountingMethod", "IndustryType"} <= prefs
+
+
+def test_invoice_carries_qbo_presentation_fields():
+    c = _client()
+    token = _token(c)
+    invoice = _open_invoice(c, token)
+    assert invoice["PrintStatus"] in ("NeedToPrint", "NotSet")
+    assert invoice["ApplyTaxAfterDiscount"] is False
+    assert "TxnTaxCodeRef" in invoice["TxnTaxDetail"]
+    assert "CustomerMemo" in invoice
+
+
+def test_taxable_customer_has_default_tax_code():
+    c = _client()
+    token = _token(c)
+    customers = _api(c, token, "list_customers", {"pageSize": 40}).json()["data"]["items"]
+    taxable = next(cu for cu in customers if cu["Taxable"])
+    assert taxable["DefaultTaxCodeRef"]["value"] == "3"
+
+
+def test_created_invoice_mirrors_seeded_tax_detail():
+    c = _client()
+    token = _token(c)
+    customer = _api(c, token, "list_customers", {"active": True, "pageSize": 1}).json()["data"]["items"][0]
+    invoice = _api(c, token, "create_invoice", {
+        "customerId": customer["Id"], "amount": 1000, "currency": customer["CurrencyRef"]["value"],
+    }).json()["data"]
+    assert "TxnTaxCodeRef" in invoice["TxnTaxDetail"]
+    assert invoice["PrintStatus"] == "NeedToPrint"
+
+
+# --------------------------------------------------------------------------- #
+# Balance summary reports
+# --------------------------------------------------------------------------- #
+def test_customer_balance_report_ties_to_receivables():
+    c = _client()
+    token = _token(c)
+    report = _api(c, token, "get_report", {"reportType": "CustomerBalance"}).json()["data"]
+    assert report["Header"]["ReportName"] == "CustomerBalance"
+    total = float(report["Summary"]["ColData"][1]["value"])
+    ar = _api(c, token, "get_account", {"accountId": "1200"}).json()["data"]["CurrentBalance"]
+    assert round(total, 2) == round(ar, 2)
+
+
+def test_vendor_balance_report_ties_to_payables():
+    c = _client()
+    token = _token(c)
+    report = _api(c, token, "get_report", {"reportType": "VendorBalance"}).json()["data"]
+    assert report["Header"]["ReportName"] == "VendorBalance"
+    total = float(report["Summary"]["ColData"][1]["value"])
+    ap = _api(c, token, "get_account", {"accountId": "2000"}).json()["data"]["CurrentBalance"]
+    assert round(total, 2) == round(ap, 2)

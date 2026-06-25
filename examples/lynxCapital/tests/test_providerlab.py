@@ -916,7 +916,7 @@ def test_oauth_authorization_code_pkce():
         .rstrip(b"=")
         .decode()
     )
-    code = _authorize_code(c, s, "accounts.read", challenge)
+    code = _authorize_code(c, s, "accounts", challenge)
     tok = c.post(
         "/oauth/token",
         data={
@@ -930,7 +930,7 @@ def test_oauth_authorization_code_pkce():
     )
     assert tok.status_code == 200 and "access_token" in tok.json()
 
-    code2 = _authorize_code(c, s, "accounts.read", challenge)
+    code2 = _authorize_code(c, s, "accounts", challenge)
     bad = c.post(
         "/oauth/token",
         data={
@@ -1020,7 +1020,7 @@ def test_halcyon_pkce_required_and_redirect_validated():
         data={
             "client_id": s["clientId"],
             "redirect_uri": "http://127.0.0.1:8000/callback",
-            "scope": "accounts.read",
+            "scope": "accounts",
             "state": "x",
         },
         follow_redirects=False,
@@ -1031,7 +1031,7 @@ def test_halcyon_pkce_required_and_redirect_validated():
         data={
             "client_id": s["clientId"],
             "redirect_uri": "http://attacker.example/cb",
-            "scope": "accounts.read",
+            "scope": "accounts",
             "state": "x",
             "code_challenge": "abc",
         },
@@ -1045,7 +1045,7 @@ def test_halcyon_pkce_required_and_redirect_validated():
 
 def test_halcyon_introspection_and_revocation():
     c, s = client("halcyon-bank"), seed("halcyon-bank")
-    token = _halcyon_token(c, s, "accounts.read payments.write")
+    token = _halcyon_token(c, s, "accounts payments")
     auth = {"client_id": s["clientId"], "client_secret": s["clientSecret"]}
     active = c.post("/oauth/introspect", data={"token": token, **auth}).json()
     assert active["active"] is True and active["client_id"] == s["clientId"]
@@ -1064,7 +1064,7 @@ def test_halcyon_introspection_and_revocation():
 
 def test_halcyon_account_and_transaction_schema():
     c, s = client("halcyon-bank"), seed("halcyon-bank")
-    h = {"Authorization": f"Bearer {_halcyon_token(c, s, 'accounts.read')}"}
+    h = {"Authorization": f"Bearer {_halcyon_token(c, s, 'accounts transactions')}"}
     account = c.post("/api/list_accounts", json={}, headers=h).json()["data"]["items"][
         0
     ]
@@ -1097,7 +1097,7 @@ def test_halcyon_account_and_transaction_schema():
 def test_halcyon_payment_lifecycle_and_idempotency():
     c, s = client("halcyon-bank"), seed("halcyon-bank")
     h = {
-        "Authorization": f"Bearer {_halcyon_token(c, s, 'accounts.read payments.write')}"
+        "Authorization": f"Bearer {_halcyon_token(c, s, 'accounts payments')}"
     }
     account = c.post(
         "/api/list_accounts", json={"status": "Enabled"}, headers=h
@@ -1111,7 +1111,7 @@ def test_halcyon_payment_lifecycle_and_idempotency():
         "idempotencyKey": "idem-1",
     }
     first = c.post("/api/initiate_payment", json=body, headers=h).json()["data"]
-    assert first["status"] == "AcceptedSettlementInProgress"
+    assert first["status"] == "AcceptedSettlementInProcess"
     assert first["instructedAmount"] == {
         "amount": 125.5,
         "currency": account["currency"],
@@ -1121,13 +1121,13 @@ def test_halcyon_payment_lifecycle_and_idempotency():
     settled = c.post(
         "/api/get_payment", json={"paymentId": first["paymentId"]}, headers=h
     ).json()["data"]
-    assert settled["status"] == "AcceptedSettlementCompleted"
+    assert settled["status"] == "AcceptedCreditSettlementCompleted"
 
 
 def test_halcyon_payment_edge_cases():
     c, s = client("halcyon-bank"), seed("halcyon-bank")
     h = {
-        "Authorization": f"Bearer {_halcyon_token(c, s, 'accounts.read payments.write')}"
+        "Authorization": f"Bearer {_halcyon_token(c, s, 'accounts payments')}"
     }
     account = c.post(
         "/api/list_accounts", json={"status": "Enabled"}, headers=h
@@ -1166,7 +1166,7 @@ def test_halcyon_payment_edge_cases():
 
 def test_halcyon_statement_resource():
     c, s = client("halcyon-bank"), seed("halcyon-bank")
-    h = {"Authorization": f"Bearer {_halcyon_token(c, s, 'accounts.read')}"}
+    h = {"Authorization": f"Bearer {_halcyon_token(c, s, 'accounts statements')}"}
     aid = c.post("/api/list_accounts", json={}, headers=h).json()["data"]["items"][0][
         "accountId"
     ]
@@ -1194,6 +1194,124 @@ def test_halcyon_statement_resource():
         ).status_code
         == 404
     )
+
+
+def test_halcyon_balances_resource():
+    c, s = client("halcyon-bank"), seed("halcyon-bank")
+    h = {"Authorization": f"Bearer {_halcyon_token(c, s, 'accounts balances')}"}
+    aid = c.post("/api/list_accounts", json={}, headers=h).json()["data"]["items"][0][
+        "accountId"
+    ]
+    data = c.post("/api/get_balances", json={"accountId": aid}, headers=h).json()["data"]
+    assert data["accountId"] == aid
+    types = {b["type"] for b in data["balances"]}
+    assert {"InterimAvailable", "InterimBooked", "ClosingBooked"} <= types
+    for bal in data["balances"]:
+        assert bal["creditDebitIndicator"] in ("Credit", "Debit")
+        assert {"amount", "currency"} <= set(bal["amount"])
+    # A balances-only token cannot read accounts.
+    bh = {"Authorization": f"Bearer {_halcyon_token(c, s, 'balances')}"}
+    assert c.post("/api/list_accounts", json={}, headers=bh).status_code == 403
+
+
+def test_halcyon_account_information_resources():
+    c, s = client("halcyon-bank"), seed("halcyon-bank")
+    token = _halcyon_token(
+        c, s, "accounts beneficiaries standing_orders direct_debits"
+    )
+    h = {"Authorization": f"Bearer {token}"}
+    beneficiaries = c.post("/api/list_beneficiaries", json={}, headers=h).json()["data"]
+    assert beneficiaries["total"] >= 1
+    ben = beneficiaries["items"][0]
+    assert ben["beneficiaryType"] in ("Trusted", "Ordinary")
+    assert {"scheme", "name"} <= set(ben["creditorAccount"])
+    standing = c.post("/api/list_standing_orders", json={}, headers=h).json()["data"]
+    assert all(
+        o["standingOrderStatusCode"] in ("Active", "Inactive")
+        for o in standing["items"]
+    )
+    debits = c.post("/api/list_direct_debits", json={}, headers=h).json()["data"]
+    assert all("mandateIdentification" in d for d in debits["items"])
+
+
+def test_halcyon_confirmation_of_funds():
+    c, s = client("halcyon-bank"), seed("halcyon-bank")
+    h = {"Authorization": f"Bearer {_halcyon_token(c, s, 'accounts fundsconfirmations')}"}
+    acct = c.post("/api/list_accounts", json={"status": "Enabled"}, headers=h).json()[
+        "data"
+    ]["items"][0]
+    aid, currency = acct["accountId"], acct["currency"]
+    ok = c.post(
+        "/api/confirm_funds",
+        json={"accountId": aid, "amount": 100, "currency": currency},
+        headers=h,
+    ).json()["data"]
+    assert ok["fundsAvailable"] is True and "fundsConfirmationId" in ok
+    short = c.post(
+        "/api/confirm_funds",
+        json={"accountId": aid, "amount": 10**12, "currency": currency},
+        headers=h,
+    ).json()["data"]
+    assert short["fundsAvailable"] is False
+
+
+def test_halcyon_payment_risk_and_dual_authorisation():
+    c, s = client("halcyon-bank"), seed("halcyon-bank")
+    h = {"Authorization": f"Bearer {_halcyon_token(c, s, 'accounts payments')}"}
+    acct = c.post("/api/list_accounts", json={"status": "Enabled"}, headers=h).json()[
+        "data"
+    ]["items"][0]
+    aid = acct["accountId"]
+    # A payment above the dual-authorisation threshold awaits a second approval.
+    large = c.post(
+        "/api/initiate_payment",
+        json={"fromAccount": aid, "amount": 260000, "creditor": "Northwind",
+              "rail": "ACH", "paymentContextCode": "TransferToThirdParty"},
+        headers=h,
+    ).json()["data"]
+    assert large["status"] == "Pending"
+    assert large["multiAuthorisation"]["status"] == "AwaitingFurtherAuthorisation"
+    assert large["risk"]["paymentContextCode"] == "TransferToThirdParty"
+    progressed = c.post(
+        "/api/get_payment", json={"paymentId": large["paymentId"]}, headers=h
+    ).json()["data"]
+    assert progressed["multiAuthorisation"]["status"] == "Authorised"
+    # An unsupported PaymentContextCode is rejected before debiting.
+    bad = c.post(
+        "/api/initiate_payment",
+        json={"fromAccount": aid, "amount": 10, "creditor": "x",
+              "paymentContextCode": "NotARealContext"},
+        headers=h,
+    )
+    assert bad.status_code == 422 and bad.json()["error"] == "invalid_payment_context"
+
+
+def test_halcyon_refresh_token_rotation():
+    c, s = client("halcyon-bank"), seed("halcyon-bank")
+    verifier = "verifier-abc123verifier-abc123verifier-xyz"
+    challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+        .rstrip(b"=")
+        .decode()
+    )
+    code = _authorize_code(c, s, "accounts offline_access", challenge)
+    tok = c.post(
+        "/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": s["clientId"],
+            "client_secret": s["clientSecret"],
+            "code_verifier": verifier,
+            "redirect_uri": "http://127.0.0.1:8000/callback",
+        },
+    ).json()
+    assert "refresh_token" in tok
+    refreshed = c.post(
+        "/oauth/token",
+        data={"grant_type": "refresh_token", "refresh_token": tok["refresh_token"]},
+    )
+    assert refreshed.status_code == 200 and "access_token" in refreshed.json()
 
 
 def _mint(provider_id: str, **overrides) -> str:
@@ -2679,7 +2797,7 @@ def test_oauth_cc_pair_distinct_cases():
 
 
 def test_oauth_ac_pair_distinct_cases():
-    # Halcyon Bank: accounts.read token cannot initiate a payment (needs payments.write).
+    # Halcyon Bank: an accounts-scoped token cannot initiate a payment (needs payments).
     c = client("halcyon-bank")
     s = seed("halcyon-bank")
     verifier = "verifier-abc123verifier-abc123verifier-xyz"
@@ -2688,7 +2806,7 @@ def test_oauth_ac_pair_distinct_cases():
         .rstrip(b"=")
         .decode()
     )
-    code = _authorize_code(c, s, "accounts.read", challenge)
+    code = _authorize_code(c, s, "accounts", challenge)
     tok = c.post(
         "/oauth/token",
         data={
