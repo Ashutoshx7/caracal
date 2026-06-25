@@ -6,7 +6,9 @@ Atlas Vendor Network domain: MCP tool server for vendor master data, onboarding,
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import hashlib
+import random
+from datetime import datetime, timedelta, timezone
 
 from _mock.providerlab.data import generators as gen
 from _mock.providerlab.providers import base
@@ -22,6 +24,18 @@ _STEP_LABELS = ("Company profile captured", "Tax identification validated",
                 "Required documents collected", "Final approval and activation")
 _PROFILE_FIELDS = ("displayName", "category", "paymentTerms", "website", "currency")
 _SCREENING_PROVIDER = "ComplyAdvantage"
+_SCREENING_PROVIDERS = ("Dow Jones Risk & Compliance", "Refinitiv World-Check",
+                        "LexisNexis Bridger", "ComplyAdvantage")
+_SANCTIONS_LISTS = ("OFAC SDN", "EU Consolidated", "UN Consolidated", "UK HMT")
+_DIVERSITY = ("minority_owned", "women_owned", "veteran_owned",
+              "small_business", "lgbtq_owned")
+_CATEGORIES = (
+    ("Software", "43230000"), ("Professional Services", "80100000"),
+    ("Facilities", "72100000"), ("Logistics", "78100000"),
+    ("Hardware", "43210000"), ("Marketing", "82100000"),
+    ("Utilities", "83100000"), ("Consulting", "80101500"),
+    ("Manufacturing", "73100000"), ("Travel", "90120000"),
+)
 
 _VENDOR_REF = {"type": "object", "properties": {
     "vendorId": {"type": "string", "description": "Vendor identifier, e.g. VEND-00042"}},
@@ -58,12 +72,94 @@ def _record_event(vendor: dict, kind: str, summary: str, *, actor: str = "api") 
     return entry
 
 
+def _categories() -> list[dict]:
+    return [{"code": code, "name": name, "segment": code[:2] + "000000"}
+            for name, code in _CATEGORIES]
+
+
+def _rng(vendor_id: str) -> random.Random:
+    digest = hashlib.sha256(f"atlas-enrich:{vendor_id}".encode()).hexdigest()
+    return random.Random(int(digest[:16], 16))
+
+
+def _seed_instant(rng: random.Random, lo: int, hi: int) -> str:
+    when = datetime(2026, 1, 1, tzinfo=timezone.utc) + timedelta(
+        days=rng.randint(lo, hi), seconds=rng.randint(0, 86399))
+    return when.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _enrich(vendor: dict) -> dict:
+    """Augment a generated vendor with beneficial-ownership, classification, screening,
+    and audit-history detail a real vendor-MDM platform would carry."""
+    rng = _rng(vendor["id"])
+    stage = vendor.get("lifecycleStage")
+    country = vendor.get("country", "US")
+
+    owners, remaining = [], 100
+    for n in range(rng.randint(1, 3)):
+        if remaining <= 0:
+            break
+        share = remaining if n == 2 else rng.randint(15, min(60, remaining))
+        remaining -= share
+        owners.append({"ownerId": f"UBO-{rng.randint(10**4, 10**5 - 1)}",
+                       "name": gen._person(rng), "type": "individual",
+                       "ownershipPercent": share, "nationality": country,
+                       "screened": rng.random() > 0.1, "pep": rng.random() < 0.06})
+    vendor["beneficialOwners"] = owners
+
+    diversity = (rng.sample(_DIVERSITY, rng.randint(1, 2)) if rng.random() < 0.25 else [])
+    vendor["classifications"] = {
+        "diversity": diversity, "diversityCertified": bool(diversity),
+        "smallBusiness": "small_business" in diversity or rng.random() < 0.2,
+        "esgScore": rng.randint(28, 95), "strategic": rng.random() < 0.15 and stage == "active"}
+
+    compliance = vendor.setdefault("compliance", {})
+    compliance.setdefault("sanctionsLists", list(_SANCTIONS_LISTS))
+    compliance.setdefault("adverseMedia", "none" if rng.random() > 0.08 else "review")
+    compliance.setdefault("watchlistHits", 0 if rng.random() > 0.05 else rng.randint(1, 3))
+    compliance.setdefault("uboVerified",
+                          stage in ("active", "suspended") and rng.random() > 0.2)
+    compliance.setdefault("screeningProvider", rng.choice(_SCREENING_PROVIDERS))
+    compliance.setdefault("lastScreenedAt", _seed_instant(rng, -200, -10))
+
+    events: list[dict] = []
+    seq = 0
+
+    def add(kind: str, summary: str, when: str, actor: str) -> None:
+        nonlocal seq
+        seq += 1
+        events.append({"eventId": f"EVT-{vendor['id'].split('-')[-1]}-{seq:03d}",
+                       "type": kind, "summary": summary, "actor": actor, "occurredAt": when})
+
+    add("vendor.registered", "Vendor master record created",
+        _seed_instant(rng, -540, -300), "intake-queue")
+    for step in vendor.get("onboarding", {}).get("checklist", []):
+        if step.get("status") == "completed" and step.get("completedAt"):
+            when = step["completedAt"]
+            add(f"onboarding.{step['step']}.completed", step["label"],
+                when if "T" in str(when) else f"{when}T12:00:00Z", "intake-queue")
+    if stage in ("active", "suspended"):
+        add("compliance.screening.completed", "KYB and sanctions screening cleared",
+            compliance["lastScreenedAt"], compliance["screeningProvider"])
+    if stage == "active":
+        add("vendor.activated", "Vendor activated for transacting",
+            _seed_instant(rng, -180, -5), gen._person(rng))
+    if stage == "suspended":
+        add("vendor.suspended", "Vendor suspended pending review",
+            _seed_instant(rng, -30, -2), gen._person(rng))
+    events.sort(key=lambda e: e["occurredAt"], reverse=True)
+    vendor["events"] = events
+    return vendor
+
+
 @base.seeder(ID)
 def seed(state: base.State) -> None:
     vendors = gen.atlas_vendors(ID, 240)
+    for vendor in vendors:
+        _enrich(vendor)
     state.tables["vendors"] = gen.index_by(vendors)
     state.tables["contracts"] = gen.atlas_contracts(ID, vendors)
-    state.tables["categories"] = {c["code"]: c for c in gen.atlas_categories()}
+    state.tables["categories"] = {c["code"]: c for c in _categories()}
 
 
 def _vendor(ctx: Ctx) -> dict:

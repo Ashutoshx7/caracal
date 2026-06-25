@@ -2161,6 +2161,25 @@ _GL_CHART = (
     ("6200", "Software Subscriptions", "Expense", "USD"),
     ("6300", "Professional Fees", "Expense", "USD"),
 )
+# Account descriptions and roll-up parent for a NetSuite-style hierarchical chart.
+_GL_ACCOUNT_META = {
+    "1000": ("Primary USD operating cash account", None),
+    "1010": ("EUR operating cash account", None),
+    "1100": ("Trade receivables control", None),
+    "1200": ("Raw and finished goods inventory", None),
+    "1500": ("Capitalized fixed assets at cost", None),
+    "2000": ("Trade payables control account", None),
+    "2100": ("Accrued but unbilled expenses", None),
+    "2200": ("Sales and VAT tax payable", None),
+    "3000": ("Issued common stock", None),
+    "3900": ("Accumulated retained earnings", None),
+    "4000": ("Recognized revenue", None),
+    "5000": ("Direct cost of goods sold", None),
+    "6000": ("Salaries, wages, and benefits", None),
+    "6100": ("Rent, utilities, and facilities", None),
+    "6200": ("SaaS and software subscriptions", None),
+    "6300": ("Outside professional and consulting fees", None),
+}
 _ERP_ITEMS = (
     ("Cloud compute", "6200"),
     ("Software licenses", "6200"),
@@ -2546,19 +2565,26 @@ def _journal_entry(seed: str, idx: int) -> dict:
 
 
 def ironbark_dataset(seed: str) -> dict[str, dict]:
-    """Build a coherent ERP back office: a chart of accounts, vendor master,
-    purchase orders that flow into vendor bills via three-way match, and posted
-    journal entries — with vendor balances and the AP control account rolled up
-    the way a real ledger keeps them."""
+    """Build a coherent ERP back office: a hierarchical chart of accounts, vendor
+    master, purchase orders that flow into item receipts and vendor bills via
+    three-way match, vendor payments that settle those bills, and posted journal
+    entries — with vendor balances, unbilled commitments, overdue exposure, and
+    the AP control account rolled up the way a real ledger keeps them."""
     accounts: dict[str, dict] = {}
     for number, name, acct_type, currency in _GL_CHART:
+        description, parent = _GL_ACCOUNT_META.get(number, ("", None))
         accounts[f"ACCT-{number}"] = {
             "id": f"ACCT-{number}",
             "acctNumber": number,
             "acctName": name,
             "acctType": acct_type,
+            "description": description,
+            "parent": parent,
             "currency": currency,
             "subsidiary": "LynxCapital : Consolidated",
+            "generalRate": "Current",
+            "cashFlowRate": "Average",
+            "includeChildren": True,
             "balance": 0.0,
             "isInactive": False,
         }
@@ -2586,14 +2612,42 @@ def ironbark_dataset(seed: str) -> dict[str, dict]:
         je["id"]: je for je in (_journal_entry(seed, i) for i in range(1, 31))
     }
 
+    payments: dict[str, dict] = {}
+    for idx, bill in enumerate(
+        (b for b in bills.values() if b["status"] == "paidInFull"), start=1
+    ):
+        payment = _vendor_payment(seed, idx, bill, vendors[bill["vendorId"]])
+        payments[payment["id"]] = payment
+
+    item_receipts: dict[str, dict] = {}
+    for idx, po in enumerate(
+        (p for p in purchase_orders.values()
+         if p["receivedStatus"] in ("partiallyReceived", "fullyReceived")),
+        start=1,
+    ):
+        receipt = _item_receipt(seed, idx, po, vendors[po["vendorId"]])
+        item_receipts[receipt["id"]] = receipt
+
+    today = _EPOCH
     ap_outstanding = 0.0
     for bill in bills.values():
         if bill["status"] in ("open", "pendingApproval"):
-            vendors[bill["vendorId"]]["balancePrimary"] = round(
-                vendors[bill["vendorId"]]["balancePrimary"] + bill["amountRemaining"], 2
-            )
+            vendor = vendors[bill["vendorId"]]
+            vendor["balancePrimary"] = round(vendor["balancePrimary"] + bill["amountRemaining"], 2)
+            vendor["openBillCount"] += 1
+            if date.fromisoformat(bill["dueDate"][:10]) < today:
+                vendor["overdueBalancePrimary"] = round(
+                    vendor["overdueBalancePrimary"] + bill["amountRemaining"], 2
+                )
             ap_outstanding += bill["amountRemaining"]
     accounts["ACCT-2000"]["balance"] = round(ap_outstanding, 2)
+
+    for po in purchase_orders.values():
+        if po["billingStatus"] in ("notBilled", "pendingBilling"):
+            vendor = vendors[po["vendorId"]]
+            vendor["unbilledOrdersPrimary"] = round(
+                vendor["unbilledOrdersPrimary"] + po["total"], 2
+            )
 
     return {
         "accounts": accounts,
@@ -2601,6 +2655,8 @@ def ironbark_dataset(seed: str) -> dict[str, dict]:
         "purchase_orders": purchase_orders,
         "bills": bills,
         "journal_entries": journal_entries,
+        "payments": payments,
+        "item_receipts": item_receipts,
         "matches": {},
     }
 
@@ -2999,7 +3055,7 @@ def _junction_purchase_order(
                         {
                             "lineNumber": l["lineNumber"],
                             "quantityReceived": l["quantity"],
-                            "condition": "good",
+                            "condition": rng.choice(_JUNCTION_RECEIPT_CONDITIONS),
                         }
                         for l in lines
                     ],
@@ -6550,6 +6606,31 @@ _CRM_RELATIONSHIP_TYPES = (
     "introduced_by",
     "decision_maker_for",
 )
+_CRM_ACCOUNT_LIFECYCLE = ("prospect", "opportunity", "customer", "vendor", "churned")
+_CRM_MARKETING_STATUS = ("subscribed", "unsubscribed", "non_marketing")
+_CRM_SENIORITY = ("c_suite", "vp", "director", "manager", "individual_contributor")
+_CRM_DEAL_TYPES = ("new_business", "renewal", "upsell", "expansion")
+_CRM_PRIORITIES = ("low", "medium", "high")
+_CRM_NEXT_STEPS = (
+    "Send updated proposal",
+    "Schedule technical review",
+    "Await procurement sign-off",
+    "Confirm budget with finance",
+    "Book executive sponsor call",
+    "Finalize contract redlines",
+)
+_CRM_OWNER_ROLES = (
+    "Account Executive",
+    "Account Manager",
+    "Sales Development Rep",
+    "Sales Manager",
+    "Customer Success Manager",
+)
+_CRM_OWNER_TEAMS = ("Enterprise", "Mid-Market", "SMB", "Partnerships")
+# The connected CRM tenant (portal) Beacon serves for LynxCapital. Owner identities
+# live in this portal, the way a HubSpot hub or Pipedrive company scopes its users.
+CRM_PORTAL_ID = "portal-48213307"
+CRM_PORTAL_DOMAIN = "lynxcapital.example"
 
 CRM_PIPELINE = "sales"
 # Ordered pipeline stages with the win probability each implies.
@@ -6561,6 +6642,73 @@ CRM_STAGES = (
     ("won", 100),
     ("lost", 0),
 )
+_CRM_STAGE_LABELS = {
+    "prospect": "Prospect",
+    "qualified": "Qualified",
+    "proposal": "Proposal Sent",
+    "negotiation": "Negotiation",
+    "won": "Closed Won",
+    "lost": "Closed Lost",
+}
+# Forecast roll-up category each open stage falls into, as HubSpot and Salesforce expose.
+_CRM_FORECAST_BY_STAGE = {
+    "prospect": "pipeline",
+    "qualified": "pipeline",
+    "proposal": "best_case",
+    "negotiation": "commit",
+    "won": "closed",
+    "lost": "omitted",
+}
+
+
+def crm_forecast_category(stage: str) -> str:
+    return _CRM_FORECAST_BY_STAGE.get(stage, "pipeline")
+
+
+def crm_pipeline_definition() -> dict:
+    """The deal pipeline and its ordered stages, shaped like a HubSpot/Pipedrive
+    pipeline object so a client can discover stage probabilities and closed flags."""
+    stages = []
+    for order, (name, probability) in enumerate(CRM_STAGES):
+        stages.append({
+            "id": name,
+            "label": _CRM_STAGE_LABELS[name],
+            "displayOrder": order,
+            "probability": probability,
+            "isClosed": name in ("won", "lost"),
+            "isWon": name == "won",
+        })
+    return {
+        "id": CRM_PIPELINE,
+        "label": "Sales Pipeline",
+        "objectType": "deal",
+        "displayOrder": 0,
+        "isDefault": True,
+        "stages": stages,
+    }
+
+
+def _crm_owners(seed: str) -> dict[str, dict]:
+    """The CRM portal's sales users. Every account, contact, deal, and activity is
+    owned by one of these records, the way HubSpot owners or Pipedrive users are."""
+    owners: dict[str, dict] = {}
+    for n in range(1, 26):
+        rng = _rng(seed, "crm_owner", n)
+        first, last = rng.choice(_FIRST), rng.choice(_LAST)
+        role = _CRM_OWNER_ROLES[(n - 1) % len(_CRM_OWNER_ROLES)]
+        owner_id = f"USR-{n:03d}"
+        owners[owner_id] = {
+            "id": owner_id,
+            "firstName": first,
+            "lastName": last,
+            "email": f"{first.lower()}.{last.lower()}@{CRM_PORTAL_DOMAIN}",
+            "role": role,
+            "team": rng.choice(_CRM_OWNER_TEAMS),
+            "portalId": CRM_PORTAL_ID,
+            "active": n <= 22,
+            "createdAt": _instant(rng, -700, -500),
+        }
+    return owners
 
 
 def _crm_account(seed: str, idx: int) -> dict:
@@ -7853,6 +8001,7 @@ def _vela_messages(
                 add_event(
                     rng, message, "Bounce", submitted, 6, dict(_VELA_SOFTBOUNCE_DETAIL)
                 )
+                message["status"] = "bounced"
                 message["bounce"] = dict(_VELA_SOFTBOUNCE_DETAIL)
                 message["errorCode"] = _VELA_SOFTBOUNCE_DETAIL["code"]
                 message["error"] = _VELA_SOFTBOUNCE_DETAIL["description"]

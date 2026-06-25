@@ -527,6 +527,28 @@ def cancel_hedge(ctx: Ctx) -> dict:
     return hedge
 
 
+@base.op(ID, "settle_hedge")
+def settle_hedge(ctx: Ctx) -> dict:
+    """Settle a booked or confirmed hedge at maturity, realizing its mark-to-market."""
+    _require(ctx, "hedgeId")
+    hedge = ctx.state.table("hedges").get(ctx.payload["hedgeId"])
+    if hedge is None:
+        raise _fail("NOT_FOUND", "hedge_not_found", ctx.payload["hedgeId"])
+    if hedge["status"] == "cancelled":
+        raise _fail("FAILED_PRECONDITION", "hedge_cancelled", "a cancelled hedge cannot be settled")
+    if hedge["status"] == "settled":
+        return hedge
+    now = _now()
+    rng = gen._rng(ID, "settle", hedge["hedgeId"])
+    realized = round(hedge["notional"] * rng.uniform(-0.03, 0.03), 2)
+    hedge["status"] = "settled"
+    hedge["markToMarket"] = realized
+    hedge["realizedPnl"] = realized
+    hedge["markToMarketAsOf"] = _iso(now)
+    hedge["settledAt"] = _iso(now)
+    return hedge
+
+
 # --------------------------------------------------------------------------- #
 # FundsTransferService
 # --------------------------------------------------------------------------- #
