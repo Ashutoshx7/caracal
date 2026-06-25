@@ -72,10 +72,12 @@ _SPECS: dict[str, PartnerSpec] = {
         "ironbark-erp", "oauth_cc", 9403,
         ("list_vendors", "get_vendor",
          "list_purchase_orders", "get_purchase_order", "create_purchase_order",
+         "receive_purchase_order", "list_item_receipts",
          "list_bills", "get_bill", "create_bill", "approve_bill",
+         "pay_bill", "list_payments", "get_payment",
          "match_invoice",
          "post_journal_entry", "get_journal_entry", "list_journal_entries",
-         "list_accounts", "get_account"),
+         "list_accounts", "get_account", "get_ap_aging"),
         client_auth_method="client_secret_post", scopes=("erp.read", "erp.write"),
         audience="https://api.ironbark-erp.test"),
     "tallyhall-books": PartnerSpec(
