@@ -160,8 +160,8 @@ providers:
     config:
       bearer_token: "${LYNX_PARTNER_BEACON_CRM_TOKEN}"
     scopes:
-      beacon:read: ["list_contacts", "get_contact", "list_accounts", "get_account", "list_deals", "get_deal", "list_activities", "list_notes", "list_relationships"]
-      beacon:write: ["create_contact", "update_contact", "update_deal", "log_activity", "add_note"]
+      beacon:read: ["list_contacts", "get_contact", "list_accounts", "get_account", "list_deals", "get_deal", "list_pipelines", "list_activities", "list_notes", "list_relationships", "list_owners", "get_owner"]
+      beacon:write: ["create_contact", "update_contact", "create_deal", "update_deal", "log_activity", "add_note"]
   - id: "atlas-vendor"
     name: "Atlas Vendor Network"
     kind: "bearer_token"

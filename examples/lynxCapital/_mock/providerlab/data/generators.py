@@ -3236,6 +3236,28 @@ _FX_MIN_CONVERSION = {"JPY": 1500.0, "INR": 800.0, "BRL": 60.0, "MXN": 200.0}
 _CONVERSION_FLOW = ("awaiting_funds", "funds_sent", "funds_arrived", "trade_settled")
 _PAYMENT_FLOW = ("ready_to_send", "submitted", "completed")
 
+# Conversions whose sell leg crosses this USD-equivalent ceiling settle against a
+# margin deposit rather than full prefunding, the way credit-backed FX desks gate
+# large rate locks.
+_FX_DEPOSIT_THRESHOLD_USD = 250_000.0
+_FX_DEPOSIT_RATE = 0.10
+
+# Payments above this USD-equivalent require a manual authorisation step before
+# they leave ready_to_send, mirroring a maker-checker release control.
+_FX_AUTHORISATION_THRESHOLD_USD = 100_000.0
+
+# Bank coordinates a beneficiary must carry for each destination country's local
+# clearing scheme, mirroring a provider's beneficiary_required_details rules.
+_FX_REQUIRED_ROUTING = {
+    "aba": ("account_number", "routing_code_value_1"),
+    "sort_code": ("account_number", "routing_code_value_1"),
+    "iban": ("iban",),
+    "ifsc": ("account_number", "routing_code_value_1"),
+    "bsb_code": ("account_number", "routing_code_value_1"),
+    "clabe": ("account_number",),
+    "bic_swift": ("account_number", "bic_swift"),
+}
+
 
 def fx_currencies() -> tuple[str, ...]:
     return tuple(_FX_MID)

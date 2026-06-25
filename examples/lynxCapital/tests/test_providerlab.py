@@ -1287,6 +1287,93 @@ def test_mandate_delegation_required_rejected():
     assert r.json()["error"] == "delegation_required"
 
 
+def test_verafin_ctr_aggregation_flags_structured_cash():
+    c = client("verafin-monitor")
+    h = {"Authorization": f"Bearer {_mint('verafin-monitor')}"}
+    last = None
+    for i in range(3):
+        last = c.post(
+            "/api/monitor_transaction",
+            json={"transactionId": f"agg-{i}", "amount": 4000, "currency": "USD",
+                  "customerId": "cust_0000", "accountId": "acct_0000_0", "channel": "cash"},
+            headers=h,
+        ).json()["data"]
+    agg = last["ctrAggregate"]
+    assert agg["cashTotal"] == 12000.0
+    assert agg["ctrBasis"] == "aggregate"
+    assert last["ctrReportable"] and last["flagged"] and "alertId" in last
+
+
+def test_verafin_alert_and_case_enrichment():
+    c = client("verafin-monitor")
+    h = {"Authorization": f"Bearer {_mint('verafin-monitor')}"}
+    res = c.post(
+        "/api/monitor_transaction",
+        json={"transactionId": "v1", "amount": 9500, "currency": "USD",
+              "customerId": "cust_0001", "accountId": "acct_0001_0",
+              "channel": "cash", "country": "IR"},
+        headers=h,
+    ).json()["data"]
+    alert = c.post("/api/get_alert", json={"alertId": res["alertId"]}, headers=h).json()["data"]
+    assert {"ageHours", "slaBreached", "tags"} <= set(alert)
+    esc = c.post(
+        "/api/resolve_alert",
+        json={"alertId": res["alertId"], "disposition": "file_sar"},
+        headers=h,
+    ).json()["data"]
+    case_id = esc["caseId"]
+    case = c.post("/api/get_case", json={"caseId": case_id}, headers=h).json()["data"]
+    assert case["caseNumber"].startswith("CASE-")
+    assert case["subjectCustomerIds"] == ["cust_0001"]
+    c.post("/api/add_case_note", json={"caseId": case_id, "note": "Reviewed records."}, headers=h)
+    refreshed = c.post("/api/get_case", json={"caseId": case_id}, headers=h).json()["data"]
+    assert refreshed["noteCount"] == 1
+
+
+def test_verafin_filing_amendment_flow():
+    c = client("verafin-monitor")
+    h = {"Authorization": f"Bearer {_mint('verafin-monitor')}"}
+    res = c.post(
+        "/api/monitor_transaction",
+        json={"transactionId": "f1", "amount": 850000, "currency": "USD",
+              "customerId": "cust_0002", "accountId": "acct_0002_0", "channel": "wire"},
+        headers=h,
+    ).json()["data"]
+    c.post("/api/resolve_alert", json={"alertId": res["alertId"], "disposition": "file_sar"}, headers=h)
+    filing = c.post(
+        "/api/prepare_filing",
+        json={"alertId": res["alertId"], "filingType": "SAR"},
+        headers=h,
+    ).json()["data"]
+    assert filing["filingInstitution"]["legalName"].startswith("LynxCapital")
+    assert filing["filingNumber"].startswith("SAR-")
+    submitted = c.post("/api/submit_filing", json={"filingId": filing["filingId"]}, headers=h).json()["data"]
+    assert submitted["status"] == "acknowledged" and submitted["confirmationNumber"]
+    amended = c.post(
+        "/api/amend_filing",
+        json={"filingId": filing["filingId"], "reason": "Corrected subject name."},
+        headers=h,
+    ).json()["data"]
+    assert amended["correctsFilingId"] == filing["filingId"]
+    assert amended["correctsConfirmationNumber"] == submitted["confirmationNumber"]
+    assert amended["form"].startswith("Corrected")
+    dup = c.post(
+        "/api/amend_filing",
+        json={"filingId": filing["filingId"], "reason": "Again."},
+        headers=h,
+    )
+    assert dup.status_code == 409
+
+
+def test_verafin_monitoring_summary_posture():
+    c = client("verafin-monitor")
+    h = {"Authorization": f"Bearer {_mint('verafin-monitor')}"}
+    summary = c.post("/api/get_monitoring_summary", json={}, headers=h).json()["data"]
+    assert {"alerts", "cases", "filings", "controls", "audit"} <= set(summary)
+    assert summary["audit"]["allChainsIntact"] is True
+    assert summary["controls"]["total"] >= 1
+
+
 def test_mandate_revocation_anchor():
     c = client("aegis-screening")
     anchor = f"sid_{uuid.uuid4().hex[:12]}"

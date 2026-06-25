@@ -50,10 +50,10 @@ def _route(channel: str, recipient: str) -> str:
     markers the way Postmark and Twilio expose deterministic test destinations."""
     target = recipient.lower()
     if channel == "email":
-        if "bounce" in target:
-            return "bounced"
         if "softbounce" in target or "mailboxfull" in target:
             return "softbounce"
+        if "bounce" in target:
+            return "bounced"
         if "complaint" in target or "spam" in target:
             return "spam"
         return "delivered"
