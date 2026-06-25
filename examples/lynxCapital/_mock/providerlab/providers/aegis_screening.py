@@ -450,22 +450,46 @@ def _persist_screen(
 # --------------------------------------------------------------------------- #
 # seeded history
 # --------------------------------------------------------------------------- #
+class _SeedCtx:
+    """A system principal used to attribute seeded history to an internal mandate."""
+
+    def __init__(self, state: base.State):
+        self.state = state
+        self.principal = {
+            "principal": "system@aegis",
+            "subjectType": "application",
+            "zone": "lynx-zone",
+            "agentSessionId": "agent_seed",
+            "rootSessionId": "root_seed",
+            "sessionId": "sid_seed",
+            "delegationEdgeId": "edge_seed",
+            "mandateId": "seed",
+        }
+
+
+def _subject_of(record: dict) -> dict:
+    """The screening subject shape for a known watchlist or registry record, carrying
+    the secondary identifiers an analyst would submit for corroboration."""
+    subject = {
+        "name": record["legalName"],
+        "type": record["type"],
+        "country": record.get("country"),
+    }
+    if record.get("dateOfBirth"):
+        subject["dateOfBirth"] = record["dateOfBirth"]
+    if record.get("identifiers"):
+        subject["identifiers"] = list(record["identifiers"])
+    return subject
+
+
 def _seed_history(state: base.State) -> None:
     rng = gen._rng(ID, "history")
-    for entity in _watchlist_subjects(state):
-        _persist_screen(
-            state,
-            {
-                "name": entity["legalName"],
-                "type": entity["type"],
-                "country": entity["country"],
-            },
-            "sanctions",
-            "system@aegis",
-        )
+    ctx = _SeedCtx(state)
+    for record in _watchlist_subjects(state):
+        _persist_screen(state, _subject_of(record), "sanctions", ctx)
     for entity in list(state.table("entities").values()):
         if entity.get("source") == "registry":
-            _verify_entity(state, entity, "system@aegis")
+            _verify_entity(state, entity, ctx)
     clean = (
         "Harbor Freight Partners",
         "Cedar Analytics",
@@ -479,71 +503,72 @@ def _seed_history(state: base.State) -> None:
             state,
             {"name": name, "type": "organization", "country": "US"},
             "sanctions",
-            "system@aegis",
+            ctx,
         )
 
     cases = list(state.table("cases").values())
     analysts = ("amelia.stone@aegis", "raj.patel@aegis", "nina.kovac@aegis")
     for idx, case in enumerate(cases):
+        analyst = analysts[idx % len(analysts)]
         roll = rng.random()
         if roll < 0.34:
-            _assign(state, case, analysts[idx % len(analysts)], "system@aegis")
+            _assign(state, case, analyst, ctx)
         elif roll < 0.55:
-            analyst = analysts[idx % len(analysts)]
-            _assign(state, case, analyst, "system@aegis")
+            _assign(state, case, analyst, ctx)
             _resolve(
                 state,
                 case,
                 "false_positive",
                 "Secondary identifiers cleared the alert.",
-                analyst,
+                ctx,
             )
         elif roll < 0.68 and case["riskBand"] in ("high", "critical"):
+            _assign(state, case, analyst, ctx)
             _escalate(
                 state,
                 case,
                 "edd_l2",
                 "Strong sanctions match requires enhanced due diligence.",
-                analysts[idx % len(analysts)],
+                ctx,
             )
 
     registry = [
         e for e in state.table("entities").values() if e.get("source") == "registry"
     ]
     for entity in registry[:5]:
-        _create_monitor(state, entity, rng.choice(("daily", "weekly")), "system@aegis")
+        _create_monitor(state, entity, rng.choice(("daily", "weekly")), ctx)
 
 
 # --------------------------------------------------------------------------- #
 # case lifecycle helpers
 # --------------------------------------------------------------------------- #
-def _assign(state: base.State, case: dict, assignee: str, actor: str) -> None:
+def _assign(state: base.State, case: dict, assignee: str, ctx) -> None:
     case["assignee"] = assignee
     case["status"] = "in_review"
     case["updatedAt"] = _ts()
-    _audit(state, case, "case_assigned", actor, {"assignee": assignee})
+    _audit(state, case, "case_assigned", ctx, {"assignee": assignee})
 
 
-def _escalate(
-    state: base.State, case: dict, queue: str, reason: str, actor: str
-) -> None:
+def _escalate(state: base.State, case: dict, queue: str, reason: str, ctx) -> None:
     case["status"] = "escalated"
     case["queue"] = queue
     case["priority"] = "critical"
     case["updatedAt"] = _ts()
-    _audit(state, case, "case_escalated", actor, {"queue": queue, "reason": reason})
+    _audit(state, case, "case_escalated", ctx, {"queue": queue, "reason": reason})
 
 
-def _resolve(
-    state: base.State, case: dict, disposition: str, reason: str, actor: str
-) -> None:
+def _resolve(state: base.State, case: dict, disposition: str, reason: str, ctx) -> None:
     case["status"] = "resolved"
     case["disposition"] = disposition
     case["dispositionReason"] = reason
     case["resolvedAt"] = _ts()
-    case["resolvedBy"] = actor
+    case["resolvedBy"] = _actor(ctx)
     case["updatedAt"] = _ts()
+    hit_disposition = (
+        "false_positive" if disposition in ("false_positive", "no_match") else "true_match"
+    )
     for hit_ref in case["hits"]:
+        hit_ref["disposition"] = hit_disposition
         hit = state.table("watchlist_hits").get(hit_ref["hitId"])
         if hit:
             hit["status"] = (
@@ -555,17 +580,13 @@ def _resolve(
         state,
         case,
         "case_resolved",
-        actor,
+        ctx,
         {"disposition": disposition, "reason": reason},
     )
 
 
-def _create_monitor(
-    state: base.State, entity: dict, frequency: str, actor: str
-) -> dict:
-    interval = {"realtime": 0, "daily": 86_400, "weekly": 604_800}.get(
-        frequency, 86_400
-    )
+def _create_monitor(state: base.State, entity: dict, frequency: str, ctx) -> dict:
+    interval = _MONITOR_INTERVALS.get(frequency, 86_400)
     monitor = {
         "monitorId": base.new_id("mon"),
         "entityId": entity["entityId"],
@@ -573,18 +594,20 @@ def _create_monitor(
         "subjectType": entity["type"],
         "frequency": frequency,
         "status": "active",
-        "createdBy": actor,
+        "createdBy": _actor(ctx),
+        "delegation": _delegation(ctx),
         "createdAt": _ts(),
         "lastRunAt": _ts(),
         "nextRunAt": _ts(interval),
         "lastDecision": entity.get("lastDecision", "clear"),
+        "runCount": 0,
         "hitCount": 0,
     }
     state.table("monitors")[monitor["monitorId"]] = monitor
     return monitor
 
 
-def _verify_entity(state: base.State, entity: dict, actor: str) -> dict:
+def _verify_entity(state: base.State, entity: dict, ctx) -> dict:
     """Run a KYB verification pass over a registry entity and its beneficial owners."""
     screening = _persist_screen(
         state,
@@ -594,12 +617,19 @@ def _verify_entity(state: base.State, entity: dict, actor: str) -> dict:
             "country": entity["country"],
         },
         "kyb",
-        actor,
+        ctx,
         entity_id=entity["entityId"],
     )
     owner_flags = []
     for owner in entity.get("beneficialOwners", []):
-        owner_hits = _match(state, owner["name"], "individual", owner.get("country"))
+        owner_hits = _match(
+            state,
+            {
+                "name": owner["name"],
+                "type": "individual",
+                "country": owner.get("country"),
+            },
+        )
         owner["screeningResult"] = "hit" if owner_hits else "clear"
         owner["isPep"] = owner.get("isPep") or any(
             "PEP" in h["programs"] for h in owner_hits

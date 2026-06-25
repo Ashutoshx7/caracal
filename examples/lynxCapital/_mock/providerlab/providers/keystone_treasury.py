@@ -309,37 +309,66 @@ def forecast_liquidity(ctx: Ctx) -> dict:
                           f"scenario must be one of {', '.join(_FORECAST_SCENARIOS)}")
 
     bias = {"base": 1.0, "optimistic": 1.4, "stress": 0.55}[scenario]
+    confidence = {"base": 0.8, "optimistic": 0.6, "stress": 0.9}[scenario]
     step = max(1, horizon // 8)
     opening = _money(sum(a["availableBalance"] for a in accounts), currency)
     balance = opening
     minimum = balance
+    cumulative_net = 0.0
     points = []
     for day in range(0, horizon + 1, step):
         rng = gen._rng(ID, "forecast", currency, scenario, day)
         scale = max(a["availableBalance"] for a in accounts) if accounts else 1_000_000
-        inflows = _money(rng.uniform(0.02, 0.12) * scale * bias, currency)
-        outflows = _money(rng.uniform(0.02, 0.11) * scale * (2 - bias), currency)
+        # Direct-method cash forecast: break receipts and disbursements into the
+        # categories a treasury workstation reconciles against actuals.
+        ar = _money(rng.uniform(0.015, 0.08) * scale * bias, currency)
+        interco_in = _money(rng.uniform(0.005, 0.03) * scale * bias, currency)
+        ap = _money(rng.uniform(0.015, 0.06) * scale * (2 - bias), currency)
+        payroll = _money(rng.uniform(0.005, 0.02) * scale, currency)
+        tax = _money(rng.uniform(0.0, 0.015) * scale, currency)
+        debt = _money(rng.uniform(0.0, 0.01) * scale, currency)
+        inflows = _money(ar + interco_in, currency)
+        outflows = _money(ap + payroll + tax + debt, currency)
         opening_day = balance
-        balance = _money(balance + inflows - outflows, currency)
+        net = _money(inflows - outflows, currency)
+        balance = _money(balance + net, currency)
+        cumulative_net = _money(cumulative_net + net, currency)
         minimum = min(minimum, balance)
+        band = round(abs(balance) * (1 - confidence) * 0.5, gen.fx_minor_units(currency))
         points.append({
             "day": day,
             "date": (_now() + timedelta(days=day)).date().isoformat(),
             "openingBalance": opening_day,
             "projectedInflows": inflows,
             "projectedOutflows": outflows,
+            "netCashFlow": net,
+            "cumulativeNetCashFlow": cumulative_net,
             "closingBalance": balance,
+            "closingBalanceLow": _money(balance - band, currency),
+            "closingBalanceHigh": _money(balance + band, currency),
+            "categories": {
+                "receivables": ar,
+                "intercompany": interco_in,
+                "payables": ap,
+                "payroll": payroll,
+                "tax": tax,
+                "debtService": debt,
+            },
         })
 
     forecast = {
         "forecastId": base.new_id("fct"),
         "currency": currency,
         "scenario": scenario,
+        "method": "direct",
+        "confidenceLevel": confidence,
         "horizonDays": horizon,
         "openingBalance": opening,
         "closingBalance": balance,
+        "netCashFlow": cumulative_net,
         "minimumProjectedBalance": minimum,
         "shortfall": minimum < 0,
+        "fundingGap": _money(max(0.0, -minimum), currency),
         "reportingCurrency": _REPORTING_CCY,
         "closingBalanceBase": round(gen.keystone_usd(balance, currency), 2),
         "generatedAt": _iso(_now()),

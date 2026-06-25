@@ -140,9 +140,9 @@ providers:
     integrationView: "compliance-verafin"
     config: {}
     scopes:
-      verafin:monitor: ["monitor_transaction", "get_alert", "list_alerts", "assign_alert", "resolve_alert", "get_audit_trail"]
+      verafin:monitor: ["monitor_transaction", "get_alert", "list_alerts", "assign_alert", "resolve_alert", "get_audit_trail", "get_monitoring_summary"]
       verafin:case: ["open_case", "get_case", "list_cases", "add_case_note", "escalate_case", "resolve_case"]
-      verafin:file: ["prepare_filing", "get_filing", "list_filings", "submit_filing"]
+      verafin:file: ["prepare_filing", "get_filing", "list_filings", "submit_filing", "amend_filing"]
       verafin:attest: ["list_controls", "attest_control", "get_attestation", "list_attestations"]
   - id: "lumen-identity"
     name: "Lumen Identity"
