@@ -17,7 +17,50 @@ ID = "keystone-treasury"
 _REPORTING_CCY = "USD"
 _FORECAST_SCENARIOS = ("base", "optimistic", "stress")
 _HEDGE_INSTRUMENTS = ("forward", "fx_swap", "ndf")
+_HEDGE_DESIGNATIONS = ("cash_flow_hedge", "fair_value_hedge", "net_investment_hedge")
 _SETTLEMENT_DAYS = 2
+
+# Above this group-reporting-currency notional an intercompany transfer needs a
+# second-pair-of-eyes approval before it leaves the source account (maker-checker).
+_TRANSFER_APPROVAL_THRESHOLD_BASE = 5_000_000.0
+
+# Canonical gRPC status codes (google.rpc.Code) and the HTTP status a gRPC
+# service exposed over JSON (grpc-gateway / Connect) returns for each. Keystone
+# surfaces both so callers see the protocol-level status, not just an HTTP code.
+_GRPC_CODE = {
+    "INVALID_ARGUMENT": 3,
+    "NOT_FOUND": 5,
+    "ALREADY_EXISTS": 6,
+    "PERMISSION_DENIED": 7,
+    "RESOURCE_EXHAUSTED": 8,
+    "FAILED_PRECONDITION": 9,
+    "ABORTED": 10,
+    "UNAUTHENTICATED": 16,
+}
+_GRPC_HTTP = {
+    "INVALID_ARGUMENT": 400,
+    "NOT_FOUND": 404,
+    "ALREADY_EXISTS": 409,
+    "PERMISSION_DENIED": 403,
+    "RESOURCE_EXHAUSTED": 429,
+    "FAILED_PRECONDITION": 400,
+    "ABORTED": 409,
+    "UNAUTHENTICATED": 401,
+}
+
+
+def _fail(status: str, code: str, message: str) -> DomainError:
+    """Build a domain error carrying the canonical gRPC status a treasury gRPC
+    service would return in its trailers alongside the HTTP-mapped code."""
+    return DomainError(_GRPC_HTTP[status], code, message,
+                       details={"grpcStatus": status, "grpcCode": _GRPC_CODE[status]})
+
+
+def _require(ctx: Ctx, *names: str) -> None:
+    missing = [n for n in names if ctx.payload.get(n) in (None, "")]
+    if missing:
+        raise _fail("INVALID_ARGUMENT", "invalid_argument",
+                    f"missing required field(s): {', '.join(missing)}")
 
 
 base.grpc_service(

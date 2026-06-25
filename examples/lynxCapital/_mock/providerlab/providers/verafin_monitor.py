@@ -26,10 +26,40 @@ _FILING_DEADLINE_DAYS = {"SAR": 30, "CTR": 15}
 _ALERT_DISPOSITIONS = ("false_positive", "cleared", "file_sar", "escalate")
 _FILING_TYPES = ("SAR", "CTR")
 
+# The BSA-reporting financial institution on whose behalf filings are submitted.
+_FILING_INSTITUTION = {
+    "legalName": "LynxCapital Markets, Inc.",
+    "ein": "47-8813920",
+    "type": "broker_dealer",
+    "primaryRegulator": "FinCEN",
+}
+
 
 def _ts(offset_seconds: int = 0) -> str:
     moment = datetime.now(timezone.utc) + timedelta(seconds=offset_seconds)
     return moment.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _parse(ts: str | None) -> datetime | None:
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _age_hours(ts: str | None) -> float | None:
+    moment = _parse(ts)
+    if moment is None:
+        return None
+    delta = datetime.now(timezone.utc) - moment
+    return round(delta.total_seconds() / 3600, 1)
+
+
+def _business_day(ts: str | None = None) -> str:
+    moment = _parse(ts) or datetime.now(timezone.utc)
+    return moment.date().isoformat()
 
 
 def _band(score: int) -> str:
@@ -50,11 +80,14 @@ def seed(state: base.State) -> None:
     state.tables["filings"] = {}
     state.tables["attestations"] = {}
     state.tables["audit_events"] = {}
+    state.tables["cash_aggregates"] = {}
     state.scalars = {
         "typologies": ref["typologies"],
         "ctrThreshold": ref["ctrThreshold"],
         "sarThreshold": ref["sarThreshold"],
         "highRisk": set(ref["highRisk"]),
+        "caseSeq": 0,
+        "filingSeq": 0,
     }
     _seed_history(state)
 
@@ -252,6 +285,45 @@ def _recent_count(state: base.State, account_id: str | None, within_hours: int) 
         if seen >= cutoff:
             count += 1
     return count
+
+
+def _aggregate_cash(state: base.State, txn: dict) -> dict | None:
+    """Accumulate same-day cash activity per customer and evaluate it against the CTR
+    threshold. A real BSA program aggregates multiple cash transactions conducted by
+    or on behalf of one customer in a single business day, so structured deposits that
+    each sit below $10,000 still produce a single reportable currency transaction."""
+    if txn.get("channel") != "cash" or not txn.get("customerId"):
+        return None
+    ctr = _meta(state)["ctrThreshold"]
+    day = _business_day(txn.get("detectedAt"))
+    key = f"{txn['customerId']}|{day}"
+    bucket = state.table("cash_aggregates").setdefault(
+        key,
+        {
+            "customerId": txn["customerId"],
+            "businessDay": day,
+            "cashTotal": 0.0,
+            "transactionCount": 0,
+            "transactionIds": [],
+            "ctrFiledFor": False,
+        },
+    )
+    bucket["cashTotal"] = round(bucket["cashTotal"] + txn["amount"], 2)
+    bucket["transactionCount"] += 1
+    if txn.get("transactionId"):
+        bucket["transactionIds"].append(txn["transactionId"])
+    reportable = bucket["cashTotal"] >= ctr
+    basis = None
+    if reportable:
+        basis = "single" if txn["amount"] >= ctr and bucket["transactionCount"] == 1 else "aggregate"
+    return {
+        "businessDay": day,
+        "cashTotal": bucket["cashTotal"],
+        "transactionCount": bucket["transactionCount"],
+        "thresholdRemaining": round(max(0.0, ctr - bucket["cashTotal"]), 2),
+        "ctrReportable": reportable,
+        "ctrBasis": basis,
+    }
 
 
 # --------------------------------------------------------------------------- #
