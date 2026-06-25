@@ -72,8 +72,8 @@ export interface RunExecOpts {
   env?: Record<string, string | undefined>
   onLine?: (line: string, stream: 'stdout' | 'stderr') => void
   cwd?: string
-  // Default true for runtime ergonomics. Hosts that own the keymap: Console, embedded
-  // libraries: must pass false so engine signals don't tear the parent down.
+  // Default true for runtime ergonomics. Hosts that own the keymap (UI hosts, embedded
+  // libraries) must pass false so engine signals don't tear the parent down.
   forwardSignals?: boolean
 }
 

@@ -309,7 +309,7 @@ function wantsHtml(req: FastifyRequest): boolean {
 
 function oauthCallbackPage(title: string, message: string, kind: 'success' | 'error'): string {
   const color = kind === 'success' ? '#0f766e' : '#b91c1c'
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>body{font-family:system-ui,sans-serif;margin:3rem;line-height:1.5;color:#111827}.card{max-width:42rem;border:1px solid #e5e7eb;border-radius:12px;padding:2rem;box-shadow:0 1px 3px #0001}.status{color:${color};font-weight:700}</style></head><body><main class="card"><p class="status">${escapeHtml(title)}</p><h1>${escapeHtml(message)}</h1><p>You can close this browser tab and return to Caracal Console.</p></main></body></html>`
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>body{font-family:system-ui,sans-serif;margin:3rem;line-height:1.5;color:#111827}.card{max-width:42rem;border:1px solid #e5e7eb;border-radius:12px;padding:2rem;box-shadow:0 1px 3px #0001}.status{color:${color};font-weight:700}</style></head><body><main class="card"><p class="status">${escapeHtml(title)}</p><h1>${escapeHtml(message)}</h1><p>You can close this browser tab and return to the Caracal web console.</p></main></body></html>`
 }
 
 function sendOAuthCallback(
@@ -624,7 +624,7 @@ export const grantsRoutes: FastifyPluginAsync = async (fastify) => {
         400,
         { error: 'oauth_state_expired' },
         'OAuth callback expired',
-        'The authorization request expired. Start the provider connection again from Caracal Console.',
+        'The authorization request expired. Start the provider connection again from the Caracal web console.',
         'error',
       )
     let state: z.infer<typeof OAuthStateBody>
