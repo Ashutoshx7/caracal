@@ -13,6 +13,7 @@
     "migrate": "node dist/migrate.js",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run --root ../.. tests/typescript/unit/auth",
     "lint": "eslint ."
   },
   "dependencies": {
@@ -29,6 +30,7 @@
     "tsx": "^4.22.4",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
-    "globals": "^15.15.0"
+    "globals": "^15.15.0",
+    "vitest": "^4.1.9"
   }
 }

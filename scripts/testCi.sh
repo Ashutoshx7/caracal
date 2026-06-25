@@ -123,6 +123,8 @@ if $run_ts; then
     tests/typescript/integration/api
   ts_run apps/coordinator coordinator tests/typescript/unit/orchestration/coordinator
   ts_run apps/runtime runtime tests/typescript/unit/runtime
+  ts_run apps/auth auth tests/typescript/unit/auth
+  ts_run apps/web web tests/typescript/unit/web
   ts_run packages/core/ts core tests/typescript/unit/shared
   ts_run packages/admin/ts admin tests/typescript/unit/admin
   ts_run packages/sdk/ts sdk tests/typescript/unit/sdk/client.test.ts

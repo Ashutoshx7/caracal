@@ -10,7 +10,7 @@ Use this page before reaching for a command. Caracal separates local runtime lif
 
 ```text
 local lifecycle and process execution -> caracal
-human product management              -> caracal web (web console)
+human product management              -> web console
 scripted product management           -> Control API or Admin SDK
 ```
 
@@ -33,7 +33,8 @@ The top-level runtime CLI intentionally contains only `up`, `down`, `status`, `u
 | Upgrade local runtime assets | `caracal upgrade` |
 | Remove local stack/runtime state | `caracal purge` |
 | Run a process with resource tokens | `caracal run -- <command>` |
-| Open the web console | `caracal web` |
+| Open the packaged local web console | `http://localhost:3001` after `caracal up` |
+| Launch the local web development server | `caracal web` |
 
 Runtime CLI commands must not require admin tokens, selected zones, product credentials, or Control credentials.
 
@@ -67,7 +68,7 @@ Automation must run with operator credentials only in trusted control-plane envi
 
 | Symptom | Check |
 | --- | --- |
-| The web console cannot reach product data | Run `caracal up` and confirm `caracal status --ready`; use `caracal web --allow-offline` only for sign-in or UI-only checks. |
+| The web console cannot reach product data | Run `caracal up` and confirm `caracal status --ready`; for the development launcher, use `caracal web --allow-offline` only for sign-in or UI-only checks. |
 | A command for zones, policies, or audit is missing from `caracal` | Open the web console. Those workflows are intentionally web-console-owned. |
 | Product management is needed in CI | Use the Control API or Admin SDK with scoped operator credentials. |
 | Runtime command asks for product-management context | Treat it as a bug; runtime lifecycle must not depend on admin or zone state. |

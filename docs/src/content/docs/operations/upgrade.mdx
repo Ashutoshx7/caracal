@@ -54,7 +54,7 @@ bash infra/scripts/smokeTest.sh
 
 | Check | Expected |
 | --- | --- |
-| `/ready` endpoints | API, STS, Gateway, Audit, Coordinator pass. |
+| Readiness endpoints | Web, API, STS, Gateway, Audit, Coordinator pass. |
 | Migrations | `schema_migrations` includes the expected versions. |
 | Redis | Streams and consumer groups exist; pending entries are bounded. |
 | Audit | DLQ empty or understood; replay backlog drains. |
