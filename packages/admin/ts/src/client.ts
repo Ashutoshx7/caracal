@@ -178,7 +178,7 @@ export class AdminClient {
         if (!res.ok) {
           if (attempt < retries && shouldRetry(res.status)) {
             const wait = retryAfterMs(res) ?? jitterBackoff(attempt)
-            await new Promise(r => setTimeout(r, wait))
+            await new Promise((r) => setTimeout(r, wait))
             continue
           }
           const text = await res.text()
@@ -189,17 +189,19 @@ export class AdminClient {
             if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'error' in parsed && typeof parsed.error === 'string') {
               code = (parsed as { error: string }).error
             }
-          } catch { /* keep raw text */ }
+          } catch {
+            /* keep raw text */
+          }
           throw new AdminApiError(res.status, code, parsed, undefined, opts.base ?? 'api')
         }
         if (opts.expectEmpty || res.status === 204) return undefined as T
-        return await res.json() as T
+        return (await res.json()) as T
       } catch (err) {
         lastErr = err
         if (err instanceof AdminApiError) throw err
         if ((opts.signal ?? this.callerSignal)?.aborted) throw err
         if (attempt < retries) {
-          await new Promise(r => setTimeout(r, jitterBackoff(attempt)))
+          await new Promise((r) => setTimeout(r, jitterBackoff(attempt)))
           continue
         }
         throw err
@@ -218,17 +220,14 @@ export class AdminClient {
     get: (id: string) => this.request<Zone>(`/v1/zones/${id}`),
     dcrStatus: (id: string) => this.request<ZoneDcrStatus>(`/v1/zones/${id}/dcr-status`),
     create: (input: ZoneInput) => this.request<Zone>('/v1/zones', { method: 'POST', body: input }),
-    patch: (id: string, input: ZonePatchInput) =>
-      this.request<Zone>(`/v1/zones/${id}`, { method: 'PATCH', body: input }),
+    patch: (id: string, input: ZonePatchInput) => this.request<Zone>(`/v1/zones/${id}`, { method: 'PATCH', body: input }),
     delete: (id: string) => this.request<void>(`/v1/zones/${id}`, { method: 'DELETE', expectEmpty: true }),
   }
 
   // Applications
   applications = {
-    list: (zoneId: string) =>
-      this.request<Application[]>(`/v1/zones/${zoneId}/applications`),
-    get: (zoneId: string, id: string) =>
-      this.request<Application>(`/v1/zones/${zoneId}/applications/${id}`),
+    list: (zoneId: string) => this.request<Application[]>(`/v1/zones/${zoneId}/applications`),
+    get: (zoneId: string, id: string) => this.request<Application>(`/v1/zones/${zoneId}/applications/${id}`),
     create: (zoneId: string, input: ApplicationInput) =>
       this.request<Application>(`/v1/zones/${zoneId}/applications`, { method: 'POST', body: input }),
     patch: (zoneId: string, id: string, input: ApplicationPatchInput) =>
@@ -246,10 +245,8 @@ export class AdminClient {
 
   // Resources
   resources = {
-    list: (zoneId: string) =>
-      this.request<Resource[]>(`/v1/zones/${zoneId}/resources`),
-    get: (zoneId: string, id: string) =>
-      this.request<Resource>(`/v1/zones/${zoneId}/resources/${id}`),
+    list: (zoneId: string) => this.request<Resource[]>(`/v1/zones/${zoneId}/resources`),
+    get: (zoneId: string, id: string) => this.request<Resource>(`/v1/zones/${zoneId}/resources/${id}`),
     create: (zoneId: string, input: ResourceInput) =>
       this.request<Resource>(`/v1/zones/${zoneId}/resources`, {
         method: 'POST',
@@ -279,10 +276,12 @@ export class AdminClient {
   // Policies (immutable Rego versions)
   policies = {
     list: (zoneId: string) => this.request<Policy[]>(`/v1/zones/${zoneId}/policies`),
-    get: (zoneId: string, id: string) =>
-      this.request<Policy & { versions: PolicyVersion[] }>(`/v1/zones/${zoneId}/policies/${id}`),
+    get: (zoneId: string, id: string) => this.request<Policy & { versions: PolicyVersion[] }>(`/v1/zones/${zoneId}/policies/${id}`),
     create: (zoneId: string, input: PolicyInput) =>
-      this.request<Policy & { version_id: string; version: PolicyVersion }>(`/v1/zones/${zoneId}/policies`, { method: 'POST', body: input }),
+      this.request<Policy & { version_id: string; version: PolicyVersion }>(`/v1/zones/${zoneId}/policies`, {
+        method: 'POST',
+        body: input,
+      }),
     validate: (content: string, schemaVersion?: string) =>
       this.request<PolicyValidation>('/v1/policies/validate', {
         method: 'POST',
@@ -337,13 +336,10 @@ export class AdminClient {
 
   // Grants
   grants = {
-    list: (zoneId: string, query?: GrantQuery) =>
-      this.request<Grant[]>(`/v1/zones/${zoneId}/grants`, { query: grantListQuery(query) }),
+    list: (zoneId: string, query?: GrantQuery) => this.request<Grant[]>(`/v1/zones/${zoneId}/grants`, { query: grantListQuery(query) }),
     get: (zoneId: string, id: string) => this.request<Grant>(`/v1/zones/${zoneId}/grants/${id}`),
-    create: (zoneId: string, input: GrantInput) =>
-      this.request<Grant>(`/v1/zones/${zoneId}/grants`, { method: 'POST', body: input }),
-    revoke: (zoneId: string, id: string) =>
-      this.request<void>(`/v1/zones/${zoneId}/grants/${id}`, { method: 'DELETE', expectEmpty: true }),
+    create: (zoneId: string, input: GrantInput) => this.request<Grant>(`/v1/zones/${zoneId}/grants`, { method: 'POST', body: input }),
+    revoke: (zoneId: string, id: string) => this.request<void>(`/v1/zones/${zoneId}/grants/${id}`, { method: 'DELETE', expectEmpty: true }),
   }
 
   providerGrants = {
@@ -381,8 +377,7 @@ export class AdminClient {
       if (!Array.isArray(response.rows)) throw new Error('audit response missing rows')
       return response.rows
     },
-    byRequest: (zoneId: string, requestId: string) =>
-      this.request<AuditDetail[]>(`/v1/zones/${zoneId}/audit/by-request/${requestId}`),
+    byRequest: (zoneId: string, requestId: string) => this.request<AuditDetail[]>(`/v1/zones/${zoneId}/audit/by-request/${requestId}`),
     explain: (zoneId: string, requestId: string) =>
       this.request<DecisionTrace>(`/v1/zones/${zoneId}/audit/by-request/${requestId}/explain`),
   }
@@ -409,8 +404,7 @@ export class AdminClient {
       if (!Array.isArray(response.items)) throw new Error('agents response missing items')
       return response.items
     },
-    get: (zoneId: string, id: string) =>
-      this.request<AgentSession>(`/zones/${zoneId}/agents/${id}`, { base: 'coordinator' }),
+    get: (zoneId: string, id: string) => this.request<AgentSession>(`/zones/${zoneId}/agents/${id}`, { base: 'coordinator' }),
     children: (zoneId: string, id: string) =>
       this.request<AgentSession[]>(`/zones/${zoneId}/agents/${id}/children`, { base: 'coordinator' }),
     suspend: (zoneId: string, id: string) =>
@@ -436,9 +430,9 @@ export class AdminClient {
     impact: (zoneId: string, id: string) =>
       this.request<DelegationImpact>(`/zones/${zoneId}/delegations/${id}/impact`, { base: 'coordinator' }),
     revoke: (zoneId: string, id: string) =>
-      this.request<{ revoked_edges: number; affected_sessions: number }>(
-        `/zones/${zoneId}/delegations/${id}/revoke`,
-        { method: 'PATCH', base: 'coordinator' },
-      ),
+      this.request<{ revoked_edges: number; affected_sessions: number }>(`/zones/${zoneId}/delegations/${id}/revoke`, {
+        method: 'PATCH',
+        base: 'coordinator',
+      }),
   }
 }

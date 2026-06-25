@@ -3,8 +3,8 @@
 //
 // Session-guarded backend-for-frontend that proxies the Community Edition web client to the Caracal admin API.
 
-import type { IncomingMessage, ServerResponse } from "node:http";
-import { discoverAdminToken, discoverCoordinatorToken } from "@caracalai/core";
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { discoverAdminToken, discoverCoordinatorToken } from '@caracalai/core'
 import {
   applyControlLifecycleAction,
   controlKeyRecord,
@@ -14,55 +14,55 @@ import {
   CONTROL_INVOKE_TRAIT,
   DEFAULT_CONTROL_AUDIENCE,
   type DoctorReport,
-} from "@caracalai/engine";
-import { resolveStsUrl } from "@caracalai/engine/runtime-config";
+} from '@caracalai/engine'
+import { resolveStsUrl } from '@caracalai/engine/runtime-config'
 
-import { auth } from "./auth.ts";
+import { auth } from './auth.ts'
 
-const API_PREFIX = "/api/console";
-const COORD_PREFIX = "/api/console/coord";
-const DEFAULT_API_URL = "http://localhost:3000";
-const DEFAULT_COORDINATOR_URL = "http://localhost:4000";
-const PROBE_TIMEOUT_MS = 2_500;
-const PROXY_TIMEOUT_MS = 30_000;
-const MAX_BODY_BYTES = 1_000_000;
+const API_PREFIX = '/api/console'
+const COORD_PREFIX = '/api/console/coord'
+const DEFAULT_API_URL = 'http://localhost:3000'
+const DEFAULT_COORDINATOR_URL = 'http://localhost:4000'
+const PROBE_TIMEOUT_MS = 2_500
+const PROXY_TIMEOUT_MS = 30_000
+const MAX_BODY_BYTES = 1_000_000
 
 function apiUrl(): string {
-  return (process.env.CARACAL_API_URL ?? DEFAULT_API_URL).replace(/\/$/, "");
+  return (process.env.CARACAL_API_URL ?? DEFAULT_API_URL).replace(/\/$/, '')
 }
 
 function coordinatorUrl(): string {
-  return (process.env.CARACAL_COORDINATOR_URL ?? DEFAULT_COORDINATOR_URL).replace(/\/$/, "");
+  return (process.env.CARACAL_COORDINATOR_URL ?? DEFAULT_COORDINATOR_URL).replace(/\/$/, '')
 }
 
 function isLocalUrl(value: string): boolean {
   try {
-    const host = new URL(value).hostname;
-    return host === "localhost" || host === "127.0.0.1" || host === "::1";
+    const host = new URL(value).hostname
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1'
   } catch {
-    return false;
+    return false
   }
 }
 
 function adminToken(): string | undefined {
-  return discoverAdminToken(undefined, { preferGenerated: isLocalUrl(apiUrl()) });
+  return discoverAdminToken(undefined, { preferGenerated: isLocalUrl(apiUrl()) })
 }
 
 function coordinatorToken(): string | undefined {
-  return discoverCoordinatorToken(undefined, { preferGenerated: isLocalUrl(coordinatorUrl()) });
+  return discoverCoordinatorToken(undefined, { preferGenerated: isLocalUrl(coordinatorUrl()) })
 }
 
 function toWebHeaders(req: IncomingMessage): Headers {
-  const headers = new Headers();
+  const headers = new Headers()
   for (const [key, value] of Object.entries(req.headers)) {
-    if (value === undefined) continue;
-    if (Array.isArray(value)) for (const v of value) headers.append(key, v);
-    else headers.set(key, value);
+    if (value === undefined) continue
+    if (Array.isArray(value)) for (const v of value) headers.append(key, v)
+    else headers.set(key, value)
   }
-  return headers;
+  return headers
 }
 
-type SessionResult = Awaited<ReturnType<typeof auth.api.getSession>>;
+type SessionResult = Awaited<ReturnType<typeof auth.api.getSession>>
 
 // A single page load fires many parallel console requests carrying the same session
 // cookie, and each getSession() is a Postgres round-trip. Validation is therefore cached
@@ -70,79 +70,79 @@ type SessionResult = Awaited<ReturnType<typeof auth.api.getSession>>;
 // collapsing N auth round-trips into one. The TTL is intentionally short so revoked or
 // expired sessions stop working within seconds; the upstream control plane still enforces
 // its own admin token, so this gate only answers "is this operator signed in".
-const SESSION_TTL_MS = 3_000;
-const SESSION_CACHE_MAX = 1_000;
-const sessionCache = new Map<string, { at: number; session: SessionResult }>();
-const sessionInFlight = new Map<string, Promise<SessionResult>>();
+const SESSION_TTL_MS = 3_000
+const SESSION_CACHE_MAX = 1_000
+const sessionCache = new Map<string, { at: number; session: SessionResult }>()
+const sessionInFlight = new Map<string, Promise<SessionResult>>()
 
 async function validateSession(req: IncomingMessage): Promise<SessionResult> {
-  const cookie = req.headers.cookie;
-  if (!cookie) return auth.api.getSession({ headers: toWebHeaders(req) });
+  const cookie = req.headers.cookie
+  if (!cookie) return auth.api.getSession({ headers: toWebHeaders(req) })
 
-  const now = Date.now();
-  const cached = sessionCache.get(cookie);
-  if (cached && now - cached.at < SESSION_TTL_MS) return cached.session;
+  const now = Date.now()
+  const cached = sessionCache.get(cookie)
+  if (cached && now - cached.at < SESSION_TTL_MS) return cached.session
 
-  const existing = sessionInFlight.get(cookie);
-  if (existing) return existing;
+  const existing = sessionInFlight.get(cookie)
+  if (existing) return existing
 
   const lookup = auth.api
     .getSession({ headers: toWebHeaders(req) })
     .then((session) => {
       if (sessionCache.size >= SESSION_CACHE_MAX) {
         for (const key of sessionCache.keys()) {
-          sessionCache.delete(key);
-          if (sessionCache.size < SESSION_CACHE_MAX) break;
+          sessionCache.delete(key)
+          if (sessionCache.size < SESSION_CACHE_MAX) break
         }
       }
-      sessionCache.set(cookie, { at: Date.now(), session });
-      return session;
+      sessionCache.set(cookie, { at: Date.now(), session })
+      return session
     })
     .finally(() => {
-      sessionInFlight.delete(cookie);
-    });
-  sessionInFlight.set(cookie, lookup);
-  return lookup;
+      sessionInFlight.delete(cookie)
+    })
+  sessionInFlight.set(cookie, lookup)
+  return lookup
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "application/json");
-  res.setHeader("Cache-Control", "no-store");
-  res.end(JSON.stringify(body));
+  res.statusCode = status
+  res.setHeader('Content-Type', 'application/json')
+  res.setHeader('Cache-Control', 'no-store')
+  res.end(JSON.stringify(body))
 }
 
 function readBody(req: IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    req.on("data", (chunk: Buffer) => {
-      size += chunk.length;
+    const chunks: Buffer[] = []
+    let size = 0
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length
       if (size > MAX_BODY_BYTES) {
-        reject(new Error("request_body_too_large"));
-        req.destroy();
-        return;
+        reject(new Error('request_body_too_large'))
+        req.destroy()
+        return
       }
-      chunks.push(chunk);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
-  });
+      chunks.push(chunk)
+    })
+    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('error', reject)
+  })
 }
 
 async function probeReachable(base: string, token: string): Promise<boolean> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS)
   try {
     const res = await fetch(`${base}/ready`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal,
-    });
-    return res.ok;
+    })
+    return res.ok
   } catch {
-    return false;
+    return false
   } finally {
-    clearTimeout(timer);
+    clearTimeout(timer)
   }
 }
 
@@ -150,20 +150,20 @@ async function probeReachable(base: string, token: string): Promise<boolean> {
 // client can show an honest connection state instead of fabricated data. The two
 // readiness probes run concurrently and the result is cached briefly so repeated
 // navigations and the navbar indicator do not each pay two network round-trips.
-const STATUS_TTL_MS = 3_000;
-let statusCache: { at: number; payload: Record<string, unknown> } | undefined;
-let statusInFlight: Promise<Record<string, unknown>> | undefined;
+const STATUS_TTL_MS = 3_000
+let statusCache: { at: number; payload: Record<string, unknown> } | undefined
+let statusInFlight: Promise<Record<string, unknown>> | undefined
 
 async function computeStatus(): Promise<Record<string, unknown>> {
-  const base = apiUrl();
-  const token = adminToken();
-  const coordBase = coordinatorUrl();
-  const coordTok = coordinatorToken();
-  const coordinatorConfigured = Boolean(coordTok);
+  const base = apiUrl()
+  const token = adminToken()
+  const coordBase = coordinatorUrl()
+  const coordTok = coordinatorToken()
+  const coordinatorConfigured = Boolean(coordTok)
   const [reachable, coordinatorReachable] = await Promise.all([
     token ? probeReachable(base, token) : Promise.resolve(false),
     coordTok ? probeReachable(coordBase, coordTok) : Promise.resolve(false),
-  ]);
+  ])
   return {
     configured: Boolean(token),
     reachable: Boolean(token) && reachable,
@@ -171,184 +171,178 @@ async function computeStatus(): Promise<Record<string, unknown>> {
     coordinatorConfigured,
     coordinatorReachable,
     coordinatorUrl: coordBase,
-  };
+  }
 }
 
 async function handleStatus(res: ServerResponse): Promise<void> {
-  const now = Date.now();
+  const now = Date.now()
   if (!statusCache || now - statusCache.at >= STATUS_TTL_MS) {
     if (!statusInFlight) {
       statusInFlight = computeStatus().finally(() => {
-        statusInFlight = undefined;
-      });
+        statusInFlight = undefined
+      })
     }
     try {
-      statusCache = { at: Date.now(), payload: await statusInFlight };
+      statusCache = { at: Date.now(), payload: await statusInFlight }
     } catch {
-      sendJson(res, 200, { configured: false, reachable: false, apiUrl: apiUrl() });
-      return;
+      sendJson(res, 200, { configured: false, reachable: false, apiUrl: apiUrl() })
+      return
     }
   }
-  sendJson(res, 200, statusCache.payload);
+  sendJson(res, 200, statusCache.payload)
 }
 
 // Full control-plane diagnostics: the same checks the Console `doctor` runs, surfaced
 // to the web client so platform health lives in one place. The report is comparatively
 // expensive (it probes every service and walks each zone), so a short in-process cache
 // absorbs the navbar's background polling without hammering the control plane.
-const DIAGNOSTICS_TTL_MS = 8_000;
+const DIAGNOSTICS_TTL_MS = 8_000
 interface DiagnosticsCacheEntry {
-  at: number;
-  generation: number;
-  payload: DoctorReport & { generatedAt: string };
+  at: number
+  generation: number
+  payload: DoctorReport & { generatedAt: string }
 }
-const diagnosticsCache = new Map<string, DiagnosticsCacheEntry>();
-const diagnosticsInFlight = new Map<string, Promise<DiagnosticsCacheEntry>>();
+const diagnosticsCache = new Map<string, DiagnosticsCacheEntry>()
+const diagnosticsInFlight = new Map<string, Promise<DiagnosticsCacheEntry>>()
 // The report is derived from the control-plane state (zones, resources, policies, …). Any
 // mutation through this proxy can change it, so a monotonic generation lets a write
 // invalidate every cached/in-flight report: a computation that started before the change is
 // neither served as fresh nor stored, forcing the next read to recompute against current state.
-let diagnosticsGeneration = 0;
+let diagnosticsGeneration = 0
 
 // Invalidate all diagnostics state after a control-plane mutation so the next read reflects
 // the change immediately instead of waiting out the freshness window.
 function invalidateDiagnostics(): void {
-  diagnosticsGeneration += 1;
-  diagnosticsCache.clear();
-  diagnosticsInFlight.clear();
+  diagnosticsGeneration += 1
+  diagnosticsCache.clear()
+  diagnosticsInFlight.clear()
 }
 
 interface DiagnosticsOptions {
-  zoneId?: string;
-  strict: boolean;
-  preflightOnly: boolean;
+  zoneId?: string
+  strict: boolean
+  preflightOnly: boolean
 }
 
 function parseDiagnosticsOptions(path: string): DiagnosticsOptions {
-  const query = path.includes("?") ? new URLSearchParams(path.slice(path.indexOf("?") + 1)) : new URLSearchParams();
+  const query = path.includes('?') ? new URLSearchParams(path.slice(path.indexOf('?') + 1)) : new URLSearchParams()
   return {
-    zoneId: query.get("zone") ?? undefined,
-    strict: query.get("strict") === "true",
-    preflightOnly: query.get("mode") === "preflight",
-  };
+    zoneId: query.get('zone') ?? undefined,
+    strict: query.get('strict') === 'true',
+    preflightOnly: query.get('mode') === 'preflight',
+  }
 }
 
 function diagnosticsCacheKey(options: DiagnosticsOptions): string {
-  return `${options.preflightOnly ? "preflight" : "system"}:${options.strict ? "strict" : "lax"}:${options.zoneId ?? "all"}`;
+  return `${options.preflightOnly ? 'preflight' : 'system'}:${options.strict ? 'strict' : 'lax'}:${options.zoneId ?? 'all'}`
 }
 
 async function computeDiagnostics(options: DiagnosticsOptions): Promise<DiagnosticsCacheEntry> {
   // Capture the generation at the start of the read; if a mutation bumps it before the
   // report finishes, the result is considered stale and is dropped by the caller.
-  const generation = diagnosticsGeneration;
+  const generation = diagnosticsGeneration
   const report = await runDoctorDiagnostics({
     zoneId: options.preflightOnly ? undefined : options.zoneId,
     strict: options.strict,
     preflightOnly: options.preflightOnly,
-  });
-  const generatedAt = new Date().toISOString();
-  return { at: Date.now(), generation, payload: { ...report, generatedAt } };
+  })
+  const generatedAt = new Date().toISOString()
+  return { at: Date.now(), generation, payload: { ...report, generatedAt } }
 }
 
 async function handleDiagnostics(res: ServerResponse, path: string): Promise<void> {
   if (!adminToken()) {
-    sendJson(res, 503, { error: "control_plane_not_configured" });
-    return;
+    sendJson(res, 503, { error: 'control_plane_not_configured' })
+    return
   }
-  const options = parseDiagnosticsOptions(path);
-  const key = diagnosticsCacheKey(options);
-  const cached = diagnosticsCache.get(key);
-  const fresh =
-    cached && cached.generation === diagnosticsGeneration && Date.now() - cached.at < DIAGNOSTICS_TTL_MS;
+  const options = parseDiagnosticsOptions(path)
+  const key = diagnosticsCacheKey(options)
+  const cached = diagnosticsCache.get(key)
+  const fresh = cached && cached.generation === diagnosticsGeneration && Date.now() - cached.at < DIAGNOSTICS_TTL_MS
   if (fresh) {
-    sendJson(res, 200, cached.payload);
-    return;
+    sendJson(res, 200, cached.payload)
+    return
   }
-  let inFlight = diagnosticsInFlight.get(key);
+  let inFlight = diagnosticsInFlight.get(key)
   if (!inFlight) {
-    inFlight = computeDiagnostics(options);
-    diagnosticsInFlight.set(key, inFlight);
+    inFlight = computeDiagnostics(options)
+    diagnosticsInFlight.set(key, inFlight)
     void inFlight.finally(() => {
       // Only clear our own slot; a mutation may have already replaced it.
-      if (diagnosticsInFlight.get(key) === inFlight) diagnosticsInFlight.delete(key);
-    });
+      if (diagnosticsInFlight.get(key) === inFlight) diagnosticsInFlight.delete(key)
+    })
   }
-  let entry: DiagnosticsCacheEntry;
+  let entry: DiagnosticsCacheEntry
   try {
-    entry = await inFlight;
+    entry = await inFlight
   } catch {
-    sendJson(res, 502, { error: "diagnostics_failed" });
-    return;
+    sendJson(res, 502, { error: 'diagnostics_failed' })
+    return
   }
   // Cache only results that still reflect the current generation; a report computed across a
   // mutation is served once but never cached, so the next read recomputes against fresh state.
-  if (entry.generation === diagnosticsGeneration) diagnosticsCache.set(key, entry);
-  sendJson(res, 200, entry.payload);
+  if (entry.generation === diagnosticsGeneration) diagnosticsCache.set(key, entry)
+  sendJson(res, 200, entry.payload)
 }
 
-async function forwardProxy(
-  req: IncomingMessage,
-  res: ServerResponse,
-  target: string,
-  token: string,
-): Promise<void> {
-  const method = req.method ?? "GET";
-  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+async function forwardProxy(req: IncomingMessage, res: ServerResponse, target: string, token: string): Promise<void> {
+  const method = req.method ?? 'GET'
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
 
-  let body: Buffer | undefined;
-  if (method !== "GET" && method !== "HEAD") {
-    body = await readBody(req);
-    if (body.length > 0) headers["Content-Type"] = "application/json";
+  let body: Buffer | undefined
+  if (method !== 'GET' && method !== 'HEAD') {
+    body = await readBody(req)
+    if (body.length > 0) headers['Content-Type'] = 'application/json'
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PROXY_TIMEOUT_MS);
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), PROXY_TIMEOUT_MS)
   try {
     const upstream = await fetch(target, {
       method,
       headers,
       body: body && body.length > 0 ? body : undefined,
       signal: controller.signal,
-    });
-    const text = await upstream.text();
-    res.statusCode = upstream.status;
-    res.setHeader("Content-Type", upstream.headers.get("content-type") ?? "application/json");
-    res.setHeader("Cache-Control", "no-store");
+    })
+    const text = await upstream.text()
+    res.statusCode = upstream.status
+    res.setHeader('Content-Type', upstream.headers.get('content-type') ?? 'application/json')
+    res.setHeader('Cache-Control', 'no-store')
     // Surface keyset pagination to the browser. The control plane advertises the next
     // page through a same-origin Link header; without forwarding it the web client
     // silently truncates large lists at the server default page size.
-    const link = upstream.headers.get("link");
-    if (link) res.setHeader("Link", link);
-    res.end(text);
+    const link = upstream.headers.get('link')
+    if (link) res.setHeader('Link', link)
+    res.end(text)
   } catch {
-    sendJson(res, 502, { error: "upstream_unreachable" });
+    sendJson(res, 502, { error: 'upstream_unreachable' })
   } finally {
-    clearTimeout(timer);
+    clearTimeout(timer)
   }
 }
 
 async function handleProxy(req: IncomingMessage, res: ServerResponse, rest: string): Promise<void> {
-  const token = adminToken();
+  const token = adminToken()
   if (!token) {
-    sendJson(res, 503, { error: "control_plane_not_configured" });
-    return;
+    sendJson(res, 503, { error: 'control_plane_not_configured' })
+    return
   }
-  await forwardProxy(req, res, `${apiUrl()}${rest}`, token);
+  await forwardProxy(req, res, `${apiUrl()}${rest}`, token)
   // A successful write to the control plane can change what diagnostics reports (zone
   // inventory, resources, policy enforcement, …); drop cached reports so the next read
   // recomputes against the new state instead of surfacing a stale warning.
-  const method = (req.method ?? "GET").toUpperCase();
-  if (method !== "GET" && method !== "HEAD" && res.statusCode < 400) {
-    invalidateDiagnostics();
+  const method = (req.method ?? 'GET').toUpperCase()
+  if (method !== 'GET' && method !== 'HEAD' && res.statusCode < 400) {
+    invalidateDiagnostics()
   }
 }
 
 function controlAudience(): string {
-  return process.env.CONTROL_AUDIENCE ?? DEFAULT_CONTROL_AUDIENCE;
+  return process.env.CONTROL_AUDIENCE ?? DEFAULT_CONTROL_AUDIENCE
 }
 
 function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return err instanceof Error ? err.message : String(err)
 }
 
 // Reports the local Control endpoint gate state. Manageability is decided by whether this
@@ -357,116 +351,112 @@ function errorText(err: unknown): string {
 // gracefully on remote or unprivileged hosts.
 async function handleControlStatus(res: ServerResponse): Promise<void> {
   try {
-    const status = await controlServiceStatus({ accessEnv: process.env });
-    sendJson(res, 200, { manageable: true, ...status });
+    const status = await controlServiceStatus({ accessEnv: process.env })
+    sendJson(res, 200, { manageable: true, ...status })
   } catch (err) {
-    sendJson(res, 200, { manageable: false, reason: errorText(err) });
+    sendJson(res, 200, { manageable: false, reason: errorText(err) })
   }
 }
 
-async function handleControlLifecycle(
-  res: ServerResponse,
-  action: "enable" | "disable",
-): Promise<void> {
+async function handleControlLifecycle(res: ServerResponse, action: 'enable' | 'disable'): Promise<void> {
   try {
     const result = await applyControlLifecycleAction({
       action,
       accessEnv: process.env,
-    });
-    invalidateDiagnostics();
-    sendJson(res, 200, { manageable: true, ...result });
+    })
+    invalidateDiagnostics()
+    sendJson(res, 200, { manageable: true, ...result })
   } catch (err) {
-    sendJson(res, 409, { error: "control_lifecycle_failed", detail: errorText(err) });
+    sendJson(res, 409, { error: 'control_lifecycle_failed', detail: errorText(err) })
   }
 }
 
 interface ControlTokenRequest {
-  zoneId?: unknown;
-  keyId?: unknown;
-  clientSecret?: unknown;
-  scopes?: unknown;
-  ttlSeconds?: unknown;
+  zoneId?: unknown
+  keyId?: unknown
+  clientSecret?: unknown
+  scopes?: unknown
+  ttlSeconds?: unknown
 }
 
 // Exchanges a control key for a short-lived STS invocation token. Mirrors the Console token
 // flow exactly: the requested scopes must be a subset of the key's grant and the TTL must not
 // exceed the key maximum, both checked before the secret is exchanged at STS.
 async function handleControlToken(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const token = adminToken();
+  const token = adminToken()
   if (!token) {
-    sendJson(res, 503, { error: "control_plane_not_configured" });
-    return;
+    sendJson(res, 503, { error: 'control_plane_not_configured' })
+    return
   }
-  let body: ControlTokenRequest;
+  let body: ControlTokenRequest
   try {
-    const raw = (await readBody(req)).toString("utf8");
-    body = raw ? (JSON.parse(raw) as ControlTokenRequest) : {};
+    const raw = (await readBody(req)).toString('utf8')
+    body = raw ? (JSON.parse(raw) as ControlTokenRequest) : {}
   } catch {
-    sendJson(res, 400, { error: "invalid_request" });
-    return;
+    sendJson(res, 400, { error: 'invalid_request' })
+    return
   }
-  const zoneId = typeof body.zoneId === "string" ? body.zoneId : "";
-  const keyId = typeof body.keyId === "string" ? body.keyId : "";
-  const clientSecret = typeof body.clientSecret === "string" ? body.clientSecret : "";
-  const scopes = Array.isArray(body.scopes) ? body.scopes.filter((s): s is string => typeof s === "string") : [];
-  const ttlSeconds = typeof body.ttlSeconds === "number" ? body.ttlSeconds : Number.NaN;
+  const zoneId = typeof body.zoneId === 'string' ? body.zoneId : ''
+  const keyId = typeof body.keyId === 'string' ? body.keyId : ''
+  const clientSecret = typeof body.clientSecret === 'string' ? body.clientSecret : ''
+  const scopes = Array.isArray(body.scopes) ? body.scopes.filter((s): s is string => typeof s === 'string') : []
+  const ttlSeconds = typeof body.ttlSeconds === 'number' ? body.ttlSeconds : Number.NaN
   if (!zoneId || !keyId) {
-    sendJson(res, 400, { error: "zone_and_key_required" });
-    return;
+    sendJson(res, 400, { error: 'zone_and_key_required' })
+    return
   }
   if (!clientSecret) {
-    sendJson(res, 400, { error: "client_secret_required" });
-    return;
+    sendJson(res, 400, { error: 'client_secret_required' })
+    return
   }
   if (scopes.length === 0) {
-    sendJson(res, 400, { error: "at_least_one_permission_required" });
-    return;
+    sendJson(res, 400, { error: 'at_least_one_permission_required' })
+    return
   }
   if (!Number.isInteger(ttlSeconds) || ttlSeconds <= 0) {
-    sendJson(res, 400, { error: "invalid_ttl" });
-    return;
+    sendJson(res, 400, { error: 'invalid_ttl' })
+    return
   }
 
-  let application: Parameters<typeof controlKeyRecord>[0];
+  let application: Parameters<typeof controlKeyRecord>[0]
   try {
-    const upstream = await fetch(
-      `${apiUrl()}/v1/zones/${encodeURIComponent(zoneId)}/applications/${encodeURIComponent(keyId)}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
+    const upstream = await fetch(`${apiUrl()}/v1/zones/${encodeURIComponent(zoneId)}/applications/${encodeURIComponent(keyId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
     if (upstream.status === 404) {
-      sendJson(res, 404, { error: "control_key_not_found" });
-      return;
+      sendJson(res, 404, { error: 'control_key_not_found' })
+      return
     }
     if (!upstream.ok) {
-      sendJson(res, 502, { error: "upstream_unreachable" });
-      return;
+      sendJson(res, 502, { error: 'upstream_unreachable' })
+      return
     }
-    application = (await upstream.json()) as Parameters<typeof controlKeyRecord>[0];
+    application = (await upstream.json()) as Parameters<typeof controlKeyRecord>[0]
   } catch {
-    sendJson(res, 502, { error: "upstream_unreachable" });
-    return;
+    sendJson(res, 502, { error: 'upstream_unreachable' })
+    return
   }
 
-  const traits = application.traits ?? [];
+  const traits = application.traits ?? []
   if (!traits.includes(CONTROL_INVOKE_TRAIT)) {
-    sendJson(res, 400, { error: "not_a_control_key" });
-    return;
+    sendJson(res, 400, { error: 'not_a_control_key' })
+    return
   }
-  const record = controlKeyRecord(application);
-  const allowed = new Set(record.allowed_scopes);
+  const record = controlKeyRecord(application)
+  const allowed = new Set(record.allowed_scopes)
   for (const scope of scopes) {
     if (!allowed.has(scope)) {
-      sendJson(res, 400, { error: "scope_not_granted", detail: scope });
-      return;
+      sendJson(res, 400, { error: 'scope_not_granted', detail: scope })
+      return
     }
   }
   if (record.max_ttl_seconds !== undefined && ttlSeconds > record.max_ttl_seconds) {
-    sendJson(res, 400, { error: "ttl_exceeds_key_maximum", detail: String(record.max_ttl_seconds) });
-    return;
+    sendJson(res, 400, { error: 'ttl_exceeds_key_maximum', detail: String(record.max_ttl_seconds) })
+    return
   }
 
-  const resource = controlAudience();
-  let accessToken: string;
+  const resource = controlAudience()
+  let accessToken: string
   try {
     accessToken = await credentialRead({
       cfg: {
@@ -478,97 +468,89 @@ async function handleControlToken(req: IncomingMessage, res: ServerResponse): Pr
       resource,
       scopes,
       ttlSeconds,
-    });
+    })
   } catch (err) {
-    sendJson(res, 502, { error: "token_exchange_failed", detail: errorText(err) });
-    return;
+    sendJson(res, 502, { error: 'token_exchange_failed', detail: errorText(err) })
+    return
   }
   sendJson(res, 200, {
     clientId: keyId,
     accessToken,
-    tokenType: "Bearer",
+    tokenType: 'Bearer',
     resource,
     scopes,
-    invokePath: "/v1/control/invoke",
-  });
+    invokePath: '/v1/control/invoke',
+  })
 }
 
 // Routes the local-only Control management surface (endpoint gate + token exchange) that the
 // Console exposes, so the web client reaches functional parity without a TTY.
-async function handleControl(
-  req: IncomingMessage,
-  res: ServerResponse,
-  path: string,
-): Promise<boolean> {
-  const method = (req.method ?? "GET").toUpperCase();
-  if (path === "/control/status" && method === "GET") {
-    await handleControlStatus(res);
-    return true;
+async function handleControl(req: IncomingMessage, res: ServerResponse, path: string): Promise<boolean> {
+  const method = (req.method ?? 'GET').toUpperCase()
+  if (path === '/control/status' && method === 'GET') {
+    await handleControlStatus(res)
+    return true
   }
-  if (path === "/control/enable" && method === "POST") {
-    await handleControlLifecycle(res, "enable");
-    return true;
+  if (path === '/control/enable' && method === 'POST') {
+    await handleControlLifecycle(res, 'enable')
+    return true
   }
-  if (path === "/control/disable" && method === "POST") {
-    await handleControlLifecycle(res, "disable");
-    return true;
+  if (path === '/control/disable' && method === 'POST') {
+    await handleControlLifecycle(res, 'disable')
+    return true
   }
-  if (path === "/control/token" && method === "POST") {
-    await handleControlToken(req, res);
-    return true;
+  if (path === '/control/token' && method === 'POST') {
+    await handleControlToken(req, res)
+    return true
   }
-  return false;
+  return false
 }
 
 // Proxies the agent and delegation runtime surfaces served by the Coordinator.
-async function handleCoordProxy(
-  req: IncomingMessage,
-  res: ServerResponse,
-  rest: string,
-): Promise<void> {
-  const token = coordinatorToken();
+async function handleCoordProxy(req: IncomingMessage, res: ServerResponse, rest: string): Promise<void> {
+  const token = coordinatorToken()
   if (!token) {
-    sendJson(res, 503, { error: "coordinator_not_configured" });
-    return;
+    sendJson(res, 503, { error: 'coordinator_not_configured' })
+    return
   }
-  await forwardProxy(req, res, `${coordinatorUrl()}${rest}`, token);
+  await forwardProxy(req, res, `${coordinatorUrl()}${rest}`, token)
 }
 
 // Returns true when the request was a console route and has been handled.
 export async function handleConsole(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
-  const url = req.url ?? "";
-  if (!url.startsWith(API_PREFIX)) return false;
+  const url = req.url ?? ''
+  if (!url.startsWith(API_PREFIX)) return false
 
-  const session = await validateSession(req);
+  const session = await validateSession(req)
   if (!session) {
-    sendJson(res, 401, { error: "unauthenticated" });
-    return true;
+    sendJson(res, 401, { error: 'unauthenticated' })
+    return true
   }
 
   if (url.startsWith(`${COORD_PREFIX}/`)) {
-    await handleCoordProxy(req, res, url.slice(COORD_PREFIX.length));
-    return true;
+    await handleCoordProxy(req, res, url.slice(COORD_PREFIX.length))
+    return true
   }
 
-  const path = url.slice(API_PREFIX.length);
-  if (path === "/status" || path.startsWith("/status?")) {
-    await handleStatus(res);
-    return true;
+  const path = url.slice(API_PREFIX.length)
+  if (path === '/status' || path.startsWith('/status?')) {
+    await handleStatus(res)
+    return true
   }
-  if (path === "/diagnostics" || path.startsWith("/diagnostics?")) {
-    await handleDiagnostics(res, path);
-    return true;
+  if (path === '/diagnostics' || path.startsWith('/diagnostics?')) {
+    await handleDiagnostics(res, path)
+    return true
   }
-  if (path.startsWith("/control/")) {
-    if (await handleControl(req, res, path)) return true;
-    sendJson(res, 404, { error: "not_found" });
-    return true;
+  if (path.startsWith('/control/')) {
+    if (await handleControl(req, res, path)) return true
+    sendJson(res, 404, { error: 'not_found' })
+    return true
   }
-  if (path.startsWith("/v1/")) {
-    await handleProxy(req, res, path);
-    return true;
+  if (path.startsWith('/v1/')) {
+    await handleProxy(req, res, path)
+    return true
   }
 
-  sendJson(res, 404, { error: "not_found" });
-  return true;
+  sendJson(res, 404, { error: 'not_found' })
+  return true
 }

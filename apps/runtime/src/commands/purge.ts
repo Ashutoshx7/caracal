@@ -24,28 +24,9 @@ import { CARACAL_REGISTRY, CARACAL_VERSION } from '../runtime/version.gen.ts'
 import { runtimePaths } from '@caracalai/engine'
 import { composeUnavailableReason, dockerComposeAvailable, resolvePaths } from './stack.ts'
 import { showHelp } from './shared.ts'
-import {
-  style,
-  SYMBOL,
-  printError,
-  printWarn,
-  printStep,
-  printSuccess,
-  printHeader,
-} from '../style.ts'
+import { style, SYMBOL, printError, printWarn, printStep, printSuccess, printHeader } from '../style.ts'
 
-type TargetId =
-  | 'stack'
-  | 'volumes'
-  | 'logs'
-  | 'config'
-  | 'runtime'
-  | 'secrets'
-  | 'web'
-  | 'cache'
-  | 'examples'
-  | 'images'
-  | 'binary'
+type TargetId = 'stack' | 'volumes' | 'logs' | 'config' | 'runtime' | 'secrets' | 'web' | 'cache' | 'examples' | 'images' | 'binary'
 
 type GroupId = 'services' | 'state' | 'dev' | 'artifacts'
 
@@ -138,11 +119,7 @@ function authDatabaseTarget(): { name: string; maintenanceUrl: string } | undefi
 // Dropping the database (rather than truncating tables) guarantees a clean slate even while
 // `caracal web` is running: WITH FORCE terminates the auth service's live connections so the
 // operator is logged out immediately, and the next launch recreates an empty database.
-async function dropAuthDatabase(
-  target: { name: string; maintenanceUrl: string },
-  ctx: PurgeContext,
-  label: string,
-): Promise<void> {
+async function dropAuthDatabase(target: { name: string; maintenanceUrl: string }, ctx: PurgeContext, label: string): Promise<void> {
   if (ctx.dryRun) {
     process.stdout.write(`  ${style.label('[dry-run]')} drop database ${style.code(label)}: ${target.name}\n`)
     return
@@ -166,43 +143,41 @@ async function dropAuthDatabase(
 }
 
 function purgeHelp(): never {
-  return showHelp(
-    [
-      'Usage: caracal purge [targets...] [options]',
-      '',
-      'Centralized cleanup for selectable resources. Without targets, prompts interactively.',
-      'Pass individual target names, a group name (selects the whole group), or "all".',
-      '',
-      'Runtime services & data (services):',
-      '  stack       Stop and remove containers + network (compose down)',
-      '  volumes     Remove data volumes: DESTROYS Postgres and Redis state',
-      '  logs        Truncate container log files via `compose down` + recreate',
-      '',
-      'Local install & operator state (state):',
-      '  config      Remove caracal.toml (zone client secret and config)',
-      '  runtime     Remove runtime assets at $CARACAL_HOME (.env, compose.yml)',
-      '  secrets     Remove operator overrides and generated secret files',
-      '  web         Drop the web console operator database (PostgreSQL caracal_auth)',
-      '',
-      'Developer artifacts (dev) — dev only:',
-      '  cache       Remove build artifacts: apps/*/dist, coverage/, node_modules/.cache',
-      '  examples    Remove example containers, volumes, networks, and example-built images',
-      '',
-      'Cached images & binaries (artifacts):',
-      '  images      Remove cached Caracal docker images (caracal/*, ghcr.io/garudex-labs/caracal-*)',
-      '  binary      Uninstall Caracal runtime and web console binaries from $CARACAL_INSTALL_DIR (default ~/.local/bin)',
-      '',
-      'Aggregate:',
-      '  all         Purge every applicable target (destructive: wipes volumes, runtime, config, web, examples, images, binary)',
-      '',
-      'Options:',
-      '  --yes, -y                Skip confirmation prompt',
-      '  --dry-run                Show what would be removed without doing it',
-      '  --safe                   With `all`, skip destructive targets (volumes, runtime, secrets, web, …)',
-      '  --help, -h               Show this help',
-      '',
-    ],
-  )
+  return showHelp([
+    'Usage: caracal purge [targets...] [options]',
+    '',
+    'Centralized cleanup for selectable resources. Without targets, prompts interactively.',
+    'Pass individual target names, a group name (selects the whole group), or "all".',
+    '',
+    'Runtime services & data (services):',
+    '  stack       Stop and remove containers + network (compose down)',
+    '  volumes     Remove data volumes: DESTROYS Postgres and Redis state',
+    '  logs        Truncate container log files via `compose down` + recreate',
+    '',
+    'Local install & operator state (state):',
+    '  config      Remove caracal.toml (zone client secret and config)',
+    '  runtime     Remove runtime assets at $CARACAL_HOME (.env, compose.yml)',
+    '  secrets     Remove operator overrides and generated secret files',
+    '  web         Drop the web console operator database (PostgreSQL caracal_auth)',
+    '',
+    'Developer artifacts (dev) — dev only:',
+    '  cache       Remove build artifacts: apps/*/dist, coverage/, node_modules/.cache',
+    '  examples    Remove example containers, volumes, networks, and example-built images',
+    '',
+    'Cached images & binaries (artifacts):',
+    '  images      Remove cached Caracal docker images (caracal/*, ghcr.io/garudex-labs/caracal-*)',
+    '  binary      Uninstall Caracal runtime and web console binaries from $CARACAL_INSTALL_DIR (default ~/.local/bin)',
+    '',
+    'Aggregate:',
+    '  all         Purge every applicable target (destructive: wipes volumes, runtime, config, web, examples, images, binary)',
+    '',
+    'Options:',
+    '  --yes, -y                Skip confirmation prompt',
+    '  --dry-run                Show what would be removed without doing it',
+    '  --safe                   With `all`, skip destructive targets (volumes, runtime, secrets, web, …)',
+    '  --help, -h               Show this help',
+    '',
+  ])
 }
 
 function buildContext(dryRun: boolean): PurgeContext {
@@ -449,8 +424,7 @@ const TARGETS: Target[] = [
   {
     id: 'cache',
     label: 'Remove build artifacts (dev only)',
-    describe: (ctx) =>
-      ctx.repoRoot ? `apps/*/dist, packages/*/dist, coverage/, node_modules/.cache` : '(dev mode only)',
+    describe: (ctx) => (ctx.repoRoot ? `apps/*/dist, packages/*/dist, coverage/, node_modules/.cache` : '(dev mode only)'),
     available: (ctx) => ctx.repoRoot !== undefined,
     run: async (ctx) => {
       if (!ctx.repoRoot) return
@@ -701,9 +675,7 @@ export async function purgeCommand(argv: string[]): Promise<void> {
   }
 
   if (!yes && !dryRun) {
-    const q = destructive
-      ? `\n${style.prompt('Type "yes" to confirm:')} `
-      : `\n${style.prompt('Proceed?')} ${style.label('[y/N]')} `
+    const q = destructive ? `\n${style.prompt('Type "yes" to confirm:')} ` : `\n${style.prompt('Proceed?')} ${style.label('[y/N]')} `
     const answer = await prompt(q)
     const ok = destructive ? answer === 'yes' : /^y(es)?$/i.test(answer)
     if (!ok) {

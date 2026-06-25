@@ -18,9 +18,7 @@ const npmPaths = inventory.packages.npm.map((pkg) => pkg.dir)
 const pyPaths = inventory.packages.pypi.map((pkg) => pkg.dir)
 const productImages = productContainers(inventory.config)
 const containers = productImages.filter((image) => image.name !== 'runtime').map((image) => image.name)
-const archiveTargets = productArchiveTargets(inventory.config).map(
-  (target) => `caracal-runtime-${target.os}-${target.arch}`,
-)
+const archiveTargets = productArchiveTargets(inventory.config).map((target) => `caracal-runtime-${target.os}-${target.arch}`)
 const imageBuilds = productImages.map((image) => [image.name, image.context, image.dockerfile])
 const releaseTagPattern = /^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}(\.[0-9]+)?(-rc\.(sha[0-9A-Za-z]+|[0-9]+))?$/
 
@@ -198,16 +196,10 @@ function makeManifest(options = {}) {
   const version = `${baseVersion}-${suffix}`
   const tag = `v${version}`
   const npm = Object.fromEntries(
-    Object.entries(readPackageVersions(npmPaths, packageSuffix)).map(([name, base]) => [
-      name,
-      npmRcVersion(base, packageSuffix),
-    ]),
+    Object.entries(readPackageVersions(npmPaths, packageSuffix)).map(([name, base]) => [name, npmRcVersion(base, packageSuffix)]),
   )
   const pypi = Object.fromEntries(
-    Object.entries(readPythonVersions(pyPaths, packageSuffix)).map(([name, base]) => [
-      name,
-      pythonRcVersion(base, packageSuffix),
-    ]),
+    Object.entries(readPythonVersions(pyPaths, packageSuffix)).map(([name, base]) => [name, pythonRcVersion(base, packageSuffix)]),
   )
   const reg = registries(options)
   return {

@@ -21,9 +21,7 @@ const repoRoot = resolve(process.env.GITHUB_WORKSPACE ?? process.cwd())
 const input = process.argv[2]
 if (!input) fail('expected a manifest path or release tag argument')
 
-const manifestPath = input.endsWith('.json')
-  ? resolve(input)
-  : join(repoRoot, 'releases', input, 'manifest.json')
+const manifestPath = input.endsWith('.json') ? resolve(input) : join(repoRoot, 'releases', input, 'manifest.json')
 if (!existsSync(manifestPath)) fail(`manifest not found: ${manifestPath}`)
 
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
@@ -31,10 +29,7 @@ const release = manifest.release
 if (!tagPattern.test(release ?? '')) fail(`invalid manifest release tag: ${release}`)
 
 const channel = manifest.mode ?? (release.includes('-rc.') ? 'rc' : 'stable')
-const date =
-  manifest.publishedAt ??
-  manifest.generatedAt?.slice(0, 10) ??
-  release.replace(/^v(\d{4})\.(\d{2})\.(\d{2}).*$/, '$1-$2-$3')
+const date = manifest.publishedAt ?? manifest.generatedAt?.slice(0, 10) ?? release.replace(/^v(\d{4})\.(\d{2})\.(\d{2}).*$/, '$1-$2-$3')
 
 const components = Object.keys(manifest.binaries ?? {})
 if (components.length === 0) fail('manifest has no binaries to derive assets from')
