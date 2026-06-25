@@ -57,6 +57,7 @@ export interface Config {
   workerId: string
   bodyLimitBytes: number
   requestTimeoutMs: number
+  keepAliveTimeoutMs: number
   db: {
     poolMax: number
     statementTimeoutMs: number
@@ -149,6 +150,10 @@ export function loadConfig(): Config {
     workerId: deriveWorkerId(),
     bodyLimitBytes: intEnv('API_BODY_LIMIT_BYTES', 1_048_576, 1),
     requestTimeoutMs: intEnv('REQUEST_TIMEOUT_MS', 30_000, 1),
+    // Hold idle keep-alive sockets longer than the typical load-balancer idle window (≈60s) so
+    // the LB never reuses a connection the server is simultaneously closing, which surfaces as
+    // sporadic 502s during steady traffic.
+    keepAliveTimeoutMs: intEnv('KEEP_ALIVE_TIMEOUT_MS', 75_000, 1),
     db: {
       poolMax: intEnv('DB_POOL_MAX', 20, 1),
       statementTimeoutMs: intEnv('DB_STATEMENT_TIMEOUT_MS', 15_000, 1),

@@ -51,6 +51,9 @@ function buildCfg() {
     outboxRetentionDays: intEnv('OUTBOX_RETENTION_DAYS', 7),
     shutdownGraceMs: intEnv('SHUTDOWN_GRACE_MS', 15_000),
     requestTimeoutMs: intEnv('REQUEST_TIMEOUT_MS', 30_000),
+    // Hold idle keep-alive sockets longer than the typical load-balancer idle window (≈60s) so
+    // the LB never reuses a connection the server is simultaneously closing.
+    keepAliveTimeoutMs: intEnv('KEEP_ALIVE_TIMEOUT_MS', 75_000, 1),
     jwksCacheMax: intEnv('JWKS_CACHE_MAX', 256),
     verifyRateLimitPerMin: intEnv('VERIFY_RATE_LIMIT_PER_MIN', 60, 0),
     invocationRateLimitPerMin: intEnv('INVOCATION_RATE_LIMIT_PER_MIN', 120, 0),

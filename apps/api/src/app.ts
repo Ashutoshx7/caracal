@@ -156,6 +156,7 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
     },
     bodyLimit: cfg.bodyLimitBytes,
     requestTimeout: cfg.requestTimeoutMs,
+    keepAliveTimeout: cfg.keepAliveTimeoutMs,
     genReqId: (req) => {
       const incoming = req.headers['x-request-id']
       const value = Array.isArray(incoming) ? incoming[0] : incoming
