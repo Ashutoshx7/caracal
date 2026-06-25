@@ -18,10 +18,14 @@ PROTOCOL_VERSION = "2025-06-18"
 _SERVER_INSTRUCTIONS = {
     "atlas-vendor": (
         "Atlas Vendor Network exposes vendor master data, onboarding, verification, "
-        "compliance, and contracts. Discover vendors with search_vendors or list_vendors, "
-        "open and progress onboarding with register_vendor, get_onboarding_status, and "
-        "advance_onboarding, verify banking with verify_vendor_banking, and gate payments "
-        "on get_compliance_status. Vendor identifiers look like VEND-00042."
+        "compliance, and contracts. Discover vendors with search_vendors or list_vendors and "
+        "browse the commodity taxonomy with list_categories. Open and progress onboarding with "
+        "register_vendor, get_onboarding_status, and advance_onboarding; maintain master data "
+        "with update_vendor_profile and add_vendor_contact. Verify banking with "
+        "verify_vendor_banking, (re)screen sanctions/KYB with run_compliance_screening, and gate "
+        "payments on get_compliance_status. Review uploaded documents with review_vendor_document "
+        "and audit any record with list_vendor_events. Single vendors are also addressable as "
+        "resources at atlas://vendors/{vendorId}. Vendor identifiers look like VEND-00042."
     ),
     "relay-automation": (
         "Relay Automation runs finance-operations workflows as asynchronous, long-running "

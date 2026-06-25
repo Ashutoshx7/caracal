@@ -218,12 +218,15 @@ CATALOG: tuple[Provider, ...] = (
         id="atlas-vendor", brand="Atlas Vendor Network", category="mcp",
         protocol="mcp", port=9411, industry="Vendor master data",
         tagline="Vendor onboarding, verification, and master-data tool server",
-        resources=("vendors", "contracts"),
+        resources=("vendors", "contracts", "categories", "events"),
         operations=("search_vendors", "list_vendors", "get_vendor_profile",
-                    "list_vendor_contacts", "register_vendor", "get_onboarding_status",
+                    "list_vendor_contacts", "update_vendor_profile", "add_vendor_contact",
+                    "register_vendor", "get_onboarding_status",
                     "advance_onboarding", "verify_vendor_banking", "get_compliance_status",
-                    "list_vendor_documents", "submit_vendor_document", "set_vendor_status",
-                    "list_contracts", "get_contract_terms"),
+                    "run_compliance_screening", "list_vendor_documents",
+                    "submit_vendor_document", "get_vendor_document", "review_vendor_document",
+                    "set_vendor_status", "list_contracts", "get_contract_terms",
+                    "list_categories", "list_vendor_events"),
         mcp_auth="bearer", auth_header="Authorization", auth_scheme="Bearer",
     ),
     Provider(
@@ -330,6 +333,7 @@ CATALOG: tuple[Provider, ...] = (
                     "list_budgets", "get_budget"),
         failure_profile="strict",
         client_auth_method="client_secret_basic", scopes=("procure.read", "procure.write"),
+        audience="https://api.junction-procure.test",
     ),
 )
 

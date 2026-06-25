@@ -1580,6 +1580,15 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id, board):
             _finish(w, {"requisition_id": requisition_id})
 
     @tool
+    def acknowledge_purchase_order(po_id: str) -> str:
+        """Record a supplier's acknowledgement of an issued purchase order."""
+        w = _worker("vendor-lifecycle", f"po-ack:{po_id}")
+        try:
+            return json.dumps(tool_fns.acknowledge_purchase_order(run_id, w.id, po_id))
+        finally:
+            _finish(w, {"po_id": po_id})
+
+    @tool
     def receive_purchase_order(po_id: str) -> str:
         """Record a goods receipt that closes out a purchase order and its budget commitment."""
         w = _worker("vendor-lifecycle", f"grn:{po_id}")
@@ -1808,6 +1817,7 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id, board):
         list_procurement_suppliers,
         get_requisition_approvals,
         reject_requisition,
+        acknowledge_purchase_order,
         receive_purchase_order,
         get_supplier_contact,
         get_supplier_account,
