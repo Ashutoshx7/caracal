@@ -51,7 +51,24 @@ def test_metadata_advertises_client_credentials():
     doc = _client().get("/.well-known/oauth-authorization-server").json()
     assert doc["grant_types_supported"] == ["client_credentials"]
     assert set(doc["scopes_supported"]) == {"procure.read", "procure.write"}
-    assert "resource" not in doc
+    assert doc["resource"] == "https://api.junction-procure.test"
+    assert doc["resource_indicators_supported"] is True
+
+
+def _token_with_resource(c: TestClient, resource: str):
+    s = _seed()
+    return c.post("/oauth/token", data={
+        "grant_type": "client_credentials", "client_id": s["clientId"],
+        "client_secret": s["clientSecret"], "scope": "procure.read",
+        "resource": resource})
+
+
+def test_token_honors_resource_indicator():
+    c = _client()
+    good = _token_with_resource(c, "https://api.junction-procure.test")
+    assert good.status_code == 200 and good.json()["access_token"]
+    bad = _token_with_resource(c, "https://api.someone-else.test")
+    assert bad.status_code == 400 and bad.json()["error"] == "invalid_target"
 
 
 def test_invalid_client_is_rejected():
@@ -96,7 +113,10 @@ def test_supplier_listing_and_lookup():
     assert supplier["status"] == "active"
     one = _api(c, token, "get_supplier", {"supplierId": supplier["supplierId"]}).json()["data"]
     assert one["supplierId"] == supplier["supplierId"]
-    assert {"paymentTerms", "commodityCode", "remitToAddress"} <= set(one)
+    assert {"paymentTerms", "commodityCode", "remitToAddress", "dunsNumber",
+            "taxRegistrations", "complianceDocuments", "performance",
+            "supplierNumber"} <= set(one)
+    assert one["performance"]["onTimeDeliveryRate"] <= 1.0
     missing = _api(c, token, "get_supplier", {"supplierId": "SUP-000000"})
     assert missing.status_code == 404 and missing.json()["error"] == "supplier_not_found"
 
@@ -126,12 +146,50 @@ def test_single_step_requisition_routes_for_approval():
     req = _api(c, token, "create_requisition",
                {"department": "engineering", "amount": 8000, "description": "Laptops"}).json()["data"]
     assert req["status"] == "pending_approval" and req["approval"]["policyTier"] == 1
+    assert req["purchaseType"] and req["priority"]
     chain = _api(c, token, "get_approval_chain", {"requisitionId": req["requisitionId"]}).json()["data"]
-    assert chain["chain"][0]["role"] == "Cost Center Manager"
+    step = chain["chain"][0]
+    assert step["role"] == "Cost Center Manager"
+    assert step["approvalLimit"] == 25000.0 and step["slaHours"] == 24 and step["dueBy"]
     approved = _api(c, token, "approve_requisition", {"requisitionId": req["requisitionId"]}).json()["data"]
     assert approved["status"] == "approved"
     again = _api(c, token, "approve_requisition", {"requisitionId": req["requisitionId"]})
     assert again.status_code == 409 and again.json()["error"] == "already_approved"
+
+
+def test_draft_requisition_submits_into_workflow():
+    c = _client()
+    token = _token(c)
+    draft = _api(c, token, "create_requisition",
+                 {"department": "engineering", "amount": 8000, "description": "Laptops",
+                  "submit": False}).json()["data"]
+    assert draft["status"] == "draft" and draft["approval"]["status"] == "not_started"
+    submitted = _api(c, token, "submit_requisition",
+                     {"requisitionId": draft["requisitionId"]}).json()["data"]
+    assert submitted["status"] == "pending_approval"
+    assert submitted["approval"]["chain"][0]["dueBy"]
+
+
+def test_delegated_approver_can_sign_off():
+    c = _client()
+    token = _token(c)
+    listed = _api(c, token, "list_requisitions",
+                  {"status": "pending_approval", "pageSize": 100}).json()["data"]["items"]
+    delegated = None
+    for req in listed:
+        chain = _api(c, token, "get_approval_chain",
+                     {"requisitionId": req["requisitionId"]}).json()["data"]["chain"]
+        step = next((s for s in chain if s["status"] == "pending" and s.get("delegatedTo")), None)
+        if step:
+            delegated = (req, step)
+            break
+    if delegated is None:
+        return
+    req, step = delegated
+    approved = _api(c, token, "approve_requisition",
+                    {"requisitionId": req["requisitionId"], "approverId": step["delegatedTo"]})
+    assert approved.status_code == 200
+    assert approved.json()["data"]["approval"]["chain"][step["step"] - 1]["decidedBy"] == step["delegatedTo"]
 
 
 def test_multi_step_chain_requires_every_signature():
@@ -238,7 +296,30 @@ def test_full_procure_to_pay_flow_closes_and_spends_budget():
     assert round(after - before, 2) == req["total"]
 
 
-def test_purchase_order_requires_approved_requisition():
+def test_purchase_order_carries_realistic_header_fields():
+    c = _client()
+    token = _token(c)
+    supplier = _active_supplier(c, token)
+    req = _api(c, token, "create_requisition",
+               {"department": "operations", "amount": 9000, "description": "Pallet jacks"}).json()["data"]
+    _api(c, token, "approve_requisition", {"requisitionId": req["requisitionId"]})
+    po = _api(c, token, "create_purchase_order",
+              {"requisitionId": req["requisitionId"], "supplierId": supplier["supplierId"],
+               "shippingAmount": 150.0}).json()["data"]
+    assert po["poType"] == "standard" and po["revision"] == 0
+    assert po["billTo"]["name"] == "LynxCapital Accounts Payable"
+    assert po["shippingAmount"] == 150.0 and po["total"] == round(req["total"] + 150.0, 2)
+
+
+def test_budget_view_flags_soft_limit_breach():
+    c = _client()
+    token = _token(c, scope="procure.read")
+    budgets = _api(c, token, "list_budgets", {}).json()["data"]["items"]
+    assert budgets and all("softLimitBreached" in b and "consumedAmount" in b for b in budgets)
+    assert all(b["budgetOwner"]["id"] for b in budgets)
+
+
+
     c = _client()
     token = _token(c)
     supplier = _active_supplier(c, token)

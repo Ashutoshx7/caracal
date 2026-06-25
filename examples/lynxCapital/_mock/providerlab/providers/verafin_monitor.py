@@ -1244,3 +1244,84 @@ def get_audit_trail(ctx: Ctx) -> dict:
         "chainIntact": _audit_intact(subject_id, events),
         "delegationChain": [e["delegation"] for e in events],
     }
+
+
+# --------------------------------------------------------------------------- #
+# operations — program posture
+# --------------------------------------------------------------------------- #
+def _tally(values, key) -> dict:
+    counts: dict[str, int] = {}
+    for v in values:
+        counts[v.get(key)] = counts.get(v.get(key), 0) + 1
+    return counts
+
+
+@base.op(ID, "get_monitoring_summary")
+def get_monitoring_summary(ctx: Ctx) -> dict:
+    """Roll the program up to the posture a compliance officer reviews: open alert and
+    case load, SLA breaches, filing obligations against their regulator deadlines, the
+    control attestation picture, and whether every audit chain remains intact."""
+    ctx.require_scope("monitoring.read")
+    now = _ts()
+    soon = _ts(7 * 86400)
+    alerts = list(ctx.state.table("alerts").values())
+    cases = list(ctx.state.table("cases").values())
+    filings = list(ctx.state.table("filings").values())
+    controls = list(ctx.state.table("controls").values())
+
+    open_alerts = [a for a in alerts if a["status"] in ("open", "in_review")]
+    alert_breaches = sum(
+        1 for a in open_alerts if a.get("slaDueAt") and now > a["slaDueAt"]
+    )
+    open_cases = [c for c in cases if c["status"] not in ("resolved", "closed")]
+    case_breaches = sum(
+        1 for c in open_cases if c.get("slaDueAt") and now > c["slaDueAt"]
+    )
+    drafts = [f for f in filings if f["status"] == "draft"]
+    overdue = [f for f in drafts if now > f["deadlineAt"]]
+    due_soon = [f for f in drafts if now <= f["deadlineAt"] <= soon]
+    submitted = [f for f in filings if f["status"] == "acknowledged"]
+
+    audit_subjects = alerts + cases + filings
+    chain_breaks = sum(
+        1
+        for s in audit_subjects
+        if not _audit_intact(s["_auditKey"], s.get("auditTrail", []))
+    )
+
+    return {
+        "generatedAt": now,
+        "alerts": {
+            "total": len(alerts),
+            "open": len(open_alerts),
+            "byBand": _tally(alerts, "riskBand"),
+            "byStatus": _tally(alerts, "status"),
+            "slaBreaches": alert_breaches,
+        },
+        "cases": {
+            "total": len(cases),
+            "open": len(open_cases),
+            "byStatus": _tally(cases, "status"),
+            "slaBreaches": case_breaches,
+        },
+        "filings": {
+            "total": len(filings),
+            "byType": _tally(filings, "filingType"),
+            "byStatus": _tally(filings, "status"),
+            "submitted": len(submitted),
+            "lateSubmitted": sum(1 for f in submitted if f.get("lateFiling")),
+            "overdue": len(overdue),
+            "dueSoon": len(due_soon),
+        },
+        "controls": {
+            "total": len(controls),
+            "byEffectiveness": _tally(controls, "effectiveness"),
+            "deficient": sum(1 for c in controls if c.get("effectiveness") == "deficient"),
+            "notYetAttested": sum(1 for c in controls if c.get("lastAttestedAt") is None),
+        },
+        "audit": {
+            "subjects": len(audit_subjects),
+            "chainBreaks": chain_breaks,
+            "allChainsIntact": chain_breaks == 0,
+        },
+    }

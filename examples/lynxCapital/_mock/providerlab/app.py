@@ -217,19 +217,22 @@ def _install_sse(app: FastAPI, provider: catalog.Provider, state) -> None:
         except auth.AuthError as exc:
             return _auth_error_response(exc, provider)
         symbol = request.query_params.get("symbol", "USD/EUR")
+        channel = request.query_params.get("channel", "quotes")
         count = int(request.query_params.get("ticks", 20))
 
         async def publisher():
             try:
                 window = domain.dispatch(provider, state, "stream_rates",
-                                         {"symbol": symbol, "ticks": count}, principal)
+                                         {"symbol": symbol, "channel": channel,
+                                          "ticks": count}, principal)
             except domain.DomainError as exc:
                 yield {"event": "error",
                        "data": json_dumps({"error": exc.code, "message": exc.message})}
                 return
             yield {"event": "subscribed",
                    "data": json_dumps({"symbol": window["symbol"], "channel": window["channel"],
-                                       "count": window["count"]})}
+                                       "count": window["count"],
+                                       "heartbeatIntervalMs": window["heartbeatIntervalMs"]})}
             for i, tick in enumerate(window["ticks"]):
                 if await request.is_disconnected():
                     break
@@ -238,6 +241,9 @@ def _install_sse(app: FastAPI, provider: catalog.Provider, state) -> None:
                     yield {"event": "heartbeat",
                            "data": json_dumps({"ts": tick["timestamp"], "seq": tick["seq"]})}
                 await asyncio.sleep(0.05)
+            yield {"event": "complete",
+                   "data": json_dumps({"symbol": window["symbol"], "channel": window["channel"],
+                                       "delivered": window["count"]})}
 
         return EventSourceResponse(publisher())
 

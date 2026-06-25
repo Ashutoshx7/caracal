@@ -1943,8 +1943,73 @@ def test_api_key_pair_distinct_cases():
 
 
 # --------------------------------------------------------------------------- #
-# Inkwell OCR — schema realism, corrections, cancellation, batching, idempotency
+# Meridian Pay — card acceptance schema realism, idempotency, capture lifecycle
 # --------------------------------------------------------------------------- #
+def _meridian() -> tuple[TestClient, dict]:
+    c = client("meridian-pay")
+    return c, {"X-Api-Key": seed("meridian-pay")["apiKey"]}
+
+
+def test_meridian_charge_schema_enrichment():
+    c, h = _meridian()
+    charge = c.post("/api/create_charge",
+                    json={"amount": 250.00, "currency": "USD", "source": "tok_visa",
+                          "statementDescriptorSuffix": "ORDER42",
+                          "receiptEmail": "buyer@payer.example"},
+                    headers=h).json()["data"]
+    assert charge["status"] == "succeeded" and charge["paid"] is True
+    assert charge["paymentIntent"].startswith("pi_")
+    assert len(charge["authorizationCode"]) == 6
+    assert charge["calculatedStatementDescriptor"] == "MERIDIAN* LYNXCAPITAL ORDER42"
+    assert charge["receiptEmail"] == "buyer@payer.example"
+    assert charge["failureCode"] is None and charge["fraudDetails"] == {}
+    assert charge["outcome"]["networkDeclineCode"] is None
+
+
+def test_meridian_idempotency_key_conflict():
+    c, h = _meridian()
+    body = {"amount": 100, "currency": "USD", "source": "tok_visa", "idempotencyKey": "rk-1"}
+    first = c.post("/api/create_charge", json=body, headers=h).json()["data"]
+    same = c.post("/api/create_charge", json=body, headers=h).json()["data"]
+    assert first["chargeId"] == same["chargeId"]
+    conflict = c.post("/api/create_charge",
+                      json={**body, "amount": 999}, headers=h)
+    assert conflict.status_code == 400
+    assert conflict.json()["error"] == "idempotency_error"
+
+
+def test_meridian_partial_capture_releases_remainder():
+    c, h = _meridian()
+    auth = c.post("/api/create_charge",
+                  json={"amount": 500, "currency": "USD", "source": "tok_visa",
+                        "capture": False}, headers=h).json()["data"]
+    assert auth["status"] == "requires_capture" and auth["captureBefore"] > auth["created"]
+    captured = c.post("/api/capture_charge",
+                      json={"chargeId": auth["chargeId"], "amountToCapture": 300},
+                      headers=h).json()["data"]
+    assert captured["status"] == "succeeded"
+    assert captured["amountCaptured"] == 300.0
+    assert captured["amountRefunded"] == 200.0
+    assert captured["captureBefore"] is None
+
+
+def test_meridian_3ds_requires_action_uses_neutral_redirect():
+    c, h = _meridian()
+    charge = c.post("/api/create_charge",
+                    json={"amount": 100, "currency": "USD",
+                          "source": "tok_threeDSecureRequired"}, headers=h).json()["data"]
+    assert charge["status"] == "requires_action"
+    assert charge["nextAction"]["type"] == "redirect_to_url"
+    assert charge["authorizationCode"] is None
+
+
+def test_meridian_decline_carries_failure_code():
+    c, h = _meridian()
+    declined = c.post("/api/create_charge",
+                      json={"amount": 100, "currency": "USD",
+                            "source": "tok_chargeDeclinedInsufficientFunds"}, headers=h)
+    assert declined.status_code == 402
+    assert declined.json()["error"] == "insufficient_funds"
 def _inkwell_query() -> tuple[TestClient, str]:
     return client("inkwell-ocr"), seed("inkwell-ocr")["apiKey"]
 
