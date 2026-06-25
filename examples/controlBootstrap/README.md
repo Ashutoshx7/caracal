@@ -1,6 +1,6 @@
 # Control API automation example
 
-Set up a Caracal zone from a script instead of clicking through Console.
+Set up a Caracal zone from a script instead of clicking through the web console.
 
 This pipeline uses the **Control API** to create and maintain everything one
 agent needs — its application, provider, resource, and policy — from a plan
@@ -9,10 +9,10 @@ declared in code. Run it from CI, a provisioning script, or an onboarding tool.
 ## Try it
 
 ```bash
-# 1. Start the stack, then create a control key in Console (Control menu)
+# 1. Start the stack, then create a control key in the web console (Control section)
 #    with app, identity-provider, resource, and policy scopes.
 caracal up
-caracal console
+caracal web
 
 # 2. Configure the key and run the pipeline from this directory:
 cp env.example .env

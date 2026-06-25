@@ -51,10 +51,10 @@ pnpm unlink --global caracal  # Remove global symlink
 
 </details>
 
-#### Console
+#### Web console
 
 ```bash
-pnpm caracal console          # Human-facing product management
+pnpm caracal web              # Human-facing product management in the browser
 ```
 
 #### Standalone execution
@@ -113,7 +113,7 @@ Style checks run automatically in pull requests, with `pnpm run style` for valid
 3. Run a quick local sanity check:
   - `pnpm caracal up`
   - `pnpm caracal status`
-  - `pnpm caracal console`
+  - `pnpm caracal web`
   - `pnpm caracal down`
 4. Ensure tests pass:
   - `pnpm run style`
@@ -167,13 +167,10 @@ Use dev builds only for development:
 
 ```bash
 pnpm --dir apps/runtime build:release                          # stamp dev + build local images + bun compile (all targets)
-pnpm --dir apps/console build:release                          # stamp dev + bun compile (all targets)
 BIN="$(pwd)/apps/runtime/dist/caracal-<os>-<arch>"                 # absolute path; survives cd
-CONSOLE="$(pwd)/apps/console/dist/caracal-console-<os>-<arch>"         # Console binary; same OS/arch matrix
 pnpm caracal down                                          # Stop dev before testing
     "$BIN" --version                                           # → caracal 2026.06.04-dev.sha<sha> [dev (sha <sha>)]
-    "$CONSOLE" --version                                           # → caracal-console 2026.06.04-dev.sha<sha> [dev (sha <sha>)]
-(cd /tmp && "$BIN" up && "$BIN" status && "$CONSOLE" && "$BIN" down)
+(cd /tmp && "$BIN" up && "$BIN" status && "$BIN" down)
 ```
 
 `build:release` stamps dev binaries and local `localhost/caracal-{svc}:<base>-dev.sha<sha>` images. Do not use dev builds downstream.

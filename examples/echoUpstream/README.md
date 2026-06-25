@@ -28,7 +28,7 @@ guide flips it to `true`.
 docker compose -f compose.yml up --build
 ```
 
-**2. Protect it.** In the Console (`caracal console`), run guided setup and use
+**2. Protect it.** In the web console (`caracal web`), run guided setup and use
 this upstream URL:
 
 ```text

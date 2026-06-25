@@ -63,9 +63,9 @@ launcher injects them.
 
 ## One-time setup
 
-### 1. Console
+### 1. Web console
 
-Run `caracal console` and create:
+Run `caracal web` and create:
 
 1. A zone (e.g. `Pied Piper Production`) and a managed confidential
    application (e.g. `PiperNet AI Research Agent`). Keep the one-time client

@@ -31,7 +31,7 @@ pip install -e ".[dev]"
 `caracal up` needs the released Caracal CLI on your PATH. Install it first:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | \
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.sh | \
   sh -s -- --version v2026.06.22-rc.1
 ```
 
