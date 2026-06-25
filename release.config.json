@@ -7,11 +7,6 @@
         "sourceDir": "apps/runtime/dist",
         "sourceBase": "caracal",
         "binaryName": "caracal"
-      },
-      "console": {
-        "sourceDir": "apps/console/dist",
-        "sourceBase": "caracal-console",
-        "binaryName": "caracal-console"
       }
     },
     "archiveTargets": [
