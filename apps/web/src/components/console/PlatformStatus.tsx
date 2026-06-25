@@ -18,7 +18,7 @@ interface Meter {
 const BAR_HEIGHTS = ["h-1.5", "h-2.5", "h-3.5"];
 
 const METER: Record<PlatformHealth, Meter> = {
-  healthy: { active: 3, bar: "bg-foreground", text: "text-foreground" },
+  healthy: { active: 3, bar: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400" },
   attention: { active: 2, bar: "bg-amber-500", text: "text-amber-600 dark:text-amber-400" },
   unhealthy: { active: 1, bar: "bg-destructive", text: "text-destructive" },
   unknown: { active: 0, bar: "bg-muted-foreground", text: "text-muted-foreground" },

@@ -86,94 +86,105 @@ export function DataTable<T>({
   const maxBodyHeight = VISIBLE_ROWS * ROW_H;
   const skeletonCount = Math.min(skeletonRows, VISIBLE_ROWS);
 
+  const showEmpty = !loading && rows.length === 0 && Boolean(empty);
+
   return (
-    <div className="overflow-hidden border border-border bg-card" style={{ minHeight }}>
-      <div className="scrollbar-thin overflow-auto" style={{ maxHeight: HEAD_H + maxBodyHeight }}>
-        <table className="w-full min-w-full text-sm">
-          <thead className="sticky top-0 z-10">
-            <tr className="bg-muted text-left">
-              {columns.map((col) => {
-                const active = sort?.column === col.id;
-                return (
-                  <th
-                    key={col.id}
-                    style={col.width ? { width: col.width } : undefined}
-                    className={cx(
-                      "border-b border-border px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground whitespace-nowrap",
-                      col.align === "right" && "text-right",
-                      col.truncate && "max-w-0",
-                    )}
-                  >
-                    {col.sortable && onSortChange ? (
-                      <button
-                        onClick={() => onSortChange(col.id)}
-                        className={cx(
-                          "inline-flex items-center gap-1 outline-none transition-colors hover:text-foreground",
-                          col.align === "right" && "flex-row-reverse",
-                        )}
-                      >
-                        {col.header}
-                        <SortGlyph active={Boolean(active)} direction={sort?.direction ?? "asc"} />
-                      </button>
-                    ) : (
-                      col.header
-                    )}
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {loading
-              ? Array.from({ length: skeletonCount }).map((_, rowIndex) => (
-                  <tr key={`skeleton-${rowIndex}`}>
-                    {columns.map((col) => (
-                      <td key={col.id} className={cx("px-4 py-3", col.truncate && "max-w-0")}>
-                        <Skeleton className="h-4 w-28" />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              : rows.map((row) => (
-                  <tr
-                    key={rowKey(row)}
-                    onClick={onRowClick ? () => onRowClick(row) : undefined}
-                    onKeyDown={
-                      onRowClick
-                        ? (event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              onRowClick(row);
+    <div
+      className="flex flex-col overflow-hidden border border-border bg-card"
+      style={{ minHeight }}
+    >
+      {showEmpty ? (
+        empty
+      ) : (
+        <div className="scrollbar-thin overflow-auto" style={{ maxHeight: HEAD_H + maxBodyHeight }}>
+          <table className="w-full min-w-full text-sm">
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-muted text-left">
+                {columns.map((col) => {
+                  const active = sort?.column === col.id;
+                  return (
+                    <th
+                      key={col.id}
+                      style={col.width ? { width: col.width } : undefined}
+                      className={cx(
+                        "border-b border-border px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground whitespace-nowrap",
+                        col.align === "right" && "text-right",
+                        col.truncate && "max-w-0",
+                      )}
+                    >
+                      {col.sortable && onSortChange ? (
+                        <button
+                          onClick={() => onSortChange(col.id)}
+                          className={cx(
+                            "inline-flex items-center gap-1 outline-none transition-colors hover:text-foreground",
+                            col.align === "right" && "flex-row-reverse",
+                          )}
+                        >
+                          {col.header}
+                          <SortGlyph
+                            active={Boolean(active)}
+                            direction={sort?.direction ?? "asc"}
+                          />
+                        </button>
+                      ) : (
+                        col.header
+                      )}
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {loading
+                ? Array.from({ length: skeletonCount }).map((_, rowIndex) => (
+                    <tr key={`skeleton-${rowIndex}`}>
+                      {columns.map((col) => (
+                        <td key={col.id} className={cx("px-4 py-3", col.truncate && "max-w-0")}>
+                          <Skeleton className="h-4 w-28" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                : rows.map((row) => (
+                    <tr
+                      key={rowKey(row)}
+                      onClick={onRowClick ? () => onRowClick(row) : undefined}
+                      onKeyDown={
+                        onRowClick
+                          ? (event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                onRowClick(row);
+                              }
                             }
-                          }
-                        : undefined
-                    }
-                    tabIndex={onRowClick ? 0 : undefined}
-                    role={onRowClick ? "button" : undefined}
-                    className={cx(
-                      "transition-colors outline-none",
-                      onRowClick &&
-                        "cursor-pointer hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-                    )}
-                  >
-                    {columns.map((col) => (
-                      <td
-                        key={col.id}
-                        className={cx(
-                          "px-4 py-3 align-middle",
-                          col.align === "right" && "text-right",
-                          col.truncate && "max-w-0",
-                        )}
-                      >
-                        {col.cell(row)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-          </tbody>
-        </table>
-      </div>
-      {!loading && rows.length === 0 && empty ? <div className="p-2">{empty}</div> : null}
+                          : undefined
+                      }
+                      tabIndex={onRowClick ? 0 : undefined}
+                      role={onRowClick ? "button" : undefined}
+                      className={cx(
+                        "transition-colors outline-none",
+                        onRowClick &&
+                          "cursor-pointer hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+                      )}
+                    >
+                      {columns.map((col) => (
+                        <td
+                          key={col.id}
+                          className={cx(
+                            "px-4 py-3 align-middle",
+                            col.align === "right" && "text-right",
+                            col.truncate && "max-w-0",
+                          )}
+                        >
+                          {col.cell(row)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

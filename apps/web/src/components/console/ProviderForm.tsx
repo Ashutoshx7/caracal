@@ -6,8 +6,16 @@ This file builds the kind-aware create and edit form for upstream credential pro
 */
 import { useMemo, useState } from "react";
 
-import { Button, Field, InfoHint, Modal, PasswordField, Select, Textarea } from "@/components/ui";
-import { cx } from "@/lib/cx";
+import {
+  Button,
+  Disclosure,
+  Field,
+  InfoHint,
+  Modal,
+  PasswordField,
+  Select,
+  Textarea,
+} from "@/components/ui";
 import {
   crossFieldIssues,
   parseParams,
@@ -424,7 +432,6 @@ export function ProviderFormModal({
   const [identifier, setIdentifier] = useState("");
   const [kind, setKind] = useState<ProviderKind>("caracal_mandate");
   const [values, setValues] = useState<Values>({});
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [touched, setTouched] = useState(false);
 
   // Reset whenever the modal opens for a different target.
@@ -437,7 +444,6 @@ export function ProviderFormModal({
     setIdentifier(provider?.identifier ?? "");
     setKind(provider?.kind ?? "caracal_mandate");
     setValues(initialValues(provider));
-    setShowAdvanced(false);
     setTouched(false);
   }
 
@@ -576,48 +582,23 @@ export function ProviderFormModal({
           />
         ))}
 
-        {advancedFields.length > 0 ? (
-          <div className="border-t border-border pt-3">
-            <button
-              type="button"
-              onClick={() => setShowAdvanced((v) => !v)}
-              className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                className={cx("transition-transform", showAdvanced && "rotate-90")}
-              >
-                <path d="m9 6 6 6-6 6" />
-              </svg>
-              Advanced ({advancedFields.length})
-              {hasAdvancedError ? (
-                <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-destructive" />
-              ) : null}
-            </button>
-            {showAdvanced || hasAdvancedError ? (
-              <div className="mt-4 flex flex-col gap-4">
-                {advancedFields.map((field) => (
-                  <ProviderFieldInput
-                    key={field.key}
-                    field={field}
-                    value={values[field.key] ?? ""}
-                    stored={Boolean(provider?.secret_config_keys.includes(field.key as never))}
-                    isEdit={isEdit}
-                    error={errors[field.key]}
-                    onChange={(v) => setValue(field.key, v)}
-                  />
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        <div className="border-t border-border pt-3">
+        <Disclosure
+          title="Advanced options"
+          description="Identifier, auth scheme, and other rarely-changed settings."
+          count={advancedFields.length}
+          hasError={hasAdvancedError || Boolean(errors.identifier)}
+        >
+          {advancedFields.map((field) => (
+            <ProviderFieldInput
+              key={field.key}
+              field={field}
+              value={values[field.key] ?? ""}
+              stored={Boolean(provider?.secret_config_keys.includes(field.key as never))}
+              isEdit={isEdit}
+              error={errors[field.key]}
+              onChange={(v) => setValue(field.key, v)}
+            />
+          ))}
           <Field
             label="Identifier"
             info="The stable identifier used to reference this provider in resources and tokens. Generated from the name when blank; must use the provider:// namespace."
@@ -627,7 +608,7 @@ export function ProviderFormModal({
             error={errors.identifier}
             onChange={(e) => setIdentifier(e.target.value)}
           />
-        </div>
+        </Disclosure>
 
         {error ? (
           <p className="text-sm text-destructive">{error}</p>
