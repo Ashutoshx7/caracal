@@ -2794,13 +2794,17 @@ def test_lumen_identity_directory_model():
     ).json()["data"]
     assert reports["count"] >= 1
 
-    # RBAC roles expose permission grants and category; lookups 404 cleanly.
+    # RBAC roles expose permission grants, category, governance, and SoD metadata.
     role = idn.post("/api/get_role", json={"roleId": "ROLE-treasury-manager"}).json()[
         "data"
     ]
     assert (
         "payments:approve" in role["permissions"] and role["category"] == "privileged"
     )
+    for field in ("ownerTeamId", "riskLevel", "requiresApproval", "requiresMfa",
+                  "sodConflictRoleIds", "assignedCount"):
+        assert field in role, f"missing role field {field}"
+    assert role["requiresMfa"] is True and role["riskLevel"] == "critical"
     assert idn.post("/api/get_role", json={"roleId": "ROLE-nope"}).status_code == 404
 
     # Groups, teams, and departments are first-class and cross-referenced.
@@ -2810,12 +2814,14 @@ def test_lumen_identity_directory_model():
     assert grp["type"] == "access" and grp["members"] and grp["roleIds"]
     team = idn.post("/api/get_team", json={"teamId": "TEAM-ap"}).json()["data"]
     assert team["managerId"] and team["memberIds"]
+    assert team["division"] == "Finance" and team["costCenter"]
     dept = idn.post(
         "/api/get_department", json={"departmentId": "DEPT-finance"}
     ).json()["data"]
     assert dept["headEmployeeId"] and dept["teamIds"]
+    assert dept["division"] == "Finance"
 
-    # Service accounts are governed: owner, roles, scopes, environment, rotation.
+    # Service accounts are governed: owner, roles, scopes, environment, rotation, credential.
     svc = idn.post(
         "/api/get_service_account", json={"serviceAccountId": "SVC-ap-bot"}
     ).json()["data"]
@@ -2826,8 +2832,13 @@ def test_lumen_identity_directory_model():
         "scopes",
         "environment",
         "status",
+        "credentialType",
+        "rotationIntervalDays",
         "secretRotatedAt",
         "secretExpiresAt",
+        "secretExpiresInDays",
+        "accessReviewDueDate",
+        "stale",
     ):
         assert field in svc, f"missing service-account field {field}"
     assert (
@@ -2836,6 +2847,55 @@ def test_lumen_identity_directory_model():
         ).status_code
         == 404
     )
+
+
+def test_lumen_identity_access_governance():
+    idn = client("lumen-identity")
+
+    # Effective access surfaces account state, MFA methods, and SoD evaluation.
+    access = idn.post("/api/get_user_access", json={"userId": "EMP-1001"}).json()["data"]
+    assert access["accountEnabled"] is True
+    assert "sodConflicts" in access and "hasSodConflict" in access
+
+    # Entitlements break each permission down to the granting role and path.
+    ent = idn.post(
+        "/api/get_user_entitlements", json={"userId": "EMP-1001"}
+    ).json()["data"]
+    assert ent["entitlementCount"] >= 1
+    sample = ent["entitlements"][0]
+    assert "permission" in sample and sample["grantedBy"][0]["via"] in ("direct", "group")
+
+    # Segregation-of-duties is policy-driven: at least one seeded toxic combination exists.
+    found_violation = False
+    for n in range(1002, 1120):
+        sod = idn.post(
+            "/api/check_segregation_of_duties", json={"userId": f"EMP-{n}"}
+        )
+        if sod.status_code != 200:
+            continue
+        body = sod.json()["data"]
+        assert "compliant" in body and "conflicts" in body
+        if not body["compliant"]:
+            found_violation = True
+            conflict = body["conflicts"][0]
+            assert len(conflict["roleIds"]) == 2 and conflict["rationale"]
+            break
+    assert found_violation, "expected at least one seeded SoD violation in the directory"
+
+    # Role membership resolves direct and group-inherited holders for access reviews.
+    members = idn.post(
+        "/api/list_role_members", json={"roleId": "ROLE-treasury-manager"}
+    ).json()["data"]
+    assert members["total"] >= 1
+    assert all("assignment" in m for m in members["items"])
+    assert idn.post(
+        "/api/list_role_members", json={"roleId": "ROLE-nope"}
+    ).status_code == 404
+
+    # Privileged-access review population is non-empty and privilege-scoped.
+    priv = idn.post("/api/list_privileged_users", json={"pageSize": 100}).json()["data"]
+    assert priv["total"] >= 1
+    assert all(u["privilegedRoleIds"] for u in priv["items"])
 
 
 def test_lumen_identity_filters_and_listing():

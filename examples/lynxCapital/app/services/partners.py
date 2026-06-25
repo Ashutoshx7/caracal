@@ -51,9 +51,14 @@ class PartnerSpec:
 _SPECS: dict[str, PartnerSpec] = {
     "halcyon-bank": PartnerSpec(
         "halcyon-bank", "oauth_ac", 9400,
-        ("list_accounts", "get_account", "list_transactions",
-         "initiate_payment", "get_payment", "get_statement"),
-        scopes=("accounts.read", "payments.write"), use_pkce=True),
+        ("list_accounts", "get_account", "get_balances", "list_transactions",
+         "list_beneficiaries", "list_standing_orders", "list_direct_debits",
+         "list_scheduled_payments", "list_statements", "get_statement",
+         "initiate_payment", "get_payment", "confirm_funds"),
+        scopes=("accounts", "balances", "transactions", "beneficiaries",
+                "standing_orders", "direct_debits", "statements",
+                "payments", "fundsconfirmations", "offline_access"),
+        use_pkce=True, offline_access=True),
     "meridian-pay": PartnerSpec(
         "meridian-pay", "api_key", 9401,
         ("create_charge", "get_charge", "capture_charge", "list_charges",

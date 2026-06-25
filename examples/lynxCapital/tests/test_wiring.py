@@ -92,6 +92,17 @@ def test_identity_org_and_access_tools_reachable(providerlab):
     assert svc["data"]["ownerTeamId"] == "TEAM-ap"
 
 
+def test_identity_governance_tools_reachable(providerlab):
+    sod = tool_fns.check_segregation_of_duties("r", "a", "EMP-1001")
+    assert _provider_of(sod) == "lumen-identity"
+    assert "compliant" in sod["data"] and "conflicts" in sod["data"]
+
+    priv = tool_fns.list_privileged_users("r", "a")
+    assert _provider_of(priv) == "lumen-identity"
+    assert priv["data"]["total"] >= 1
+    assert all(u["privilegedRoleIds"] for u in priv["data"]["items"])
+
+
 def test_market_snapshot_reachable(providerlab):
     res = tool_fns.get_market_snapshot("r", "a", "USD/EUR")
     assert _provider_of(res) == "pulse-market"
