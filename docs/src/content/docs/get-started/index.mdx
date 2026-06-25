@@ -39,15 +39,15 @@ flowchart LR
   Install --> Stack --> Setup --> Run --> Gateway --> Audit
 ```
 
-The onboarding path keeps runtime lifecycle in the `caracal` CLI and product management in the Console:
+The onboarding path keeps runtime lifecycle in the `caracal` CLI and product management in the web console:
 
-1. Install `caracal` and `caracal-console`.
+1. Install `caracal`.
 2. Start the local stack with `caracal up`.
-3. Open Console guided setup with `caracal console`.
+3. Open web console guided setup with `caracal web`.
 4. Create one zone, agent app, resource, policy, and runtime profile.
 5. Run a workload with `caracal run --` or an SDK.
 6. Call the protected resource through the Gateway.
-7. Inspect **audit** and **explain** in the Console.
+7. Inspect **Audit** and **Request Traces** in the web console.
 
 ## Core Terms
 
@@ -67,7 +67,7 @@ You can finish Get Started with only these terms. Use [Concepts](/concepts/) whe
 
 | Goal | Start here | You will have |
 | --- | --- | --- |
-| Evaluate Caracal locally | [Install Caracal](./install-caracal/) | A verified CLI, Console, and local Docker prerequisite. |
+| Evaluate Caracal locally | [Install Caracal](./install-caracal/) | A verified runtime CLI, web console launcher, and local Docker prerequisite. |
 | Protect one resource end to end | [First Protected Call](./first-protected-call/) | A Gateway-routed resource, active policy, runtime profile, and audit explanation. |
 | Add Caracal to app code | [Add SDK to Your App](./add-sdk-to-your-app/) | TypeScript, Python, or Go code that opens an agent session and calls the Gateway. |
 | Fix a blocked first run | [First-Run Troubleshooting](./first-run-troubleshooting/) | A focused checklist for readiness, profile, STS, Gateway, upstream, and audit issues. |

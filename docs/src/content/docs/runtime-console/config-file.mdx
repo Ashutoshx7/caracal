@@ -77,7 +77,7 @@ mode = "block"
 | `zone_url` | Cloud/custom STS URL override used by `caracal run`; `sts_url` is accepted as an SDK-readable alias/fallback. |
 | `gateway_url` | Cloud/custom Gateway endpoint override for SDK transports. |
 | `coordinator_url` | Cloud/custom Coordinator endpoint override for SDK agent/delegation features. |
-| `zone_id` | Zone created in Console. |
+| `zone_id` | Zone created in the web console. |
 | `application_id` | Confidential application used by the workload. |
 | `app_client_secret_file` | Cloud/custom secret-file path override. |
 | `app_client_secret` | Inline local-development secret. |
@@ -112,7 +112,7 @@ Cloud deployments and custom service locations can also set `CARACAL_STS_URL`,
 
 ## Generated Profiles
 
-Console `guided setup` can generate a complete profile and one-time secret file using real zone, application, provider, resource, policy, and credential values. Enable file writing when you want the Console to write the profile and secret file with owner-only permissions.
+Web console **Guided setup** can generate a complete profile and one-time secret file using real zone, application, provider, resource, policy, and credential values. Enable file writing when you want the Console to write the profile and secret file with owner-only permissions.
 
 ## Troubleshooting
 

@@ -48,19 +48,19 @@ Use `http://caracalDemoUpstream:80` as the resource upstream URL in guided setup
 
 ## Create a Protected Resource
 
-Open the Console:
+Open the web console:
 
 ```sh
-caracal console
+caracal web
 ```
 
 On Windows PowerShell:
 
 ```powershell
-caracal console
+caracal web
 ```
 
-Choose **guided setup** and use these first-run choices:
+Choose **Guided setup** and use these first-run choices:
 
 | Step | First-run choice |
 | --- | --- |
@@ -69,16 +69,16 @@ Choose **guided setup** and use these first-run choices:
 | Agent app | Create a confidential app for the workload. |
 | Resource | Use a stable resource ID, required scopes, and the upstream URL you chose. |
 | Provider | Skipped for the internal HTTP API scenario. |
-| Access policy | Let the Console create and activate the starter policy. |
+| Access policy | Let the web console create and activate the starter policy. |
 | Review | Enable **write profile files** when this machine should receive the runtime profile and secret file. |
 
 The result view shows the zone ID, application ID, resource ID, app client secret, active policy set, profile path, secret-file path, generated profile, and first-success commands.
 
 ## Save the Runtime Profile
 
-Guided setup can write the runtime profile and secret file for you. Enable **write profile files** when you want the Console to create them on the current machine.
+Guided setup can write the runtime profile and secret file for you. Enable **write profile files** when you want the web console to create them on the current machine.
 
-If file writing is disabled, copy the generated TOML profile and one-time app client secret from the result view into the paths the Console shows. Keep the secret file readable only by the owner.
+If file writing is disabled, copy the generated TOML profile and one-time app client secret from the result view into the paths the web console shows. Keep the secret file readable only by the owner.
 
 The generated profile is the source of runtime configuration for:
 
@@ -116,15 +116,15 @@ For a Gateway-routed HTTP resource, send the request to the Gateway URL from the
 | `Authorization` | `Bearer <Caracal access token>` |
 | `X-Caracal-Resource` | The resource ID from guided setup. |
 
-Run the exact `curl` or PowerShell command from the Console result view first. It uses the resource ID, protected path, and profile values you just created.
+Run the exact `curl` or PowerShell command from the web console result view first. It uses the resource ID, protected path, and profile values you just created.
 
 ## Inspect Audit
 
-Return to the Console:
+Return to the web console:
 
-1. Open **audit**.
+1. Open **Audit**.
 2. Find the request you just made.
-3. Press Enter on the event, or open **explain** and paste its request ID.
+3. Open the event detail, or open **Request Traces** and paste its request ID.
 
 The explanation should show the application, resource, requested scopes, policy version, policy set version, Gateway result, and final decision. If the request failed, the explanation identifies whether to fix runtime config, policy, resource routing, or the upstream service.
 

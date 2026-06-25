@@ -18,7 +18,7 @@ pageType: workflow
 | Area | Common sources |
 | --- | --- |
 | Runtime CLI | `apps/runtime`, `packages/engine`, runtime tests. |
-| Console | `apps/console`, Admin SDK, Console tests. |
+| Web console | `apps/web`, Admin SDK, web console tests. |
 | API | `apps/api`, migrations, Admin package, API tests. |
 | Coordinator | `apps/coordinator`, Coordinator tests, SDK tests. |
 | STS/Gateway/Audit | `services/*`, Go tests, operations docs. |
@@ -28,7 +28,7 @@ pageType: workflow
 
 ## Command Boundary
 
-Do not add top-level runtime CLI commands for zones, policies, grants, audit, agents, delegation, or Control. Human workflows belong to Console; automation belongs to Control/Admin APIs.
+Do not add top-level runtime CLI commands for zones, policies, grants, audit, agents, delegation, or Control. Human workflows belong to the web console; automation belongs to Control/Admin APIs.
 
 ## Security Reports
 

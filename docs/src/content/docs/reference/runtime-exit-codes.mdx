@@ -1,10 +1,10 @@
 ---
 title: CLI Exit Codes
-description: Exit behavior for top-level caracal runtime CLI commands and Console launch.
+description: Exit behavior for top-level caracal runtime CLI commands and web console launch.
 pageType: reference
 ---
 
-Top-level `caracal` commands are limited to local runtime lifecycle, status, purge, `run`, and Console launch.
+Top-level `caracal` commands are limited to local runtime lifecycle, status, upgrade, purge, `run`, and web console launch.
 
 ## Exit Behavior
 
@@ -14,13 +14,14 @@ Top-level `caracal` commands are limited to local runtime lifecycle, status, pur
 | `caracal down` | `0` after stack stop succeeds. | Non-zero when Compose stop fails. |
 | `caracal status` | `0` when health probes pass. | `1` when service health fails. |
 | `caracal status --ready` | `0` when readiness probes pass. | `1` when dependency readiness fails. |
+| `caracal upgrade` | `0` after runtime assets upgrade successfully. | Non-zero when download, verification, or replacement fails. |
 | `caracal purge` | `0` after selected state is removed. | Non-zero when cleanup fails. |
 | `caracal run -- <command>` | Child process exit code after credentials are acquired. | Non-zero before spawn when config, credential exchange, step-up, or governance fails. |
-| `caracal console` | Console process exit code. | Non-zero when Console launcher or TTY requirements fail. |
+| `caracal web` | `0` after the web console exits cleanly. | Non-zero when launcher, port binding, build, session backend, or required stack checks fail. |
 
 ## Structured Output
 
-`caracal status --json` emits machine-readable status. Console-owned diagnostics are available through the Console `diagnostics` view and management command catalog, not as top-level runtime CLI workflows.
+`caracal status --json` emits machine-readable status. Web-console-owned diagnostics are available through the web console **Diagnostics** section and management command catalog, not as top-level runtime CLI workflows.
 
 ## Next Step
 

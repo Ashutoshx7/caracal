@@ -1,19 +1,13 @@
 ---
 title: Manage Product Objects
-description: Manage zones, applications, providers, resources, policies, authority sessions, and Control through the Console.
+description: Manage zones, applications, providers, resources, policies, authority sessions, and Control through the web console.
 pageType: reference
 ---
 
-The Console is the supported human interface for product management. Launch it with:
+The web console is the supported human interface for product management. Launch it with:
 
 ```bash
-caracal console
-```
-
-or:
-
-```bash
-caracal-console
+caracal web
 ```
 
 ## Management Flow
@@ -22,37 +16,37 @@ caracal-console
 zone -> application -> provider -> resource -> policy -> policy set -> authority session/audit
 ```
 
-Console `guided setup` walks the first version of that flow and can write a runtime profile for `caracal run` and SDKs.
+Web console **Guided setup** walks the first version of that flow and can write a runtime profile for `caracal run` and SDKs.
 
-## Menu Workflows
+## Web Console Workflows
 
-| Menu label | What it manages |
+| Section | What it manages |
 | --- | --- |
-| `zone` | Zone records and active zone selection. |
-| `application` | Confidential agent applications and one-time client secrets. |
-| `provider` | Gateway upstream auth modes for Caracal mandates, OAuth 2.0 authorization code, OAuth 2.0 client credentials, API-key, and bearer-token upstreams. |
-| `resource` | Protected resource identifiers, scopes, upstream URLs, Gateway application bindings, and upstream credential provider bindings. |
-| `policy` | Policy content and versions. |
-| `policy set` | Policy-set composition, simulation, activation, and shadow evaluation. |
-| `authority session` | Active authority-session records. |
-| `control` | Control API exposure and Control credentials. |
+| **Zones** | Zone records and active zone selection. |
+| **Applications** | Confidential agent applications and one-time client secrets. |
+| **Providers** | Gateway upstream auth modes for Caracal mandates, OAuth 2.0 authorization code, OAuth 2.0 client credentials, API-key, and bearer-token upstreams. |
+| **Resources** | Protected resource identifiers, scopes, upstream URLs, Gateway application bindings, and upstream credential provider bindings. |
+| **Policies** | Policy content and versions. |
+| **Policy Sets** | Policy-set composition, simulation, activation, and shadow evaluation. |
+| **Sessions** | Active authority-session records. |
+| **Control** | Control API exposure and Control credentials. |
 
 ## Secrets and Credentials
 
-Application client secrets are shown once when created. Provider secrets are accepted only in provider create or rotation-style edit flows and are stored sealed by the Control API. Store application secrets in a secret manager, mounted secret file, or Console-generated local profile before leaving the result screen. The Console masks secret-shaped fields and error output.
+Application client secrets are shown once when created. Provider secrets are accepted only in provider create or rotation-style edit flows and are stored sealed by the Control API. Store application secrets in a secret manager, mounted secret file, or web-console-generated local profile before leaving the result screen. The web console masks secret-shaped fields and error output.
 
 ## Automation Handoff
 
-Use the Console `control` menu when management needs to move from interactive operations to automation. Control API calls are authenticated and audited. They use the same product-management boundary as the Console; they are not exposed as top-level runtime CLI commands.
+Use the web console's **Control** section when management needs to move from interactive operations to automation. Control API calls are authenticated and audited. They use the same product-management boundary as the web console; they are not exposed as top-level runtime CLI commands.
 
 ## Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
-| A view says a zone is required | Press `z` to select a zone before opening zone-scoped views. |
+| A page says a zone is required | Select a zone before opening zone-scoped pages. |
 | A created client secret is no longer visible | Generate or rotate a new secret; one-time secrets are not recoverable. |
 | Policy activation fails | Run simulation, inspect validation errors, and confirm the policy set references the intended policy versions. |
-| Control API calls fail | Confirm Control is enabled from the Console `control` menu and the automation token targets the Control resource. |
+| Control API calls fail | Confirm Control is enabled from the web console's **Control** section and the automation token targets the Control resource. |
 
 ## Next Step
 
