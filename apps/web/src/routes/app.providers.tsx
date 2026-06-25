@@ -270,8 +270,6 @@ function ProvidersPage({ zoneId, zoneName }: { zoneId: string; zoneName: string 
           description: query.isError
             ? errorMessage(query.error)
             : "Add a provider so applications can obtain mandates and upstream credentials.",
-          actionLabel: query.isError ? undefined : "New provider",
-          onAction: query.isError ? undefined : () => setCreateOpen(true),
         }}
         detail={{
           title: (p) => p.name,

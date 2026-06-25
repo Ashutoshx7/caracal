@@ -303,8 +303,6 @@ function PolicySetsTab({
           description: query.isError
             ? errorMessage(query.error)
             : "Without an active policy set, every request in this zone denies by default. Compose and activate one to authorize traffic.",
-          actionLabel: query.isError ? undefined : "New policy set",
-          onAction: query.isError ? undefined : () => setComposer({ mode: "create" }),
         }}
         detail={{
           title: (ps) => ps.name,
@@ -994,8 +992,6 @@ function PoliciesTab({
           description: query.isError
             ? errorMessage(query.error)
             : "Policies are the Rego rules that authorize requests. Create one, then compose it into a policy set.",
-          actionLabel: query.isError ? undefined : "New policy",
-          onAction: query.isError ? undefined : () => setEditor({ mode: "create" }),
         }}
         detail={{
           title: (p) => p.name,

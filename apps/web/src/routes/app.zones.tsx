@@ -10,9 +10,19 @@ import { useEffect, useMemo, useState } from "react";
 import { DcrField } from "@/components/console/DcrField";
 import { ModulePage } from "@/components/console/ModulePage";
 import {
+  CopyValue,
+  DangerZone,
+  DetailField,
+  DetailGroup,
+  DetailHeader,
+  DetailSection,
+  Monogram,
+} from "@/components/console/ResourceWorkspace";
+import {
   Badge,
   Button,
   DataTable,
+  Drawer,
   EmptyState,
   Field,
   Modal,
@@ -81,6 +91,7 @@ function ZonesPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [createOpen, setCreateOpen] = useState(false);
+  const [detailTarget, setDetailTarget] = useState<Zone | null>(null);
   const [editTarget, setEditTarget] = useState<Zone | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Zone | null>(null);
   const [dcrShutdown, setDcrShutdown] = useState<{
@@ -178,7 +189,11 @@ function ZonesPage() {
       align: "right",
       width: "1%",
       cell: (zone) => (
-        <div className="flex justify-end gap-1">
+        <div
+          className="flex justify-end gap-1"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
           <Tooltip label="Make this the active zone">
             <Button
               variant="ghost"
@@ -284,16 +299,15 @@ function ZonesPage() {
         skeletonRows={pageSize}
         sort={sort}
         onSortChange={toggleSort}
+        onRowClick={(zone) => setDetailTarget(zone)}
         empty={
           <EmptyState
+            bordered={false}
             title={query ? "No matching zones" : "No zones yet"}
             description={
               query
                 ? "Try a different search term."
                 : "Create your first zone to start managing applications, resources, and policies."
-            }
-            action={
-              !query ? <Button onClick={() => setCreateOpen(true)}>Create zone</Button> : undefined
             }
           />
         }
@@ -310,6 +324,30 @@ function ZonesPage() {
           />
         </div>
       ) : null}
+
+      <ZoneDetailDrawer
+        zone={detailTarget}
+        isActive={detailTarget?.id === activeId}
+        owner={owner}
+        onClose={() => setDetailTarget(null)}
+        onSwitch={() => {
+          if (!detailTarget) return;
+          selectZone(detailTarget.id);
+          toast({
+            tone: "success",
+            title: "Active zone switched",
+            description: detailTarget.name,
+          });
+        }}
+        onEdit={() => {
+          setEditTarget(detailTarget);
+          setDetailTarget(null);
+        }}
+        onDelete={() => {
+          setDeleteTarget(detailTarget);
+          setDetailTarget(null);
+        }}
+      />
 
       <ZoneFormModal
         open={createOpen}
@@ -534,6 +572,181 @@ interface Dependencies {
   policies: number;
   policySets: number;
   liveDcr: number;
+}
+
+function useZoneDependencies(zone: Zone | null): {
+  deps: Dependencies | null;
+  loading: boolean;
+  error: string | null;
+} {
+  const [deps, setDeps] = useState<Dependencies | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!zone) return;
+    setDeps(null);
+    setError(null);
+    setLoading(true);
+    let cancelled = false;
+    (async () => {
+      try {
+        const [applications, resources, providers, policies, policySets, dcr] = await Promise.all([
+          consoleApi.applications.list(zone.id),
+          consoleApi.resources.list(zone.id),
+          consoleApi.providers.list(zone.id),
+          consoleApi.policies.list(zone.id),
+          consoleApi.policySets.list(zone.id),
+          consoleApi.zones.dcrStatus(zone.id).catch(() => ({ live_dcr_applications: 0 })),
+        ]);
+        if (cancelled) return;
+        setDeps({
+          applications: applications.length,
+          resources: resources.length,
+          providers: providers.length,
+          policies: policies.length,
+          policySets: policySets.length,
+          liveDcr: dcr.live_dcr_applications ?? 0,
+        });
+      } catch (err) {
+        if (!cancelled) setError(errorMessage(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [zone]);
+
+  return { deps, loading, error };
+}
+
+// The clickable zone detail panel, mirroring the entity detail the console TUI opens on
+// Enter: identity, configuration, and a live inventory of what the zone contains, with the
+// same switch/edit/delete actions surfaced inline.
+function ZoneDetailDrawer({
+  zone,
+  isActive,
+  owner,
+  onClose,
+  onSwitch,
+  onEdit,
+  onDelete,
+}: {
+  zone: Zone | null;
+  isActive: boolean;
+  owner: string;
+  onClose: () => void;
+  onSwitch: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { deps, loading, error } = useZoneDependencies(zone);
+
+  const contents: { label: string; value: number; to: string }[] = deps
+    ? [
+        { label: "Applications", value: deps.applications, to: "/app/applications" },
+        { label: "Resources", value: deps.resources, to: "/app/resources" },
+        { label: "Providers", value: deps.providers, to: "/app/providers" },
+        { label: "Policies", value: deps.policies, to: "/app/policies" },
+        { label: "Policy sets", value: deps.policySets, to: "/app/policy-sets" },
+      ]
+    : [];
+
+  return (
+    <Drawer
+      open={zone !== null}
+      onClose={onClose}
+      title={zone?.name ?? ""}
+      description={zone?.slug ?? undefined}
+      icon={zone ? <Monogram label={zone.name} /> : undefined}
+      width="max-w-lg"
+    >
+      {zone ? (
+        <div className="flex flex-col gap-6">
+          <DetailHeader
+            action={
+              <>
+                {!isActive ? (
+                  <Button variant="secondary" size="sm" onClick={onSwitch}>
+                    Switch to
+                  </Button>
+                ) : null}
+                <Button variant="secondary" size="sm" onClick={onEdit}>
+                  Edit
+                </Button>
+              </>
+            }
+          >
+            {isActive ? <Badge tone="success">Active</Badge> : null}
+            {zone.dcr_enabled ? (
+              <Badge tone="neutral">DCR enabled</Badge>
+            ) : (
+              <Badge tone="muted">DCR off</Badge>
+            )}
+          </DetailHeader>
+
+          <DetailGroup title="Identity">
+            <DetailField label="Name">{zone.name}</DetailField>
+            <DetailField label="Slug">
+              <CopyValue value={zone.slug} />
+            </DetailField>
+            <DetailField label="Zone ID">
+              <CopyValue value={zone.id} />
+            </DetailField>
+            <DetailField label="Owner">{owner}</DetailField>
+            <DetailField label="Created">{new Date(zone.created_at).toLocaleString()}</DetailField>
+            {zone.updated_at && zone.updated_at !== zone.created_at ? (
+              <DetailField label="Updated">
+                {new Date(zone.updated_at).toLocaleString()}
+              </DetailField>
+            ) : null}
+          </DetailGroup>
+
+          <DetailSection title="Contents">
+            {loading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Spinner className="h-4 w-4" /> Loading inventory…
+              </div>
+            ) : error ? (
+              <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                Could not load contents: {error}
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-3 [&>*]:bg-card">
+                {contents.map((item) => (
+                  <Link
+                    key={item.label}
+                    to={item.to}
+                    onClick={onClose}
+                    className="flex flex-col gap-1 px-3 py-2.5 transition-colors hover:bg-accent/50"
+                  >
+                    <span className="text-lg font-semibold tabular-nums text-foreground">
+                      {item.value}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">{item.label}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+            {deps && deps.liveDcr > 0 ? (
+              <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                {deps.liveDcr} live dynamically-registered client{deps.liveDcr === 1 ? "" : "s"}{" "}
+                currently authenticating in this zone.
+              </p>
+            ) : null}
+          </DetailSection>
+
+          <DangerZone
+            description="Archive this zone and revoke access to everything it contains."
+            actionLabel="Delete"
+            onAction={onDelete}
+          />
+        </div>
+      ) : null}
+    </Drawer>
+  );
 }
 
 function DeleteZoneDialog({
