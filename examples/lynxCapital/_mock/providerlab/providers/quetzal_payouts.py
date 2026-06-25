@@ -42,6 +42,51 @@ _PURPOSE_CODES = {
 
 _PAYOUT_FLOW = ("processing", "in_transit", "paid")
 
+# Clearing scheme a corridor settles over, the way a payout platform names the
+# rail on the payout record: domestic local clearing, the euro-area SEPA scheme,
+# or the SWIFT correspondent network for everything else.
+_EUR_SEPA = {"EUR"}
+
+# Payouts at or above this source-USD value are held for enhanced screening and
+# surface a compliance review the way a real platform gates large disbursements.
+_SCREENING_THRESHOLD_USD = 250_000.0
+
+# Canonical failure dispositions a payout can carry, each mapping a machine code
+# to the human-readable detail a real platform returns on the payout record.
+_FAILURE_MESSAGES = {
+    "recipient_account_closed": "The recipient's bank account is closed.",
+    "invalid_bank_details": "The recipient's bank details failed validation.",
+    "compliance_hold": "The payout was held by compliance screening.",
+    "bank_returned_funds": "The beneficiary bank returned the funds.",
+    "recipient_name_mismatch": "The account holder name did not match the bank record.",
+}
+
+# Sandbox triggers that force a deterministic disposition, the way payout
+# platforms publish test values so integrators can exercise non-happy paths.
+_SIMULATE_OUTCOMES = ("processing", "in_transit", "paid", "failed", "returned")
+_SIMULATE_FAILURE = {"failed": "invalid_bank_details", "returned": "bank_returned_funds"}
+
+
+def _scheme(method: str, source: str, target: str) -> str:
+    """The clearing scheme a corridor settles over for a given method."""
+    if method != "bank_transfer":
+        return method
+    if source == target:
+        return "local"
+    if target in _EUR_SEPA:
+        return "sepa"
+    return "swift"
+
+
+def _tracking_reference(payout_id: str) -> str:
+    """A customer-facing tracking reference a recipient can quote to their bank."""
+    return "QZL-" + payout_id.split("_")[-1].upper()[:10]
+
+
+def _failure(code: str) -> dict:
+    return {"failureCode": code,
+            "failureMessage": _FAILURE_MESSAGES.get(code, "The payout could not be completed.")}
+
 
 def _norm_method(value: str) -> str:
     method = str(value or "bank_transfer").lower()

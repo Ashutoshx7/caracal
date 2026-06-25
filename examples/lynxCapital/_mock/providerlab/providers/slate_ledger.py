@@ -354,3 +354,5 @@ def close_period(ctx: Ctx) -> dict:
     pr["trialBalance"] = {"totalDebit": tb["totalDebit"], "totalCredit": tb["totalCredit"]}
     pr["openExceptions"] = warnings
     return pr
+
+# probe-marker-xyz

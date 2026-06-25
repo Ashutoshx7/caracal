@@ -114,7 +114,8 @@ _SPECS: dict[str, PartnerSpec] = {
          "get_screening", "list_screenings", "get_entity", "get_watchlist_hit",
          "list_watchlists", "get_case", "list_cases", "get_audit_trail",
          "assign_case", "add_case_note", "escalate_case", "resolve_case",
-         "create_monitor", "get_monitor", "list_monitors"),
+         "reopen_case", "whitelist_match",
+         "create_monitor", "run_monitor", "get_monitor", "list_monitors"),
         scopes=("screening.run", "screening.read", "cases.read", "cases.write", "monitoring.write")),
     "verafin-monitor": PartnerSpec(
         "verafin-monitor", "mandate", 9408,
@@ -208,9 +209,10 @@ _SPECS: dict[str, PartnerSpec] = {
     "pulse-market": PartnerSpec(
         "pulse-market", "api_key", 9418,
         ("list_instruments", "get_instrument", "get_snapshot", "get_quotes",
-         "get_bars", "get_market_status", "list_reference_rates", "get_reference_rate",
-         "create_subscription", "list_subscriptions", "get_subscription",
-         "cancel_subscription", "stream_rates"),
+         "convert", "get_bars", "list_movers", "get_market_status", "get_usage",
+         "list_reference_rates", "get_reference_rate",
+         "create_subscription", "update_subscription", "list_subscriptions",
+         "get_subscription", "cancel_subscription", "stream_rates"),
         apikey_location="header", apikey_field="X-Api-Key"),
     "junction-procure": PartnerSpec(
         "junction-procure", "oauth_cc", 9419,

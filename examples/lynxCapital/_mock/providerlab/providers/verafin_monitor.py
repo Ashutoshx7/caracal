@@ -841,22 +841,40 @@ def monitor_transaction(ctx: Ctx) -> dict:
         "direction": ctx.get("direction"),
         "counterparty": ctx.get("counterparty"),
         "country": ctx.get("country"),
+        "detectedAt": _ts(),
     }
     score, signals = _score_transaction(ctx.state, txn)
+    aggregate = _aggregate_cash(ctx.state, txn)
+    ctr_reportable = bool(aggregate and aggregate["ctrReportable"])
+    if aggregate and aggregate["ctrBasis"] == "aggregate" and aggregate["transactionCount"] >= 2:
+        signals.append(
+            {
+                "typology": "structuring",
+                "weight": 34,
+                "detail": (
+                    f"{aggregate['transactionCount']} same-day cash transactions "
+                    f"aggregate to {aggregate['cashTotal']:.0f}, crossing the CTR threshold"
+                ),
+            }
+        )
+        score = max(score, 62)
     band = _band(score)
     flagged = score >= 60
-    ctr = _meta(ctx.state)["ctrThreshold"]
     result = {
         "transactionId": txn["transactionId"],
         "riskScore": score,
         "riskBand": band,
         "flagged": flagged,
         "signals": signals,
-        "ctrReportable": txn["channel"] == "cash" and amount >= ctr,
+        "ctrReportable": ctr_reportable,
+        "ctrBasis": aggregate["ctrBasis"] if aggregate else None,
+        "ctrAggregate": aggregate,
         "evaluatedAt": _ts(),
     }
     if flagged:
-        alert = _open_alert(ctx.state, txn, score, signals, ctx)
+        alert = _open_alert(
+            ctx.state, txn, score, signals, ctx, ctr_reportable=ctr_reportable
+        )
         result["alertId"] = alert["alertId"]
         result["recommendedAction"] = (
             "investigate" if band in ("high", "critical") else "review"
@@ -871,13 +889,13 @@ def get_alert(ctx: Ctx) -> dict:
     alert = ctx.state.table("alerts").get(ctx.payload["alertId"])
     if alert is None:
         raise DomainError(404, "alert_not_found", ctx.payload["alertId"])
-    return _public(alert)
+    return _view_alert(ctx.state, alert)
 
 
 @base.op(ID, "list_alerts")
 def list_alerts(ctx: Ctx) -> dict:
     ctx.require_scope("alerts.read")
-    items = [_public(a) for a in ctx.state.table("alerts").values()]
+    items = [_view_alert(ctx.state, a) for a in ctx.state.table("alerts").values()]
     if ctx.get("status"):
         items = [a for a in items if a["status"] == ctx.get("status")]
     if ctx.get("riskBand"):
@@ -886,6 +904,9 @@ def list_alerts(ctx: Ctx) -> dict:
         items = [a for a in items if a["typology"] == ctx.get("typology")]
     if ctx.get("assignee"):
         items = [a for a in items if a.get("assignee") == ctx.get("assignee")]
+    if ctx.get("slaBreached") is not None:
+        want = bool(ctx.get("slaBreached"))
+        items = [a for a in items if a["slaBreached"] == want]
     items.sort(key=lambda a: a["detectedAt"], reverse=True)
     return ctx.paginate(items)
 
@@ -900,7 +921,7 @@ def assign_alert(ctx: Ctx) -> dict:
     if alert["status"] == "resolved":
         raise DomainError(409, "alert_resolved", "cannot assign a resolved alert")
     _set_assignee(ctx.state, alert, str(ctx.payload["assignee"]), ctx)
-    return _public(alert)
+    return _view_alert(ctx.state, alert)
 
 
 @base.op(ID, "resolve_alert")
@@ -934,9 +955,9 @@ def resolve_alert(ctx: Ctx) -> dict:
             )
         _audit(ctx.state, alert, "alert_escalated", ctx, {"caseId": case["caseId"]})
         alert["status"] = "escalated"
-        return {"alert": _public(alert), "caseId": case["caseId"]}
+        return {"alert": _view_alert(ctx.state, alert), "caseId": case["caseId"]}
     _resolve_alert(ctx.state, alert, disposition, reason, ctx)
-    return {"alert": _public(alert), "caseId": alert.get("caseId")}
+    return {"alert": _view_alert(ctx.state, alert), "caseId": alert.get("caseId")}
 
 
 # --------------------------------------------------------------------------- #
@@ -950,11 +971,11 @@ def open_case(ctx: Ctx) -> dict:
     if alert is None:
         raise DomainError(404, "alert_not_found", ctx.payload["alertId"])
     if alert.get("caseId"):
-        return _public(ctx.state.table("cases")[alert["caseId"]])
+        return _view_case(ctx.state.table("cases")[alert["caseId"]])
     case = _open_case(
         ctx.state, alert, ctx, ctx.get("reason", "Manual investigation opened.")
     )
-    return _public(case)
+    return _view_case(case)
 
 
 @base.op(ID, "get_case")
@@ -964,13 +985,13 @@ def get_case(ctx: Ctx) -> dict:
     case = ctx.state.table("cases").get(ctx.payload["caseId"])
     if case is None:
         raise DomainError(404, "case_not_found", ctx.payload["caseId"])
-    return _public(case)
+    return _view_case(case)
 
 
 @base.op(ID, "list_cases")
 def list_cases(ctx: Ctx) -> dict:
     ctx.require_scope("cases.read")
-    items = [_public(c) for c in ctx.state.table("cases").values()]
+    items = [_view_case(c) for c in ctx.state.table("cases").values()]
     if ctx.get("status"):
         items = [c for c in items if c["status"] == ctx.get("status")]
     if ctx.get("priority"):
@@ -1016,7 +1037,7 @@ def escalate_case(ctx: Ctx) -> dict:
             "reason": ctx.get("reason", "Manual escalation requested."),
         },
     )
-    return _public(case)
+    return _view_case(case)
 
 
 @base.op(ID, "resolve_case")
@@ -1042,7 +1063,7 @@ def resolve_case(ctx: Ctx) -> dict:
         ctx.get("reason", "Investigation closed by analyst."),
         ctx,
     )
-    return _public(case)
+    return _view_case(case)
 
 
 # --------------------------------------------------------------------------- #
