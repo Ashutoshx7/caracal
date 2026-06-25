@@ -55,6 +55,10 @@ secrets:
     file: ${CARACAL_SECRETS_DIR:-./secrets}/gatewayStsHmacKey
   databaseUrl:
     file: ${CARACAL_SECRETS_DIR:-./secrets}/databaseUrl
+  authDatabaseUrl:
+    file: ${CARACAL_SECRETS_DIR:-./secrets}/authDatabaseUrl
+  caracalAuthSecret:
+    file: ${CARACAL_SECRETS_DIR:-./secrets}/caracalAuthSecret
   redisUrl:
     file: ${CARACAL_SECRETS_DIR:-./secrets}/redisUrl
 
@@ -420,6 +424,49 @@ services:
       HOST: 0.0.0.0
     ports:
       - "127.0.0.1:4000:4000"
+    healthcheck:
+      test: ["CMD", "/healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+  web:
+    <<: *appService
+    image: ${CARACAL_REGISTRY:-ghcr.io/garudex-labs/}caracal-web:v${CARACAL_VERSION}
+    command: ["/app/auth/dist/server.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      coordinator:
+        condition: service_healthy
+    secrets:
+      - source: authDatabaseUrl
+        target: authDatabaseUrl
+      - source: caracalAuthSecret
+        target: caracalAuthSecret
+      - source: caracalAdminToken
+        target: caracalAdminToken
+      - source: caracalCoordinatorToken
+        target: caracalCoordinatorToken
+    environment:
+      NODE_ENV: production
+      CARACAL_AUTH_DATABASE_URL_FILE: /run/secrets/authDatabaseUrl
+      CARACAL_AUTH_DATABASE_SSL: disable
+      CARACAL_AUTH_SECRET_FILE: /run/secrets/caracalAuthSecret
+      CARACAL_AUTH_AUTO_MIGRATE: "true"
+      CARACAL_AUTH_URL: ${CARACAL_WEB_URL:-http://localhost:3001}
+      CARACAL_API_URL: http://api:3000
+      CARACAL_COORDINATOR_URL: http://coordinator:4000
+      CARACAL_ADMIN_TOKEN_FILE: /run/secrets/caracalAdminToken
+      CARACAL_COORDINATOR_TOKEN_FILE: /run/secrets/caracalCoordinatorToken
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PORT: 3002
+      HOST: 0.0.0.0
+    ports:
+      - "127.0.0.1:3001:3002"
     healthcheck:
       test: ["CMD", "/healthcheck"]
       interval: 5s

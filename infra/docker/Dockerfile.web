@@ -38,13 +38,13 @@ COPY apps/auth/ apps/auth/
 # The SPA is served same-origin by the BFF, so the client resolves the API base from the page
 # origin at runtime; no build-time backend URL is baked in. Passed as a build ARG (not a
 # persisted ENV) so it never lingers in the final image layers.
-ARG VITE_CARACAL_AUTH_URL=""
+ARG SPA_BACKEND_BASE=""
 RUN set -e; \
     pnpm --filter @caracalai/core build; \
     pnpm --filter @caracalai/admin build; \
     pnpm --filter @caracalai/oauth build; \
     pnpm --filter @caracalai/engine build; \
-    pnpm --filter @caracalai/web build; \
+    VITE_CARACAL_AUTH_URL="${SPA_BACKEND_BASE}" pnpm --filter @caracalai/web build; \
     pnpm --filter @caracalai/auth build; \
     pnpm --config.inject-workspace-packages=true --filter @caracalai/auth deploy --prod /out/auth; \
     mkdir -p /out/auth/web && cp -r apps/web/dist/* /out/auth/web/; \

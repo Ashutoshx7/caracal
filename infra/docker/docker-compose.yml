@@ -81,6 +81,10 @@ secrets:
     file: ${CARACAL_SECRETS_DIR:-../secrets/files}/gatewayStsHmacKey
   databaseUrl:
     file: ${CARACAL_SECRETS_DIR:-../secrets/files}/databaseUrl
+  authDatabaseUrl:
+    file: ${CARACAL_SECRETS_DIR:-../secrets/files}/authDatabaseUrl
+  caracalAuthSecret:
+    file: ${CARACAL_SECRETS_DIR:-../secrets/files}/caracalAuthSecret
   redisUrl:
     file: ${CARACAL_SECRETS_DIR:-../secrets/files}/redisUrl
 
@@ -525,6 +529,52 @@ services:
       HOST: 0.0.0.0
     ports:
       - "127.0.0.1:4000:4000"
+    healthcheck:
+      test: ["CMD", "/healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+  web:
+    <<: [*appService, *appResources]
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+    image: localhost/caracal-web:${CARACAL_DEV_VERSION:-${CARACAL_BASE_VERSION:-2026.05.26}-dev.sha${CARACAL_DEV_SHA:-local}}
+    command: ["/app/auth/dist/server.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+      coordinator:
+        condition: service_healthy
+    secrets:
+      - source: authDatabaseUrl
+        target: authDatabaseUrl
+      - source: caracalAuthSecret
+        target: caracalAuthSecret
+      - source: caracalAdminToken
+        target: caracalAdminToken
+      - source: caracalCoordinatorToken
+        target: caracalCoordinatorToken
+    environment:
+      NODE_ENV: production
+      CARACAL_AUTH_DATABASE_URL_FILE: /run/secrets/authDatabaseUrl
+      CARACAL_AUTH_DATABASE_SSL: disable
+      CARACAL_AUTH_SECRET_FILE: /run/secrets/caracalAuthSecret
+      CARACAL_AUTH_AUTO_MIGRATE: "true"
+      CARACAL_AUTH_URL: http://localhost:3001
+      CARACAL_API_URL: http://api:3000
+      CARACAL_COORDINATOR_URL: http://coordinator:4000
+      CARACAL_ADMIN_TOKEN_FILE: /run/secrets/caracalAdminToken
+      CARACAL_COORDINATOR_TOKEN_FILE: /run/secrets/caracalCoordinatorToken
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PORT: 3002
+      HOST: 0.0.0.0
+    ports:
+      - "127.0.0.1:${CARACAL_WEB_PORT:-3001}:3002"
     healthcheck:
       test: ["CMD", "/healthcheck"]
       interval: 5s
