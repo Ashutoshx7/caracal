@@ -603,7 +603,7 @@ def _build_regional_domain_tools(run_id, runner, parent, region, board):
         (payments, payouts, open banking), inkwell-ocr (document extraction), slate-ledger (journals),
         vela-notify (transactional email/SMS, templates, delivery tracking, suppressions, webhooks), cordoba-fx (fx quotes/conversions/settlement payments), ironbark-erp/tallyhall-books (vendors/bills),
         beacon-crm (CRM accounts/contacts/deal pipeline/activities), core-billing (internal AR: customers/invoices/payments/dunning/collections/aging), lumen-identity (directory),
-        atlas-vendor (vendor MDM/onboarding/verification/compliance/contracts over MCP),
+        atlas-vendor (vendor MDM/onboarding/verification/compliance over MCP: search/list/update vendors, register and progress onboarding, screen KYB/sanctions, verify banking, review documents, audit change history, contracts),
         sabre-tax, pulse-market (market data: instruments, quotes, OHLC bars, conversions, top movers, end-of-day reference fixings, streaming subscriptions), junction-procure (procure-to-pay: suppliers, commodity catalog, cost-center budgets, tiered requisition approvals, purchase orders, goods receipts),
         relay-automation, aegis-screening, and verafin-monitor.
         Every call routes through the Caracal Gateway under the worker's own narrowed mandate.

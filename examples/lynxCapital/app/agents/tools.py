@@ -332,7 +332,7 @@ def get_withholding_rate(run_id: str, agent_id: str, region: str, currency: str)
     payee = {"country": country, "entityType": "corporation",
              "documentationType": documentation, "treatyClaim": country != "US"}
     return _run(run_id, agent_id, "get_withholding_rate", "sabre-tax", "determine_withholding",
-                {"paymentType": "independent_services", "currencyCode": currency, "payee": payee})
+                {"paymentType": "services", "currencyCode": currency, "payee": payee})
 
 
 def validate_tax_id(run_id: str, agent_id: str, vendor_id: str) -> dict[str, object]:
@@ -509,8 +509,18 @@ def create_outbound_payment(run_id: str, agent_id: str, vendor_id: str, amount: 
 # -- audit tools --
 
 def get_contract_terms(run_id: str, agent_id: str, vendor_id: str) -> dict[str, object]:
+    """Retrieve a vendor's contract terms. Accepts a contract id (CTR-) directly or a
+    vendor id (VEND-), resolving the vendor's first contract through list_contracts."""
+    contract_id = vendor_id
+    if not str(vendor_id).upper().startswith("CTR-"):
+        listing = _run(run_id, agent_id, "get_contract_terms", "atlas-vendor", "list_contracts",
+                       {"vendorId": vendor_id})
+        items = ((listing.get("data") or {}).get("items")) or []
+        if not items:
+            return listing
+        contract_id = items[0].get("id") or items[0].get("contractId")
     return _run(run_id, agent_id, "get_contract_terms", "atlas-vendor", "get_contract_terms",
-                {"contractId": vendor_id})
+                {"contractId": contract_id})
 
 
 def get_payment_status(run_id: str, agent_id: str, charge_id: str) -> dict[str, object]:
@@ -612,6 +622,60 @@ def verify_vendor_banking(run_id: str, agent_id: str, vendor_id: str,
         payload["accountNumber"] = account_number
     return _run(run_id, agent_id, "verify_vendor_banking", "atlas-vendor",
                 "verify_vendor_banking", payload)
+
+
+def search_vendors(run_id: str, agent_id: str, query: str,
+                   status: str = "") -> dict[str, object]:
+    """Find vendors in the master by name or country, optionally filtered by status."""
+    payload: dict[str, object] = {"query": query}
+    if status:
+        payload["status"] = status
+    return _run(run_id, agent_id, "search_vendors", "atlas-vendor", "search_vendors", payload)
+
+
+def get_vendor_profile_record(run_id: str, agent_id: str, vendor_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "get_vendor_profile_record", "atlas-vendor",
+                "get_vendor_profile", {"vendorId": vendor_id})
+
+
+def update_vendor_profile(run_id: str, agent_id: str, vendor_id: str, field: str,
+                          value: str) -> dict[str, object]:
+    """Update a single master-data field on a vendor record."""
+    return _run(run_id, agent_id, "update_vendor_profile", "atlas-vendor",
+                "update_vendor_profile", {"vendorId": vendor_id, field: value})
+
+
+def screen_vendor_compliance(run_id: str, agent_id: str, vendor_id: str) -> dict[str, object]:
+    """Re-run KYB, sanctions, and adverse-media screening for a vendor."""
+    return _run(run_id, agent_id, "screen_vendor_compliance", "atlas-vendor",
+                "run_compliance_screening", {"vendorId": vendor_id})
+
+
+def list_vendor_documents(run_id: str, agent_id: str, vendor_id: str) -> dict[str, object]:
+    return _run(run_id, agent_id, "list_vendor_documents", "atlas-vendor",
+                "list_vendor_documents", {"vendorId": vendor_id})
+
+
+def submit_vendor_document(run_id: str, agent_id: str, vendor_id: str, doc_type: str,
+                           file_name: str) -> dict[str, object]:
+    """Attach a compliance document (W-9, COI, registration) to a vendor record."""
+    return _run(run_id, agent_id, "submit_vendor_document", "atlas-vendor",
+                "submit_vendor_document",
+                {"vendorId": vendor_id, "type": doc_type, "fileName": file_name})
+
+
+def review_vendor_document(run_id: str, agent_id: str, vendor_id: str, document_id: str,
+                           decision: str = "approve") -> dict[str, object]:
+    """Approve or reject a submitted vendor document during compliance review."""
+    return _run(run_id, agent_id, "review_vendor_document", "atlas-vendor",
+                "review_vendor_document",
+                {"vendorId": vendor_id, "documentId": document_id, "decision": decision})
+
+
+def get_vendor_events(run_id: str, agent_id: str, vendor_id: str) -> dict[str, object]:
+    """Return the change-history / audit trail for a vendor."""
+    return _run(run_id, agent_id, "get_vendor_events", "atlas-vendor",
+                "list_vendor_events", {"vendorId": vendor_id})
 
 
 # -- treasury tools --
@@ -1119,6 +1183,14 @@ TOOLS: dict[str, Callable] = {
     "get_vendor_onboarding_status": get_vendor_onboarding_status,
     "advance_vendor_onboarding": advance_vendor_onboarding,
     "verify_vendor_banking": verify_vendor_banking,
+    "search_vendors": search_vendors,
+    "get_vendor_profile_record": get_vendor_profile_record,
+    "update_vendor_profile": update_vendor_profile,
+    "screen_vendor_compliance": screen_vendor_compliance,
+    "list_vendor_documents": list_vendor_documents,
+    "submit_vendor_document": submit_vendor_document,
+    "review_vendor_document": review_vendor_document,
+    "get_vendor_events": get_vendor_events,
     "get_cash_position": get_cash_position,
     "get_treasury_summary": get_treasury_summary,
     "forecast_liquidity": forecast_liquidity,

@@ -145,14 +145,21 @@ def test_grpc_position_aggregates_accounts():
     assert body["currency"] == "USD" and body["accountCount"] >= 1
     assert body["availableBalance"] <= body["ledgerBalance"]
     assert body["reportingCurrency"] == "USD"
-    assert (
-        c.post("/api/get_position", json={"currency": "ZZZ"}, headers=md).status_code
-        == 422
-    )
-    assert (
-        c.post("/api/get_position", json={"currency": "CHF"}, headers=md).status_code
-        == 404
-    )
+    # Treasury-grade aggregates a real cash desk reports on.
+    assert {"investableSurplus", "minimumOperatingBalance", "floatAmount"} <= set(body)
+    assert {"sweepEligible", "investableSurplus"} <= set(body["accounts"][0])
+    bad = c.post("/api/get_position", json={"currency": "ZZZ"}, headers=md)
+    assert bad.status_code == 400 and bad.json()["grpcStatus"] == "INVALID_ARGUMENT"
+    nf = c.post("/api/get_position", json={"currency": "CHF"}, headers=md)
+    assert nf.status_code == 404 and nf.json()["grpcStatus"] == "NOT_FOUND"
+
+
+def test_grpc_position_summary_reports_investable_surplus():
+    c, md = _keystone()
+    summary = c.post("/api/get_position_summary", json={}, headers=md).json()["data"]
+    assert summary["reportingCurrency"] == "USD"
+    assert "totalInvestableSurplusBase" in summary
+    assert all("investableSurplusBase" in b for b in summary["byCurrency"])
 
 
 def test_grpc_forecast_scenarios_and_validation():
@@ -163,22 +170,26 @@ def test_grpc_forecast_scenarios_and_validation():
         headers=md,
     )
     assert ok.status_code == 200 and ok.json()["data"]["scenario"] == "stress"
-    assert ok.json()["data"]["points"]
-    assert (
-        c.post(
-            "/api/forecast_liquidity",
-            json={"currency": "USD", "horizonDays": 0},
-            headers=md,
-        ).status_code
-        == 422
+    forecast = ok.json()["data"]
+    assert forecast["points"] and forecast["method"] == "direct"
+    # Direct-method forecast breaks receipts and disbursements into categories.
+    assert {"receivables", "payables", "payroll", "tax", "debtService"} <= set(
+        forecast["points"][0]["categories"]
     )
+    assert {"closingBalanceLow", "closingBalanceHigh"} <= set(forecast["points"][0])
+    bad_horizon = c.post(
+        "/api/forecast_liquidity",
+        json={"currency": "USD", "horizonDays": 0},
+        headers=md,
+    )
+    assert bad_horizon.status_code == 400 and bad_horizon.json()["grpcStatus"] == "INVALID_ARGUMENT"
     assert (
         c.post(
             "/api/forecast_liquidity",
             json={"currency": "USD", "horizonDays": 30, "scenario": "wild"},
             headers=md,
         ).status_code
-        == 422
+        == 400
     )
 
 
@@ -192,24 +203,39 @@ def test_grpc_hedge_lifecycle():
             "side": "buy",
             "instrument": "forward",
             "tenorDays": 90,
+            "designation": "net_investment_hedge",
         },
         headers=md,
     )
     assert placed.status_code == 200
     hedge = placed.json()["data"]
     assert hedge["status"] == "booked" and hedge["notionalCurrency"] == "EUR"
+    # Hedge-accounting and counterparty detail a real FX desk records.
+    assert hedge["accountingDesignation"] == "net_investment_hedge"
+    assert {"counterpartyRating", "isdaMasterAgreementRef", "settlementType"} <= set(hedge)
     hid = hedge["hedgeId"]
+    # Settle a second hedge through its full lifecycle.
+    other = c.post(
+        "/api/place_hedge",
+        json={"pair": "GBP/USD", "notional": 500_000, "side": "buy"},
+        headers=md,
+    ).json()["data"]
+    settled = c.post("/api/settle_hedge", json={"hedgeId": other["hedgeId"]}, headers=md)
+    assert settled.status_code == 200 and settled.json()["data"]["status"] == "settled"
     cancelled = c.post("/api/cancel_hedge", json={"hedgeId": hid}, headers=md).json()[
         "data"
     ]
     assert cancelled["status"] == "cancelled"
+    # A cancelled hedge can no longer be settled.
+    no_settle = c.post("/api/settle_hedge", json={"hedgeId": hid}, headers=md)
+    assert no_settle.status_code == 400 and no_settle.json()["grpcStatus"] == "FAILED_PRECONDITION"
     assert (
         c.post(
             "/api/place_hedge",
             json={"pair": "EUR/USD", "notional": 1_000_000, "side": "hold"},
             headers=md,
         ).status_code
-        == 422
+        == 400
     )
     assert (
         c.post(
@@ -217,7 +243,7 @@ def test_grpc_hedge_lifecycle():
             json={"pair": "USDUSD", "notional": 1, "side": "buy"},
             headers=md,
         ).status_code
-        == 422
+        == 400
     )
     assert (
         c.post("/api/get_hedge", json={"hedgeId": "missing"}, headers=md).status_code
@@ -235,6 +261,8 @@ def test_grpc_transfer_and_insufficient_liquidity():
     assert ok.status_code == 200
     transfer = ok.json()["data"]
     assert transfer["type"] == "intercompany" and transfer["status"] == "executed"
+    # Settlement metadata a cross-border payment carries.
+    assert transfer["settlementMethod"] == "swift" and transfer["crossBorder"] is True
     fetched = c.post(
         "/api/get_transfer", json={"transferId": transfer["transferId"]}, headers=md
     )
@@ -244,7 +272,24 @@ def test_grpc_transfer_and_insufficient_liquidity():
         json={"currency": "USD", "amount": 9_999_999_999, "destination": "DE"},
         headers=md,
     )
-    assert broke.status_code == 402
+    assert broke.status_code == 400 and broke.json()["grpcStatus"] == "FAILED_PRECONDITION"
+
+
+def test_grpc_transfer_maker_checker_approval():
+    c, md = _keystone()
+    large = c.post(
+        "/api/transfer_funds",
+        json={"currency": "USD", "amount": 6_000_000, "destination": "DE"},
+        headers=md,
+    ).json()["data"]
+    # Above the approval threshold a transfer is held for a second pair of eyes.
+    assert large["status"] == "pending_approval" and large["approvalState"] == "pending"
+    tid = large["transferId"]
+    released = c.post("/api/approve_transfer", json={"transferId": tid}, headers=md)
+    assert released.status_code == 200 and released.json()["data"]["status"] == "executed"
+    # A transfer can only be approved once.
+    again = c.post("/api/approve_transfer", json={"transferId": tid}, headers=md)
+    assert again.status_code == 400 and again.json()["grpcStatus"] == "FAILED_PRECONDITION"
 
 
 def test_grpc_exposure_and_streaming():
@@ -253,12 +298,23 @@ def test_grpc_exposure_and_streaming():
     assert exposure.status_code == 200
     data = exposure.json()["data"]
     assert {"netExposure", "hedgedAmount", "unhedgedAmount", "hedgeRatio"} <= set(data)
+    # Risk-desk detail: tenor buckets, VaR methodology, exposure split.
+    assert len(data["byTenor"]) == 4 and data["varMethodology"] == "parametric"
+    assert {"transactionExposure", "translationExposure", "withinLimit"} <= set(data)
     stream = c.post(
         "/api/watch_positions", json={"currency": "USD", "snapshots": 4}, headers=md
     )
     assert stream.status_code == 200
     payload = stream.json()["data"]
     assert payload["streaming"] is True and len(payload["updates"]) == 4
+
+
+def test_grpc_operation_carries_money_market_detail():
+    c, md = _keystone()
+    listing = c.post("/api/list_operations", json={}, headers=md).json()["data"]
+    op_id = listing["items"][0]["operationId"]
+    op = c.post("/api/get_operation", json={"operationId": op_id}, headers=md).json()["data"]
+    assert {"dayCountConvention", "interestAmount", "accruedInterest", "maturityValue"} <= set(op)
 
 
 # --------------------------------------------------------------------------- #

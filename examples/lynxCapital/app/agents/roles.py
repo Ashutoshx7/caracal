@@ -77,7 +77,9 @@ ROLES: dict[str, RoleDef] = {
     "audit": RoleDef(
         name="audit",
         scope_template="audit:{subject}",
-        allowed_tools=(),
+        allowed_tools=(
+            "get_contract_terms", "get_vendor_profile_record", "get_vendor_events",
+        ),
         emits=(*WORKER_EMITS, "audit_record"),
     ),
     "exception": RoleDef(
@@ -98,7 +100,9 @@ ROLES: dict[str, RoleDef] = {
         allowed_tools=(
             "kyb_screen_vendor", "register_vendor", "refresh_vendor_compliance",
             "get_contract_terms", "get_vendor_onboarding_status", "advance_vendor_onboarding",
-            "verify_vendor_banking",
+            "verify_vendor_banking", "search_vendors", "get_vendor_profile_record",
+            "update_vendor_profile", "screen_vendor_compliance", "list_vendor_documents",
+            "submit_vendor_document", "review_vendor_document", "get_vendor_events",
             "get_budget", "create_requisition", "approve_requisition", "reject_requisition",
             "get_approval_chain", "create_purchase_order", "receive_purchase_order",
             "procurement_list_suppliers",
