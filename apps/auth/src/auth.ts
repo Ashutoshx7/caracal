@@ -3,22 +3,22 @@
 //
 // Better Auth instance for Community Edition: unified email, Google, and GitHub identity backed by PostgreSQL.
 
-import { betterAuth } from "better-auth";
-import type { BetterAuthOptions } from "better-auth";
+import { betterAuth } from 'better-auth'
+import type { BetterAuthOptions } from 'better-auth'
 
-import { authDatabase } from "./database.ts";
-import { loadConfig } from "./config.ts";
-import { githubCredentials, googleCredentials } from "./providers.ts";
+import { authDatabase } from './database.ts'
+import { loadConfig } from './config.ts'
+import { githubCredentials, googleCredentials } from './providers.ts'
 
-const cfg = loadConfig();
+const cfg = loadConfig()
 
-function socialProviders(): NonNullable<BetterAuthOptions["socialProviders"]> {
-  const providers: NonNullable<BetterAuthOptions["socialProviders"]> = {};
-  const google = googleCredentials();
-  if (google) providers.google = google;
-  const github = githubCredentials();
-  if (github) providers.github = github;
-  return providers;
+function socialProviders(): NonNullable<BetterAuthOptions['socialProviders']> {
+  const providers: NonNullable<BetterAuthOptions['socialProviders']> = {}
+  const google = googleCredentials()
+  if (google) providers.google = google
+  const github = githubCredentials()
+  if (github) providers.github = github
+  return providers
 }
 
 export const auth = betterAuth({
@@ -34,7 +34,7 @@ export const auth = betterAuth({
   account: {
     accountLinking: {
       enabled: true,
-      trustedProviders: ["email-password", "google", "github"],
+      trustedProviders: ['email-password', 'google', 'github'],
     },
   },
   session: {
@@ -49,9 +49,9 @@ export const auth = betterAuth({
     window: 60,
     max: 120,
     customRules: {
-      "/sign-in/email": { window: 60, max: 10 },
-      "/sign-up/email": { window: 60, max: 10 },
-      "/forget-password": { window: 60, max: 5 },
+      '/sign-in/email': { window: 60, max: 10 },
+      '/sign-up/email': { window: 60, max: 10 },
+      '/forget-password': { window: 60, max: 5 },
     },
   },
   advanced: {
@@ -60,7 +60,7 @@ export const auth = betterAuth({
     useSecureCookies: cfg.secureCookies,
     defaultCookieAttributes: {
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: 'lax',
     },
   },
-});
+})

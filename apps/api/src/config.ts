@@ -114,20 +114,15 @@ function loadControlConfig(port: number): ControlConfig | null {
 }
 
 function deriveWorkerId(): string {
-  return process.env.WORKER_ID
-    ?? `${process.env.HOSTNAME ?? 'api'}:${process.pid}`
+  return process.env.WORKER_ID ?? `${process.env.HOSTNAME ?? 'api'}:${process.pid}`
 }
 
 export function loadConfig(): Config {
-  const gatewayStsHmacKey = process.env.GATEWAY_STS_HMAC_KEY
-    ? Buffer.from(process.env.GATEWAY_STS_HMAC_KEY, 'hex')
-    : null
+  const gatewayStsHmacKey = process.env.GATEWAY_STS_HMAC_KEY ? Buffer.from(process.env.GATEWAY_STS_HMAC_KEY, 'hex') : null
   if (gatewayStsHmacKey && gatewayStsHmacKey.length < 32) {
     throw new Error('GATEWAY_STS_HMAC_KEY must be hex-encoded with at least 32 bytes')
   }
-  const auditHmacKey = process.env.AUDIT_HMAC_KEY
-    ? Buffer.from(process.env.AUDIT_HMAC_KEY, 'hex')
-    : null
+  const auditHmacKey = process.env.AUDIT_HMAC_KEY ? Buffer.from(process.env.AUDIT_HMAC_KEY, 'hex') : null
   if (auditHmacKey && auditHmacKey.length < 32) {
     throw new Error('AUDIT_HMAC_KEY must be hex-encoded with at least 32 bytes')
   }

@@ -43,8 +43,7 @@ interface DerivedSecret {
 const DERIVED_SECRETS: readonly DerivedSecret[] = [
   {
     fileName: 'databaseUrl',
-    render: (v) =>
-      `postgres://${v.POSTGRES_USER ?? 'caracal'}:${v.POSTGRES_PASSWORD}@postgres:5432/${v.POSTGRES_DB ?? 'caracal'}`,
+    render: (v) => `postgres://${v.POSTGRES_USER ?? 'caracal'}:${v.POSTGRES_PASSWORD}@postgres:5432/${v.POSTGRES_DB ?? 'caracal'}`,
   },
   {
     fileName: 'authDatabaseUrl',
@@ -163,8 +162,6 @@ export function prepareDevSecrets(repoRoot: string): BootstrapPaths {
 
 export function runtimeBootstrapPaths(home: string): BootstrapPaths {
   return {
-    secretsDir: process.env.CARACAL_SECRETS_DIR
-      ? resolve(process.env.CARACAL_SECRETS_DIR)
-      : resolve(home, 'secrets'),
+    secretsDir: process.env.CARACAL_SECRETS_DIR ? resolve(process.env.CARACAL_SECRETS_DIR) : resolve(home, 'secrets'),
   }
 }

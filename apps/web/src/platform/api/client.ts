@@ -314,8 +314,12 @@ export const consoleApi = {
 
   applications: {
     list: async (zoneId: string, signal?: AbortSignal) =>
-      (await fetchAllPages<Application>(`/v1/zones/${encodeURIComponent(zoneId)}/applications`, signal))
-        .rows,
+      (
+        await fetchAllPages<Application>(
+          `/v1/zones/${encodeURIComponent(zoneId)}/applications`,
+          signal,
+        )
+      ).rows,
     create: (zoneId: string, input: ApplicationInput) =>
       request<Application>(`/v1/zones/${encodeURIComponent(zoneId)}/applications`, {
         method: "POST",
@@ -335,7 +339,8 @@ export const consoleApi = {
 
   resources: {
     list: async (zoneId: string, signal?: AbortSignal) =>
-      (await fetchAllPages<Resource>(`/v1/zones/${encodeURIComponent(zoneId)}/resources`, signal)).rows,
+      (await fetchAllPages<Resource>(`/v1/zones/${encodeURIComponent(zoneId)}/resources`, signal))
+        .rows,
     get: (zoneId: string, id: string) =>
       request<Resource>(
         `/v1/zones/${encodeURIComponent(zoneId)}/resources/${encodeURIComponent(id)}`,
@@ -358,7 +363,8 @@ export const consoleApi = {
 
   providers: {
     list: async (zoneId: string, signal?: AbortSignal) =>
-      (await fetchAllPages<Provider>(`/v1/zones/${encodeURIComponent(zoneId)}/providers`, signal)).rows,
+      (await fetchAllPages<Provider>(`/v1/zones/${encodeURIComponent(zoneId)}/providers`, signal))
+        .rows,
     get: (zoneId: string, id: string) =>
       request<Provider>(
         `/v1/zones/${encodeURIComponent(zoneId)}/providers/${encodeURIComponent(id)}`,
@@ -381,7 +387,8 @@ export const consoleApi = {
 
   policies: {
     list: async (zoneId: string, signal?: AbortSignal) =>
-      (await fetchAllPages<Policy>(`/v1/zones/${encodeURIComponent(zoneId)}/policies`, signal)).rows,
+      (await fetchAllPages<Policy>(`/v1/zones/${encodeURIComponent(zoneId)}/policies`, signal))
+        .rows,
     get: (zoneId: string, id: string) =>
       request<PolicyDetail>(
         `/v1/zones/${encodeURIComponent(zoneId)}/policies/${encodeURIComponent(id)}`,
@@ -410,7 +417,12 @@ export const consoleApi = {
 
   policySets: {
     list: async (zoneId: string, signal?: AbortSignal) =>
-      (await fetchAllPages<PolicySet>(`/v1/zones/${encodeURIComponent(zoneId)}/policy-sets`, signal)).rows,
+      (
+        await fetchAllPages<PolicySet>(
+          `/v1/zones/${encodeURIComponent(zoneId)}/policy-sets`,
+          signal,
+        )
+      ).rows,
     get: (zoneId: string, id: string) =>
       request<PolicySetDetail>(
         `/v1/zones/${encodeURIComponent(zoneId)}/policy-sets/${encodeURIComponent(id)}`,
