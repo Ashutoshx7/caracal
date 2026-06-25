@@ -1,6 +1,6 @@
 # Configuration Review
 
-Use to review pasted provider configuration, resource configuration, screenshots text, field lists, or completed Caracal Console setups.
+Use to review pasted provider configuration, resource configuration, screenshots text, field lists, or completed Caracal web console setups.
 
 ## Procedure
 

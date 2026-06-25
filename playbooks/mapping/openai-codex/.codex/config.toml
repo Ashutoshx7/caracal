@@ -1,4 +1,4 @@
-# Codex configuration guidance for the Caracal Console mapping playbook.
+# Codex configuration guidance for the Caracal web console mapping playbook.
 
 [mapping]
 mode = "console-field-mapping"

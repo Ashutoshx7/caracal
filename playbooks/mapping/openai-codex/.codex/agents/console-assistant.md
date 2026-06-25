@@ -1,6 +1,6 @@
 # Console Assistant
 
-Use to clarify Caracal Console UI labels, helper text, placeholders, section names, and provider/resource form boundaries.
+Use to clarify Caracal web console UI labels, helper text, placeholders, section names, and provider/resource form boundaries.
 
 ## Scope
 

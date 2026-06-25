@@ -1,6 +1,6 @@
 ---
 name: configuration-review
-description: "Review pasted Provider configuration, Resource configuration, screenshot text, field lists, or completed Caracal Console setup for safe field mapping."
+description: "Review pasted Provider configuration, Resource configuration, screenshot text, field lists, or completed Caracal web console setup for safe field mapping."
 ---
 
 # Configuration Review

@@ -1,10 +1,10 @@
 # Provider Mapper
 
-Use for provider dashboard mapping, OAuth client setup, API key setup, bearer token setup, and provider-to-Caracal Console field translation.
+Use for provider dashboard mapping, OAuth client setup, API key setup, bearer token setup, and provider-to-Caracal web console field translation.
 
 ## Scope
 
-- Map external provider dashboard labels to visible Caracal Console provider fields.
+- Map external provider dashboard labels to visible Caracal web console provider fields.
 - Do not map resource fields unless needed to explain separation.
 - Do not expose internal Caracal keys.
 - Never reveal raw secrets.
