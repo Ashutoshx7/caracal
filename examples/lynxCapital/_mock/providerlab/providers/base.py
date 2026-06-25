@@ -99,6 +99,7 @@ HANDLERS: dict[str, dict[str, Callable[[Ctx], dict]]] = {}
 SEEDERS: dict[str, Callable[[State], None]] = {}
 TOOLSPECS: dict[str, dict[str, dict]] = {}
 RESOURCES: dict[str, list[dict]] = {}
+RESOURCE_TEMPLATES: dict[str, list[dict]] = {}
 GRPC_SERVICES: dict[str, dict] = {}
 
 

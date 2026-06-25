@@ -198,7 +198,8 @@ _SPECS: dict[str, PartnerSpec] = {
         ("list_workflows", "get_workflow",
          "start_execution", "get_execution", "list_executions",
          "get_execution_logs", "get_execution_result",
-         "signal_execution", "retry_execution", "cancel_execution",
+         "signal_execution", "retry_execution",
+         "pause_execution", "resume_execution", "cancel_execution",
          "list_queues", "get_queue", "get_execution_audit"),
         scopes=("relay.workflows.read", "relay.executions.read", "relay.executions.write")),
     "pulse-market": PartnerSpec(

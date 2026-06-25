@@ -12,11 +12,12 @@ from _mock.providerlab import catalog, credentials, mandate
 
 
 class AuthError(Exception):
-    def __init__(self, status: int, code: str, message: str):
+    def __init__(self, status: int, code: str, message: str, details: dict | None = None):
         super().__init__(message)
         self.status = status
         self.code = code
         self.message = message
+        self.details = details or {}
 
 
 def _bearer_from(request: Request, header: str, scheme: str) -> str:
@@ -41,11 +42,14 @@ async def authenticate(provider: catalog.Provider, request: Request) -> dict:
             presented = request.query_params.get(provider.apikey_field, "")
         else:
             presented = request.headers.get(provider.apikey_field, "")
+        # A gRPC service authenticates the metadata token at the protocol level and
+        # rejects with UNAUTHENTICATED in its trailers when it is absent or invalid.
+        grpc_md = {"grpcStatus": "UNAUTHENTICATED", "grpcCode": 16} if provider.protocol == "grpc" else None
         if not presented:
-            raise AuthError(401, "missing_api_key", f"provide {provider.apikey_field}")
+            raise AuthError(401, "missing_api_key", f"provide {provider.apikey_field}", grpc_md)
         rec = store.find_api_key(presented)
         if rec is None:
-            raise AuthError(401, "invalid_api_key", "unknown or revoked API key")
+            raise AuthError(401, "invalid_api_key", "unknown or revoked API key", grpc_md)
         store.touch("apiKey", presented)
         return {"principal": rec["keyId"], "auth": "api_key"}
 
