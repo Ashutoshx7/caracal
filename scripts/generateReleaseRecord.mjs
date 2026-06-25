@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path'
 const tagPattern = /^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}(\.[0-9]+)?(-rc\.(sha[0-9A-Za-z]+|[0-9]+))?$/
 const archivePlatforms = ['linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64']
 const zipPlatform = 'windows-amd64'
-const extras = ['manifest.json', 'install-console.sh', 'install-console.ps1', 'SHA256SUMS']
+const extras = ['manifest.json', 'SHA256SUMS']
 
 function fail(message) {
   process.stderr.write(`generateReleaseRecord: ${message}\n`)

@@ -18,10 +18,9 @@ const npmPaths = inventory.packages.npm.map((pkg) => pkg.dir)
 const pyPaths = inventory.packages.pypi.map((pkg) => pkg.dir)
 const productImages = productContainers(inventory.config)
 const containers = productImages.filter((image) => image.name !== 'runtime').map((image) => image.name)
-const archiveTargets = productArchiveTargets(inventory.config).flatMap((target) => [
-  `caracal-runtime-${target.os}-${target.arch}`,
-  `caracal-console-${target.os}-${target.arch}`,
-])
+const archiveTargets = productArchiveTargets(inventory.config).map(
+  (target) => `caracal-runtime-${target.os}-${target.arch}`,
+)
 const imageBuilds = productImages.map((image) => [image.name, image.context, image.dockerfile])
 const releaseTagPattern = /^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}(\.[0-9]+)?(-rc\.(sha[0-9A-Za-z]+|[0-9]+))?$/
 
@@ -224,7 +223,7 @@ function makeManifest(options = {}) {
       dirty: Boolean(dirtyTree()),
     },
     registries: reg,
-    binaries: { runtime: version, console: version },
+    binaries: { runtime: version },
     runtimeImage: version,
     containers: Object.fromEntries(containers.map((name) => [name, version])),
     helm: { chartVersion: helmChartVersion(version), appVersion: version, imageTag: version },
@@ -266,7 +265,7 @@ function makeStableManifest(version, tag) {
     release: tag,
     mode: 'stable',
     publishedAt: currentDate(),
-    binaries: { runtime: version, console: version },
+    binaries: { runtime: version },
     runtimeImage: version,
     containers: Object.fromEntries(containers.map((name) => [name, version])),
     helm: { chartVersion, appVersion: version, imageTag: version },
@@ -641,7 +640,7 @@ function promote(options) {
     generatedAt: new Date().toISOString(),
     promotedFrom: fromTag,
     registries: reg,
-    binaries: { runtime: stableVersion, console: stableVersion },
+    binaries: { runtime: stableVersion },
     runtimeImage: stableVersion,
     containers: Object.fromEntries(Object.keys(rcManifest.containers ?? {}).map((name) => [name, stableVersion])),
     helm: { chartVersion: helmChartVersion(stableVersion), appVersion: stableVersion, imageTag: stableVersion },

@@ -26,14 +26,7 @@ const assets = [
   `caracal-runtime-darwin-amd64-${releaseTag}.tar.gz`,
   `caracal-runtime-darwin-arm64-${releaseTag}.tar.gz`,
   `caracal-runtime-windows-amd64-${releaseTag}.zip`,
-  `caracal-console-linux-amd64-${releaseTag}.tar.gz`,
-  `caracal-console-linux-arm64-${releaseTag}.tar.gz`,
-  `caracal-console-darwin-amd64-${releaseTag}.tar.gz`,
-  `caracal-console-darwin-arm64-${releaseTag}.tar.gz`,
-  `caracal-console-windows-amd64-${releaseTag}.zip`,
   'manifest.json',
-  'install-console.sh',
-  'install-console.ps1',
   'SHA256SUMS',
 ]
 
