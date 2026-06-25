@@ -248,10 +248,13 @@ def advance_onboarding(ctx: Ctx) -> dict:
         entry["status"] = "failed"
         case["status"] = "blocked"
         vendor["status"] = "on_hold"
-        vendor["updatedAt"] = _now()
+        _record_event(vendor, f"onboarding.{step}.failed",
+                      f"Onboarding step failed: {entry['label']}", actor="intake-queue")
         return get_onboarding_status(ctx)
     entry["status"] = "completed"
     entry["completedAt"] = _now()
+    _record_event(vendor, f"onboarding.{step}.completed", entry["label"],
+                  actor="intake-queue")
     pending = next((s for s in case["checklist"] if s["status"] == "pending"), None)
     if pending is None:
         case["status"] = "completed"
@@ -259,6 +262,8 @@ def advance_onboarding(ctx: Ctx) -> dict:
         case["completedAt"] = _now()
         vendor["status"] = "active"
         vendor["lifecycleStage"] = "active"
+        _record_event(vendor, "vendor.activated",
+                      "Onboarding complete; vendor activated", actor="intake-queue")
     else:
         case["stage"] = pending["step"]
         case["status"] = "in_progress"
@@ -294,7 +299,8 @@ def verify_vendor_banking(ctx: Ctx) -> dict:
     banking["verifiedAt"] = _now()
     if account:
         banking["accountLast4"] = account[-4:]
-    vendor["updatedAt"] = _now()
+    _record_event(vendor, "banking.verified",
+                  "Bank account verified via micro-deposit", actor="api")
     return {"vendorId": vendor["id"], "status": "verified", "alreadyVerified": False,
             "banking": banking}
 
@@ -303,14 +309,16 @@ def verify_vendor_banking(ctx: Ctx) -> dict:
     ID, "get_compliance_status",
     title="Get compliance status",
     description="Return the vendor's consolidated compliance posture: KYB, sanctions, "
-                "tax validation, insurance, and review dates.",
-    input_schema=_VENDOR_REF,
+                "adverse media, tax validation, beneficial-ownership, insurance, and review dates.",
+    input_schema=_VENDOR_REF, output_schema=_COMPLIANCE_OUTPUT,
     annotations={"readOnlyHint": True, "idempotentHint": True})
 def get_compliance_status(ctx: Ctx) -> dict:
     vendor = _vendor(ctx)
     compliance = vendor["compliance"]
-    blocking = [k for k in ("kyb", "sanctions", "taxValidation")
+    blocking = [k for k in ("kyb", "sanctions", "taxValidation", "adverseMedia")
                 if compliance.get(k) in ("flagged", "review", "invalid", "pending")]
+    if compliance.get("watchlistHits"):
+        blocking.append("watchlist")
     return {"vendorId": vendor["id"], "riskTier": vendor["riskTier"],
             "riskScore": vendor.get("riskScore"), "compliance": compliance,
             "clearedToPay": not blocking, "blockingChecks": blocking}
@@ -348,12 +356,13 @@ def submit_vendor_document(ctx: Ctx) -> dict:
         raise DomainError(422, "invalid_document_type", dtype)
     docs = vendor.setdefault("documents", [])
     document = {"documentId": f"DOC-{vendor['id'].split('-')[-1]}-{len(docs) + 1}",
-                "type": dtype, "status": "received", "fileName": ctx.payload["fileName"],
+                "type": dtype, "status": "pending_review", "fileName": ctx.payload["fileName"],
                 "uploadedAt": _now(), "expiresAt": None}
     docs.append(document)
     if dtype == "w9":
         vendor["compliance"]["w9OnFile"] = True
-    vendor["updatedAt"] = _now()
+    _record_event(vendor, "document.submitted",
+                  f"Document submitted for review: {dtype}", actor="api")
     return document
 
 
@@ -379,7 +388,8 @@ def set_vendor_status(ctx: Ctx) -> dict:
         raise DomainError(422, "invalid_status", status)
     vendor["status"] = status
     vendor["lifecycleStage"] = "active" if status in ("active", "on_hold") else status
-    vendor["updatedAt"] = _now()
+    _record_event(vendor, f"vendor.{status}",
+                  ctx.get("reason") or f"Vendor status set to {status}", actor="api")
     return {"vendorId": vendor["id"], "status": status, "reason": ctx.get("reason")}
 
 

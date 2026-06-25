@@ -93,10 +93,14 @@ base.grpc_service(
              "request": "GetHedgeRequest", "response": "Hedge"},
             {"name": "CancelHedge", "operation": "cancel_hedge",
              "request": "CancelHedgeRequest", "response": "Hedge"},
+            {"name": "SettleHedge", "operation": "settle_hedge",
+             "request": "SettleHedgeRequest", "response": "Hedge"},
         ]},
         {"name": "FundsTransferService", "rpcs": [
             {"name": "TransferFunds", "operation": "transfer_funds",
              "request": "TransferFundsRequest", "response": "Transfer"},
+            {"name": "ApproveTransfer", "operation": "approve_transfer",
+             "request": "ApproveTransferRequest", "response": "Transfer"},
             {"name": "GetTransfer", "operation": "get_transfer",
              "request": "GetTransferRequest", "response": "Transfer"},
             {"name": "ListTransfers", "operation": "list_transfers",
@@ -510,14 +514,17 @@ def transfer_funds(ctx: Ctx) -> dict:
     dest_entity = gen.keystone_entity(region=str(ctx.get("destination", "")),
                                       currency=str(ctx.get("toCurrency", "")) or None)
     to_account = ctx.get("toAccountId")
+    dest_country = None
     if to_account:
         dest = ctx.state.table("positions").get(to_account)
         if dest is None:
             raise _fail("NOT_FOUND", "account_not_found", to_account)
         to_account_id, to_entity_id, to_entity = dest["accountId"], dest["legalEntityId"], dest["legalEntity"]
+        dest_country = dest.get("country")
     elif dest_entity is not None:
         to_account_id = f"acct_{dest_entity[0].lower()}_concentration"
         to_entity_id, to_entity = dest_entity[0], dest_entity[1]
+        dest_country = dest_entity[2]
     else:
         to_account_id = str(ctx.get("destination", "external"))
         to_entity_id, to_entity = "EXTERNAL", str(ctx.get("destination", "external"))
@@ -528,12 +535,26 @@ def transfer_funds(ctx: Ctx) -> dict:
     now = _now()
     value_date = _value_date(ctx, now)
     same_entity = to_entity_id == source["legalEntityId"]
+    cross_border = dest_country is not None and dest_country != source["country"] or dest_country is None and not same_entity
+    if same_entity:
+        method = "book_transfer"
+    elif cross_border:
+        method = "swift"
+    else:
+        method = "rtgs" if amount >= 1_000_000 else "ach"
     fee = 0.0 if same_entity else _money(min(25.0, amount * 0.0001), currency)
-    source["availableBalance"] = _money(source["availableBalance"] - amount, currency)
-    source["valueDatedBalance"] = _money(source["valueDatedBalance"] - amount, currency)
+
+    amount_base = gen.keystone_usd(amount, currency)
+    requires_approval = not same_entity and amount_base >= _TRANSFER_APPROVAL_THRESHOLD_BASE
+    status = "pending_approval" if requires_approval else "executed"
+    if not requires_approval:
+        source["availableBalance"] = _money(source["availableBalance"] - amount, currency)
+        source["valueDatedBalance"] = _money(source["valueDatedBalance"] - amount, currency)
+
     transfer = {
         "transferId": base.new_id("tr"),
         "reference": f"TT{now:%Y%m%d}-{base.new_id('ref').split('_')[-1][:6].upper()}",
+        "endToEndId": f"E2E{now:%Y%m%d}{base.new_id('e2e').split('_')[-1][:6].upper()}",
         "type": "internal_sweep" if same_entity else "intercompany",
         "fromAccountId": source["accountId"],
         "fromEntityId": source["legalEntityId"],
@@ -543,15 +564,53 @@ def transfer_funds(ctx: Ctx) -> dict:
         "toEntity": to_entity,
         "currency": currency,
         "amount": _money(amount, currency),
+        "amountBase": round(amount_base, 2),
         "valueDate": value_date.date().isoformat(),
-        "status": "executed",
+        "status": status,
+        "approvalState": "pending" if requires_approval else "approved",
+        "approvalThresholdBase": _TRANSFER_APPROVAL_THRESHOLD_BASE,
+        "settlementMethod": method,
+        "settlementRail": "ISO20022_pain.001" if method == "swift" else method.upper(),
+        "crossBorder": cross_border,
+        "chargeBearer": str(ctx.get("chargeBearer", "OUR")).upper() if not same_entity else "OUR",
+        "correspondentBank": str(ctx.get("counterparty", "Halcyon Bank")) if cross_border else None,
+        "regulatoryReportingRequired": cross_border and amount_base > 1_000_000,
         "purposeCode": str(ctx.get("purposeCode", "INTC")),
         "fee": fee,
         "feeCurrency": currency,
+        "statusHistory": [{"status": status, "at": _iso(now)}],
+        "initiatedBy": str(ctx.get("initiatedBy", "treasury")),
         "initiatedAt": _iso(now),
         "settledAt": None,
     }
     ctx.state.table("transfers")[transfer["transferId"]] = transfer
+    return transfer
+
+
+@base.op(ID, "approve_transfer")
+def approve_transfer(ctx: Ctx) -> dict:
+    """Release a transfer held for second-pair-of-eyes approval (maker-checker control)."""
+    _require(ctx, "transferId")
+    transfer = ctx.state.table("transfers").get(ctx.payload["transferId"])
+    if transfer is None:
+        raise _fail("NOT_FOUND", "transfer_not_found", ctx.payload["transferId"])
+    if transfer["status"] != "pending_approval":
+        raise _fail("FAILED_PRECONDITION", "transfer_not_pending_approval",
+                    f"transfer is {transfer['status']}, not pending_approval")
+    source = ctx.state.table("positions").get(transfer["fromAccountId"])
+    currency, amount = transfer["currency"], transfer["amount"]
+    if source is not None:
+        if amount > source["availableBalance"]:
+            raise _fail("FAILED_PRECONDITION", "insufficient_liquidity",
+                        f"amount exceeds {source['availableBalance']} available on {source['accountId']}")
+        source["availableBalance"] = _money(source["availableBalance"] - amount, currency)
+        source["valueDatedBalance"] = _money(source["valueDatedBalance"] - amount, currency)
+    now = _now()
+    transfer["status"] = "executed"
+    transfer["approvalState"] = "approved"
+    transfer["approvedBy"] = str(ctx.get("approver", "treasury-controller"))
+    transfer["approvedAt"] = _iso(now)
+    transfer["statusHistory"].append({"status": "executed", "at": _iso(now)})
     return transfer
 
 

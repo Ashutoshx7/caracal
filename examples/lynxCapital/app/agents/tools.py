@@ -521,6 +521,32 @@ def get_payout_status(run_id: str, agent_id: str, payout_id: str, rail: str = ""
                 {"payoutId": payout_id})
 
 
+def get_payment_dispute(run_id: str, agent_id: str, dispute_id: str) -> dict[str, object]:
+    """Pull one chargeback dispute, including its evidence window and network reason code."""
+    return _run(run_id, agent_id, "get_payment_dispute", "meridian-pay", "get_dispute",
+                {"disputeId": dispute_id})
+
+
+def respond_to_payment_dispute(run_id: str, agent_id: str, dispute_id: str,
+                               evidence: dict[str, object]) -> dict[str, object]:
+    """Submit chargeback evidence to contest a dispute before its response deadline."""
+    return _run(run_id, agent_id, "respond_to_payment_dispute", "meridian-pay",
+                "submit_dispute_evidence", {"disputeId": dispute_id, "evidence": evidence})
+
+
+def get_acceptance_balance(run_id: str, agent_id: str) -> dict[str, object]:
+    """Read the card-acceptance balance: funds available for payout and pending settlement."""
+    return _run(run_id, agent_id, "get_acceptance_balance", "meridian-pay", "get_balance", {})
+
+
+def reconcile_acceptance_settlements(run_id: str, agent_id: str, status: str = "") -> dict[str, object]:
+    """List settlement batches that group captured charges into bank payouts, for
+    reconciling acceptance net deposits against the ledger."""
+    payload = {"status": status} if status else {}
+    return _run(run_id, agent_id, "reconcile_acceptance_settlements", "meridian-pay",
+                "list_settlements", payload)
+
+
 # -- vendor lifecycle tools --
 
 def kyb_screen_vendor(run_id: str, agent_id: str, vendor_id: str) -> dict[str, object]:
@@ -1035,6 +1061,10 @@ TOOLS: dict[str, Callable] = {
     "refund_receivable": refund_receivable,
     "list_payment_disputes": list_payment_disputes,
     "get_payout_status": get_payout_status,
+    "get_payment_dispute": get_payment_dispute,
+    "respond_to_payment_dispute": respond_to_payment_dispute,
+    "get_acceptance_balance": get_acceptance_balance,
+    "reconcile_acceptance_settlements": reconcile_acceptance_settlements,
     "kyb_screen_vendor": kyb_screen_vendor,
     "register_vendor": register_vendor,
     "refresh_vendor_compliance": refresh_vendor_compliance,

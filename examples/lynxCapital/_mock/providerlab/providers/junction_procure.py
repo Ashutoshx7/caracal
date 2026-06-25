@@ -68,6 +68,13 @@ def _recompute_budget(cc: dict) -> None:
         cc["budgetAmount"] - cc["committedAmount"] - cc["spentAmount"], 2)
 
 
+def _apply_sla(chain: list[dict], now: int) -> None:
+    """Stamp a routing due date on every pending approval step from its SLA window."""
+    for step in chain:
+        if step.get("status") == "pending" and step.get("slaHours") is not None:
+            step["dueBy"] = _iso(now + int(step["slaHours"]) * 3_600)
+
+
 def _budget_view(cc: dict) -> dict:
     soft = round(cc["budgetAmount"] * cc["softLimitPct"], 2)
     consumed = round(cc["committedAmount"] + cc["spentAmount"], 2)
@@ -138,13 +145,16 @@ def _build_lines(ctx: Ctx, raw_lines: list, currency: str) -> tuple[list[dict], 
             "lineNumber": n,
             "description": line.get("description", "Goods or services"),
             "commodityCode": str(line.get("commodityCode", "81111800")),
+            "commodityName": line.get("commodityName", line.get("description", "Goods or services")),
             "quantity": quantity,
             "unitOfMeasure": line.get("unitOfMeasure", "each"),
             "unitPrice": unit_price,
             "lineTotal": line_total,
             "currency": currency,
             "supplierId": line.get("supplierId"),
+            "costCenter": line.get("costCenter"),
             "glAccount": str(line.get("glAccount", "6300")),
+            "projectCode": line.get("projectCode"),
             "quantityReceived": 0,
         })
     return lines, round(subtotal, 2)
@@ -184,9 +194,12 @@ def create_requisition(ctx: Ctx) -> dict:
         lines = [{
             "lineNumber": 1, "description": ctx.payload["description"],
             "commodityCode": str(ctx.get("commodityCode", "81111800")),
+            "commodityName": ctx.get("commodityName", ctx.payload["description"]),
             "quantity": 1.0, "unitOfMeasure": "each", "unitPrice": amount,
             "lineTotal": amount, "currency": currency,
-            "supplierId": ctx.get("supplierId"), "glAccount": str(ctx.get("glAccount", "6300")),
+            "supplierId": ctx.get("supplierId"), "costCenter": cc["costCenter"],
+            "glAccount": str(ctx.get("glAccount", "6300")),
+            "projectCode": ctx.get("projectCode"),
             "quantityReceived": 0,
         }]
         subtotal = amount
@@ -199,12 +212,16 @@ def create_requisition(ctx: Ctx) -> dict:
     requester = ctx.get("requestedBy") or {"id": "EMP-2300", "name": "Lena Novak"}
     if isinstance(requester, str):
         requester = {"id": requester, "name": requester}
+    if not draft:
+        _apply_sla(chain, now)
 
     req = {
         "requisitionId": base.new_id("req"),
         "requisitionNumber": f"REQ-2026-{now}",
         "title": ctx.payload["description"],
         "status": "draft" if draft else ("pending_approval" if steps else "approved"),
+        "purchaseType": ctx.get("purchaseType", "non_catalog"),
+        "priority": ctx.get("priority", "standard"),
         "department": cc["department"],
         "costCenter": cc["costCenter"],
         "requestedBy": requester,
@@ -256,6 +273,7 @@ def submit_requisition(ctx: Ctx) -> dict:
     else:
         req["status"] = "pending_approval"
         req["approval"]["status"] = "pending"
+        _apply_sla(req["approval"]["chain"], now)
     return req
 
 
@@ -280,7 +298,10 @@ def approve_requisition(ctx: Ctx) -> dict:
         raise DomainError(409, "no_pending_approval", "no approval step is pending")
     step = pending[0]
     approver = ctx.get("approverId")
-    if approver and approver != step["approverId"]:
+    authorized = {step["approverId"]}
+    if step.get("delegatedTo"):
+        authorized.add(step["delegatedTo"])
+    if approver and approver not in authorized:
         raise DomainError(403, "not_authorized_approver",
                           f"step {step['step']} is assigned to {step['approverId']}")
 
@@ -294,6 +315,7 @@ def approve_requisition(ctx: Ctx) -> dict:
     now = base.now()
     step["status"] = "approved"
     step["decidedAt"] = _iso(now)
+    step["decidedBy"] = approver or step["approverId"]
     step["comment"] = ctx.get("comment", "Approved.")
     req["updatedAt"] = _iso(now)
     if len(pending) == 1:
