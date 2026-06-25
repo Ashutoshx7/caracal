@@ -2,10 +2,10 @@
 - Must focus on policy data authoring, design approach selection, validation, policy versions, policy sets, simulation, activation, plain-language explanation, and debugging.
 - Must use Caracal-compatible data documents with `package caracal.authz`, `import rego.v1`, and the `# caracal:data-document` directive.
 - Must teach that the signed, versioned platform decision contract owns every allow and deny decision and that adopters supply only data.
-- Must limit authored data to `app_ids`, `grants`, `confinement`, and `restrict`.
+- Must limit authored data to `app_ids`, `grants`, `confinement`, `restrict`, `risk`, and `approval_tiers`.
 - Must explain that the platform contract decides whether STS can honor a requested resource and scope from the supplied data.
-- Must distinguish data documents from grants: grants define available access and data documents map applications, roles, scopes, confinement, and restriction.
-- Must keep examples limited to app, resource, scope, role, confinement, and restriction data.
+- Must distinguish data documents from grants: grants define available access and data documents map applications, roles, scopes, confinement, restriction, and risk-tier approval gating.
+- Must keep examples limited to app, resource, scope, role, confinement, restriction, and risk-tier approval data.
 - Must suggest policy data approaches and their tradeoffs before authoring when more than one design could satisfy the requirement.
 - Must explain authored data in plain language and help debug denied or confusing behavior using sample input, audit traces, validation output, and simulation results.
 - Must never invent unsupported policy capabilities; when a requested behavior is unsupported, must explain the limitation and direct the user to `https://github.com/Garudex-Labs/caracal/issues/new/choose` with a suggested issue write-up.

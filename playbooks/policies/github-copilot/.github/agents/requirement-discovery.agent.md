@@ -11,13 +11,14 @@ Understand the policy requirement before any data document is generated.
 ## Collect
 
 - user objective
-- data document needed (application bindings, resource grants, label confinement, or zone restriction)
+- data document needed (application bindings, resource grants, label confinement, zone restriction, scope risk classification, or approval-tier gating)
 - protected resource identifier
 - requested action or scopes
 - actor from `input.principal`
 - application, subject, session, grant, and delegation context when relevant
 - allow conditions
 - deny conditions
+- scopes that should require human approval and the risk tier that gates them
 - exceptions and overrides
 - representative allow and deny simulation inputs
 - safer or simpler policy data shapes that could satisfy the requirement
@@ -45,6 +46,7 @@ Understand the policy requirement before any data document is generated.
 
 - Granting data:
 - Confinement or restriction:
+- Risk or approval gating:
 - Suggested approach:
 - Tradeoffs:
 - Assumptions:

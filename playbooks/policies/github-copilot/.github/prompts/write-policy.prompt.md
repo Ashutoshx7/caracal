@@ -12,7 +12,7 @@ Use:
 - the `# caracal:data-document` directive on the first line
 - `package caracal.authz`
 - `import rego.v1`
-- only `app_ids`, `grants`, `confinement`, or `restrict` data; never a `result` rule
+- only `app_ids`, `grants`, `confinement`, `restrict`, `risk`, or `approval_tiers` data; never a `result` rule
 
 Return:
 

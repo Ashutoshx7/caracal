@@ -7,12 +7,13 @@ tools: [read, search, web]
 
 Review the policy for:
 
-- data document shape (`app_ids`, `grants`, `confinement`, or `restrict`, never a `result` rule)
+- data document shape (`app_ids`, `grants`, `confinement`, `restrict`, `risk`, or `approval_tiers`, never a `result` rule)
 - the platform decision contract that denies by default
 - resource and scope precision
 - verified input fields
 - deterministic and side-effect-free data
 - confinement and restriction overlays that only narrow authority
+- `risk` and `approval_tiers` consistency when human approval is gated
 - a simpler grant, confinement, or restriction shape when one would be safer
 - simulation and activation readiness
 
