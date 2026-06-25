@@ -253,13 +253,13 @@ export default defineConfig({
           ],
         },
         {
-          label: 'Runtime and Console',
+          label: 'Runtime and Web Console',
           collapsed: true,
           items: [
-            { label: 'Operate Runtime and Console', link: '/runtime-console/' },
+            { label: 'Operate Runtime and the Web Console', link: '/runtime-console/' },
             { label: 'Choose the Right Surface', link: '/runtime-console/cli-and-console/' },
             { label: 'Start and Check the Stack', link: '/runtime-console/stack/' },
-            { label: 'Use the Console', link: '/runtime-console/console/' },
+            { label: 'Use the Web Console', link: '/runtime-console/console/' },
             { label: 'Configure Workloads', link: '/runtime-console/config-file/' },
             { label: 'Run Workloads', link: '/runtime-console/runtime/' },
             { label: 'Manage Product Objects', link: '/runtime-console/admin/' },

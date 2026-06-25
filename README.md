@@ -45,7 +45,7 @@ Read the full documentation at [docs.caracal.run](https://docs.caracal.run).
 
 ### Install
 
-The installer provides the thin `caracal` runtime CLI and the `caracal-console` management interface.
+The installer provides the thin `caracal` runtime CLI. Manage Caracal from the browser with the web console (`caracal web`).
 
 > Check [GitHub Releases](https://github.com/Garudex-Labs/caracal/releases) for the latest available tag.
 
@@ -55,8 +55,7 @@ The installer provides the thin `caracal` runtime CLI and the `caracal-console` 
 <summary><strong>Linux</strong> (amd64 / arm64)</summary>
 
 ```bash
-# Console
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | \
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.sh | \
   sh -s -- --version v2026.06.22-rc.1
 ```
 
@@ -66,8 +65,7 @@ curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-c
 <summary><strong>macOS</strong> (Intel / Apple Silicon)</summary>
 
 ```bash
-# Console
-curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.sh | \
+curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.sh | \
   sh -s -- --version v2026.06.22-rc.1
 ```
 
@@ -77,9 +75,8 @@ curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-c
 <summary><strong>Windows</strong> (amd64) PowerShell</summary>
 
 ```powershell
-# Console
-$installer = "$env:TEMP\install-console.ps1"
-iwr -useb https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install-console.ps1 -OutFile $installer
+$installer = "$env:TEMP\install.ps1"
+iwr -useb https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.ps1 -OutFile $installer
 powershell -ExecutionPolicy Bypass -File $installer -Version v2026.06.22-rc.1
 ```
 
@@ -94,7 +91,6 @@ caracal status [--ready]              # probe all services
 caracal down                          # stop; add -v to remove volumes
 caracal purge                         # interactive cleanup (containers, volumes, config, runtime, examples, caches)
 
-caracal console                       # launch Console (terminal)
 caracal web                           # launch the web console (requires a running stack; --allow-offline for UI only)
 caracal run -- node worker.js         # workload execution
 ```
