@@ -339,7 +339,10 @@ def _grpc_panel(provider: catalog.Provider) -> str:
             f'<div class="panel"><table><tr><th>rpc</th><th>signature</th></tr>{"".join(rpc_rows)}</table></div></section>')
     return ("".join(blocks) +
             '<p class="hint">Methods are discoverable through server reflection and '
-            'authenticated with the <code>x-api-key</code> call metadata.</p>')
+            'authenticated with the <code>x-api-key</code> call metadata. Rejected calls '
+            'return a canonical gRPC status — <code>UNAUTHENTICATED</code>, '
+            '<code>INVALID_ARGUMENT</code>, <code>NOT_FOUND</code>, or '
+            '<code>FAILED_PRECONDITION</code> — in the response trailers.</p>')
 
 
 def _mcp_panel(provider: catalog.Provider) -> str:

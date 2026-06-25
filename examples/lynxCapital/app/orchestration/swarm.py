@@ -1393,6 +1393,39 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id, board):
             _finish(w, {"message_id": message_id})
 
     @tool
+    def get_notification_delivery_stats(channel: str = "") -> str:
+        """Report notification delivery health: delivered, bounced, and complaint counts
+        plus delivery, bounce, open, and click rates. Filter by channel (email or sms)."""
+        w = _worker("receivables", f"notif-stats:{channel or 'all'}")
+        try:
+            return json.dumps(
+                tool_fns.get_notification_delivery_stats(run_id, w.id, channel or None)
+            )
+        finally:
+            _finish(w, {"channel": channel})
+
+    @tool
+    def list_notification_templates() -> str:
+        """List the available transactional email and SMS notification templates."""
+        w = _worker("receivables", "notif-templates")
+        try:
+            return json.dumps(tool_fns.list_notification_templates(run_id, w.id))
+        finally:
+            _finish(w, {})
+
+    @tool
+    def list_suppressed_recipients(channel: str = "") -> str:
+        """List recipients suppressed from notifications after hard bounces, complaints,
+        or unsubscribes. Filter by channel (email or sms)."""
+        w = _worker("receivables", f"suppressions:{channel or 'all'}")
+        try:
+            return json.dumps(
+                tool_fns.list_suppressed_recipients(run_id, w.id, channel or None)
+            )
+        finally:
+            _finish(w, {"channel": channel})
+
+    @tool
     def apply_customer_payment(invoice_id: str, amount: float) -> str:
         """Apply a received customer payment to an open invoice."""
         w = _worker("receivables", f"ar-apply:{invoice_id}")
@@ -1870,6 +1903,9 @@ def _build_workflow_domain_tools(run_id, runner, parent, workflow_id, board):
         send_remittance_advice,
         send_payment_confirmation,
         track_message_delivery,
+        get_notification_delivery_stats,
+        list_notification_templates,
+        list_suppressed_recipients,
         get_department_budget,
         raise_requisition,
         approve_requisition,

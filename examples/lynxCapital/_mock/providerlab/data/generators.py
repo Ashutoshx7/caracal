@@ -2608,15 +2608,53 @@ def ironbark_dataset(seed: str) -> dict[str, dict]:
         bill = _vendor_bill(seed, idx, vendor, po)
         bills[bill["id"]] = bill
 
-    journal_entries: dict[str, dict] = {
-        je["id"]: je for je in (_journal_entry(seed, i) for i in range(1, 31))
-    }
+    journal_entries: dict[str, dict] = {}
+    for i in range(1, 31):
+        je = _journal_entry(seed, i)
+        je.setdefault("tranDate", je["createdDate"][:10])
+        je.setdefault("exchangeRate", _fx_rate(je.get("currency", "USD")))
+        je.setdefault("approvalStatus", "approved")
+        je.setdefault("createdBy", _ERP_AP_CLERK)
+        je.setdefault("memo", "Month-end accrual")
+        je.setdefault("reversalDate", None)
+        jrng = _rng(seed, "je_dims", i)
+        location = jrng.choice(_ERP_LOCATIONS)
+        klass = jrng.choice(_ERP_CLASSES)
+        for line in je["lines"]:
+            line.setdefault("location", location)
+            line.setdefault("class", klass)
+        journal_entries[je["id"]] = je
 
     payments: dict[str, dict] = {}
     for idx, bill in enumerate(
         (b for b in bills.values() if b["status"] == "paidInFull"), start=1
     ):
-        payment = _vendor_payment(seed, idx, bill, vendors[bill["vendorId"]])
+        vendor = vendors[bill["vendorId"]]
+        prng = _rng(seed, "vendpmt", idx)
+        paid = date.fromisoformat(bill["createdDate"][:10]) + timedelta(
+            days=prng.randint(2, _term_days(vendor["terms"])))
+        currency = bill["currency"]
+        bank = _BANK_ACCOUNT_BY_CURRENCY.get(currency, _DEFAULT_BANK_ACCOUNT).removeprefix("ACCT-")
+        payment = {
+            "id": f"PAYMENT-{idx:06d}",
+            "tranId": f"BILLPMT-{idx:06d}",
+            "type": "vendorPayment",
+            "tranDate": paid.isoformat(),
+            "entity": vendor["id"],
+            "vendorId": vendor["id"],
+            "vendorName": vendor["companyName"],
+            "status": "paid",
+            "account": bank,
+            "apAccount": "2000",
+            "currency": currency,
+            "exchangeRate": _fx_rate(currency),
+            "paymentMethod": vendor["paymentMethod"],
+            "memo": f"Payment to {vendor['companyName']} for {bill['tranId']}",
+            "applied": [{"billId": bill["id"], "tranId": bill["tranId"], "amount": bill["total"]}],
+            "total": bill["total"],
+            "postingPeriod": _posting_period(paid.isoformat()),
+            "createdDate": _instant(prng, -120, -2),
+        }
         payments[payment["id"]] = payment
 
     item_receipts: dict[str, dict] = {}
@@ -2625,7 +2663,29 @@ def ironbark_dataset(seed: str) -> dict[str, dict]:
          if p["receivedStatus"] in ("partiallyReceived", "fullyReceived")),
         start=1,
     ):
-        receipt = _item_receipt(seed, idx, po, vendors[po["vendorId"]])
+        vendor = vendors[po["vendorId"]]
+        rrng = _rng(seed, "itemrcpt", idx)
+        received = date.fromisoformat(po["createdDate"][:10]) + timedelta(days=rrng.randint(2, 21))
+        receipt = {
+            "id": f"ITEMRCPT-{idx:06d}",
+            "tranId": f"ITEMRCPT-{idx:06d}",
+            "type": "itemReceipt",
+            "tranDate": received.isoformat(),
+            "createdFrom": po["id"],
+            "purchaseOrderTranId": po["tranId"],
+            "entity": vendor["id"],
+            "vendorId": vendor["id"],
+            "vendorName": vendor["companyName"],
+            "subsidiary": po["subsidiary"],
+            "location": po["location"],
+            "status": "received",
+            "lines": [
+                {"lineId": l["lineId"], "item": l["item"],
+                 "quantity": l["quantityReceived"], "quantityOrdered": l["quantity"]}
+                for l in po["lines"] if l.get("quantityReceived")
+            ],
+            "createdDate": _instant(rrng, -120, -2),
+        }
         item_receipts[receipt["id"]] = receipt
 
     today = _EPOCH

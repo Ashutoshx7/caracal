@@ -117,8 +117,7 @@ ROLES: dict[str, RoleDef] = {
         scope_template="treasury:{subject}",
         allowed_tools=(
             "get_cash_position", "get_treasury_summary", "forecast_liquidity",
-            "get_fx_exposure", "place_fx_hedge", "settle_fx_hedge",
-            "transfer_funds", "approve_fund_transfer",
+            "get_fx_exposure", "place_fx_hedge", "transfer_funds",
         ),
         emits=WORKER_EMITS,
     ),
@@ -149,6 +148,8 @@ ROLES: dict[str, RoleDef] = {
             "apply_customer_payment", "record_customer_payment", "get_ar_aging",
             "get_ar_summary", "get_customer_account", "list_customer_invoices",
             "write_off_invoice", "open_collection_case", "track_message_delivery",
+            "get_notification_delivery_stats", "list_notification_templates",
+            "list_suppressed_recipients",
         ),
         emits=WORKER_EMITS,
     ),
