@@ -1816,9 +1816,58 @@ def test_relay_queue_concurrency_reported():
     queues = {q["queue"]: q for q in call("list_queues")["items"]}
     assert queues["payments"]["concurrencyLimit"] == 1
     assert "payout_release" in queues["payments"]["workflows"]
+    assert queues["payments"]["utilization"] is not None
+    assert "depth" in queues["payments"] and "oldestQueuedAt" in queues["payments"]
     assert call("get_execution", {"executionId": "exec_missing"})["_error"].startswith(
         "execution_not_found"
     )
+
+
+def test_relay_pause_resume_round_trips():
+    _, _, call = _relay()
+    ex = call("start_execution",
+              {"workflowId": "statement_reconciliation", "input": {"day": "2026-06-01"}})
+    eid = ex["executionId"]
+    call("get_execution", {"executionId": eid})
+    paused = call("pause_execution", {"executionId": eid, "reason": "hold for review"})
+    assert paused["status"] == "paused"
+    assert paused["pausedAt"]
+    # A paused run does not advance when polled.
+    assert call("get_execution", {"executionId": eid})["status"] == "paused"
+    resumed = call("resume_execution", {"executionId": eid})
+    assert resumed["status"] in ("queued", "running")
+    assert resumed["pausedAt"] is None
+    audit = call("get_execution_audit", {"executionId": eid})
+    kinds = {e["type"] for e in audit["events"]}
+    assert {"execution_paused", "execution_resumed"} <= kinds
+    assert audit["chainIntact"] is True
+
+
+def test_relay_pause_rejected_on_terminal_execution():
+    _, _, call = _relay()
+    done = call("list_executions", {"status": "succeeded"})["items"][0]["executionId"]
+    assert "not_pausable" in call("pause_execution", {"executionId": done})["_error"]
+    assert "not_paused" in call("resume_execution", {"executionId": done})["_error"]
+
+
+def test_relay_workflow_exposes_next_run_and_stats():
+    _, _, call = _relay()
+    workflows = {w["id"]: w for w in call("list_workflows")["items"]}
+    scheduled = workflows["statement_reconciliation"]
+    assert scheduled["schedule"] and scheduled["nextRunAt"]
+    assert scheduled["nextRunAt"].endswith("Z")
+    stats = scheduled["stats"]
+    assert {"successRate", "failureRate", "avgDurationMs", "lastFailureAt"} <= set(stats)
+
+
+def test_relay_result_tracks_attempt_history():
+    _, _, call = _relay()
+    failed = call("list_executions", {"status": "failed"})
+    fid = failed["items"][0]["executionId"]
+    result = call("get_execution_result", {"executionId": fid})
+    assert result["attempts"] >= 1
+    assert result["attemptHistory"]
+    assert result["attemptHistory"][-1]["status"] in ("failed", "timed_out")
 
 
 # --------------------------------------------------------------------------- #

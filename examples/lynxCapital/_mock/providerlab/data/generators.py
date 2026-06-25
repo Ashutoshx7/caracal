@@ -2785,6 +2785,11 @@ def _junction_requisition(
         status = "approved"
         approval_status = "approved"
 
+    if status in ("pending_approval", "draft"):
+        for step in chain:
+            if step["status"] == "pending" and rng.random() < 0.15:
+                step["delegatedTo"] = _JUNCTION_FINANCE_PARTNER["id"]
+
     return {
         "requisitionId": f"REQ-{200000 + idx}",
         "requisitionNumber": f"REQ-2026-{idx:06d}",

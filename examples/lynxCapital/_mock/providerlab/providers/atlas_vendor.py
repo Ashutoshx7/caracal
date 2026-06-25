@@ -387,6 +387,46 @@ def get_compliance_status(ctx: Ctx) -> dict:
             "clearedToPay": not blocking, "blockingChecks": blocking}
 
 
+@base.op(
+    ID, "run_compliance_screening",
+    title="Run compliance screening",
+    description="Re-run KYB, sanctions, and adverse-media screening for a vendor against "
+                "the configured watchlists and refresh its risk tier and posture.",
+    input_schema={"type": "object", "properties": {
+        "vendorId": {"type": "string"},
+        "scope": {"type": "array", "items": {
+            "type": "string", "enum": ["kyb", "sanctions", "adverse_media", "ubo"]},
+            "description": "Checks to run; defaults to the full screen."}},
+        "required": ["vendorId"]},
+    output_schema=_COMPLIANCE_OUTPUT,
+    annotations={"readOnlyHint": False, "idempotentHint": False})
+def run_compliance_screening(ctx: Ctx) -> dict:
+    vendor = _vendor(ctx)
+    compliance = vendor["compliance"]
+    scope = ctx.get("scope") or ["kyb", "sanctions", "adverse_media", "ubo"]
+    hits = compliance.get("watchlistHits", 0)
+    if "kyb" in scope and compliance.get("kyb") == "pending":
+        compliance["kyb"] = "cleared"
+    if "sanctions" in scope:
+        compliance["sanctions"] = "review" if hits else "clear"
+    if "adverse_media" in scope and compliance.get("adverseMedia") == "pending":
+        compliance["adverseMedia"] = "none"
+    if "ubo" in scope:
+        compliance["uboVerified"] = all(o.get("screened") for o in vendor.get("beneficialOwners", []))
+    compliance["screeningProvider"] = _SCREENING_PROVIDER
+    compliance["lastScreenedAt"] = _now()
+    flagged = hits > 0 or compliance.get("sanctions") == "review" \
+        or compliance.get("adverseMedia") == "review"
+    if flagged:
+        vendor["riskTier"] = "high"
+        vendor["riskScore"] = max(vendor.get("riskScore", 50), 80)
+    _record_event(vendor, "compliance.screening.completed",
+                  f"Screening run ({', '.join(scope)}); "
+                  f"{'hits found' if flagged else 'cleared'}",
+                  actor=_SCREENING_PROVIDER)
+    return get_compliance_status(ctx)
+
+
 # --------------------------------------------------------------------------- #
 # Documents
 # --------------------------------------------------------------------------- #

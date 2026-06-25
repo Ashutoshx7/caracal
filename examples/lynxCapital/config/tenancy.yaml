@@ -184,7 +184,7 @@ providers:
       api_key: "${LYNX_PARTNER_KEYSTONE_TREASURY_API_KEY}"
     scopes:
       keystone:read: ["list_positions", "get_position", "get_account", "get_position_summary", "watch_positions", "forecast_liquidity", "list_hedges", "get_hedge", "get_transfer", "list_transfers", "get_exposure", "list_exposures", "list_operations", "get_operation"]
-      keystone:move: ["place_hedge", "cancel_hedge", "transfer_funds"]
+      keystone:move: ["place_hedge", "cancel_hedge", "settle_hedge", "transfer_funds", "approve_transfer"]
   - id: "sabre-tax"
     name: "Sabre Tax"
     kind: "api_key"

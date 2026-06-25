@@ -434,7 +434,15 @@ def get_quote(ctx: Ctx) -> dict:
 # payouts
 # --------------------------------------------------------------------------- #
 def _advance(payout: dict) -> dict:
-    """Move a live payout one step along its delivery lifecycle on each read."""
+    """Move a live payout one step along its delivery lifecycle on each read.
+
+    A payout held for compliance screening clears first and only then begins to
+    move down its delivery flow, the way a real platform releases a held payout
+    once screening passes before it reaches the beneficiary bank."""
+    if payout.get("complianceStatus") == "in_review":
+        payout["complianceStatus"] = "cleared"
+        payout["updatedAt"] = base.now()
+        return payout
     status = payout["status"]
     if status in _PAYOUT_FLOW and status != _PAYOUT_FLOW[-1]:
         payout["status"] = _PAYOUT_FLOW[_PAYOUT_FLOW.index(status) + 1]
@@ -471,6 +479,11 @@ def create_payout(ctx: Ctx) -> dict:
     if usd_value > _MAX_PAYOUT_USD:
         raise DomainError(422, "amount_exceeds_limit", "payout exceeds the per-transaction limit")
 
+    simulate = str(ctx.get("simulate") or "").lower()
+    if simulate and simulate not in _SIMULATE_OUTCOMES:
+        raise DomainError(422, "invalid_simulate",
+                          f"simulate must be one of {', '.join(_SIMULATE_OUTCOMES)}")
+
     balances = ctx.state.table("balances")
     balance = balances.get(source)
     if balance is not None and source_amount > balance["available"]:
@@ -485,6 +498,10 @@ def create_payout(ctx: Ctx) -> dict:
     now = base.now()
     delivery = _delivery(method, now)
     payout_id = base.new_id("po")
+    held = simulate in ("", "processing") and (
+        usd_value >= _SCREENING_THRESHOLD_USD or rec.get("riskRating") == "high")
+    status = simulate or "processing"
+    failed = status in ("failed", "returned")
     payout = {
         "id": payout_id,
         "payoutId": payout_id,
@@ -500,20 +517,27 @@ def create_payout(ctx: Ctx) -> dict:
         "feeCurrency": source,
         "feeBreakdown": fee["breakdown"],
         "method": method,
+        "scheme": _scheme(method, source, target),
         "reference": ctx.get("reference", payout_id),
+        "trackingReference": _tracking_reference(payout_id),
+        "statementDescriptor": ctx.get("statementDescriptor", "QUETZAL PAYOUT"),
         "purpose": purpose,
         "purposeCode": _purpose_code(purpose),
         "quoteId": ctx.get("quoteId"),
-        "status": "processing",
-        "failureReason": None,
+        "complianceStatus": "in_review" if held else "cleared",
+        "status": status,
+        "failureCode": None,
+        "failureMessage": None,
         "deliveryEstimateHours": delivery["deliveryEstimateHours"],
         "estimatedDelivery": delivery["estimatedDelivery"],
         "createdAt": now,
         "updatedAt": now,
-        "statusHistory": [{"status": "processing", "at": now}],
+        "statusHistory": [{"status": status, "at": now}],
         "batchId": None,
     }
-    if balance is not None:
+    if failed:
+        payout.update(_failure(_SIMULATE_FAILURE[status]))
+    elif balance is not None:
         balance["available"] = _money(balance["available"] - source_amount, source)
         balance["reserved"] = _money(balance["reserved"] + source_amount, source)
     payouts[payout_id] = payout
