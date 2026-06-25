@@ -26,7 +26,7 @@ let root: string
 let cwdBefore: string
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), 'caracal-consolecfg-'))
+  root = mkdtempSync(join(tmpdir(), 'caracal-rtcfg-'))
   cwdBefore = process.cwd()
   process.env.XDG_CONFIG_HOME = join(root, 'xdg-default')
 })
@@ -177,17 +177,20 @@ describe('resolveRuntimeConfigPath', () => {
     const secret = join(root, 'client-secret')
     const cfg = join(root, 'caracal.toml')
     writeFileSync(secret, 'secret-value\n')
-    writeFileSync(cfg, [
-      'zone_url = "https://sts.example.com"',
-      'zone_id = "zone1"',
-      'application_id = "app1"',
-      `app_client_secret_file = "${secret}"`,
-      '[[credentials]]',
-      'env = "RESOURCE_TOKEN"',
-      'resource = "resource://api"',
-      'credential_type = "caracal_mandate"',
-      '',
-    ].join('\n'))
+    writeFileSync(
+      cfg,
+      [
+        'zone_url = "https://sts.example.com"',
+        'zone_id = "zone1"',
+        'application_id = "app1"',
+        `app_client_secret_file = "${secret}"`,
+        '[[credentials]]',
+        'env = "RESOURCE_TOKEN"',
+        'resource = "resource://api"',
+        'credential_type = "caracal_mandate"',
+        '',
+      ].join('\n'),
+    )
     if (process.platform !== 'win32') {
       chmodSync(secret, 0o444)
       chmodSync(cfg, 0o600)
@@ -207,11 +210,14 @@ describe('resolveRuntimeConfigPath', () => {
     const secret = join(root, 'client-secret')
     const credentials = join(root, 'credentials.json')
     writeFileSync(secret, 'secret-value\n')
-    writeFileSync(credentials, JSON.stringify({
-      credentials: [{ env: 'RESOURCE_TOKEN', resource: 'resource://api' }],
-      optional_credentials: [{ env: 'OPTIONAL_TOKEN', resource: 'resource://optional' }],
-      mcp_governance: { mode: 'log' },
-    }))
+    writeFileSync(
+      credentials,
+      JSON.stringify({
+        credentials: [{ env: 'RESOURCE_TOKEN', resource: 'resource://api' }],
+        optional_credentials: [{ env: 'OPTIONAL_TOKEN', resource: 'resource://optional' }],
+        mcp_governance: { mode: 'log' },
+      }),
+    )
     if (process.platform !== 'win32') {
       chmodSync(secret, 0o444)
       chmodSync(credentials, 0o444)
@@ -323,14 +329,12 @@ describe('resolveRuntimeConfigPath', () => {
     const secret = defaultAppClientSecretFilePath('zone1', 'app1')
     mkdirSync(join(root, 'xdg-default', 'caracal', 'runtime', 'zone1', 'app1'), { recursive: true })
     writeFileSync(secret, 'secret-value\n')
-    writeFileSync(cfg, [
-      'zone_id = "zone1"',
-      'application_id = "app1"',
-      '[[credentials]]',
-      'env = "RESOURCE_TOKEN"',
-      'resource = "resource://api"',
-      '',
-    ].join('\n'))
+    writeFileSync(
+      cfg,
+      ['zone_id = "zone1"', 'application_id = "app1"', '[[credentials]]', 'env = "RESOURCE_TOKEN"', 'resource = "resource://api"', ''].join(
+        '\n',
+      ),
+    )
     if (process.platform !== 'win32') {
       chmodSync(secret, 0o600)
       chmodSync(cfg, 0o600)
@@ -362,16 +366,19 @@ describe('resolveRuntimeConfigPath', () => {
     const envSecret = join(root, 'env-secret')
     mkdirSync(configDir, { recursive: true })
     writeFileSync(profileSecret, 'profile-secret\n')
-    writeFileSync(profileConfig, [
-      'zone_url = "https://profile-sts.example.com"',
-      'zone_id = "profile-zone"',
-      'application_id = "profile-app"',
-      `app_client_secret_file = "${profileSecret}"`,
-      '[[credentials]]',
-      'env = "PROFILE_TOKEN"',
-      'resource = "resource://profile"',
-      '',
-    ].join('\n'))
+    writeFileSync(
+      profileConfig,
+      [
+        'zone_url = "https://profile-sts.example.com"',
+        'zone_id = "profile-zone"',
+        'application_id = "profile-app"',
+        `app_client_secret_file = "${profileSecret}"`,
+        '[[credentials]]',
+        'env = "PROFILE_TOKEN"',
+        'resource = "resource://profile"',
+        '',
+      ].join('\n'),
+    )
     writeFileSync(envSecret, 'env-secret\n')
     if (process.platform !== 'win32') {
       chmodSync(profileSecret, 0o600)
@@ -424,14 +431,17 @@ describe('resolveRuntimeConfigPath', () => {
 
   it('rejects unknown runtime config fields', () => {
     const cfg = join(root, 'caracal.toml')
-    writeFileSync(cfg, [
-      'zone_url = "https://sts.example.com"',
-      'zone_id = "zone1"',
-      'application_id = "app1"',
-      'app_client_secret = "secret-value"',
-      'surprise = "nope"',
-      '',
-    ].join('\n'))
+    writeFileSync(
+      cfg,
+      [
+        'zone_url = "https://sts.example.com"',
+        'zone_id = "zone1"',
+        'application_id = "app1"',
+        'app_client_secret = "secret-value"',
+        'surprise = "nope"',
+        '',
+      ].join('\n'),
+    )
     if (process.platform !== 'win32') chmodSync(cfg, 0o600)
     process.env.CARACAL_CONFIG = cfg
 

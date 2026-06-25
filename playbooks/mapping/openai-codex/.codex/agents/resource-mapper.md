@@ -4,7 +4,7 @@ Use for resource form mapping, Caracal resource scopes, upstream URLs, gateway a
 
 ## Scope
 
-- Map visible resource form labels to Caracal Console resource fields.
+- Map visible resource form labels to Caracal web console resource fields.
 - Keep provider credentials separate from resource target values.
 - Never invent unsupported resource fields.
 - Do not generate mock resource values or layouts unless explicitly requested.

@@ -1,11 +1,11 @@
 ---
-description: "Use when writing, editing, or reviewing Console help, info pages, field examples, guided setup copy, or example-facing Console UI text. Enforces the approved Caracal demo naming universe."
-applyTo: "{apps/console/**,tests/typescript/unit/console/**}"
+description: "Use when writing, editing, or reviewing web console help, info pages, field examples, guided setup copy, or example-facing web console UI text. Enforces the approved Caracal demo naming universe."
+applyTo: "{apps/web/**,tests/typescript/unit/web/**}"
 ---
 
-# Console Example Naming
+# Web Console Example Naming
 
-- Applies to Console-facing help, info pages, tooltips, field examples, guided setup copy, placeholder examples, and tests that assert those strings.
+- Applies to web-console-facing help, info pages, tooltips, field examples, guided setup copy, placeholder examples, and tests that assert those strings.
 - Use the approved naming universe when example, demo, placeholder, or reference data is needed.
 - Keep names contextually appropriate, realistic, operational, and internally consistent.
 - Do not introduce random placeholder names such as `payments-api`, `payments-worker`, `alice`, `bob`, `Acme`, generic GitHub examples, or unrelated fake brands.

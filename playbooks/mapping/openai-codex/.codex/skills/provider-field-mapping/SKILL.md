@@ -1,6 +1,6 @@
 # Provider Field Mapping
 
-Use to map provider dashboard labels, OAuth client fields, API keys, bearer tokens, and connector setup to visible Caracal Console provider fields.
+Use to map provider dashboard labels, OAuth client fields, API keys, bearer tokens, and connector setup to visible Caracal web console provider fields.
 
 ## Procedure
 
