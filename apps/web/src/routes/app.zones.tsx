@@ -262,9 +262,14 @@ function ZonesPage() {
           title="Zones unavailable"
           description="The control plane did not respond, so zones could not be loaded. Check platform health in Diagnostics; this view recovers automatically once the control plane is reachable."
           action={
-            <Link to="/app/diagnostics">
-              <Button variant="secondary">Open Diagnostics</Button>
-            </Link>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button onClick={() => zonesQuery.refetch()} loading={zonesQuery.isFetching}>
+                Retry
+              </Button>
+              <Link to="/app/diagnostics">
+                <Button variant="secondary">Open Diagnostics</Button>
+              </Link>
+            </div>
           }
         />
       </ModulePage>
@@ -358,7 +363,10 @@ function ZonesPage() {
           try {
             const zone = await createZone.mutateAsync({
               name: values.name,
-              slug: values.slug,
+              // Omit the slug when the operator did not customise it so the control plane
+              // auto-generates a unique one (matching the TUI, which never sends a slug on
+              // create and relies on server-side dedup). An explicit slug is still honoured.
+              slug: values.slug || undefined,
               dcr_enabled: values.dcrEnabled,
             });
             setCreateOpen(false);
@@ -529,7 +537,12 @@ function ZoneFormModal({
           </Button>
           <Button
             onClick={() =>
-              name.trim() && onSubmit({ name: name.trim(), slug: effectiveSlug.trim(), dcrEnabled })
+              name.trim() &&
+              onSubmit({
+                name: name.trim(),
+                slug: slugDirty ? effectiveSlug.trim() : "",
+                dcrEnabled,
+              })
             }
             loading={busy}
             disabled={!name.trim() || !effectiveSlug.trim()}

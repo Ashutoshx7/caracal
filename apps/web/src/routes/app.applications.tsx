@@ -377,34 +377,26 @@ function ApplicationDetail({
         ) : null}
       </DetailHeader>
 
-      {managed ? (
-        <IdentitySection app={app} busy={busy} onRename={onRename} />
-      ) : (
-        <DetailGroup title="Identity">
-          <DetailField label="Name">{app.name}</DetailField>
-          <DetailField label="Application ID">
-            <CopyValue value={app.id} />
-          </DetailField>
-          <DetailField label="Created">{new Date(app.created_at).toLocaleString()}</DetailField>
-        </DetailGroup>
-      )}
+      <IdentitySection app={app} busy={busy} onRename={onRename} />
 
       {managed ? (
         <CredentialsSection onRotate={onRotate} />
       ) : (
         <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          Dynamic clients are registered programmatically and expire automatically. Their identity
-          and credentials are managed by the issuing system and are read-only here.
+          Dynamic clients are registered programmatically and expire automatically. Their client
+          secret is issued by the registering system and cannot be rotated here.
         </p>
       )}
 
-      {managed ? (
-        <DangerZone
-          description="Permanently revoke this identity. This cannot be undone."
-          actionLabel="Delete"
-          onAction={onDelete}
-        />
-      ) : null}
+      <DangerZone
+        description={
+          managed
+            ? "Permanently revoke this identity. This cannot be undone."
+            : "Revoke this dynamic client now instead of waiting for it to expire. This cannot be undone."
+        }
+        actionLabel="Delete"
+        onAction={onDelete}
+      />
     </div>
   );
 }

@@ -21,8 +21,10 @@ import { useAdminAuditFeed, useAuditFeed, useDecisionTrace } from "@/platform/ap
 import type {
   AdminAuditEvent,
   AdminAuditQuery,
+  AuditDetail,
   AuditEvent,
   AuditQuery,
+  DeniedDecision,
 } from "@/platform/api/types";
 
 export const Route = createFileRoute("/app/audit")({
@@ -201,20 +203,41 @@ function decisionTone(decision: string | null): "success" | "danger" | "warning"
   return "muted";
 }
 
-// Accepts a relative window (e.g. 15m, 2h, 7d, 30s), an ISO timestamp, or a
-// datetime-local value and returns an ISO string the control plane understands.
+// Accepts the same inputs the Console TUI honors: the literal "now", a relative
+// window (e.g. 30s, 15m, 2h, 7d, 2w), a canonical ISO timestamp, or any other
+// date the platform can parse. Returns an ISO string the control plane understands,
+// or undefined when the field is blank or the value cannot be parsed.
+const TIME_UNIT_MS: Record<string, number> = {
+  s: 1_000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+  w: 604_800_000,
+};
+const RELATIVE_TIME = /^(\d+)\s*(s|m|h|d|w)$/i;
+const CANONICAL_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
+
 function parseTimeInput(value: string): string | undefined {
   const text = value.trim();
   if (!text) return undefined;
-  const relative = /^(\d+)\s*(s|m|h|d)$/.exec(text.toLowerCase());
+  if (text.toLowerCase() === "now") return new Date().toISOString();
+  const relative = RELATIVE_TIME.exec(text);
   if (relative) {
     const amount = Number(relative[1]);
-    const unit = relative[2];
-    const ms = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 }[unit] ?? 0;
-    return new Date(Date.now() - amount * ms).toISOString();
+    const unit = TIME_UNIT_MS[relative[2]!.toLowerCase()]!;
+    return new Date(Date.now() - amount * unit).toISOString();
   }
+  if (CANONICAL_ISO.test(text)) return text;
   const ts = Date.parse(text);
   return Number.isFinite(ts) ? new Date(ts).toISOString() : undefined;
+}
+
+// Inline feedback parity with the TUI form, which rejects unparseable time input
+// rather than silently dropping it.
+function timeInputError(value: string): string | undefined {
+  return value.trim() && !parseTimeInput(value)
+    ? "Enter a relative time like 15m, 2h, 7d, an ISO timestamp, or a date"
+    : undefined;
 }
 
 function AuditPage({
@@ -456,26 +479,66 @@ function AuditFilterBar({
         label="Since"
         placeholder="15m, 2h, 7d, or a date"
         value={since}
+        error={timeInputError(since)}
         onChange={(e) => onSince(e.target.value)}
       />
       <Field
         label="Until"
         placeholder="15m, 2h, or a date"
         value={until}
+        error={timeInputError(until)}
         onChange={(e) => onUntil(e.target.value)}
       />
     </AuditToolbar>
   );
 }
 
+// Copies the raw backend payload to the clipboard, matching the Console TUI's
+// copy-page action so operators can paste full audit evidence into tickets.
+function CopyJsonButton({ value, label = "Copy JSON" }: { value: unknown; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={() => {
+        void navigator.clipboard?.writeText(JSON.stringify(value, null, 2));
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1200);
+      }}
+    >
+      {copied ? "Copied" : label}
+    </Button>
+  );
+}
+
+function JsonBlock({ value }: { value: unknown }) {
+  return (
+    <pre className="mt-2 max-h-48 overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-xs text-foreground">
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  );
+}
+
+function SubHeading({ children }: { children: ReactNode }) {
+  return (
+    <h4 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+      {children}
+    </h4>
+  );
+}
+
 function AuditDetailView({ zoneId, event }: { zoneId: string; event: AuditEvent }) {
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center gap-2">
-        {event.decision ? (
-          <Badge tone={decisionTone(event.decision)}>{event.decision}</Badge>
-        ) : null}
-        <Badge tone="neutral">{event.event_type}</Badge>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {event.decision ? (
+            <Badge tone={decisionTone(event.decision)}>{event.decision}</Badge>
+          ) : null}
+          <Badge tone="neutral">{event.event_type}</Badge>
+        </div>
+        <CopyJsonButton value={event} label="Copy event JSON" />
       </div>
 
       <DetailGroup title="Event">
@@ -493,9 +556,7 @@ function AuditDetailView({ zoneId, event }: { zoneId: string; event: AuditEvent 
 
       {event.metadata_json && Object.keys(event.metadata_json).length > 0 ? (
         <DetailGroup title="Metadata">
-          <pre className="mt-2 max-h-48 overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-xs text-foreground">
-            {JSON.stringify(event.metadata_json, null, 2)}
-          </pre>
+          <JsonBlock value={event.metadata_json} />
         </DetailGroup>
       ) : null}
 
@@ -504,14 +565,128 @@ function AuditDetailView({ zoneId, event }: { zoneId: string; event: AuditEvent 
   );
 }
 
+// Full per-event forensic detail: the determining policies, diagnostics, policy-set
+// binding, manifest hash, and metadata recorded for one event in the request group.
+function TraceEventDetail({ event, index }: { event: AuditDetail; index: number }) {
+  const determining = event.determining_policies_json ?? [];
+  const diagnostics = event.diagnostics_json ?? [];
+  const metadata = event.metadata_json ?? {};
+  return (
+    <details className="rounded-md border border-border">
+      <summary className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-xs">
+        <span className="flex items-center gap-2">
+          <span className="text-muted-foreground">#{index + 1}</span>
+          <span className="font-mono text-foreground">{event.event_type}</span>
+        </span>
+        {event.decision ? (
+          <Badge tone={decisionTone(event.decision)}>{event.decision}</Badge>
+        ) : (
+          <span className="text-muted-foreground">{event.evaluation_status ?? "-"}</span>
+        )}
+      </summary>
+      <div className="flex flex-col gap-3 border-t border-border px-3 py-3">
+        <DetailGroup title="Event">
+          <DetailField label="Event ID">
+            <Mono>{event.id}</Mono>
+          </DetailField>
+          <DetailField label="Occurred">{new Date(event.occurred_at).toLocaleString()}</DetailField>
+          <DetailField label="Evaluation">{event.evaluation_status ?? "-"}</DetailField>
+          {event.policy_set_id ? (
+            <DetailField label="Policy set">
+              <Mono>{event.policy_set_id}</Mono>
+            </DetailField>
+          ) : null}
+          {event.policy_set_version_id ? (
+            <DetailField label="Policy set version">
+              <Mono>{event.policy_set_version_id}</Mono>
+            </DetailField>
+          ) : null}
+          {event.manifest_sha ? (
+            <DetailField label="Manifest SHA">
+              <Mono>{event.manifest_sha}</Mono>
+            </DetailField>
+          ) : null}
+        </DetailGroup>
+        {determining.length > 0 ? (
+          <div>
+            <SubHeading>Determining policies</SubHeading>
+            <JsonBlock value={determining} />
+          </div>
+        ) : null}
+        {diagnostics.length > 0 ? (
+          <div>
+            <SubHeading>Diagnostics</SubHeading>
+            <JsonBlock value={diagnostics} />
+          </div>
+        ) : null}
+        {Object.keys(metadata).length > 0 ? (
+          <div>
+            <SubHeading>Metadata</SubHeading>
+            <JsonBlock value={metadata} />
+          </div>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
+// Denied decisions carry the reconstructed policy input alongside the determining
+// policies and diagnostics, which is the core forensic payload for incident response.
+function DeniedDecisionDetail({ denied, index }: { denied: DeniedDecision; index: number }) {
+  return (
+    <details className="rounded-md border border-destructive/30">
+      <summary className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-xs">
+        <span className="flex items-center gap-2">
+          <span className="text-muted-foreground">#{index + 1}</span>
+          <span className="font-mono text-foreground">{denied.event_type}</span>
+        </span>
+        <Badge tone="danger">deny</Badge>
+      </summary>
+      <div className="flex flex-col gap-3 border-t border-border px-3 py-3">
+        <DetailGroup title="Denied">
+          <DetailField label="Event ID">
+            <Mono>{denied.event_id}</Mono>
+          </DetailField>
+          <DetailField label="Evaluation">{denied.evaluation_status ?? "-"}</DetailField>
+        </DetailGroup>
+        <div>
+          <SubHeading>Policy input</SubHeading>
+          <JsonBlock value={denied.policy_input} />
+        </div>
+        {denied.determining_policies.length > 0 ? (
+          <div>
+            <SubHeading>Determining policies</SubHeading>
+            <JsonBlock value={denied.determining_policies} />
+          </div>
+        ) : null}
+        {denied.diagnostics.length > 0 ? (
+          <div>
+            <SubHeading>Diagnostics</SubHeading>
+            <JsonBlock value={denied.diagnostics} />
+          </div>
+        ) : null}
+        {Object.keys(denied.metadata).length > 0 ? (
+          <div>
+            <SubHeading>Metadata</SubHeading>
+            <JsonBlock value={denied.metadata} />
+          </div>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
 function DecisionTraceView({ zoneId, requestId }: { zoneId: string; requestId: string }) {
   const trace = useDecisionTrace(zoneId, requestId);
 
   return (
     <section className="border-t border-border pt-4">
-      <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        Decision trace
-      </h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          Decision trace
+        </h3>
+        {trace.data ? <CopyJsonButton value={trace.data} label="Copy trace JSON" /> : null}
+      </div>
       {trace.isLoading ? (
         <Skeleton className="mt-3 h-16 w-full" />
       ) : trace.isError ? (
@@ -536,21 +711,22 @@ function DecisionTraceView({ zoneId, requestId }: { zoneId: string; requestId: s
               <Badge tone="danger">{trace.data.denied.length}</Badge>
             </div>
           ) : null}
-          <ol className="mt-1 flex flex-col gap-1.5">
-            {trace.data.events.map((ev) => (
-              <li
-                key={ev.id}
-                className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-1.5 text-xs"
-              >
-                <span className="font-mono text-foreground">{ev.event_type}</span>
-                {ev.decision ? (
-                  <Badge tone={decisionTone(ev.decision)}>{ev.decision}</Badge>
-                ) : (
-                  <span className="text-muted-foreground">{ev.evaluation_status ?? "-"}</span>
-                )}
-              </li>
+
+          <div className="mt-1 flex flex-col gap-1.5">
+            <SubHeading>Events</SubHeading>
+            {trace.data.events.map((ev, i) => (
+              <TraceEventDetail key={ev.id} event={ev} index={i} />
             ))}
-          </ol>
+          </div>
+
+          {trace.data.denied.length > 0 ? (
+            <div className="mt-1 flex flex-col gap-1.5">
+              <SubHeading>Denied decisions</SubHeading>
+              {trace.data.denied.map((d, i) => (
+                <DeniedDecisionDetail key={d.event_id} denied={d} index={i} />
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>
@@ -893,12 +1069,14 @@ function AdminAuditFilterBar({
         label="Since"
         placeholder="15m, 2h, 7d, or a date"
         value={since}
+        error={timeInputError(since)}
         onChange={(e) => onSince(e.target.value)}
       />
       <Field
         label="Until"
         placeholder="15m, 2h, or a date"
         value={until}
+        error={timeInputError(until)}
         onChange={(e) => onUntil(e.target.value)}
       />
     </AuditToolbar>
