@@ -27,10 +27,18 @@ export interface GatewayMessage {
 export interface CompletionOptions {
   maxTokens?: number
   temperature?: number
+  // The id of the provider the caller would like to use first. When it is configured and
+  // available it is tried ahead of the failover order; otherwise it is ignored and the
+  // normal order applies, so a stale preference never disables the gateway.
+  preferredProvider?: string
 }
 
 export interface CompletionResult {
   text: string
+  // The model's chain of thought when a reasoning model exposes it, either through the
+  // OpenAI-compatible reasoning_content channel or inline <think> tags. Absent for models
+  // that return only an answer.
+  reasoning?: string
   provider: string
   model: string
   promptTokens?: number
@@ -44,6 +52,9 @@ export interface ProviderStatus {
   // assert reachability — that is what the connectivity check verifies — and never
   // exposes whether a key is present beyond this boolean.
   available: boolean
+  // The model's context window in tokens, or zero when the administrator has not
+  // declared it. Surfaced so the console can show usage against the chosen model.
+  contextWindow: number
 }
 
 export interface GatewayStatus {
@@ -91,8 +102,22 @@ function providerAvailable(provider: ProviderConfig): boolean {
 }
 
 interface ChatCompletionResponse {
-  choices?: { message?: { content?: string } }[]
+  choices?: { message?: { content?: string; reasoning_content?: string } }[]
   usage?: { prompt_tokens?: number; completion_tokens?: number }
+}
+
+// Separates a reasoning model's chain of thought from its answer. Reasoning arrives
+// either in the OpenAI-compatible reasoning_content channel or inline as a leading
+// <think>...</think> block; the answer is the content with any think block removed.
+function splitReasoning(content: string, reasoningField?: string): { text: string; reasoning?: string } {
+  const inline = content.match(/<think>([\s\S]*?)<\/think>/i)
+  const answer = inline ? content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim() : content.trim()
+  const field = typeof reasoningField === 'string' ? reasoningField.trim() : ''
+  const reasoning = field.length > 0 ? field : inline ? inline[1].trim() : ''
+  return {
+    text: answer.length > 0 ? answer : content.trim(),
+    reasoning: reasoning.length > 0 ? reasoning : undefined,
+  }
 }
 
 // Performs one OpenAI-compatible chat completion against a single provider. Network
@@ -124,12 +149,14 @@ async function callProvider(
       throw new Error(`provider returned status ${res.status}`)
     }
     const body = (await res.json()) as ChatCompletionResponse
-    const text = body.choices?.[0]?.message?.content
-    if (typeof text !== 'string' || text.length === 0) {
+    const message = body.choices?.[0]?.message
+    if (typeof message?.content !== 'string' || message.content.length === 0) {
       throw new Error('provider returned an empty completion')
     }
+    const { text, reasoning } = splitReasoning(message.content, message.reasoning_content)
     return {
       text,
+      reasoning,
       provider: provider.id,
       model: provider.model,
       promptTokens: body.usage?.prompt_tokens,
@@ -160,6 +187,7 @@ export function createGateway(providers: ProviderConfig[], fetchImpl: FetchImpl 
           id: provider.id,
           model: provider.model,
           available: providerAvailable(provider),
+          contextWindow: provider.contextWindow,
         })),
       }
     },
@@ -171,8 +199,18 @@ export function createGateway(providers: ProviderConfig[], fetchImpl: FetchImpl 
 
     async complete(messages, options = {}) {
       if (available.length === 0) throw new GatewayUnavailableError()
+      // Try the caller's preferred provider first when it is available, then the rest in
+      // failover order. A preference for an unknown or unavailable provider is ignored.
+      const order = [...available]
+      if (options.preferredProvider) {
+        const index = order.findIndex((provider) => provider.id === options.preferredProvider)
+        if (index > 0) {
+          const [preferred] = order.splice(index, 1)
+          order.unshift(preferred)
+        }
+      }
       const attempts: { provider: string; reason: string }[] = []
-      for (const provider of available) {
+      for (const provider of order) {
         try {
           return await callProvider(fetchImpl, provider, messages, options)
         } catch (err) {
@@ -204,4 +242,15 @@ export function withUsage(gateway: Gateway): { gateway: Gateway; usage: () => Ga
     },
   }
   return { gateway: tracked, usage: () => ({ inputTokens, outputTokens }) }
+}
+
+// Wraps a gateway so every completion prefers the given provider, without touching the
+// agents that call complete(). A null id is a no-op, so callers can wrap unconditionally.
+export function preferProvider(gateway: Gateway, providerId: string | null): Gateway {
+  if (!providerId) return gateway
+  return {
+    status: () => gateway.status(),
+    active: () => gateway.active(),
+    complete: (messages, options = {}) => gateway.complete(messages, { ...options, preferredProvider: providerId }),
+  }
 }

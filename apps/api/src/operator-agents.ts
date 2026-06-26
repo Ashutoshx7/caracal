@@ -141,14 +141,18 @@ export function buildExplainerMessages(message: string, context: AgentContext): 
   ]
 }
 
-// Answers a read-only question. Returns the model's text directly; it carries no
-// authority and performs no action.
-export async function runExplainer(gateway: Gateway, message: string, context: AgentContext): Promise<AgentResult<string>> {
+// Answers a read-only question. Returns the model's text directly along with any chain
+// of thought the model exposed; it carries no authority and performs no action.
+export async function runExplainer(
+  gateway: Gateway,
+  message: string,
+  context: AgentContext,
+): Promise<AgentResult<{ text: string; reasoning?: string }>> {
   const completion = await gateway.complete(buildExplainerMessages(message, context), {
     maxTokens: EXPLAINER_MAX_TOKENS,
     temperature: 0.2,
   })
   const text = completion.text.trim()
   if (text.length === 0) return { ok: false, error: 'explainer returned an empty answer' }
-  return { ok: true, value: text }
+  return { ok: true, value: { text, reasoning: completion.reasoning } }
 }
