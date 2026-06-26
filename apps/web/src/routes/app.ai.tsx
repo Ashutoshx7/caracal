@@ -39,6 +39,21 @@ import {
 } from "@/components/ai-elements/task";
 import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-elements/reasoning";
 import {
+  InlineCitation,
+  InlineCitationCard,
+  InlineCitationCardBody,
+  InlineCitationCardTrigger,
+  InlineCitationCarousel,
+  InlineCitationCarouselContent,
+  InlineCitationCarouselHeader,
+  InlineCitationCarouselIndex,
+  InlineCitationCarouselItem,
+  InlineCitationCarouselNext,
+  InlineCitationCarouselPrev,
+  InlineCitationSource,
+  InlineCitationText,
+} from "@/components/ai-elements/inline-citation";
+import {
   ModelSelector,
   ModelSelectorCheck,
   ModelSelectorContent,
@@ -93,6 +108,7 @@ import {
   useOperatorAiStatus,
   useOperatorContext,
   useOperatorConversations,
+  useOperatorCapabilities,
   useOperatorStatus,
   useOperatorTurns,
   useRenameOperatorConversation,
@@ -105,6 +121,7 @@ import {
   type PlanStepView,
   type TimelineItem,
 } from "@/platform/operator/timeline";
+import { planCitations } from "@/platform/operator/citations";
 import type { OperatorConversation, OperatorUsageMeta } from "@/platform/api/types";
 
 export const Route = createFileRoute("/app/ai")({
@@ -420,12 +437,12 @@ function OperatorWorkspace() {
             <img
               src="/caracal_light.png"
               alt="Caracal"
-              className="h-7 w-auto select-none dark:hidden"
+              className="h-25 w-auto select-none dark:hidden"
             />
             <img
               src="/caracal_dark.png"
               alt="Caracal"
-              className="hidden h-7 w-auto select-none dark:block"
+              className="hidden h-25 w-auto select-none dark:block"
             />
           </div>
         ) : null}
@@ -1816,6 +1833,8 @@ function PlanArtifact({
   const busy = decide.isPending || execute.isPending;
   const decision = planDecision(plan);
   const mutatingCount = plan.steps.filter((step) => step.mutating).length;
+  const catalog = useOperatorCapabilities().data ?? [];
+  const sources = planCitations(plan, catalog);
 
   return (
     <div className="border border-border bg-card shadow-sm">
@@ -1902,6 +1921,35 @@ function PlanArtifact({
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-purple" /> Working…
             </span>
           ) : null}
+        </div>
+      ) : null}
+
+      {sources.length > 0 ? (
+        <div className="border-t border-border px-3.5 py-2.5 text-[11px] text-muted-foreground">
+          <InlineCitation>
+            <InlineCitationText>
+              This plan touches {sources.length} Console item{sources.length === 1 ? "" : "s"}.
+            </InlineCitationText>
+            <InlineCitationCard>
+              <InlineCitationCardTrigger sources={sources.map((source) => source.title)} />
+              <InlineCitationCardBody>
+                <InlineCitationCarousel>
+                  <InlineCitationCarouselHeader>
+                    <InlineCitationCarouselPrev />
+                    <InlineCitationCarouselNext />
+                    <InlineCitationCarouselIndex />
+                  </InlineCitationCarouselHeader>
+                  <InlineCitationCarouselContent>
+                    {sources.map((source) => (
+                      <InlineCitationCarouselItem key={source.key}>
+                        <InlineCitationSource source={source} />
+                      </InlineCitationCarouselItem>
+                    ))}
+                  </InlineCitationCarouselContent>
+                </InlineCitationCarousel>
+              </InlineCitationCardBody>
+            </InlineCitationCard>
+          </InlineCitation>
         </div>
       ) : null}
     </div>
