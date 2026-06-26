@@ -212,13 +212,13 @@ describe('password sign-up gating', () => {
 
 describe('web origin defaults', () => {
   it('seeds the localhost dev origin outside production', () => {
-    expect(loadConfig().webOrigins).toContain('http://localhost:3001')
+    expect(loadConfig().webOrigins).toContain('http://localhost:3011')
   })
 
   it('does not seed a localhost dev origin in production', () => {
     reset({ NODE_ENV: 'production', CARACAL_AUTH_URL: 'https://app.example.com' })
     const origins = loadConfig().webOrigins
     expect(origins).toContain('https://app.example.com')
-    expect(origins).not.toContain('http://localhost:3001')
+    expect(origins).not.toContain('http://localhost:3011')
   })
 })

@@ -18,12 +18,14 @@ export default defineConfig({
     viteReact(),
   ],
   server: {
-    port: 3001,
+    // The packaged stack publishes the console on host port 3001; the dev server runs on
+    // 3011 so the two never contend for the same port when both are up.
+    port: 3011,
     // Editors that save atomically (e.g. VS Code safe-write) replace the file
     // inode, which native inotify watches miss; polling makes HMR fire reliably.
     watch: { usePolling: true, interval: 120 },
   },
-  preview: { port: 3001 },
+  preview: { port: 3011 },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),

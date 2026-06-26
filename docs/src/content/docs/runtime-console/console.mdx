@@ -23,6 +23,8 @@ Use the development launcher only when working on the console or auth BFF locall
 caracal web
 ```
 
+The launcher prints its URLs on startup and defaults to the UI on [http://localhost:3011](http://localhost:3011) and the backend-for-frontend on `3002`. The dev UI deliberately runs on `3011`, not the packaged console's `3001`, so the development launcher and the packaged Compose console can run at the same time without contending for the port.
+
 Use `--allow-offline` with the development launcher when you only need sign-in or UI-only checks and the stack is not ready:
 
 ```bash
@@ -33,8 +35,8 @@ caracal web --allow-offline
 
 | Option | Purpose |
 | --- | --- |
-| `--web-port <port>` | Bind the browser UI to a specific port. |
-| `--auth-port <port>` | Bind the session/auth backend to a specific port. |
+| `--web-port <port>` | Bind the browser UI to a specific port (default `3011`). |
+| `--auth-port <port>` | Bind the session/auth backend to a specific port (default `3002`). |
 | `--build` | Build the web assets before launching. |
 | `--allow-offline` | Start the UI even when local Caracal services are not ready. |
 
