@@ -15,7 +15,15 @@ import { ProposedPlan, listCapabilities, validateProposedPlan, type PlanValidati
 import { previewPlan } from '../operator-preview.js'
 import { applyPlanSteps, unsupportedSteps, StepExecutionError } from '../operator-execute.js'
 import { buildOperatorAuthority, isZoneIsolated, authorizePlanSteps, type OperatorAuthority } from '../operator-authority.js'
-import { createGateway, withUsage, GatewayUnavailableError, GatewayError, type Gateway, type ProviderConfig } from '../operator-gateway.js'
+import {
+  createGateway,
+  withUsage,
+  preferProvider,
+  GatewayUnavailableError,
+  GatewayError,
+  type Gateway,
+  type ProviderConfig,
+} from '../operator-gateway.js'
 import { runRouter, runPlanner, runExplainer, type AgentContext } from '../operator-agents.js'
 import { summarizeHistory, type ConversationFacts } from '../operator-memory.js'
 
@@ -64,7 +72,15 @@ const PlanDecisionBody = z
 const ExecutePlanBody = z.object({ plan_seq: z.number().int().min(1) }).strict()
 
 const MESSAGE_MAX_LENGTH = 4000
-const MessageBody = z.object({ message: z.string().trim().min(1).max(MESSAGE_MAX_LENGTH) }).strict()
+const MessageBody = z
+  .object({
+    message: z.string().trim().min(1).max(MESSAGE_MAX_LENGTH),
+    // Optional id of the configured provider to answer with. When omitted, the gateway's
+    // failover order chooses. Switching it mid-conversation only routes the next message;
+    // the conversation history the agents reason over is unchanged.
+    provider: z.string().min(1).max(64).optional(),
+  })
+  .strict()
 const MESSAGE_CONTEXT_WINDOW = 10
 
 interface PlanTurnContent {
@@ -81,7 +97,10 @@ const TurnQuery = z.object({
   limit: z.coerce.number().int().min(1).max(MAX_TURN_PAGE).default(DEFAULT_TURN_PAGE),
 })
 
-const ListSearchQuery = z.object({ q: z.string().trim().min(1).max(200).optional() })
+const ListSearchQuery = z.object({
+  q: z.string().trim().min(1).max(200).optional(),
+  status: z.enum(['active', 'archived', 'all']).default('active'),
+})
 
 // Neutralizes LIKE/ILIKE metacharacters so a search term is matched literally.
 // Backslash is escaped first so it cannot re-introduce an escape sequence.
@@ -370,9 +389,11 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     if (!search.success) return reply.code(400).send({ error: 'invalid_query' })
 
     const base: { conds: string[]; values: unknown[] } = {
-      conds: ['zone_id = $1', 'archived_at IS NULL'],
+      conds: ['zone_id = $1'],
       values: [params.zoneId],
     }
+    if (search.data.status === 'active') base.conds.push('archived_at IS NULL')
+    else if (search.data.status === 'archived') base.conds.push('archived_at IS NOT NULL')
     if (search.data.q) {
       // Match the term as a literal substring: LIKE wildcards in user input are
       // escaped so a query like "50%" cannot widen the match. ESCAPE is explicit.
@@ -427,6 +448,19 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     )
     if (!rows[0]) return reply.code(404).send({ error: 'conversation_not_found' })
     return rows[0]
+  })
+
+  fastify.delete('/zones/:zoneId/operator-conversations/:id', async (req, reply) => {
+    const params = parseParams(ZoneIdParams, req, reply)
+    if (!params) return
+    // The turns ledger is removed with the conversation through the ON DELETE CASCADE
+    // foreign key, so a single statement clears the whole session.
+    const { rowCount } = await fastify.db.query(`DELETE FROM operator_conversations WHERE id = $1 AND zone_id = $2`, [
+      params.id,
+      params.zoneId,
+    ])
+    if (!rowCount) return reply.code(404).send({ error: 'conversation_not_found' })
+    return reply.code(204).send()
   })
 
   fastify.post('/zones/:zoneId/operator-conversations/:id/turns', async (req, reply) => {
@@ -813,7 +847,15 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     }
     const parsed = MessageBody.safeParse(req.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_message' })
-    if (!gateway.status().enabled) return reply.code(409).send({ error: 'ai_unavailable' })
+    const status = gateway.status()
+    if (!status.enabled) return reply.code(409).send({ error: 'ai_unavailable' })
+
+    // A model preference must name an available provider; an unknown or unavailable id is
+    // rejected rather than silently ignored, so the console and gateway never disagree.
+    const preference = parsed.data.provider ?? null
+    if (preference && !status.providers.some((p) => p.id === preference && p.available)) {
+      return reply.code(400).send({ error: 'invalid_provider' })
+    }
 
     // Record the operator's message first, so it is in the ledger regardless of how
     // the agents respond, and so the agents reason over a context that includes it.
@@ -837,11 +879,12 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     const context: AgentContext = { facts, state }
 
     // Track the real token usage of every completion made while answering this one
-    // message, and report it alongside the active model and its context window so the
-    // console can show genuine usage rather than an estimate.
-    const tracked = withUsage(gateway)
+    // message, and report it alongside the model that answered and its context window so
+    // the console can show genuine usage. preferProvider routes to the chosen model while
+    // the context the agents reason over stays the full conversation history.
+    const tracked = withUsage(preferProvider(gateway, preference))
+    const effective = status.providers.find((p) => p.id === preference && p.available) ?? status.providers.find((p) => p.available) ?? null
     const meta = () => {
-      const active = gateway.active()
       const usage = tracked.usage()
       return {
         usage: {
@@ -849,8 +892,9 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
           output_tokens: usage.outputTokens,
           total_tokens: usage.inputTokens + usage.outputTokens,
         },
-        model: active?.model ?? null,
-        max_tokens: active?.contextWindow ?? 0,
+        model: effective?.model ?? null,
+        provider: effective?.id ?? null,
+        max_tokens: effective?.contextWindow ?? 0,
       }
     }
 
@@ -925,9 +969,18 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       }
 
       const explained = await runExplainer(tracked.gateway, parsed.data.message, context)
-      const text = explained.ok ? explained.value : 'I could not produce an explanation.'
-      const turn = await appendTurnTx(fastify.db, params.id, params.zoneId, 'operator', 'note', JSON.stringify({ text }), req.actor.id)
-      return reply.code(201).send({ intent: 'explain', ok: explained.ok, text, turn: turn.ok ? turn.turn : null, ...meta() })
+      const answer = explained.ok ? explained.value : { text: 'I could not produce an explanation.' }
+      const noteContent: Record<string, unknown> = { text: answer.text }
+      if (answer.reasoning) noteContent.reasoning = answer.reasoning
+      const turn = await appendTurnTx(fastify.db, params.id, params.zoneId, 'operator', 'note', JSON.stringify(noteContent), req.actor.id)
+      return reply.code(201).send({
+        intent: 'explain',
+        ok: explained.ok,
+        text: answer.text,
+        reasoning: answer.reasoning,
+        turn: turn.ok ? turn.turn : null,
+        ...meta(),
+      })
     } catch (err) {
       if (err instanceof GatewayUnavailableError) return reply.code(409).send({ error: 'ai_unavailable' })
       if (err instanceof GatewayError) return reply.code(502).send({ error: 'ai_unreachable', attempts: err.attempts })

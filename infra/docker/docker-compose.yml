@@ -378,6 +378,20 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       OTEL_SERVICE_NAME: caracal-api
       OTEL_RESOURCE_ATTRIBUTES: service.namespace=caracal,deployment.environment=${CARACAL_MODE:-dev}
+      # Caracal Operator. Enabled by default; the AI provider layer stays off until a
+      # provider is configured below, so the Operator runs deterministically with no AI
+      # cost out of the box. Set these in infra/docker/local.env to enable the model
+      # selector. Provider ids in API_OPERATOR_AI_PROVIDERS map to the OPENAI_/LOCAL_ vars.
+      API_OPERATOR_ENABLED: ${API_OPERATOR_ENABLED:-true}
+      API_OPERATOR_AI_PROVIDERS: ${API_OPERATOR_AI_PROVIDERS:-}
+      API_OPERATOR_AI_OPENAI_BASE_URL: ${API_OPERATOR_AI_OPENAI_BASE_URL:-}
+      API_OPERATOR_AI_OPENAI_MODEL: ${API_OPERATOR_AI_OPENAI_MODEL:-}
+      API_OPERATOR_AI_OPENAI_API_KEY: ${API_OPERATOR_AI_OPENAI_API_KEY:-}
+      API_OPERATOR_AI_OPENAI_CONTEXT_WINDOW: ${API_OPERATOR_AI_OPENAI_CONTEXT_WINDOW:-}
+      API_OPERATOR_AI_LOCAL_BASE_URL: ${API_OPERATOR_AI_LOCAL_BASE_URL:-}
+      API_OPERATOR_AI_LOCAL_MODEL: ${API_OPERATOR_AI_LOCAL_MODEL:-}
+      API_OPERATOR_AI_LOCAL_API_KEY: ${API_OPERATOR_AI_LOCAL_API_KEY:-}
+      API_OPERATOR_AI_LOCAL_CONTEXT_WINDOW: ${API_OPERATOR_AI_LOCAL_CONTEXT_WINDOW:-}
       PORT: 3000
       HOST: 0.0.0.0
     ports:
