@@ -25,7 +25,7 @@ STS_TOKEN_PATH = "/oauth/2/token"
 CONTROL_INVOKE_PATH = "/v1/control/invoke"
 
 # The Control scopes the Lynx plan needs: applications, providers, resources, and the
-# policy and policy-set lifecycle. The scoped key only ever receives the scopes Console
+# policy and policy-set lifecycle. The scoped key only ever receives the scopes the web console
 # allowed it, so requesting these is safe even on a more restricted key.
 SCOPES = [
     "control:app:read",

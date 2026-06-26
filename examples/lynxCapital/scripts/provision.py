@@ -281,7 +281,7 @@ def ensure_policy_set(
 
     if not version_ids:
         print(
-            "policy-set: no policy version ids returned; author versions and activate in Console"
+            "policy-set: no policy version ids returned; author versions and activate in the web console"
         )
         return
     version = client.invoke(
