@@ -161,6 +161,7 @@ function loadOperatorAiProviders(): ProviderConfig[] {
       model,
       apiKey: process.env[`API_OPERATOR_AI_${upper}_API_KEY`] || undefined,
       timeoutMs: intEnv(`API_OPERATOR_AI_${upper}_TIMEOUT_MS`, DEFAULT_PROVIDER_TIMEOUT_MS, 1),
+      contextWindow: intEnv(`API_OPERATOR_AI_${upper}_CONTEXT_WINDOW`, 0, 0),
     })
   }
   return providers

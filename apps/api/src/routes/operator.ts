@@ -15,7 +15,7 @@ import { ProposedPlan, listCapabilities, validateProposedPlan, type PlanValidati
 import { previewPlan } from '../operator-preview.js'
 import { applyPlanSteps, unsupportedSteps, StepExecutionError } from '../operator-execute.js'
 import { buildOperatorAuthority, isZoneIsolated, authorizePlanSteps, type OperatorAuthority } from '../operator-authority.js'
-import { createGateway, GatewayUnavailableError, GatewayError, type Gateway, type ProviderConfig } from '../operator-gateway.js'
+import { createGateway, withUsage, GatewayUnavailableError, GatewayError, type Gateway, type ProviderConfig } from '../operator-gateway.js'
 import { runRouter, runPlanner, runExplainer, type AgentContext } from '../operator-agents.js'
 import { summarizeHistory, type ConversationFacts } from '../operator-memory.js'
 
@@ -836,12 +836,30 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     const facts = await loadConversationFacts(fastify.db, params.id, params.zoneId)
     const context: AgentContext = { facts, state }
 
+    // Track the real token usage of every completion made while answering this one
+    // message, and report it alongside the active model and its context window so the
+    // console can show genuine usage rather than an estimate.
+    const tracked = withUsage(gateway)
+    const meta = () => {
+      const active = gateway.active()
+      const usage = tracked.usage()
+      return {
+        usage: {
+          input_tokens: usage.inputTokens,
+          output_tokens: usage.outputTokens,
+          total_tokens: usage.inputTokens + usage.outputTokens,
+        },
+        model: active?.model ?? null,
+        max_tokens: active?.contextWindow ?? 0,
+      }
+    }
+
     try {
-      const route = await runRouter(gateway, parsed.data.message)
+      const route = await runRouter(tracked.gateway, parsed.data.message)
       const intent = route.ok ? route.value : 'explain'
 
       if (intent === 'plan') {
-        const planned = await runPlanner(gateway, parsed.data.message, context)
+        const planned = await runPlanner(tracked.gateway, parsed.data.message, context)
         if (!planned.ok || planned.value.steps.length === 0) {
           const message = planned.ok ? 'I could not turn that into an action with the capabilities available.' : planned.error
           const turn = await appendTurnTx(
@@ -859,6 +877,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
             error: 'no_plan',
             message,
             turn: turn.ok ? turn.turn : null,
+            ...meta(),
           })
         }
 
@@ -883,6 +902,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
             error: 'plan_invalid',
             validation,
             turn: turn.ok ? turn.turn : null,
+            ...meta(),
           })
         }
 
@@ -901,13 +921,13 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
             .code(turn.reason === 'archived' ? 409 : 404)
             .send({ error: turn.reason === 'archived' ? 'conversation_archived' : 'conversation_not_found' })
         }
-        return reply.code(201).send({ intent: 'plan', ok: true, turn: turn.turn, validation, preview })
+        return reply.code(201).send({ intent: 'plan', ok: true, turn: turn.turn, validation, preview, ...meta() })
       }
 
-      const explained = await runExplainer(gateway, parsed.data.message, context)
+      const explained = await runExplainer(tracked.gateway, parsed.data.message, context)
       const text = explained.ok ? explained.value : 'I could not produce an explanation.'
       const turn = await appendTurnTx(fastify.db, params.id, params.zoneId, 'operator', 'note', JSON.stringify({ text }), req.actor.id)
-      return reply.code(201).send({ intent: 'explain', ok: explained.ok, text, turn: turn.ok ? turn.turn : null })
+      return reply.code(201).send({ intent: 'explain', ok: explained.ok, text, turn: turn.ok ? turn.turn : null, ...meta() })
     } catch (err) {
       if (err instanceof GatewayUnavailableError) return reply.code(409).send({ error: 'ai_unavailable' })
       if (err instanceof GatewayError) return reply.code(502).send({ error: 'ai_unreachable', attempts: err.attempts })

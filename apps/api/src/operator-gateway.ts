@@ -13,6 +13,10 @@ export interface ProviderConfig {
   model: string
   apiKey?: string
   timeoutMs: number
+  // The model's context window in tokens, supplied by the administrator since it is a
+  // property of the chosen model rather than the transport. Zero means unknown, in which
+  // case usage is reported as raw counts without a percentage of the window.
+  contextWindow: number
 }
 
 export interface GatewayMessage {
@@ -45,6 +49,21 @@ export interface ProviderStatus {
 export interface GatewayStatus {
   enabled: boolean
   providers: ProviderStatus[]
+}
+
+// The model that the next completion would run against, with its context window. Null
+// when no provider is configured. Drawn from the first available provider, which is the
+// one the failover order tries first.
+export interface ActiveModel {
+  model: string
+  contextWindow: number
+}
+
+// Cumulative token usage tallied by a usage-tracking gateway wrapper over the calls made
+// during a single request, so it never mixes usage across conversations.
+export interface GatewayUsage {
+  inputTokens: number
+  outputTokens: number
 }
 
 // No provider is configured, so the AI tier is off. Distinct from a call failure so
@@ -123,6 +142,7 @@ async function callProvider(
 
 export interface Gateway {
   status(): GatewayStatus
+  active(): ActiveModel | null
   complete(messages: GatewayMessage[], options?: CompletionOptions): Promise<CompletionResult>
 }
 
@@ -144,6 +164,11 @@ export function createGateway(providers: ProviderConfig[], fetchImpl: FetchImpl 
       }
     },
 
+    active() {
+      const provider = available[0]
+      return provider ? { model: provider.model, contextWindow: provider.contextWindow } : null
+    },
+
     async complete(messages, options = {}) {
       if (available.length === 0) throw new GatewayUnavailableError()
       const attempts: { provider: string; reason: string }[] = []
@@ -160,4 +185,23 @@ export function createGateway(providers: ProviderConfig[], fetchImpl: FetchImpl 
       throw new GatewayError(attempts)
     },
   }
+}
+
+// Wraps a gateway for the span of a single request so the real token usage of every
+// completion made through it is tallied. The underlying gateway is shared across
+// requests, so usage must be collected per call here rather than held on the gateway.
+export function withUsage(gateway: Gateway): { gateway: Gateway; usage: () => GatewayUsage } {
+  let inputTokens = 0
+  let outputTokens = 0
+  const tracked: Gateway = {
+    status: () => gateway.status(),
+    active: () => gateway.active(),
+    async complete(messages, options) {
+      const result = await gateway.complete(messages, options)
+      inputTokens += result.promptTokens ?? 0
+      outputTokens += result.completionTokens ?? 0
+      return result
+    },
+  }
+  return { gateway: tracked, usage: () => ({ inputTokens, outputTokens }) }
 }
