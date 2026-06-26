@@ -20,25 +20,51 @@ const DCR_MAX_LIFETIME_SECONDS = 3600
 
 const NAME_MAX_LENGTH = 200
 
-const AppBody = z.object({
-  name: z.string().min(1).max(NAME_MAX_LENGTH),
-  registration_method: z.literal('managed'),
-  traits: z.array(z.string()).optional(),
-}).strict()
+const AppBody = z
+  .object({
+    name: z.string().min(1).max(NAME_MAX_LENGTH),
+    registration_method: z.literal('managed'),
+    traits: z.array(z.string()).optional(),
+  })
+  .strict()
 
-const DCRBody = z.object({
-  name: z.string().min(1).max(NAME_MAX_LENGTH),
-  expires_in: z.number().int().positive().max(DCR_MAX_LIFETIME_SECONDS).default(DCR_DEFAULT_LIFETIME_SECONDS),
-}).strict()
+const DCRBody = z
+  .object({
+    name: z.string().min(1).max(NAME_MAX_LENGTH),
+    expires_in: z.number().int().positive().max(DCR_MAX_LIFETIME_SECONDS).default(DCR_DEFAULT_LIFETIME_SECONDS),
+  })
+  .strict()
 
-const PatchBody = z.object({
-  name: z.string().min(1).max(NAME_MAX_LENGTH).optional(),
-  client_secret: z.string().min(1).optional(),
-  traits: z.array(z.string()).optional(),
-}).strict()
+const PatchBody = z
+  .object({
+    name: z.string().min(1).max(NAME_MAX_LENGTH).optional(),
+    client_secret: z.string().min(1).optional(),
+    traits: z.array(z.string()).optional(),
+  })
+  .strict()
 
 function generateClientSecret(): string {
   return `cs_${randomBytes(32).toString('base64url')}`
+}
+
+// Registers a managed application with a freshly generated one-time client secret.
+// Shared by the applications route and the Operator executor so both register
+// applications identically; the plaintext secret is returned to the caller and
+// never persisted beyond its hash.
+export async function createManagedApplication(
+  db: { query: <T = unknown>(text: string, params?: unknown[]) => Promise<{ rows: T[] }> },
+  zoneId: string,
+  input: { name: string; traits?: string[] },
+): Promise<{ row: Record<string, unknown>; clientSecret: string }> {
+  const clientSecret = generateClientSecret()
+  const secretHash = await hashClientSecret(clientSecret)
+  const { rows } = await db.query<Record<string, unknown>>(
+    `INSERT INTO applications (id, zone_id, name, registration_method, credential_type, client_secret_hash, traits)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, zone_id, name, registration_method, expires_at, created_at`,
+    [uuidv7(), zoneId, input.name, 'managed', 'token', secretHash, input.traits ?? []],
+  )
+  return { row: rows[0], clientSecret }
 }
 
 function applicationSelect(req: FastifyRequest): string {
@@ -53,10 +79,7 @@ export const applicationsRoutes: FastifyPluginAsync = async (fastify) => {
     if (!params) return
     const page = parseListPagination(req, reply)
     if (!page) return
-    const keyset = appendKeysetCondition(
-      { conds: ['zone_id = $1', 'archived_at IS NULL'], values: [params.zoneId] },
-      page,
-    )
+    const keyset = appendKeysetCondition({ conds: ['zone_id = $1', 'archived_at IS NULL'], values: [params.zoneId] }, page)
     const { rows } = await fastify.db.query(
       `SELECT ${applicationSelect(req)}
        FROM applications WHERE ${keyset.conds.join(' AND ')}
@@ -90,16 +113,11 @@ export const applicationsRoutes: FastifyPluginAsync = async (fastify) => {
     const body = parsed.data
     const traitErr = validateTraits(body.traits, req.actor)
     if (traitErr) return reply.code(403).send(traitErr)
-    const id = uuidv7()
-    const clientSecret = generateClientSecret()
-    const secretHash = await hashClientSecret(clientSecret)
-    const { rows } = await fastify.db.query(
-      `INSERT INTO applications (id, zone_id, name, registration_method, credential_type, client_secret_hash, traits)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, zone_id, name, registration_method, expires_at, created_at`,
-      [id, params.zoneId, body.name, body.registration_method, 'token', secretHash, body.traits ?? []],
-    )
-    return reply.code(201).send({ ...rows[0], client_secret: clientSecret })
+    const { row, clientSecret } = await createManagedApplication(fastify.db, params.zoneId, {
+      name: body.name,
+      traits: body.traits,
+    })
+    return reply.code(201).send({ ...row, client_secret: clientSecret })
   })
 
   fastify.patch('/zones/:zoneId/applications/:id', async (req, reply) => {
@@ -119,11 +137,10 @@ export const applicationsRoutes: FastifyPluginAsync = async (fastify) => {
       if (!existing[0].client_secret_hash) return reply.code(400).send({ error: 'client_secret_not_configured' })
     }
     const patchedHash = body.client_secret === undefined ? undefined : await hashClientSecret(body.client_secret)
-    const update = buildPatchUpdate([params.id, params.zoneId], [
-      patchColumn('name', body.name),
-      patchColumn('client_secret_hash', patchedHash),
-      patchColumn('traits', body.traits),
-    ])
+    const update = buildPatchUpdate(
+      [params.id, params.zoneId],
+      [patchColumn('name', body.name), patchColumn('client_secret_hash', patchedHash), patchColumn('traits', body.traits)],
+    )
     if (!update) return reply.code(400).send({ error: 'no_fields' })
     const { rows } = await fastify.db.query(
       `UPDATE applications SET ${update.sets.join(', ')}
@@ -154,9 +171,7 @@ export const applicationsRoutes: FastifyPluginAsync = async (fastify) => {
         [params.zoneId, params.id],
       )
       if (unbound) {
-        await client.query(
-          `UPDATE gateway_binding_revision SET version = version + 1, updated_at = now() WHERE id = true`,
-        )
+        await client.query(`UPDATE gateway_binding_revision SET version = version + 1, updated_at = now() WHERE id = true`)
       }
       return reply.code(204).send()
     })
@@ -178,10 +193,9 @@ export const applicationsRoutes: FastifyPluginAsync = async (fastify) => {
 
     const id = uuidv7()
     return withTransaction(fastify.db, async (client) => {
-      const { rows: zones } = await client.query(
-        `SELECT dcr_enabled FROM zones WHERE id = $1 AND archived_at IS NULL FOR UPDATE`,
-        [params.zoneId],
-      )
+      const { rows: zones } = await client.query(`SELECT dcr_enabled FROM zones WHERE id = $1 AND archived_at IS NULL FOR UPDATE`, [
+        params.zoneId,
+      ])
       if (!zones[0]) throw new TxAbort(reply.code(404).send({ error: 'zone_not_found' }))
       if (!zones[0].dcr_enabled) throw new TxAbort(reply.code(403).send({ error: 'dcr_disabled' }))
       const { rows: cnt } = await client.query(

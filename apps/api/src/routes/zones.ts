@@ -15,18 +15,28 @@ import { enqueueOutbox } from '../outbox.js'
 import { STREAM_AGENTS_LIFECYCLE, STREAM_SESSIONS_REVOKE } from '../redis.js'
 import type { Actor } from '../auth.js'
 
-const ZoneCreateBody = z.object({
-  name: z.string().min(1),
-  slug: z.string().regex(/^[a-z0-9-]+$/).optional(),
-  dcr_enabled: z.boolean().optional(),
-}).strict()
+const ZoneCreateBody = z
+  .object({
+    name: z.string().min(1),
+    slug: z
+      .string()
+      .regex(/^[a-z0-9-]+$/)
+      .optional(),
+    dcr_enabled: z.boolean().optional(),
+  })
+  .strict()
 
-const ZoneUpdateBody = z.object({
-  name: z.string().min(1).optional(),
-  slug: z.string().regex(/^[a-z0-9-]+$/).optional(),
-  dcr_enabled: z.boolean().optional(),
-  dcr_shutdown: z.enum(['keep_live', 'revoke_live']).optional(),
-}).strict()
+const ZoneUpdateBody = z
+  .object({
+    name: z.string().min(1).optional(),
+    slug: z
+      .string()
+      .regex(/^[a-z0-9-]+$/)
+      .optional(),
+    dcr_enabled: z.boolean().optional(),
+    dcr_shutdown: z.enum(['keep_live', 'revoke_live']).optional(),
+  })
+  .strict()
 
 type ZoneUpdateBody = z.infer<typeof ZoneUpdateBody>
 
@@ -70,14 +80,16 @@ function isDcrShutdownInfrastructureError(err: unknown): boolean {
 }
 
 function slugify(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'zone'
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'zone'
+  )
 }
 
 async function zoneSlugExists(client: Queryable, slug: string): Promise<boolean> {
-  const { rows } = await client.query(
-    `SELECT 1 FROM zones WHERE slug = $1`,
-    [slug],
-  )
+  const { rows } = await client.query(`SELECT 1 FROM zones WHERE slug = $1`, [slug])
   return rows.length > 0
 }
 
@@ -90,14 +102,26 @@ async function nextZoneSlug(client: Queryable, name: string): Promise<string> {
   return `${base}-${uuidv7().replace(/-/g, '')}`
 }
 
+// Creates a zone row, allocating a unique slug when one is not supplied. Shared by
+// the zones route and the Operator executor so both create zones identically.
+export async function createZoneRecord(db: Queryable, input: { name: string; slug?: string; dcrEnabled?: boolean }): Promise<ZoneRow> {
+  const { rows } = await db.query<ZoneRow>(
+    `INSERT INTO zones (id, name, slug, dek_ciphertext, dcr_enabled)
+     VALUES ($1, $2, $3, gen_random_bytes(32), $4)
+     RETURNING id, name, slug, dcr_enabled, created_at, updated_at`,
+    [uuidv7(), input.name, input.slug ?? (await nextZoneSlug(db, input.name)), input.dcrEnabled ?? false],
+  )
+  return rows[0]
+}
+
 function isZoneSlugConflict(err: unknown): boolean {
   return Boolean(
-    err
-    && typeof err === 'object'
-    && 'code' in err
-    && (err as { code?: unknown }).code === '23505'
-    && 'constraint' in err
-    && (err as { constraint?: unknown }).constraint === ZONE_SLUG_UNIQUE_CONSTRAINT,
+    err &&
+    typeof err === 'object' &&
+    'code' in err &&
+    (err as { code?: unknown }).code === '23505' &&
+    'constraint' in err &&
+    (err as { constraint?: unknown }).constraint === ZONE_SLUG_UNIQUE_CONSTRAINT,
   )
 }
 
@@ -175,17 +199,18 @@ async function revokeDcrIdentities(
   )
 
   const agentIds = agents.map((row) => row.id)
-  const { rows: delegations } = agentIds.length > 0
-    ? await client.query<RevokedDelegation>(
-      `UPDATE delegation_edges
+  const { rows: delegations } =
+    agentIds.length > 0
+      ? await client.query<RevokedDelegation>(
+          `UPDATE delegation_edges
        SET status = 'revoked', revoked_at = now(), edge_version = edge_version + 1, updated_at = now()
        WHERE zone_id = $1
          AND status = 'active'
          AND (source_session_id = ANY($2::text[]) OR target_session_id = ANY($2::text[]))
        RETURNING id`,
-      [zoneId, agentIds],
-    )
-    : { rows: [] as RevokedDelegation[] }
+          [zoneId, agentIds],
+        )
+      : { rows: [] as RevokedDelegation[] }
 
   for (const row of sessions) {
     await enqueueOutbox(client, {
@@ -256,11 +281,10 @@ async function auditDcrShutdown(
 }
 
 async function patchZone(client: Queryable, id: string, body: ZoneUpdateBody): Promise<ZoneRow | null | undefined> {
-  const update = buildPatchUpdate([id], [
-    patchColumn('name', body.name),
-    patchColumn('slug', body.slug),
-    patchColumn('dcr_enabled', body.dcr_enabled),
-  ])
+  const update = buildPatchUpdate(
+    [id],
+    [patchColumn('name', body.name), patchColumn('slug', body.slug), patchColumn('dcr_enabled', body.dcr_enabled)],
+  )
   if (!update) return undefined
   const { rows } = await client.query<ZoneRow>(
     `UPDATE zones SET ${update.sets.join(', ')}, updated_at = now()
@@ -290,20 +314,13 @@ export const zonesRoutes: FastifyPluginAsync = async (fastify) => {
     const parsed = ZoneCreateBody.safeParse(req.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_zone' })
     const body = parsed.data
-    const id = uuidv7()
     try {
-      const { rows } = await fastify.db.query(
-        `INSERT INTO zones (id, name, slug, dek_ciphertext, dcr_enabled)
-         VALUES ($1, $2, $3, gen_random_bytes(32), $4)
-         RETURNING id, name, slug, dcr_enabled, created_at, updated_at`,
-        [
-          id,
-          body.name,
-          body.slug ?? await nextZoneSlug(fastify.db, body.name),
-          body.dcr_enabled ?? false,
-        ],
-      )
-      return reply.code(201).send(rows[0])
+      const row = await createZoneRecord(fastify.db, {
+        name: body.name,
+        slug: body.slug,
+        dcrEnabled: body.dcr_enabled,
+      })
+      return reply.code(201).send(row)
     } catch (err) {
       if (isZoneSlugConflict(err)) return reply.code(409).send({ error: 'zone_slug_conflict' })
       throw err
@@ -358,11 +375,10 @@ export const zonesRoutes: FastifyPluginAsync = async (fastify) => {
       return row
     }
 
-    const update = buildPatchUpdate([params.id], [
-      patchColumn('name', body.name),
-      patchColumn('slug', body.slug),
-      patchColumn('dcr_enabled', body.dcr_enabled),
-    ])
+    const update = buildPatchUpdate(
+      [params.id],
+      [patchColumn('name', body.name), patchColumn('slug', body.slug), patchColumn('dcr_enabled', body.dcr_enabled)],
+    )
     if (!update) return reply.code(400).send({ error: 'no_fields' })
     try {
       return await withTransaction(fastify.db, async (client) => {
@@ -372,9 +388,7 @@ export const zonesRoutes: FastifyPluginAsync = async (fastify) => {
         )
         if (!zones[0]) throw new TxAbort(reply.code(404).send({ error: 'zone_not_found' }))
 
-        const apps = zones[0].dcr_enabled || body.dcr_shutdown
-          ? await liveDcrApplications(client, params.id, true)
-          : []
+        const apps = zones[0].dcr_enabled || body.dcr_shutdown ? await liveDcrApplications(client, params.id, true) : []
         if (apps.length > 0 && !body.dcr_shutdown) {
           throw new TxAbort(reply.code(409).send({ error: 'dcr_shutdown_required', live_dcr_applications: apps.length }))
         }
@@ -385,16 +399,22 @@ export const zonesRoutes: FastifyPluginAsync = async (fastify) => {
            RETURNING id, name, slug, dcr_enabled, created_at, updated_at`,
           update.values,
         )
-        const shutdown = body.dcr_shutdown === 'revoke_live'
-          ? await revokeDcrIdentities(client, params.id, apps.map((app) => app.id), req.id)
-          : { applications: 0, sessions: 0, agents: 0, delegations: 0 }
+        const shutdown =
+          body.dcr_shutdown === 'revoke_live'
+            ? await revokeDcrIdentities(
+                client,
+                params.id,
+                apps.map((app) => app.id),
+                req.id,
+              )
+            : { applications: 0, sessions: 0, agents: 0, delegations: 0 }
         if (zones[0].dcr_enabled || body.dcr_shutdown) {
           await auditDcrShutdown(
             client,
             req.actor ?? null,
             req.id,
             params.id,
-            apps.length === 0 ? 'no_live' : body.dcr_shutdown ?? 'keep_live',
+            apps.length === 0 ? 'no_live' : (body.dcr_shutdown ?? 'keep_live'),
             { live: apps.length, ...shutdown },
           )
         }
