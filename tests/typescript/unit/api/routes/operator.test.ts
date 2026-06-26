@@ -15,7 +15,7 @@ function buildApp(
   authorityOpts: {
     allowedCapabilities?: string[]
     systemZones?: string[]
-    aiProviders?: { id: string; baseUrl: string; model: string; apiKey?: string; timeoutMs: number }[]
+    aiProviders?: { id: string; baseUrl: string; model: string; apiKey?: string; timeoutMs: number; contextWindow: number }[]
     fetchImpl?: typeof fetch
   } = {},
 ) {
@@ -956,7 +956,14 @@ describe('operator AI gateway routes', () => {
       headers: { 'content-type': 'application/json' },
     })
   }
-  const provider = { id: 'primary', baseUrl: 'https://api.example.com/v1', model: 'gpt-x', apiKey: 'sk-secret', timeoutMs: 1000 }
+  const provider = {
+    id: 'primary',
+    baseUrl: 'https://api.example.com/v1',
+    model: 'gpt-x',
+    apiKey: 'sk-secret',
+    timeoutMs: 1000,
+    contextWindow: 0,
+  }
 
   it('reports a disabled AI tier with no providers', async () => {
     const { app } = buildApp(true)
@@ -1016,7 +1023,7 @@ describe('operator AI gateway routes', () => {
 })
 
 describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
-  const provider = { id: 'primary', baseUrl: 'https://api.example.com/v1', model: 'gpt-x', apiKey: 'sk', timeoutMs: 1000 }
+  const provider = { id: 'primary', baseUrl: 'https://api.example.com/v1', model: 'gpt-x', apiKey: 'sk', timeoutMs: 1000, contextWindow: 0 }
 
   // A fetch that returns the given assistant message contents in sequence, so the
   // agents' model calls are scripted without a live backend.
@@ -1173,6 +1180,58 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     const body = JSON.parse(res.body)
     expect(body).toMatchObject({ intent: 'explain', ok: true })
     expect(body.text).toContain('scope is missing')
+  })
+
+  it('reports real token usage, model, and context window with the answer', async () => {
+    const usageProvider = { ...provider, contextWindow: 128000 }
+    function fetchWithUsage(...turns: { content: string; prompt: number; completion: number }[]) {
+      const fn = vi.fn()
+      for (const turn of turns) {
+        fn.mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              choices: [{ message: { content: turn.content } }],
+              usage: { prompt_tokens: turn.prompt, completion_tokens: turn.completion },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        )
+      }
+      return fn as unknown as typeof fetch
+    }
+    const fetchImpl = fetchWithUsage(
+      { content: '{"intent":"explain"}', prompt: 120, completion: 4 },
+      { content: 'Because the scope was missing.', prompt: 400, completion: 60 },
+    )
+    const { app, clientQuery, db } = buildApp(true, { aiProviders: [usageProvider], fetchImpl })
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', next_seq: 1 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-1', seq: 1 }] })
+      .mockResolvedValueOnce(undefined)
+    db.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', next_seq: 2 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-2', seq: 2, kind: 'note' }] })
+      .mockResolvedValueOnce(undefined)
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'why was my agent denied' },
+    })
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body)
+    expect(body.model).toBe('gpt-x')
+    expect(body.max_tokens).toBe(128000)
+    expect(body.usage).toEqual({ input_tokens: 520, output_tokens: 64, total_tokens: 584 })
   })
 
   it('returns 502 ai_unreachable when the model call fails', async () => {

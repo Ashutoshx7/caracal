@@ -4,10 +4,16 @@
 // Unit tests for the Operator LLM gateway: provider selection, failover, timeout, and key redaction.
 
 import { describe, it, expect, vi } from 'vitest'
-import { createGateway, GatewayUnavailableError, GatewayError, type ProviderConfig } from '../../../../apps/api/src/operator-gateway.js'
+import {
+  createGateway,
+  withUsage,
+  GatewayUnavailableError,
+  GatewayError,
+  type ProviderConfig,
+} from '../../../../apps/api/src/operator-gateway.js'
 
 function provider(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
-  return { id: 'p1', baseUrl: 'https://api.example.com/v1', model: 'gpt-x', timeoutMs: 1000, ...overrides }
+  return { id: 'p1', baseUrl: 'https://api.example.com/v1', model: 'gpt-x', timeoutMs: 1000, contextWindow: 0, ...overrides }
 }
 
 function chatResponse(content: string, usage?: { prompt_tokens: number; completion_tokens: number }): Response {
@@ -115,5 +121,42 @@ describe('gateway complete', () => {
     const gateway = createGateway([provider({ id: 'slow', timeoutMs: 10 }), provider({ id: 'fast' })], fetchMock as unknown as typeof fetch)
     const result = await gateway.complete([{ role: 'user', content: 'ping' }])
     expect(result.provider).toBe('fast')
+  })
+})
+
+describe('gateway active model', () => {
+  it('reports no active model when no provider is configured', () => {
+    expect(createGateway([]).active()).toBeNull()
+  })
+
+  it('reports the first available provider model and its context window', () => {
+    const gateway = createGateway([
+      provider({ id: 'broken', baseUrl: '' }),
+      provider({ id: 'primary', model: 'gpt-x', contextWindow: 128000 }),
+    ])
+    expect(gateway.active()).toEqual({ model: 'gpt-x', contextWindow: 128000 })
+  })
+})
+
+describe('withUsage', () => {
+  it('tallies real prompt and completion tokens across calls', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(chatResponse('one', { prompt_tokens: 100, completion_tokens: 20 }))
+      .mockResolvedValueOnce(chatResponse('two', { prompt_tokens: 30, completion_tokens: 5 }))
+    const base = createGateway([provider()], fetchMock as unknown as typeof fetch)
+    const { gateway, usage } = withUsage(base)
+
+    expect(usage()).toEqual({ inputTokens: 0, outputTokens: 0 })
+    await gateway.complete([{ role: 'user', content: 'a' }])
+    await gateway.complete([{ role: 'user', content: 'b' }])
+    expect(usage()).toEqual({ inputTokens: 130, outputTokens: 25 })
+  })
+
+  it('treats missing usage as zero without throwing', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(chatResponse('no usage'))
+    const { gateway, usage } = withUsage(createGateway([provider()], fetchMock as unknown as typeof fetch))
+    await gateway.complete([{ role: 'user', content: 'a' }])
+    expect(usage()).toEqual({ inputTokens: 0, outputTokens: 0 })
   })
 })

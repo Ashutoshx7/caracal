@@ -226,15 +226,17 @@ describe('api config trustProxy', () => {
     process.env.API_OPERATOR_AI_OPENAI_API_KEY = 'sk-test'
     process.env.API_OPERATOR_AI_LOCAL_BASE_URL = 'http://localhost:11434/v1'
     process.env.API_OPERATOR_AI_LOCAL_MODEL = 'llama3'
+    process.env.API_OPERATOR_AI_OPENAI_CONTEXT_WINDOW = '128000'
     const providers = loadConfig().operatorAiProviders
     expect(providers).toEqual([
-      { id: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: 'sk-test', timeoutMs: 30000 },
-      { id: 'local', baseUrl: 'http://localhost:11434/v1', model: 'llama3', apiKey: undefined, timeoutMs: 30000 },
+      { id: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: 'sk-test', timeoutMs: 30000, contextWindow: 128000 },
+      { id: 'local', baseUrl: 'http://localhost:11434/v1', model: 'llama3', apiKey: undefined, timeoutMs: 30000, contextWindow: 0 },
     ])
     delete process.env.API_OPERATOR_AI_PROVIDERS
     delete process.env.API_OPERATOR_AI_OPENAI_BASE_URL
     delete process.env.API_OPERATOR_AI_OPENAI_MODEL
     delete process.env.API_OPERATOR_AI_OPENAI_API_KEY
+    delete process.env.API_OPERATOR_AI_OPENAI_CONTEXT_WINDOW
     delete process.env.API_OPERATOR_AI_LOCAL_BASE_URL
     delete process.env.API_OPERATOR_AI_LOCAL_MODEL
   })
