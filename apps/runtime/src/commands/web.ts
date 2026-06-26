@@ -11,12 +11,21 @@ import { printError, printInfo, printWarn, style } from '../style.ts'
 import { devAuthDatabaseUrl, devAuthSecret } from './authStore.ts'
 import { killTree, resolvePnpm, spawnSyncTree, spawnTree } from '../processTree.ts'
 
-// The development launcher runs alongside a live stack (`caracal up`), whose packaged
-// web container already publishes host port 3001. Defaulting the dev UI to 3011 keeps the
-// two consoles on distinct ports so the Vite server never contends with the container for
-// 3001. The backend-for-frontend stays on 3002, which the packaged stack does not publish.
-const DEFAULT_WEB_PORT = 3011
+// The development launcher serves the console on the same host port as the packaged stack
+// (3001), taking the role over from `caracal up`'s packaged web container while it runs (it stops
+// that container on launch and leaves it stopped on exit). The backend-for-frontend stays on 3002,
+// which the packaged stack does not publish, so only the single console port is ever reconciled.
+const DEFAULT_WEB_PORT = 3001
 const DEFAULT_AUTH_PORT = 3002
+// `caracal up` publishes the packaged web console on this host port. When the development
+// launcher binds the same port it stops this service first so the two never contend for it.
+const PACKAGED_WEB_PORT = 3001
+// The compose service name of the packaged web console. Stopping just this service frees the
+// shared console port without disturbing the API, Coordinator, or any other stack service.
+const PACKAGED_WEB_SERVICE = 'web'
+// The dev stack's compose file, relative to the repo root. Its baked-in `name:` selects the
+// running project, so the web service is resolved from the same containers `caracal up` launched.
+const DEV_COMPOSE_FILE = join('infra', 'docker', 'docker-compose.yml')
 // The web console is a control-plane surface: its backend-for-frontend only proxies
 // the local stack started by `caracal up`. Mirror the BFF's own service-URL defaults
 // so the launcher gates on the same endpoints the running console will use.
@@ -64,6 +73,24 @@ async function serviceUp(base: string): Promise<boolean> {
     }
   }
   return false
+}
+
+// Resolve the id of the running packaged web console container for the dev compose project, or
+// undefined when none is running (the operator never ran `caracal up`, or already stopped it).
+function runningWebContainerId(root: string): string | undefined {
+  const result = spawnSyncTree('docker', ['compose', '-f', join(root, DEV_COMPOSE_FILE), 'ps', '-q', PACKAGED_WEB_SERVICE], {
+    encoding: 'utf8',
+  })
+  if (result.status !== 0 || typeof result.stdout !== 'string') return undefined
+  const id = result.stdout.trim().split('\n')[0]?.trim()
+  return id && id.length > 0 ? id : undefined
+}
+
+// Stop a specific container by id. Operating on the resolved container directly avoids compose's
+// dependency-graph validation, which fails once the stack's one-shot init containers are gone.
+function stopContainer(id: string): boolean {
+  const result = spawnSyncTree('docker', ['stop', id], { stdio: 'ignore' })
+  return result.status === 0
 }
 
 function repoRoot(): string | undefined {
@@ -240,15 +267,16 @@ function printWebUsage(): void {
     'backend-for-frontend, which proxies the admin API without exposing credentials.',
     '',
     style.header('Options'),
-    '  --web-port <port>    Port for the web UI (default 3011)',
+    '  --web-port <port>    Port for the web UI (default 3001)',
     '  --auth-port <port>   Port for the backend-for-frontend (default 3002)',
     '  --build              Serve the production build instead of the dev server',
     '  --allow-offline      Launch even if the stack is not running (UI/sign-in only)',
     '  -h, --help           Show help',
     '',
     'The web console proxies the local control plane started by `caracal up`.',
-    'Without a running stack it cannot manage zones, applications, policies, or agents;',
-    'run `caracal up` first, or pass --allow-offline to launch the UI on its own.',
+    'It serves on the same port as the packaged console (3001); while it runs it stops the',
+    'packaged web container so the two never contend for the port. The container stays stopped',
+    'after you quit, so run `caracal up` to bring the packaged console back.',
     '',
   ]
   process.stdout.write(lines.join('\n') + '\n')
@@ -261,11 +289,12 @@ export async function webCommand(argv: string[]): Promise<void> {
     process.exit(0)
   }
 
-  const root = repoRoot()
-  if (!root || !webInterfaceAvailable()) {
+  const repoRootDir = repoRoot()
+  if (!repoRootDir || !webInterfaceAvailable()) {
     printError('web: the web console is only available inside the Caracal workspace.')
     process.exit(127)
   }
+  const root: string = repoRootDir
 
   // The web console is only useful against a running control plane. Refuse to launch
   // when the stack is down so operators get a clear pointer to `caracal up` instead of
@@ -321,6 +350,9 @@ export async function webCommand(argv: string[]): Promise<void> {
 
   const children: ChildProcess[] = []
   let shuttingDown = false
+  // Set when this launcher stopped the packaged web container to claim the shared console port,
+  // so shutdown can tell the operator how to bring the packaged console back.
+  let stoppedPackagedWeb = false
   const FORCE_KILL_MS = 5000
 
   type Role = 'backend' | 'web'
@@ -361,7 +393,6 @@ export async function webCommand(argv: string[]): Promise<void> {
     restoreStdin()
 
     const alive = children.filter((child) => child.exitCode === null && child.signalCode === null)
-    if (alive.length === 0) process.exit(code)
 
     // Wait for every service to actually exit before leaving, so a single Ctrl+C
     // never returns the prompt while a server is still holding a port or the DB.
@@ -374,6 +405,12 @@ export async function webCommand(argv: string[]): Promise<void> {
 
     await Promise.all(exits)
     clearTimeout(force)
+    // A clean stop leaves nothing serving on the shared console port: the packaged container the
+    // launcher paused stays stopped so the operator's Ctrl+C fully tears the console down. Point
+    // them at `caracal up` to bring the packaged console back when they want it.
+    if (stoppedPackagedWeb) {
+      printInfo('Console stopped. The packaged web console stays stopped; run `caracal up` to bring it back on port 3001.')
+    }
     process.exit(code)
   }
 
@@ -459,6 +496,22 @@ export async function webCommand(argv: string[]): Promise<void> {
     })
   }
 
+  // The development console binds the same host port (3001) as the packaged web container. They
+  // cannot share it, and they proxy the same stack, so stop the packaged console first and claim
+  // the port for this session. It stays stopped after shutdown so Ctrl+C fully tears the console
+  // down. Offline launches never touch the stack, and a custom --web-port leaves it alone.
+  if (!parsed.allowOffline && parsed.webPort === PACKAGED_WEB_PORT) {
+    const running = runningWebContainerId(root)
+    if (running) {
+      printInfo(`Stopping the packaged web console to serve the development console on port ${parsed.webPort}…`)
+      if (stopContainer(running)) {
+        stoppedPackagedWeb = true
+      } else {
+        printWarn(`Could not stop the packaged web console; port ${parsed.webPort} may be in use. Stop it with \`caracal up\` controls or pass --web-port.`)
+      }
+    }
+  }
+
   spawnRole('backend')
   spawnRole('web')
 
@@ -469,6 +522,9 @@ export async function webCommand(argv: string[]): Promise<void> {
       `  ${style.label('Web UI')}    ${webOrigin}`,
       `  ${style.label('Backend')}   ${authUrl}  (session-guarded; proxies the admin API)`,
       `  ${style.label('Mode')}      ${parsed.build ? 'production build' : 'development'}`,
+      ...(stoppedPackagedWeb
+        ? [`  ${style.label('Note')}      Packaged web console stopped to free port ${parsed.webPort}; run \`caracal up\` to restore it later.`]
+        : []),
       '',
       `  ${style.label('r')} restart both   ${style.label('f')} restart frontend   ${style.label('b')} restart backend`,
       `  ${style.label('q')} or ${style.label('Ctrl+C')} to stop`,

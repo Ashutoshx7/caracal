@@ -27,7 +27,7 @@
 - Must link email, Google, and GitHub identities for one operator through account linking.
 
 ## Forbidden
-- Must not reuse open-source ports 3000, 3001, 3011, 4000, 5432, 6379, 8080, 8081, 8087, or 9090.
+- Must not reuse open-source ports 3000, 3001, 4000, 5432, 6379, 8080, 8081, 8087, or 9090.
 - Must not import or copy source from `caracalEnterprise/`.
 - Must not implement Caracal authority or policy logic.
 
