@@ -7,6 +7,7 @@ This file provides the standard header frame for Console module pages.
 import type { ReactNode } from "react";
 
 import { Breadcrumbs, Tooltip, type Crumb } from "@/components/ui";
+import { cx } from "@/lib/cx";
 
 export function ModulePage({
   title,
@@ -14,12 +15,14 @@ export function ModulePage({
   actions,
   breadcrumbs,
   children,
+  fill = false,
 }: {
   title: string;
   description?: string;
   actions?: ReactNode;
   breadcrumbs?: Crumb[];
   children: ReactNode;
+  fill?: boolean;
 }) {
   const crumbs: Crumb[] =
     breadcrumbs && breadcrumbs.length > 0
@@ -27,8 +30,8 @@ export function ModulePage({
       : [{ label: "Console", to: "/app" }, { label: title }];
 
   return (
-    <div className="animate-fade-in">
-      <div className="mb-6 flex items-center justify-between gap-3">
+    <div className={cx("animate-fade-in", fill && "flex min-h-0 flex-1 flex-col")}>
+      <div className={cx("mb-6 flex items-center justify-between gap-3", fill && "flex-shrink-0")}>
         <div className="flex min-w-0 items-center">
           <Breadcrumbs items={crumbs} />
         </div>
@@ -60,7 +63,7 @@ export function ModulePage({
           ) : null}
         </div>
       </div>
-      {children}
+      {fill ? <div className="flex min-h-0 flex-1 flex-col">{children}</div> : children}
     </div>
   );
 }

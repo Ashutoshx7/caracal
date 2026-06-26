@@ -20,7 +20,7 @@ const ISSUE_LINK = "https://github.com/Garudex-Labs/caracal/issues/new/choose";
 
 type OpenPanel = "contact" | "customize" | null;
 
-export function UtilityRail() {
+export function UtilityRail({ className }: { className?: string }) {
   const [open, setOpen] = useState<OpenPanel>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const theme = useTheme();
@@ -45,7 +45,10 @@ export function UtilityRail() {
   return (
     <aside
       ref={rootRef}
-      className="hidden w-12 flex-shrink-0 flex-col items-center border-l border-border md:flex"
+      className={cx(
+        "hidden w-12 flex-shrink-0 flex-col items-center border-l border-border md:flex",
+        className,
+      )}
     >
       <div className="flex h-14 w-full flex-shrink-0 items-center justify-center border-b border-border">
         <RailButton

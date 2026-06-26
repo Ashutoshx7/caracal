@@ -27,6 +27,11 @@ function readCollapsed(): boolean {
 export function ConsoleLayout() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
+  // Full-height workspace routes (the Operator) fill the content region exactly so the
+  // navbar frames them from above and the utility rail from the side, matching how the
+  // left sidebar bounds the rest of the console. Other routes keep the scrolling main.
+  const flush = pathname === "/app/ai";
+
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -85,7 +90,12 @@ export function ConsoleLayout() {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex h-14 flex-shrink-0 items-center justify-between gap-3 border-b border-border bg-background/95 px-4 backdrop-blur">
+        <header
+          className={cx(
+            "sticky top-0 z-20 flex h-14 flex-shrink-0 items-center justify-between gap-3 border-b border-border bg-background/95 px-4 backdrop-blur",
+            flush && "lg:hidden",
+          )}
+        >
           <button
             onClick={() => setMobileOpen(true)}
             aria-label="Open navigation"
@@ -114,14 +124,19 @@ export function ConsoleLayout() {
           </div>
         </header>
 
-        <main className="scrollbar-thin min-w-0 flex-1 overflow-y-auto px-5 py-6 md:px-8">
-          <div className="w-full">
+        <main
+          className={cx(
+            "scrollbar-thin min-w-0 flex-1 px-5 py-6 md:px-8",
+            flush ? "flex flex-col overflow-hidden" : "overflow-y-auto",
+          )}
+        >
+          <div className={cx("w-full", flush && "flex min-h-0 flex-1 flex-col")}>
             <Outlet />
           </div>
         </main>
       </div>
 
-      <UtilityRail />
+      <UtilityRail className={flush ? "lg:hidden" : undefined} />
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <GuidedSetup />

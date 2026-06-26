@@ -124,12 +124,16 @@ export function useOperatorCapabilities() {
   });
 }
 
-export function useOperatorConversations(zoneId: string | null, q?: string) {
+export function useOperatorConversations(
+  zoneId: string | null,
+  q?: string,
+  status: "active" | "archived" | "all" = "active",
+) {
   const term = q?.trim() || undefined;
   return useQuery({
-    queryKey: [...keys.operatorConversations(zoneId), term ?? ""],
+    queryKey: [...keys.operatorConversations(zoneId), term ?? "", status],
     queryFn: ({ signal }) =>
-      consoleApi.operator.conversations.list(zoneId as string, { q: term, signal }),
+      consoleApi.operator.conversations.list(zoneId as string, { q: term, status, signal }),
     enabled: !!zoneId,
   });
 }
@@ -139,6 +143,39 @@ export function useCreateOperatorConversation(zoneId: string | null) {
   return useMutation({
     mutationFn: (title: string) =>
       consoleApi.operator.conversations.create(zoneId as string, title),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.operatorConversations(zoneId) }),
+  });
+}
+
+export function useRenameOperatorConversation(zoneId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; title: string }) =>
+      consoleApi.operator.conversations.rename(zoneId as string, input.id, input.title),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.operatorConversations(zoneId) }),
+  });
+}
+
+export function useArchiveOperatorConversation(zoneId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => consoleApi.operator.conversations.archive(zoneId as string, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.operatorConversations(zoneId) }),
+  });
+}
+
+export function useRestoreOperatorConversation(zoneId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => consoleApi.operator.conversations.restore(zoneId as string, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.operatorConversations(zoneId) }),
+  });
+}
+
+export function useDeleteOperatorConversation(zoneId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => consoleApi.operator.conversations.delete(zoneId as string, id),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.operatorConversations(zoneId) }),
   });
 }
@@ -180,8 +217,13 @@ function invalidateConversation(
 export function useSendOperatorMessage(zoneId: string | null, conversationId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (message: string) =>
-      consoleApi.operator.sendMessage(zoneId as string, conversationId as string, message),
+    mutationFn: (input: { message: string; provider?: string }) =>
+      consoleApi.operator.sendMessage(
+        zoneId as string,
+        conversationId as string,
+        input.message,
+        input.provider,
+      ),
     onSuccess: () => invalidateConversation(qc, zoneId, conversationId),
   });
 }
