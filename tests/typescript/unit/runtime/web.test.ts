@@ -43,7 +43,14 @@ describe('webCommand stack preflight', () => {
     }) as never)
     // A child handle that never resolves; the launcher only spawns when it proceeds.
     spawnMock.mockReturnValue({ on: vi.fn(), kill: vi.fn() })
-    spawnSyncMock.mockReturnValue({ status: 0, stdout: '/usr/bin/pnpm\n' })
+    // Default synchronous spawns: `docker compose ps web` resolves a running container id (so the
+    // launcher exercises the yield path), every other call (pnpm, docker stop/start) succeeds.
+    spawnSyncMock.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'docker' && Array.isArray(args) && args.includes('ps')) {
+        return { status: 0, stdout: 'webcontainerid\n' }
+      }
+      return { status: 0, stdout: '/usr/bin/pnpm\n' }
+    })
     fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
   })
@@ -83,6 +90,43 @@ describe('webCommand stack preflight', () => {
       expect(call[2]).toMatchObject({ detached: true })
     }
     expect(output()).toContain('Caracal web console')
+  })
+
+  it('stops the packaged web container and takes over the port when one is running', async () => {
+    // The stack is up and a packaged web container is running; the launcher must stop that
+    // container so the development console can bind 3001, and say so in the banner.
+    fetchMock.mockResolvedValue({ ok: true } as Response)
+
+    await webCommand([])
+
+    const resolvedWeb = spawnSyncMock.mock.calls.find(
+      (call) => call[0] === 'docker' && Array.isArray(call[1]) && call[1].includes('ps') && call[1].includes('web'),
+    )
+    const stoppedContainer = spawnSyncMock.mock.calls.find(
+      (call) => call[0] === 'docker' && Array.isArray(call[1]) && call[1][0] === 'stop',
+    )
+    expect(resolvedWeb).toBeDefined()
+    expect(stoppedContainer).toBeDefined()
+    expect(output()).toContain('Packaged web console stopped to free port 3001')
+  })
+
+  it('does not stop anything when no packaged web container is running', async () => {
+    fetchMock.mockResolvedValue({ ok: true } as Response)
+    // `docker compose ps web` resolves no container, so there is nothing to yield.
+    spawnSyncMock.mockImplementation((cmd: string, args: string[]) => {
+      if (cmd === 'docker' && Array.isArray(args) && args.includes('ps')) {
+        return { status: 0, stdout: '\n' }
+      }
+      return { status: 0, stdout: '/usr/bin/pnpm\n' }
+    })
+
+    await webCommand([])
+
+    const stoppedContainer = spawnSyncMock.mock.calls.find(
+      (call) => call[0] === 'docker' && Array.isArray(call[1]) && call[1][0] === 'stop',
+    )
+    expect(stoppedContainer).toBeUndefined()
+    expect(output()).not.toContain('Packaged web console stopped')
   })
 
   it('warns but still launches when only the Coordinator is down', async () => {
