@@ -67,6 +67,28 @@ export async function createManagedApplication(
   return { row: rows[0], clientSecret }
 }
 
+// Issues a fresh client secret for an existing managed application and retires the old
+// one. Shared by the applications route and the Operator executor so a rotation behaves
+// identically however it is initiated; the new plaintext secret is returned to the caller
+// and never persisted beyond its hash. Returns null when the application does not exist.
+export async function rotateApplicationClientSecret(
+  db: { query: <T = unknown>(text: string, params?: unknown[]) => Promise<{ rows: T[] }> },
+  zoneId: string,
+  applicationId: string,
+): Promise<{ row: Record<string, unknown>; clientSecret: string } | null> {
+  const clientSecret = generateClientSecret()
+  const secretHash = await hashClientSecret(clientSecret)
+  const { rows } = await db.query<Record<string, unknown>>(
+    `UPDATE applications
+        SET client_secret_hash = $3
+      WHERE id = $1 AND zone_id = $2 AND archived_at IS NULL
+      RETURNING id, zone_id, name, registration_method, expires_at, created_at`,
+    [applicationId, zoneId, secretHash],
+  )
+  if (!rows[0]) return null
+  return { row: rows[0], clientSecret }
+}
+
 function applicationSelect(req: FastifyRequest): string {
   return req.actor?.scope === 'global'
     ? 'id, zone_id, name, registration_method, traits, expires_at, created_at'

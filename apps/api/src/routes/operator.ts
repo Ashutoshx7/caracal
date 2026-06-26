@@ -778,6 +778,20 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
           throw new TxAbort(reply.code(409).send({ error: 'plan_blocked', preview }))
         }
 
+        // A create step whose target now already exists would duplicate it, so the plan
+        // is refused rather than applied. This closes the window between preview and
+        // approval: the object may have been created in the meantime, and re-running the
+        // plan must never silently create a second one.
+        const existing = preview.steps.filter((step) => step.effect === 'exists')
+        if (existing.length > 0) {
+          throw new TxAbort(
+            reply.code(409).send({
+              error: 'plan_already_satisfied',
+              steps: existing.map((step) => ({ step_id: step.id, capability: step.capability, detail: step.detail })),
+            }),
+          )
+        }
+
         const applied = await applyPlanSteps(client, params.zoneId, steps)
 
         let seq = conv[0].next_seq

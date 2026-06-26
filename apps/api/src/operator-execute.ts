@@ -5,7 +5,8 @@
 
 import type { TxClient } from './db.js'
 import { createZoneRecord } from './routes/zones.js'
-import { createManagedApplication } from './routes/applications.js'
+import { createManagedApplication, rotateApplicationClientSecret } from './routes/applications.js'
+import { createDelegatedGrant } from './routes/grants.js'
 
 // The outcome of applying one step. detail is ledger-safe (never a secret); output
 // carries any one-time material that must reach the caller in the HTTP response only
@@ -20,20 +21,111 @@ export interface StepOutcome {
 // functions the manual routes use, so the Operator can do nothing a route cannot.
 type CapabilityHandler = (client: TxClient, zoneId: string, args: Record<string, unknown>) => Promise<StepOutcome>
 
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value : String(value)
+}
+
+function asScopes(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(asString) : []
+}
+
 const HANDLERS: Record<string, CapabilityHandler> = {
+  // Read capabilities resolve real control-plane state and return it as step output, so
+  // the Operator can answer "what do I have" with live data rather than prose.
+  listZones: async (client) => {
+    const { rows } = await client.query<{ id: string; name: string; slug: string }>(
+      `SELECT id, name, slug FROM zones ORDER BY created_at DESC, id DESC LIMIT 200`,
+    )
+    return { detail: `Found ${rows.length} zone${rows.length === 1 ? '' : 's'}.`, output: { zones: rows } }
+  },
+  listApplications: async (client, zoneId) => {
+    const { rows } = await client.query<{ id: string; name: string }>(
+      `SELECT id, name FROM applications
+        WHERE zone_id = $1 AND archived_at IS NULL
+        ORDER BY created_at DESC, id DESC LIMIT 200`,
+      [zoneId],
+    )
+    return {
+      detail: `Found ${rows.length} application${rows.length === 1 ? '' : 's'} in this zone.`,
+      output: { applications: rows },
+    }
+  },
+  listProviders: async (client, zoneId) => {
+    const { rows } = await client.query<{ id: string; name: string; provider_kind: string }>(
+      `SELECT id, name, provider_kind FROM providers
+        WHERE zone_id = $1 AND archived_at IS NULL
+        ORDER BY created_at DESC, id DESC LIMIT 200`,
+      [zoneId],
+    )
+    return {
+      detail: `Found ${rows.length} provider${rows.length === 1 ? '' : 's'} in this zone.`,
+      output: { providers: rows },
+    }
+  },
+  explainAccess: async (client, zoneId, args) => {
+    const conditions = ['zone_id = $1', "status = 'active'"]
+    const values: unknown[] = [zoneId]
+    if (args.application_id !== undefined) {
+      values.push(asString(args.application_id))
+      conditions.push(`application_id = $${values.length}`)
+    }
+    if (args.resource_id !== undefined) {
+      values.push(asString(args.resource_id))
+      conditions.push(`resource_id = $${values.length}`)
+    }
+    const { rows } = await client.query<{ application_id: string; resource_id: string; user_id: string; scopes: string[] }>(
+      `SELECT application_id, resource_id, user_id, scopes FROM delegated_grants
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY created_at DESC LIMIT 200`,
+      values,
+    )
+    const detail =
+      rows.length === 0
+        ? 'No active grants match. Access would be denied for that combination.'
+        : `Found ${rows.length} active grant${rows.length === 1 ? '' : 's'} that permit access.`
+    return { detail, output: { grants: rows } }
+  },
+
   createZone: async (client, _zoneId, args) => {
-    const zone = await createZoneRecord(client, { name: String(args.name) })
+    const zone = await createZoneRecord(client, { name: asString(args.name) })
     return { detail: `Created zone “${zone.name}”.`, output: { zone_id: zone.id, slug: zone.slug } }
   },
   registerApplication: async (client, zoneId, args) => {
     const { row, clientSecret } = await createManagedApplication(client, zoneId, {
-      name: String(args.name),
+      name: asString(args.name),
     })
     // The plaintext secret is returned for this response only; the persisted detail
     // records that a secret was issued without ever storing it.
     return {
-      detail: `Registered application “${String(args.name)}” and issued a client secret.`,
+      detail: `Registered application “${asString(args.name)}” and issued a client secret.`,
       output: { application_id: row.id, client_secret: clientSecret },
+    }
+  },
+  rotateApplicationSecret: async (client, zoneId, args) => {
+    const applicationId = asString(args.application_id)
+    const result = await rotateApplicationClientSecret(client, zoneId, applicationId)
+    if (!result) {
+      throw new StepExecutionError('', 'rotateApplicationSecret', `application ${applicationId} was not found in this zone`)
+    }
+    return {
+      detail: `Rotated the client secret for application ${applicationId} and retired the old one.`,
+      output: { application_id: applicationId, client_secret: result.clientSecret },
+    }
+  },
+  grantAccess: async (client, zoneId, args) => {
+    const result = await createDelegatedGrant(client, zoneId, {
+      application_id: asString(args.application_id),
+      user_id: asString(args.user_id),
+      resource_id: asString(args.resource_id),
+      scopes: asScopes(args.scopes),
+    })
+    if (!result.ok) {
+      throw new StepExecutionError('', 'grantAccess', result.error)
+    }
+    const scopes = asScopes(args.scopes)
+    return {
+      detail: `Granted ${scopes.join(', ')} to application ${asString(args.application_id)} on resource ${asString(args.resource_id)}.`,
+      output: { grant_id: result.row.id },
     }
   },
 }
