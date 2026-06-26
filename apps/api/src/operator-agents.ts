@@ -1,0 +1,154 @@
+// Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+// Caracal, a product of Garudex Labs
+//
+// The Operator agent layer: purpose-built agents that turn intent into typed artifacts the deterministic engine governs.
+
+import { z } from 'zod'
+import { describeCapabilitiesForPrompt, ProposedPlan, type ProposedPlanInput } from './operator-capabilities.js'
+import type { ConversationState } from './operator-state.js'
+import { describeFacts, type ConversationFacts } from './operator-memory.js'
+import type { Gateway, GatewayMessage } from './operator-gateway.js'
+
+// The agents never hold authority. Each one produces a typed artifact — an intent,
+// a proposed plan, or an explanation — that the deterministic pipeline then
+// validates, previews, and governs. A model can propose; only Caracal decides.
+
+const ROUTER_MAX_TOKENS = 16
+const PLANNER_MAX_TOKENS = 800
+const EXPLAINER_MAX_TOKENS = 600
+
+// Extracts the first JSON object from a model response, tolerating Markdown code
+// fences and surrounding prose, then parses it. Returns null when no parseable JSON
+// object is present so callers can fail closed rather than guess.
+export function extractJson(text: string): unknown {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const candidate = fenced ? fenced[1] : text
+  const start = candidate.indexOf('{')
+  const end = candidate.lastIndexOf('}')
+  if (start === -1 || end === -1 || end < start) return null
+  try {
+    return JSON.parse(candidate.slice(start, end + 1))
+  } catch {
+    return null
+  }
+}
+
+export type OperatorIntent = 'plan' | 'explain'
+
+export type AgentResult<T> = { ok: true; value: T } | { ok: false; error: string }
+
+const RouterOutput = z.object({ intent: z.enum(['plan', 'explain']) }).strict()
+
+export function buildRouterMessages(message: string): GatewayMessage[] {
+  return [
+    {
+      role: 'system',
+      content:
+        'You route a Caracal operator request to one handler. Reply with ONLY a JSON object ' +
+        '{"intent":"plan"} when the user wants to create, change, connect, rotate, grant, or set ' +
+        'something up, or {"intent":"explain"} when the user wants to understand, inspect, or ask ' +
+        'why. No prose, no code fences.',
+    },
+    { role: 'user', content: message },
+  ]
+}
+
+// Classifies a request into an actionable intent. Defaults closed: an unparseable
+// classification is an error, not a guessed action.
+export async function runRouter(gateway: Gateway, message: string): Promise<AgentResult<OperatorIntent>> {
+  const completion = await gateway.complete(buildRouterMessages(message), {
+    maxTokens: ROUTER_MAX_TOKENS,
+    temperature: 0,
+  })
+  const parsed = RouterOutput.safeParse(extractJson(completion.text))
+  if (!parsed.success) return { ok: false, error: 'router returned an unrecognized intent' }
+  return { ok: true, value: parsed.data.intent }
+}
+
+// The context an agent reasons over: the compressed facts of the older history plus
+// the live working-memory snapshot of the recent window. Together they give an agent
+// continuity across a long conversation at a bounded token cost.
+export interface AgentContext {
+  facts: ConversationFacts | null
+  state: ConversationState | null
+}
+
+// Renders the agent context into a compact block: the compressed session facts first,
+// then the recent working memory. Older history is summarized rather than replayed,
+// so the prompt stays small no matter how long the conversation is.
+function describeContext(context: AgentContext): string {
+  const sections: string[] = []
+  const facts = describeFacts(context.facts)
+  if (facts) sections.push(`Session facts:\n${facts}`)
+
+  const recent: string[] = []
+  if (context.state?.latest_plan) {
+    recent.push(
+      `Latest plan (seq ${context.state.latest_plan.seq}): ${context.state.latest_plan.summary} [${context.state.latest_plan.decision}]`,
+    )
+  }
+  for (const message of context.state?.recent_messages.slice(-6) ?? []) {
+    recent.push(`${message.role}: ${message.text}`)
+  }
+  if (recent.length > 0) sections.push(`Recent activity:\n${recent.join('\n')}`)
+
+  return sections.length > 0 ? sections.join('\n\n') : 'No prior context.'
+}
+
+export function buildPlannerMessages(message: string, context: AgentContext): GatewayMessage[] {
+  return [
+    {
+      role: 'system',
+      content:
+        'You are the planning agent for Caracal, a control-plane authority platform. Translate the ' +
+        "operator's request into a plan using ONLY the capabilities below. Reply with ONLY a JSON " +
+        'object of the form {"summary": string, "steps": [{"id": string, "capability": string, ' +
+        '"args": object}]}. Use a short unique id per step (s1, s2, ...). Use exactly the capability ' +
+        'ids and argument names listed. Do not invent capabilities or arguments. If the request maps ' +
+        'to no listed capability, return a plan with an empty steps array.\n\nCapabilities:\n' +
+        describeCapabilitiesForPrompt(),
+    },
+    { role: 'user', content: `Context:\n${describeContext(context)}\n\nRequest: ${message}` },
+  ]
+}
+
+// Produces a proposed plan from intent. The output is parsed against the same
+// ProposedPlan contract the rest of the pipeline uses; anything else fails closed,
+// so a malformed or hallucinated plan never leaves this function as a success.
+export async function runPlanner(gateway: Gateway, message: string, context: AgentContext): Promise<AgentResult<ProposedPlanInput>> {
+  const completion = await gateway.complete(buildPlannerMessages(message, context), {
+    maxTokens: PLANNER_MAX_TOKENS,
+    temperature: 0,
+  })
+  const json = extractJson(completion.text)
+  if (json === null) return { ok: false, error: 'planner did not return JSON' }
+  const parsed = ProposedPlan.safeParse(json)
+  if (!parsed.success) return { ok: false, error: 'planner returned a plan that failed the schema' }
+  return { ok: true, value: parsed.data }
+}
+
+export function buildExplainerMessages(message: string, context: AgentContext): GatewayMessage[] {
+  return [
+    {
+      role: 'system',
+      content:
+        'You are a read-only Caracal operator assistant. Explain clearly and concisely in plain ' +
+        'language for an operator who should not need to know Caracal internals. You never make ' +
+        'changes and must not claim to; if the operator wants to change something, tell them to ask ' +
+        'for that change so it can be planned and approved.',
+    },
+    { role: 'user', content: `Context:\n${describeContext(context)}\n\nQuestion: ${message}` },
+  ]
+}
+
+// Answers a read-only question. Returns the model's text directly; it carries no
+// authority and performs no action.
+export async function runExplainer(gateway: Gateway, message: string, context: AgentContext): Promise<AgentResult<string>> {
+  const completion = await gateway.complete(buildExplainerMessages(message, context), {
+    maxTokens: EXPLAINER_MAX_TOKENS,
+    temperature: 0.2,
+  })
+  const text = completion.text.trim()
+  if (text.length === 0) return { ok: false, error: 'explainer returned an empty answer' }
+  return { ok: true, value: text }
+}
