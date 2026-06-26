@@ -636,3 +636,189 @@ export interface DiagnosticsOptions {
   strict?: boolean;
   preflight?: boolean;
 }
+
+export type OperatorCapabilityDomain =
+  | "zone"
+  | "application"
+  | "provider"
+  | "resource"
+  | "policy"
+  | "grant"
+  | "audit";
+
+export interface OperatorCapability {
+  id: string;
+  title: string;
+  summary: string;
+  domain: OperatorCapabilityDomain;
+  mutating: boolean;
+}
+
+export interface OperatorPlanStepInput {
+  id: string;
+  capability: string;
+  args?: Record<string, unknown>;
+}
+
+export interface OperatorPlanInput {
+  summary: string;
+  steps: OperatorPlanStepInput[];
+}
+
+export type OperatorPlanDiagnosticCode =
+  | "unknown_capability"
+  | "invalid_args"
+  | "duplicate_step_id";
+
+export interface OperatorPlanDiagnostic {
+  step_id: string;
+  code: OperatorPlanDiagnosticCode;
+  message: string;
+}
+
+export interface OperatorValidatedStep {
+  id: string;
+  capability: string;
+  title: string;
+  domain: OperatorCapabilityDomain;
+  mutating: boolean;
+}
+
+export interface OperatorPlanValidation {
+  ok: boolean;
+  mutating: boolean;
+  mutating_step_count: number;
+  steps: OperatorValidatedStep[];
+  diagnostics: OperatorPlanDiagnostic[];
+}
+
+export type OperatorConversationStatus = "active" | "archived";
+
+export interface OperatorConversation {
+  id: string;
+  zone_id: string;
+  title: string;
+  status: OperatorConversationStatus;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  last_activity_at: string;
+  archived_at: string | null;
+}
+
+export type OperatorTurnKind =
+  | "message"
+  | "plan"
+  | "approval"
+  | "rejection"
+  | "execution"
+  | "error"
+  | "note";
+
+export type OperatorNarrativeKind = "message" | "note" | "error";
+
+export interface OperatorTurn {
+  id: string;
+  conversation_id: string;
+  seq: number;
+  role: "user" | "operator" | "system";
+  kind: OperatorTurnKind;
+  content: Record<string, unknown>;
+  actor_id: string | null;
+  created_at: string;
+}
+
+export interface OperatorNarrativeInput {
+  role: "user" | "operator" | "system";
+  kind: OperatorNarrativeKind;
+  content: Record<string, unknown>;
+  client_token?: string;
+}
+
+export interface OperatorPlanStepState {
+  id: string;
+  capability: string;
+  summary: string;
+  mutating: boolean;
+  status: "pending" | "succeeded" | "failed";
+  detail?: string;
+}
+
+export interface OperatorPlanState {
+  seq: number;
+  summary: string;
+  decision: "pending" | "approved" | "rejected";
+  decision_seq: number | null;
+  rejection_reason: string | null;
+  steps: OperatorPlanStepState[];
+  progress: { total: number; succeeded: number; failed: number; pending: number };
+}
+
+export interface OperatorDecidedPlanFact {
+  seq: number;
+  summary: string;
+  decision: "approved" | "rejected";
+  executed: boolean;
+  steps_succeeded: number;
+  steps_failed: number;
+}
+
+export interface OperatorConversationFacts {
+  decided_plans: OperatorDecidedPlanFact[];
+  rejected_capabilities: string[];
+  applied_change_count: number;
+  last_error: { seq: number; message: string } | null;
+}
+
+export interface OperatorContext {
+  conversation_id: string;
+  status: OperatorConversationStatus;
+  turn_count: number;
+  facts: OperatorConversationFacts;
+  latest_plan: OperatorPlanState | null;
+  pending_approval: boolean;
+  recent_messages: { seq: number; role: "user" | "operator" | "system"; text: string }[];
+  last_error: { seq: number; message: string } | null;
+}
+
+export interface OperatorPlanDecisionInput {
+  plan_seq: number;
+  decision: "approved" | "rejected";
+  reason?: string;
+}
+
+export interface OperatorExecutionResult {
+  ok: boolean;
+  plan_seq: number;
+  executed: OperatorTurn[];
+  outputs: Record<string, Record<string, unknown>>;
+}
+
+export interface OperatorAiProviderStatus {
+  id: string;
+  model: string;
+  available: boolean;
+}
+
+export interface OperatorAiStatus {
+  enabled: boolean;
+  providers: OperatorAiProviderStatus[];
+}
+
+export interface OperatorAiCheckResult {
+  ok: boolean;
+  provider: string;
+  model: string;
+  latency_ms: number;
+}
+
+export type OperatorMessageResult =
+  | {
+      intent: "plan";
+      ok: true;
+      turn: OperatorTurn;
+      validation: OperatorPlanValidation;
+      preview: { ok: boolean; mutating: boolean; steps: OperatorValidatedStep[] };
+    }
+  | { intent: "plan"; ok: false; error: string; turn: OperatorTurn | null }
+  | { intent: "explain"; ok: boolean; text: string; turn: OperatorTurn | null };

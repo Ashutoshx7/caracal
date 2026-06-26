@@ -82,7 +82,6 @@ export function UtilityRail() {
           label="Caracal Operator"
           to="/app/ai"
           active={pathname.startsWith("/app/ai")}
-          locked
           icon={
             <>
               <path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9z" />
@@ -138,7 +137,6 @@ function RailButton({
   onClick,
   href,
   to,
-  locked,
   panel,
 }: {
   label: string;
@@ -147,7 +145,6 @@ function RailButton({
   onClick?: () => void;
   href?: string;
   to?: string;
-  locked?: boolean;
   panel?: ReactNode;
 }) {
   const content = (
@@ -170,30 +167,9 @@ function RailButton({
     active && "bg-accent text-foreground",
   );
 
-  const lockDot = locked ? (
-    <span className="absolute -right-0.5 -top-0.5 grid h-3 w-3 place-items-center rounded-full bg-background text-muted-foreground">
-      <svg
-        width="9"
-        height="9"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.5"
-      >
-        <rect x="5" y="11" width="14" height="9" rx="2" />
-        <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-      </svg>
-    </span>
-  ) : null;
-
   const floatingLabel = (
     <span className="pointer-events-none absolute right-full top-1/2 z-50 mr-2 -translate-y-1/2 flex items-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs font-medium text-popover-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100">
       {label}
-      {locked ? (
-        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-          Enterprise
-        </span>
-      ) : null}
     </span>
   );
 
@@ -201,7 +177,6 @@ function RailButton({
     return (
       <Link to={to} aria-label={label} className={className}>
         {content}
-        {lockDot}
         {floatingLabel}
       </Link>
     );
@@ -211,7 +186,6 @@ function RailButton({
     return (
       <a href={href} target="_blank" rel="noreferrer" aria-label={label} className={className}>
         {content}
-        {lockDot}
         {floatingLabel}
       </a>
     );
@@ -220,7 +194,6 @@ function RailButton({
   return (
     <button onClick={onClick} aria-label={label} className={className}>
       {content}
-      {lockDot}
       {!active ? floatingLabel : null}
       {panel}
     </button>
