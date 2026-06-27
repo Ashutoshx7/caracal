@@ -824,6 +824,10 @@ export interface OperatorUsageMeta {
   model?: string | null;
   provider?: string | null;
   max_tokens?: number;
+  // The handling tier the request was triaged into: conversational and read are answered as
+  // text, change and compound produce a plan. Surfaced for observability; the web client keys
+  // its rendering on intent, so this is additive.
+  tier?: "conversational" | "read" | "change" | "compound";
 }
 
 export type OperatorMessageResult = (

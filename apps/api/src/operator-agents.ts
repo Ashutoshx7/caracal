@@ -13,42 +13,58 @@ import type { Gateway, GatewayMessage } from './operator-gateway.js'
 // a proposed plan, or an explanation — that the deterministic pipeline then
 // validates, previews, and governs. A model can propose; only Caracal decides.
 
-const ROUTER_MAX_TOKENS = 16
+const TRIAGE_MAX_TOKENS = 16
 const PLANNER_MAX_TOKENS = 800
 const EXPLAINER_MAX_TOKENS = 600
 
-export type OperatorIntent = 'plan' | 'explain'
+// The handling tier a request is triaged into: the smallest sufficient path, so a simple turn
+// never pays the planning pipeline. conversational and read are answered directly as text;
+// change and compound produce a proposed plan. The four tiers are the stable taxonomy the
+// orchestration grows into — later phases add specialist skills and parallel composition for
+// the compound tier without changing this classification.
+export type OperatorTier = 'conversational' | 'read' | 'change' | 'compound'
 
 export type AgentResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
-const RouterOutput = z.object({ intent: z.enum(['plan', 'explain']) }).strict()
+// Whether a tier produces a state-changing plan. conversational and read are read-only and are
+// answered as text; change and compound flow through propose → preview → decide → apply. This
+// is the single deterministic branch the orchestrator takes on a triaged tier.
+export function tierPlans(tier: OperatorTier): boolean {
+  return tier === 'change' || tier === 'compound'
+}
 
-export function buildRouterMessages(message: string): GatewayMessage[] {
+const TriageOutput = z.object({ tier: z.enum(['conversational', 'read', 'change', 'compound']) }).strict()
+
+export function buildTriageMessages(message: string): GatewayMessage[] {
   return [
     {
       role: 'system',
       content:
-        'You route a Caracal operator request to one handler. Reply with ONLY a JSON object ' +
-        '{"intent":"plan"} when the user wants to create, change, connect, rotate, grant, or set ' +
-        'something up, or {"intent":"explain"} when the user wants to understand, inspect, or ask ' +
-        'why. No prose, no code fences.',
+        'You triage a Caracal operator request into the smallest sufficient handling tier. Reply ' +
+        'with ONLY a JSON object {"tier":"<tier>"} and no prose. Tiers:\n' +
+        '- "conversational": a greeting, small talk, an acknowledgement, a question about what you ' +
+        'can do, or a clarifying question — nothing about the operator\'s actual Caracal state.\n' +
+        '- "read": a question that inspects or explains current state or a past decision, changing ' +
+        'nothing.\n' +
+        '- "change": a request to create, connect, rotate, grant, or set up ONE thing.\n' +
+        '- "compound": a request that combines several changes, or needs investigation before acting.',
     },
     { role: 'user', content: message },
   ]
 }
 
-// Classifies a request into an actionable intent. The model's answer is generated as a
-// schema-validated object, so an off-schema classification fails closed as an error
-// rather than a guessed action.
-export async function runRouter(gateway: Gateway, message: string): Promise<AgentResult<OperatorIntent>> {
+// Classifies a request into the smallest sufficient tier. The model's answer is generated as a
+// schema-validated object, so an off-schema classification fails closed as an error rather than
+// a guessed tier; the orchestrator then defaults to the read tier, which never acts.
+export async function runTriage(gateway: Gateway, message: string): Promise<AgentResult<OperatorTier>> {
   try {
-    const completion = await gateway.completeObject(buildRouterMessages(message), RouterOutput, {
-      maxTokens: ROUTER_MAX_TOKENS,
+    const completion = await gateway.completeObject(buildTriageMessages(message), TriageOutput, {
+      maxTokens: TRIAGE_MAX_TOKENS,
       temperature: 0,
     })
-    return { ok: true, value: completion.value.intent }
+    return { ok: true, value: completion.value.tier }
   } catch {
-    return { ok: false, error: 'router returned an unrecognized intent' }
+    return { ok: false, error: 'triage returned an unrecognized tier' }
   }
 }
 

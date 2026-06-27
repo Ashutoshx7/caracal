@@ -530,9 +530,19 @@ async function handleControlToken(req: IncomingMessage, res: ServerResponse, id:
 
   let application: Parameters<typeof controlKeyRecord>[0]
   try {
-    const upstream = await fetch(`${apiUrl()}/v1/zones/${encodeURIComponent(zoneId)}/applications/${encodeURIComponent(keyId)}`, {
-      headers: { Authorization: `Bearer ${token}`, ...downstreamHeaders(id) },
-    })
+    // Reading the control key's application record is a read, so it presents the read-only
+    // token and falls back to the admin token only if that token is unrecognized — the same
+    // credential policy the proxy uses, so this read never carries the god token on its normal
+    // path.
+    const url = `${apiUrl()}/v1/zones/${encodeURIComponent(zoneId)}/applications/${encodeURIComponent(keyId)}`
+    const credential = selectProxyCredential('GET', token, consoleReadToken(), consoleWriteToken())
+    const readWith = (bearer: string): Promise<Response> =>
+      fetch(url, { headers: { Authorization: `Bearer ${bearer}`, ...downstreamHeaders(id) } })
+    let upstream = await readWith(credential.token)
+    if (shouldRetryWithFallback(upstream.status, credential.token, credential.fallbackToken) && credential.fallbackToken) {
+      await upstream.body?.cancel().catch(() => {})
+      upstream = await readWith(credential.fallbackToken)
+    }
     if (upstream.status === 404) {
       sendJson(res, 404, { error: 'control_key_not_found' })
       return
