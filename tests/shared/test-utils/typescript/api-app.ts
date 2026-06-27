@@ -13,6 +13,7 @@ export interface ApiDepsOptions {
   adminToken?: string
   adminScope?: 'global' | 'zone'
   adminZoneId?: string | null
+  adminCapability?: 'read' | 'write'
 }
 
 export interface ApiDeps {
@@ -25,6 +26,7 @@ export function apiAppDeps(opts: ApiDepsOptions = {}): ApiDeps {
   const adminToken = opts.adminToken ?? 'admin-secret'
   const adminScope = opts.adminScope ?? 'global'
   const adminZoneId = opts.adminZoneId ?? null
+  const adminCapability = opts.adminCapability ?? 'write'
   const adminDigest = createHash('sha256').update(adminToken).digest()
 
   const db = {
@@ -33,15 +35,18 @@ export function apiAppDeps(opts: ApiDepsOptions = {}): ApiDeps {
         const candidate = params[0]
         if (Buffer.isBuffer(candidate) && candidate.equals(adminDigest)) {
           return Promise.resolve({
-            rows: [{
-              id: 'token-test',
-              name: 'test',
-              scope: adminScope,
-              zone_id: adminZoneId,
-              token_sha256: adminDigest,
-              token_hash: adminToken === 'admin-secret' ? ADMIN_SECRET_HASH : null,
-              revoked_at: null,
-            }],
+            rows: [
+              {
+                id: 'token-test',
+                name: 'test',
+                scope: adminScope,
+                capability: adminCapability,
+                zone_id: adminZoneId,
+                token_sha256: adminDigest,
+                token_hash: adminToken === 'admin-secret' ? ADMIN_SECRET_HASH : null,
+                revoked_at: null,
+              },
+            ],
             rowCount: 1,
           })
         }

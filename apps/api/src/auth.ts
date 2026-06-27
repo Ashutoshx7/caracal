@@ -15,11 +15,17 @@ import { hashAdminToken, verifyAdminTokenHash } from './hash-secret.js'
 import { bindRequestZoneScope, GLOBAL_ZONE_SCOPE } from './zone-context.js'
 
 type AdminScope = 'global' | 'zone'
+type AdminCapability = 'read' | 'write'
 
 export interface Actor {
   id: string
   name: string
   scope: AdminScope
+  // Whether the token may mutate state at the API. A read-capability token is denied any
+  // mutating request at the auth choke point, so a least-privilege admin credential cannot
+  // change state even on a route that does not check it. Defaults to write for every existing
+  // and bootstrap token, so the capability only ever narrows authority, never widens it.
+  capability: AdminCapability
   zoneId: string | null
 }
 
@@ -27,6 +33,7 @@ interface AdminTokenRow {
   id: string
   name: string
   scope: AdminScope
+  capability: AdminCapability
   zone_id: string | null
   token_sha256: Buffer
   token_hash: string | null
@@ -84,10 +91,20 @@ function isControlInvoke(method: string, url: string): boolean {
   return url.split('?')[0] === '/v1/control/invoke'
 }
 
+// Whether a request only reads state. GET and HEAD are reads; the read-but-POST exceptions
+// (policy validation) are the same ones a zone token may run cross-zone, so the existing
+// classifier names them. A read-capability token is allowed exactly these and denied
+// everything else, so the capability gate is a single, complete boundary that does not depend
+// on each route re-checking it.
+function isReadOnlyRequest(method: string, url: string): boolean {
+  if (method === 'GET' || method === 'HEAD') return true
+  return isGlobalReadPath(method, url)
+}
+
 export async function lookupAdminToken(db: DB, plaintext: string): Promise<Actor | null> {
   const digest = sha256(plaintext)
   const { rows } = await db.query<AdminTokenRow>(
-    `SELECT id, name, scope, zone_id, token_sha256, token_hash, revoked_at
+    `SELECT id, name, scope, capability, zone_id, token_sha256, token_hash, revoked_at
      FROM admin_tokens
      WHERE token_sha256 = $1 AND revoked_at IS NULL
      LIMIT 1`,
@@ -97,31 +114,20 @@ export async function lookupAdminToken(db: DB, plaintext: string): Promise<Actor
   if (!row) return null
   if (!bytesEqual(row.token_sha256, digest)) return null
   if (!row.token_hash || !(await verifyAdminTokenHash(plaintext, row.token_hash))) return null
-  return { id: row.id, name: row.name, scope: row.scope, zoneId: row.zone_id }
+  return { id: row.id, name: row.name, scope: row.scope, capability: row.capability, zoneId: row.zone_id }
 }
 
 async function touchLastUsed(db: DB, tokenId: string): Promise<void> {
-  await db.query(
-    `UPDATE admin_tokens SET last_used_at = now() WHERE id = $1`,
-    [tokenId],
-  )
+  await db.query(`UPDATE admin_tokens SET last_used_at = now() WHERE id = $1`, [tokenId])
 }
 
-async function shouldTouchLastUsed(
-  redis: RedisClient | null,
-  tokenId: string,
-  debounceSec: number,
-): Promise<boolean> {
+async function shouldTouchLastUsed(redis: RedisClient | null, tokenId: string, debounceSec: number): Promise<boolean> {
   if (!redis || debounceSec <= 0) return true
   const ok = await redis.set(`api:admin_token_touched:${tokenId}`, '1', 'EX', debounceSec, 'NX')
   return ok === 'OK'
 }
 
-async function recordAuthFailure(
-  redis: RedisClient | null,
-  ip: string,
-  limitPerMin: number,
-): Promise<boolean> {
+async function recordAuthFailure(redis: RedisClient | null, ip: string, limitPerMin: number): Promise<boolean> {
   if (!redis || limitPerMin <= 0) return false
   const minute = await redisMinuteBucket(redis)
   const key = `api:admin_auth_fail:${ip}:${minute}`
@@ -149,10 +155,7 @@ export async function seedBootstrapAdminToken(db: DB, opts: SeedOptions): Promis
   }
   const tokenHash = await hashAdminToken(opts.envToken)
   if (row) {
-    await db.query(
-      `UPDATE admin_tokens SET token_hash = $1 WHERE id = $2 AND token_hash IS NULL`,
-      [tokenHash, row.id],
-    )
+    await db.query(`UPDATE admin_tokens SET token_hash = $1 WHERE id = $2 AND token_hash IS NULL`, [tokenHash, row.id])
     await revokeStaleBootstrapTokens(db, digest)
     opts.log(`seeded bootstrap admin token verifier id=${row.id}`)
     return
@@ -253,6 +256,15 @@ const adminAuthImpl: FastifyPluginAsync<AuthPluginOptions> = async (fastify, opt
         return reply.code(429).send({ error: 'rate_limited' })
       }
       return reply.code(401).send({ error: 'invalid_admin_token' })
+    }
+
+    // A read-capability token may never mutate state. The check sits at the single auth choke
+    // point ahead of every admin route, so a read-only credential is denied any write even on
+    // a route that does not inspect the capability itself — defense in depth, not per-route
+    // trust. The control invoke path returned earlier and carries its own scope enforcement,
+    // so this gate governs only the admin route surface.
+    if (actor.capability === 'read' && !isReadOnlyRequest(req.method, req.url)) {
+      return reply.code(403).send({ error: 'admin_token_read_only' })
     }
 
     if (actor.scope === 'zone') {

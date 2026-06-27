@@ -17,6 +17,10 @@ const MintBody = z
     name: z.string().min(1).max(120),
     scope: z.enum(['global', 'zone']),
     zone_id: z.string().min(1).max(128).optional(),
+    // Whether the minted token may mutate state. Defaults to write so an unspecified mint is a
+    // full-capability token exactly as before; a read token is the opt-in least-privilege
+    // credential that cannot change state at the API.
+    capability: z.enum(['read', 'write']).default('write'),
   })
   .strict()
 
@@ -61,14 +65,24 @@ export const adminTokensRoutes: FastifyPluginAsync = async (fastify) => {
       id: string
       name: string
       scope: string
+      capability: string
       zone_id: string | null
       created_by: string
       created_at: Date
     }>(
-      `INSERT INTO admin_tokens (id, name, token_sha256, token_hash, scope, zone_id, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, name, scope, zone_id, created_by, created_at`,
-      [id, body.name, sha256(token), tokenHash, body.scope, body.scope === 'zone' ? body.zone_id : null, `admin:${req.actor.id}`],
+      `INSERT INTO admin_tokens (id, name, token_sha256, token_hash, scope, capability, zone_id, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, name, scope, capability, zone_id, created_by, created_at`,
+      [
+        id,
+        body.name,
+        sha256(token),
+        tokenHash,
+        body.scope,
+        body.capability,
+        body.scope === 'zone' ? body.zone_id : null,
+        `admin:${req.actor.id}`,
+      ],
     )
     const row = rows[0]
     if (!row) return reply.code(500).send({ error: 'admin_token_mint_failed' })
@@ -77,6 +91,7 @@ export const adminTokensRoutes: FastifyPluginAsync = async (fastify) => {
       id: row.id,
       name: row.name,
       scope: row.scope,
+      capability: row.capability,
       zone_id: row.zone_id,
       created_by: row.created_by,
       created_at: row.created_at,
@@ -90,7 +105,7 @@ export const adminTokensRoutes: FastifyPluginAsync = async (fastify) => {
     if (!page) return
     const keyset = appendKeysetCondition({ conds: ['1 = 1'], values: [] }, page)
     const { rows } = await fastify.db.query(
-      `SELECT id, name, scope, zone_id, created_by, created_at, last_used_at, revoked_at
+      `SELECT id, name, scope, capability, zone_id, created_by, created_at, last_used_at, revoked_at
        FROM admin_tokens WHERE ${keyset.conds.join(' AND ')}
        ORDER BY created_at DESC, id DESC LIMIT ${keyset.limitPlaceholder}`,
       keyset.values,
