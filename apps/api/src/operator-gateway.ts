@@ -23,6 +23,11 @@ export interface ProviderConfig {
   // property of the chosen model rather than the transport. Zero means unknown, in which
   // case usage is reported as raw counts without a percentage of the window.
   contextWindow: number
+  // A per-provider transport that replaces the default fetch for this provider only. A
+  // governed provider routes through the Caracal gateway with a minted resource mandate, so
+  // its transport attaches that authority and the key is never held here; an ungoverned
+  // provider leaves this unset and calls its backend directly.
+  transport?: typeof fetch
 }
 
 export interface GatewayMessage {
@@ -143,15 +148,17 @@ function providerAvailable(provider: ProviderConfig): boolean {
   return provider.baseUrl.length > 0 && provider.model.length > 0
 }
 
-// Builds the OpenAI-compatible backend for one provider. fetchImpl is injectable so the
-// transport can be exercised without a live backend. In production the recommended
-// backend is a LiteLLM proxy that fronts every provider behind this one wire format.
+// Builds the OpenAI-compatible backend for one provider. A governed provider carries its own
+// transport that routes through the Caracal gateway with a minted mandate; an ungoverned one
+// uses the shared fetch. fetchImpl is injectable so the transport can be exercised without a
+// live backend. In production the recommended backend is a LiteLLM proxy that fronts every
+// provider behind this one wire format.
 function buildBackend(fetchImpl: FetchImpl, provider: ProviderConfig) {
   return createOpenAICompatible({
     name: provider.id,
     baseURL: provider.baseUrl,
     apiKey: provider.apiKey,
-    fetch: fetchImpl,
+    fetch: provider.transport ?? fetchImpl,
   })
 }
 

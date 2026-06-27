@@ -19,7 +19,9 @@ import { adminAuthPlugin } from './auth.js'
 import { registerAdminAuditHook } from './admin-audit.js'
 import { controlPlugin } from './control/plugin.js'
 import { AdminClient } from '@caracalai/admin'
-import { provisionSystemZone } from './system-zone.js'
+import { provisionSystemZone, llmResourceIdentifier } from './system-zone.js'
+import { createOperatorLlmTransport } from './operator-llm-transport.js'
+import type { ProviderConfig } from './operator-gateway.js'
 import type { OperatorControlIdentity } from './config.js'
 import {
   isPublished,
@@ -285,12 +287,42 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
   // loopback; until then the getter returns null and governed execution stays unconfigured.
   const operatorControlIdentity: { current: OperatorControlIdentity | null } = { current: null }
 
+  // When self-governance is active, the Operator must not hold its upstream LLM keys: the
+  // provisioner seals each keyed provider into Caracal, and here the matching providers are
+  // re-pointed at the gateway with a per-provider transport that mints and presents a Caracal
+  // resource mandate. The key is dropped from the in-process config, so a governed provider
+  // calls its model only through Caracal's own authority plane. Keyless local providers need
+  // no protection and are left calling directly. The transport resolves the Operator identity
+  // lazily because it is provisioned after the server is listening; until then a governed call
+  // fails closed rather than leaking a key.
+  const governanceActive = Boolean(cfg.control && cfg.operatorSelfGovern && cfg.operatorControlSecret)
+  const aiProviders: ProviderConfig[] = governanceActive
+    ? (() => {
+        const transport = createOperatorLlmTransport({
+          stsUrl: cfg.stsUrl,
+          coordinatorUrl: cfg.coordinatorUrl,
+          gatewayUrl: cfg.gatewayUrl,
+          resolveIdentity: () => operatorControlIdentity.current,
+        })
+        return cfg.operatorAiProviders.map((provider) =>
+          provider.apiKey
+            ? {
+                ...provider,
+                apiKey: undefined,
+                baseUrl: cfg.gatewayUrl,
+                transport: transport.governedFetch(llmResourceIdentifier(provider.id)),
+              }
+            : provider,
+        )
+      })()
+    : cfg.operatorAiProviders
+
   await app.register(operatorRoutes, {
     prefix: '/v1',
     enabled: cfg.operatorEnabled,
     allowedCapabilities: cfg.operatorAllowedCapabilities,
     systemZones: cfg.operatorSystemZones,
-    aiProviders: cfg.operatorAiProviders,
+    aiProviders,
     resolveControlIdentity: () => operatorControlIdentity.current,
     controlEndpoints: cfg.control
       ? { stsUrl: cfg.stsUrl, audience: cfg.control.audience, controlUrl: cfg.control.apiUrl, controlEnabled: true }

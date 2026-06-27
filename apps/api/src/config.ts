@@ -51,6 +51,12 @@ export interface Config {
   databaseUrl: string
   redisUrl: string
   stsUrl: string
+  // The data-plane endpoints the Operator's governed LLM transport routes through: the
+  // gateway it presents minted mandates to and the coordinator it spawns its short-lived
+  // agent sessions on. Defaulted for the standard deployment topology; never an end-user
+  // surface.
+  gatewayUrl: string
+  coordinatorUrl: string
   gatewayStsHmacKey: Buffer | null
   auditHmacKey: Buffer | null
   logLevel: string
@@ -216,6 +222,8 @@ export function loadConfig(): Config {
     databaseUrl: mustGetenv('DATABASE_URL'),
     redisUrl: mustGetenv('REDIS_URL'),
     stsUrl: getenv('STS_URL', 'http://localhost:8080'),
+    gatewayUrl: getenv('CARACAL_GATEWAY_URL', 'http://localhost:8081'),
+    coordinatorUrl: getenv('CARACAL_COORDINATOR_URL', 'http://localhost:4000'),
     gatewayStsHmacKey,
     auditHmacKey,
     logLevel: getenv('LOG_LEVEL', 'info'),
