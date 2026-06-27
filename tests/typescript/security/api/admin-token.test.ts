@@ -47,4 +47,30 @@ describe('API admin token enforcement', () => {
     expect(calls.some((sql) => sql.includes('FROM zones'))).toBe(true)
     await app.close()
   })
+
+  it('denies a derived Console token the admin-token management surface', async () => {
+    const { cfg, db, redis } = apiAppDeps({ adminCreatedBy: 'env-derived-write' })
+    const app = await buildApp({ cfg, db: db as unknown as DB, redis: redis as unknown as RedisClient })
+
+    const mint = await app.inject({
+      method: 'POST',
+      url: '/v1/admin-tokens',
+      headers: { authorization: 'Bearer admin-secret' },
+      payload: { name: 'escalate', scope: 'global' },
+    })
+    expect(mint.statusCode).toBe(403)
+    expect(JSON.parse(mint.body)).toMatchObject({ error: 'admin_token_management_forbidden_for_derived_token' })
+
+    const revoke = await app.inject({
+      method: 'DELETE',
+      url: '/v1/admin-tokens/some-id',
+      headers: { authorization: 'Bearer admin-secret' },
+    })
+    expect(revoke.statusCode).toBe(403)
+    expect(JSON.parse(revoke.body)).toMatchObject({ error: 'admin_token_management_forbidden_for_derived_token' })
+
+    const inserted = db.query.mock.calls.some((c: unknown[]) => String(c[0]).startsWith('INSERT INTO admin_tokens'))
+    expect(inserted).toBe(false)
+    await app.close()
+  })
 })

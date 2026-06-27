@@ -9,6 +9,7 @@ import Fastify from 'fastify'
 import type { DB } from '../../../../apps/api/src/db.js'
 import {
   adminAuthPlugin,
+  isDerivedConsoleActor,
   lookupAdminToken,
   seedBootstrapAdminToken,
   seedConsoleReadToken,
@@ -33,6 +34,7 @@ function makeDb(
     scope?: 'global' | 'zone'
     zoneId?: string | null
     capability?: 'read' | 'write'
+    createdBy?: string
   } = {},
 ) {
   const tokenDigest = opts.token ? digest(opts.token) : null
@@ -48,6 +50,7 @@ function makeDb(
               scope: opts.scope ?? 'global',
               capability: opts.capability ?? 'write',
               zone_id: opts.zoneId ?? null,
+              created_by: opts.createdBy ?? 'env-bootstrap',
               token_sha256: tokenDigest,
               token_hash: opts.tokenHash ?? (opts.token ? ARGON_HASHES[opts.token] : null),
               revoked_at: null,
@@ -101,9 +104,9 @@ describe('lookupAdminToken', () => {
     expect(await lookupAdminToken(db, 'nope')).toBeNull()
   })
   it('returns actor for matching token', async () => {
-    const db = makeDb({ token: 'secret', scope: 'zone', zoneId: 'z1' })
+    const db = makeDb({ token: 'secret', scope: 'zone', zoneId: 'z1', createdBy: 'env-derived-write' })
     const actor = await lookupAdminToken(db, 'secret')
-    expect(actor).toMatchObject({ scope: 'zone', zoneId: 'z1' })
+    expect(actor).toMatchObject({ scope: 'zone', zoneId: 'z1', createdBy: 'env-derived-write' })
   })
 
   it('returns null when the verifier hash does not match', async () => {
@@ -469,5 +472,26 @@ describe('seedConsoleWriteToken', () => {
     expect(insert!.params![5]).toBe('env-derived-write')
     const revoke = inserts.find((q) => q.sql.includes('created_by = $1') && q.sql.includes('revoked_at = now()'))
     expect(revoke!.params![0]).toBe('env-derived-write')
+  })
+})
+
+describe('isDerivedConsoleActor', () => {
+  const actor = (createdBy: string) => ({
+    id: 't1',
+    name: 'n',
+    scope: 'global' as const,
+    capability: 'write' as const,
+    zoneId: null,
+    createdBy,
+  })
+
+  it('recognises both derived Console creators', () => {
+    expect(isDerivedConsoleActor(actor('env-derived'))).toBe(true)
+    expect(isDerivedConsoleActor(actor('env-derived-write'))).toBe(true)
+  })
+
+  it('does not match the bootstrap or operator-minted creators', () => {
+    expect(isDerivedConsoleActor(actor('env-bootstrap'))).toBe(false)
+    expect(isDerivedConsoleActor(actor('admin:t1'))).toBe(false)
   })
 })

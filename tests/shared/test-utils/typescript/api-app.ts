@@ -14,6 +14,7 @@ export interface ApiDepsOptions {
   adminScope?: 'global' | 'zone'
   adminZoneId?: string | null
   adminCapability?: 'read' | 'write'
+  adminCreatedBy?: string
 }
 
 export interface ApiDeps {
@@ -27,6 +28,7 @@ export function apiAppDeps(opts: ApiDepsOptions = {}): ApiDeps {
   const adminScope = opts.adminScope ?? 'global'
   const adminZoneId = opts.adminZoneId ?? null
   const adminCapability = opts.adminCapability ?? 'write'
+  const adminCreatedBy = opts.adminCreatedBy ?? 'env-bootstrap'
   const adminDigest = createHash('sha256').update(adminToken).digest()
 
   const db = {
@@ -42,6 +44,7 @@ export function apiAppDeps(opts: ApiDepsOptions = {}): ApiDeps {
                 scope: adminScope,
                 capability: adminCapability,
                 zone_id: adminZoneId,
+                created_by: adminCreatedBy,
                 token_sha256: adminDigest,
                 token_hash: adminToken === 'admin-secret' ? ADMIN_SECRET_HASH : null,
                 revoked_at: null,

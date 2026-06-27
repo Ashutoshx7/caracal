@@ -7,8 +7,9 @@ import { describe, it, expect } from 'vitest'
 import { adminTokensRoutes } from '../../../../../apps/api/src/routes/admin-tokens.js'
 import { buildRouteApp } from '../../../../shared/test-utils/typescript/fastify.js'
 
-const globalActor = { id: 'op-1', name: 'operator', scope: 'global', zoneId: null }
-const zoneActor = { id: 'op-z', name: 'zone-op', scope: 'zone', zoneId: 'z1' }
+const globalActor = { id: 'op-1', name: 'operator', scope: 'global', zoneId: null, createdBy: 'admin:op-1' }
+const zoneActor = { id: 'op-z', name: 'zone-op', scope: 'zone', zoneId: 'z1', createdBy: 'admin:op-z' }
+const derivedActor = { id: 'cw', name: 'console-write', scope: 'global', zoneId: null, createdBy: 'env-derived-write' }
 
 describe('POST /v1/admin-tokens', () => {
   it('mints a global-scoped token and returns the plaintext once', async () => {
@@ -104,6 +105,17 @@ describe('POST /v1/admin-tokens', () => {
     expect(db.query).not.toHaveBeenCalled()
   })
 
+  it('rejects a derived Console token with 403 so it cannot mint a fresh admin token', async () => {
+    const { app, db } = buildRouteApp(adminTokensRoutes, { prefix: '/v1' }, { actor: derivedActor })
+
+    await app.ready()
+    const res = await app.inject({ method: 'POST', url: '/v1/admin-tokens', payload: { name: 'x', scope: 'global' } })
+
+    expect(res.statusCode).toBe(403)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'admin_token_management_forbidden_for_derived_token' })
+    expect(db.query).not.toHaveBeenCalled()
+  })
+
   it('returns 404 when the target zone does not exist', async () => {
     const { app, db } = buildRouteApp(adminTokensRoutes, { prefix: '/v1' }, { actor: globalActor })
     db.query.mockResolvedValueOnce({ rows: [] })
@@ -192,6 +204,17 @@ describe('DELETE /v1/admin-tokens/:id', () => {
     const res = await app.inject({ method: 'DELETE', url: '/v1/admin-tokens/t1' })
 
     expect(res.statusCode).toBe(403)
+    expect(db.query).not.toHaveBeenCalled()
+  })
+
+  it('rejects a derived Console token with 403 so it cannot revoke the break-glass token', async () => {
+    const { app, db } = buildRouteApp(adminTokensRoutes, { prefix: '/v1' }, { actor: derivedActor })
+
+    await app.ready()
+    const res = await app.inject({ method: 'DELETE', url: '/v1/admin-tokens/t1' })
+
+    expect(res.statusCode).toBe(403)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'admin_token_management_forbidden_for_derived_token' })
     expect(db.query).not.toHaveBeenCalled()
   })
 })

@@ -9,6 +9,7 @@ import { v7 as uuidv7 } from 'uuid'
 import { randomBytes } from 'node:crypto'
 import { sha256 } from '@caracalai/core'
 import { hashAdminToken } from '../hash-secret.js'
+import { isDerivedConsoleActor } from '../auth.js'
 import { zoneExists } from '../zone-guard.js'
 import { appendKeysetCondition, parseListPagination, setNextLink } from './list-pagination.js'
 
@@ -32,12 +33,19 @@ function generateAdminToken(): string {
   return `cat_${randomBytes(32).toString('base64url')}`
 }
 
-// Admin token management mints credentials, so it is restricted to global
-// actors. The auth plugin already denies zone-scoped actors at this path; this
-// is the in-handler defense in depth that does not rely on URL heuristics.
-function requireGlobalActor(req: FastifyRequest, reply: FastifyReply): boolean {
+// Admin token management mints and revokes credentials, so it is restricted to global actors and
+// denied to the derived Console operational tokens. A derived token allowed here could mint a
+// fresh, non-derived admin token — an escalation that would survive bootstrap-token rotation — or
+// revoke the break-glass credential and lock everyone out. The Console never reaches this surface,
+// so denying the derived tokens costs nothing. The auth plugin already denies zone-scoped actors
+// at this path; this is the in-handler defense in depth that does not rely on URL heuristics.
+function requireManagementActor(req: FastifyRequest, reply: FastifyReply): boolean {
   if (req.actor?.scope !== 'global') {
     reply.code(403).send({ error: 'admin_token_management_requires_global' })
+    return false
+  }
+  if (isDerivedConsoleActor(req.actor)) {
+    reply.code(403).send({ error: 'admin_token_management_forbidden_for_derived_token' })
     return false
   }
   return true
@@ -45,7 +53,7 @@ function requireGlobalActor(req: FastifyRequest, reply: FastifyReply): boolean {
 
 export const adminTokensRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post('/admin-tokens', async (req, reply) => {
-    if (!requireGlobalActor(req, reply)) return
+    if (!requireManagementActor(req, reply)) return
     const parsed = MintBody.safeParse(req.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_admin_token_request' })
     const body = parsed.data
@@ -100,7 +108,7 @@ export const adminTokensRoutes: FastifyPluginAsync = async (fastify) => {
   })
 
   fastify.get('/admin-tokens', async (req, reply) => {
-    if (!requireGlobalActor(req, reply)) return
+    if (!requireManagementActor(req, reply)) return
     const page = parseListPagination(req, reply)
     if (!page) return
     const keyset = appendKeysetCondition({ conds: ['1 = 1'], values: [] }, page)
@@ -115,7 +123,7 @@ export const adminTokensRoutes: FastifyPluginAsync = async (fastify) => {
   })
 
   fastify.delete('/admin-tokens/:id', async (req, reply) => {
-    if (!requireGlobalActor(req, reply)) return
+    if (!requireManagementActor(req, reply)) return
     const params = IdParams.safeParse(req.params)
     if (!params.success) return reply.code(400).send({ error: 'invalid_admin_token_id' })
     const { rows } = await fastify.db.query(

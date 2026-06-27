@@ -27,6 +27,10 @@ export interface Actor {
   // and bootstrap token, so the capability only ever narrows authority, never widens it.
   capability: AdminCapability
   zoneId: string | null
+  // The seed marker the token was provisioned under. It classifies the credential — bootstrap,
+  // a derived Console operational token, or an operator-minted token — so the admin-token
+  // management surface can refuse the derived operational tokens without trusting URL heuristics.
+  createdBy: string
 }
 
 interface AdminTokenRow {
@@ -35,6 +39,7 @@ interface AdminTokenRow {
   scope: AdminScope
   capability: AdminCapability
   zone_id: string | null
+  created_by: string
   token_sha256: Buffer
   token_hash: string | null
   revoked_at: Date | null
@@ -104,7 +109,7 @@ function isReadOnlyRequest(method: string, url: string): boolean {
 export async function lookupAdminToken(db: DB, plaintext: string): Promise<Actor | null> {
   const digest = sha256(plaintext)
   const { rows } = await db.query<AdminTokenRow>(
-    `SELECT id, name, scope, capability, zone_id, token_sha256, token_hash, revoked_at
+    `SELECT id, name, scope, capability, zone_id, created_by, token_sha256, token_hash, revoked_at
      FROM admin_tokens
      WHERE token_sha256 = $1 AND revoked_at IS NULL
      LIMIT 1`,
@@ -114,7 +119,7 @@ export async function lookupAdminToken(db: DB, plaintext: string): Promise<Actor
   if (!row) return null
   if (!bytesEqual(row.token_sha256, digest)) return null
   if (!row.token_hash || !(await verifyAdminTokenHash(plaintext, row.token_hash))) return null
-  return { id: row.id, name: row.name, scope: row.scope, capability: row.capability, zoneId: row.zone_id }
+  return { id: row.id, name: row.name, scope: row.scope, capability: row.capability, zoneId: row.zone_id, createdBy: row.created_by }
 }
 
 async function touchLastUsed(db: DB, tokenId: string): Promise<void> {
@@ -189,6 +194,16 @@ const CONSOLE_READ_TOKEN_NAME = 'console-read-only'
 const CONSOLE_READ_TOKEN_CREATED_BY = 'env-derived'
 const CONSOLE_WRITE_TOKEN_NAME = 'console-write'
 const CONSOLE_WRITE_TOKEN_CREATED_BY = 'env-derived-write'
+
+// Both derived Console creators share this prefix, so a single predicate recognises every derived
+// Console credential regardless of capability. Derived tokens are strictly operational, so they are
+// denied the admin-token management surface: one must never mint a fresh, non-derived admin token
+// (an escalation that would outlive bootstrap rotation) or revoke the break-glass credential.
+const DERIVED_CONSOLE_CREATED_BY_PREFIX = 'env-derived'
+
+export function isDerivedConsoleActor(actor: Actor): boolean {
+  return actor.createdBy.startsWith(DERIVED_CONSOLE_CREATED_BY_PREFIX)
+}
 
 // Provisions a Console BFF admin token derived deterministically from the deployment admin
 // token. The value is deterministic, so this is idempotent — the same admin token yields the
