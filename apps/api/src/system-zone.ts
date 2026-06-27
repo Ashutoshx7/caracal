@@ -3,7 +3,7 @@
 //
 // Idempotent provisioner for the reserved caracal.sys system zone the Operator self-governs through the control plane.
 
-import type { AdminClient, Application, Zone } from '@caracalai/admin'
+import type { AdminClient, Application } from '@caracalai/admin'
 import { ensureControlResource } from '@caracalai/engine'
 import { CONTROL_CAPABILITIES } from './operator-control-map.js'
 
@@ -54,9 +54,16 @@ function sameTraitSet(live: readonly string[] | undefined, desired: readonly str
   return have.size === desired.length && desired.every((trait) => have.has(trait))
 }
 
-async function ensureSystemZone(admin: AdminClient): Promise<Zone> {
-  const zones = await admin.zones.list()
-  const existing = zones.find((zone) => zone.slug === SYSTEM_ZONE_SLUG)
+// Resolves the id of a zone by its exact slug, or null when no such zone exists. A
+// deterministic lookup the provisioner depends on instead of scanning a page of the zone
+// list: the system zone is created at first boot (the oldest zone), so in a deployment with
+// more than one page of zones it would fall off the newest-first first page and a list scan
+// would miss it — then try to create it and conflict on the unique slug. Looking it up by
+// slug finds it regardless of zone count or archival, so provisioning stays convergent.
+export type FindZoneBySlug = (slug: string) => Promise<{ id: string } | null>
+
+async function ensureSystemZone(admin: AdminClient, findZoneBySlug: FindZoneBySlug): Promise<{ id: string }> {
+  const existing = await findZoneBySlug(SYSTEM_ZONE_SLUG)
   if (existing) return existing
   return admin.zones.create({ name: SYSTEM_ZONE_NAME, slug: SYSTEM_ZONE_SLUG })
 }
@@ -98,8 +105,13 @@ async function ensureOperatorIdentity(admin: AdminClient, zoneId: string, secret
 // so it is safe to call on every startup. The caller serializes concurrent instances so
 // the find-then-create lookups never race into duplicate objects. Returns the resolved
 // identity the Operator binds its governed execution to.
-export async function provisionSystemZone(admin: AdminClient, operatorSecret: string, audience: string): Promise<SystemZoneIdentity> {
-  const zone = await ensureSystemZone(admin)
+export async function provisionSystemZone(
+  admin: AdminClient,
+  operatorSecret: string,
+  audience: string,
+  findZoneBySlug: FindZoneBySlug,
+): Promise<SystemZoneIdentity> {
+  const zone = await ensureSystemZone(admin, findZoneBySlug)
   await ensureControlResource(admin, zone.id, audience)
   const operatorApplicationId = await ensureOperatorIdentity(admin, zone.id, operatorSecret)
   return { zoneId: zone.id, operatorApplicationId }

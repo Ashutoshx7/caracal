@@ -21,6 +21,16 @@ interface FakeState {
   calls: string[]
 }
 
+// A by-slug lookup over the fake state, mirroring the deterministic DB lookup the
+// provisioner uses in place of scanning a page of the zone list.
+function fakeFindZoneBySlug(state: FakeState): (slug: string) => Promise<{ id: string } | null> {
+  return async (slug: string) => {
+    state.calls.push('findZoneBySlug')
+    const zone = state.zones.find((z) => z.slug === slug)
+    return zone ? { id: zone.id } : null
+  }
+}
+
 // A minimal in-memory AdminClient double covering exactly the surface the provisioner uses.
 // It records the calls it receives so a test can assert idempotent, least-privilege
 // behavior without a live control plane.
@@ -115,7 +125,7 @@ describe('operatorIdentityTraits', () => {
 describe('provisionSystemZone', () => {
   it('creates the reserved zone, control resource, and least-privilege identity from scratch', async () => {
     const { admin, state } = fakeAdmin()
-    const result = await provisionSystemZone(admin, 'cs_sealed_secret', 'caracal-control')
+    const result = await provisionSystemZone(admin, 'cs_sealed_secret', 'caracal-control', fakeFindZoneBySlug(state))
 
     const zone = state.zones[0]
     expect(zone).toMatchObject({ name: SYSTEM_ZONE_NAME, slug: SYSTEM_ZONE_SLUG })
@@ -149,7 +159,7 @@ describe('provisionSystemZone', () => {
         },
       ],
     })
-    const result = await provisionSystemZone(seeded.admin, 'cs_rotated', 'caracal-control')
+    const result = await provisionSystemZone(seeded.admin, 'cs_rotated', 'caracal-control', fakeFindZoneBySlug(seeded.state))
 
     // No new zone or application was created.
     expect(result.zoneId).toBe('zone-sys')
@@ -158,6 +168,10 @@ describe('provisionSystemZone', () => {
     expect(seeded.state.apps).toHaveLength(1)
     expect(seeded.state.calls).not.toContain('zones.create')
     expect(seeded.state.calls).not.toContain('applications.create')
+    // The zone is found deterministically by slug, never by scanning the zone list — so a
+    // deployment whose system zone has fallen off the newest-first first page still resolves.
+    expect(seeded.state.calls).not.toContain('zones.list')
+    expect(seeded.state.calls).toContain('findZoneBySlug')
     // Traits already match, so they are not re-patched; the secret is reconciled to config.
     expect(seeded.state.calls).not.toContain('applications.patch:traits')
     expect(seeded.state.apps[0].client_secret).toBe('cs_rotated')
@@ -178,7 +192,7 @@ describe('provisionSystemZone', () => {
         },
       ],
     })
-    await provisionSystemZone(seeded.admin, 'cs_sealed', 'caracal-control')
+    await provisionSystemZone(seeded.admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(seeded.state))
     expect(seeded.state.calls).toContain('applications.patch:traits')
     expect([...(seeded.state.apps[0].traits ?? [])].sort()).toEqual(operatorIdentityTraits())
   })
@@ -198,7 +212,7 @@ describe('provisionSystemZone', () => {
         },
       ],
     })
-    await expect(provisionSystemZone(expired.admin, 'cs_sealed', 'caracal-control')).rejects.toThrow(
+    await expect(provisionSystemZone(expired.admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(expired.state))).rejects.toThrow(
       /usable non-expiring managed credential/,
     )
     // It never widens authority by reusing an unusable identity or creating a duplicate.

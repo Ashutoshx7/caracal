@@ -308,6 +308,14 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
     const isolatedSystemZone = new Set(cfg.operatorSystemZones)
     const provisionLog = createLogger('api-system-zone', cfg.logLevel as 'info')
     const admin = new AdminClient({ apiUrl: cfg.control.apiUrl, adminToken: cfg.control.apiToken })
+    // Deterministic by-slug lookup for the singleton system zone. Selecting regardless of
+    // archival avoids a unique-slug conflict on create when an archived system zone exists,
+    // and finds the zone no matter how many zones the deployment has (a list scan would miss
+    // the oldest zone past the first page).
+    const findZoneBySlug = async (slug: string): Promise<{ id: string } | null> => {
+      const { rows } = await db.query<{ id: string }>('SELECT id FROM zones WHERE slug = $1 LIMIT 1', [slug])
+      return rows[0] ?? null
+    }
     app.addHook('onListen', async () => {
       // Serialize provisioning across instances with a Postgres advisory lock, so two API
       // replicas starting together cannot both run the find-then-create lookups and create
@@ -318,7 +326,7 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
       const lock = await db.connect()
       try {
         await lock.query('SELECT pg_advisory_lock($1)', [SYSTEM_ZONE_PROVISION_LOCK])
-        const identity = await provisionSystemZone(admin, secret, audience)
+        const identity = await provisionSystemZone(admin, secret, audience, findZoneBySlug)
         operatorControlIdentity.current = {
           applicationId: identity.operatorApplicationId,
           clientSecret: secret,
