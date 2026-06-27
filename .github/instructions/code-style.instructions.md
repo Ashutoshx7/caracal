@@ -27,3 +27,7 @@ applyTo: "**"
 - Must not duplicate values into new variable names.
 - Must not add abstractions, wrappers, or helpers for single-use operations.
 - Must not add features, error handling, or logic beyond what was requested.
+
+## Commits
+
+- Never add a co-author trailer for any AI agent or assistant to a commit (no `Co-authored-by` line naming an AI tool, e.g. Copilot, Claude, Cursor, or any model/agent). Commits are attributed to the human author only.
