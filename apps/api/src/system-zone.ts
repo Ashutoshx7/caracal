@@ -88,12 +88,18 @@ function sanitizeSlug(id: string): string {
 }
 
 function llmProviderIdentifier(id: string): `provider://${string}` {
-  return `provider://caracal-sys-operator-llm-${sanitizeSlug(id)}`
+  return `${LLM_PROVIDER_PREFIX}${sanitizeSlug(id)}`
 }
 
 function llmResourceIdentifier(id: string): string {
-  return `caracal-sys://operator-llm-${sanitizeSlug(id)}`
+  return `${LLM_RESOURCE_PREFIX}${sanitizeSlug(id)}`
 }
+
+// The reserved identifier prefixes every governed LLM provider and resource carries, so the
+// pruner can find the objects this provisioner owns and remove the ones no longer configured
+// without touching anything else in the system zone.
+const LLM_PROVIDER_PREFIX = 'provider://caracal-sys-operator-llm-'
+const LLM_RESOURCE_PREFIX = 'caracal-sys://operator-llm-'
 
 // Authors the system zone's data-document policy: the platform decision contract reads
 // app_ids and grants to decide a data-plane exchange, and this document supplies them for
@@ -245,23 +251,27 @@ async function ensureLlmResource(
   return identifier
 }
 
-// Reconciles the system zone's single data-document policy and policy-set to carry the
-// Operator's grants. Policy versions are immutable, so a new version is added only when the
-// authored content changes; the policy-set is re-activated only when the content changed or
-// no version is active, which self-heals a deactivated set without churning a steady state.
-// A zone has exactly one active policy-set, so this reuses the reserved-named set rather
-// than creating a new one each run.
+// Reconciles the system zone's single data-document policy and policy-set to carry exactly
+// the Operator's current grants. Policy versions are immutable, so a new version is added
+// only when the authored content changes; the policy-set is re-activated only when the
+// content changed or no version is active, which self-heals a deactivated set without
+// churning a steady state. A zone has exactly one active policy-set, so this reuses the
+// reserved-named set rather than creating a new one each run. When there are no grants and no
+// system policy already exists, it creates nothing — a deployment that never governs an
+// upstream gets no empty artifacts.
 async function ensureOperatorPolicySet(
   admin: AdminClient,
   zoneId: string,
   operatorAppId: string,
   resourceIdentifiers: string[],
 ): Promise<void> {
+  const policies = await admin.policies.list(zoneId)
+  const policy = policies.find((entry) => entry.name === OPERATOR_POLICY_NAME)
+  if (!policy && resourceIdentifiers.length === 0) return
+
   const content = authorOperatorPolicy(operatorAppId, resourceIdentifiers)
   const desiredSha = sha256Hex(content)
 
-  const policies = await admin.policies.list(zoneId)
-  const policy = policies.find((entry) => entry.name === OPERATOR_POLICY_NAME)
   let policyVersionId: string
   let policyChanged = false
   if (!policy) {
@@ -291,9 +301,41 @@ async function ensureOperatorPolicySet(
   }
 }
 
-// Provisions every governed upstream as a sealed provider + LLM resource + gateway binding,
-// then reconciles the one system-zone policy-set that grants the Operator data-plane access
-// to them. Returns the upstream-id to resource-identifier mapping the runtime routes through.
+// Removes the governed providers and resources for upstreams no longer configured. Pruning a
+// removed upstream is a security concern, not just hygiene: a lingering sealed key stays
+// usable and a lingering grant keeps authorizing the Operator to it. The provider is archived
+// (its partial-unique identifier index makes a later re-add of the same id clean), which
+// drops the sealed key. The resource has a global-unique identifier, so archiving it would
+// block a re-add; it is instead neutralized in place — its gateway binding and credential
+// provider are removed — which a later re-add patches straight back. The grant itself is
+// revoked by the policy-set reconcile, so the removed upstream loses authorization, its key,
+// and its gateway route.
+async function pruneOrphanedUpstreams(
+  admin: AdminClient,
+  zoneId: string,
+  desiredResourceIdentifiers: Set<string>,
+  desiredProviderIdentifiers: Set<string>,
+): Promise<void> {
+  const resources = (await admin.resources.list(zoneId)) as unknown as (ResourceShape & { id: string; identifier: string })[]
+  for (const resource of resources) {
+    if (!resource.identifier.startsWith(LLM_RESOURCE_PREFIX) || desiredResourceIdentifiers.has(resource.identifier)) continue
+    if (resource.gateway_application_id !== null || resource.credential_provider_id !== null) {
+      await admin.resources.patch(zoneId, resource.id, { gateway_application_id: null, credential_provider_id: null })
+    }
+  }
+  const providers = await admin.providers.list(zoneId)
+  for (const provider of providers) {
+    if (!provider.identifier.startsWith(LLM_PROVIDER_PREFIX) || desiredProviderIdentifiers.has(provider.identifier)) continue
+    await admin.providers.delete(zoneId, provider.id)
+  }
+}
+
+// Reconciles every governed upstream to a sealed provider + LLM resource + gateway binding,
+// prunes the providers and resources for upstreams no longer configured, then reconciles the
+// one system-zone policy-set so it grants the Operator exactly the current upstreams. Safe to
+// run with an empty set: it prunes any previously governed upstreams and reconciles the grant
+// set to empty. Returns the upstream-id to resource-identifier mapping the runtime routes
+// through.
 async function provisionGovernedUpstreams(
   admin: AdminClient,
   zoneId: string,
@@ -306,6 +348,12 @@ async function provisionGovernedUpstreams(
     const resourceIdentifier = await ensureLlmResource(admin, zoneId, upstream, providerId, operatorAppId)
     governed.push({ id: upstream.id, resourceIdentifier })
   }
+  await pruneOrphanedUpstreams(
+    admin,
+    zoneId,
+    new Set(governed.map((entry) => entry.resourceIdentifier)),
+    new Set(upstreams.map((upstream) => llmProviderIdentifier(upstream.id))),
+  )
   await ensureOperatorPolicySet(
     admin,
     zoneId,
@@ -334,7 +382,9 @@ export async function provisionSystemZone(
   const zone = await ensureSystemZone(admin, findZoneBySlug)
   await ensureControlResource(admin, zone.id, audience)
   const operatorApplicationId = await ensureOperatorIdentity(admin, zone.id, operatorSecret)
-  const governedResources =
-    governedUpstreams.length > 0 ? await provisionGovernedUpstreams(admin, zone.id, operatorApplicationId, governedUpstreams) : []
+  // Always reconcile governed upstreams, even with an empty set, so a previously governed
+  // upstream that has been removed from config is pruned and its grant revoked rather than
+  // left authorized with a live sealed key.
+  const governedResources = await provisionGovernedUpstreams(admin, zone.id, operatorApplicationId, governedUpstreams)
   return { zoneId: zone.id, operatorApplicationId, governedResources }
 }

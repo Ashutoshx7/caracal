@@ -113,6 +113,10 @@ function fakeAdmin(seed: Partial<FakeState> = {}): { admin: AdminClient; state: 
         Object.assign(resource, input)
         return resource
       },
+      delete: async (_zone: string, rid: string) => {
+        state.calls.push('resources.delete')
+        state.resources = state.resources.filter((r) => r.id !== rid)
+      },
     },
     providers: {
       list: async () => {
@@ -130,6 +134,10 @@ function fakeAdmin(seed: Partial<FakeState> = {}): { admin: AdminClient; state: 
         const provider = state.providers.find((p) => p.id === pid)!
         if (input.config_json) provider.config_json = input.config_json
         return provider
+      },
+      delete: async (_zone: string, pid: string) => {
+        state.calls.push('providers.delete')
+        state.providers = state.providers.filter((p) => p.id !== pid)
       },
     },
     policies: {
@@ -433,5 +441,73 @@ describe('provisionSystemZone with governed upstreams', () => {
     expect(state.policies).toHaveLength(0)
     expect(state.policySets).toHaveLength(0)
     expect(result.governedResources).toEqual([])
+  })
+
+  it('prunes a removed upstream: archives its provider, neutralizes its resource binding, and revokes its grant', async () => {
+    const { admin, state } = fakeAdmin({ zones: [{ id: 'zone-sys', name: SYSTEM_ZONE_NAME, slug: SYSTEM_ZONE_SLUG }] })
+    const second = { id: 'anthropic', baseUrl: 'https://api.anthropic.test/v1', apiKey: 'sk-other' }
+    await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [upstream, second])
+    state.calls.length = 0
+    // Remove the second upstream from config and re-provision.
+    const result = await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [upstream])
+
+    // The removed upstream's sealed provider is gone, so its key is no longer usable.
+    expect(state.providers.find((p) => p.identifier === 'provider://caracal-sys-operator-llm-anthropic')).toBeUndefined()
+    expect(state.calls).toContain('providers.delete')
+    // Its resource is neutralized in place (not archived, since the identifier is globally
+    // unique and a later re-add must not conflict): no gateway route, no credential.
+    const orphan = state.resources.find((r) => r.identifier === 'caracal-sys://operator-llm-anthropic')!
+    expect(orphan.gateway_application_id).toBeNull()
+    expect(orphan.credential_provider_id).toBeNull()
+    // The grant set is reconciled to exactly the remaining upstream.
+    expect(result.governedResources).toEqual([{ id: 'openai', resourceIdentifier: 'caracal-sys://operator-llm-openai' }])
+    expect(state.policies[0].versions).toHaveLength(2)
+    expect(state.calls).toContain('policySets.activate')
+  })
+
+  it('reconciles grants to empty and prunes everything when all governed upstreams are removed', async () => {
+    const { admin, state } = fakeAdmin({ zones: [{ id: 'zone-sys', name: SYSTEM_ZONE_NAME, slug: SYSTEM_ZONE_SLUG }] })
+    await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [upstream])
+    state.calls.length = 0
+    const result = await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [])
+
+    // No provider survives, so no sealed key remains usable.
+    expect(state.providers).toHaveLength(0)
+    expect(state.calls).toContain('providers.delete')
+    // The policy is reconciled to an empty grant set and re-activated.
+    const content = state.policies[0].versions.at(-1)!
+    expect(state.policies[0].versions).toHaveLength(2)
+    expect(state.calls).toContain('policySets.activate')
+    expect(content.content_sha256).toBe(sha256Hex(authorOperatorPolicy(result.operatorApplicationId, [])))
+    expect(result.governedResources).toEqual([])
+  })
+
+  it('re-adds a previously pruned upstream cleanly: a fresh provider and the resource binding restored', async () => {
+    const { admin, state } = fakeAdmin({ zones: [{ id: 'zone-sys', name: SYSTEM_ZONE_NAME, slug: SYSTEM_ZONE_SLUG }] })
+    await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [upstream])
+    await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [])
+    const result = await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [upstream])
+
+    // A single resource (re-used by global-unique identifier) is bound again to a fresh provider.
+    const resource = state.resources.find((r) => r.identifier === 'caracal-sys://operator-llm-openai')!
+    const provider = state.providers.find((p) => p.identifier === 'provider://caracal-sys-operator-llm-openai')!
+    expect(resource.gateway_application_id).toBe(result.operatorApplicationId)
+    expect(resource.credential_provider_id).toBe(provider.id)
+    expect(state.resources.filter((r) => r.identifier === 'caracal-sys://operator-llm-openai')).toHaveLength(1)
+    expect(result.governedResources).toEqual([{ id: 'openai', resourceIdentifier: 'caracal-sys://operator-llm-openai' }])
+  })
+
+  it('leaves non-operator providers and resources untouched while pruning', async () => {
+    const { admin, state } = fakeAdmin({
+      zones: [{ id: 'zone-sys', name: SYSTEM_ZONE_NAME, slug: SYSTEM_ZONE_SLUG }],
+      resources: [{ id: 'res-control', identifier: 'caracal-control', scopes: [] }],
+      providers: [{ id: 'prov-keep', identifier: 'provider://tenant-thing', kind: 'api_key', config_json: {} }],
+    })
+    await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [upstream])
+    await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [])
+
+    // The unrelated provider and the control resource are never pruned.
+    expect(state.providers.find((p) => p.identifier === 'provider://tenant-thing')).toBeDefined()
+    expect(state.resources.find((r) => r.identifier === 'caracal-control')).toBeDefined()
   })
 })
