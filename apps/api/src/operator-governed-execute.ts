@@ -9,8 +9,7 @@ import { ControlClientError, type ControlClient } from './control-client.js'
 
 // One applied step: the ledger-safe detail persisted to the turn and any one-time output
 // (such as an issued or rotated client secret) returned to the caller in the response
-// only. Mirrors the shape the execute route records, so the route is agnostic to whether
-// a step ran through the control plane or the legacy path.
+// only. Mirrors the shape the execute route records for each governed control-plane step.
 export interface GovernedStepResult {
   id: string
   capability: string
