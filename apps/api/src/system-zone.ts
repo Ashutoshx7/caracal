@@ -3,6 +3,7 @@
 //
 // Idempotent provisioner for the reserved caracal.sys system zone the Operator self-governs through the control plane.
 
+import { createHash } from 'node:crypto'
 import type { AdminClient, Application } from '@caracalai/admin'
 import { ensureControlResource } from '@caracalai/engine'
 import { CONTROL_CAPABILITIES } from './operator-control-map.js'
@@ -43,10 +44,75 @@ export function operatorIdentityTraits(): string[] {
 
 // The resolved system-zone identity the Operator executes as: the system zone it governs
 // and the application id of its reserved control identity. The client secret is supplied
-// separately from sealed config and is never returned here.
+// separately from sealed config and is never returned here. governedResources maps each
+// governed upstream's id to the Caracal resource identifier the Operator routes its calls
+// through, so the runtime can address the gateway by resource.
 export interface SystemZoneIdentity {
   zoneId: string
   operatorApplicationId: string
+  governedResources: { id: string; resourceIdentifier: string }[]
+}
+
+// A third-party upstream the Operator must reach without holding its key directly: the
+// provider id, its base URL, and the secret key Caracal seals and injects at the gateway.
+export interface GovernedUpstream {
+  id: string
+  baseUrl: string
+  apiKey: string
+}
+
+// The reserved, single system-zone policy and policy-set that carry the Operator's
+// data-plane grants. A zone has exactly one active policy-set, so the provisioner reuses
+// these by name rather than creating a new one each run. The names are in the reserved
+// caracal.sys/ form so a tenant can never author or replace them.
+const OPERATOR_POLICY_NAME = 'caracal.sys/operator-bindings'
+const OPERATOR_POLICY_SET_NAME = 'caracal.sys/operator-policy'
+const OPERATOR_ROLE = 'operator'
+const LLM_SCOPE = 'llm:invoke'
+// The owning application bootstraps its session mandate by requesting this scope on a
+// resource it owns, so every governed resource must declare it alongside its data scope.
+const LIFECYCLE_SCOPE = 'agent:lifecycle'
+
+function sha256Hex(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex')
+}
+
+function sanitizeSlug(id: string): string {
+  return (
+    id
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'default'
+  )
+}
+
+function llmProviderIdentifier(id: string): `provider://${string}` {
+  return `provider://caracal-sys-operator-llm-${sanitizeSlug(id)}`
+}
+
+function llmResourceIdentifier(id: string): string {
+  return `caracal-sys://operator-llm-${sanitizeSlug(id)}`
+}
+
+// Authors the system zone's data-document policy: the platform decision contract reads
+// app_ids and grants to decide a data-plane exchange, and this document supplies them for
+// the Operator. The content is deterministic — resource identifiers are sorted and the
+// objects are rendered as canonical JSON — so an unchanged grant set produces an identical
+// document and the reconciler adds no new policy version.
+export function authorOperatorPolicy(operatorAppId: string, resourceIdentifiers: string[]): string {
+  const grants: Record<string, unknown> = {}
+  for (const identifier of [...resourceIdentifiers].sort()) {
+    grants[identifier] = { application: OPERATOR_ROLE, roles: { [OPERATOR_ROLE]: [LLM_SCOPE] } }
+  }
+  return [
+    '# caracal:data-document',
+    'package caracal.authz',
+    'import rego.v1',
+    `app_ids := ${JSON.stringify({ [OPERATOR_ROLE]: operatorAppId })}`,
+    `grants := ${JSON.stringify(grants)}`,
+    '',
+  ].join('\n')
 }
 
 function sameTraitSet(live: readonly string[] | undefined, desired: readonly string[]): boolean {
@@ -97,22 +163,178 @@ async function ensureOperatorIdentity(admin: AdminClient, zoneId: string, secret
   return existing.id
 }
 
+// Seals an upstream's api key into a Caracal api_key provider the gateway injects at call
+// time, so the Operator never holds the key. The key is reconciled on every run (the sealed
+// secret cannot be read back to compare), so rotating it in config and restarting rotates
+// the protected credential. allow_runtime_injection lets the gateway inject it for a
+// runtime exchange, not only a gateway-authenticated one.
+async function ensureApiKeyProvider(admin: AdminClient, zoneId: string, upstream: GovernedUpstream): Promise<string> {
+  const identifier = llmProviderIdentifier(upstream.id)
+  const config = {
+    auth_location: 'header' as const,
+    header_name: 'Authorization',
+    auth_scheme: 'Bearer',
+    api_key: upstream.apiKey,
+    allow_runtime_injection: true,
+  }
+  const providers = await admin.providers.list(zoneId)
+  const existing = providers.find((provider) => provider.identifier === identifier)
+  if (!existing) {
+    const created = await admin.providers.create(zoneId, {
+      name: `Operator LLM ${upstream.id}`,
+      identifier,
+      kind: 'api_key',
+      config_json: config,
+    })
+    return created.id
+  }
+  await admin.providers.patch(zoneId, existing.id, { kind: 'api_key', config_json: config })
+  return existing.id
+}
+
+interface ResourceShape {
+  upstream_url?: string | null
+  scopes?: string[]
+  credential_provider_id?: string | null
+  gateway_application_id?: string | null
+  operation_enforcement?: string
+}
+
+function sameScopeSet(live: readonly string[] | undefined, desired: readonly string[]): boolean {
+  const have = new Set(live ?? [])
+  return have.size === desired.length && desired.every((scope) => have.has(scope))
+}
+
+// Reconciles the governed LLM resource and its gateway binding. The resource declares the
+// data scope plus agent:lifecycle (so the owner can bootstrap), binds the sealed credential
+// provider, and routes through the gateway as the Operator identity. transport_uniform
+// treats the upstream as one surface, so an arbitrary chat-completions path passes the
+// mint-time scope check rather than a per-path operation match. Patched only on drift, so a
+// steady state never bumps the gateway binding cache.
+async function ensureLlmResource(
+  admin: AdminClient,
+  zoneId: string,
+  upstream: GovernedUpstream,
+  providerId: string,
+  operatorAppId: string,
+): Promise<string> {
+  const identifier = llmResourceIdentifier(upstream.id)
+  const scopes = [LLM_SCOPE, LIFECYCLE_SCOPE]
+  const desired = {
+    upstream_url: upstream.baseUrl,
+    scopes,
+    credential_provider_id: providerId,
+    gateway_application_id: operatorAppId,
+    operation_enforcement: 'transport_uniform' as const,
+  }
+  const resources = (await admin.resources.list(zoneId)) as unknown as (ResourceShape & { id: string; identifier: string })[]
+  const existing = resources.find((resource) => resource.identifier === identifier)
+  if (!existing) {
+    await admin.resources.create(zoneId, { name: `Operator LLM ${upstream.id}`, identifier, ...desired })
+    return identifier
+  }
+  const drifted =
+    existing.upstream_url !== desired.upstream_url ||
+    !sameScopeSet(existing.scopes, scopes) ||
+    existing.credential_provider_id !== providerId ||
+    existing.gateway_application_id !== operatorAppId ||
+    existing.operation_enforcement !== desired.operation_enforcement
+  if (drifted) {
+    await admin.resources.patch(zoneId, existing.id, desired)
+  }
+  return identifier
+}
+
+// Reconciles the system zone's single data-document policy and policy-set to carry the
+// Operator's grants. Policy versions are immutable, so a new version is added only when the
+// authored content changes; the policy-set is re-activated only when the content changed or
+// no version is active, which self-heals a deactivated set without churning a steady state.
+// A zone has exactly one active policy-set, so this reuses the reserved-named set rather
+// than creating a new one each run.
+async function ensureOperatorPolicySet(
+  admin: AdminClient,
+  zoneId: string,
+  operatorAppId: string,
+  resourceIdentifiers: string[],
+): Promise<void> {
+  const content = authorOperatorPolicy(operatorAppId, resourceIdentifiers)
+  const desiredSha = sha256Hex(content)
+
+  const policies = await admin.policies.list(zoneId)
+  const policy = policies.find((entry) => entry.name === OPERATOR_POLICY_NAME)
+  let policyVersionId: string
+  let policyChanged = false
+  if (!policy) {
+    const created = await admin.policies.create(zoneId, { name: OPERATOR_POLICY_NAME, content })
+    policyVersionId = created.version_id
+    policyChanged = true
+  } else {
+    const detail = await admin.policies.get(zoneId, policy.id)
+    const latest = detail.versions.reduce((best, version) => (version.version > best.version ? version : best))
+    if (latest.content_sha256 === desiredSha) {
+      policyVersionId = latest.id
+    } else {
+      const added = await admin.policies.addVersion(zoneId, policy.id, content)
+      policyVersionId = added.version_id
+      policyChanged = true
+    }
+  }
+
+  const sets = await admin.policySets.list(zoneId)
+  let set = sets.find((entry) => entry.name === OPERATOR_POLICY_SET_NAME)
+  if (!set) {
+    set = await admin.policySets.create(zoneId, OPERATOR_POLICY_SET_NAME)
+  }
+  if (policyChanged || !set.active_version_id) {
+    const version = await admin.policySets.addVersion(zoneId, set.id, [{ policy_version_id: policyVersionId }])
+    await admin.policySets.activate(zoneId, set.id, version.version_id)
+  }
+}
+
+// Provisions every governed upstream as a sealed provider + LLM resource + gateway binding,
+// then reconciles the one system-zone policy-set that grants the Operator data-plane access
+// to them. Returns the upstream-id to resource-identifier mapping the runtime routes through.
+async function provisionGovernedUpstreams(
+  admin: AdminClient,
+  zoneId: string,
+  operatorAppId: string,
+  upstreams: GovernedUpstream[],
+): Promise<{ id: string; resourceIdentifier: string }[]> {
+  const governed: { id: string; resourceIdentifier: string }[] = []
+  for (const upstream of upstreams) {
+    const providerId = await ensureApiKeyProvider(admin, zoneId, upstream)
+    const resourceIdentifier = await ensureLlmResource(admin, zoneId, upstream, providerId, operatorAppId)
+    governed.push({ id: upstream.id, resourceIdentifier })
+  }
+  await ensureOperatorPolicySet(
+    admin,
+    zoneId,
+    operatorAppId,
+    governed.map((entry) => entry.resourceIdentifier),
+  )
+  return governed
+}
+
 // Provisions the reserved caracal.sys system zone and the Operator's least-privilege
 // control identity within it, idempotently. Runs as the global-scope bootstrap admin
 // identity (the only actor allowed to create reserved-namespace objects), using the same
 // control primitives a customer uses: a real zone, the control resource, and a real
-// least-privilege control application. Re-running converges without duplicating anything,
-// so it is safe to call on every startup. The caller serializes concurrent instances so
-// the find-then-create lookups never race into duplicate objects. Returns the resolved
-// identity the Operator binds its governed execution to.
+// least-privilege control application. When governed upstreams are supplied, it also seals
+// each upstream's key into Caracal and grants the Operator data-plane access through the
+// gateway. Re-running converges without duplicating anything, so it is safe to call on every
+// startup. The caller serializes concurrent instances so the find-then-create lookups never
+// race into duplicate objects. Returns the resolved identity the Operator binds to.
 export async function provisionSystemZone(
   admin: AdminClient,
   operatorSecret: string,
   audience: string,
   findZoneBySlug: FindZoneBySlug,
+  governedUpstreams: GovernedUpstream[] = [],
 ): Promise<SystemZoneIdentity> {
   const zone = await ensureSystemZone(admin, findZoneBySlug)
   await ensureControlResource(admin, zone.id, audience)
   const operatorApplicationId = await ensureOperatorIdentity(admin, zone.id, operatorSecret)
-  return { zoneId: zone.id, operatorApplicationId }
+  const governedResources =
+    governedUpstreams.length > 0 ? await provisionGovernedUpstreams(admin, zone.id, operatorApplicationId, governedUpstreams) : []
+  return { zoneId: zone.id, operatorApplicationId, governedResources }
 }

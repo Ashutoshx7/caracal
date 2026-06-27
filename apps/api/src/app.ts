@@ -306,6 +306,13 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
     const secret = cfg.operatorControlSecret
     const audience = cfg.control.audience
     const isolatedSystemZone = new Set(cfg.operatorSystemZones)
+    // Govern every configured AI provider that carries a key: seal the key into Caracal and
+    // route the Operator's calls through the gateway, so the Operator never holds the key.
+    // Keyless local providers need no protection and are left as direct calls. Reusing the
+    // existing AI provider config keeps the user surface to the keys already supplied.
+    const governedUpstreams = cfg.operatorAiProviders
+      .filter((provider) => provider.apiKey)
+      .map((provider) => ({ id: provider.id, baseUrl: provider.baseUrl, apiKey: provider.apiKey! }))
     const provisionLog = createLogger('api-system-zone', cfg.logLevel as 'info')
     const admin = new AdminClient({ apiUrl: cfg.control.apiUrl, adminToken: cfg.control.apiToken })
     // Deterministic by-slug lookup for the singleton system zone. Selecting regardless of
@@ -326,7 +333,7 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
       const lock = await db.connect()
       try {
         await lock.query('SELECT pg_advisory_lock($1)', [SYSTEM_ZONE_PROVISION_LOCK])
-        const identity = await provisionSystemZone(admin, secret, audience, findZoneBySlug)
+        const identity = await provisionSystemZone(admin, secret, audience, findZoneBySlug, governedUpstreams)
         operatorControlIdentity.current = {
           applicationId: identity.operatorApplicationId,
           clientSecret: secret,
@@ -343,6 +350,7 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
         provisionLog.info('system zone provisioned', {
           zone_id: identity.zoneId,
           operator_application_id: identity.operatorApplicationId,
+          governed_resources: identity.governedResources.map((entry) => entry.resourceIdentifier),
         })
       } catch (err) {
         provisionLog.error('system zone provisioning failed', { error: err instanceof Error ? err.message : String(err) })

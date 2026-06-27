@@ -4,9 +4,11 @@
 // Unit tests for the idempotent caracal.sys system zone provisioner and the Operator's least-privilege identity.
 
 import { describe, it, expect } from 'vitest'
+import { createHash } from 'node:crypto'
 import type { AdminClient } from '@caracalai/admin'
 import {
   provisionSystemZone,
+  authorOperatorPolicy,
   operatorControlScopes,
   operatorIdentityTraits,
   SYSTEM_ZONE_SLUG,
@@ -14,11 +16,54 @@ import {
   OPERATOR_APP_NAME,
 } from '../../../../apps/api/src/system-zone.js'
 
+interface FakeResource {
+  id: string
+  identifier: string
+  scopes: string[]
+  upstream_url?: string | null
+  credential_provider_id?: string | null
+  gateway_application_id?: string | null
+  operation_enforcement?: string
+}
+interface FakeProvider {
+  id: string
+  identifier: string
+  kind: string
+  config_json: Record<string, unknown>
+}
+interface FakePolicyVersion {
+  id: string
+  version: number
+  content_sha256: string
+}
+interface FakePolicy {
+  id: string
+  name: string
+  versions: FakePolicyVersion[]
+}
+interface FakePolicySetVersion {
+  id: string
+  manifest: { policy_version_id: string }[]
+}
+interface FakePolicySet {
+  id: string
+  name: string
+  active_version_id: string | null
+  versions: FakePolicySetVersion[]
+}
+
 interface FakeState {
   zones: { id: string; name: string; slug: string }[]
-  resources: { id: string; identifier: string; scopes: string[] }[]
+  resources: FakeResource[]
   apps: { id: string; name: string; traits?: string[]; client_secret?: string; registration_method?: string; expires_at?: string | null }[]
+  providers: FakeProvider[]
+  policies: FakePolicy[]
+  policySets: FakePolicySet[]
   calls: string[]
+}
+
+function sha256Hex(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex')
 }
 
 // A by-slug lookup over the fake state, mirroring the deterministic DB lookup the
@@ -35,7 +80,7 @@ function fakeFindZoneBySlug(state: FakeState): (slug: string) => Promise<{ id: s
 // It records the calls it receives so a test can assert idempotent, least-privilege
 // behavior without a live control plane.
 function fakeAdmin(seed: Partial<FakeState> = {}): { admin: AdminClient; state: FakeState } {
-  const state: FakeState = { zones: [], resources: [], apps: [], calls: [], ...seed }
+  const state: FakeState = { zones: [], resources: [], apps: [], providers: [], policies: [], policySets: [], calls: [], ...seed }
   let counter = 0
   const id = (prefix: string): string => `${prefix}-${++counter}`
   const admin = {
@@ -56,17 +101,88 @@ function fakeAdmin(seed: Partial<FakeState> = {}): { admin: AdminClient; state: 
         state.calls.push('resources.list')
         return state.resources
       },
-      create: async (_zone: string, input: { identifier: string; scopes: string[] }) => {
+      create: async (_zone: string, input: FakeResource) => {
         state.calls.push('resources.create')
-        const resource = { id: id('res'), identifier: input.identifier, scopes: input.scopes }
+        const resource = { ...input, id: id('res') }
         state.resources.push(resource)
         return resource
       },
-      patch: async (_zone: string, rid: string, input: { scopes?: string[] }) => {
+      patch: async (_zone: string, rid: string, input: Partial<FakeResource>) => {
         state.calls.push('resources.patch')
         const resource = state.resources.find((r) => r.id === rid)!
-        if (input.scopes) resource.scopes = input.scopes
+        Object.assign(resource, input)
         return resource
+      },
+    },
+    providers: {
+      list: async () => {
+        state.calls.push('providers.list')
+        return state.providers
+      },
+      create: async (_zone: string, input: { identifier: string; kind: string; config_json: Record<string, unknown> }) => {
+        state.calls.push('providers.create')
+        const provider = { id: id('prov'), identifier: input.identifier, kind: input.kind, config_json: input.config_json }
+        state.providers.push(provider)
+        return provider
+      },
+      patch: async (_zone: string, pid: string, input: { config_json?: Record<string, unknown> }) => {
+        state.calls.push('providers.patch')
+        const provider = state.providers.find((p) => p.id === pid)!
+        if (input.config_json) provider.config_json = input.config_json
+        return provider
+      },
+    },
+    policies: {
+      list: async () => {
+        state.calls.push('policies.list')
+        return state.policies
+      },
+      get: async (_zone: string, pid: string) => {
+        state.calls.push('policies.get')
+        return state.policies.find((p) => p.id === pid)!
+      },
+      create: async (_zone: string, input: { name: string; content: string }) => {
+        state.calls.push('policies.create')
+        const versionId = id('pv')
+        const policy = {
+          id: id('pol'),
+          name: input.name,
+          versions: [{ id: versionId, version: 1, content_sha256: sha256Hex(input.content) }],
+        }
+        state.policies.push(policy)
+        return { id: policy.id, version_id: versionId }
+      },
+      addVersion: async (_zone: string, pid: string, content: string) => {
+        state.calls.push('policies.addVersion')
+        const policy = state.policies.find((p) => p.id === pid)!
+        const versionId = id('pv')
+        policy.versions.push({ id: versionId, version: policy.versions.length + 1, content_sha256: sha256Hex(content) })
+        return { version_id: versionId }
+      },
+    },
+    policySets: {
+      list: async () => {
+        state.calls.push('policySets.list')
+        return state.policySets
+      },
+      create: async (_zone: string, name: string) => {
+        state.calls.push('policySets.create')
+        const set = { id: id('ps'), name, active_version_id: null, versions: [] as FakePolicySetVersion[] }
+        state.policySets.push(set)
+        return set
+      },
+      addVersion: async (_zone: string, sid: string, manifest: { policy_version_id: string }[]) => {
+        state.calls.push('policySets.addVersion')
+        const set = state.policySets.find((s) => s.id === sid)!
+        const versionId = id('psv')
+        set.versions.push({ id: versionId, manifest })
+        return { version_id: versionId }
+      },
+      activate: async (_zone: string, sid: string, versionId: string) => {
+        state.calls.push('policySets.activate')
+        const set = state.policySets.find((s) => s.id === sid)!
+        set.active_version_id = versionId
+        return { activated: true, version_id: versionId, shadow_version_id: null }
       },
     },
     applications: {
@@ -217,5 +333,105 @@ describe('provisionSystemZone', () => {
     )
     // It never widens authority by reusing an unusable identity or creating a duplicate.
     expect(expired.state.calls).not.toContain('applications.create')
+  })
+})
+
+describe('authorOperatorPolicy', () => {
+  it('renders deterministic app_ids and grants data documents the decision contract reads', () => {
+    const content = authorOperatorPolicy('app-op', ['caracal-sys://operator-llm-openai'])
+    expect(content).toContain('# caracal:data-document')
+    expect(content).toContain('package caracal.authz')
+    expect(content).toContain('app_ids := {"operator":"app-op"}')
+    expect(content).toContain(
+      'grants := {"caracal-sys://operator-llm-openai":{"application":"operator","roles":{"operator":["llm:invoke"]}}}',
+    )
+  })
+
+  it('is order-independent in the resource list, so an unchanged grant set yields identical content', () => {
+    const a = authorOperatorPolicy('app-op', ['caracal-sys://b', 'caracal-sys://a'])
+    const b = authorOperatorPolicy('app-op', ['caracal-sys://a', 'caracal-sys://b'])
+    expect(a).toBe(b)
+  })
+})
+
+describe('provisionSystemZone with governed upstreams', () => {
+  const upstream = { id: 'openai', baseUrl: 'https://api.openai.test/v1', apiKey: 'sk-live-secret' }
+
+  it('seals the key, binds the resource, and activates the single grant policy-set from scratch', async () => {
+    const { admin, state } = fakeAdmin({ zones: [{ id: 'zone-sys', name: SYSTEM_ZONE_NAME, slug: SYSTEM_ZONE_SLUG }] })
+    const result = await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [upstream])
+
+    // An api_key provider holds the sealed key and allows gateway runtime injection.
+    const provider = state.providers.find((p) => p.identifier === 'provider://caracal-sys-operator-llm-openai')!
+    expect(provider.kind).toBe('api_key')
+    expect(provider.config_json).toMatchObject({ api_key: 'sk-live-secret', allow_runtime_injection: true, header_name: 'Authorization' })
+
+    // The resource declares the data scope plus agent:lifecycle, binds the credential
+    // provider, and routes through the gateway as the Operator identity.
+    const resource = state.resources.find((r) => r.identifier === 'caracal-sys://operator-llm-openai')!
+    expect([...resource.scopes].sort()).toEqual(['agent:lifecycle', 'llm:invoke'])
+    expect(resource.credential_provider_id).toBe(provider.id)
+    expect(resource.gateway_application_id).toBe(result.operatorApplicationId)
+    expect(resource.operation_enforcement).toBe('transport_uniform')
+
+    // Exactly one policy and one policy-set, activated, granting the Operator the resource.
+    expect(state.policies).toHaveLength(1)
+    expect(state.policySets).toHaveLength(1)
+    expect(state.policySets[0].active_version_id).not.toBeNull()
+    expect(result.governedResources).toEqual([{ id: 'openai', resourceIdentifier: 'caracal-sys://operator-llm-openai' }])
+  })
+
+  it('is idempotent: an unchanged upstream set adds no policy version and does not re-activate', async () => {
+    const { admin, state } = fakeAdmin({ zones: [{ id: 'zone-sys', name: SYSTEM_ZONE_NAME, slug: SYSTEM_ZONE_SLUG }] })
+    await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [upstream])
+    state.calls.length = 0
+    await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [upstream])
+
+    // Steady state: no new policy version, no re-activation, no duplicate objects.
+    expect(state.calls).not.toContain('policies.create')
+    expect(state.calls).not.toContain('policies.addVersion')
+    expect(state.calls).not.toContain('policySets.addVersion')
+    expect(state.calls).not.toContain('policySets.activate')
+    expect(state.calls).not.toContain('resources.patch')
+    expect(state.policies).toHaveLength(1)
+    expect(state.policySets).toHaveLength(1)
+    expect(state.resources.filter((r) => r.identifier.startsWith('caracal-sys://operator-llm-'))).toHaveLength(1)
+    expect(state.providers).toHaveLength(1)
+  })
+
+  it('adds a new policy version and re-activates when a governed upstream is added', async () => {
+    const { admin, state } = fakeAdmin({ zones: [{ id: 'zone-sys', name: SYSTEM_ZONE_NAME, slug: SYSTEM_ZONE_SLUG }] })
+    await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [upstream])
+    state.calls.length = 0
+    const second = { id: 'anthropic', baseUrl: 'https://api.anthropic.test/v1', apiKey: 'sk-other' }
+    await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [upstream, second])
+
+    expect(state.calls).toContain('policies.addVersion')
+    expect(state.calls).toContain('policySets.activate')
+    expect(state.policies[0].versions).toHaveLength(2)
+    expect(state.providers).toHaveLength(2)
+    expect(state.resources.filter((r) => r.identifier.startsWith('caracal-sys://operator-llm-'))).toHaveLength(2)
+  })
+
+  it('re-activates to self-heal a deactivated policy-set even when content is unchanged', async () => {
+    const { admin, state } = fakeAdmin({ zones: [{ id: 'zone-sys', name: SYSTEM_ZONE_NAME, slug: SYSTEM_ZONE_SLUG }] })
+    await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [upstream])
+    // Simulate a manual deactivation of the system policy-set.
+    state.policySets[0].active_version_id = null
+    state.calls.length = 0
+    await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state), [upstream])
+
+    expect(state.calls).not.toContain('policies.addVersion')
+    expect(state.calls).toContain('policySets.activate')
+    expect(state.policySets[0].active_version_id).not.toBeNull()
+  })
+
+  it('does no LLM provisioning when no governed upstreams are supplied', async () => {
+    const { admin, state } = fakeAdmin({ zones: [{ id: 'zone-sys', name: SYSTEM_ZONE_NAME, slug: SYSTEM_ZONE_SLUG }] })
+    const result = await provisionSystemZone(admin, 'cs_sealed', 'caracal-control', fakeFindZoneBySlug(state))
+    expect(state.providers).toHaveLength(0)
+    expect(state.policies).toHaveLength(0)
+    expect(state.policySets).toHaveLength(0)
+    expect(result.governedResources).toEqual([])
   })
 })
