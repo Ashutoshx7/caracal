@@ -51,6 +51,10 @@ import './fastify-augmentation.js'
 
 const READY_CHECK_TIMEOUT_MS = 5_000
 
+// Stable Postgres advisory-lock key that serializes caracal.sys system-zone provisioning
+// across API instances. A fixed constant so every instance contends for the same lock.
+const SYSTEM_ZONE_PROVISION_LOCK = 4143012026
+
 interface OutboxHealth {
   pendingCount: number
   deadCount: number
@@ -300,15 +304,33 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
   // unconfigured rather than crashing the API; a later restart retries.
   if (cfg.control && cfg.operatorSelfGovern && cfg.operatorControlSecret) {
     const secret = cfg.operatorControlSecret
+    const audience = cfg.control.audience
+    const isolatedSystemZone = new Set(cfg.operatorSystemZones)
     const provisionLog = createLogger('api-system-zone', cfg.logLevel as 'info')
     const admin = new AdminClient({ apiUrl: cfg.control.apiUrl, adminToken: cfg.control.apiToken })
     app.addHook('onListen', async () => {
+      // Serialize provisioning across instances with a Postgres advisory lock, so two API
+      // replicas starting together cannot both run the find-then-create lookups and create
+      // duplicate reserved objects. The lock is held on a dedicated connection only for the
+      // brief provisioning window and released in finally; a crash drops it with the
+      // session. The provisioner is idempotent, so the instance that waits then converges on
+      // the objects the first one created.
+      const lock = await db.connect()
       try {
-        const identity = await provisionSystemZone(admin, secret)
+        await lock.query('SELECT pg_advisory_lock($1)', [SYSTEM_ZONE_PROVISION_LOCK])
+        const identity = await provisionSystemZone(admin, secret, audience)
         operatorControlIdentity.current = {
           applicationId: identity.operatorApplicationId,
           clientSecret: secret,
           zoneId: identity.zoneId,
+        }
+        if (isolatedSystemZone.has(identity.zoneId)) {
+          // The Operator must govern its own system zone; listing it as an isolated zone
+          // would block self-governance before the identity check. Warn rather than fail so
+          // the rest of the platform still starts.
+          provisionLog.warn('system zone is also listed as an isolated zone; self-governance will be blocked', {
+            zone_id: identity.zoneId,
+          })
         }
         provisionLog.info('system zone provisioned', {
           zone_id: identity.zoneId,
@@ -316,6 +338,9 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
         })
       } catch (err) {
         provisionLog.error('system zone provisioning failed', { error: err instanceof Error ? err.message : String(err) })
+      } finally {
+        await lock.query('SELECT pg_advisory_unlock($1)', [SYSTEM_ZONE_PROVISION_LOCK]).catch(() => {})
+        lock.release()
       }
     })
   }

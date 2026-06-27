@@ -73,6 +73,13 @@ async function ensureOperatorIdentity(admin: AdminClient, zoneId: string, secret
     await admin.applications.patch(zoneId, created.id, { client_secret: secret })
     return created.id
   }
+  // An existing reserved-name identity must be a usable, non-expiring managed credential; a
+  // DCR or expired application with the reserved name cannot mint control tokens, so binding
+  // to it would report governed execution as configured while every execution failed at the
+  // token mint. Fail closed instead, so the misconfiguration surfaces rather than hiding.
+  if (existing.registration_method !== 'managed' || (existing.expires_at !== null && existing.expires_at !== undefined)) {
+    throw new Error('reserved operator identity exists but is not a usable non-expiring managed credential')
+  }
   // Reconcile the live identity to least privilege and the configured secret. Patching the
   // secret every run keeps the running credential equal to sealed config; patching traits
   // only when drifted avoids needless writes while still self-healing a tampered identity.
@@ -88,11 +95,12 @@ async function ensureOperatorIdentity(admin: AdminClient, zoneId: string, secret
 // identity (the only actor allowed to create reserved-namespace objects), using the same
 // control primitives a customer uses: a real zone, the control resource, and a real
 // least-privilege control application. Re-running converges without duplicating anything,
-// so it is safe to call on every startup. Returns the resolved identity the Operator binds
-// its governed execution to.
-export async function provisionSystemZone(admin: AdminClient, operatorSecret: string): Promise<SystemZoneIdentity> {
+// so it is safe to call on every startup. The caller serializes concurrent instances so
+// the find-then-create lookups never race into duplicate objects. Returns the resolved
+// identity the Operator binds its governed execution to.
+export async function provisionSystemZone(admin: AdminClient, operatorSecret: string, audience: string): Promise<SystemZoneIdentity> {
   const zone = await ensureSystemZone(admin)
-  await ensureControlResource(admin, zone.id)
+  await ensureControlResource(admin, zone.id, audience)
   const operatorApplicationId = await ensureOperatorIdentity(admin, zone.id, operatorSecret)
   return { zoneId: zone.id, operatorApplicationId }
 }

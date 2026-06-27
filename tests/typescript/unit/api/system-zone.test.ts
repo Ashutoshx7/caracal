@@ -17,7 +17,7 @@ import {
 interface FakeState {
   zones: { id: string; name: string; slug: string }[]
   resources: { id: string; identifier: string; scopes: string[] }[]
-  apps: { id: string; name: string; traits?: string[]; client_secret?: string }[]
+  apps: { id: string; name: string; traits?: string[]; client_secret?: string; registration_method?: string; expires_at?: string | null }[]
   calls: string[]
 }
 
@@ -66,7 +66,14 @@ function fakeAdmin(seed: Partial<FakeState> = {}): { admin: AdminClient; state: 
       },
       create: async (_zone: string, input: { name: string; traits?: string[] }) => {
         state.calls.push('applications.create')
-        const app = { id: id('app'), name: input.name, traits: input.traits, client_secret: 'cs_minted_once' }
+        const app = {
+          id: id('app'),
+          name: input.name,
+          traits: input.traits,
+          client_secret: 'cs_minted_once',
+          registration_method: 'managed',
+          expires_at: null,
+        }
         state.apps.push(app)
         return app
       },
@@ -108,7 +115,7 @@ describe('operatorIdentityTraits', () => {
 describe('provisionSystemZone', () => {
   it('creates the reserved zone, control resource, and least-privilege identity from scratch', async () => {
     const { admin, state } = fakeAdmin()
-    const result = await provisionSystemZone(admin, 'cs_sealed_secret')
+    const result = await provisionSystemZone(admin, 'cs_sealed_secret', 'caracal-control')
 
     const zone = state.zones[0]
     expect(zone).toMatchObject({ name: SYSTEM_ZONE_NAME, slug: SYSTEM_ZONE_SLUG })
@@ -131,9 +138,18 @@ describe('provisionSystemZone', () => {
     const seeded = fakeAdmin({
       zones: [{ id: 'zone-sys', name: SYSTEM_ZONE_NAME, slug: SYSTEM_ZONE_SLUG }],
       resources: [{ id: 'res-control', identifier: 'caracal-control', scopes: [] }],
-      apps: [{ id: 'app-op', name: OPERATOR_APP_NAME, traits: operatorIdentityTraits(), client_secret: 'old' }],
+      apps: [
+        {
+          id: 'app-op',
+          name: OPERATOR_APP_NAME,
+          traits: operatorIdentityTraits(),
+          client_secret: 'old',
+          registration_method: 'managed',
+          expires_at: null,
+        },
+      ],
     })
-    const result = await provisionSystemZone(seeded.admin, 'cs_rotated')
+    const result = await provisionSystemZone(seeded.admin, 'cs_rotated', 'caracal-control')
 
     // No new zone or application was created.
     expect(result.zoneId).toBe('zone-sys')
@@ -151,10 +167,41 @@ describe('provisionSystemZone', () => {
     const seeded = fakeAdmin({
       zones: [{ id: 'zone-sys', name: SYSTEM_ZONE_NAME, slug: SYSTEM_ZONE_SLUG }],
       // A widened identity: an extra scope trait that is not least privilege.
-      apps: [{ id: 'app-op', name: OPERATOR_APP_NAME, traits: ['control:invoke', 'control:scope:control:zone:write'], client_secret: 'x' }],
+      apps: [
+        {
+          id: 'app-op',
+          name: OPERATOR_APP_NAME,
+          traits: ['control:invoke', 'control:scope:control:zone:write'],
+          client_secret: 'x',
+          registration_method: 'managed',
+          expires_at: null,
+        },
+      ],
     })
-    await provisionSystemZone(seeded.admin, 'cs_sealed')
+    await provisionSystemZone(seeded.admin, 'cs_sealed', 'caracal-control')
     expect(seeded.state.calls).toContain('applications.patch:traits')
     expect([...(seeded.state.apps[0].traits ?? [])].sort()).toEqual(operatorIdentityTraits())
+  })
+
+  it('fails closed when the reserved identity exists but cannot mint tokens (expired or non-managed)', async () => {
+    const expired = fakeAdmin({
+      zones: [{ id: 'zone-sys', name: SYSTEM_ZONE_NAME, slug: SYSTEM_ZONE_SLUG }],
+      // An expired reserved-name app cannot mint control tokens; binding to it would report
+      // governed execution configured while every execution failed at the mint.
+      apps: [
+        {
+          id: 'app-op',
+          name: OPERATOR_APP_NAME,
+          traits: operatorIdentityTraits(),
+          registration_method: 'managed',
+          expires_at: '2020-01-01T00:00:00Z',
+        },
+      ],
+    })
+    await expect(provisionSystemZone(expired.admin, 'cs_sealed', 'caracal-control')).rejects.toThrow(
+      /usable non-expiring managed credential/,
+    )
+    // It never widens authority by reusing an unusable identity or creating a duplicate.
+    expect(expired.state.calls).not.toContain('applications.create')
   })
 })
