@@ -9,6 +9,13 @@ import { useSyncExternalStore, useState } from "react";
 
 import { getActiveZoneId, setActiveZoneId } from "@/platform/state/localInstall";
 import { isSystemZone } from "@/platform/state/zones";
+import {
+  clearSystemZoneViewLatch,
+  isSystemZoneViewTab,
+  systemZoneViewPath,
+} from "@/platform/state/systemZoneView";
+
+export { systemZoneViewPath };
 
 import { consoleApi } from "./client";
 import type {
@@ -1031,37 +1038,10 @@ function subscribeZone(listener: () => void): () => void {
   return () => zoneListeners.delete(listener);
 }
 
-// The query parameter and the per-tab latch that mark a browser tab as the read-only
-// system-zone viewer. The Console opens the reserved system zone in a new tab with
-// ?systemZone=1; the flag is latched into sessionStorage so it survives in-tab navigation
-// (which drops the query string) while staying strictly per-tab, so a normal tab is never
-// switched into the system view and the shared active-zone storage is never touched.
-const SYSTEM_ZONE_VIEW_PARAM = "systemZone";
-const SYSTEM_ZONE_VIEW_KEY = "caracal.systemZoneView";
-
-// The relative URL that opens the reserved system zone in a new, read-only viewer tab.
-export function systemZoneViewPath(): string {
-  return `/app?${SYSTEM_ZONE_VIEW_PARAM}=1`;
-}
-
-function detectSystemZoneView(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get(SYSTEM_ZONE_VIEW_PARAM) === "1") {
-      window.sessionStorage.setItem(SYSTEM_ZONE_VIEW_KEY, "1");
-      return true;
-    }
-    return window.sessionStorage.getItem(SYSTEM_ZONE_VIEW_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
 // Whether this tab is the read-only system-zone viewer. Stable for the tab's lifetime, so the
 // shell can render the whole Console read-only and pin the active zone to the system zone.
 export function useSystemZoneView(): boolean {
-  return useState(detectSystemZoneView)[0];
+  return useState(isSystemZoneViewTab)[0];
 }
 
 // Leaves the read-only system-zone viewer and lands on the given Console path as a normal tab.
@@ -1070,11 +1050,7 @@ export function useSystemZoneView(): boolean {
 // where the operator can pick and manage their own zones again.
 export function exitSystemZoneView(to: string): void {
   if (typeof window === "undefined") return;
-  try {
-    window.sessionStorage.removeItem(SYSTEM_ZONE_VIEW_KEY);
-  } catch {
-    // sessionStorage may be unavailable; the absent flag still resolves to the normal Console.
-  }
+  clearSystemZoneViewLatch();
   window.location.assign(to);
 }
 
@@ -1113,7 +1089,7 @@ export function useActiveZone(): {
   activeZone: Zone | null;
   selectZone: (id: string) => void;
 } {
-  const systemView = useState(detectSystemZoneView)[0];
+  const systemView = useState(isSystemZoneViewTab)[0];
   const zonesQuery = useZones();
   const persistedId = useSyncExternalStore(subscribeZone, getActiveZoneId, () => null);
   const systemZoneQuery = useSystemZone(systemView);

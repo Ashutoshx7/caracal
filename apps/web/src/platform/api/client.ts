@@ -5,6 +5,8 @@ Caracal, a product of Garudex Labs
 This file is the typed HTTP client the web app uses to reach the Caracal control plane through the session-guarded console backend.
 */
 import { config } from "@/platform/config";
+import { isSystemZoneViewTab } from "@/platform/state/systemZoneView";
+
 import { CONTROL_AUDIENCE, CONTROL_SCOPES } from "./controlCatalog";
 
 import type {
@@ -128,6 +130,14 @@ function abortError(caller: AbortSignal | undefined): ConsoleApiError {
 
 async function request<T>(path: string, init?: RequestInit & { signal?: AbortSignal }): Promise<T> {
   const caller = init?.signal;
+  // The read-only system-zone viewer tab may never mutate. Every mutating call funnels through
+  // here (list reads use a separate GET-only path), so refusing mutating methods from the viewer
+  // tab is a single fail-closed gate that holds even if a control was rendered without its
+  // read-only state and even against a control plane that has not yet shipped the server guard.
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD" && isSystemZoneViewTab()) {
+    throw new ConsoleApiError(403, "system_zone_read_only");
+  }
   let res: Response;
   try {
     res = await fetch(`${config.consoleBaseUrl}${path}`, {
