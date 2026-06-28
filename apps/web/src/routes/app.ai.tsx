@@ -249,6 +249,11 @@ const RAIL_MIN_WIDTH = 208;
 const RAIL_DEFAULT_WIDTH = 240;
 const RAIL_COLLAPSED_WIDTH = "2.75rem";
 
+// The mode and autopilot chosen for the last new conversation are remembered so a fresh chat
+// opens the way the operator last worked. Mode defaults to the safer read-only "ask".
+const DRAFT_MODE_KEY = "caracal.operator.draftMode";
+const DRAFT_AUTOPILOT_KEY = "caracal.operator.draftAutopilot";
+
 function readRailCollapsed(): boolean {
   if (typeof localStorage === "undefined") return false;
   return localStorage.getItem(RAIL_COLLAPSE_KEY) === "1";
@@ -260,13 +265,17 @@ function readRailWidth(): number {
   return Number.isFinite(stored) && stored >= RAIL_MIN_WIDTH ? stored : RAIL_DEFAULT_WIDTH;
 }
 
-/* ------------------------------ workspace ------------------------------ */
+function readDraftMode(): OperatorConversationMode {
+  if (typeof localStorage === "undefined") return "ask";
+  return localStorage.getItem(DRAFT_MODE_KEY) === "agent" ? "agent" : "ask";
+}
 
-// Shown wherever the Operator would otherwise invite a message while no AI provider is connected.
-// The Operator turns natural language into governed plans through a model, so with no provider every
-// send is refused upstream; the console says so plainly and disables sending rather than presenting
-// a chat that silently fails.
-const AI_DISCONNECTED_NOTICE = "Connect an AI provider to use the Operator.";
+function readDraftAutopilot(): boolean {
+  if (typeof localStorage === "undefined") return false;
+  return localStorage.getItem(DRAFT_AUTOPILOT_KEY) === "1";
+}
+
+/* ------------------------------ workspace ------------------------------ */
 
 function OperatorWorkspace() {
   const { activeZone } = useActiveZone();
@@ -276,8 +285,8 @@ function OperatorWorkspace() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [heroDraft, setHeroDraft] = useState("");
-  const [draftMode, setDraftMode] = useState<OperatorConversationMode>("agent");
-  const [draftAutopilot, setDraftAutopilot] = useState(false);
+  const [draftMode, setDraftMode] = useState<OperatorConversationMode>(readDraftMode);
+  const [draftAutopilot, setDraftAutopilot] = useState(readDraftAutopilot);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [usageByConversation, setUsageByConversation] = useState<Record<string, SessionUsage>>({});
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
@@ -296,11 +305,6 @@ function OperatorWorkspace() {
   const restore = useRestoreOperatorConversation(zoneId);
   const remove = useDeleteOperatorConversation(zoneId);
 
-  // Whether the Operator has a usable model. Only a loaded status that reports no provider blocks
-  // sending; while the status is still loading the composer stays interactive so a configured
-  // deployment never flickers through a disabled state.
-  const aiStatus = useOperatorAiStatus(true);
-  const aiUnavailable = aiStatus.data?.enabled === false;
   const { data: autopilotAvailable } = useOperatorAutopilotAvailable();
 
   useEffect(() => {
@@ -314,6 +318,18 @@ function OperatorWorkspace() {
       localStorage.setItem(RAIL_WIDTH_KEY, String(Math.round(railWidth)));
     }
   }, [railWidth]);
+
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(DRAFT_MODE_KEY, draftMode);
+    }
+  }, [draftMode]);
+
+  useEffect(() => {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(DRAFT_AUTOPILOT_KEY, draftAutopilot ? "1" : "0");
+    }
+  }, [draftAutopilot]);
 
   // Escape leaves full-screen so the overlay never traps the operator.
   useEffect(() => {
@@ -401,12 +417,10 @@ function OperatorWorkspace() {
   }
 
   // Starting from intent: derive a session title from the message, create the
-  // session, then hand the message to the stream to send as the opening turn. With no
-  // AI provider the request would only be refused upstream, so the session is not even
-  // created — the hero shows the disconnected notice instead.
+  // session, then hand the message to the stream to send as the opening turn.
   function startFromIntent(text: string) {
     const value = text.trim();
-    if (!value || create.isPending || aiUnavailable) return;
+    if (!value || create.isPending) return;
     setPendingMessage(value);
     setHeroDraft("");
     create.mutate(
@@ -534,7 +548,6 @@ function OperatorWorkspace() {
             usage={usageByConversation[selectedId]}
             model={selectedModel}
             onModelChange={setSelectedModel}
-            aiUnavailable={aiUnavailable}
           />
         ) : (
           <NewChatHero
@@ -545,7 +558,6 @@ function OperatorWorkspace() {
             pending={create.isPending}
             model={selectedModel}
             onModelChange={setSelectedModel}
-            aiUnavailable={aiUnavailable}
             controls={{
               mode: draftMode,
               onModeChange: setDraftMode,
@@ -1072,29 +1084,35 @@ interface ComposerControls {
 }
 
 // The approval-mode dropdown placed flush below the chat box. It only appears in agent mode,
-// since ask mode is read-only and never proposes a change to approve.
+// since ask mode is read-only and never proposes a change to approve. When autopilot is engaged a
+// short reminder sits beside it that the Operator acts on its own judgement for low-risk changes.
 function AutopilotRow({ controls }: { controls: ComposerControls }) {
   if (controls.mode !== "agent") return null;
   return (
-    <div className="mt-1.5 flex items-center px-0.5">
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 px-0.5">
       <AutopilotMenu
         autopilot={controls.autopilot}
         available={controls.autopilotAvailable}
         pending={controls.autopilotPending}
         onChange={controls.onAutopilotChange}
       />
+      {controls.autopilot ? (
+        <span className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-500">
+          <AlertGlyph className="h-3 w-3 flex-shrink-0" />
+          AI can make mistakes — use autopilot responsibly.
+        </span>
+      ) : null}
     </div>
   );
 }
 
 // A compact icon-led dropdown used inside the composer for mode and autopilot. It opens
 // upward so it never collides with the page below the chat box, closes on outside click or
-// Escape, and renders each option with an icon, label, and one-line description. A disabled
-// option keeps its row visible with an explanatory hint rather than disappearing.
+// Escape, and renders each option as an icon and label. A disabled option stays visible with
+// an explanatory tooltip rather than disappearing.
 interface ComposerMenuOption<T extends string> {
   value: T;
   label: string;
-  description: string;
   icon: Glyph;
   disabled?: boolean;
   disabledHint?: string;
@@ -1166,7 +1184,7 @@ function ComposerMenu<T extends string>({
           role="menu"
           aria-label={ariaLabel}
           className={cx(
-            "animate-pop-in absolute bottom-full z-50 mb-1.5 w-64 overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-xl",
+            "animate-pop-in absolute bottom-full z-50 mb-1.5 w-44 overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-xl",
             align === "right" ? "right-0" : "left-0",
           )}
         >
@@ -1180,13 +1198,14 @@ function ComposerMenu<T extends string>({
                 role="menuitemradio"
                 aria-checked={active}
                 disabled={option.disabled}
+                title={option.disabled ? option.disabledHint : undefined}
                 onClick={() => {
                   if (option.disabled) return;
                   onChange(option.value);
                   setOpen(false);
                 }}
                 className={cx(
-                  "flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left outline-none transition-colors",
+                  "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors",
                   option.disabled
                     ? "cursor-not-allowed opacity-55"
                     : active
@@ -1194,18 +1213,11 @@ function ComposerMenu<T extends string>({
                       : "hover:bg-accent/50",
                 )}
               >
-                <Icon className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5 text-sm text-foreground">
-                    {option.label}
-                    {active ? <CheckGlyph className="h-3.5 w-3.5 text-accent-purple" /> : null}
-                  </span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
-                    {option.disabled && option.disabledHint
-                      ? option.disabledHint
-                      : option.description}
-                  </span>
-                </span>
+                <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate text-foreground">{option.label}</span>
+                {active ? (
+                  <CheckGlyph className="h-3.5 w-3.5 flex-shrink-0 text-accent-purple" />
+                ) : null}
               </button>
             );
           })}
@@ -1216,18 +1228,8 @@ function ComposerMenu<T extends string>({
 }
 
 const MODE_OPTIONS: ComposerMenuOption<OperatorConversationMode>[] = [
-  {
-    value: "agent",
-    label: "Agent",
-    description: "Plans and carries out changes — nothing applies until you approve.",
-    icon: BoltGlyph,
-  },
-  {
-    value: "ask",
-    label: "Ask",
-    description: "Read-only — explains and investigates, never changes anything.",
-    icon: EyeGlyph,
-  },
+  { value: "agent", label: "Agent", icon: BoltGlyph },
+  { value: "ask", label: "Ask", icon: EyeGlyph },
 ];
 
 // The conversation mode picker, shown inside the composer next to the model selector.
@@ -1267,16 +1269,10 @@ function AutopilotMenu({
   onChange: (autopilot: boolean) => void;
 }) {
   const options: ComposerMenuOption<"human" | "auto">[] = [
-    {
-      value: "human",
-      label: "Human approval",
-      description: "Every change waits for your explicit approval.",
-      icon: UserCheckGlyph,
-    },
+    { value: "human", label: "Human approval", icon: UserCheckGlyph },
     {
       value: "auto",
       label: "Autopilot",
-      description: "Auto-approves low-risk changes; major ones still need you.",
       icon: BoltGlyph,
       disabled: !available,
       disabledHint:
@@ -1307,7 +1303,6 @@ function ActivityStream({
   usage,
   model,
   onModelChange,
-  aiUnavailable,
 }: {
   zoneId: string | null;
   conversationId: string;
@@ -1320,7 +1315,6 @@ function ActivityStream({
   usage?: SessionUsage;
   model: string | null;
   onModelChange: (id: string | null) => void;
-  aiUnavailable: boolean;
 }) {
   const { data: turns, isLoading } = useOperatorTurns(zoneId, conversationId);
   const send = useSendOperatorMessage(zoneId, conversationId);
@@ -1340,12 +1334,11 @@ function ActivityStream({
   }
 
   // Queue a message when the Operator is busy or earlier messages are still waiting, so a
-  // sequence of instructions can be lined up and sent in order; otherwise send it now. With no AI
-  // provider the request would only be refused upstream, so nothing is sent or queued — the
-  // composer is disabled and shows the disconnected notice instead.
+  // sequence of instructions can be lined up and sent in order; otherwise send it now. A send
+  // that the deployment cannot fulfil is refused upstream and surfaces in the error banner.
   function submit(text: string) {
     const value = text.trim();
-    if (!value || aiUnavailable) return;
+    if (!value) return;
     setMessage("");
     if (send.isPending || queued.length > 0) {
       setQueued((prev) => [...prev, { id: crypto.randomUUID(), text: value }]);
@@ -1431,7 +1424,6 @@ function ActivityStream({
           model={model}
           onModelChange={onModelChange}
           controls={controls}
-          aiUnavailable={aiUnavailable}
         />
       </div>
     );
@@ -1480,7 +1472,6 @@ function ActivityStream({
         model={model}
         onModelChange={onModelChange}
         controls={controls}
-        aiUnavailable={aiUnavailable}
       />
     </div>
   );
@@ -1605,7 +1596,6 @@ function OperatorInput({
   model,
   onModelChange,
   leftSlot,
-  blockedReason,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -1618,17 +1608,13 @@ function OperatorInput({
   model?: string | null;
   onModelChange?: (id: string | null) => void;
   leftSlot?: ReactNode;
-  // When set, the input is non-interactive and the reason is shown as the placeholder. Used when
-  // no AI provider is connected, so the Operator never invites a message it could only refuse.
-  blockedReason?: string;
 }) {
   const { ref, adjust } = useAutoResizeTextarea({ minHeight, maxHeight: 220 });
   useEffect(() => {
     adjust();
   }, [value, adjust]);
 
-  const blocked = blockedReason !== undefined;
-  const canSend = !pending && !blocked && value.trim().length > 0;
+  const canSend = !pending && value.trim().length > 0;
 
   const textarea = (
     <textarea
@@ -1639,14 +1625,13 @@ function OperatorInput({
       onKeyDown={(event) => {
         if (event.key === "Enter" && !event.shiftKey) {
           event.preventDefault();
-          if (!blocked) onSubmit();
+          onSubmit();
         }
       }}
       rows={1}
-      disabled={blocked}
-      placeholder={blockedReason ?? "Describe what you want, or ask a question…"}
+      placeholder="Describe what you want, or ask a question…"
       aria-label="Message the Operator"
-      className="scrollbar-thin w-full resize-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed"
+      className="scrollbar-thin w-full resize-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
       style={{ height: minHeight }}
     />
   );
@@ -1832,7 +1817,6 @@ function Composer({
   model,
   onModelChange,
   controls,
-  aiUnavailable,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -1842,7 +1826,6 @@ function Composer({
   model: string | null;
   onModelChange: (id: string | null) => void;
   controls: ComposerControls;
-  aiUnavailable: boolean;
 }) {
   return (
     <div className="flex-shrink-0 border-t border-border bg-card px-3 py-3">
@@ -1855,7 +1838,6 @@ function Composer({
         usage={usage ?? ZERO_USAGE}
         model={model}
         onModelChange={onModelChange}
-        blockedReason={aiUnavailable ? AI_DISCONNECTED_NOTICE : undefined}
         leftSlot={
           <ModeMenu
             mode={controls.mode}
@@ -1866,9 +1848,7 @@ function Composer({
       />
       <AutopilotRow controls={controls} />
       <p className="mt-1.5 px-0.5 text-[10px] text-muted-foreground">
-        {aiUnavailable
-          ? AI_DISCONNECTED_NOTICE
-          : "Enter to send · Shift+Enter for a new line — nothing changes until you approve the plan."}
+        Enter to send · Shift+Enter for a new line — nothing changes until you approve the plan.
       </p>
     </div>
   );
@@ -1922,7 +1902,6 @@ function NewChatHero({
   model,
   onModelChange,
   controls,
-  aiUnavailable,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -1932,7 +1911,6 @@ function NewChatHero({
   model: string | null;
   onModelChange: (id: string | null) => void;
   controls: ComposerControls;
-  aiUnavailable: boolean;
 }) {
   const { greeting, message } = useMemo(() => greetingForNow(), []);
   const suggestionsRef = useRef<HTMLDivElement>(null);
@@ -2035,7 +2013,6 @@ function NewChatHero({
               usage={ZERO_USAGE}
               model={model}
               onModelChange={onModelChange}
-              blockedReason={aiUnavailable ? AI_DISCONNECTED_NOTICE : undefined}
               leftSlot={
                 <ModeMenu
                   mode={controls.mode}
@@ -2045,11 +2022,6 @@ function NewChatHero({
               }
             />
             <AutopilotRow controls={controls} />
-            {aiUnavailable ? (
-              <p className="mt-2 px-0.5 text-center text-xs text-muted-foreground">
-                {AI_DISCONNECTED_NOTICE}
-              </p>
-            ) : null}
           </div>
 
           <div
@@ -2071,7 +2043,7 @@ function NewChatHero({
                   <button
                     key={suggestion.title}
                     onClick={() => onPick(suggestion.title)}
-                    disabled={pending || aiUnavailable}
+                    disabled={pending}
                     title={suggestion.hint}
                     className="group inline-flex h-8 shrink-0 items-center gap-2 rounded-full border border-border bg-card px-3.5 text-xs text-muted-foreground shadow-sm transition-colors hover:border-accent-purple/40 hover:bg-accent hover:text-foreground disabled:opacity-50"
                   >
