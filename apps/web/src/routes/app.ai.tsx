@@ -19,6 +19,7 @@ import {
 import { createPortal } from "react-dom";
 
 import { ModulePage } from "@/components/console/ModulePage";
+import { OperatorErrorLog } from "@/components/console/OperatorErrorLog";
 import {
   Context,
   ContextCacheUsage,
@@ -300,7 +301,6 @@ function OperatorWorkspace() {
   const [railWidth, setRailWidth] = useState(readRailWidth);
   const [view, setView] = useState<"active" | "archived">("active");
   const [streamError, setStreamError] = useState(false);
-  const [errorDismissed, setErrorDismissed] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
 
@@ -393,10 +393,6 @@ function OperatorWorkspace() {
     }
     return null;
   }, [conversations.isError, create.isError, streamError]);
-
-  useEffect(() => {
-    setErrorDismissed(false);
-  }, [errorMessage]);
 
   // Accumulate the real token usage reported by each answered message so the rail can
   // show genuine context consumption for the session rather than an estimate.
@@ -536,9 +532,7 @@ function OperatorWorkspace() {
         >
           {fullscreen ? <ShrinkGlyph className="h-4 w-4" /> : <ExpandGlyph className="h-4 w-4" />}
         </button>
-        {errorMessage && !errorDismissed ? (
-          <OperatorErrorBanner message={errorMessage} onDismiss={() => setErrorDismissed(true)} />
-        ) : null}
+        <OperatorErrorLog message={errorMessage} />
         <SessionStrip
           conversations={conversations.data ?? []}
           selectedId={selectedId}
@@ -1008,28 +1002,6 @@ function groupConversations(conversations: OperatorConversation[]): SessionGroup
   return buckets
     .filter((bucket) => bucket.items.length > 0)
     .map(({ label, items }) => ({ label, items }));
-}
-
-// A standard, dismissible alert pinned to the top of the chat pane so any failed
-// operation surfaces in one consistent place rather than only inline.
-function OperatorErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
-  return (
-    <div
-      role="alert"
-      className="flex flex-shrink-0 items-start gap-2.5 border-b border-destructive/30 bg-destructive/10 py-2.5 pl-4 pr-4 text-destructive lg:pr-12"
-    >
-      <AlertGlyph className="mt-px h-4 w-4 shrink-0" />
-      <p className="min-w-0 flex-1 text-xs leading-relaxed">{message}</p>
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label="Dismiss error"
-        className="shrink-0 rounded-md p-0.5 text-destructive/70 outline-none transition-colors hover:text-destructive focus-visible:ring-2 focus-visible:ring-destructive/40"
-      >
-        <CloseGlyph className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  );
 }
 
 // Horizontal session switcher shown only below the sessions rail breakpoint.
