@@ -104,6 +104,16 @@ export function useOperatorStatus() {
   });
 }
 
+// Whether Caracal-governed autopilot is available on this deployment, so the console only offers
+// the per-conversation engage toggle when there is a policy that could approve something.
+export function useOperatorAutopilotAvailable() {
+  return useQuery({
+    queryKey: [...keys.operatorStatus, "autopilot"] as const,
+    queryFn: ({ signal }) => consoleApi.operator.autopilotAvailable(signal),
+    staleTime: Infinity,
+  });
+}
+
 // Reflects which AI providers are configured for the Operator, in failover order.
 // Provider configuration is static per deployment, so it is held for the session.
 export function useOperatorAiStatus(enabled: boolean) {
@@ -162,6 +172,15 @@ export function useSetOperatorConversationMode(zoneId: string | null) {
   return useMutation({
     mutationFn: (input: { id: string; mode: OperatorConversationMode }) =>
       consoleApi.operator.conversations.setMode(zoneId as string, input.id, input.mode),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.operatorConversations(zoneId) }),
+  });
+}
+
+export function useSetOperatorConversationAutopilot(zoneId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; autopilot: boolean }) =>
+      consoleApi.operator.conversations.setAutopilot(zoneId as string, input.id, input.autopilot),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.operatorConversations(zoneId) }),
   });
 }

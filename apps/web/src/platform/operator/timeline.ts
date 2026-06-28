@@ -58,6 +58,8 @@ export interface PlanItem {
   canExecute: boolean;
   // The advisory security review, present only for a composed plan that carried one.
   advisory?: PlanAdvisoryView;
+  // Whether the approval was auto-satisfied by Caracal-governed autopilot rather than a human.
+  approvedByAutopilot: boolean;
 }
 
 export interface ErrorItem {
@@ -186,6 +188,7 @@ function resolvePlan(
   let decision: PlanItem["decision"] = "pending";
   let rejectionReason: string | null = null;
   let executed = false;
+  let approvedByAutopilot = false;
   const stepStatus = new Map<string, { status: "succeeded" | "failed"; detail?: string }>();
 
   for (const turn of ordered) {
@@ -195,6 +198,7 @@ function resolvePlan(
     if (turn.kind === "approval") {
       decision = "approved";
       rejectionReason = null;
+      approvedByAutopilot = content.autopilot === true;
     } else if (turn.kind === "rejection") {
       decision = "rejected";
       rejectionReason = asString(content.reason) || null;
@@ -232,6 +236,7 @@ function resolvePlan(
     executed,
     canDecide: decision === "pending",
     canExecute: decision === "approved" && !executed,
+    approvedByAutopilot,
     ...(advisory ? { advisory } : {}),
   };
 }
