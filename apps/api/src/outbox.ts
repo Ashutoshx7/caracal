@@ -34,13 +34,7 @@ export async function enqueueOutbox(client: ClientLike, args: EnqueueArgs): Prom
   await client.query(
     `INSERT INTO event_outbox (id, stream_name, payload_json, available_at, request_id)
      VALUES ($1, $2, $3::jsonb, COALESCE($4, now()), $5)`,
-    [
-      id,
-      args.streamName,
-      JSON.stringify(args.payload),
-      args.availableAt ?? null,
-      args.requestId ?? null,
-    ],
+    [id, args.streamName, JSON.stringify(args.payload), args.availableAt ?? null, args.requestId ?? null],
   )
   return id
 }
@@ -188,14 +182,19 @@ export class OutboxDispatcher {
         [row.id],
       )
       this.opts.log('info', 'outbox event dispatched', {
-        id: row.id, stream: row.stream_name, attempts: row.attempts,
+        id: row.id,
+        stream: row.stream_name,
+        attempts: row.attempts,
       })
     } catch (err) {
       const message = (err as Error).message ?? String(err)
       const maxAttempts = this.opts.maxAttempts ?? 100
       if (row.attempts >= maxAttempts) {
         this.opts.log('error', 'outbox event abandoned after max attempts', {
-          id: row.id, stream: row.stream_name, attempts: row.attempts, err: message,
+          id: row.id,
+          stream: row.stream_name,
+          attempts: row.attempts,
+          err: message,
         })
         await this.opts.db.query(
           `UPDATE event_outbox
@@ -217,7 +216,11 @@ export class OutboxDispatcher {
         [row.id, String(delay), message],
       )
       this.opts.log('warn', 'outbox event dispatch failed; will retry', {
-        id: row.id, stream: row.stream_name, attempts: row.attempts, delaySec: delay, err: message,
+        id: row.id,
+        stream: row.stream_name,
+        attempts: row.attempts,
+        delaySec: delay,
+        err: message,
       })
     }
   }
