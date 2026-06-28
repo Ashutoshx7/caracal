@@ -116,6 +116,14 @@ The Operator is also bounded by a zone isolation boundary. An administrator can 
 
 Because the Operator acts within a delegated subset of your operator authority and never outside the active zone, the same row-level zone isolation and audit trail that govern manual changes also govern Operator changes. Nothing is applied until you approve the plan, every applied change is attributed to you, and the executing authority is the Operator's own least-privilege identity.
 
+### Ask and agent modes
+
+Every conversation runs in one of two modes, set on the conversation and enforced by Caracal, never chosen by the model. A new conversation opens in agent mode unless you create it in ask mode, and you can switch a conversation between the two at any time from the mode control above the message box.
+
+In **agent mode** the Operator can do everything described here: answer questions, read your state, and propose plans that — after your approval — apply changes. In **ask mode** the Operator is strictly read-only: it explains, investigates, and diagnoses, but it never produces a plan and cannot apply anything. A request that would require a change is answered with a note telling you to switch to agent mode to plan it. Ask mode is the right choice for exploration, audits, and read-only operators.
+
+Ask mode is enforced in two independent places, so a read-only conversation is provably write-incapable rather than write-incapable by convention. The Operator's planning skill is never even selected in ask mode, so the model is not asked to produce a plan; and the change endpoints — proposing a plan, approving one, and applying one — refuse outright in ask mode regardless of what was requested. Either layer alone blocks a change; together they mean no change can originate from an ask-mode conversation.
+
 ### Natural-language provider
 
 Turning your words into a plan needs a language model, and that model is something you supply. The Operator is built on the [Vercel AI SDK](https://ai-sdk.dev) and talks to any OpenAI-compatible endpoint, so you can bring a hosted provider key, point at a local model server, or list several providers that are tried in order for resilience. For production the recommended backend is a self-hosted [LiteLLM](https://docs.litellm.ai) proxy, which owns per-provider integration, bring-your-own-key budgets, and local-model routing behind one OpenAI-compatible endpoint — so Caracal never maintains provider SDKs itself. Keys are read from the API service environment and never stored in or returned by the console.

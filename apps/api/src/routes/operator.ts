@@ -28,7 +28,7 @@ import {
   type Gateway,
   type ProviderConfig,
 } from '../operator-gateway.js'
-import { type AgentContext, type SecurityAdvisory } from '../operator-agents.js'
+import { type AgentContext, type OperatorMode, type SecurityAdvisory } from '../operator-agents.js'
 import { createOrchestrator } from '../operator-orchestrator.js'
 import { createStateResearcher } from '../operator-research.js'
 import { summarizeHistory, type ConversationFacts } from '../operator-memory.js'
@@ -38,15 +38,18 @@ const CONTENT_MAX_BYTES = 64_000
 const DEFAULT_TURN_PAGE = 200
 const MAX_TURN_PAGE = 500
 
-const CONVERSATION_SELECT = 'id, zone_id, title, status, created_by, created_at, updated_at, last_activity_at, archived_at'
+const CONVERSATION_SELECT = 'id, zone_id, title, status, mode, created_by, created_at, updated_at, last_activity_at, archived_at'
 const TURN_SELECT = 'id, conversation_id, seq, role, kind, content, actor_id, created_at'
 
-const CreateConversationBody = z.object({ title: z.string().min(1).max(TITLE_MAX_LENGTH) }).strict()
+const CreateConversationBody = z
+  .object({ title: z.string().min(1).max(TITLE_MAX_LENGTH), mode: z.enum(['ask', 'agent']).optional() })
+  .strict()
 
 const PatchConversationBody = z
   .object({
     title: z.string().min(1).max(TITLE_MAX_LENGTH).optional(),
     status: z.enum(['active', 'archived']).optional(),
+    mode: z.enum(['ask', 'agent']).optional(),
   })
   .strict()
 
@@ -264,12 +267,14 @@ async function loadConversationFacts(db: ContextQueryable, conversationId: strin
   return summarizeHistory(rows)
 }
 
-type AppendOutcome = { ok: true; turn: Record<string, unknown> } | { ok: false; reason: 'not_found' | 'archived' }
+type AppendOutcome = { ok: true; turn: Record<string, unknown>; mode: OperatorMode } | { ok: false; reason: 'not_found' | 'archived' }
 
 // Appends a single turn in its own transaction: locks the conversation, confirms it
 // is active, allocates the gapless seq, and writes. Used by the message orchestrator
 // to record the operator's message and the agent's response as distinct, ordered
-// turns without holding a transaction open across a model call.
+// turns without holding a transaction open across a model call. Returns the conversation's
+// operation mode read under the same lock, so the caller enforces ask mode against the exact
+// mode the turn was recorded under, with no extra query and no race.
 async function appendTurnTx(
   db: DB,
   conversationId: string,
@@ -280,8 +285,8 @@ async function appendTurnTx(
   actorId: string,
 ): Promise<AppendOutcome> {
   return withTransaction(db, async (client) => {
-    const { rows: conv } = await client.query<{ status: string; next_seq: number }>(
-      `SELECT status, next_seq FROM operator_conversations
+    const { rows: conv } = await client.query<{ status: string; mode: string; next_seq: number }>(
+      `SELECT status, mode, next_seq FROM operator_conversations
        WHERE id = $1 AND zone_id = $2 FOR UPDATE`,
       [conversationId, zoneId],
     )
@@ -296,7 +301,7 @@ async function appendTurnTx(
       contentJson,
       actorId,
     })
-    return { ok: true as const, turn }
+    return { ok: true as const, turn, mode: conv[0].mode === 'ask' ? 'ask' : 'agent' }
   })
 }
 
@@ -426,11 +431,13 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     const parsed = CreateConversationBody.safeParse(req.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_conversation' })
     const id = uuidv7()
+    // A conversation opens in agent mode unless it is explicitly created in ask mode. Mode is a
+    // Caracal-side setting on the conversation; the model never selects or changes it.
     const { rows } = await fastify.db.query(
-      `INSERT INTO operator_conversations (id, zone_id, title, created_by)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO operator_conversations (id, zone_id, title, mode, created_by)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING ${CONVERSATION_SELECT}`,
-      [id, params.zoneId, parsed.data.title, req.actor.id],
+      [id, params.zoneId, parsed.data.title, parsed.data.mode ?? 'agent', req.actor.id],
     )
     return reply.code(201).send(rows[0])
   })
@@ -484,13 +491,14 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     const parsed = PatchConversationBody.safeParse(req.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_conversation' })
     const body = parsed.data
-    if (body.title === undefined && body.status === undefined) {
+    if (body.title === undefined && body.status === undefined && body.mode === undefined) {
       return reply.code(400).send({ error: 'no_fields' })
     }
     const { rows } = await fastify.db.query(
       `UPDATE operator_conversations
        SET title = COALESCE($3, title),
            status = COALESCE($4, status),
+           mode = COALESCE($5, mode),
            archived_at = CASE
              WHEN $4 = 'archived' THEN now()
              WHEN $4 = 'active' THEN NULL
@@ -499,7 +507,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
            updated_at = now()
        WHERE id = $1 AND zone_id = $2
        RETURNING ${CONVERSATION_SELECT}`,
-      [params.id, params.zoneId, body.title ?? null, body.status ?? null],
+      [params.id, params.zoneId, body.title ?? null, body.status ?? null, body.mode ?? null],
     )
     if (!rows[0]) return reply.code(404).send({ error: 'conversation_not_found' })
     return rows[0]
@@ -657,14 +665,20 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     const contentJson = buildPlanContentJson(parsed.data.summary, validation)
 
     return withTransaction(fastify.db, async (client) => {
-      const { rows: conv } = await client.query<{ status: string; next_seq: number }>(
-        `SELECT status, next_seq FROM operator_conversations
+      const { rows: conv } = await client.query<{ status: string; mode: string; next_seq: number }>(
+        `SELECT status, mode, next_seq FROM operator_conversations
          WHERE id = $1 AND zone_id = $2 FOR UPDATE`,
         [params.id, params.zoneId],
       )
       if (!conv[0]) throw new TxAbort(reply.code(404).send({ error: 'conversation_not_found' }))
       if (conv[0].status !== 'active') {
         throw new TxAbort(reply.code(409).send({ error: 'conversation_archived' }))
+      }
+      // Ask mode is read-only: a plan is a change artifact, so it is refused regardless of how the
+      // caller produced it. This is the write-path half of mode enforcement, independent of the
+      // orchestrator's skill filter, so a plan can never enter an ask conversation's ledger.
+      if (conv[0].mode === 'ask') {
+        throw new TxAbort(reply.code(403).send({ error: 'mode_forbidden' }))
       }
       const turn = await writeTurnLocked(client, {
         conversationId: params.id,
@@ -691,8 +705,8 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     const contentJson = JSON.stringify(content)
 
     return withTransaction(fastify.db, async (client) => {
-      const { rows: conv } = await client.query<{ status: string; next_seq: number }>(
-        `SELECT status, next_seq FROM operator_conversations
+      const { rows: conv } = await client.query<{ status: string; mode: string; next_seq: number }>(
+        `SELECT status, mode, next_seq FROM operator_conversations
          WHERE id = $1 AND zone_id = $2 FOR UPDATE`,
         [params.id, params.zoneId],
       )
@@ -700,7 +714,12 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       if (conv[0].status !== 'active') {
         throw new TxAbort(reply.code(409).send({ error: 'conversation_archived' }))
       }
-
+      // Ask mode is read-only: it has no plans to decide, and an approval is the gate that lets a
+      // change apply. The decision endpoint is refused so an ask conversation has no path that
+      // could authorize a change.
+      if (conv[0].mode === 'ask') {
+        throw new TxAbort(reply.code(403).send({ error: 'mode_forbidden' }))
+      }
       // The decision must reference an actual plan turn in this conversation.
       const { rows: planTurn } = await client.query(
         `SELECT 1 FROM operator_turns
@@ -768,12 +787,16 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       // not-yet-executed, still-valid, still-unblocked plan to the steps to execute. It
       // writes nothing, so the governed control calls below run outside any transaction.
       const pre = await withTransaction(fastify.db, async (client): Promise<PreflightResult> => {
-        const { rows: conv } = await client.query<{ status: string }>(
-          `SELECT status FROM operator_conversations WHERE id = $1 AND zone_id = $2`,
+        const { rows: conv } = await client.query<{ status: string; mode: string }>(
+          `SELECT status, mode FROM operator_conversations WHERE id = $1 AND zone_id = $2`,
           [params.id, params.zoneId],
         )
         if (!conv[0]) return { ok: false, status: 404, body: { error: 'conversation_not_found' } }
         if (conv[0].status !== 'active') return { ok: false, status: 409, body: { error: 'conversation_archived' } }
+        // Ask mode is read-only: execution is the apply step, so it is refused even if a plan and
+        // an approval somehow exist. With the plan and decision endpoints also refusing in ask
+        // mode, an ask conversation has no reachable path to apply a change.
+        if (conv[0].mode === 'ask') return { ok: false, status: 403, body: { error: 'mode_forbidden' } }
 
         const { rows: planRows } = await client.query<{ content: PlanTurnContent }>(
           `SELECT content FROM operator_turns
@@ -1015,10 +1038,21 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       const governed = resolveControlClient()
       const researcher = governed && governed.identity.zoneId === params.zoneId ? createStateResearcher(governed.client) : null
 
+      // The conversation's operation mode, read under the lock that recorded the message. In ask
+      // mode the orchestrator never produces a plan, so the message path cannot persist one.
+      const mode: OperatorMode = userTurn.mode
+
       // The orchestrator triages the request to its tier and runs the one skill that handles
       // it. A plan outcome flows through validate → preview → store-for-approval; an answer
       // outcome is recorded as a note. The model only proposes — every plan is governed below.
-      const { tier, outcome } = await orchestrator.handle(tracked.gateway, parsed.data.message, context, { researcher })
+      const { tier, outcome } = await orchestrator.handle(tracked.gateway, parsed.data.message, context, { researcher, mode })
+
+      // Defense in depth: ask mode is read-only, so a plan must never be persisted on this path
+      // regardless of what the orchestrator returned. The orchestrator already refuses to plan in
+      // ask mode; this guarantees it at the route even if that ever regressed.
+      if (mode === 'ask' && outcome.kind === 'plan') {
+        return reply.code(403).send({ error: 'mode_forbidden' })
+      }
 
       if (outcome.kind === 'plan') {
         const planned = outcome.result

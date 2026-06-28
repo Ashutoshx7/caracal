@@ -22,6 +22,7 @@ import type {
   DiagnosticsOptions,
   DiagnosticsReport,
   DiagnosticStatus,
+  OperatorConversationMode,
   PolicyInput,
   PolicyManifestEntry,
   Provider,
@@ -152,6 +153,15 @@ export function useRenameOperatorConversation(zoneId: string | null) {
   return useMutation({
     mutationFn: (input: { id: string; title: string }) =>
       consoleApi.operator.conversations.rename(zoneId as string, input.id, input.title),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.operatorConversations(zoneId) }),
+  });
+}
+
+export function useSetOperatorConversationMode(zoneId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { id: string; mode: OperatorConversationMode }) =>
+      consoleApi.operator.conversations.setMode(zoneId as string, input.id, input.mode),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.operatorConversations(zoneId) }),
   });
 }

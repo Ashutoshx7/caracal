@@ -90,6 +90,7 @@ const conversationRow = {
   zone_id: 'z1',
   title: 'Connect GitHub',
   status: 'active',
+  mode: 'agent',
   created_by: 'actor-1',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
@@ -173,7 +174,36 @@ describe('POST /v1/zones/:zoneId/operator-conversations', () => {
     expect(JSON.parse(res.body)).toMatchObject({ id: 'conv-1', status: 'active', created_by: 'actor-1' })
     const insert = db.query.mock.calls[1]
     expect(insert[0]).toContain('INSERT INTO operator_conversations')
-    expect(insert[1]).toEqual([expect.any(String), 'z1', 'Connect GitHub', 'actor-1'])
+    expect(insert[1]).toEqual([expect.any(String), 'z1', 'Connect GitHub', 'agent', 'actor-1'])
+  })
+
+  it('creates a conversation in ask mode when requested', async () => {
+    const { app, db } = buildApp()
+    db.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+    db.query.mockResolvedValueOnce({ rows: [{ ...conversationRow, mode: 'ask' }] })
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations',
+      payload: { title: 'Audit access', mode: 'ask' },
+    })
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body)).toMatchObject({ mode: 'ask' })
+    const insert = db.query.mock.calls[1]
+    expect(insert[1]).toEqual([expect.any(String), 'z1', 'Audit access', 'ask', 'actor-1'])
+  })
+
+  it('rejects an unknown mode', async () => {
+    const { app, db } = buildApp()
+    db.query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] })
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations',
+      payload: { title: 'x', mode: 'root' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'invalid_conversation' })
   })
 
   it('rejects an empty title', async () => {
@@ -301,7 +331,7 @@ describe('PATCH /v1/zones/:zoneId/operator-conversations/:id', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(JSON.parse(res.body)).toMatchObject({ status: 'archived' })
-    expect(db.query.mock.calls[0][1]).toEqual(['conv-1', 'z1', null, 'archived'])
+    expect(db.query.mock.calls[0][1]).toEqual(['conv-1', 'z1', null, 'archived', null])
   })
 })
 
@@ -662,6 +692,26 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/plan', () => {
     expect(res.statusCode).toBe(404)
     expect(JSON.parse(res.body)).toMatchObject({ error: 'conversation_not_found' })
   })
+
+  it('refuses to persist a plan in an ask-mode conversation', async () => {
+    // Defense in depth: even a directly posted, catalog-valid plan is refused in ask mode, so a
+    // plan can never enter an ask conversation's ledger regardless of how it was produced.
+    const { app, clientQuery } = buildApp()
+    clientQuery
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'ask', next_seq: 2 }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce(undefined) // ROLLBACK
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/plan',
+      payload: goodPlan,
+    })
+    expect(res.statusCode).toBe(403)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'mode_forbidden' })
+    // No INSERT was issued: the refusal happens before the plan turn is written.
+    expect(clientQuery.mock.calls.some((c) => String(c[0]).includes('INSERT INTO operator_turns'))).toBe(false)
+  })
 })
 
 describe('POST /v1/zones/:zoneId/operator-conversations/:id/plan/decision', () => {
@@ -740,6 +790,26 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/plan/decision', () =
     })
     expect(res.statusCode).toBe(400)
     expect(JSON.parse(res.body)).toMatchObject({ error: 'invalid_decision' })
+  })
+
+  it('refuses a decision in an ask-mode conversation', async () => {
+    // An approval is the gate that lets a change apply, so the decision endpoint is refused in
+    // ask mode before any plan or decision is even looked up.
+    const { app, clientQuery } = buildApp()
+    clientQuery
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'ask', next_seq: 3 }] }) // SELECT ... FOR UPDATE
+      .mockResolvedValueOnce(undefined) // ROLLBACK
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/plan/decision',
+      payload: { plan_seq: 2, decision: 'approved' },
+    })
+    expect(res.statusCode).toBe(403)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'mode_forbidden' })
+    // The plan lookup never runs: the refusal precedes any decision write.
+    expect(clientQuery.mock.calls.some((c) => String(c[0]).includes('INSERT INTO operator_turns'))).toBe(false)
   })
 })
 
@@ -830,6 +900,26 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/plan/execute', () =>
     })
     expect(res.statusCode).toBe(409)
     expect(JSON.parse(res.body)).toMatchObject({ error: 'plan_not_approved' })
+  })
+
+  it('refuses to execute in an ask-mode conversation', async () => {
+    // The apply step is refused in ask mode before the plan or its approval is even resolved, so
+    // an ask conversation has no reachable path to apply a change even if one were approved.
+    const { app, clientQuery } = buildApp(true, governedControl)
+    clientQuery
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'ask' }] }) // conv status + mode
+      .mockResolvedValueOnce(undefined) // COMMIT
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/plan/execute',
+      payload: { plan_seq: 2 },
+    })
+    expect(res.statusCode).toBe(403)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'mode_forbidden' })
+    // The plan content is never read: the refusal precedes plan resolution and any control call.
+    expect(clientQuery.mock.calls.some((c) => String(c[0]).includes('FROM operator_turns'))).toBe(false)
   })
 
   it('refuses to execute an already-executed plan', async () => {
@@ -1411,6 +1501,77 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     expect(body.turn).toMatchObject({ kind: 'plan' })
     expect(body.validation.ok).toBe(true)
     expect(body.preview.steps[0]).toMatchObject({ effect: 'create' })
+  })
+
+  it('refuses to plan in ask mode and answers with a switch-to-agent note', async () => {
+    // Ask mode is read-only. Triage classifies the request as a change, but the orchestrator
+    // short-circuits to a deterministic switch-to-agent answer and never calls the planner, so
+    // only one model call is made (triage) and the turn is a note, never a plan.
+    const fetchImpl = fetchReturning('{"tier":"change"}')
+    const { app, clientQuery, db } = buildApp(true, { aiProviders: [provider], fetchImpl })
+    // user message turn: FOR UPDATE returns ask mode
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'ask', next_seq: 1 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-1', seq: 1, kind: 'message' }] })
+      .mockResolvedValueOnce(undefined)
+    db.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+    // note turn persist
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'ask', next_seq: 2 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-2', seq: 2, kind: 'note' }] })
+      .mockResolvedValueOnce(undefined)
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'connect github' },
+    })
+    expect(res.statusCode).toBe(201)
+    const body = JSON.parse(res.body)
+    expect(body).toMatchObject({ intent: 'explain', tier: 'change', ok: true })
+    expect(body.text).toContain('ask mode')
+    expect(body.turn).toMatchObject({ kind: 'note' })
+    // Exactly one model call: triage. The planner is never invoked in ask mode.
+    expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(1)
+  })
+
+  it('answers a read in ask mode normally', async () => {
+    // Ask mode still answers read and conversational requests; only changes are withheld.
+    const fetchImpl = fetchReturning('{"tier":"read"}', 'You have two providers connected.')
+    const { app, clientQuery, db } = buildApp(true, { aiProviders: [provider], fetchImpl })
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'ask', next_seq: 1 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-1', seq: 1 }] })
+      .mockResolvedValueOnce(undefined)
+    db.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'ask', next_seq: 2 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-2', seq: 2, kind: 'note' }] })
+      .mockResolvedValueOnce(undefined)
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'what providers do i have' },
+    })
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body)).toMatchObject({ intent: 'explain', tier: 'read', ok: true })
   })
 
   it('composes a compound request: attaches and persists an advisory security review with the plan', async () => {

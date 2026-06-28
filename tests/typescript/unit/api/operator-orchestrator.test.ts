@@ -4,7 +4,13 @@
 // Unit tests for the Operator orchestrator and skill registry: tier-to-skill selection and typed-artifact dispatch.
 
 import { describe, it, expect, vi } from 'vitest'
-import { createSkillRegistry, createOrchestrator, type SkillRegistry, type Skill } from '../../../../apps/api/src/operator-orchestrator.js'
+import {
+  createSkillRegistry,
+  createOrchestrator,
+  ASK_MODE_CHANGE_MESSAGE,
+  type SkillRegistry,
+  type Skill,
+} from '../../../../apps/api/src/operator-orchestrator.js'
 import type { Gateway, CompletionResult, CompletionObjectResult } from '../../../../apps/api/src/operator-gateway.js'
 
 const emptyContext = { facts: null, state: null }
@@ -278,5 +284,56 @@ describe('createOrchestrator', () => {
       expect(result.outcome.result.ok).toBe(true)
       expect(result.outcome.advisory).toBeUndefined()
     }
+  })
+
+  it('refuses to plan in ask mode and answers with a switch-to-agent message', async () => {
+    // The gateway would happily plan, but ask mode short-circuits before the planner: only triage
+    // runs, and the deterministic switch-to-agent answer is returned with no plan.
+    const plan = {
+      summary: 'Connect GitHub',
+      steps: [{ id: 's1', capability: 'connectProvider', args: { name: 'GitHub', kind: 'api_key' } }],
+    }
+    const gateway = planningGateway('change', plan)
+    const result = await createOrchestrator().handle(gateway, 'connect github', emptyContext, { mode: 'ask' })
+    expect(result.tier).toBe('change')
+    expect(result.outcome.kind).toBe('answer')
+    if (result.outcome.kind === 'answer') {
+      expect(result.outcome.result.ok).toBe(true)
+      if (result.outcome.result.ok) expect(result.outcome.result.value.text).toBe(ASK_MODE_CHANGE_MESSAGE)
+    }
+    // Only triage ran; the planner was never called, so the model could not produce a plan.
+    expect((gateway.completeObject as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(1)
+  })
+
+  it('refuses to plan a compound request in ask mode without gathering evidence', async () => {
+    const plan = { summary: 'Grant + cleanup', steps: [{ id: 's1', capability: 'grantAccess', args: {} }] }
+    const researcher = { gather: vi.fn().mockResolvedValue({ evidence: [] }) }
+    const result = await createOrchestrator().handle(planningGateway('compound', plan), 'do a lot', emptyContext, {
+      mode: 'ask',
+      researcher,
+    })
+    expect(result.outcome.kind).toBe('answer')
+    // Ask mode short-circuits before any evidence gathering or planning.
+    expect(researcher.gather).not.toHaveBeenCalled()
+  })
+
+  it('still answers a read request normally in ask mode', async () => {
+    const researcher = { gather: vi.fn().mockResolvedValue({ evidence: [] }) }
+    const result = await createOrchestrator().handle(gatewayFor('read', 'two providers'), 'what do i have', emptyContext, {
+      mode: 'ask',
+      researcher,
+    })
+    // Reads are allowed in ask mode and still gather evidence; only changes are withheld.
+    expect(result.outcome.kind).toBe('answer')
+    expect(researcher.gather).toHaveBeenCalledTimes(1)
+  })
+
+  it('plans normally in agent mode (the default)', async () => {
+    const plan = {
+      summary: 'Connect GitHub',
+      steps: [{ id: 's1', capability: 'connectProvider', args: { name: 'GitHub', kind: 'api_key' } }],
+    }
+    const result = await createOrchestrator().handle(planningGateway('change', plan), 'connect github', emptyContext, { mode: 'agent' })
+    expect(result.outcome.kind).toBe('plan')
   })
 })

@@ -28,6 +28,13 @@ const TRANSLATOR_MAX_TOKENS = 600
 // the compound tier without changing this classification.
 export type OperatorTier = 'conversational' | 'read' | 'change' | 'compound'
 
+// The operation mode of a conversation, a Caracal-side setting enforced deterministically and
+// never chosen by the model. agent is the full path: read, propose, and — after human approval —
+// apply. ask is strictly read-only: no plan is ever produced and no change path is reachable, so
+// an ask conversation is provably write-incapable. The mode gates skill selection here and the
+// write routes independently, so a read-only conversation stays read-only at both layers.
+export type OperatorMode = 'ask' | 'agent'
+
 export type AgentResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
 // Whether a tier produces a state-changing plan. conversational and read are read-only and are

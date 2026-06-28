@@ -15,6 +15,7 @@ import {
   runSecurityAnalyst,
   type AgentContext,
   type AgentResult,
+  type OperatorMode,
   type OperatorTier,
   type OperatorTriage,
   type SecurityAdvisory,
@@ -124,13 +125,24 @@ export interface Orchestrator {
   handle(gateway: Gateway, message: string, context: AgentContext, options?: HandleOptions): Promise<OrchestrationResult>
 }
 
-// Per-turn collaborators the orchestrator may invoke. researcher is an ephemeral, read-only
-// worker bound to the Operator's scoped identity; when present and the tier inspects state, the
-// orchestrator gathers live evidence before answering. It is null when governed reads are not
-// configured, in which case the answer falls back to conversation context alone.
+// Per-turn collaborators and settings the orchestrator runs under. researcher is an ephemeral,
+// read-only worker bound to the Operator's scoped identity; when present and the tier inspects
+// state, the orchestrator gathers live evidence before answering. It is null when governed reads
+// are not configured, in which case the answer falls back to conversation context alone. mode is
+// the conversation's Caracal-side operation mode; in ask mode the orchestrator never selects a
+// plan skill, so an ask conversation cannot produce a plan. It defaults to agent.
 export interface HandleOptions {
   researcher?: Researcher | null
+  mode?: OperatorMode
 }
+
+// The deterministic answer an ask-mode conversation returns for a request that would require a
+// change. Ask mode is read-only, so the request is never planned; the operator is told to switch
+// to agent mode to plan it. This is a fixed string, not a model call, so ask mode never invokes a
+// planning skill.
+export const ASK_MODE_CHANGE_MESSAGE =
+  'This conversation is in ask mode, which is read-only — I can explain and investigate but cannot make changes. ' +
+  'Switch this conversation to agent mode to plan and apply this change.'
 
 // Gathers live state evidence and merges it into the context, without ever failing the turn. The
 // researcher already isolates a single read's failure into a typed evidence entry; this also
@@ -150,18 +162,30 @@ async function withEvidence(context: AgentContext, researcher: Researcher | null
 // Builds the orchestrator over a skill registry. Per turn it triages the request to its tier and,
 // for a read, its topic, then runs the one skill the registry selects. A triage that fails the
 // schema defaults to a general read, which answers as text and never acts — the safe direction on
-// ambiguity. A read tier grounds its answer in live state gathered through governed reads. A
-// compound tier composes specialists: it gathers live state, plans against it, and runs an
-// advisory security review over the proposed plan. Every plan — single or composed — still flows
-// through the deterministic spine the route owns; the orchestrator selects and runs skills and
-// gathers read-only evidence, and never validates, previews, persists, or applies, and the
-// advisory it attaches only informs the human and never gates the plan.
+// ambiguity. In ask mode a request that would require a change is never planned: the orchestrator
+// returns a deterministic switch-to-agent answer before any planning skill runs, so an ask
+// conversation is provably write-incapable at the skill layer (the route refuses writes
+// independently as defense in depth). A read tier grounds its answer in live state gathered
+// through governed reads. A compound tier composes specialists: it gathers live state, plans
+// against it, and runs an advisory security review over the proposed plan. Every plan — single or
+// composed — still flows through the deterministic spine the route owns; the orchestrator selects
+// and runs skills and gathers read-only evidence, and never validates, previews, persists, or
+// applies, and the advisory it attaches only informs the human and never gates the plan.
 export function createOrchestrator(registry: SkillRegistry = createSkillRegistry()): Orchestrator {
   return {
     async handle(gateway, message, context, options = {}): Promise<OrchestrationResult> {
+      const mode: OperatorMode = options.mode ?? 'agent'
       const triage = await runTriage(gateway, message)
       const classification: OperatorTriage = triage.ok ? triage.value : { tier: 'read', topic: 'general' }
       const tier = classification.tier
+
+      // Ask mode is read-only: a change or compound request is answered with a deterministic
+      // switch-to-agent message and no planning skill is ever selected or run, so the conversation
+      // cannot produce a plan. Conversational and read requests proceed normally below.
+      if (mode === 'ask' && tierPlans(tier)) {
+        return { tier, outcome: { kind: 'answer', result: { ok: true, value: { text: ASK_MODE_CHANGE_MESSAGE } } } }
+      }
+
       const skill = registry.select(classification)
 
       if (skill.kind === 'plan') {

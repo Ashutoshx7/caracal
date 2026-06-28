@@ -123,6 +123,7 @@ import {
   useOperatorTurns,
   useRenameOperatorConversation,
   useRestoreOperatorConversation,
+  useSetOperatorConversationMode,
   useSendOperatorMessage,
 } from "@/platform/api/hooks";
 import {
@@ -133,7 +134,11 @@ import {
   type TimelineItem,
 } from "@/platform/operator/timeline";
 import { planCitations } from "@/platform/operator/citations";
-import type { OperatorConversation, OperatorUsageMeta } from "@/platform/api/types";
+import type {
+  OperatorConversation,
+  OperatorConversationMode,
+  OperatorUsageMeta,
+} from "@/platform/api/types";
 
 export const Route = createFileRoute("/app/ai")({
   component: CaracalOperatorPage,
@@ -488,6 +493,7 @@ function OperatorWorkspace() {
             key={selectedId}
             zoneId={zoneId}
             conversationId={selectedId}
+            mode={(conversations.data ?? []).find((c) => c.id === selectedId)?.mode ?? "agent"}
             initialMessage={pendingMessage}
             onInitialConsumed={() => setPendingMessage(null)}
             onUsage={(meta) => recordUsage(selectedId, meta)}
@@ -990,9 +996,62 @@ function SessionStrip({
 
 /* --------------------------- activity stream --------------------------- */
 
+// The conversation's operation mode control. Ask mode is strictly read-only — the Operator
+// explains and investigates but cannot plan or apply changes; agent mode allows planning and,
+// after approval, applying. The mode is enforced by the API at both the skill layer and the write
+// routes, so this control only sets the Caracal-side setting; it never relaxes enforcement.
+function ModeToggle({
+  mode,
+  pending,
+  onChange,
+}: {
+  mode: OperatorConversationMode;
+  pending: boolean;
+  onChange: (mode: OperatorConversationMode) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Mode
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {mode === "ask"
+            ? "Read-only — explains and investigates, makes no changes."
+            : "Can plan changes; nothing applies until you approve."}
+        </span>
+      </div>
+      <div
+        className="flex flex-shrink-0 items-center border border-border"
+        role="group"
+        aria-label="Operation mode"
+      >
+        {(["ask", "agent"] as const).map((option) => (
+          <button
+            key={option}
+            type="button"
+            aria-pressed={mode === option}
+            disabled={pending || mode === option}
+            onClick={() => onChange(option)}
+            className={cx(
+              "px-2.5 py-1 text-xs capitalize transition-colors",
+              mode === option
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground disabled:opacity-100",
+            )}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ActivityStream({
   zoneId,
   conversationId,
+  mode,
   initialMessage,
   onInitialConsumed,
   onUsage,
@@ -1003,6 +1062,7 @@ function ActivityStream({
 }: {
   zoneId: string | null;
   conversationId: string;
+  mode: OperatorConversationMode;
   initialMessage?: string | null;
   onInitialConsumed?: () => void;
   onUsage?: (meta: OperatorUsageMeta) => void;
@@ -1013,6 +1073,7 @@ function ActivityStream({
 }) {
   const { data: turns, isLoading } = useOperatorTurns(zoneId, conversationId);
   const send = useSendOperatorMessage(zoneId, conversationId);
+  const setMode = useSetOperatorConversationMode(zoneId);
   const [message, setMessage] = useState("");
   const [queued, setQueued] = useState<QueuedMessage[]>([]);
 
@@ -1107,6 +1168,11 @@ function ActivityStream({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <ModeToggle
+        mode={mode}
+        pending={setMode.isPending}
+        onChange={(next) => setMode.mutate({ id: conversationId, mode: next })}
+      />
       <MemoryStrip zoneId={zoneId} conversationId={conversationId} />
 
       <div className="scrollbar-thin flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-4">

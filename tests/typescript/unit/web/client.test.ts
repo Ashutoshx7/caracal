@@ -182,6 +182,24 @@ describe('operator conversation lifecycle', () => {
     expect(JSON.parse(init.body as string)).toEqual({ title: 'Audit' })
   })
 
+  it('creates an ask-mode conversation when a mode is given', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(201, { id: 'conv-1', title: 'Audit', mode: 'ask' }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    await consoleApi.operator.conversations.create('z1', 'Audit', 'ask')
+    const [, init] = fetchMock.mock.calls[0]! as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toEqual({ title: 'Audit', mode: 'ask' })
+  })
+
+  it('sets the conversation operation mode through a patch', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { id: 'conv-1', mode: 'ask' }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    await consoleApi.operator.conversations.setMode('z1', 'conv-1', 'ask')
+    const [url, init] = fetchMock.mock.calls[0]! as [string, RequestInit]
+    expect(url).toContain('/v1/zones/z1/operator-conversations/conv-1')
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body as string)).toEqual({ mode: 'ask' })
+  })
+
   it('fetches the working-memory context snapshot', async () => {
     const context = {
       conversation_id: 'conv-1',

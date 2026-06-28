@@ -64,6 +64,7 @@ import type {
   SimulateResult,
   OperatorCapability,
   OperatorConversation,
+  OperatorConversationMode,
   OperatorContext,
   OperatorAiStatus,
   OperatorExecutionResult,
@@ -533,15 +534,20 @@ export const consoleApi = {
           `/v1/zones/${encodeURIComponent(zoneId)}/operator-conversations/${encodeURIComponent(id)}`,
           { signal },
         ),
-      create: (zoneId: string, title: string) =>
+      create: (zoneId: string, title: string, mode?: OperatorConversationMode) =>
         request<OperatorConversation>(
           `/v1/zones/${encodeURIComponent(zoneId)}/operator-conversations`,
-          { method: "POST", body: JSON.stringify({ title }) },
+          { method: "POST", body: JSON.stringify(mode ? { title, mode } : { title }) },
         ),
       rename: (zoneId: string, id: string, title: string) =>
         request<OperatorConversation>(
           `/v1/zones/${encodeURIComponent(zoneId)}/operator-conversations/${encodeURIComponent(id)}`,
           { method: "PATCH", body: JSON.stringify({ title }) },
+        ),
+      setMode: (zoneId: string, id: string, mode: OperatorConversationMode) =>
+        request<OperatorConversation>(
+          `/v1/zones/${encodeURIComponent(zoneId)}/operator-conversations/${encodeURIComponent(id)}`,
+          { method: "PATCH", body: JSON.stringify({ mode }) },
         ),
       restore: (zoneId: string, id: string) =>
         request<OperatorConversation>(

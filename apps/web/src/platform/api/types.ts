@@ -694,11 +694,17 @@ export interface OperatorPlanValidation {
 
 export type OperatorConversationStatus = "active" | "archived";
 
+// The operation mode of a conversation, a Caracal-side setting enforced by the API. agent allows
+// planning and, after approval, applying changes; ask is strictly read-only and provably
+// write-incapable. The mode is never chosen by the model.
+export type OperatorConversationMode = "ask" | "agent";
+
 export interface OperatorConversation {
   id: string;
   zone_id: string;
   title: string;
   status: OperatorConversationStatus;
+  mode: OperatorConversationMode;
   created_by: string;
   created_at: string;
   updated_at: string;
