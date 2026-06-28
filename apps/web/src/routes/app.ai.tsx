@@ -1083,11 +1083,10 @@ interface ComposerControls {
   autopilotAvailable: boolean;
 }
 
-// The approval-mode dropdown placed flush below the chat box. It only appears in agent mode,
-// since ask mode is read-only and never proposes a change to approve. When autopilot is engaged a
+// The approval-mode dropdown placed flush below the chat box, always visible so the operator
+// can see and set how changes are approved before any are proposed. When autopilot is engaged a
 // short reminder sits beside it that the Operator acts on its own judgement for low-risk changes.
 function AutopilotRow({ controls }: { controls: ComposerControls }) {
-  if (controls.mode !== "agent") return null;
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 px-0.5">
       <AutopilotMenu
