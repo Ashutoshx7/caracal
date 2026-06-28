@@ -212,39 +212,46 @@ interface ContextQueryable {
 // recent messages. Shared by the context endpoint and the message orchestrator so
 // an agent reasons over exactly what an operator sees.
 async function loadConversationState(db: ContextQueryable, conversationId: string, zoneId: string, messageWindow: number) {
-  const { rows: planRows } = await db.query<{ seq: number }>(
-    `SELECT seq FROM operator_turns
-     WHERE conversation_id = $1 AND zone_id = $2 AND kind = 'plan'
-     ORDER BY seq DESC LIMIT 1`,
-    [conversationId, zoneId],
-  )
-  const planSeq = planRows[0]?.seq ?? null
+  // The plan slice must first find the latest plan seq, but the error and message reads are
+  // independent, so overlap all three instead of serializing the round trips.
+  const planSlicePromise = (async () => {
+    const { rows: planRows } = await db.query<{ seq: number }>(
+      `SELECT seq FROM operator_turns
+       WHERE conversation_id = $1 AND zone_id = $2 AND kind = 'plan'
+       ORDER BY seq DESC LIMIT 1`,
+      [conversationId, zoneId],
+    )
+    const planSeq = planRows[0]?.seq ?? null
+    if (!planSeq) return []
+    const { rows } = await db.query<TurnRecord>(
+      `SELECT seq, role, kind, content FROM operator_turns
+       WHERE conversation_id = $1 AND zone_id = $2 AND seq >= $3
+         AND kind IN ('plan', 'approval', 'rejection', 'execution', 'error')
+       ORDER BY seq ASC LIMIT $4`,
+      [conversationId, zoneId, planSeq, PLAN_WINDOW_LIMIT],
+    )
+    return rows
+  })()
 
-  const planSlice = planSeq
-    ? (
-        await db.query<TurnRecord>(
-          `SELECT seq, role, kind, content FROM operator_turns
-           WHERE conversation_id = $1 AND zone_id = $2 AND seq >= $3
-             AND kind IN ('plan', 'approval', 'rejection', 'execution', 'error')
-           ORDER BY seq ASC LIMIT $4`,
-          [conversationId, zoneId, planSeq, PLAN_WINDOW_LIMIT],
-        )
-      ).rows
-    : []
-
-  const { rows: errorRows } = await db.query<TurnRecord>(
+  const errorPromise = db.query<TurnRecord>(
     `SELECT seq, role, kind, content FROM operator_turns
      WHERE conversation_id = $1 AND zone_id = $2 AND kind = 'error'
      ORDER BY seq DESC LIMIT 1`,
     [conversationId, zoneId],
   )
 
-  const { rows: messageRows } = await db.query<TurnRecord>(
+  const messagePromise = db.query<TurnRecord>(
     `SELECT seq, role, kind, content FROM operator_turns
      WHERE conversation_id = $1 AND zone_id = $2 AND kind = 'message'
      ORDER BY seq DESC LIMIT $3`,
     [conversationId, zoneId, messageWindow],
   )
+
+  const [planSlice, { rows: errorRows }, { rows: messageRows }] = await Promise.all([
+    planSlicePromise,
+    errorPromise,
+    messagePromise,
+  ])
 
   const merged = new Map<number, TurnRecord>()
   for (const turn of [...planSlice, ...errorRows, ...messageRows]) {
@@ -656,8 +663,10 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     )
     if (!conv[0]) return reply.code(404).send({ error: 'conversation_not_found' })
 
-    const state = await loadConversationState(fastify.db, params.id, params.zoneId, query.data.message_window)
-    const facts = await loadConversationFacts(fastify.db, params.id, params.zoneId)
+    const [state, facts] = await Promise.all([
+      loadConversationState(fastify.db, params.id, params.zoneId, query.data.message_window),
+      loadConversationFacts(fastify.db, params.id, params.zoneId),
+    ])
 
     return {
       conversation_id: params.id,
@@ -1062,8 +1071,10 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         .send({ error: userTurn.reason === 'archived' ? 'conversation_archived' : 'conversation_not_found' })
     }
 
-    const state = await loadConversationState(fastify.db, params.id, params.zoneId, MESSAGE_CONTEXT_WINDOW)
-    const facts = await loadConversationFacts(fastify.db, params.id, params.zoneId)
+    const [state, facts] = await Promise.all([
+      loadConversationState(fastify.db, params.id, params.zoneId, MESSAGE_CONTEXT_WINDOW),
+      loadConversationFacts(fastify.db, params.id, params.zoneId),
+    ])
     const context: AgentContext = { facts, state }
 
     // Track the real token usage of every completion made while answering this one

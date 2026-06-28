@@ -1292,27 +1292,29 @@ describe('GET /v1/zones/:zoneId/operator-conversations/:id/context', () => {
 
   it('derives working memory: pending plan, recent message, no error', async () => {
     const { app, db } = buildApp()
-    db.query
-      .mockResolvedValueOnce({ rows: [{ status: 'active', next_seq: 4 }] }) // conversation
-      .mockResolvedValueOnce({ rows: [{ seq: 2 }] }) // latest plan seq
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            seq: 2,
-            role: 'operator',
-            kind: 'plan',
-            content: {
-              summary: 'Connect GitHub',
-              steps: [{ id: 's1', capability: 'connectProvider', summary: 'Bind GitHub', mutating: true }],
+    // The context reads run concurrently, so route by query shape rather than call order.
+    db.query.mockImplementation((sql: string) => {
+      if (sql.includes('FROM operator_conversations')) return Promise.resolve({ rows: [{ status: 'active', next_seq: 4 }] })
+      if (sql.includes("kind = 'plan'")) return Promise.resolve({ rows: [{ seq: 2 }] }) // latest plan seq
+      if (sql.includes('seq >= $3'))
+        return Promise.resolve({
+          rows: [
+            {
+              seq: 2,
+              role: 'operator',
+              kind: 'plan',
+              content: {
+                summary: 'Connect GitHub',
+                steps: [{ id: 's1', capability: 'connectProvider', summary: 'Bind GitHub', mutating: true }],
+              },
             },
-          },
-        ],
-      }) // plan slice
-      .mockResolvedValueOnce({ rows: [] }) // error rows
-      .mockResolvedValueOnce({
-        rows: [{ seq: 1, role: 'user', kind: 'message', content: { text: 'Connect GitHub' } }],
-      }) // message rows
-      .mockResolvedValueOnce({ rows: [] }) // facts: decision-turn history
+          ],
+        }) // plan slice
+      if (sql.includes("kind = 'error'")) return Promise.resolve({ rows: [] })
+      if (sql.includes("kind = 'message'"))
+        return Promise.resolve({ rows: [{ seq: 1, role: 'user', kind: 'message', content: { text: 'Connect GitHub' } }] })
+      return Promise.resolve({ rows: [] }) // facts: decision-turn history
+    })
     await app.ready()
     const res = await app.inject({
       method: 'GET',
@@ -1335,38 +1337,28 @@ describe('GET /v1/zones/:zoneId/operator-conversations/:id/context', () => {
 
   it('reflects approval and execution progress in the derived plan', async () => {
     const { app, db } = buildApp()
-    db.query
-      .mockResolvedValueOnce({ rows: [{ status: 'active', next_seq: 6 }] }) // conversation
-      .mockResolvedValueOnce({ rows: [{ seq: 2 }] }) // latest plan seq
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            seq: 2,
-            role: 'operator',
-            kind: 'plan',
-            content: {
-              summary: 'Connect GitHub',
-              steps: [{ id: 's1', capability: 'connectProvider', summary: 'Bind GitHub', mutating: true }],
-            },
-          },
-          { seq: 3, role: 'user', kind: 'approval', content: { plan_seq: 2 } },
-          { seq: 4, role: 'operator', kind: 'execution', content: { plan_seq: 2, step_id: 's1', status: 'succeeded' } },
-        ],
-      }) // plan slice
-      .mockResolvedValueOnce({ rows: [] }) // error rows
-      .mockResolvedValueOnce({ rows: [] }) // message rows
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            seq: 2,
-            role: 'operator',
-            kind: 'plan',
-            content: { summary: 'Connect GitHub', steps: [{ id: 's1', capability: 'connectProvider' }] },
-          },
-          { seq: 3, role: 'user', kind: 'approval', content: { plan_seq: 2 } },
-          { seq: 4, role: 'operator', kind: 'execution', content: { plan_seq: 2, step_id: 's1', status: 'succeeded' } },
-        ],
-      }) // facts: decision-turn history
+    // The context reads run concurrently, so route by query shape rather than call order.
+    const decisionRows = [
+      {
+        seq: 2,
+        role: 'operator',
+        kind: 'plan',
+        content: {
+          summary: 'Connect GitHub',
+          steps: [{ id: 's1', capability: 'connectProvider', summary: 'Bind GitHub', mutating: true }],
+        },
+      },
+      { seq: 3, role: 'user', kind: 'approval', content: { plan_seq: 2 } },
+      { seq: 4, role: 'operator', kind: 'execution', content: { plan_seq: 2, step_id: 's1', status: 'succeeded' } },
+    ]
+    db.query.mockImplementation((sql: string) => {
+      if (sql.includes('FROM operator_conversations')) return Promise.resolve({ rows: [{ status: 'active', next_seq: 6 }] })
+      if (sql.includes("kind = 'plan'")) return Promise.resolve({ rows: [{ seq: 2 }] }) // latest plan seq
+      if (sql.includes('seq >= $3')) return Promise.resolve({ rows: decisionRows }) // plan slice
+      if (sql.includes("kind = 'error'")) return Promise.resolve({ rows: [] })
+      if (sql.includes("kind = 'message'")) return Promise.resolve({ rows: [] })
+      return Promise.resolve({ rows: decisionRows }) // facts: decision-turn history
+    })
     await app.ready()
     const res = await app.inject({
       method: 'GET',

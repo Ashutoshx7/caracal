@@ -23,8 +23,10 @@ import type {
   DiagnosticsReport,
   DiagnosticStatus,
   OperatorConversationMode,
+  Policy,
   PolicyInput,
   PolicyManifestEntry,
+  PolicySet,
   Provider,
   ProviderGrantAuthorizeInput,
   ProviderGrantRevokeInput,
@@ -561,7 +563,18 @@ export function useDeletePolicy(zoneId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => consoleApi.policies.delete(zoneId as string, id),
-    onSuccess: () => invalidatePolicies(qc, zoneId),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: keys.policies(zoneId) });
+      const previous = qc.getQueryData<Policy[]>(keys.policies(zoneId));
+      qc.setQueryData<Policy[]>(keys.policies(zoneId), (old) =>
+        old?.filter((policy) => policy.id !== id),
+      );
+      return { previous };
+    },
+    onError: (_error, _id, context) => {
+      if (context?.previous) qc.setQueryData(keys.policies(zoneId), context.previous);
+    },
+    onSettled: () => invalidatePolicies(qc, zoneId),
   });
 }
 
@@ -603,7 +616,18 @@ export function useDeletePolicySet(zoneId: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => consoleApi.policySets.delete(zoneId as string, id),
-    onSuccess: () => invalidatePolicySets(qc, zoneId),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: keys.policySets(zoneId) });
+      const previous = qc.getQueryData<PolicySet[]>(keys.policySets(zoneId));
+      qc.setQueryData<PolicySet[]>(keys.policySets(zoneId), (old) =>
+        old?.filter((set) => set.id !== id),
+      );
+      return { previous };
+    },
+    onError: (_error, _id, context) => {
+      if (context?.previous) qc.setQueryData(keys.policySets(zoneId), context.previous);
+    },
+    onSettled: () => invalidatePolicySets(qc, zoneId),
   });
 }
 
