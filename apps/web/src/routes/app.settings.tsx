@@ -942,7 +942,7 @@ function EndpointField({ value, onChange }: { value: string; onChange: (value: s
     <div ref={rootRef} className="relative block">
       <FieldLabel
         label="Endpoint base URL"
-        info="Caracal speaks the OpenAI /chat/completions format — the industry-standard interop schema. OpenAI, Azure, Anthropic, and Gemini all expose an OpenAI-compatible endpoint directly; reach any other model through an OpenAI-compatible proxy like LiteLLM or OpenRouter. This keeps every model behind one governed, auditable path instead of a separate integration per vendor."
+        info="Any OpenAI-compatible endpoint works. For other providers, route through LiteLLM."
       />
       <input
         value={value}
