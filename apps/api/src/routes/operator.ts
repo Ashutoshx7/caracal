@@ -16,6 +16,7 @@ import { previewPlan } from '../operator-preview.js'
 import { buildOperatorAuthority, isZoneIsolated, authorizePlanSteps, type OperatorAuthority } from '../operator-authority.js'
 import { buildOperatorControlClient, type OperatorControlEndpoints } from '../operator-control-client.js'
 import { executeViaControlPlane, type GovernedPlanStep } from '../operator-governed-execute.js'
+import { createRoleScopedClient, roleScopes } from '../operator-agent-roles.js'
 import { isControlExecutable } from '../operator-control-map.js'
 import { mayAutoApprove, autopilotAvailable, buildAutopilotPolicy, type AutopilotPolicy } from '../operator-autopilot.js'
 import type { ControlClient } from '../control-client.js'
@@ -922,11 +923,14 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
 
       if (!pre.ok) return reply.code(pre.status).send(pre.body)
 
-      // Apply the plan through the control plane as the Operator's scoped identity. Each
-      // step mints a least-privilege token and invokes its governed control command; the
-      // control plane authorizes, executes, and audits it natively. A denial or failure
-      // stops the plan, so it never silently half-applies.
-      const result = await executeViaControlPlane(controlClient, pre.steps)
+      // Apply the plan through the control plane as the Operator's scoped identity, spawned under
+      // the executor role: the control client is bounded to exactly the scopes the Operator's
+      // authority grants, so a write scope it was never granted can never be minted even if a step
+      // slipped past the authority check. Each step mints a least-privilege token and invokes its
+      // governed control command; the control plane authorizes, executes, and audits it natively. A
+      // denial or failure stops the plan, so it never silently half-applies.
+      const executor = createRoleScopedClient(controlClient, 'executor', roleScopes('executor', authority))
+      const result = await executeViaControlPlane(executor, pre.steps)
 
       // Record the applied steps and any failure in the ledger. The control plane already
       // wrote the tamper-evident admin audit for each mutation, so no manual audit record
@@ -1086,12 +1090,16 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     try {
       // For a read tier the orchestrator first gathers live state through governed reads, so
       // the answer is grounded in current state rather than the model's guess. The researcher is
-      // the Operator's own scoped, read-only control identity — the same dogfooded path a change
-      // executes through. The identity is zone-bound, so it is used only when it is bound to this
-      // conversation's zone; otherwise it would read another zone's state, so no researcher is
-      // built and the answer falls back to conversation context alone.
+      // spawned under the read-only researcher role: its control client is bounded to the read
+      // scopes alone, so the read worker can never mint a write token even though it shares the
+      // Operator's underlying control identity. The identity is zone-bound, so it is used only when
+      // it is bound to this conversation's zone; otherwise it would read another zone's state, so no
+      // researcher is built and the answer falls back to conversation context alone.
       const governed = resolveControlClient()
-      const researcher = governed && governed.identity.zoneId === params.zoneId ? createStateResearcher(governed.client) : null
+      const researcher =
+        governed && governed.identity.zoneId === params.zoneId
+          ? createStateResearcher(createRoleScopedClient(governed.client, 'researcher', roleScopes('researcher', authority)))
+          : null
 
       // The conversation's operation mode, read under the lock that recorded the message. In ask
       // mode the orchestrator never produces a plan, so the message path cannot persist one.
