@@ -8,6 +8,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { useSyncExternalStore, useState } from "react";
 
 import { getActiveZoneId, setActiveZoneId } from "@/platform/state/localInstall";
+import { isSystemZone } from "@/platform/state/zones";
 
 import { consoleApi } from "./client";
 import type {
@@ -363,7 +364,16 @@ export function useDiagnostics(options: DiagnosticsOptions = {}) {
 }
 
 export function useZones() {
-  return useQuery({ queryKey: keys.zones, queryFn: ({ signal }) => consoleApi.zones.list(signal) });
+  return useQuery({
+    queryKey: keys.zones,
+    queryFn: ({ signal }) => consoleApi.zones.list(signal),
+    // The reserved system zone is Caracal's own internal infrastructure and is never a
+    // selectable, manageable zone. The control plane already excludes it from this list; the
+    // client filter is defense-in-depth so it can never surface in any zone selector or list,
+    // including the profile active-zone switcher. The read-only viewer resolves it by id
+    // separately, so hiding it here never blocks the transparency view.
+    select: (zones) => zones.filter((zone) => !isSystemZone(zone)),
+  });
 }
 
 // Zone create/update/delete change the zone inventory the diagnostics report walks, so

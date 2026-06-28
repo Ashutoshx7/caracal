@@ -66,12 +66,13 @@ export function ConsoleLayout() {
 
   return (
     <ViewOnlyProvider readOnly={systemView} reason={SYSTEM_ZONE_VIEW_REASON}>
-      <div
-        className={cx(
-          "flex h-screen overflow-hidden bg-background text-foreground",
-          systemView && "ring-2 ring-inset ring-pink-500",
-        )}
-      >
+      {systemView ? (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed inset-0 z-[100] border-[3px] border-pink-500 shadow-[inset_0_0_12px_rgba(236,72,153,0.45)]"
+        />
+      ) : null}
+      <div className="flex h-screen overflow-hidden bg-background text-foreground">
         <aside
           className={cx(
             "hidden flex-shrink-0 border-r border-border transition-[width] duration-200 md:block",
