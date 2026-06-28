@@ -10,6 +10,7 @@ import {
   preferProvider,
   GatewayUnavailableError,
   GatewayError,
+  GatewayBudgetError,
   type ProviderConfig,
 } from '../../../../apps/api/src/operator-gateway.js'
 import { ProposedPlan } from '../../../../apps/api/src/operator-capabilities.js'
@@ -244,6 +245,82 @@ describe('withUsage', () => {
     const { gateway, usage } = withUsage(createGateway([provider()], fetchMock as unknown as typeof fetch))
     await gateway.complete([{ role: 'user', content: 'a' }])
     expect(usage()).toEqual({ inputTokens: 0, outputTokens: 0 })
+  })
+
+  it('enforces the per-turn model-call budget, refusing a call beyond it', async () => {
+    const fetchMock = vi.fn(async () => chatResponse('OK'))
+    const base = createGateway([provider()], fetchMock as unknown as typeof fetch)
+    const { gateway } = withUsage(base, { maxCalls: 2 })
+    await gateway.complete([{ role: 'user', content: 'a' }])
+    await gateway.complete([{ role: 'user', content: 'b' }])
+    // The third call is refused before reaching a provider, so only two requests were made.
+    await expect(gateway.complete([{ role: 'user', content: 'c' }])).rejects.toBeInstanceOf(GatewayBudgetError)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('counts text and object completions against one shared budget', async () => {
+    const fetchMock = vi.fn(async () => chatResponse('OK'))
+    const base = createGateway([provider()], fetchMock as unknown as typeof fetch)
+    const { gateway } = withUsage(base, { maxCalls: 1 })
+    await gateway.complete([{ role: 'user', content: 'a' }])
+    await expect(gateway.completeObject([{ role: 'user', content: 'b' }], ProposedPlan)).rejects.toBeInstanceOf(GatewayBudgetError)
+  })
+
+  it('imposes no budget when maxCalls is absent or zero', async () => {
+    const fetchMock = vi.fn(async () => chatResponse('OK'))
+    const base = createGateway([provider()], fetchMock as unknown as typeof fetch)
+    const { gateway } = withUsage(base, { maxCalls: 0 })
+    for (let i = 0; i < 5; i += 1) await gateway.complete([{ role: 'user', content: 'x' }])
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+  })
+})
+
+describe('gateway governance', () => {
+  it('clamps a completion output request down to the Caracal ceiling', async () => {
+    const fetchMock = vi.fn(async () => chatResponse('OK'))
+    const gateway = createGateway([provider()], fetchMock as unknown as typeof fetch, { maxOutputTokens: 256, maxCallsPerTurn: 0 })
+    await gateway.complete([{ role: 'user', content: 'hi' }], { maxTokens: 5000 })
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string)
+    expect(body.max_tokens).toBe(256)
+  })
+
+  it('sets the ceiling when a completion left the output open', async () => {
+    const fetchMock = vi.fn(async () => chatResponse('OK'))
+    const gateway = createGateway([provider()], fetchMock as unknown as typeof fetch, { maxOutputTokens: 256, maxCallsPerTurn: 0 })
+    await gateway.complete([{ role: 'user', content: 'hi' }])
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string)
+    expect(body.max_tokens).toBe(256)
+  })
+
+  it('leaves a request below the ceiling unchanged', async () => {
+    const fetchMock = vi.fn(async () => chatResponse('OK'))
+    const gateway = createGateway([provider()], fetchMock as unknown as typeof fetch, { maxOutputTokens: 4096, maxCallsPerTurn: 0 })
+    await gateway.complete([{ role: 'user', content: 'hi' }], { maxTokens: 600 })
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string)
+    expect(body.max_tokens).toBe(600)
+  })
+
+  it('applies the ceiling to structured completions too', async () => {
+    const validPlan = { summary: 'Connect GitHub', steps: [{ id: 's1', capability: 'connectProvider', args: { name: 'GitHub' } }] }
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(validPlan) } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    )
+    const gateway = createGateway([provider()], fetchMock as unknown as typeof fetch, { maxOutputTokens: 128, maxCallsPerTurn: 0 })
+    await gateway.completeObject([{ role: 'user', content: 'connect github' }], ProposedPlan, { maxTokens: 9000 })
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string)
+    expect(body.max_tokens).toBe(128)
+  })
+
+  it('does not constrain output when no governance ceiling is configured', async () => {
+    const fetchMock = vi.fn(async () => chatResponse('OK'))
+    const gateway = createGateway([provider()], fetchMock as unknown as typeof fetch)
+    await gateway.complete([{ role: 'user', content: 'hi' }], { maxTokens: 5000 })
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string)
+    expect(body.max_tokens).toBe(5000)
   })
 })
 

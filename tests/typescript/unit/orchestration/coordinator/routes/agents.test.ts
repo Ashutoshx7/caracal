@@ -688,7 +688,7 @@ describe('GET /v1/zones/:zoneId/agents/:id/children', () => {
     await app.ready()
     const res = await app.inject({ method: 'GET', url: '/v1/zones/z1/agents/parent/children' })
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual([{ agent_session_id: 'child-1' }])
+    expect(res.json()).toEqual({ items: [{ agent_session_id: 'child-1' }], next_cursor: null })
   })
 })
 
