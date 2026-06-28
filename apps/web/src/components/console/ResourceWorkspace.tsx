@@ -213,7 +213,9 @@ export function ResourceWorkspace<T>({
         ) : null}
         {primaryAction ? (
           <div className="ml-auto">
-            <Button onClick={primaryAction.onClick}>{primaryAction.label}</Button>
+            <Button onClick={primaryAction.onClick} mutating>
+              {primaryAction.label}
+            </Button>
           </div>
         ) : null}
       </div>

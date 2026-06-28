@@ -15,6 +15,7 @@ import type {
 
 import { cx } from "@/lib/cx";
 import { InfoHint } from "./InfoHint";
+import { useViewOnly, READ_ONLY_BLOCK_MESSAGE } from "./ViewOnly";
 
 // The dithering backdrop pulls in a WebGL shader library, so it is code-split and only
 // fetched when an empty state actually renders, keeping the shared primitives chunk lean.
@@ -45,15 +46,23 @@ export function Button({
   variant = "primary",
   size = "md",
   loading = false,
+  mutating = false,
   className,
   children,
   disabled,
+  title,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
+  // Marks the button as a state-changing action. In a read-only surface (e.g. the system zone
+  // shown for transparency) every mutating control is disabled, so a view-only page cannot trigger
+  // a change the control plane would refuse anyway.
+  mutating?: boolean;
 }) {
+  const { readOnly, reason } = useViewOnly();
+  const blocked = mutating && readOnly;
   const variants: Record<ButtonVariant, string> = {
     primary: "bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/80",
     secondary:
@@ -68,8 +77,9 @@ export function Button({
   };
   return (
     <button
-      disabled={disabled || loading}
+      disabled={disabled || loading || blocked}
       aria-busy={loading || undefined}
+      title={blocked ? (reason ?? READ_ONLY_BLOCK_MESSAGE) : title}
       className={cx(
         "inline-flex select-none items-center justify-center rounded-md font-medium outline-none transition-all",
         "focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-1 focus-visible:ring-offset-background",

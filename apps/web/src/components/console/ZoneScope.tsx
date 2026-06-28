@@ -8,9 +8,10 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { ModulePage } from "@/components/console/ModulePage";
-import { Button, EmptyState, Skeleton, type Crumb } from "@/components/ui";
+import { Button, EmptyState, Skeleton, ViewOnlyProvider, type Crumb } from "@/components/ui";
 import { useConsoleStatus } from "@/platform/api/hooks";
 import { useActiveZone } from "@/platform/api/hooks";
+import { isSystemZone } from "@/platform/state/zones";
 import type { Zone } from "@/platform/api/types";
 
 function LoadingBody() {
@@ -91,5 +92,43 @@ export function ZoneScopedPage({
 
   if (!activeZone) return frame(<LoadingBody />);
 
-  return <>{children(activeZone)}</>;
+  const readOnly = isSystemZone(activeZone);
+  if (!readOnly) return <>{children(activeZone)}</>;
+
+  return (
+    <ViewOnlyProvider
+      readOnly
+      reason="Caracal governs this internal system zone — it is shown read-only for transparency."
+    >
+      <SystemZoneNotice />
+      {children(activeZone)}
+    </ViewOnlyProvider>
+  );
+}
+
+// A transparency banner shown on every page of Caracal's internal system zone. The zone is
+// provisioned and governed by Caracal itself, so the Console presents it read-only: operators can
+// inspect exactly how Caracal self-governs without being able to alter it from here.
+function SystemZoneNotice() {
+  return (
+    <div className="mb-4 flex items-start gap-2 rounded-md border border-border bg-accent/40 px-3 py-2 text-sm text-muted-foreground">
+      <svg
+        viewBox="0 0 24 24"
+        className="mt-0.5 h-4 w-4 flex-shrink-0"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <rect x="3" y="11" width="18" height="11" rx="2" />
+        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+      </svg>
+      <span>
+        This is Caracal&apos;s internal system zone, shown read-only for transparency. Caracal
+        governs it through its own policies, so changes are disabled here.
+      </span>
+    </div>
+  );
 }

@@ -7,6 +7,7 @@ This file re-exports the Console UI component kit.
 export * from "./Primitives";
 export * from "./Overlay";
 export * from "./ConfirmDialog";
+export * from "./ViewOnly";
 export * from "./Toast";
 export * from "./toastContext";
 export * from "./Tooltip";

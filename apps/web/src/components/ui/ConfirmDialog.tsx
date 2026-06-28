@@ -51,6 +51,7 @@ export function ConfirmDialog({
             variant={tone === "danger" ? "danger" : "primary"}
             onClick={confirm}
             loading={busy}
+            mutating
           >
             {confirmLabel}
           </Button>
