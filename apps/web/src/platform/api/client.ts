@@ -542,11 +542,15 @@ export const consoleApi = {
           `/v1/zones/${encodeURIComponent(zoneId)}/operator-conversations/${encodeURIComponent(id)}`,
           { signal },
         ),
-      create: (zoneId: string, title: string, mode?: OperatorConversationMode) =>
-        request<OperatorConversation>(
-          `/v1/zones/${encodeURIComponent(zoneId)}/operator-conversations`,
-          { method: "POST", body: JSON.stringify(mode ? { title, mode } : { title }) },
-        ),
+      create: (zoneId: string, title: string, options: { mode?: OperatorConversationMode; autopilot?: boolean } = {}) =>
+        request<OperatorConversation>(`/v1/zones/${encodeURIComponent(zoneId)}/operator-conversations`, {
+          method: "POST",
+          body: JSON.stringify({
+            title,
+            ...(options.mode ? { mode: options.mode } : {}),
+            ...(options.autopilot ? { autopilot: options.autopilot } : {}),
+          }),
+        }),
       rename: (zoneId: string, id: string, title: string) =>
         request<OperatorConversation>(
           `/v1/zones/${encodeURIComponent(zoneId)}/operator-conversations/${encodeURIComponent(id)}`,

@@ -46,7 +46,11 @@ const CONVERSATION_SELECT = 'id, zone_id, title, status, mode, autopilot, create
 const TURN_SELECT = 'id, conversation_id, seq, role, kind, content, actor_id, created_at'
 
 const CreateConversationBody = z
-  .object({ title: z.string().min(1).max(TITLE_MAX_LENGTH), mode: z.enum(['ask', 'agent']).optional() })
+  .object({
+    title: z.string().min(1).max(TITLE_MAX_LENGTH),
+    mode: z.enum(['ask', 'agent']).optional(),
+    autopilot: z.boolean().optional(),
+  })
   .strict()
 
 const PatchConversationBody = z
@@ -484,13 +488,15 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     const parsed = CreateConversationBody.safeParse(req.body)
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_conversation' })
     const id = uuidv7()
-    // A conversation opens in agent mode unless it is explicitly created in ask mode. Mode is a
-    // Caracal-side setting on the conversation; the model never selects or changes it.
+    // A conversation opens in agent mode with autopilot disengaged unless explicitly created
+    // otherwise. Mode and the autopilot engage flag are Caracal-side settings on the conversation;
+    // the model never selects or changes them. Engaging autopilot here only sets the engage flag —
+    // what may be auto-approved is still bounded by the deployment's autopilot policy.
     const { rows } = await fastify.db.query(
-      `INSERT INTO operator_conversations (id, zone_id, title, mode, created_by)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO operator_conversations (id, zone_id, title, mode, autopilot, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING ${CONVERSATION_SELECT}`,
-      [id, params.zoneId, parsed.data.title, parsed.data.mode ?? 'agent', req.actor.id],
+      [id, params.zoneId, parsed.data.title, parsed.data.mode ?? 'agent', parsed.data.autopilot ?? false, req.actor.id],
     )
     return reply.code(201).send(rows[0])
   })
