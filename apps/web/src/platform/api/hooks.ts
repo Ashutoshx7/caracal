@@ -23,6 +23,8 @@ import type {
   DiagnosticsReport,
   DiagnosticStatus,
   OperatorConversationMode,
+  OperatorAiProviderInput,
+  OperatorAiProviderPatch,
   Policy,
   PolicyInput,
   PolicyManifestEntry,
@@ -84,6 +86,7 @@ const keys = {
   operatorCapabilities: ["console", "operator-capabilities"] as const,
   operatorStatus: ["console", "operator-status"] as const,
   operatorAiStatus: ["console", "operator-ai-status"] as const,
+  operatorAiProviders: ["console", "operator-ai-providers"] as const,
   operatorConversations: (zoneId: string | null) =>
     ["console", "operator-conversations", zoneId] as const,
   operatorTurns: (zoneId: string | null, conversationId: string | null) =>
@@ -132,6 +135,56 @@ export function useOperatorAiStatus(enabled: boolean) {
 export function useOperatorAiCheck() {
   return useMutation({
     mutationFn: () => consoleApi.operator.aiCheck(),
+  });
+}
+
+// The governed model providers managed from the console, with whether the deployment can seal
+// keys (governed execution configured). Refetched on focus so a change applied elsewhere shows.
+export function useOperatorAiProviders() {
+  return useQuery({
+    queryKey: keys.operatorAiProviders,
+    queryFn: ({ signal }) => consoleApi.operator.aiProviders.list(signal),
+  });
+}
+
+export function useCreateOperatorAiProvider() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: OperatorAiProviderInput) => consoleApi.operator.aiProviders.create(input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.operatorAiProviders });
+      qc.invalidateQueries({ queryKey: keys.operatorAiStatus });
+    },
+  });
+}
+
+export function useUpdateOperatorAiProvider() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ slug, patch }: { slug: string; patch: OperatorAiProviderPatch }) =>
+      consoleApi.operator.aiProviders.update(slug, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.operatorAiProviders });
+      qc.invalidateQueries({ queryKey: keys.operatorAiStatus });
+    },
+  });
+}
+
+export function useRotateOperatorAiProviderKey() {
+  return useMutation({
+    mutationFn: ({ slug, apiKey }: { slug: string; apiKey: string }) =>
+      consoleApi.operator.aiProviders.rotateKey(slug, apiKey),
+  });
+}
+
+export function useDeleteOperatorAiProvider() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (slug: string) => consoleApi.operator.aiProviders.remove(slug),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.operatorAiProviders });
+      qc.invalidateQueries({ queryKey: keys.operatorAiStatus });
+    },
   });
 }
 

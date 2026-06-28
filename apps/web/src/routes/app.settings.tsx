@@ -14,6 +14,7 @@ import {
   Badge,
   Button,
   Field,
+  FieldLabel,
   LockBadge,
   Modal,
   Skeleton,
@@ -22,7 +23,17 @@ import {
 } from "@/components/ui";
 import { LOCKED_FEATURES } from "@/platform/edition/lockedFeatures";
 import { consoleApi, ConsoleApiError } from "@/platform/api/client";
-import { useOperatorAiStatus, useOperatorAiCheck, useZones } from "@/platform/api/hooks";
+import {
+  useOperatorAiStatus,
+  useOperatorAiCheck,
+  useOperatorAiProviders,
+  useCreateOperatorAiProvider,
+  useUpdateOperatorAiProvider,
+  useRotateOperatorAiProviderKey,
+  useDeleteOperatorAiProvider,
+  useZones,
+} from "@/platform/api/hooks";
+import type { OperatorAiProvider } from "@/platform/api/types";
 import {
   AuthApiError,
   changePassword,
@@ -620,23 +631,20 @@ function PreferencesSection() {
 
 /* ------------------------------ AI Operator ------------------------------ */
 
-type PresetFamily = "OpenAI" | "Anthropic" | "Google" | "Custom";
 type EndpointKind = "direct" | "aggregator" | "custom";
 
 interface ModelPreset {
   id: string;
   label: string;
-  family: PresetFamily;
+  family: string;
   model: string;
-  providerId: string;
+  slug: string;
   endpoint: EndpointKind;
-  baseUrlHint: string;
-  note: string;
+  baseUrl: string;
 }
 
 const AGGREGATOR_NOTE =
   "Not an OpenAI-wire-format API. Front it with an OpenAI-compatible aggregator (a self-hosted LiteLLM proxy or OpenRouter) and point the endpoint there.";
-const DIRECT_NOTE = "OpenAI-compatible, so OpenAI or Azure OpenAI connects directly.";
 const AGGREGATOR_BASE_URL = "https://your-litellm-or-openrouter/v1";
 
 const MODEL_PRESETS: ModelPreset[] = [
@@ -645,142 +653,82 @@ const MODEL_PRESETS: ModelPreset[] = [
     label: "GPT 5.5",
     family: "OpenAI",
     model: "gpt-5.5",
-    providerId: "openai",
+    slug: "openai",
     endpoint: "direct",
-    baseUrlHint: "https://api.openai.com/v1",
-    note: DIRECT_NOTE,
+    baseUrl: "https://api.openai.com/v1",
   },
   {
     id: "gpt-5.4",
     label: "GPT 5.4",
     family: "OpenAI",
     model: "gpt-5.4",
-    providerId: "openai",
+    slug: "openai",
     endpoint: "direct",
-    baseUrlHint: "https://api.openai.com/v1",
-    note: DIRECT_NOTE,
+    baseUrl: "https://api.openai.com/v1",
   },
   {
     id: "gpt-5.4-mini",
     label: "GPT 5.4 mini",
     family: "OpenAI",
     model: "gpt-5.4-mini",
-    providerId: "openai",
+    slug: "openai",
     endpoint: "direct",
-    baseUrlHint: "https://api.openai.com/v1",
-    note: DIRECT_NOTE,
+    baseUrl: "https://api.openai.com/v1",
   },
   {
     id: "claude-opus-4.8",
     label: "Claude Opus 4.8",
     family: "Anthropic",
     model: "claude-opus-4.8",
-    providerId: "anthropic",
+    slug: "anthropic",
     endpoint: "aggregator",
-    baseUrlHint: AGGREGATOR_BASE_URL,
-    note: AGGREGATOR_NOTE,
+    baseUrl: AGGREGATOR_BASE_URL,
   },
   {
     id: "claude-sonnet-4.6",
     label: "Claude Sonnet 4.6",
     family: "Anthropic",
     model: "claude-sonnet-4.6",
-    providerId: "anthropic",
+    slug: "anthropic",
     endpoint: "aggregator",
-    baseUrlHint: AGGREGATOR_BASE_URL,
-    note: AGGREGATOR_NOTE,
+    baseUrl: AGGREGATOR_BASE_URL,
   },
   {
     id: "gemini-3.5-flash",
     label: "Gemini 3.5 Flash",
     family: "Google",
     model: "gemini-3.5-flash",
-    providerId: "gemini",
+    slug: "gemini",
     endpoint: "aggregator",
-    baseUrlHint: AGGREGATOR_BASE_URL,
-    note: AGGREGATOR_NOTE,
+    baseUrl: AGGREGATOR_BASE_URL,
   },
   {
     id: "gemini-3.1-pro",
     label: "Gemini 3.1 Pro",
     family: "Google",
     model: "gemini-3.1-pro",
-    providerId: "gemini",
+    slug: "gemini",
     endpoint: "aggregator",
-    baseUrlHint: AGGREGATOR_BASE_URL,
-    note: AGGREGATOR_NOTE,
+    baseUrl: AGGREGATOR_BASE_URL,
   },
   {
     id: "custom",
     label: "Custom OpenAI-compatible",
     family: "Custom",
     model: "",
-    providerId: "custom",
+    slug: "custom",
     endpoint: "custom",
-    baseUrlHint: "https://your-endpoint/v1",
-    note: "Any model reachable over an OpenAI-compatible /chat/completions endpoint.",
+    baseUrl: "https://your-endpoint/v1",
   },
 ];
 
-// The Operator addresses providers by a slug used to build its env keys, so the slug is
-// constrained to the same shape the API enforces: letters, digits, and underscores.
-function sanitizeProviderId(raw: string): string {
+// The Operator addresses a provider by a slug used to build its configuration keys, so the slug
+// is constrained to the shape the API enforces: lowercase letters, digits, and underscores.
+function sanitizeSlug(raw: string): string {
   return raw
     .toLowerCase()
     .replace(/[^a-z0-9_]/g, "")
     .slice(0, 32);
-}
-
-// Assembles the exact governed provider configuration for the chosen model. The key is woven
-// in only on the client when present, so it never leaves the browser; the placeholder keeps the
-// block copy-ready before a key is entered. Caracal seals the key at boot and routes the call
-// through the gateway, so the value here is only ever placed into the deployment's own config.
-function buildEnvConfig(input: {
-  providerId: string;
-  baseUrl: string;
-  model: string;
-  apiKey: string;
-  contextWindow: string;
-}): string {
-  const id = sanitizeProviderId(input.providerId) || "openai";
-  const upper = id.toUpperCase();
-  const lines = [
-    `API_OPERATOR_AI_PROVIDERS=${id}`,
-    `API_OPERATOR_AI_${upper}_BASE_URL=${input.baseUrl || "https://your-endpoint/v1"}`,
-    `API_OPERATOR_AI_${upper}_MODEL=${input.model || "your-model-id"}`,
-    `API_OPERATOR_AI_${upper}_API_KEY=${input.apiKey || "your-api-key"}`,
-  ];
-  const ctx = input.contextWindow.trim();
-  if (ctx) lines.push(`API_OPERATOR_AI_${upper}_CONTEXT_WINDOW=${ctx}`);
-  return lines.join("\n");
-}
-
-function CodeBlock({ text }: { text: string }) {
-  const toast = useToast();
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast({ tone: "success", title: "Copied" });
-    } catch {
-      toast({ tone: "error", title: "Copy failed" });
-    }
-  }
-  return (
-    <div className="relative">
-      <pre className="scrollbar-thin overflow-x-auto rounded-md border border-border bg-muted/40 p-3 pr-20 font-mono text-xs leading-relaxed text-foreground">
-        {text}
-      </pre>
-      <Button
-        variant="secondary"
-        size="sm"
-        className="absolute right-2 top-2"
-        onClick={copy}
-        type="button"
-      >
-        Copy
-      </Button>
-    </div>
-  );
 }
 
 function checkErrorMessage(err: unknown): string {
@@ -792,83 +740,63 @@ function checkErrorMessage(err: unknown): string {
   return "The connectivity check failed. Try again.";
 }
 
+function writeErrorMessage(err: unknown): string {
+  if (err instanceof ConsoleApiError) {
+    if (err.code === "governed_execution_unconfigured")
+      return "Self-governance is not configured, so a key cannot be sealed.";
+    if (err.code === "invalid_provider")
+      return "Some fields are invalid. Check the form and try again.";
+    if (err.code === "provider_not_found") return "That provider no longer exists.";
+  }
+  return "The change could not be saved. Try again.";
+}
+
 function AiOperatorSection() {
   const status = useOperatorAiStatus(true);
+  const list = useOperatorAiProviders();
   const check = useOperatorAiCheck();
+  const remove = useDeleteOperatorAiProvider();
+  const toast = useToast();
 
-  const [presetId, setPresetId] = useState<string>(MODEL_PRESETS[0].id);
-  const preset = MODEL_PRESETS.find((item) => item.id === presetId) ?? MODEL_PRESETS[0];
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<OperatorAiProvider | null>(null);
+  const [rotating, setRotating] = useState<OperatorAiProvider | null>(null);
+  const [deleting, setDeleting] = useState<OperatorAiProvider | null>(null);
 
-  const [providerId, setProviderId] = useState(preset.providerId);
-  const [baseUrl, setBaseUrl] = useState("");
-  const [model, setModel] = useState(preset.model);
-  const [apiKey, setApiKey] = useState("");
-  const [contextWindow, setContextWindow] = useState("");
-
-  // Choosing a preset reseeds the editable fields with its defaults so the model id and slug
-  // are correct out of the box, while leaving the endpoint and key for the operator to supply.
-  function choosePreset(id: string) {
-    const next = MODEL_PRESETS.find((item) => item.id === id) ?? MODEL_PRESETS[0];
-    setPresetId(id);
-    setProviderId(next.providerId);
-    setModel(next.model);
-  }
-
-  const env = buildEnvConfig({ providerId, baseUrl, model, apiKey, contextWindow });
-  const providers = status.data?.providers ?? [];
+  const available = list.data?.available ?? false;
+  const providers = list.data?.providers ?? [];
+  const runtime = status.data?.providers ?? [];
   const connected = status.data?.enabled ?? false;
+
+  function runtimeReady(slug: string, model: string): boolean {
+    return runtime.some(
+      (entry) =>
+        entry.available &&
+        (entry.id === slug || entry.id.startsWith(`${slug}__`) || entry.model === model),
+    );
+  }
 
   return (
     <div>
       <SettingsGroup
         title="Status"
-        description="The model providers the Operator uses, in failover order, and a live connectivity check."
+        description="The models the Operator uses, in failover order, and a live connectivity check."
       >
         <div className="grid gap-4">
           {status.isLoading ? (
-            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-10 w-full" />
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Badge tone={connected ? "success" : "warning"}>
-                {connected ? "Connected" : "No provider configured"}
+                {connected ? "Connected" : "No model ready"}
               </Badge>
               <span className="text-xs text-muted-foreground">
                 {connected
-                  ? `${providers.length} provider${providers.length === 1 ? "" : "s"} in failover order`
-                  : "Configure a provider below, then restart the API to apply it."}
+                  ? `${runtime.length} model${runtime.length === 1 ? "" : "s"} in failover order`
+                  : "Add a model below to bring the Operator online."}
               </span>
             </div>
           )}
-
-          {providers.length > 0 ? (
-            <div className="divide-y divide-border border border-border bg-card">
-              {providers.map((provider) => (
-                <div
-                  key={provider.id}
-                  className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-foreground">
-                      {provider.id}
-                    </div>
-                    <div className="truncate font-mono text-xs text-muted-foreground">
-                      {provider.model}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {provider.contextWindow > 0 ? (
-                      <span className="text-xs text-muted-foreground">
-                        {provider.contextWindow.toLocaleString()} ctx
-                      </span>
-                    ) : null}
-                    <Badge tone={provider.available ? "success" : "muted"}>
-                      {provider.available ? "Ready" : "Unconfigured"}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
 
           <div className="flex flex-wrap items-center gap-3">
             <Button
@@ -894,103 +822,471 @@ function AiOperatorSection() {
       </SettingsGroup>
 
       <SettingsGroup
-        title="Add a model"
-        description="Pick a model, supply its endpoint and key, and apply the generated configuration."
+        title="Models"
+        description="Add a provider once; its key is sealed into Caracal and the Operator reaches every model through the governed gateway."
+        action={
+          <Button
+            size="sm"
+            mutating
+            disabled={!available}
+            onClick={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}
+          >
+            Add provider
+          </Button>
+        }
       >
-        <div className="grid gap-5">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {MODEL_PRESETS.map((item) => {
-              const active = item.id === presetId;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => choosePreset(item.id)}
-                  className={[
-                    "flex flex-col gap-0.5 border px-3 py-2.5 text-left transition-colors",
-                    active
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-border bg-card text-foreground hover:bg-surface",
-                  ].join(" ")}
+        <div className="grid gap-4">
+          {!available ? (
+            <div className="border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-700 dark:text-amber-400">
+              Self-governance is not configured for this deployment, so a key cannot be sealed.
+              Enable the Operator control plane to manage models here.
+            </div>
+          ) : null}
+
+          {list.isLoading ? (
+            <Skeleton className="h-24 w-full" />
+          ) : providers.length === 0 ? (
+            <p className="border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+              No models yet. Add a provider to bring the Operator online.
+            </p>
+          ) : (
+            <div className="divide-y divide-border border border-border bg-card">
+              {providers.map((provider) => (
+                <div
+                  key={provider.slug}
+                  className="flex flex-wrap items-start justify-between gap-3 px-4 py-3"
                 >
-                  <span className="text-sm font-medium">{item.label}</span>
-                  <span
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium text-foreground">
+                        {provider.label}
+                      </span>
+                      {!provider.enabled ? <Badge tone="muted">Disabled</Badge> : null}
+                    </div>
+                    <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+                      {provider.baseUrl}
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {provider.models.map((model) => (
+                        <Badge
+                          key={model}
+                          tone={runtimeReady(provider.slug, model) ? "success" : "neutral"}
+                        >
+                          {model}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex flex-shrink-0 items-center gap-1.5">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      mutating
+                      onClick={() => {
+                        setEditing(provider);
+                        setFormOpen(true);
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      mutating
+                      onClick={() => setRotating(provider)}
+                    >
+                      Rotate key
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      mutating
+                      onClick={() => setDeleting(provider)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </SettingsGroup>
+
+      <ProviderFormModal
+        open={formOpen}
+        editing={editing}
+        existingSlugs={providers.map((provider) => provider.slug)}
+        onClose={() => setFormOpen(false)}
+        onSaved={() => {
+          setFormOpen(false);
+          toast({ tone: "success", title: editing ? "Provider updated" : "Provider added" });
+        }}
+      />
+
+      {rotating ? (
+        <RotateKeyModal
+          provider={rotating}
+          onClose={() => setRotating(null)}
+          onRotated={() => {
+            setRotating(null);
+            toast({ tone: "success", title: "Key rotated" });
+          }}
+        />
+      ) : null}
+
+      <ConfirmModal
+        open={deleting !== null}
+        title="Delete provider"
+        description={
+          deleting
+            ? `Remove ${deleting.label}? Its sealed key is destroyed and the Operator's grant to it is revoked.`
+            : ""
+        }
+        confirmLabel="Delete"
+        danger
+        onClose={() => setDeleting(null)}
+        onConfirm={async () => {
+          if (!deleting) return;
+          try {
+            await remove.mutateAsync(deleting.slug);
+            toast({ tone: "info", title: "Provider deleted" });
+          } catch (err) {
+            toast({ tone: "error", title: "Delete failed", description: writeErrorMessage(err) });
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+// The add and edit form. Adding starts from a model preset that prefills the slug, endpoint, and
+// model so only the key remains; editing locks the slug and omits the key, which is changed
+// through rotate. The provider and resource details Caracal sets automatically (api-key auth, an
+// Authorization Bearer header, the llm:invoke and agent:lifecycle scopes, and the gateway
+// binding) are shown read-only rather than asked for.
+function ProviderFormModal({
+  open,
+  editing,
+  existingSlugs,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  editing: OperatorAiProvider | null;
+  existingSlugs: string[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const create = useCreateOperatorAiProvider();
+  const update = useUpdateOperatorAiProvider();
+
+  const [presetId, setPresetId] = useState<string>(MODEL_PRESETS[0].id);
+  const preset = MODEL_PRESETS.find((item) => item.id === presetId) ?? MODEL_PRESETS[0];
+
+  const [slug, setSlug] = useState("");
+  const [label, setLabel] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [models, setModels] = useState<string[]>([]);
+  const [modelDraft, setModelDraft] = useState("");
+  const [contextWindow, setContextWindow] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  // Seed the form whenever it opens: an edit loads the provider, a fresh add applies the first
+  // preset's defaults so the common case needs only a key.
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    if (editing) {
+      setSlug(editing.slug);
+      setLabel(editing.label);
+      setBaseUrl(editing.baseUrl);
+      setModels(editing.models);
+      setContextWindow(editing.contextWindow ? String(editing.contextWindow) : "");
+      setApiKey("");
+    } else {
+      applyPreset(MODEL_PRESETS[0]);
+    }
+  }, [open, editing]);
+
+  function applyPreset(next: ModelPreset) {
+    setPresetId(next.id);
+    setSlug(next.slug === "custom" ? "" : next.slug);
+    setLabel(next.family === "Custom" ? "" : next.label);
+    setBaseUrl(next.endpoint === "direct" ? next.baseUrl : "");
+    setModels(next.model ? [next.model] : []);
+    setModelDraft("");
+  }
+
+  function addModel() {
+    const value = modelDraft.trim();
+    if (!value || models.includes(value)) {
+      setModelDraft("");
+      return;
+    }
+    setModels((prev) => [...prev, value]);
+    setModelDraft("");
+  }
+
+  const slugTaken = !editing && existingSlugs.includes(slug);
+  const valid =
+    slug.length > 0 &&
+    !slugTaken &&
+    label.trim().length > 0 &&
+    baseUrl.trim().length > 0 &&
+    models.length > 0 &&
+    (editing !== null || apiKey.length > 0);
+  const busy = create.isPending || update.isPending;
+
+  async function save() {
+    setError(null);
+    const ctx = contextWindow.trim() ? Number(contextWindow) : 0;
+    try {
+      if (editing) {
+        await update.mutateAsync({
+          slug: editing.slug,
+          patch: { label, baseUrl, models, contextWindow: ctx },
+        });
+      } else {
+        await create.mutateAsync({
+          slug,
+          label,
+          baseUrl,
+          models,
+          contextWindow: ctx,
+          apiKey,
+          enabled: true,
+        });
+      }
+      onSaved();
+    } catch (err) {
+      setError(writeErrorMessage(err));
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={editing ? "Edit provider" : "Add a model provider"}
+      description={
+        editing
+          ? "Update the endpoint and models. Rotate the key from the provider's menu."
+          : "Pick a model, supply the endpoint and key, and Caracal seals and governs it."
+      }
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={save} loading={busy} disabled={!valid}>
+            {editing ? "Save changes" : "Add provider"}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-5">
+        {!editing ? (
+          <div className="grid gap-2">
+            <span className="text-sm font-medium text-foreground">Model</span>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {MODEL_PRESETS.map((item) => {
+                const active = item.id === presetId;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => applyPreset(item)}
                     className={[
-                      "text-[11px]",
-                      active ? "text-background/70" : "text-muted-foreground",
+                      "flex flex-col gap-0.5 border px-3 py-2 text-left transition-colors",
+                      active
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-border bg-card text-foreground hover:bg-surface",
                     ].join(" ")}
                   >
-                    {item.family}
-                  </span>
-                </button>
-              );
-            })}
+                    <span className="text-xs font-medium">{item.label}</span>
+                    <span
+                      className={[
+                        "text-[10px]",
+                        active ? "text-background/70" : "text-muted-foreground",
+                      ].join(" ")}
+                    >
+                      {item.family}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {preset.endpoint === "aggregator" ? (
+              <p className="border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
+                {AGGREGATOR_NOTE}
+              </p>
+            ) : null}
           </div>
+        ) : null}
 
-          <div
-            className={[
-              "flex items-start gap-2 border px-3 py-2.5 text-xs",
-              preset.endpoint === "aggregator"
-                ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                : "border-border bg-muted/40 text-muted-foreground",
-            ].join(" ")}
-          >
-            <span>{preset.note}</span>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field
-              label="Provider id"
-              info="A short slug used to build the Operator's configuration keys."
-              value={providerId}
-              onChange={(event) => setProviderId(sanitizeProviderId(event.target.value))}
-              placeholder="openai"
-            />
-            <Field
-              label="Model id"
-              info="The exact model string the endpoint expects."
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-              placeholder="your-model-id"
-            />
-            <Field
-              label="Endpoint base URL"
-              info="The OpenAI-compatible base URL the request is sent to."
-              value={baseUrl}
-              onChange={(event) => setBaseUrl(event.target.value)}
-              placeholder={preset.baseUrlHint}
-              className="font-mono"
-            />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field
+            label="Label"
+            value={label}
+            onChange={(event) => setLabel(event.target.value)}
+            placeholder="OpenAI production"
+          />
+          <Field
+            label="Provider id"
+            info="A short slug Caracal uses to name the sealed provider and resource."
+            value={slug}
+            onChange={(event) => setSlug(sanitizeSlug(event.target.value))}
+            placeholder="openai"
+            disabled={editing !== null}
+            error={slugTaken ? "That id is already in use." : undefined}
+          />
+          <Field
+            label="Endpoint base URL"
+            info="The OpenAI-compatible base URL the request is sent to."
+            value={baseUrl}
+            onChange={(event) => setBaseUrl(event.target.value)}
+            placeholder={preset.baseUrl}
+            className="font-mono sm:col-span-2"
+          />
+          <Field
+            label="Context window"
+            info="Optional. The model's token window, used for the usage gauge."
+            value={contextWindow}
+            onChange={(event) => setContextWindow(event.target.value.replace(/[^0-9]/g, ""))}
+            placeholder="128000"
+            inputMode="numeric"
+          />
+          {!editing ? (
             <Field
               label="API key"
-              info="Stays in your browser — it is only woven into the configuration you copy, then sealed by Caracal at boot."
+              info="Sent once and sealed into Caracal; it is never stored in the console or read back."
               type="password"
               value={apiKey}
               onChange={(event) => setApiKey(event.target.value)}
-              placeholder="your-api-key"
+              placeholder="sk-…"
             />
-            <Field
-              label="Context window"
-              info="Optional. The model's token window, used for the usage gauge."
-              value={contextWindow}
-              onChange={(event) => setContextWindow(event.target.value.replace(/[^0-9]/g, ""))}
-              placeholder="128000"
-              inputMode="numeric"
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <span className="text-sm font-medium text-foreground">Configuration</span>
-            <p className="text-xs text-muted-foreground">
-              Apply these to the API environment (the deployment's env file or secret store), then
-              restart the API. Caracal seals the key into the caracal.sys system zone and routes the
-              Operator's calls through its gateway, so the Operator never holds the key.
-            </p>
-            <CodeBlock text={env} />
-          </div>
+          ) : null}
         </div>
-      </SettingsGroup>
-    </div>
+
+        <div className="grid gap-2">
+          <FieldLabel
+            label="Models"
+            info="One provider can serve several models behind the same key."
+          />
+          <div className="flex gap-2">
+            <input
+              value={modelDraft}
+              onChange={(event) => setModelDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  addModel();
+                }
+              }}
+              placeholder="model id, then Enter"
+              className="h-9 w-full rounded-md border border-input bg-background px-3 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/70 focus:border-ring focus:ring-2 focus:ring-ring/25"
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              onClick={addModel}
+              disabled={!modelDraft.trim()}
+            >
+              Add
+            </Button>
+          </div>
+          {models.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {models.map((model) => (
+                <span
+                  key={model}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 font-mono text-[11px] text-foreground"
+                >
+                  {model}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${model}`}
+                    onClick={() => setModels((prev) => prev.filter((value) => value !== model))}
+                    className="text-muted-foreground transition-colors hover:text-destructive"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="border border-border bg-muted/40 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
+          Caracal sets the rest automatically: api-key auth over an Authorization Bearer header, the
+          llm:invoke and agent:lifecycle scopes, and the gateway binding to the Operator. The key is
+          sealed into the caracal.sys system zone and the Operator reaches the model only through
+          the governed gateway.
+        </div>
+
+        {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      </div>
+    </Modal>
+  );
+}
+
+function RotateKeyModal({
+  provider,
+  onClose,
+  onRotated,
+}: {
+  provider: OperatorAiProvider;
+  onClose: () => void;
+  onRotated: () => void;
+}) {
+  const rotate = useRotateOperatorAiProviderKey();
+  const [apiKey, setApiKey] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setError(null);
+    try {
+      await rotate.mutateAsync({ slug: provider.slug, apiKey });
+      onRotated();
+    } catch (err) {
+      setError(writeErrorMessage(err));
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Rotate key — ${provider.label}`}
+      description="The new key is sealed into Caracal, replacing the old one. The model stays online."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={rotate.isPending}>
+            Cancel
+          </Button>
+          <Button onClick={save} loading={rotate.isPending} disabled={apiKey.length === 0}>
+            Rotate key
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-3">
+        <Field
+          label="New API key"
+          type="password"
+          value={apiKey}
+          onChange={(event) => setApiKey(event.target.value)}
+          placeholder="sk-…"
+        />
+        {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      </div>
+    </Modal>
   );
 }
 

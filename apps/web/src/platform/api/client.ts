@@ -68,6 +68,10 @@ import type {
   OperatorContext,
   OperatorAiStatus,
   OperatorAiCheckResult,
+  OperatorAiProvider,
+  OperatorAiProviderList,
+  OperatorAiProviderInput,
+  OperatorAiProviderPatch,
   OperatorExecutionResult,
   OperatorMessageResult,
   OperatorNarrativeInput,
@@ -518,6 +522,46 @@ export const consoleApi = {
     // explicit action, so it doubles as the page's connectivity test.
     aiCheck: (signal?: AbortSignal) =>
       request<OperatorAiCheckResult>("/v1/operator/ai/check", { method: "POST", signal }),
+    // Governed model-provider management. Each write seals the key into Caracal and reconciles
+    // the Operator's grants server-side; the key is sent once on create or rotate and is never
+    // read back.
+    aiProviders: {
+      list: (signal?: AbortSignal) =>
+        request<OperatorAiProviderList>("/v1/operator/ai/providers", { signal }),
+      create: (input: OperatorAiProviderInput) =>
+        request<OperatorAiProvider>("/v1/operator/ai/providers", {
+          method: "POST",
+          body: JSON.stringify({
+            slug: input.slug,
+            label: input.label,
+            base_url: input.baseUrl,
+            models: input.models,
+            context_window: input.contextWindow,
+            api_key: input.apiKey,
+            enabled: input.enabled,
+          }),
+        }),
+      update: (slug: string, patch: OperatorAiProviderPatch) =>
+        request<OperatorAiProvider>(`/v1/operator/ai/providers/${encodeURIComponent(slug)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            ...(patch.label !== undefined ? { label: patch.label } : {}),
+            ...(patch.baseUrl !== undefined ? { base_url: patch.baseUrl } : {}),
+            ...(patch.models !== undefined ? { models: patch.models } : {}),
+            ...(patch.contextWindow !== undefined ? { context_window: patch.contextWindow } : {}),
+            ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+          }),
+        }),
+      rotateKey: (slug: string, apiKey: string) =>
+        request<{ ok: boolean }>(`/v1/operator/ai/providers/${encodeURIComponent(slug)}/key`, {
+          method: "POST",
+          body: JSON.stringify({ api_key: apiKey }),
+        }),
+      remove: (slug: string) =>
+        request<void>(`/v1/operator/ai/providers/${encodeURIComponent(slug)}`, {
+          method: "DELETE",
+        }),
+    },
     capabilities: async (signal?: AbortSignal) => {
       const res = await request<{ capabilities: OperatorCapability[] }>(
         "/v1/operator/capabilities",

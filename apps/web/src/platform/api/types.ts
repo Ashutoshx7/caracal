@@ -822,6 +822,40 @@ export interface OperatorAiCheckResult {
   latency_ms: number;
 }
 
+// A governed model provider as managed from the console. The key is never represented here: it
+// lives sealed in the Caracal provider, so a view carries only the metadata.
+export interface OperatorAiProvider {
+  slug: string;
+  label: string;
+  baseUrl: string;
+  models: string[];
+  contextWindow: number;
+  enabled: boolean;
+}
+
+export interface OperatorAiProviderList {
+  providers: OperatorAiProvider[];
+  available: boolean;
+}
+
+export interface OperatorAiProviderInput {
+  slug: string;
+  label: string;
+  baseUrl: string;
+  models: string[];
+  contextWindow: number;
+  apiKey: string;
+  enabled: boolean;
+}
+
+export interface OperatorAiProviderPatch {
+  label?: string;
+  baseUrl?: string;
+  models?: string[];
+  contextWindow?: number;
+  enabled?: boolean;
+}
+
 export interface OperatorUsage {
   input_tokens: number;
   output_tokens: number;
