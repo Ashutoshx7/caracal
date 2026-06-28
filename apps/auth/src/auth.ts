@@ -71,6 +71,14 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 7,
     disableSessionRefresh: true,
   },
+  // Redirect OAuth and verification errors to the web console's sign-in page rather than the BFF's
+  // bare error page, which serves no UI (and is a different origin in a split deployment). A
+  // replayed or expired OAuth callback — for example a back-navigation to a consumed state — then
+  // lands on the real console: a still-valid session is forwarded straight to the app, and a
+  // genuinely signed-out operator sees the sign-in screen instead of a dead error URL.
+  onAPIError: {
+    errorURL: `${cfg.webAppOrigin}/sign-in`,
+  },
   // Throttle credential endpoints so a directly reachable auth surface cannot be brute-forced
   // or enumerated. The window is shared across all auth routes with a tighter ceiling on the
   // sign-in and sign-up paths.

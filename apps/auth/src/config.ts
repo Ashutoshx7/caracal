@@ -16,6 +16,10 @@ export interface AuthConfig {
   baseURL: string
   secret: string
   webOrigins: string[]
+  // The origin that serves the web console SPA, used to redirect OAuth errors back to a real UI
+  // instead of the BFF's bare error page. In a split deployment (local dev) it is the Vite origin;
+  // in a same-origin deployment it is the BFF's own origin, which serves the SPA.
+  webAppOrigin: string
   webRoot?: string
   databaseUrl: string
   ssl: PostgresSsl
@@ -91,6 +95,16 @@ function resolveWebOrigins(baseURL: string, production: boolean): string[] {
   return [...origins]
 }
 
+// The origin that serves the web console SPA. A split deployment (local dev's separate Vite
+// server) exposes the SPA on a different origin than the auth BFF, so an OAuth error must redirect
+// there rather than to the BFF, which serves no UI. A same-origin deployment serves the SPA from
+// the BFF itself, so its own origin is correct. Resolve the first trusted origin that is not the
+// BFF's own, falling back to the BFF origin.
+function resolveWebAppOrigin(baseURL: string, webOrigins: string[]): string {
+  const self = originOf(baseURL)
+  return webOrigins.find((origin) => origin !== self) ?? self ?? baseURL
+}
+
 // The operators permitted to register and sign in. A signed-in operator is proxied with the
 // shared global admin token, so registration is an authority boundary: only listed identities
 // may create an account. Entries are exact emails (case-insensitive) or domain suffixes written
@@ -146,11 +160,13 @@ export function loadConfig(): AuthConfig {
   const passwordSignup =
     process.env.CARACAL_PASSWORD_SIGNUP !== undefined ? /^(1|true|yes|on)$/i.test(process.env.CARACAL_PASSWORD_SIGNUP) : !production
   const requireEmailVerification = production
+  const webOrigins = resolveWebOrigins(baseURL, production)
   return {
     port,
     host,
     baseURL,
-    webOrigins: resolveWebOrigins(baseURL, production),
+    webOrigins,
+    webAppOrigin: resolveWebAppOrigin(baseURL, webOrigins),
     webRoot,
     databaseUrl: resolveDatabaseUrl(),
     ssl: resolveSsl(production),

@@ -222,3 +222,25 @@ describe('web origin defaults', () => {
     expect(origins).not.toContain('http://localhost:3001')
   })
 })
+
+describe('web app origin for OAuth error redirects', () => {
+  it('resolves the split dev SPA origin rather than the BFF origin', () => {
+    // Local development serves the SPA on a separate Vite origin, so an OAuth error must land
+    // there and not on the BFF, which serves no UI.
+    const cfg = loadConfig()
+    expect(cfg.baseURL).toBe('http://localhost:3002')
+    expect(cfg.webAppOrigin).toBe('http://localhost:3001')
+  })
+
+  it('falls back to the BFF origin in a same-origin production deployment', () => {
+    // With no separate web origin configured, the BFF serves the SPA, so its own origin is the
+    // correct sign-in destination.
+    reset({ NODE_ENV: 'production', CARACAL_AUTH_URL: 'https://app.example.com' })
+    expect(loadConfig().webAppOrigin).toBe('https://app.example.com')
+  })
+
+  it('prefers a configured external web origin over the BFF origin', () => {
+    reset({ NODE_ENV: 'production', CARACAL_AUTH_URL: 'https://api.example.com', CARACAL_WEB_ORIGIN: 'https://console.example.com' })
+    expect(loadConfig().webAppOrigin).toBe('https://console.example.com')
+  })
+})
