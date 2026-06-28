@@ -8,7 +8,7 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 
 import { useSession } from "@/platform/auth";
-import { errorEntry, type ErrorAction } from "@/platform/errors/catalog";
+import { errorEntry } from "@/platform/errors/catalog";
 
 const FUN_FACTS = [
   "Caracal mints a fresh, short-lived token for every request.",
@@ -20,24 +20,6 @@ const FUN_FACTS = [
   "Policies are evaluated fresh on every call, never cached.",
   "Zones keep every tenant fully isolated from the others.",
 ] as const;
-
-function ArrowRight({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden
-    >
-      <path d="M5 12h14" />
-      <path d="m12 5 7 7-7 7" />
-    </svg>
-  );
-}
 
 function Sparkle({ className }: { className?: string }) {
   return (
@@ -57,63 +39,9 @@ function Sparkle({ className }: { className?: string }) {
   );
 }
 
-function ActionButtons({ actions, onRetry }: { actions: ErrorAction[]; onRetry?: () => void }) {
-  const primary =
-    "group inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90";
-  const secondary =
-    "inline-flex items-center justify-center rounded-lg border border-input bg-background px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-accent";
-
-  return (
-    <>
-      {actions.map((action, index) => {
-        const styles = index === 0 ? primary : secondary;
-        const arrow =
-          index === 0 ? (
-            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-          ) : null;
-        if (action === "retry") {
-          return (
-            <button
-              key={action}
-              onClick={() => (onRetry ? onRetry() : window.location.reload())}
-              className={styles}
-            >
-              Try again
-              {arrow}
-            </button>
-          );
-        }
-        if (action === "signin") {
-          return (
-            <Link key={action} to="/sign-in" className={styles}>
-              Sign in
-              {arrow}
-            </Link>
-          );
-        }
-        if (action === "dashboard") {
-          return (
-            <Link key={action} to="/app" className={styles}>
-              Back to dashboard
-              {arrow}
-            </Link>
-          );
-        }
-        return (
-          <Link key={action} to="/" className={styles}>
-            Back to home
-            {arrow}
-          </Link>
-        );
-      })}
-    </>
-  );
-}
-
-export function ErrorState({ code, onRetry }: { code: number; onRetry?: () => void }) {
+export function ErrorState({ code }: { code: number }) {
   const entry = errorEntry(code);
   const ringText = `Autonomous agent authority • Caracal • `;
-  const actions = entry.actions.filter((action) => action !== "home");
 
   const session = useSession();
   const homeTo = session.data?.user ? "/app" : "/";
@@ -228,13 +156,7 @@ export function ErrorState({ code, onRetry }: { code: number; onRetry?: () => vo
             {FUN_FACTS[factIndex]}
           </p>
 
-          {actions.length > 0 && (
-            <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-              <ActionButtons actions={actions} onRetry={onRetry} />
-            </div>
-          )}
-
-          <div className="mt-8 flex items-center justify-center gap-4 text-xs text-muted-foreground">
+          <div className="mt-9 flex items-center justify-center gap-4 text-xs text-muted-foreground">
             <a
               href="https://docs.caracal.run"
               target="_blank"

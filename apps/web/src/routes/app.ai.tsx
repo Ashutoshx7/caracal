@@ -1106,7 +1106,7 @@ function AutopilotRow({ controls }: { controls: ComposerControls }) {
       {controls.autopilot ? (
         <span className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-500">
           <AlertGlyph className="h-3 w-3 flex-shrink-0" />
-          AI can make mistakes - use autopilot responsibly.
+          Autopilot gives AI autonomy to take actions. (Secured by Caracal)
         </span>
       ) : null}
     </div>

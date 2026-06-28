@@ -8,7 +8,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
   createRootRouteWithContext,
-  useRouter,
   useRouterState,
   HeadContent,
 } from "@tanstack/react-router";
@@ -28,20 +27,11 @@ function NotFoundComponent() {
   return <ErrorState code={404} />;
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error }: { error: Error }) {
   console.error(error);
-  const router = useRouter();
   const code = errorToStatus(error);
 
-  return (
-    <ErrorState
-      code={code}
-      onRetry={() => {
-        router.invalidate();
-        reset();
-      }}
-    />
-  );
+  return <ErrorState code={code} />;
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
