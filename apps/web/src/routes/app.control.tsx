@@ -955,7 +955,7 @@ function EndpointStatusBar() {
               Invoke URL
             </span>
             <span className="truncate font-mono text-xs text-foreground">
-              {url ?? "—"}
+              {url ?? "-"}
               {!enabled && url ? (
                 <span className="ml-2 not-italic text-muted-foreground">(not exposed)</span>
               ) : null}
@@ -1113,7 +1113,7 @@ agents = control.agents.list()`,
           </Step>
           <Step n={2}>
             Exchange the key for a short-lived, least-privilege STS token scoped as{" "}
-            <Mono>control:&lt;noun&gt;:&lt;verb&gt;</Mono> — use{" "}
+            <Mono>control:&lt;noun&gt;:&lt;verb&gt;</Mono> - use{" "}
             <span className="font-medium text-foreground">Issue token</span> on a key, or the STS
             client-credentials grant shown alongside.
           </Step>

@@ -9,7 +9,7 @@ const env = import.meta.env;
 // The backend-for-frontend origin. When VITE_CARACAL_AUTH_URL is set (local development's
 // separate Vite dev server, or a split deployment), it is used verbatim. Otherwise the SPA is
 // served same-origin by the BFF itself, so every API and auth call is relative to the page
-// origin — no cross-origin requests, and therefore no CORS or cross-site cookie concerns.
+// origin - no cross-origin requests, and therefore no CORS or cross-site cookie concerns.
 function resolveAuthBase(): string {
   const configured = (env.VITE_CARACAL_AUTH_URL as string | undefined)?.trim();
   if (configured) return configured.replace(/\/$/, "");

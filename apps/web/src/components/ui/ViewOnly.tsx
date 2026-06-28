@@ -28,10 +28,10 @@ export function ViewOnlyProvider({
 }
 
 // Reads the nearest read-only surface. The default is interactive, so a control outside any
-// provider is never accidentally disabled — only a subtree explicitly marked read-only gates its
+// provider is never accidentally disabled - only a subtree explicitly marked read-only gates its
 // mutating controls.
 export function useViewOnly(): ViewOnlyState {
   return useContext(ViewOnlyContext);
 }
 
-export const READ_ONLY_BLOCK_MESSAGE = "Read-only view — changes are disabled here.";
+export const READ_ONLY_BLOCK_MESSAGE = "Read-only view - changes are disabled here.";

@@ -176,7 +176,7 @@ function CaracalOperatorPage() {
   return (
     <ModulePage
       title="Caracal Operator"
-      description="Operate your entire Caracal control plane in natural language. Describe what you want; the Operator resolves it into concrete changes, shows the plan, previews the effect against live state, and applies it through the same guarded APIs you use by hand — within your operator scope and recorded in the audit log."
+      description="Operate your entire Caracal control plane in natural language. Describe what you want; the Operator resolves it into concrete changes, shows the plan, previews the effect against live state, and applies it through the same guarded APIs you use by hand - within your operator scope and recorded in the audit log."
       breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Caracal Operator" }]}
       titleAccessory={
         <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent-purple">
@@ -1070,7 +1070,7 @@ function SessionStrip({
 // write routes, so this only sets the conversation's setting; it never relaxes enforcement.
 // Autopilot is shown in agent mode so the capability is discoverable: it is a working switch when
 // the deployment has an autopilot policy, and a clear "unavailable" hint when it does not. Engaging
-// autopilot only flips the conversation's engage flag — what may be auto-approved is set in Caracal.
+// autopilot only flips the conversation's engage flag - what may be auto-approved is set in Caracal.
 // The mode and approval-mode controls threaded into both the hero and the active composer,
 // so a conversation's mode and autopilot are always adjustable from the same place.
 interface ComposerControls {
@@ -1098,7 +1098,7 @@ function AutopilotRow({ controls }: { controls: ComposerControls }) {
       {controls.autopilot ? (
         <span className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-500">
           <AlertGlyph className="h-3 w-3 flex-shrink-0" />
-          AI can make mistakes — use autopilot responsibly.
+          AI can make mistakes - use autopilot responsibly.
         </span>
       ) : null}
     </div>
@@ -1396,8 +1396,8 @@ function ActivityStream({
 
   const empty = !isLoading && items.length === 0 && !send.isPending && !initialMessage;
 
-  // The mode and approval controls now live inside the composer itself — the mode dropdown
-  // next to the model selector, the approval dropdown flush below the box — so they are always
+  // The mode and approval controls now live inside the composer itself - the mode dropdown
+  // next to the model selector, the approval dropdown flush below the box - so they are always
   // visible and adjustable, including before the first message is sent. Both patch the live
   // conversation.
   const controls: ComposerControls = {
@@ -1847,7 +1847,7 @@ function Composer({
       />
       <AutopilotRow controls={controls} />
       <p className="mt-1.5 px-0.5 text-[10px] text-muted-foreground">
-        Enter to send · Shift+Enter for a new line — nothing changes until you approve the plan.
+        Enter to send · Shift+Enter for a new line - nothing changes until you approve the plan.
       </p>
     </div>
   );
@@ -1891,7 +1891,7 @@ function greetingForNow(): { greeting: string; message: string } {
 }
 
 // The new-conversation entry point: an atmospheric, centered greeting with a glassy
-// composer and quick-action pills — the way a modern operational assistant opens.
+// composer and quick-action pills - the way a modern operational assistant opens.
 function NewChatHero({
   value,
   onChange,
@@ -2190,7 +2190,7 @@ function planConfirmationState(plan: PlanItem): ToolState {
 }
 
 // Maps an advisory severity to a badge tone. The review is informational, so even a warning is a
-// caution to weigh, not a block — the human still decides.
+// caution to weigh, not a block - the human still decides.
 function advisoryTone(severity: PlanAdvisoryView["findings"][number]["severity"]): BadgeTone {
   if (severity === "warning") return "danger";
   if (severity === "caution") return "warning";
@@ -2198,7 +2198,7 @@ function advisoryTone(severity: PlanAdvisoryView["findings"][number]["severity"]
 }
 
 // The advisory security review surfaced above the approval controls, so the reviewer weighs
-// over-grant and blast-radius before approving. It never gates the decision — the approve and
+// over-grant and blast-radius before approving. It never gates the decision - the approve and
 // reject controls are unchanged whether or not findings are present.
 function PlanAdvisory({ advisory }: { advisory: PlanAdvisoryView }) {
   return (
@@ -2289,7 +2289,7 @@ function PlanArtifact({
           <ConfirmationTitle>
             <ConfirmationRequest>
               {mutatingCount > 0
-                ? `Approve to apply ${mutatingCount} change${mutatingCount === 1 ? "" : "s"} in this zone — nothing runs until you do.`
+                ? `Approve to apply ${mutatingCount} change${mutatingCount === 1 ? "" : "s"} in this zone - nothing runs until you do.`
                 : "Approve to run these read-only steps in this zone."}
             </ConfirmationRequest>
             <ConfirmationAccepted>
@@ -2474,11 +2474,11 @@ function DisabledState() {
   const steps = [
     {
       title: "Describe it",
-      body: "Tell the Operator what you want in plain language — connect a provider, grant access, or ask why a request was denied.",
+      body: "Tell the Operator what you want in plain language - connect a provider, grant access, or ask why a request was denied.",
     },
     {
       title: "Review the plan",
-      body: "It resolves your intent into concrete steps, validates them, and previews the effect against your live state — nothing changes yet.",
+      body: "It resolves your intent into concrete steps, validates them, and previews the effect against your live state - nothing changes yet.",
     },
     {
       title: "Approve and apply",

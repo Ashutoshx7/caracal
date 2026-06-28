@@ -36,7 +36,7 @@ export interface AdvisoryFindingView {
   concern: string;
 }
 
-// The advisory security review a composed plan may carry. Informational only — it is surfaced to
+// The advisory security review a composed plan may carry. Informational only - it is surfaced to
 // the reviewer and never changes whether the plan can be approved or applied.
 export interface PlanAdvisoryView {
   summary: string;

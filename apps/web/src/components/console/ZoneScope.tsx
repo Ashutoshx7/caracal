@@ -98,7 +98,7 @@ export function ZoneScopedPage({
   return (
     <ViewOnlyProvider
       readOnly
-      reason="Caracal governs this internal system zone — it is shown read-only for transparency."
+      reason="Caracal governs this internal system zone - it is shown read-only for transparency."
     >
       <SystemZoneNotice />
       {children(activeZone)}

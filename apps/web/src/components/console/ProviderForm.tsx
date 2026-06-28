@@ -436,7 +436,7 @@ export function ProviderFormModal({
 
   // Seed (or fully reset) the form each time the modal opens. Resetting the seed ref on
   // close is essential: for "create" the seed key is constant, so without this the previous
-  // entry — including secret fields — would persist into the next New. Clearing on close
+  // entry - including secret fields - would persist into the next New. Clearing on close
   // guarantees every reopen starts from a clean slate.
   const seedKey = `${provider?.id ?? "new"}:${mode}`;
   const [seedRef, setSeedRef] = useState<string | null>(null);

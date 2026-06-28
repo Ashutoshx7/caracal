@@ -221,7 +221,7 @@ function ContactPanel() {
       <div className="border-b border-border px-4 py-3">
         <p className="text-sm font-semibold text-foreground">Talk to sales</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Book an Enterprise call — SSO, multi-tenancy, and managed services.
+          Book an Enterprise call - SSO, multi-tenancy, and managed services.
         </p>
       </div>
       <div className="scrollbar-thin max-h-[32rem] overflow-y-auto">

@@ -49,7 +49,7 @@ function ChevronLeft({ className }: { className?: string }) {
 }
 
 // A tidy "advanced options" entry. Clicking it slides a secondary panel in over the parent
-// modal — a new internal window showing only the advanced fields — with a back affordance to
+// modal - a new internal window showing only the advanced fields - with a back affordance to
 // return. When it cannot find a modal surface (used outside a modal) it falls back to a plain
 // inline expand so it is always usable.
 export function Disclosure({

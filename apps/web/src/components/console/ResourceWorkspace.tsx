@@ -175,7 +175,7 @@ export function ResourceWorkspace<T>({
   // and populated states. Controls lock only when there is genuinely nothing to act on:
   // loading, or no data at all. When the visible rows are empty *because* a search or filter
   // excluded them, the controls stay enabled so the operator can always change or clear them
-  // and recover — they are never trapped by their own selection.
+  // and recover - they are never trapped by their own selection.
   const controlsLocked = loading || (rows.length === 0 && !filtersActive && !searchActive);
 
   const noMatches = (searchActive || filtersActive) && paged.length === 0;

@@ -849,7 +849,7 @@ export interface OperatorAdvisoryFinding {
 }
 
 // The advisory security review a composed plan may carry: a plain-language summary and any
-// findings about over-grant, least-privilege, or blast-radius. It is informational only — the
+// findings about over-grant, least-privilege, or blast-radius. It is informational only - the
 // plan is governed by validation, preview, and approval, never by this review.
 export interface OperatorSecurityAdvisory {
   summary: string;
