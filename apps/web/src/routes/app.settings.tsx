@@ -17,6 +17,7 @@ import {
   FieldLabel,
   LockBadge,
   Modal,
+  PasswordField,
   Skeleton,
   Tooltip,
   useToast,
@@ -640,7 +641,10 @@ function PreferencesSection() {
 // through a proxy), with placeholders the operator fills in for their own resource.
 const ENDPOINT_SUGGESTIONS: { name: string; url: string }[] = [
   { name: "OpenAI", url: "https://api.openai.com/v1" },
-  { name: "Azure OpenAI", url: "https://YOUR-RESOURCE.openai.azure.com/openai/v1" },
+  {
+    name: "Azure Foundry",
+    url: "https://YOUR-RESOURCE.services.ai.azure.com/api/projects/PROJECT-NAME",
+  },
   { name: "Anthropic", url: "https://api.anthropic.com/v1" },
   { name: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai" },
   { name: "OpenRouter", url: "https://openrouter.ai/api/v1" },
@@ -940,10 +944,7 @@ function EndpointField({ value, onChange }: { value: string; onChange: (value: s
 
   return (
     <div ref={rootRef} className="relative block">
-      <FieldLabel
-        label="Endpoint base URL"
-        info="Any OpenAI-compatible endpoint works. For other providers, route through LiteLLM."
-      />
+      <FieldLabel label="Endpoint base URL" info="Any OpenAI-compatible endpoint works." />
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -1141,10 +1142,9 @@ function ProviderFormModal({
             inputMode="numeric"
           />
           {!editing ? (
-            <Field
+            <PasswordField
               label="API key"
               info="Sent once and sealed into Caracal; it is never stored in the console or read back."
-              type="password"
               value={apiKey}
               onChange={(event) => setApiKey(event.target.value)}
               placeholder="sk-…"
@@ -1258,9 +1258,8 @@ function RotateKeyModal({
       }
     >
       <div className="grid gap-3">
-        <Field
+        <PasswordField
           label="New API key"
-          type="password"
           value={apiKey}
           onChange={(event) => setApiKey(event.target.value)}
           placeholder="sk-…"
