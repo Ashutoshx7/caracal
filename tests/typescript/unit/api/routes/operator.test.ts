@@ -1511,7 +1511,10 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     // registerApplication is allowlisted, governed-executable, not on the denied floor, and
     // previews as a clean create — so Caracal's evaluator auto-satisfies the approval. The
     // conversation row reports agent mode with autopilot engaged.
-    const plan = { summary: 'Register the billing app', steps: [{ id: 's1', capability: 'registerApplication', args: { name: 'Billing' } }] }
+    const plan = {
+      summary: 'Register the billing app',
+      steps: [{ id: 's1', capability: 'registerApplication', args: { name: 'Billing' } }],
+    }
     const fetchImpl = fetchReturning('{"tier":"change"}', JSON.stringify(plan))
     const { app, clientQuery, db } = buildApp(true, {
       aiProviders: [provider],
@@ -1608,13 +1611,18 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     expect(body).toMatchObject({ intent: 'plan', ok: true, auto_approved: false })
     expect(body.approval_turn).toBeNull()
     // No approval turn was written: the plan waits for a human.
-    expect(clientQuery.mock.calls.some((c) => String(c[0]).includes('INSERT INTO operator_turns') && String(c[1]?.[5]) === 'approval')).toBe(false)
+    expect(
+      clientQuery.mock.calls.some((c) => String(c[0]).includes('INSERT INTO operator_turns') && String(c[1]?.[5]) === 'approval'),
+    ).toBe(false)
   })
 
   it('does not auto-approve when autopilot is not engaged on the conversation', async () => {
     // The deployment policy allows the capability, but the conversation has not engaged autopilot,
     // so no auto-approval happens and the policy is never even evaluated against the budget.
-    const plan = { summary: 'Register the billing app', steps: [{ id: 's1', capability: 'registerApplication', args: { name: 'Billing' } }] }
+    const plan = {
+      summary: 'Register the billing app',
+      steps: [{ id: 's1', capability: 'registerApplication', args: { name: 'Billing' } }],
+    }
     const fetchImpl = fetchReturning('{"tier":"change"}', JSON.stringify(plan))
     const { app, clientQuery, db } = buildApp(true, {
       aiProviders: [provider],

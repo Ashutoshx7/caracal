@@ -505,7 +505,9 @@ export const consoleApi = {
     // Whether Caracal-governed autopilot is available in this deployment. Read from the same
     // status probe; the per-conversation engage toggle is only meaningful when this is true.
     autopilotAvailable: async (signal?: AbortSignal) => {
-      const res = await request<{ autopilot?: { available: boolean } }>("/v1/operator/status", { signal });
+      const res = await request<{ autopilot?: { available: boolean } }>("/v1/operator/status", {
+        signal,
+      });
       return res.autopilot?.available ?? false;
     },
     aiStatus: (signal?: AbortSignal) =>

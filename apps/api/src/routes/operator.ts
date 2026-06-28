@@ -39,8 +39,7 @@ const CONTENT_MAX_BYTES = 64_000
 const DEFAULT_TURN_PAGE = 200
 const MAX_TURN_PAGE = 500
 
-const CONVERSATION_SELECT =
-  'id, zone_id, title, status, mode, autopilot, created_by, created_at, updated_at, last_activity_at, archived_at'
+const CONVERSATION_SELECT = 'id, zone_id, title, status, mode, autopilot, created_by, created_at, updated_at, last_activity_at, archived_at'
 const TURN_SELECT = 'id, conversation_id, seq, role, kind, content, actor_id, created_at'
 
 const CreateConversationBody = z
@@ -1200,7 +1199,18 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
 
         return reply
           .code(201)
-          .send({ intent: 'plan', tier, ok: true, turn: turn.turn, validation, preview, advisory, auto_approved: autoApproved, approval_turn: approvalTurn, ...meta() })
+          .send({
+            intent: 'plan',
+            tier,
+            ok: true,
+            turn: turn.turn,
+            validation,
+            preview,
+            advisory,
+            auto_approved: autoApproved,
+            approval_turn: approvalTurn,
+            ...meta(),
+          })
       }
 
       const explained = outcome.result

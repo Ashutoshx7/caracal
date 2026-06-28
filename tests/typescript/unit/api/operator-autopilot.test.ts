@@ -100,7 +100,12 @@ describe('mayAutoApprove', () => {
   })
 
   it('stops on an empty plan', () => {
-    expect(mayAutoApprove(evaluation({ steps: [], preview: { ok: true, mutating: false, steps: [], diagnostics: [] } }), policyAllowing('registerApplication'))).toEqual({
+    expect(
+      mayAutoApprove(
+        evaluation({ steps: [], preview: { ok: true, mutating: false, steps: [], diagnostics: [] } }),
+        policyAllowing('registerApplication'),
+      ),
+    ).toEqual({
       autoApprove: false,
       reason: 'empty_plan',
     })
@@ -115,7 +120,14 @@ describe('mayAutoApprove', () => {
     const preview: PlanPreview = {
       ok: true,
       mutating: true,
-      steps: steps.map((s) => ({ id: s.id, capability: s.capability, title: s.capability, mutating: true, effect: 'create' as const, detail: '' })),
+      steps: steps.map((s) => ({
+        id: s.id,
+        capability: s.capability,
+        title: s.capability,
+        mutating: true,
+        effect: 'create' as const,
+        detail: '',
+      })),
       diagnostics: [],
     }
     expect(mayAutoApprove(evaluation({ steps, preview }), policy)).toEqual({ autoApprove: false, reason: 'exceeds_max_steps' })
@@ -123,7 +135,10 @@ describe('mayAutoApprove', () => {
 
   it('stops when the rolling window budget is exhausted', () => {
     const policy = buildAutopilotPolicy({ enabled: true, capabilities: ['registerApplication'], windowMaxApprovals: 3 })
-    expect(mayAutoApprove(evaluation({ recentAutoApprovals: 3 }), policy)).toEqual({ autoApprove: false, reason: 'window_budget_exhausted' })
+    expect(mayAutoApprove(evaluation({ recentAutoApprovals: 3 }), policy)).toEqual({
+      autoApprove: false,
+      reason: 'window_budget_exhausted',
+    })
   })
 
   it('stops when a capability is not on the allowlist', () => {
@@ -135,7 +150,13 @@ describe('mayAutoApprove', () => {
   it('stops on a denied high-risk capability even if the evaluation reaches it', () => {
     // grantAccess can never be allowlisted, but the evaluator floors it regardless so a denied
     // capability is never auto-approved even if a policy were constructed another way.
-    const policy: AutopilotPolicy = { enabled: true, capabilities: new Set(['grantAccess']), maxStepsPerPlan: 5, windowSec: 3600, windowMaxApprovals: 10 }
+    const policy: AutopilotPolicy = {
+      enabled: true,
+      capabilities: new Set(['grantAccess']),
+      maxStepsPerPlan: 5,
+      windowSec: 3600,
+      windowMaxApprovals: 10,
+    }
     const ev = evaluation({ steps: [{ id: 's1', capability: 'grantAccess' }], preview: previewFor('s1', 'grantAccess', 'create') })
     expect(mayAutoApprove(ev, policy)).toEqual({ autoApprove: false, reason: 'capability_requires_human' })
   })
@@ -158,7 +179,15 @@ describe('mayAutoApprove', () => {
   })
 
   it('still approves when the advisory has only lower-severity findings', () => {
-    const ev = evaluation({ advisory: { summary: 'fine', findings: [{ severity: 'caution', concern: 'double-check' }, { severity: 'info', concern: 'fyi' }] } })
+    const ev = evaluation({
+      advisory: {
+        summary: 'fine',
+        findings: [
+          { severity: 'caution', concern: 'double-check' },
+          { severity: 'info', concern: 'fyi' },
+        ],
+      },
+    })
     expect(mayAutoApprove(ev, policyAllowing('registerApplication'))).toEqual({ autoApprove: true })
   })
 
