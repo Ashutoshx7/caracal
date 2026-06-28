@@ -1604,6 +1604,7 @@ function OperatorInput({
   model,
   onModelChange,
   leftSlot,
+  blockedReason,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -1616,13 +1617,17 @@ function OperatorInput({
   model?: string | null;
   onModelChange?: (id: string | null) => void;
   leftSlot?: ReactNode;
+  // When set, the input is non-interactive and the reason is shown as the placeholder. Used when
+  // no AI provider is connected, so the Operator never invites a message it could only refuse.
+  blockedReason?: string;
 }) {
   const { ref, adjust } = useAutoResizeTextarea({ minHeight, maxHeight: 220 });
   useEffect(() => {
     adjust();
   }, [value, adjust]);
 
-  const canSend = !pending && value.trim().length > 0;
+  const blocked = blockedReason !== undefined;
+  const canSend = !pending && !blocked && value.trim().length > 0;
 
   const textarea = (
     <textarea
@@ -1633,13 +1638,14 @@ function OperatorInput({
       onKeyDown={(event) => {
         if (event.key === "Enter" && !event.shiftKey) {
           event.preventDefault();
-          onSubmit();
+          if (!blocked) onSubmit();
         }
       }}
       rows={1}
-      placeholder="Describe what you want, or ask a question…"
+      disabled={blocked}
+      placeholder={blockedReason ?? "Describe what you want, or ask a question…"}
       aria-label="Message the Operator"
-      className="scrollbar-thin w-full resize-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+      className="scrollbar-thin w-full resize-none bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed"
       style={{ height: minHeight }}
     />
   );
