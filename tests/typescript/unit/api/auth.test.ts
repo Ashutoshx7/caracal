@@ -37,13 +37,25 @@ function makeDb(
     capability?: 'read' | 'write'
     createdBy?: string
     zoneReserved?: boolean
+    zoneOwner?: string | null
   } = {},
 ) {
   const tokenDigest = opts.token ? digest(opts.token) : null
   const query = vi.fn().mockImplementation((sql: string, params?: unknown[]) => {
     if (sql.includes('FROM zones') && sql.includes('name, slug')) {
+      // The zone exists in the mock when it is reserved or has an owner, so the access guards can
+      // read its metadata; otherwise it is an unknown/unowned zone (no row).
+      const exists = opts.zoneReserved || opts.zoneOwner !== undefined
       return Promise.resolve({
-        rows: opts.zoneReserved ? [{ name: 'caracal.sys/system', slug: 'caracal-sys-internal' }] : [],
+        rows: exists
+          ? [
+              {
+                name: opts.zoneReserved ? 'caracal.sys/system' : 'Tenant Zone',
+                slug: opts.zoneReserved ? 'caracal-sys-internal' : 'tenant-zone',
+                owner_account_id: opts.zoneOwner ?? null,
+              },
+            ]
+          : [],
       })
     }
     if (sql.includes('FROM admin_tokens') && Array.isArray(params)) {
@@ -600,6 +612,56 @@ describe('account assertion binding', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(res.json().account).toBeNull()
+    await app.close()
+  })
+})
+
+describe('per-account zone isolation', () => {
+  function withAccount(accountId: string, exp = Math.floor(Date.now() / 1000) + 60): Record<string, string> {
+    return { authorization: 'Bearer secret', 'x-caracal-account': signAccountAssertion('secret', accountId, exp) }
+  }
+
+  it('allows an account to reach a zone it owns', async () => {
+    const app = await buildPluginApp(makeDb({ token: 'secret', zoneOwner: 'acct-a' }), undefined, { accountAssertionKey: 'secret' })
+    const res = await app.inject({ method: 'GET', url: '/v1/zones/z1/things', headers: withAccount('acct-a') })
+    expect(res.statusCode).toBe(200)
+    await app.close()
+  })
+
+  it('forbids an account from reaching a zone owned by another account', async () => {
+    const app = await buildPluginApp(makeDb({ token: 'secret', zoneOwner: 'acct-a' }), undefined, { accountAssertionKey: 'secret' })
+    const res = await app.inject({ method: 'GET', url: '/v1/zones/z1/things', headers: withAccount('acct-b') })
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toEqual({ error: 'zone_forbidden' })
+    await app.close()
+  })
+
+  it('forbids mutations on another account-owned zone too', async () => {
+    const app = await buildPluginApp(makeDb({ token: 'secret', zoneOwner: 'acct-a' }), undefined, { accountAssertionKey: 'secret' })
+    const res = await app.inject({ method: 'DELETE', url: '/v1/zones/z1', headers: withAccount('acct-b') })
+    expect(res.statusCode).toBe(403)
+    expect(res.json()).toEqual({ error: 'zone_forbidden' })
+    await app.close()
+  })
+
+  it('allows any account to reach an unowned legacy zone (no lockout)', async () => {
+    const app = await buildPluginApp(makeDb({ token: 'secret', zoneOwner: null }), undefined, { accountAssertionKey: 'secret' })
+    const res = await app.inject({ method: 'GET', url: '/v1/zones/z1/things', headers: withAccount('acct-b') })
+    expect(res.statusCode).toBe(200)
+    await app.close()
+  })
+
+  it('does not isolate a direct admin call with no bound account (break-glass preserved)', async () => {
+    const app = await buildPluginApp(makeDb({ token: 'secret', zoneOwner: 'acct-a' }), undefined, { accountAssertionKey: 'secret' })
+    const res = await app.inject({ method: 'GET', url: '/v1/zones/z1/things', headers: { authorization: 'Bearer secret' } })
+    expect(res.statusCode).toBe(200)
+    await app.close()
+  })
+
+  it('does not isolate when the assertion key is unconfigured (undeployed)', async () => {
+    const app = await buildPluginApp(makeDb({ token: 'secret', zoneOwner: 'acct-a' }))
+    const res = await app.inject({ method: 'GET', url: '/v1/zones/z1/things', headers: withAccount('acct-b') })
+    expect(res.statusCode).toBe(200)
     await app.close()
   })
 })

@@ -60,6 +60,28 @@ describe('GET /v1/zones', () => {
     expect(res.headers.link).toContain('cursor=')
     expect(db.query.mock.calls[0][1]).toEqual(['2026-01-03T00:00:00.000Z', 'z3', 2])
   })
+
+  it('filters the list to the bound account, plus unowned legacy zones', async () => {
+    const { app, db } = buildRouteApp(zonesRoutes, { prefix: '/v1' }, { account: { id: 'acct-9' } })
+    db.query.mockResolvedValueOnce({ rows: [{ id: 'z1', name: 'Mine', slug: 'mine', created_at: '2026-01-01T00:00:00.000Z' }] })
+    await app.ready()
+    const res = await app.inject({ method: 'GET', url: '/v1/zones?limit=10' })
+    expect(res.statusCode).toBe(200)
+    const sql = String(db.query.mock.calls[0][0])
+    expect(sql).toContain('owner_account_id IS NULL OR owner_account_id = $1')
+    expect(db.query.mock.calls[0][1]).toEqual(['acct-9', 10])
+  })
+
+  it('does not filter the list for a direct admin with no bound account', async () => {
+    const { app, db } = buildRouteApp(zonesRoutes)
+    db.query.mockResolvedValueOnce({ rows: [] })
+    await app.ready()
+    const res = await app.inject({ method: 'GET', url: '/v1/zones?limit=10' })
+    expect(res.statusCode).toBe(200)
+    const sql = String(db.query.mock.calls[0][0])
+    expect(sql).not.toContain('owner_account_id')
+    expect(db.query.mock.calls[0][1]).toEqual([10])
+  })
 })
 
 describe('GET /v1/zones/:id', () => {

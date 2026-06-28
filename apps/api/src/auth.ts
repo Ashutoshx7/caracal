@@ -380,23 +380,31 @@ const adminAuthImpl: FastifyPluginAsync<AuthPluginOptions> = async (fastify, opt
     return lookup
   }
 
-  // Whether a zone id names the reserved system zone, cached briefly by id. The reserved
-  // status of a zone never changes, so a short TTL keeps the mutation gate off the hot path
-  // while still tolerating the zone being provisioned after the process starts. A miss caches
-  // false too; ids are uuids, so a later real zone never collides with a cached negative.
-  const reservedZoneTtlMs = 30_000
-  const reservedZoneCacheMax = 1024
-  const reservedZoneCache = new Map<string, { at: number; reserved: boolean }>()
+  // Zone metadata cached briefly by id: whether it is the reserved system zone, and which
+  // account owns it. Both are looked up in one query and rarely change, so a short TTL keeps the
+  // per-request zone guards off the hot path while still converging after a zone is provisioned or
+  // its ownership is assigned. A miss caches the negative too; ids are uuids, so a later real zone
+  // never collides with a cached miss within the TTL.
+  const zoneMetaTtlMs = 30_000
+  const zoneMetaCacheMax = 1024
+  const zoneMetaCache = new Map<string, { at: number; reserved: boolean; owner: string | null }>()
+
+  async function zoneMeta(zoneId: string): Promise<{ reserved: boolean; owner: string | null }> {
+    const now = Date.now()
+    const cached = zoneMetaCache.get(zoneId)
+    if (cached && now - cached.at < zoneMetaTtlMs) return cached
+    const { rows } = await opts.db.query<{ name: string; slug: string; owner_account_id: string | null }>(
+      `SELECT name, slug, owner_account_id FROM zones WHERE id = $1 LIMIT 1`,
+      [zoneId],
+    )
+    const entry = { at: now, reserved: rows[0] ? isReservedZone(rows[0]) : false, owner: rows[0]?.owner_account_id ?? null }
+    if (zoneMetaCache.size >= zoneMetaCacheMax) zoneMetaCache.clear()
+    zoneMetaCache.set(zoneId, entry)
+    return entry
+  }
 
   async function isReservedZoneId(zoneId: string): Promise<boolean> {
-    const now = Date.now()
-    const cached = reservedZoneCache.get(zoneId)
-    if (cached && now - cached.at < reservedZoneTtlMs) return cached.reserved
-    const { rows } = await opts.db.query<{ name: string; slug: string }>(`SELECT name, slug FROM zones WHERE id = $1 LIMIT 1`, [zoneId])
-    const reserved = rows[0] ? isReservedZone(rows[0]) : false
-    if (reservedZoneCache.size >= reservedZoneCacheMax) reservedZoneCache.clear()
-    reservedZoneCache.set(zoneId, { at: now, reserved })
-    return reserved
+    return (await zoneMeta(zoneId)).reserved
   }
 
   fastify.addHook('preHandler', async (req, reply) => {
@@ -452,8 +460,26 @@ const adminAuthImpl: FastifyPluginAsync<AuthPluginOptions> = async (fastify, opt
       }
     }
 
+    // Per-account zone isolation: a Console login may only reach a zone it owns. The guard
+    // activates only when an account is bound — direct admin and the internal provisioner carry
+    // no account, so break-glass access and provisioning are unaffected — and an unowned (legacy)
+    // zone stays reachable by everyone, so no existing zone is ever locked out. It covers reads
+    // and writes alike and every zone-scoped child path, since they all carry the zone id in the
+    // URL, so one account can never see or change another account's zone, applications, policies,
+    // audit, or operator history.
+    const account = resolveAccount(req)
+    if (account) {
+      const reqZone = zoneFromUrl(req.url)
+      if (reqZone !== INVALID_ZONE_ID) {
+        const owner = (await zoneMeta(reqZone)).owner
+        if (owner !== null && owner !== account.id) {
+          return reply.code(403).send({ error: 'zone_forbidden' })
+        }
+      }
+    }
+
     req.actor = actor
-    req.account = resolveAccount(req)
+    req.account = account
     bindRequestZoneScope(actor.scope === 'zone' && actor.zoneId ? actor.zoneId : GLOBAL_ZONE_SCOPE)
     if (await shouldTouchLastUsed(redis, actor.id, debounceSec)) {
       touchLastUsed(opts.db, actor.id).catch((err) => {
