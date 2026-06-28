@@ -5,7 +5,7 @@ Caracal, a product of Garudex Labs
 This file exposes React Query hooks and active-zone state for the control-plane console screens.
 */
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSyncExternalStore } from "react";
+import { useSyncExternalStore, useState } from "react";
 
 import { getActiveZoneId, setActiveZoneId } from "@/platform/state/localInstall";
 
@@ -1021,15 +1021,84 @@ function subscribeZone(listener: () => void): () => void {
   return () => zoneListeners.delete(listener);
 }
 
+// The query parameter and the per-tab latch that mark a browser tab as the read-only
+// system-zone viewer. The Console opens the reserved system zone in a new tab with
+// ?systemZone=1; the flag is latched into sessionStorage so it survives in-tab navigation
+// (which drops the query string) while staying strictly per-tab, so a normal tab is never
+// switched into the system view and the shared active-zone storage is never touched.
+const SYSTEM_ZONE_VIEW_PARAM = "systemZone";
+const SYSTEM_ZONE_VIEW_KEY = "caracal.systemZoneView";
+
+// The relative URL that opens the reserved system zone in a new, read-only viewer tab.
+export function systemZoneViewPath(): string {
+  return `/app?${SYSTEM_ZONE_VIEW_PARAM}=1`;
+}
+
+function detectSystemZoneView(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get(SYSTEM_ZONE_VIEW_PARAM) === "1") {
+      window.sessionStorage.setItem(SYSTEM_ZONE_VIEW_KEY, "1");
+      return true;
+    }
+    return window.sessionStorage.getItem(SYSTEM_ZONE_VIEW_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+// Whether this tab is the read-only system-zone viewer. Stable for the tab's lifetime, so the
+// shell can render the whole Console read-only and pin the active zone to the system zone.
+export function useSystemZoneView(): boolean {
+  return useState(detectSystemZoneView)[0];
+}
+
+const noopSelectZone = (): void => {};
+
+// The id of the reserved system zone, resolved from the Operator status probe. Static per
+// deployment, so it is held for the session. Used both by the Settings button that opens the
+// viewer and, in a viewer tab, to resolve the zone the read-only Console is scoped to.
+export function useSystemZoneId() {
+  return useQuery({
+    queryKey: [...keys.operatorStatus, "system-zone-id"] as const,
+    queryFn: ({ signal }) => consoleApi.operator.systemZoneId(signal),
+    staleTime: Infinity,
+  });
+}
+
+function useSystemZone(enabled: boolean) {
+  return useQuery({
+    queryKey: ["console", "system-zone"] as const,
+    enabled,
+    staleTime: Infinity,
+    queryFn: async ({ signal }) => {
+      const id = await consoleApi.operator.systemZoneId(signal);
+      if (!id) return null;
+      return consoleApi.zones.get(id, signal);
+    },
+  });
+}
+
 // Resolves the persisted active zone against the live zone list, falling back to
-// the first available zone so screens always have a coherent zone context.
+// the first available zone so screens always have a coherent zone context. In a read-only
+// system-zone viewer tab the active zone is instead pinned to the reserved system zone,
+// resolved by id (it is excluded from the normal zone list), and zone switching is disabled.
 export function useActiveZone(): {
   zones: Zone[];
   activeZone: Zone | null;
   selectZone: (id: string) => void;
 } {
+  const systemView = useState(detectSystemZoneView)[0];
   const zonesQuery = useZones();
   const persistedId = useSyncExternalStore(subscribeZone, getActiveZoneId, () => null);
+  const systemZoneQuery = useSystemZone(systemView);
+
+  if (systemView) {
+    const zone = systemZoneQuery.data ?? null;
+    return { zones: zone ? [zone] : [], activeZone: zone, selectZone: noopSelectZone };
+  }
+
   const zones = zonesQuery.data ?? [];
   const activeZone = zones.find((zone) => zone.id === persistedId) ?? zones[0] ?? null;
   return { zones, activeZone, selectZone };

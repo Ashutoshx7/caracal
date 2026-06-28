@@ -45,6 +45,7 @@ import {
 } from "@/platform/api/hooks";
 import { useSession } from "@/platform/auth";
 import { getActiveZoneId } from "@/platform/state/localInstall";
+import { isSystemZone } from "@/platform/state/zones";
 import type { Zone, ZonePatchInput } from "@/platform/api/types";
 
 const PAGE_SIZE = 8;
@@ -101,7 +102,13 @@ function ZonesPage() {
   } | null>(null);
   const activeId = getActiveZoneId();
 
-  const zones = useMemo(() => zonesQuery.data ?? [], [zonesQuery.data]);
+  // The reserved system zone is Caracal's own internal infrastructure and is never managed from
+  // the dashboard. The control plane already excludes it from the zone list; this is a
+  // defense-in-depth filter so it can never surface here even if an upstream list included it.
+  const zones = useMemo(
+    () => (zonesQuery.data ?? []).filter((zone) => !isSystemZone(zone)),
+    [zonesQuery.data],
+  );
 
   useEffect(() => {
     setPage(1);
