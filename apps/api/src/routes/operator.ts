@@ -311,6 +311,22 @@ async function appendTurnTx(
   })
 }
 
+// Counts the autopilot approvals a conversation has accrued within the rolling window, so the
+// evaluator can enforce the per-window budget. Only approval turns autopilot itself recorded are
+// counted; a human approval never consumes the autopilot budget. A non-positive window disables
+// the time bound and counts none, leaving only the per-plan step bound in force.
+async function countRecentAutoApprovals(db: DB, conversationId: string, zoneId: string, windowSec: number): Promise<number> {
+  if (windowSec <= 0) return 0
+  const { rows } = await db.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM operator_turns
+     WHERE conversation_id = $1 AND zone_id = $2 AND kind = 'approval'
+       AND content->>'autopilot' = 'true'
+       AND created_at >= now() - make_interval(secs => $3)`,
+    [conversationId, zoneId, windowSec],
+  )
+  return rows[0]?.n ?? 0
+}
+
 export interface OperatorRoutesOptions {
   enabled: boolean
   allowedCapabilities?: string[] | null
@@ -386,6 +402,13 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       // zone it governs. Surfaced so an operator can confirm the dogfooding identity is
       // configured without inspecting secrets; the credential itself is never exposed.
       governed_execution: identity ? { configured: true, zone_id: identity.zoneId } : { configured: false },
+      // Whether Caracal-governed autopilot is available in this deployment: the master switch is
+      // on and a non-empty allowlist is configured. The allowlist itself is the auto-approvable
+      // capability set, surfaced so an operator can see exactly what autopilot may ever approve;
+      // the policy is read-only here and set in Caracal, never through the console.
+      autopilot: autopilotAvailable(autopilotPolicy)
+        ? { available: true, capabilities: [...autopilotPolicy.capabilities].sort(), max_steps_per_plan: autopilotPolicy.maxStepsPerPlan }
+        : { available: false },
     }
   })
 
@@ -1140,7 +1163,44 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
             .code(turn.reason === 'archived' ? 409 : 404)
             .send({ error: turn.reason === 'archived' ? 'conversation_archived' : 'conversation_not_found' })
         }
-        return reply.code(201).send({ intent: 'plan', tier, ok: true, turn: turn.turn, validation, preview, advisory, ...meta() })
+
+        // Caracal-governed autopilot: in agent mode, when the conversation has engaged autopilot
+        // and the deployment policy could approve something, Caracal — not the model — decides
+        // whether this plan's human approval may be auto-satisfied. The evaluation runs over the
+        // same artifacts a human would weigh: the plan's steps, the live preview, and the advisory
+        // review, plus the rolling auto-approval budget. If it approves, an approval turn is
+        // recorded attributed to autopilot and the operator who is acting; the plan is then ready
+        // to apply through the unchanged governed execute path. Autopilot never widens authority —
+        // it only fills the approval step for changes a deployment pre-authorized as low-risk.
+        let autoApproved = false
+        let approvalTurn: Record<string, unknown> | null = null
+        if (turn.mode === 'agent' && turn.autopilot && autopilotAvailable(autopilotPolicy)) {
+          const planSeq = Number(turn.turn.seq)
+          const recentAutoApprovals = await countRecentAutoApprovals(fastify.db, params.id, params.zoneId, autopilotPolicy.windowSec)
+          const decision = mayAutoApprove(
+            { engaged: true, steps: planned.value.steps, preview, advisory, recentAutoApprovals },
+            autopilotPolicy,
+          )
+          if (decision.autoApprove) {
+            const approval = await appendTurnTx(
+              fastify.db,
+              params.id,
+              params.zoneId,
+              'system',
+              'approval',
+              JSON.stringify({ plan_seq: planSeq, autopilot: true }),
+              req.actor.id,
+            )
+            if (approval.ok) {
+              autoApproved = true
+              approvalTurn = approval.turn
+            }
+          }
+        }
+
+        return reply
+          .code(201)
+          .send({ intent: 'plan', tier, ok: true, turn: turn.turn, validation, preview, advisory, auto_approved: autoApproved, approval_turn: approvalTurn, ...meta() })
       }
 
       const explained = outcome.result

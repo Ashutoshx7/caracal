@@ -9,6 +9,7 @@ import type { DB } from '../../../../../apps/api/src/db.js'
 import type { RedisClient } from '../../../../../apps/api/src/redis.js'
 import '../../../../../apps/api/src/fastify-augmentation.js'
 import { operatorRoutes } from '../../../../../apps/api/src/routes/operator.js'
+import { buildAutopilotPolicy } from '../../../../../apps/api/src/operator-autopilot.js'
 
 function buildApp(
   enabled = true,
@@ -19,6 +20,7 @@ function buildApp(
     controlIdentity?: { applicationId: string; clientSecret: string; zoneId: string }
     controlEndpoints?: { stsUrl: string; audience: string; controlUrl: string; controlEnabled: boolean }
     fetchImpl?: typeof fetch
+    autopilotPolicy?: ReturnType<typeof buildAutopilotPolicy>
   } = {},
 ) {
   const app = Fastify({ logger: false })
@@ -54,6 +56,7 @@ function buildApp(
     resolveControlIdentity: () => authorityOpts.controlIdentity ?? null,
     controlEndpoints: authorityOpts.controlEndpoints ?? null,
     fetchImpl: authorityOpts.fetchImpl,
+    autopilotPolicy: authorityOpts.autopilotPolicy,
   })
   return { app, db, clientQuery, redis }
 }
@@ -91,6 +94,7 @@ const conversationRow = {
   title: 'Connect GitHub',
   status: 'active',
   mode: 'agent',
+  autopilot: false,
   created_by: 'actor-1',
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
@@ -331,7 +335,7 @@ describe('PATCH /v1/zones/:zoneId/operator-conversations/:id', () => {
     })
     expect(res.statusCode).toBe(200)
     expect(JSON.parse(res.body)).toMatchObject({ status: 'archived' })
-    expect(db.query.mock.calls[0][1]).toEqual(['conv-1', 'z1', null, 'archived', null])
+    expect(db.query.mock.calls[0][1]).toEqual(['conv-1', 'z1', null, 'archived', null, null])
   })
 })
 
