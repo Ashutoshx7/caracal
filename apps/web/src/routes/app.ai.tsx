@@ -262,6 +262,12 @@ function readRailWidth(): number {
 
 /* ------------------------------ workspace ------------------------------ */
 
+// Shown wherever the Operator would otherwise invite a message while no AI provider is connected.
+// The Operator turns natural language into governed plans through a model, so with no provider every
+// send is refused upstream; the console says so plainly and disables sending rather than presenting
+// a chat that silently fails.
+const AI_DISCONNECTED_NOTICE = "Connect an AI provider to use the Operator.";
+
 function OperatorWorkspace() {
   const { activeZone } = useActiveZone();
   const zoneId = activeZone?.id ?? null;
@@ -270,6 +276,8 @@ function OperatorWorkspace() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [heroDraft, setHeroDraft] = useState("");
+  const [draftMode, setDraftMode] = useState<OperatorConversationMode>("agent");
+  const [draftAutopilot, setDraftAutopilot] = useState(false);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [usageByConversation, setUsageByConversation] = useState<Record<string, SessionUsage>>({});
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
@@ -287,6 +295,13 @@ function OperatorWorkspace() {
   const archive = useArchiveOperatorConversation(zoneId);
   const restore = useRestoreOperatorConversation(zoneId);
   const remove = useDeleteOperatorConversation(zoneId);
+
+  // Whether the Operator has a usable model. Only a loaded status that reports no provider blocks
+  // sending; while the status is still loading the composer stays interactive so a configured
+  // deployment never flickers through a disabled state.
+  const aiStatus = useOperatorAiStatus(true);
+  const aiUnavailable = aiStatus.data?.enabled === false;
+  const { data: autopilotAvailable } = useOperatorAutopilotAvailable();
 
   useEffect(() => {
     if (typeof localStorage !== "undefined") {
@@ -374,24 +389,37 @@ function OperatorWorkspace() {
     });
   }
 
-  // Creating an empty session from the rail; the stream then opens on the hero.
+  // Creating an empty session from the rail; the stream then opens on the hero. The draft
+  // mode and autopilot chosen on the landing hero are applied to the new conversation.
   function startSession(title: string) {
     const name = title.trim();
     if (!name || create.isPending) return;
-    create.mutate(name, { onSuccess: (conversation) => setSelectedId(conversation.id) });
+    create.mutate(
+      { title: name, mode: draftMode, autopilot: draftMode === "agent" && draftAutopilot },
+      { onSuccess: (conversation) => setSelectedId(conversation.id) },
+    );
   }
 
   // Starting from intent: derive a session title from the message, create the
-  // session, then hand the message to the stream to send as the opening turn.
+  // session, then hand the message to the stream to send as the opening turn. With no
+  // AI provider the request would only be refused upstream, so the session is not even
+  // created — the hero shows the disconnected notice instead.
   function startFromIntent(text: string) {
     const value = text.trim();
-    if (!value || create.isPending) return;
+    if (!value || create.isPending || aiUnavailable) return;
     setPendingMessage(value);
     setHeroDraft("");
-    create.mutate(deriveTitle(value), {
-      onSuccess: (conversation) => setSelectedId(conversation.id),
-      onError: () => setPendingMessage(null),
-    });
+    create.mutate(
+      {
+        title: deriveTitle(value),
+        mode: draftMode,
+        autopilot: draftMode === "agent" && draftAutopilot,
+      },
+      {
+        onSuccess: (conversation) => setSelectedId(conversation.id),
+        onError: () => setPendingMessage(null),
+      },
+    );
   }
 
   // Rename a session in place. The empty case is ignored so a cleared field never
@@ -506,6 +534,7 @@ function OperatorWorkspace() {
             usage={usageByConversation[selectedId]}
             model={selectedModel}
             onModelChange={setSelectedModel}
+            aiUnavailable={aiUnavailable}
           />
         ) : (
           <NewChatHero
@@ -516,6 +545,16 @@ function OperatorWorkspace() {
             pending={create.isPending}
             model={selectedModel}
             onModelChange={setSelectedModel}
+            aiUnavailable={aiUnavailable}
+            controls={{
+              mode: draftMode,
+              onModeChange: setDraftMode,
+              modePending: false,
+              autopilot: draftAutopilot,
+              onAutopilotChange: setDraftAutopilot,
+              autopilotPending: false,
+              autopilotAvailable: autopilotAvailable ?? false,
+            }}
           />
         )}
       </section>
@@ -1119,9 +1158,7 @@ function ComposerMenu<T extends string>({
       >
         <SelectedIcon className="h-3.5 w-3.5" />
         <span className="max-w-[9rem] truncate">{selected.label}</span>
-        <ChevronDownGlyph
-          className={cx("h-3 w-3 transition-transform", open && "rotate-180")}
-        />
+        <ChevronDownGlyph className={cx("h-3 w-3 transition-transform", open && "rotate-180")} />
       </button>
 
       {open ? (
@@ -1161,9 +1198,7 @@ function ComposerMenu<T extends string>({
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5 text-sm text-foreground">
                     {option.label}
-                    {active ? (
-                      <CheckGlyph className="h-3.5 w-3.5 text-accent-purple" />
-                    ) : null}
+                    {active ? <CheckGlyph className="h-3.5 w-3.5 text-accent-purple" /> : null}
                   </span>
                   <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
                     {option.disabled && option.disabledHint
@@ -1271,6 +1306,7 @@ function ActivityStream({
   usage,
   model,
   onModelChange,
+  aiUnavailable,
 }: {
   zoneId: string | null;
   conversationId: string;
@@ -1283,6 +1319,7 @@ function ActivityStream({
   usage?: SessionUsage;
   model: string | null;
   onModelChange: (id: string | null) => void;
+  aiUnavailable: boolean;
 }) {
   const { data: turns, isLoading } = useOperatorTurns(zoneId, conversationId);
   const send = useSendOperatorMessage(zoneId, conversationId);
@@ -1302,10 +1339,12 @@ function ActivityStream({
   }
 
   // Queue a message when the Operator is busy or earlier messages are still waiting, so a
-  // sequence of instructions can be lined up and sent in order; otherwise send it now.
+  // sequence of instructions can be lined up and sent in order; otherwise send it now. With no AI
+  // provider the request would only be refused upstream, so nothing is sent or queued — the
+  // composer is disabled and shows the disconnected notice instead.
   function submit(text: string) {
     const value = text.trim();
-    if (!value) return;
+    if (!value || aiUnavailable) return;
     setMessage("");
     if (send.isPending || queued.length > 0) {
       setQueued((prev) => [...prev, { id: crypto.randomUUID(), text: value }]);
@@ -1364,25 +1403,23 @@ function ActivityStream({
 
   const empty = !isLoading && items.length === 0 && !send.isPending && !initialMessage;
 
-  // The session controls render in every state — the empty hero and the active stream alike — so a
-  // conversation's mode and autopilot are always visible and adjustable, including before the first
-  // message is sent.
-  const sessionControls = (
-    <SessionControls
-      mode={mode}
-      autopilot={autopilot}
-      autopilotAvailable={autopilotAvailable ?? false}
-      modePending={setMode.isPending}
-      autopilotPending={setAutopilot.isPending}
-      onModeChange={(next) => setMode.mutate({ id: conversationId, mode: next })}
-      onAutopilotChange={(next) => setAutopilot.mutate({ id: conversationId, autopilot: next })}
-    />
-  );
+  // The mode and approval controls now live inside the composer itself — the mode dropdown
+  // next to the model selector, the approval dropdown flush below the box — so they are always
+  // visible and adjustable, including before the first message is sent. Both patch the live
+  // conversation.
+  const controls: ComposerControls = {
+    mode,
+    onModeChange: (next) => setMode.mutate({ id: conversationId, mode: next }),
+    modePending: setMode.isPending,
+    autopilot,
+    onAutopilotChange: (next) => setAutopilot.mutate({ id: conversationId, autopilot: next }),
+    autopilotPending: setAutopilot.isPending,
+    autopilotAvailable: autopilotAvailable ?? false,
+  };
 
   if (empty) {
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {sessionControls}
         <MemoryStrip zoneId={zoneId} conversationId={conversationId} />
         <NewChatHero
           value={message}
@@ -1392,6 +1429,8 @@ function ActivityStream({
           pending={send.isPending}
           model={model}
           onModelChange={onModelChange}
+          controls={controls}
+          aiUnavailable={aiUnavailable}
         />
       </div>
     );
@@ -1399,7 +1438,6 @@ function ActivityStream({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {sessionControls}
       <MemoryStrip zoneId={zoneId} conversationId={conversationId} />
 
       <div className="scrollbar-thin flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-4">
@@ -1440,6 +1478,8 @@ function ActivityStream({
         usage={usage}
         model={model}
         onModelChange={onModelChange}
+        controls={controls}
+        aiUnavailable={aiUnavailable}
       />
     </div>
   );
@@ -1785,6 +1825,7 @@ function Composer({
   model,
   onModelChange,
   controls,
+  aiUnavailable,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -1794,6 +1835,7 @@ function Composer({
   model: string | null;
   onModelChange: (id: string | null) => void;
   controls: ComposerControls;
+  aiUnavailable: boolean;
 }) {
   return (
     <div className="flex-shrink-0 border-t border-border bg-card px-3 py-3">
@@ -1806,6 +1848,7 @@ function Composer({
         usage={usage ?? ZERO_USAGE}
         model={model}
         onModelChange={onModelChange}
+        blockedReason={aiUnavailable ? AI_DISCONNECTED_NOTICE : undefined}
         leftSlot={
           <ModeMenu
             mode={controls.mode}
@@ -1816,7 +1859,9 @@ function Composer({
       />
       <AutopilotRow controls={controls} />
       <p className="mt-1.5 px-0.5 text-[10px] text-muted-foreground">
-        Enter to send · Shift+Enter for a new line — nothing changes until you approve the plan.
+        {aiUnavailable
+          ? AI_DISCONNECTED_NOTICE
+          : "Enter to send · Shift+Enter for a new line — nothing changes until you approve the plan."}
       </p>
     </div>
   );
@@ -1870,6 +1915,7 @@ function NewChatHero({
   model,
   onModelChange,
   controls,
+  aiUnavailable,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -1879,6 +1925,7 @@ function NewChatHero({
   model: string | null;
   onModelChange: (id: string | null) => void;
   controls: ComposerControls;
+  aiUnavailable: boolean;
 }) {
   const { greeting, message } = useMemo(() => greetingForNow(), []);
   const suggestionsRef = useRef<HTMLDivElement>(null);
@@ -1981,6 +2028,7 @@ function NewChatHero({
               usage={ZERO_USAGE}
               model={model}
               onModelChange={onModelChange}
+              blockedReason={aiUnavailable ? AI_DISCONNECTED_NOTICE : undefined}
               leftSlot={
                 <ModeMenu
                   mode={controls.mode}
@@ -1990,6 +2038,11 @@ function NewChatHero({
               }
             />
             <AutopilotRow controls={controls} />
+            {aiUnavailable ? (
+              <p className="mt-2 px-0.5 text-center text-xs text-muted-foreground">
+                {AI_DISCONNECTED_NOTICE}
+              </p>
+            ) : null}
           </div>
 
           <div
@@ -2011,7 +2064,7 @@ function NewChatHero({
                   <button
                     key={suggestion.title}
                     onClick={() => onPick(suggestion.title)}
-                    disabled={pending}
+                    disabled={pending || aiUnavailable}
                     title={suggestion.hint}
                     className="group inline-flex h-8 shrink-0 items-center gap-2 rounded-full border border-border bg-card px-3.5 text-xs text-muted-foreground shadow-sm transition-colors hover:border-accent-purple/40 hover:bg-accent hover:text-foreground disabled:opacity-50"
                   >

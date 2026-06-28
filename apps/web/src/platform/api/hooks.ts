@@ -154,8 +154,11 @@ export function useOperatorConversations(
 export function useCreateOperatorConversation(zoneId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: string | { title: string; mode?: OperatorConversationMode; autopilot?: boolean }) => {
-      const { title, mode, autopilot } = typeof input === "string" ? { title: input, mode: undefined, autopilot: undefined } : input;
+    mutationFn: (
+      input: string | { title: string; mode?: OperatorConversationMode; autopilot?: boolean },
+    ) => {
+      const { title, mode, autopilot } =
+        typeof input === "string" ? { title: input, mode: undefined, autopilot: undefined } : input;
       return consoleApi.operator.conversations.create(zoneId as string, title, { mode, autopilot });
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.operatorConversations(zoneId) }),
