@@ -340,8 +340,7 @@ async function runWithFailover<T>(
 // Caracal governance middleware so the ceiling holds uniformly across providers.
 export function createGateway(providers: ProviderConfig[], fetchImpl: FetchImpl = fetch, governance?: GovernanceLimits): Gateway {
   const available = providers.filter(providerAvailable)
-  const governanceMiddleware =
-    governance && governance.maxOutputTokens > 0 ? buildGovernanceMiddleware(governance) : undefined
+  const governanceMiddleware = governance && governance.maxOutputTokens > 0 ? buildGovernanceMiddleware(governance) : undefined
 
   return {
     status() {
