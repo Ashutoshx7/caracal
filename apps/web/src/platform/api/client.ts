@@ -67,6 +67,7 @@ import type {
   OperatorConversationMode,
   OperatorContext,
   OperatorAiStatus,
+  OperatorAiCheckResult,
   OperatorExecutionResult,
   OperatorMessageResult,
   OperatorNarrativeInput,
@@ -512,6 +513,11 @@ export const consoleApi = {
     },
     aiStatus: (signal?: AbortSignal) =>
       request<OperatorAiStatus>("/v1/operator/ai/status", { signal }),
+    // Sends one minimal completion through the failover chain so an operator can confirm a
+    // configured provider is reachable. The endpoint makes the only real provider call on an
+    // explicit action, so it doubles as the page's connectivity test.
+    aiCheck: (signal?: AbortSignal) =>
+      request<OperatorAiCheckResult>("/v1/operator/ai/check", { method: "POST", signal }),
     capabilities: async (signal?: AbortSignal) => {
       const res = await request<{ capabilities: OperatorCapability[] }>(
         "/v1/operator/capabilities",

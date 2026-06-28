@@ -127,6 +127,14 @@ export function useOperatorAiStatus(enabled: boolean) {
   });
 }
 
+// Runs the explicit connectivity probe: one real completion through the failover chain.
+// Exposed as a mutation since it is an operator-triggered action, not background state.
+export function useOperatorAiCheck() {
+  return useMutation({
+    mutationFn: () => consoleApi.operator.aiCheck(),
+  });
+}
+
 // The capability catalog is static for a deployment, so it is fetched once and held
 // for the session rather than polled.
 export function useOperatorCapabilities() {
