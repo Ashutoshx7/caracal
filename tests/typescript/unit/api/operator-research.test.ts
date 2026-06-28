@@ -106,9 +106,7 @@ describe('createStateResearcher', () => {
   it('skips rows that are not objects without surfacing them', async () => {
     // A list with non-object entries (null, a string, a number) must contribute to the count but
     // never to the surfaced names, so a malformed row can never leak an arbitrary value.
-    const invoke = vi.fn(async (command: string) =>
-      command === 'app' ? [null, 'a-bare-string', 42, { id: 'a1', name: 'Billing' }] : [],
-    )
+    const invoke = vi.fn(async (command: string) => (command === 'app' ? [null, 'a-bare-string', 42, { id: 'a1', name: 'Billing' }] : []))
     const { evidence } = await createStateResearcher({ invoke } as unknown as ControlClient).gather()
     const apps = evidence.find((e) => e.domain === 'application')!
     expect(apps.count).toBe(4)
