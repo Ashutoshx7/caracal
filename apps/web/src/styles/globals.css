@@ -122,19 +122,19 @@ This file defines the application theme and global styles.
   .font-mono {
     font-family: var(--font-mono);
   }
-  .grid-bg {
-    background-image:
-      linear-gradient(
-        to right,
-        color-mix(in oklch, var(--foreground) 6%, transparent) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        to bottom,
-        color-mix(in oklch, var(--foreground) 6%, transparent) 1px,
-        transparent 1px
-      );
-    background-size: 48px 48px;
+  .font-doto {
+    font-family: "Doto", var(--font-mono);
+  }
+  .animate-spin-slow {
+    animation: spin-slow 20s linear infinite;
+  }
+  @keyframes spin-slow {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
   .noise {
     background-image: radial-gradient(
