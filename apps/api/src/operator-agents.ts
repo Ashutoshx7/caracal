@@ -8,7 +8,7 @@ import { describeCapabilitiesForPrompt, ProposedPlan, type ProposedPlanInput } f
 import type { ConversationState } from './operator-state.js'
 import { describeFacts, type ConversationFacts } from './operator-memory.js'
 import type { Evidence } from './operator-research.js'
-import type { Gateway, GatewayMessage } from './operator-gateway.js'
+import { GatewayBudgetError, type Gateway, type GatewayMessage } from './operator-gateway.js'
 
 // The agents never hold authority. Each one produces a typed artifact — an intent,
 // a proposed plan, or an explanation — that the deterministic pipeline then
@@ -202,7 +202,8 @@ const PlannerPlan = z
 // Produces a proposed plan from intent. The model's answer is generated as a
 // schema-validated object, so anything malformed or off-schema fails closed and a
 // hallucinated plan never leaves this function as a success. An empty steps array is a
-// valid "nothing maps" result.
+// valid "nothing maps" result. A per-turn budget refusal is a governance stop, not a plan
+// failure, so it propagates to the route rather than being reported as an unmappable request.
 export async function runPlanner(gateway: Gateway, message: string, context: AgentContext): Promise<AgentResult<ProposedPlanInput>> {
   try {
     const completion = await gateway.completeObject(buildPlannerMessages(message, context), PlannerPlan, {
@@ -210,7 +211,8 @@ export async function runPlanner(gateway: Gateway, message: string, context: Age
       temperature: 0,
     })
     return { ok: true, value: completion.value }
-  } catch {
+  } catch (err) {
+    if (err instanceof GatewayBudgetError) throw err
     return { ok: false, error: 'planner returned a plan that failed the schema' }
   }
 }

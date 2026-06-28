@@ -1499,6 +1499,38 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(1)
   })
 
+  it('surfaces a planner budget refusal as 429 rather than a misleading no-plan', async () => {
+    // A change request: triage consumes the single-call budget, so the planner call is refused.
+    // The planner propagates the budget stop rather than reporting an unmappable request, so the
+    // turn returns 429, not a 200 no_plan.
+    const fetchImpl = fetchReturning('{"tier":"change"}', '{"summary":"x","steps":[]}')
+    const { app, clientQuery, db } = buildApp(true, {
+      aiProviders: [provider],
+      fetchImpl,
+      aiGovernance: { maxOutputTokens: 0, maxCallsPerTurn: 1 },
+    })
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: false, next_seq: 1 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-1', seq: 1, kind: 'message' }] })
+      .mockResolvedValueOnce(undefined)
+    db.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'connect github' },
+    })
+    expect(res.statusCode).toBe(429)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'ai_budget_exceeded' })
+    expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(1)
+  })
+
   it('turns a natural-language request into a validated, previewed plan', async () => {
     const plan = {
       summary: 'Connect GitHub',
