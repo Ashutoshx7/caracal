@@ -41,6 +41,7 @@ import {
   TaskTrigger,
 } from "@/components/ai-elements/task";
 import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-elements/reasoning";
+import { Response } from "@/components/ai-elements/response";
 import {
   InlineCitation,
   InlineCitationCard,
@@ -2161,7 +2162,7 @@ function StreamEntry({
             <ReasoningContent>{item.reasoning}</ReasoningContent>
           </Reasoning>
         ) : null}
-        <p className="whitespace-pre-wrap text-sm text-foreground">{item.text}</p>
+        <Response>{item.text}</Response>
       </div>
     </div>
   );
