@@ -22,6 +22,7 @@ import {
 } from './operator-agents.js'
 import type { ProposedPlanInput } from './operator-capabilities.js'
 import type { Researcher } from './operator-research.js'
+import type { DocSnippet } from './operator-docs.js'
 import type { Gateway } from './operator-gateway.js'
 
 // A skill is a capability the orchestrator can invoke, not a pipeline stage. answer skills
@@ -134,6 +135,11 @@ export interface Orchestrator {
 export interface HandleOptions {
   researcher?: Researcher | null
   mode?: OperatorMode
+  // Retrieves the documentation passages most relevant to the request from the Operator's bundled
+  // corpus. When present, the answer skills are grounded in the real docs so they quote exact
+  // package names, endpoints, and fields rather than inventing them. Omitted when documentation
+  // grounding is not wired, in which case answers fall back to the model's own knowledge.
+  docs?: (query: string) => DocSnippet[]
 }
 
 // The deterministic answer an ask-mode conversation returns for a request that would require a
@@ -155,6 +161,21 @@ async function withEvidence(context: AgentContext, researcher: Researcher | null
   try {
     const blackboard = await researcher.gather()
     return blackboard.evidence.length > 0 ? { ...context, evidence: blackboard.evidence } : context
+  } catch {
+    return context
+  }
+}
+
+// Grounds an answer in the real documentation: retrieves the passages most relevant to the request
+// and attaches them to the context so the answering agent quotes exact names, endpoints, and fields
+// rather than inventing them. Retrieval is pure in-memory work over the bundled corpus and never
+// fails the turn — a retriever error or no match simply leaves the context ungrounded. Returns the
+// context unchanged when no retriever is wired.
+function withDocs(context: AgentContext, message: string, docs: HandleOptions['docs']): AgentContext {
+  if (!docs) return context
+  try {
+    const snippets = docs(message)
+    return snippets.length > 0 ? { ...context, docs: snippets } : context
   } catch {
     return context
   }
@@ -204,8 +225,10 @@ export function createOrchestrator(registry: SkillRegistry = createSkillRegistry
       }
 
       // A read tier inspects current state, so it answers grounded in freshly read evidence; a
-      // conversational tier needs no state read and pays nothing.
-      const answerContext = tierReadsState(tier) ? await withEvidence(context, options.researcher) : context
+      // conversational tier needs no state read and pays nothing. Both ground their answer in the
+      // real documentation so exact names, endpoints, and fields come from the docs, not the model.
+      const stateContext = tierReadsState(tier) ? await withEvidence(context, options.researcher) : context
+      const answerContext = withDocs(stateContext, message, options.docs)
       return { tier, outcome: { kind: 'answer', result: await skill.run(gateway, message, answerContext) } }
     },
   }

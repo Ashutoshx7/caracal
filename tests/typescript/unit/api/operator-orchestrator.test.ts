@@ -155,6 +155,41 @@ describe('createOrchestrator', () => {
     expect(seen).toEqual(evidence)
   })
 
+  it('grounds an answer in retrieved documentation passed to the answer skill', async () => {
+    const docs = [{ id: '/sdks/typescript', title: 'TypeScript SDK', url: 'https://docs/x', snippet: 'npm install @caracalai/sdk' }]
+    const retriever = vi.fn().mockReturnValue(docs)
+    let seenDocs: unknown
+    const registry: SkillRegistry = {
+      select: () => ({
+        id: 'probe',
+        kind: 'answer',
+        run: async (_g, _m, context) => {
+          seenDocs = context.docs
+          return { ok: true, value: { text: 'grounded in docs' } }
+        },
+      }),
+    }
+    await createOrchestrator(registry).handle(gatewayFor('conversational'), 'what is the typescript sdk package', emptyContext, {
+      docs: retriever,
+    })
+    // The retriever is queried with the request and its passages reach the answering skill, so the
+    // answer is grounded in real documentation rather than the model's recall.
+    expect(retriever).toHaveBeenCalledWith('what is the typescript sdk package')
+    expect(seenDocs).toEqual(docs)
+  })
+
+  it('does not retrieve documentation for a planning tier', async () => {
+    const retriever = vi.fn().mockReturnValue([])
+    const plan = {
+      summary: 'connect',
+      steps: [{ id: 's1', capability: 'connectProvider', args: { name: 'GitHub', kind: 'oauth2_authorization_code' } }],
+    }
+    await createOrchestrator().handle(planningGateway('change', plan), 'connect github', emptyContext, { docs: retriever })
+    // Planning grounds in the capability catalog and live state, not prose docs, so the retriever is
+    // never invoked on the change path.
+    expect(retriever).not.toHaveBeenCalled()
+  })
+
   it('routes a diagnostic read to the troubleshooter and an integration read to the translator', async () => {
     // The default registry is used, so the real specialists run; the topic in the scripted triage
     // decides which one. Both are read-only answer skills grounded in the gathered evidence.

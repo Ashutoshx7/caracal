@@ -8,6 +8,7 @@ import { describeCapabilitiesForPrompt, ProposedPlan, type ProposedPlanInput } f
 import type { ConversationState } from './operator-state.js'
 import { describeFacts, type ConversationFacts } from './operator-memory.js'
 import type { Evidence } from './operator-research.js'
+import type { DocSnippet } from './operator-docs.js'
 import { GatewayBudgetError, type Gateway, type GatewayMessage } from './operator-gateway.js'
 
 // The agents never hold authority. Each one produces a typed artifact — an intent,
@@ -170,14 +171,16 @@ const REASONING_PRINCIPLES = [
 // pointer is always correct.
 const DOCS_DISCIPLINE = [
   "USING DOCUMENTATION. You already hold Caracal's core model; reason from it first and answer",
-  'directly whenever you can. Reach for documentation only when the answer turns on a specific',
-  'procedure, an exact field, flag, or scope name, a version detail, or an edge case beyond the core',
-  'model — not for things you can already explain. When documentation genuinely helps, point to the',
-  'single most relevant page by its canonical path, summarize the one relevant point in your own words,',
-  "and tie it to the user's situation; never paste documentation text and never list several links.",
-  'If you are not certain a specific detail is current, say what you are confident about and name the',
-  'page to confirm it rather than guessing. Prefer one precise pointer over many — do not overwhelm.',
-  'Canonical pages you can cite:',
+  'directly whenever you can. For anything that turns on an exact detail — a package name, an',
+  'endpoint, a field, a flag, a scope, a procedure, or a version specific — do not rely on memory.',
+  'When the context includes a "Reference documentation (retrieved just now)" block, treat it as the',
+  'authoritative source: take exact names, endpoints, and fields verbatim from it, summarize the',
+  "relevant point in your own words, tie it to the user's situation, and cite the page by its path.",
+  'Never paste documentation wholesale and never list several links — one precise pointer beats many.',
+  'If the retrieved passages do not cover the exact detail asked, say what you are confident about,',
+  'name the single most relevant page to confirm it, and do not invent the specific. When no',
+  'documentation was retrieved, reason from the core model and still avoid guessing precise',
+  'identifiers you are unsure of. Canonical pages you can cite:',
   '- Concepts: /concepts/model-overview, /concepts/authority-model, /concepts/zone,',
   '  /concepts/resource-grant, /concepts/policy, /concepts/mandate, /concepts/delegation,',
   '  /concepts/constraint, /concepts/principal, /concepts/sessions-revocation, /concepts/audit-ledger,',
@@ -284,6 +287,10 @@ export interface AgentContext {
   // conversation's zone, so nothing could be read. The read agents must then say so plainly
   // instead of inventing applications, providers, resources, policies, or counts.
   liveStateUnavailable?: boolean
+  // Documentation passages retrieved from the Operator's bundled corpus for this turn. When
+  // present they are the authoritative source for exact package names, endpoints, fields, and
+  // scopes — the answering agent quotes and cites them rather than relying on its own recall.
+  docs?: DocSnippet[]
 }
 
 // Renders the live state evidence into a compact block: one line per governed read, with the
@@ -302,6 +309,16 @@ function describeEvidence(evidence: Evidence[] | undefined): string | null {
   return `Live state (read just now):\n${lines.join('\n')}`
 }
 
+// Renders the retrieved documentation into a compact, attributable block: each passage is labelled
+// with the page title and its canonical path so the answering agent can cite the page, and the
+// snippet carries the exact text — names, endpoints, fields — the answer must be grounded in. This
+// is reference material to quote and summarize, never to paste wholesale.
+function describeDocs(docs: DocSnippet[] | undefined): string | null {
+  if (!docs || docs.length === 0) return null
+  const blocks = docs.map((doc) => `[${doc.title} — ${doc.id}]\n${doc.snippet}`)
+  return `Reference documentation (retrieved just now — authoritative for exact names, endpoints, and fields; cite the page and summarize, do not paste):\n\n${blocks.join('\n\n')}`
+}
+
 // Renders the agent context into a compact block: the compressed session facts first,
 // then the live state evidence, then the recent working memory. Older history is summarized
 // rather than replayed, so the prompt stays small no matter how long the conversation is.
@@ -318,6 +335,9 @@ function describeContext(context: AgentContext): string {
         'so nothing about this zone was inspected this turn.',
     )
   }
+
+  const docs = describeDocs(context.docs)
+  if (docs) sections.push(docs)
 
   const recent: string[] = []
   if (context.state?.latest_plan) {

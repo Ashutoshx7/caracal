@@ -36,6 +36,7 @@ import { type GovernanceLimits } from '../operator-ai-governance.js'
 import { type AgentContext, type OperatorMode, type SecurityAdvisory } from '../operator-agents.js'
 import { createOrchestrator } from '../operator-orchestrator.js'
 import { createStateResearcher } from '../operator-research.js'
+import { retrieveDocs } from '../operator-docs.js'
 import { summarizeHistory, type ConversationFacts } from '../operator-memory.js'
 import { OperatorAiNotFoundError, OperatorAiUnavailableError, type OperatorAiManager } from '../operator-ai-manager.js'
 import { PROVIDER_SLUG_PATTERN } from '../operator-ai-store.js'
@@ -1317,7 +1318,13 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       // The orchestrator triages the request to its tier and runs the one skill that handles
       // it. A plan outcome flows through validate → preview → store-for-approval; an answer
       // outcome is recorded as a note. The model only proposes — every plan is governed below.
-      const { tier, outcome } = await orchestrator.handle(tracked.gateway, parsed.data.message, context, { researcher, mode })
+      // Answers are grounded in the bundled documentation corpus so exact names, endpoints, and
+      // fields come from the docs rather than the model's recall.
+      const { tier, outcome } = await orchestrator.handle(tracked.gateway, parsed.data.message, context, {
+        researcher,
+        mode,
+        docs: (query) => retrieveDocs(query),
+      })
 
       // Defense in depth: ask mode is read-only, so a plan must never be persisted on this path
       // regardless of what the orchestrator returned. The orchestrator already refuses to plan in
