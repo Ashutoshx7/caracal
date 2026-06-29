@@ -87,8 +87,6 @@ secrets:
     file: ${CARACAL_SECRETS_DIR:-../secrets/files}/caracalAuthSecret
   redisUrl:
     file: ${CARACAL_SECRETS_DIR:-../secrets/files}/redisUrl
-  litellmMasterKey:
-    file: ${CARACAL_SECRETS_DIR:-../secrets/files}/litellmMasterKey
 
 services:
   replayVolumeInit:
@@ -499,18 +497,13 @@ services:
     logging: *defaultLogging
     networks:
       - caracalData
-    secrets:
-      - source: litellmMasterKey
-        target: litellmMasterKey
     environment:
-      LITELLM_MASTER_KEY_FILE: /run/secrets/litellmMasterKey
+      PYTHONPATH: /etc/litellm
     entrypoint: ["/bin/sh", "-c"]
     command:
-      - 'export LITELLM_MASTER_KEY="$(cat /run/secrets/litellmMasterKey)"; exec litellm --config /etc/litellm/config.yaml --port 4000'
+      - 'exec litellm --config /etc/litellm/config.yaml --port 4000'
     volumes:
-      - ./litellm/config.yaml:/etc/litellm/config.yaml:ro
-    ports:
-      - "127.0.0.1:4500:4000"
+      - ./litellm:/etc/litellm:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:4000/health/liveliness')\""]
       interval: 10s
