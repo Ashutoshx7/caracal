@@ -2310,6 +2310,29 @@ function executeErrorMessage(err: unknown): string {
   }
 }
 
+// An honest, human message for why a decision could not be recorded, so approving or rejecting a
+// plan never fails silently. Most of these mean the plan already moved on; the message names that
+// plainly and the timeline re-reads to settle the card on its true state.
+function decideErrorMessage(err: unknown): string {
+  const code = (err as { code?: string } | null)?.code;
+  switch (code) {
+    case "plan_already_decided":
+      return "This plan was already decided. The latest state is shown above.";
+    case "plan_not_found":
+      return "This plan is no longer available.";
+    case "mode_forbidden":
+      return "This conversation is in ask mode, so plans can't be approved here.";
+    case "conversation_archived":
+      return "This conversation is archived, so it can't be decided.";
+    case "conversation_not_found":
+      return "This conversation is no longer available.";
+    case "invalid_decision":
+      return "That decision wasn't accepted. Please try again.";
+    default:
+      return "Couldn't record the decision. Please try again.";
+  }
+}
+
 // The active execution plan rendered as a first-class operational artifact: steps,
 // per-step effect, live progress, and the approve / reject / apply controls.
 function PlanArtifact({
@@ -2403,6 +2426,11 @@ function PlanArtifact({
               Approve
             </ConfirmationAction>
           </ConfirmationActions>
+          {decide.isError ? (
+            <p className="mt-2 text-[11px] text-destructive" role="alert">
+              {decideErrorMessage(decide.error)}
+            </p>
+          ) : null}
         </Confirmation>
       ) : null}
 
