@@ -504,9 +504,6 @@ services:
         target: litellmMasterKey
     environment:
       LITELLM_MASTER_KEY_FILE: /run/secrets/litellmMasterKey
-      AZURE_API_BASE: ${OPERATOR_AZURE_API_BASE:-}
-      AZURE_API_KEY: ${OPERATOR_AZURE_API_KEY:-}
-      OPENAI_API_KEY: ${OPERATOR_OPENAI_API_KEY:-}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - 'export LITELLM_MASTER_KEY="$(cat /run/secrets/litellmMasterKey)"; exec litellm --config /etc/litellm/config.yaml --port 4000'
