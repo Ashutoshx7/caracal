@@ -11,13 +11,9 @@ import {
   authorOperatorPolicy,
   operatorControlScopes,
   operatorIdentityTraits,
-  operatorReadScopes,
-  operatorReaderIdentityTraits,
-  ensureOperatorReaderIdentity,
   SYSTEM_ZONE_SLUG,
   SYSTEM_ZONE_NAME,
   OPERATOR_APP_NAME,
-  OPERATOR_READER_APP_NAME,
 } from '../../../../apps/api/src/system-zone.js'
 
 interface FakeResource {
@@ -249,70 +245,6 @@ describe('operatorIdentityTraits', () => {
     }
     // No traits beyond invoke + the scope set: the identity is exactly least privilege.
     expect(traits.length).toBe(1 + operatorControlScopes().length)
-  })
-})
-
-describe('operatorReadScopes', () => {
-  it('is exactly the non-mutating control scopes and carries no write or delete scope', () => {
-    const reads = operatorReadScopes()
-    expect(reads).toEqual(['control:app:read', 'control:identity-provider:read', 'control:policy:read', 'control:resource:read'])
-    expect(reads.every((scope) => scope.endsWith(':read'))).toBe(true)
-  })
-})
-
-describe('operatorReaderIdentityTraits', () => {
-  it('grants control:invoke plus a scope trait per read scope and nothing else', () => {
-    const traits = operatorReaderIdentityTraits()
-    expect(traits).toContain('control:invoke')
-    for (const scope of operatorReadScopes()) {
-      expect(traits).toContain(`control:scope:${scope}`)
-    }
-    expect(traits.length).toBe(1 + operatorReadScopes().length)
-    // A reader can never carry a write trait, so it can never mint a write token.
-    expect(traits.some((trait) => trait.includes(':write') || trait.includes(':delete'))).toBe(false)
-  })
-})
-
-describe('ensureOperatorReaderIdentity', () => {
-  it('ensures the control resource and a read-only reader identity in a tenant zone', async () => {
-    const { admin, state } = fakeAdmin()
-    const appId = await ensureOperatorReaderIdentity(admin, 'zone-tenant', 'cs_sealed', 'caracal-control')
-
-    // The zone's control resource is created so the control-key exchange can mint a token there.
-    expect(state.resources.find((r) => r.identifier === 'caracal-control')).toBeTruthy()
-
-    const app = state.apps.find((a) => a.id === appId)!
-    expect(app.name).toBe(OPERATOR_READER_APP_NAME)
-    expect([...(app.traits ?? [])].sort()).toEqual(operatorReaderIdentityTraits())
-    expect(app.client_secret).toBe('cs_sealed')
-    expect(app.registration_method).toBe('managed')
-  })
-
-  it('is idempotent: a second run reuses the reader and reconciles it to the sealed secret', async () => {
-    const { admin, state } = fakeAdmin()
-    const first = await ensureOperatorReaderIdentity(admin, 'zone-tenant', 'cs_sealed', 'caracal-control')
-    const second = await ensureOperatorReaderIdentity(admin, 'zone-tenant', 'cs_rotated', 'caracal-control')
-    expect(second).toBe(first)
-    expect(state.apps.filter((a) => a.name === OPERATOR_READER_APP_NAME)).toHaveLength(1)
-    expect(state.apps.find((a) => a.id === first)!.client_secret).toBe('cs_rotated')
-  })
-
-  it('refuses to bind a reserved reader name that is not a managed non-expiring credential', async () => {
-    const seeded = fakeAdmin({
-      apps: [
-        {
-          id: 'app-dcr',
-          name: OPERATOR_READER_APP_NAME,
-          traits: operatorReaderIdentityTraits(),
-          client_secret: 'cs',
-          registration_method: 'dcr',
-          expires_at: null,
-        },
-      ],
-    })
-    await expect(ensureOperatorReaderIdentity(seeded.admin, 'zone-tenant', 'cs_sealed', 'caracal-control')).rejects.toThrow(
-      /not a usable non-expiring managed credential/,
-    )
   })
 })
 

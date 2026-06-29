@@ -356,13 +356,6 @@ export interface OperatorRoutesOptions {
   // value because the identity is resolved after the server is listening, when the
   // provisioner can reach the control plane over loopback. Never an end-user surface.
   resolveControlIdentity?: () => OperatorControlIdentity | null
-  // Internal-only: idempotently provisions (or resolves) the Operator's least-privilege,
-  // read-only reader identity in a tenant zone and returns it, so the Operator can ground an
-  // answer in that zone's live state through a governed mandate even though it does not govern
-  // the zone. Returns null when self-governance is not configured. The reader can mint read
-  // tokens only; every change still flows through the approval-gated system-zone path. Never an
-  // end-user surface.
-  resolveZoneReader?: (zoneId: string) => Promise<OperatorControlIdentity | null>
   // The deployment's control endpoints (STS plus the loopback control plane) the Operator's
   // governed client talks to. Null when the control plane is disabled, which leaves governed
   // execution unconfigured.
@@ -419,22 +412,19 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     return client ? { client, identity } : null
   }
 
-  // Builds a read-only researcher bound to the conversation's zone, so the Operator grounds an
-  // answer in that zone's live state through a governed mandate. The Operator's system-zone
-  // identity governs only caracal.sys, so for that one zone its full identity is reused; for any
-  // other zone a least-privilege reader identity is provisioned in the zone and used. The reader
-  // can mint read tokens only, and the researcher narrows further to the read role, so this path
-  // can never change state. Null when self-governance is not configured, in which case the
-  // answer falls back to conversation context and the read agents say live state was unreadable.
-  const resolveZoneResearcher = async (zoneId: string): Promise<ReturnType<typeof createStateResearcher> | null> => {
-    if (!opts.controlEndpoints) return null
-    const system = resolveControlClient()
-    if (system && system.identity.zoneId === zoneId) {
-      return createStateResearcher(createRoleScopedClient(system.client, 'researcher', roleScopes('researcher', authority)))
-    }
-    const reader = (await opts.resolveZoneReader?.(zoneId)) ?? null
-    if (!reader) return null
-    const client = buildOperatorControlClient(reader, opts.controlEndpoints, opts.fetchImpl)
+  // Builds a read-only researcher that grounds an answer in the conversation zone's live state
+  // through a governed mandate. The Operator acts as its single reserved system-zone identity in
+  // every zone: for caracal.sys it reads directly; for any tenant zone the control client carries a
+  // zone-scope header the in-process control handler honors only for this reader and only for
+  // non-mutating commands, so live state is read without provisioning any identity in the tenant
+  // zone. The worker is further narrowed to the read role, so it can never mint a write token; every
+  // change still flows through the approval-gated execution path. Null when self-governance is not
+  // configured, in which case the read agents say live state could not be read rather than guess.
+  const resolveZoneResearcher = (zoneId: string): ReturnType<typeof createStateResearcher> | null => {
+    const identity = opts.resolveControlIdentity?.() ?? null
+    if (!identity || !opts.controlEndpoints) return null
+    const zoneScope = identity.zoneId === zoneId ? undefined : zoneId
+    const client = buildOperatorControlClient(identity, opts.controlEndpoints, opts.fetchImpl, zoneScope)
     if (!client) return null
     return createStateResearcher(createRoleScopedClient(client, 'researcher', roleScopes('researcher', authority)))
   }
@@ -698,12 +688,6 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
        RETURNING ${CONVERSATION_SELECT}`,
       [id, params.zoneId, parsed.data.title, parsed.data.mode ?? 'agent', parsed.data.autopilot ?? false, req.actor.id],
     )
-    // Warm the zone's read mandate ahead of the first message so the Operator can ground its very
-    // first answer in live state. Provisioning the reader identity and the zone's control resource
-    // is idempotent and cached, so this only does work the first time a zone is operated; a failure
-    // is non-fatal — the message path provisions on demand and the read agents stay honest if it
-    // cannot.
-    void opts.resolveZoneReader?.(params.zoneId).catch(() => {})
     return reply.code(201).send(rows[0])
   })
 
@@ -1320,7 +1304,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       // every change still flows through the approval-gated execution path below. When
       // self-governance is not configured the researcher is null and the answer falls back to
       // conversation context, and the read agents say live state could not be read for this zone.
-      const researcher = await resolveZoneResearcher(params.zoneId)
+      const researcher = resolveZoneResearcher(params.zoneId)
 
       // The conversation's operation mode, read under the lock that recorded the message. In ask
       // mode the orchestrator never produces a plan, so the message path cannot persist one.

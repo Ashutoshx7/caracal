@@ -212,4 +212,52 @@ describe('registerInvokeRoute', () => {
     expect(upstreamRes.statusCode).toBe(502)
     expect(upstreamRes.json()).toEqual({ ok: false, error: { code: 'upstream', reason: 'upstream error' } })
   })
+
+  it('lets the reserved Operator reader read a tenant zone via the zone-scope header', async () => {
+    const app = Fastify()
+    apps.push(app)
+    const list = vi.fn(async () => [{ id: 'a1' }])
+    const d = deps(vi.fn(async () => claims({ sub: 'operator-reader', zoneId: 'z-system', scope: 'control:app:read' })))
+    d.replay.mark = vi.fn(async () => true)
+    d.resolvePlatformReaderSubject = () => 'operator-reader'
+    d.ctx = { admin: { applications: { list } } } as unknown as DispatchContext
+
+    registerInvokeRoute(app, d)
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/control/invoke',
+      headers: { authorization: 'Bearer token', 'x-caracal-zone-scope': 'z-tenant' },
+      payload: { command: 'app', subcommand: 'list' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    // The read targets the tenant zone, and the audit is attributed to the zone actually read.
+    expect(list).toHaveBeenCalledWith('z-tenant')
+    expect(d.sink.emit).toHaveBeenCalledWith(expect.objectContaining({ decision: 'allow', zoneId: 'z-tenant' }))
+  })
+
+  it('ignores the zone-scope header for a subject that is not the reserved Operator reader', async () => {
+    const app = Fastify()
+    apps.push(app)
+    const list = vi.fn(async () => [{ id: 'a1' }])
+    const d = deps(vi.fn(async () => claims({ sub: 'tenant-key', zoneId: 'z-own', scope: 'control:app:read' })))
+    d.replay.mark = vi.fn(async () => true)
+    d.resolvePlatformReaderSubject = () => 'operator-reader'
+    d.ctx = { admin: { applications: { list } } } as unknown as DispatchContext
+
+    registerInvokeRoute(app, d)
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/control/invoke',
+      headers: { authorization: 'Bearer token', 'x-caracal-zone-scope': 'z-victim' },
+      payload: { command: 'app', subcommand: 'list' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    // A tenant key can never use the header to read another zone: the read stays in its own zone.
+    expect(list).toHaveBeenCalledWith('z-own')
+    expect(d.sink.emit).toHaveBeenCalledWith(expect.objectContaining({ decision: 'allow', zoneId: 'z-own' }))
+  })
 })

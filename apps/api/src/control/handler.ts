@@ -4,7 +4,16 @@
 // /v1/control/invoke handler: rate-limits, authenticates, blocks JTI replay, and dispatches through the shared engine.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { dispatch, DispatchError, type DispatchContext, type FlagMap, type Principal } from '@caracalai/engine'
+import {
+  dispatch,
+  DispatchError,
+  findCommand,
+  scopeFor,
+  MANAGEMENT_COMMANDS,
+  type DispatchContext,
+  type FlagMap,
+  type Principal,
+} from '@caracalai/engine'
 import { Authenticator, AuthError } from './auth.js'
 import { newRequestId, type EventSink } from './audit.js'
 import type { Replay } from './replay.js'
@@ -13,6 +22,13 @@ import type { ControlGate } from './gate.js'
 import { redisMinuteBucket, type RedisClient } from '../redis.js'
 
 const MAX_BODY_BYTES = 64 * 1024
+
+// The header the in-process Operator reader stamps to read a tenant zone's live state. The token
+// is minted in the reader's own (system) zone; this names the zone the read targets. It is honored
+// only for the reserved Operator reader subject and only for non-mutating commands, so it grants a
+// read-only cross-zone view to the platform identity and nothing else — a tenant's own control key
+// can never use it to read another zone.
+const ZONE_SCOPE_HEADER = 'x-caracal-zone-scope'
 
 interface InvokeBody {
   command?: unknown
@@ -31,6 +47,39 @@ export interface InvokeDeps {
   // Pre-authentication per-IP request ceiling that throttles unauthenticated
   // floods before they reach JWT verification and JWKS fetches. 0 disables it.
   ipRateLimitPerMin: number
+  // The application id of the reserved Operator reader, or null when self-governance is not
+  // configured. Only this subject may use the zone-scope header to read a tenant zone it is not
+  // bound to, and only for non-mutating commands. Resolved lazily because the identity is
+  // provisioned after the server is listening.
+  resolvePlatformReaderSubject?: () => string | null
+}
+
+// Whether a control command/subcommand is a non-mutating read, derived from the engine's command
+// metadata so the cross-zone read gate can never drift from the real scope verb of a command. An
+// unknown command is treated as not-read, so the gate fails closed.
+function isReadCommand(command: string, subcommand: string): boolean {
+  const desc = findCommand(MANAGEMENT_COMMANDS, command)
+  if (!desc) return false
+  return scopeFor(desc, subcommand) === 'read'
+}
+
+// Resolves the zone a request acts in. A request normally acts in the token's own zone. The
+// reserved Operator reader may target another zone for a non-mutating read by stamping the
+// zone-scope header; any other use of the header is ignored and the token's own zone applies, so
+// the header can never widen authority for a tenant key or for a mutating command.
+function resolveEffectiveZone(
+  req: FastifyRequest,
+  deps: InvokeDeps,
+  claims: { sub: string; zoneId?: string },
+  command: string,
+  subcommand: string,
+): string | undefined {
+  const requested = req.headers[ZONE_SCOPE_HEADER]
+  const target = typeof requested === 'string' ? requested.trim() : ''
+  if (!target || target === claims.zoneId) return claims.zoneId
+  const readerSubject = deps.resolvePlatformReaderSubject?.() ?? null
+  if (readerSubject && claims.sub === readerSubject && isReadCommand(command, subcommand)) return target
+  return claims.zoneId
 }
 
 export function registerInvokeRoute(app: FastifyInstance, deps: InvokeDeps): void {
@@ -119,10 +168,15 @@ async function handle(req: FastifyRequest, reply: FastifyReply, deps: InvokeDeps
   const flags = body?.flags && typeof body.flags === 'object' && !Array.isArray(body.flags) ? (body.flags as FlagMap) : undefined
   const idempotencyKey = typeof flags?.['idempotency-key'] === 'string' ? (flags['idempotency-key'] as string) : undefined
 
+  // The zone the request acts in: the token's own zone, or a tenant zone the reserved Operator
+  // reader targets for a non-mutating read. The audit records the effective zone, so a cross-zone
+  // read is attributed to the zone actually read.
+  const effectiveZone = resolveEffectiveZone(req, deps, claims, command, subcommand)
+
   const principal: Principal = {
     kind: 'remote',
     subject: claims.sub,
-    zoneId: claims.zoneId,
+    zoneId: effectiveZone,
     clientId: claims.clientId,
     scopes: claims.scope.split(/\s+/).filter((s) => s.length > 0),
   }
@@ -131,7 +185,7 @@ async function handle(req: FastifyRequest, reply: FastifyReply, deps: InvokeDeps
     const result = await dispatch({ command, subcommand, flags }, principal, deps.ctx)
     await deps.sink.emit({
       at: new Date(),
-      zoneId: claims.zoneId,
+      zoneId: effectiveZone,
       clientId: claims.clientId,
       subject: claims.sub,
       jti: claims.jti,
@@ -146,7 +200,7 @@ async function handle(req: FastifyRequest, reply: FastifyReply, deps: InvokeDeps
     const reason = describe(err)
     await deps.sink.emit({
       at: new Date(),
-      zoneId: claims.zoneId,
+      zoneId: effectiveZone,
       clientId: claims.clientId,
       subject: claims.sub,
       jti: claims.jti,

@@ -2209,11 +2209,25 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(2)
   })
 
-  it('does not gather evidence when the control identity is bound to another zone', async () => {
-    // The Operator's control identity is zone-bound. A conversation in a zone the identity is
-    // not bound to has no in-zone read authority, so the researcher is not built and the answer
-    // never reads — it can never surface another zone's state.
-    const fetchImpl = fetchReturning('{"tier":"read"}', 'I cannot read this zone right now.')
+  it('reads a tenant zone through the zone-scope mandate when the identity is bound elsewhere', async () => {
+    // The Operator acts as its single reserved system-zone identity in every zone. A conversation
+    // in a zone the identity is not bound to is read through the governed control plane with a
+    // zone-scope header, so the answer is grounded in that zone's live state without provisioning
+    // any identity in it.
+    let m = 0
+    const modelContents = ['{"tier":"read"}', 'You have one provider connected.']
+    const calls: { url: string; zoneScope: unknown }[] = []
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const headers = (init?.headers ?? {}) as Record<string, string>
+      calls.push({ url, zoneScope: headers['x-caracal-zone-scope'] })
+      if (url.endsWith('/oauth/2/token')) return jsonResponse({ access_token: 'control-token' })
+      if (url.endsWith('/v1/control/invoke')) return jsonResponse({ result: [] })
+      return new Response(JSON.stringify({ choices: [{ message: { content: modelContents[m++] } }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
     const { app, clientQuery, db } = buildApp(true, {
       aiProviders: [provider],
       fetchImpl,
@@ -2245,8 +2259,11 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     })
     expect(res.statusCode).toBe(201)
     expect(JSON.parse(res.body)).toMatchObject({ intent: 'explain', tier: 'read', ok: true })
-    // No control traffic at all: only the two model calls (triage + answer) were made.
-    expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(2)
+    // The researcher read the conversation's zone, and every control invoke carried the
+    // conversation zone as its zone-scope, so the read targeted z1, not the identity's home zone.
+    const invokeCalls = calls.filter((c) => c.url.endsWith('/v1/control/invoke'))
+    expect(invokeCalls.length).toBeGreaterThan(0)
+    expect(invokeCalls.every((c) => c.zoneScope === 'z1')).toBe(true)
   })
 
   it('reports real token usage, model, and context window with the answer', async () => {
