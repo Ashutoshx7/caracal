@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto'
 import type { AdminClient, Application } from '@caracalai/admin'
 import { ensureControlResource } from '@caracalai/engine'
 import { CONTROL_CAPABILITIES } from './operator-control-map.js'
+import { CAPABILITIES } from './operator-capabilities.js'
 
 // The reserved system zone, encoded per the caracal.sys namespace standard: a slug in the
 // caracal-sys- form and a name in the caracal.sys/ form. Both are reserved, so only a
@@ -18,6 +19,15 @@ export const SYSTEM_ZONE_NAME = 'caracal.sys/system'
 // The Operator's reserved control identity inside the system zone, named in the reserved
 // caracal.sys/ form so a tenant can never create or impersonate it.
 export const OPERATOR_APP_NAME = 'caracal.sys/operator'
+
+// The Operator's reserved read-only control identity for a tenant zone. The full Operator
+// identity is bound to caracal.sys and cannot mint a token for any other zone, so to read a
+// tenant zone's live state the Operator provisions this least-privilege reader in that zone:
+// it carries only the non-mutating control scopes, so it can ground an answer in real state but
+// can never mint a write token. Execution still flows through the approval-gated system-zone
+// path; this identity only reads. Named in the reserved caracal.sys/ form so a tenant can never
+// create or impersonate it.
+export const OPERATOR_READER_APP_NAME = 'caracal.sys/operator-reader'
 
 const CONTROL_INVOKE_TRAIT = 'control:invoke'
 const CONTROL_SCOPE_TRAIT_PREFIX = 'control:scope:'
@@ -40,6 +50,24 @@ export function operatorControlScopes(): string[] {
 // privilege.
 export function operatorIdentityTraits(): string[] {
   return [CONTROL_INVOKE_TRAIT, ...operatorControlScopes().map((scope) => `${CONTROL_SCOPE_TRAIT_PREFIX}${scope}`)].sort()
+}
+
+// The non-mutating subset of the Operator's control scopes: the scopes of every governed
+// capability the catalog marks read-only. Derived from the catalog and the control mapping so
+// it can never drift from the mutating flag — a reader can never be granted a write scope.
+export function operatorReadScopes(): string[] {
+  const scopes = new Set<string>()
+  for (const [id, capability] of Object.entries(CONTROL_CAPABILITIES)) {
+    if (CAPABILITIES[id]?.mutating === false) for (const scope of capability.scopes) scopes.add(scope)
+  }
+  return [...scopes].sort()
+}
+
+// The canonical trait set for the read-only reader identity: control:invoke plus one
+// control:scope: trait per non-mutating scope. The reader can mint read tokens and nothing
+// else, so its standing authority in a tenant zone is strictly read-only.
+export function operatorReaderIdentityTraits(): string[] {
+  return [CONTROL_INVOKE_TRAIT, ...operatorReadScopes().map((scope) => `${CONTROL_SCOPE_TRAIT_PREFIX}${scope}`)].sort()
 }
 
 // The resolved system-zone identity the Operator executes as: the system zone it governs
@@ -177,6 +205,35 @@ async function ensureOperatorIdentity(admin: AdminClient, zoneId: string, secret
   // Reconcile the live identity to least privilege and the configured secret. Patching the
   // secret every run keeps the running credential equal to sealed config; patching traits
   // only when drifted avoids needless writes while still self-healing a tampered identity.
+  if (!sameTraitSet(existing.traits, traits)) {
+    await admin.applications.patch(zoneId, existing.id, { traits })
+  }
+  await admin.applications.patch(zoneId, existing.id, { client_secret: secret })
+  return existing.id
+}
+
+// Idempotently provisions the Operator's read-only reader identity in a tenant zone and returns
+// its application id. Mirrors ensureOperatorIdentity but binds the reserved reader name and the
+// read-only trait set, and shares the same sealed control secret so no per-zone secret material
+// is created. Reconciles a drifted identity back to least privilege on every run, so a tampered
+// reader self-heals to read-only. Used to ground the Operator's answers in a zone it does not
+// govern; it can never mint a write token.
+export async function ensureOperatorReaderIdentity(admin: AdminClient, zoneId: string, secret: string, audience: string): Promise<string> {
+  // The control-key exchange requires the zone to expose the control resource; a zone the
+  // Operator does not govern has none, so ensure it before provisioning the reader. It is the
+  // same control primitive a customer's zone carries, scoped to the control scopes.
+  await ensureControlResource(admin, zoneId, audience)
+  const traits = operatorReaderIdentityTraits()
+  const apps = await admin.applications.list(zoneId)
+  const existing = apps.find((app: Application) => app.name === OPERATOR_READER_APP_NAME)
+  if (!existing) {
+    const created = await admin.applications.create(zoneId, { name: OPERATOR_READER_APP_NAME, registration_method: 'managed', traits })
+    await admin.applications.patch(zoneId, created.id, { client_secret: secret })
+    return created.id
+  }
+  if (existing.registration_method !== 'managed' || (existing.expires_at !== null && existing.expires_at !== undefined)) {
+    throw new Error('reserved operator reader identity exists but is not a usable non-expiring managed credential')
+  }
   if (!sameTraitSet(existing.traits, traits)) {
     await admin.applications.patch(zoneId, existing.id, { traits })
   }

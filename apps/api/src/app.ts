@@ -19,7 +19,7 @@ import { adminAuthPlugin } from './auth.js'
 import { registerAdminAuditHook } from './admin-audit.js'
 import { controlPlugin } from './control/plugin.js'
 import { AdminClient } from '@caracalai/admin'
-import { provisionSystemZone, llmResourceIdentifier, type GovernedUpstream } from './system-zone.js'
+import { provisionSystemZone, llmResourceIdentifier, ensureOperatorReaderIdentity, type GovernedUpstream } from './system-zone.js'
 import { createOperatorLlmTransport, type OperatorLlmTransport } from './operator-llm-transport.js'
 import type { ProviderConfig } from './operator-gateway.js'
 import { createOperatorAiManager, buildStoreProviderConfigs, type OperatorAiManager } from './operator-ai-manager.js'
@@ -365,6 +365,40 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
         })
       : null
 
+  // Lazily provisions and resolves the Operator's read-only reader identity for a tenant zone,
+  // so the Operator can ground answers in any zone's live state through a governed, least-privilege
+  // mandate rather than guessing. Active only when self-governance can seal the shared control
+  // secret. The reader carries read scopes only, so it can never mint a write token; every change
+  // still flows through the approval-gated execution path. Per-zone results are cached and
+  // concurrent first-touch provisions are de-duplicated, so a busy new zone provisions once.
+  const zoneReaderCache = new Map<string, OperatorControlIdentity>()
+  const zoneReaderInFlight = new Map<string, Promise<OperatorControlIdentity | null>>()
+  const resolveZoneReader = async (zoneId: string): Promise<OperatorControlIdentity | null> => {
+    const secret = cfg.operatorControlSecret
+    if (!governanceActive || !provisionAdmin || !secret || !cfg.control) return null
+    const cached = zoneReaderCache.get(zoneId)
+    if (cached) return cached
+    const inFlight = zoneReaderInFlight.get(zoneId)
+    if (inFlight) return inFlight
+    const admin = provisionAdmin
+    const audience = cfg.control.audience
+    const work = (async (): Promise<OperatorControlIdentity | null> => {
+      try {
+        const applicationId = await ensureOperatorReaderIdentity(admin, zoneId, secret, audience)
+        const identity: OperatorControlIdentity = { applicationId, clientSecret: secret, zoneId }
+        zoneReaderCache.set(zoneId, identity)
+        return identity
+      } catch (err) {
+        app.log.warn({ err, zoneId }, 'operator reader identity provisioning failed')
+        return null
+      } finally {
+        zoneReaderInFlight.delete(zoneId)
+      }
+    })()
+    zoneReaderInFlight.set(zoneId, work)
+    return work
+  }
+
   await app.register(operatorRoutes, {
     prefix: '/v1',
     enabled: cfg.operatorEnabled,
@@ -384,6 +418,7 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
       maxCallsPerTurn: cfg.operatorAiMaxCallsPerTurn,
     }),
     resolveControlIdentity: () => operatorControlIdentity.current,
+    resolveZoneReader,
     controlEndpoints: cfg.control
       ? { stsUrl: cfg.stsUrl, audience: cfg.control.audience, controlUrl: cfg.control.apiUrl, controlEnabled: true }
       : null,
