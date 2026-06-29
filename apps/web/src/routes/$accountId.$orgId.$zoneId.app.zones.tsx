@@ -46,7 +46,6 @@ import {
 } from "@/platform/api/hooks";
 import { useSession } from "@/platform/auth";
 import { getActiveZoneId } from "@/platform/state/localInstall";
-import { isSystemZone } from "@/platform/state/zones";
 import type { Zone, ZonePatchInput } from "@/platform/api/types";
 
 const PAGE_SIZE = 8;
@@ -151,13 +150,6 @@ function ZonesPage() {
               <Badge tone="success">Active</Badge>
             </span>
           ) : null}
-          {isSystemZone(zone) ? (
-            <Tooltip label="Reserved internal zone managed by Caracal. Read-only for transparency.">
-              <span className="flex-shrink-0">
-                <Badge tone="muted">System</Badge>
-              </span>
-            </Tooltip>
-          ) : null}
         </div>
       ),
     },
@@ -174,18 +166,7 @@ function ZonesPage() {
       id: "owner",
       header: "Owner",
       truncate: true,
-      cell: (zone) => {
-        const isOwned = zone.owner_account_id === session.data?.user?.id;
-        const isSystem = isSystemZone(zone);
-        return (
-          <div className="flex items-center gap-1.5">
-            <span className="block truncate text-sm text-muted-foreground">
-              {isSystem ? "Caracal" : isOwned ? "You" : owner}
-            </span>
-            {isOwned && !isSystem ? <Badge tone="success">Owner</Badge> : null}
-          </div>
-        );
-      },
+      cell: () => <span className="block truncate text-sm text-muted-foreground">{owner}</span>,
     },
     {
       id: "dcr",

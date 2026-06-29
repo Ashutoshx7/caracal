@@ -8,7 +8,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
 import { ProviderFormModal } from "@/components/console/ProviderForm";
-import { ProviderHealth } from "@/components/console/ProviderHealth";
 import {
   CopyValue,
   DangerZone,
@@ -206,14 +205,6 @@ function ProvidersPage({ zoneId, zoneName }: { zoneId: string; zoneName: string 
           {routingSummary(p)}
         </span>
       ),
-    },
-    {
-      id: "health",
-      header: "Status",
-      cell: (p) => {
-        const hasEndpoint = p.kind !== "none" && p.kind !== "caracal_mandate";
-        return hasEndpoint ? <ProviderHealth provider={p} compact /> : null;
-      },
     },
     {
       id: "secrets",
@@ -424,14 +415,6 @@ function ProviderDetail({
           </DetailField>
         ) : null}
       </DetailGroup>
-
-      {credentialKind && (
-        <DetailGroup title="Health">
-          <DetailField label="Connection Status">
-            <ProviderHealth provider={provider} />
-          </DetailField>
-        </DetailGroup>
-      )}
 
       {credentialKind ? (
         <DetailSection title="Credentials">
