@@ -9,11 +9,8 @@ import { useSyncExternalStore, useState } from "react";
 
 import { getActiveZoneId, setActiveZoneId } from "@/platform/state/localInstall";
 import { isSystemZone } from "@/platform/state/zones";
-import {
-  clearSystemZoneViewLatch,
-  isSystemZoneViewTab,
-  systemZoneViewPath,
-} from "@/platform/state/systemZoneView";
+import { clearSystemZoneViewLatch, isSystemZoneViewTab } from "@/platform/state/systemZoneView";
+import { systemZoneViewPath } from "@/platform/nav/appLink";
 
 export { systemZoneViewPath };
 

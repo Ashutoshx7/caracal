@@ -4,6 +4,7 @@ Caracal, a product of Garudex Labs
 
 This file defines the settings route.
 */
+import { appLink } from "@/platform/nav/appLink";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -36,7 +37,7 @@ import {
   systemZoneViewPath,
   useZones,
 } from "@/platform/api/hooks";
-import type { OperatorAiProvider } from "@/platform/api/types";
+import type { OperatorAiProvider, OperatorAiAuth } from "@/platform/api/types";
 import {
   AuthApiError,
   changePassword,
@@ -135,7 +136,7 @@ const ALL_SECTIONS = SETTINGS_GROUPS.flatMap((group) => group.items);
 
 type SectionId = string;
 
-export const Route = createFileRoute("/app/settings")({
+export const Route = createFileRoute("/$accountId/$orgId/$zoneId/app/settings")({
   component: SettingsPage,
 });
 
@@ -148,7 +149,7 @@ function SettingsPage() {
     <ModulePage
       title="Settings"
       description="Account and administration controls."
-      breadcrumbs={[{ label: "Console", to: "/app" }, { label: "Settings" }]}
+      breadcrumbs={[{ label: "Console", to: appLink() }, { label: "Settings" }]}
     >
       <div className="grid gap-8 xl:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="xl:sticky xl:top-20 xl:self-start">
@@ -664,8 +665,18 @@ function sanitizeSlug(raw: string): string {
 function checkErrorMessage(err: unknown): string {
   if (err instanceof ConsoleApiError) {
     if (err.code === "ai_unavailable") return "No AI provider is configured for the Operator.";
-    if (err.code === "ai_unreachable")
-      return "The configured provider could not be reached. Check the endpoint and key.";
+    if (err.code === "ai_unreachable") {
+      // Surface the upstream's own status so a rejected key (401/403) reads differently from a
+      // wrong endpoint (404) or an unreachable host, rather than one ambiguous message.
+      const attempts = (err.detail as { attempts?: { reason?: string }[] } | undefined)?.attempts;
+      const reason = attempts?.[0]?.reason ?? "";
+      const status = reason.match(/status (\d{3})/)?.[1];
+      if (status === "401" || status === "403")
+        return "The provider rejected the key. Check the API key.";
+      if (status === "404") return "The endpoint was not found. Check the base URL.";
+      if (status) return `The provider returned ${status}. Check the endpoint and key.`;
+      return "The provider could not be reached. Check the endpoint.";
+    }
   }
   return "The connectivity check failed. Try again.";
 }
@@ -728,7 +739,7 @@ function AiOperatorSection() {
               </span>
               {systemZone.data ? (
                 <a
-                  href={systemZoneViewPath()}
+                  href={systemZoneViewPath(systemZone.data)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -1009,6 +1020,11 @@ function ProviderFormModal({
   const [modelDraft, setModelDraft] = useState("");
   const [contextWindow, setContextWindow] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [authLocation, setAuthLocation] = useState<"header" | "query">("header");
+  const [headerName, setHeaderName] = useState("Authorization");
+  const [authScheme, setAuthScheme] = useState("Bearer");
+  const [queryParamName, setQueryParamName] = useState("api_key");
+  const [showPlacement, setShowPlacement] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Seed the form whenever it opens: an edit loads the provider, a fresh add starts empty so the
@@ -1025,6 +1041,14 @@ function ProviderFormModal({
       setModels(editing.models);
       setContextWindow(editing.contextWindow ? String(editing.contextWindow) : "");
       setApiKey("");
+      setAuthLocation(editing.auth.location);
+      setHeaderName(editing.auth.headerName ?? "Authorization");
+      setAuthScheme(editing.auth.authScheme ?? "");
+      setQueryParamName(editing.auth.queryParamName ?? "api_key");
+      setShowPlacement(
+        editing.auth.location !== "header" ||
+          (editing.auth.headerName ?? "Authorization") !== "Authorization",
+      );
     } else {
       setSlug("");
       setSlugEdited(false);
@@ -1033,6 +1057,11 @@ function ProviderFormModal({
       setModels([]);
       setContextWindow("");
       setApiKey("");
+      setAuthLocation("header");
+      setHeaderName("Authorization");
+      setAuthScheme("Bearer");
+      setQueryParamName("api_key");
+      setShowPlacement(false);
     }
   }, [open, editing]);
 
@@ -1066,11 +1095,19 @@ function ProviderFormModal({
   async function save() {
     setError(null);
     const ctx = contextWindow.trim() ? Number(contextWindow) : 0;
+    const auth: OperatorAiAuth =
+      authLocation === "query"
+        ? { location: "query", queryParamName: queryParamName.trim() || "api_key" }
+        : {
+            location: "header",
+            headerName: headerName.trim() || "Authorization",
+            authScheme: authScheme.trim() || undefined,
+          };
     try {
       if (editing) {
         await update.mutateAsync({
           slug: editing.slug,
-          patch: { label, baseUrl, models, contextWindow: ctx },
+          patch: { label, baseUrl, models, contextWindow: ctx, auth },
         });
       } else {
         await create.mutateAsync({
@@ -1081,6 +1118,7 @@ function ProviderFormModal({
           contextWindow: ctx,
           apiKey,
           enabled: true,
+          auth,
         });
       }
       onSaved();
@@ -1202,13 +1240,73 @@ function ProviderFormModal({
           ) : null}
         </div>
 
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowPlacement((v) => !v)}
+            className="text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            {showPlacement ? "Hide" : "Advanced:"} key placement
+          </button>
+          {showPlacement ? (
+            <div className="mt-3 grid gap-4 border border-border bg-muted/30 p-3">
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                Where the sealed key is sent. Default is an Authorization Bearer header. Some
+                upstreams differ — Azure uses an <span className="font-mono">api-key</span> header,
+                a LiteLLM/OpenRouter proxy expects <span className="font-mono">X-API-Key</span>, and
+                a few take it in the query string.
+              </p>
+              <div className="flex gap-2">
+                {(["header", "query"] as const).map((loc) => (
+                  <button
+                    key={loc}
+                    type="button"
+                    onClick={() => setAuthLocation(loc)}
+                    className={[
+                      "h-8 px-3 text-xs font-medium capitalize transition-colors",
+                      authLocation === loc
+                        ? "bg-foreground text-background"
+                        : "border border-border text-muted-foreground hover:bg-surface",
+                    ].join(" ")}
+                  >
+                    {loc}
+                  </button>
+                ))}
+              </div>
+              {authLocation === "header" ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field
+                    label="Header name"
+                    value={headerName}
+                    onChange={(e) => setHeaderName(e.target.value)}
+                    placeholder="Authorization"
+                  />
+                  <Field
+                    label="Scheme prefix"
+                    info="Optional. Blank sends the raw key (e.g. Azure)."
+                    value={authScheme}
+                    onChange={(e) => setAuthScheme(e.target.value)}
+                    placeholder="Bearer"
+                  />
+                </div>
+              ) : (
+                <Field
+                  label="Query parameter"
+                  value={queryParamName}
+                  onChange={(e) => setQueryParamName(e.target.value)}
+                  placeholder="api_key"
+                />
+              )}
+            </div>
+          ) : null}
+        </div>
+
         <div className="border border-border bg-muted/40 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
           The endpoint must speak the OpenAI <span className="font-mono">/chat/completions</span>{" "}
           format — OpenAI and Azure work directly; for Claude, Gemini, or others, point this at an
-          OpenAI-compatible proxy such as LiteLLM or OpenRouter. Caracal sets the rest automatically
-          (api-key auth over an Authorization Bearer header, the llm:invoke and agent:lifecycle
-          scopes, and the gateway binding), seals the key into the caracal.sys system zone, and
-          routes the Operator only through the governed gateway.
+          OpenAI-compatible proxy such as LiteLLM or OpenRouter. Caracal seals the key into the
+          caracal.sys system zone, sets the scopes and gateway binding, and routes the Operator only
+          through the governed gateway.
         </div>
 
         {error ? <p className="text-xs text-destructive">{error}</p> : null}
@@ -1361,7 +1459,7 @@ function LifecycleSection() {
           ) : null}
           <div className="mt-4 flex flex-wrap gap-2">
             <Link
-              to="/app/zones"
+              to={appLink("/zones")}
               className="inline-flex h-9 items-center rounded-md border border-border bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-surface"
             >
               Manage zones
