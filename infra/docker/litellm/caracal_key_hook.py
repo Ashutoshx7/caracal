@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Forwards the sealed key (request bearer) and the operator endpoint (X-Llm-Upstream) into the call, and refuses any endpoint outside CARACAL_UPSTREAM_ALLOWLIST so the key cannot be exfiltrated to an attacker URL.
+# Forwards the sealed key (request bearer) and the operator endpoint (X-Llm-Upstream) into the call, so any OpenAI-compatible provider works with no per-model config. The endpoint is always the admin-sealed provider base URL the gateway stamps server-side, never a caller value, so the gateway is the enforcement boundary; CARACAL_UPSTREAM_ALLOWLIST is optional extra confinement, off when unset.
 
 import os
 from urllib.parse import urlparse
