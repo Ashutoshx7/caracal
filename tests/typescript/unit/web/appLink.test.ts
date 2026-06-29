@@ -12,7 +12,7 @@ vi.mock('../../../../apps/web/src/platform/state/localInstall', () => ({
 
 import { appLink, navTarget } from '../../../../apps/web/src/platform/nav/appLink'
 
-const OSS_ORG = '00000000-0000-0000-0000-000000000000'
+const OSS_ORG = 'ORG-0000-0000-0000'
 
 describe('appLink', () => {
   it('builds account/org/zone prefixed app root', () => {

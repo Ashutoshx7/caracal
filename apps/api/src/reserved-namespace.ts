@@ -10,8 +10,8 @@ import type { Actor } from './auth.js'
 // system zone sits under Caracal's own org, identical for every account and edition. These ids
 // are reserved: a tenant zone must never be minted with the system zone id, so the generator
 // regenerates on the astronomically unlikely collision rather than shadowing the reserved zone.
-export const OSS_ORG_ID = '00000000-0000-0000-0000-000000000000'
-export const CARACAL_ORG_ID = 'caracal'
+export const OSS_ORG_ID = 'ORG-0000-0000-0000'
+export const CARACAL_ORG_ID = 'ORG-CRC0-SYS0-0001'
 
 // Resolves the org an open-source request acts under. Open source has no concept of orgs or teams,
 // so there is exactly one valid org: the sentinel. Caracal's own system org is accepted as-is so

@@ -11,6 +11,7 @@ import {
   isReservedZone,
   mintZoneId,
   OSS_ORG_ID,
+  CARACAL_ORG_ID,
   resolveOssOrg,
   RESERVED_ZONE_IDS,
   RESERVED_ZONE_SQL,
@@ -157,7 +158,7 @@ describe('resolveOssOrg', () => {
   })
 
   it('keeps the reserved Caracal system org', () => {
-    expect(resolveOssOrg('caracal')).toBe('caracal')
+    expect(resolveOssOrg(CARACAL_ORG_ID)).toBe(CARACAL_ORG_ID)
   })
 
   it('collapses any other org id to the sentinel (open source has no orgs)', () => {

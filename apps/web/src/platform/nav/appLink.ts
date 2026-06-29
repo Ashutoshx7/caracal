@@ -10,7 +10,7 @@ import { getProfile, getActiveZoneId } from "@/platform/state/localInstall";
 // identity, org as the tenancy boundary, zone innermost. Open source has no orgs, so every account
 // uses this reserved sentinel org; enterprise replaces it with real org ids on the same shape, so
 // zone and account routing never change when orgs arrive.
-const OSS_ORG_ID = "00000000-0000-0000-0000-000000000000";
+const OSS_ORG_ID = "ORG-0000-0000-0000";
 
 // Builds an account/org/zone-scoped Console path. Identity comes from the current profile and
 // active zone, so every link carries it without each caller threading params. A sub-path like
