@@ -63,7 +63,6 @@ import {
   ModelSelectorInput,
   ModelSelectorItem,
   ModelSelectorList,
-  ModelSelectorLogo,
   ModelSelectorName,
   ModelSelectorTrigger,
 } from "@/components/ai-elements/model-selector";
@@ -1751,7 +1750,6 @@ function OperatorModelSelector({
   return (
     <ModelSelector className="flex-shrink-0" open={open} onOpenChange={setOpen}>
       <ModelSelectorTrigger>
-        <ModelSelectorLogo provider={selected.id} />
         <ModelSelectorName className="max-w-[8rem]">{selected.model}</ModelSelectorName>
       </ModelSelectorTrigger>
       <ModelSelectorContent placement="top">
@@ -1766,7 +1764,6 @@ function OperatorModelSelector({
                 setOpen(false);
               }}
             >
-              <ModelSelectorLogo provider={provider.id} />
               <div className="min-w-0">
                 <div className="truncate text-sm text-foreground">{provider.model}</div>
                 <div className="truncate text-[10px] text-muted-foreground">{provider.id}</div>

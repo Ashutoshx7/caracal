@@ -113,16 +113,6 @@ export const ModelSelectorTrigger = ({
   );
 };
 
-// A monogram chip standing in for a provider logo, derived from the provider id.
-export const ModelSelectorLogo = ({ provider }: { provider: string }) => (
-  <span
-    aria-hidden="true"
-    className="grid h-4 w-4 flex-shrink-0 place-items-center rounded-sm bg-muted text-[9px] font-semibold uppercase text-foreground"
-  >
-    {provider.slice(0, 1)}
-  </span>
-);
-
 export const ModelSelectorName = ({ children, className }: ComponentProps<"span">) => (
   <span className={cx("truncate", className)}>{children}</span>
 );
