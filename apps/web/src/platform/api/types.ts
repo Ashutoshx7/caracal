@@ -11,6 +11,7 @@ export interface Zone {
   name: string;
   slug: string;
   dcr_enabled: boolean;
+  owner_account_id: string | null;
   created_at: string;
   updated_at: string;
 }
