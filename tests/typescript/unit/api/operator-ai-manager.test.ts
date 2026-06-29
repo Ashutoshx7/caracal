@@ -209,7 +209,18 @@ describe('operator ai manager helpers', () => {
 
   it('builds one gateway entry per model, each routed through the provider resource', () => {
     const configs = buildStoreProviderConfigs(
-      [{ slug: 'openai', label: 'OpenAI', baseUrl: 'https://api', models: ['a', 'b'], contextWindow: 128000, enabled: true, sortOrder: 1, auth: AUTH }],
+      [
+        {
+          slug: 'openai',
+          label: 'OpenAI',
+          baseUrl: 'https://api',
+          models: ['a', 'b'],
+          contextWindow: 128000,
+          enabled: true,
+          sortOrder: 1,
+          auth: AUTH,
+        },
+      ],
       new Map([['openai', 'caracal-sys://operator-llm-openai']]),
       'http://gateway',
       fakeTransport(),
@@ -239,7 +250,18 @@ describe('operator ai manager helpers', () => {
   it('lets a store upstream shadow an env upstream and only seals the override slug', () => {
     const merged = mergeDesiredUpstreams(
       [{ id: 'openai', baseUrl: 'https://env', apiKey: 'env-key' }],
-      [{ slug: 'openai', label: 'OpenAI', baseUrl: 'https://store', models: ['m'], contextWindow: 0, enabled: true, sortOrder: 1, auth: AUTH }],
+      [
+        {
+          slug: 'openai',
+          label: 'OpenAI',
+          baseUrl: 'https://store',
+          models: ['m'],
+          contextWindow: 0,
+          enabled: true,
+          sortOrder: 1,
+          auth: AUTH,
+        },
+      ],
       { slug: 'openai', apiKey: 'new-key' },
     )
     expect(merged).toHaveLength(1)
@@ -249,7 +271,18 @@ describe('operator ai manager helpers', () => {
   it('reconciles a store upstream without a key when it is not the override', () => {
     const merged = mergeDesiredUpstreams(
       [],
-      [{ slug: 'claude', label: 'Claude', baseUrl: 'https://store', models: ['m'], contextWindow: 0, enabled: true, sortOrder: 1, auth: AUTH }],
+      [
+        {
+          slug: 'claude',
+          label: 'Claude',
+          baseUrl: 'https://store',
+          models: ['m'],
+          contextWindow: 0,
+          enabled: true,
+          sortOrder: 1,
+          auth: AUTH,
+        },
+      ],
     )
     expect(merged[0].apiKey).toBeUndefined()
   })
