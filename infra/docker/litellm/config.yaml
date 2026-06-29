@@ -1,19 +1,13 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Optional LiteLLM proxy: a stateless normalizer. No keys; the Caracal hook supplies the sealed key. Azure mapped so GPT-5 param quirks are remapped via drop_params; other models forward by wildcard.
+# Stateless LiteLLM normalizer: no providers, no keys, no endpoints. The Caracal hook supplies the sealed key and the operator's real endpoint per request; drop_params strips model-specific quirks. Any model id forwards to whatever endpoint Caracal sends, so adding a provider needs no config edit.
 
 litellm_settings:
   drop_params: true
   callbacks: ["caracal_key_hook.caracal_key_hook"]
 
 model_list:
-  - model_name: gpt-5.4-mini
-    litellm_params:
-      model: azure/gpt-5.4-mini
-      api_base: https://caracalaus.services.ai.azure.com
-      api_version: preview
-      base_model: azure/gpt-5.4-mini
   - model_name: "*"
     litellm_params:
       model: openai/*

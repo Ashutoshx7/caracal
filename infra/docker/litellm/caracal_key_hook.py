@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 # Caracal, a product of Garudex Labs
 #
-# Maps the gateway-injected upstream key (the bearer LiteLLM parses as the caller key) to the LiteLLM api_key, so the sealed Caracal key reaches the provider with no proxy-side keys or per-user setup.
+# Maps the gateway-injected key and the operator's real endpoint into the LiteLLM call, so any OpenAI-compatible provider works with no per-model config: the sealed key becomes api_key and X-Llm-Upstream becomes api_base.
 
 from litellm.integrations.custom_logger import CustomLogger
 
@@ -11,6 +11,10 @@ class CaracalKeyHook(CustomLogger):
         key = getattr(user_api_key_dict, "api_key", None)
         if key:
             data["api_key"] = key
+        headers = (data.get("metadata") or {}).get("headers") or {}
+        upstream = headers.get("x-llm-upstream")
+        if upstream:
+            data["api_base"] = upstream
         return data
 
 

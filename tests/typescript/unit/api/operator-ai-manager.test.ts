@@ -172,7 +172,7 @@ function fakeAdmin(): { admin: AdminClient; state: AdminState } {
 // confirm the gateway entries route through the right minted-mandate fetch.
 function fakeTransport(): OperatorLlmTransport {
   return {
-    governedFetch: (resourceIdentifier: string) => {
+    governedFetch: (resourceIdentifier: string, _upstream?: string) => {
       const fn = (async () => new Response('{}')) as unknown as typeof fetch
       ;(fn as unknown as { resourceIdentifier: string }).resourceIdentifier = resourceIdentifier
       return fn
@@ -193,6 +193,7 @@ function buildManager(identity: typeof IDENTITY | null) {
     resolveIdentity: () => identity,
     envUpstreams: [],
     gatewayUrl: 'http://gateway',
+    proxyUrl: 'http://litellm:4000/v1',
     transport: fakeTransport(),
     onRegistryChange: (configs) => {
       published = configs
@@ -262,10 +263,12 @@ describe('operator ai manager helpers', () => {
           auth: AUTH,
         },
       ],
+      'http://litellm:4000/v1',
       { slug: 'openai', apiKey: 'new-key' },
     )
     expect(merged).toHaveLength(1)
-    expect(merged[0]).toEqual({ id: 'openai', baseUrl: 'https://store', apiKey: 'new-key', auth: AUTH })
+    // The resource points at the proxy; the store endpoint travels separately as a per-call header.
+    expect(merged[0]).toEqual({ id: 'openai', baseUrl: 'http://litellm:4000/v1', apiKey: 'new-key', auth: AUTH })
   })
 
   it('reconciles a store upstream without a key when it is not the override', () => {
@@ -283,6 +286,7 @@ describe('operator ai manager helpers', () => {
           auth: AUTH,
         },
       ],
+      'http://litellm:4000/v1',
     )
     expect(merged[0].apiKey).toBeUndefined()
   })
