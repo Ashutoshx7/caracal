@@ -1180,9 +1180,9 @@ function ComposerMenu<T extends string>({
         disabled={pending}
         onClick={() => setOpen((v) => !v)}
         className={cx(
-          "inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60",
+          "inline-flex h-8 items-center gap-1.5 rounded-full border border-transparent px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60",
           open
-            ? "border-foreground/20 bg-accent text-foreground"
+            ? "bg-accent text-foreground"
             : "text-muted-foreground hover:bg-surface hover:text-foreground",
         )}
       >
