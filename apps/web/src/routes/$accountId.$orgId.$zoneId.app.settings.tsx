@@ -729,7 +729,7 @@ function AiOperatorSection() {
               </span>
               {systemZone.data ? (
                 <a
-                  href={systemZoneViewPath()}
+                  href={systemZoneViewPath(systemZone.data)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
