@@ -541,16 +541,21 @@ function OperatorWorkspace() {
             />
           </div>
         ) : null}
-        <button
-          type="button"
-          onClick={() => setFullscreen((value) => !value)}
-          aria-pressed={fullscreen}
-          aria-label={fullscreen ? "Exit full screen" : "Full screen chat"}
-          title={fullscreen ? "Exit full screen" : "Full screen chat"}
-          className="absolute right-2 top-2 z-30 hidden h-8 w-8 place-items-center rounded-md border border-border bg-card/80 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 lg:grid"
-        >
-          {fullscreen ? <ShrinkGlyph className="h-4 w-4" /> : <ExpandGlyph className="h-4 w-4" />}
-        </button>
+        {/* A thin header bar above the chat that holds the full-screen toggle, so the control sits
+            outside the message viewport and never overlaps the first message. Large screens only,
+            matching where the control is shown; the divider line bounds the messages below it. */}
+        <div className="hidden flex-shrink-0 items-center justify-end border-b border-border bg-background px-2 py-1.5 lg:flex">
+          <button
+            type="button"
+            onClick={() => setFullscreen((value) => !value)}
+            aria-pressed={fullscreen}
+            aria-label={fullscreen ? "Exit full screen" : "Full screen chat"}
+            title={fullscreen ? "Exit full screen" : "Full screen chat"}
+            className="grid h-8 w-8 place-items-center rounded-md border border-border bg-card/80 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            {fullscreen ? <ShrinkGlyph className="h-4 w-4" /> : <ExpandGlyph className="h-4 w-4" />}
+          </button>
+        </div>
         <OperatorErrorLog event={operatorNotice} />
         <SessionStrip
           conversations={conversations.data ?? []}
