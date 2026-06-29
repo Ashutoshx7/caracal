@@ -22,7 +22,10 @@ export const Response = memo(
   ({ className, ...props }: ResponseProps) => (
     <Streamdown
       className={cx(
-        "size-full text-sm leading-relaxed text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+        "size-full min-w-0 wrap-break-word text-sm leading-relaxed text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+        "[&_a]:wrap-break-word [&_code]:wrap-break-word [&_pre]:max-w-full [&_pre]:overflow-x-auto",
+        "[&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg",
+        "[&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto",
         className,
       )}
       {...props}

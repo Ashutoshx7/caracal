@@ -249,6 +249,11 @@ const RAIL_COLLAPSE_KEY = "caracal.operator.railCollapsed";
 const RAIL_WIDTH_KEY = "caracal.operator.railWidth";
 const RAIL_MIN_WIDTH = 208;
 const RAIL_DEFAULT_WIDTH = 240;
+
+// Upper bound on how long a send may stay pending before the working state is forced back to
+// idle. A send is already bounded by the client request timeout, so this only ever fires if a
+// request fails to settle in the browser, guaranteeing the indicator can never linger.
+const SEND_SETTLE_GUARD_MS = 60_000;
 const RAIL_COLLAPSED_WIDTH = "2.75rem";
 
 // The mode and autopilot chosen for the last new conversation are remembered so a fresh chat
@@ -1135,7 +1140,6 @@ function ComposerMenu<T extends string>({
   ariaLabel,
   align = "left",
   pending,
-  tone = "outline",
 }: {
   value: T;
   options: ComposerMenuOption<T>[];
@@ -1143,7 +1147,6 @@ function ComposerMenu<T extends string>({
   ariaLabel: string;
   align?: "left" | "right";
   pending?: boolean;
-  tone?: "outline" | "ghost";
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -1177,8 +1180,7 @@ function ComposerMenu<T extends string>({
         disabled={pending}
         onClick={() => setOpen((v) => !v)}
         className={cx(
-          "inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60",
-          tone === "ghost" ? "border border-transparent" : "border border-border",
+          "inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60",
           open
             ? "border-foreground/20 bg-accent text-foreground"
             : "text-muted-foreground hover:bg-surface hover:text-foreground",
@@ -1259,7 +1261,6 @@ function ModeMenu({
       onChange={onChange}
       ariaLabel="Operation mode"
       pending={pending}
-      tone="ghost"
     />
   );
 }
@@ -1296,7 +1297,6 @@ function AutopilotMenu({
       onChange={(next) => onChange(next === "auto")}
       ariaLabel="Approval mode"
       pending={pending}
-      tone="ghost"
     />
   );
 }
@@ -1340,6 +1340,22 @@ function ActivityStream({
 
   const { items, latestPlan } = useMemo(() => buildTimeline(turns ?? []), [turns]);
 
+  // Keep the transcript pinned to the newest message only while the operator is already reading
+  // the bottom. Once they scroll up to review earlier turns the stream stops yanking them back,
+  // and the snap is instant so streaming updates land without flicker or mid-message jumps.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+  const onStreamScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 80;
+  }, []);
+  useEffect(() => {
+    if (!stickToBottom.current) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [items, send.isPending]);
+
   function dispatch(text: string) {
     send.mutate(
       { message: text, provider: model ?? undefined },
@@ -1359,6 +1375,7 @@ function ActivityStream({
       return;
     }
     setMessage("");
+    stickToBottom.current = true;
     if (send.isPending || queued.length > 0) {
       setQueued((prev) => [...prev, { id: crypto.randomUUID(), text: value }]);
       return;
@@ -1414,6 +1431,16 @@ function ActivityStream({
     return () => onError?.(false);
   }, [send.isError, onError]);
 
+  // Guarantee the workspace returns to idle after a send: the request itself is bounded by the
+  // client request timeout, so this is a final backstop that clears the working state if a
+  // request ever fails to settle in the browser, never showing the indicator past a real send.
+  useEffect(() => {
+    if (!send.isPending) return;
+    const guard = window.setTimeout(() => send.reset(), SEND_SETTLE_GUARD_MS);
+    return () => window.clearTimeout(guard);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [send.isPending]);
+
   const empty = !isLoading && items.length === 0 && !send.isPending && !initialMessage;
 
   // The mode and approval controls now live inside the composer itself - the mode dropdown
@@ -1452,7 +1479,11 @@ function ActivityStream({
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <MemoryStrip zoneId={zoneId} conversationId={conversationId} />
 
-      <div className="scrollbar-thin flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-4">
+      <div
+        ref={scrollRef}
+        onScroll={onStreamScroll}
+        className="scrollbar-thin flex min-h-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto px-4 py-4"
+      >
         {isLoading ? (
           <StreamSkeleton />
         ) : (
@@ -1600,9 +1631,9 @@ function useAutoResizeTextarea({ minHeight, maxHeight }: { minHeight: number; ma
   return { ref, adjust };
 }
 
-// The Operator's natural-language input. The compact variant is the pinned follow-up
-// bar; the elevated variant is the glassy hero composer. Both auto-resize, send on
-// Enter (Shift+Enter for a newline), and carry a circular send control.
+// The Operator's natural-language input: one glassy composer shared by the pinned
+// follow-up bar and the hero entry point. It auto-resizes, sends on Enter (Shift+Enter
+// for a newline), and carries a circular send control.
 function OperatorInput({
   value,
   onChange,
@@ -1610,7 +1641,6 @@ function OperatorInput({
   pending,
   minHeight,
   autoFocus,
-  elevated,
   usage,
   model,
   onModelChange,
@@ -1622,7 +1652,6 @@ function OperatorInput({
   pending: boolean;
   minHeight: number;
   autoFocus?: boolean;
-  elevated?: boolean;
   usage?: SessionUsage;
   model?: string | null;
   onModelChange?: (id: string | null) => void;
@@ -1663,8 +1692,7 @@ function OperatorInput({
       disabled={!canSend}
       aria-busy={pending || undefined}
       className={cx(
-        "grid flex-shrink-0 place-items-center rounded-full transition-all",
-        elevated ? "h-9 w-9" : "h-8 w-8",
+        "grid h-9 w-9 flex-shrink-0 place-items-center rounded-full transition-all",
         canSend
           ? "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 active:scale-95"
           : "cursor-not-allowed bg-muted text-muted-foreground",
@@ -1678,29 +1706,9 @@ function OperatorInput({
     </button>
   );
 
-  if (elevated) {
-    return (
-      <div className="flex flex-col gap-2 rounded-2xl border border-border bg-card p-3 shadow-xl shadow-black/10 transition-colors focus-within:border-accent-purple/40 focus-within:ring-2 focus-within:ring-accent-purple/20">
-        <div className="px-1 pt-0.5">{textarea}</div>
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-1.5">
-            {onModelChange ? (
-              <OperatorModelSelector value={model ?? null} onChange={onModelChange} />
-            ) : null}
-            {leftSlot}
-          </div>
-          <div className="flex items-center gap-1.5">
-            {usage ? <UsageMeter usage={usage} /> : null}
-            {sendButton}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col gap-1.5 border border-input bg-card px-2 py-2 transition-colors focus-within:border-foreground/30 focus-within:ring-2 focus-within:ring-ring/30">
-      <div className="min-w-0 px-1">{textarea}</div>
+    <div className="flex flex-col gap-2 rounded-2xl border border-border bg-card p-3 shadow-xl shadow-black/10 transition-colors focus-within:border-accent-purple/40 focus-within:ring-2 focus-within:ring-accent-purple/20">
+      <div className="px-1 pt-0.5">{textarea}</div>
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
           {onModelChange ? (
@@ -1864,9 +1872,6 @@ function Composer({
         }
       />
       <AutopilotRow controls={controls} />
-      <p className="mt-1.5 px-0.5 text-[10px] text-muted-foreground">
-        Enter to send · Shift+Enter for a new line - nothing changes until you approve the plan.
-      </p>
     </div>
   );
 }
@@ -2026,7 +2031,6 @@ function NewChatHero({
               pending={pending}
               minHeight={60}
               autoFocus
-              elevated
               usage={ZERO_USAGE}
               model={model}
               onModelChange={onModelChange}
@@ -2141,19 +2145,29 @@ function StreamEntry({
   if (item.role === "user") {
     return (
       <div className="flex justify-end">
-        <p className="max-w-[82%] whitespace-pre-wrap border border-border bg-muted px-3 py-2 text-sm text-foreground">
-          {item.text}
-        </p>
+        <div
+          className="animate-rainbow min-w-0 max-w-[82%] overflow-hidden rounded-2xl bg-size-[200%] p-[1.5px]"
+          style={{
+            backgroundImage:
+              "linear-gradient(90deg, var(--rainbow-1), var(--rainbow-4), var(--accent-purple), var(--rainbow-5), var(--rainbow-1))",
+          }}
+        >
+          <p className="wrap-anywhere rounded-[14.5px] bg-muted px-3 py-2 text-sm whitespace-pre-wrap text-foreground">
+            {item.text}
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="group flex items-start gap-2">
-      <span className="mt-0.5 grid h-6 w-6 flex-shrink-0 place-items-center border border-border bg-muted text-foreground">
-        <OperatorGlyph className="h-3.5 w-3.5" />
-      </span>
-      <div className="flex min-w-0 max-w-[82%] flex-col gap-1.5">
+      <img
+        src="/chatbot.png"
+        alt="Caracal Operator"
+        className="h-8 w-8 shrink-0 select-none object-contain"
+      />
+      <div className="mt-1.5 flex min-w-0 max-w-[82%] flex-col gap-1.5">
         {item.reasoning ? (
           <Reasoning>
             <ReasoningTrigger />

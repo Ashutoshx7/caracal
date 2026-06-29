@@ -644,7 +644,7 @@ const ENDPOINT_SUGGESTIONS: { name: string; url: string }[] = [
   { name: "OpenAI", url: "https://api.openai.com/v1" },
   {
     name: "Azure Foundry",
-    url: "https://YOUR-RESOURCE.services.ai.azure.com/api/projects/PROJECT-NAME",
+    url: "https://YOUR-RESOURCE.services.ai.azure.com/PROVIDER-NAME/v1",
   },
   { name: "Anthropic", url: "https://api.anthropic.com/v1" },
   { name: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai" },
