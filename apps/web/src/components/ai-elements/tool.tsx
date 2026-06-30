@@ -157,12 +157,22 @@ export type ToolHeaderProps = Omit<ComponentProps<"button">, "type" | "title"> &
   type: string;
   title?: ReactNode;
   state: ToolState;
+  // Optional metadata rendered between the title and the status pill, such as a per-step risk
+  // signal. It sits in the header flow without affecting the title's truncation.
+  accessory?: ReactNode;
 };
 
 // The clickable header: the tool's name, a status pill derived from its lifecycle
 // state, and a disclosure chevron. The display name falls back to the `tool-` part
 // type with its prefix stripped.
-export const ToolHeader = ({ type, title, state, className, ...props }: ToolHeaderProps) => {
+export const ToolHeader = ({
+  type,
+  title,
+  state,
+  accessory,
+  className,
+  ...props
+}: ToolHeaderProps) => {
   const { open, setOpen, contentId } = useTool();
   const meta = STATUS_META[state];
   const name = title ?? type.replace(/^tool-/, "");
@@ -181,6 +191,7 @@ export const ToolHeader = ({ type, title, state, className, ...props }: ToolHead
     >
       <WrenchGlyph className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate text-sm text-foreground">{name}</span>
+      {accessory}
       <span
         className={cx(
           "inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",

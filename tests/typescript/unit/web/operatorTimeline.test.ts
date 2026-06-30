@@ -180,4 +180,73 @@ describe('buildTimeline', () => {
     // An advisory with no summary is treated as absent.
     expect(planB && planB.kind === 'plan' ? planB.advisory : 'missing').toBeUndefined()
   })
+
+  it('surfaces the advisory alignment verdict and teaching recommendation', () => {
+    const { latestPlan } = buildTimeline([
+      turn({
+        seq: 1,
+        kind: 'plan',
+        role: 'operator',
+        content: {
+          summary: 'Grant broad admin',
+          steps: [{ id: 's1', capability: 'grantAccess', summary: 'Grant', mutating: true }],
+          advisory: {
+            summary: 'This grant is wider than the intent needs.',
+            alignment: 'misaligned',
+            findings: [],
+            recommendation: 'Scope the grant to the single resource instead of the whole zone.',
+          },
+        },
+      }),
+    ])
+    expect(latestPlan?.advisory?.alignment).toBe('misaligned')
+    expect(latestPlan?.advisory?.recommendation).toBe(
+      'Scope the grant to the single resource instead of the whole zone.',
+    )
+  })
+
+  it('omits an unknown alignment and an empty recommendation', () => {
+    const { latestPlan } = buildTimeline([
+      turn({
+        seq: 1,
+        kind: 'plan',
+        role: 'operator',
+        content: {
+          summary: 'Read state',
+          steps: [{ id: 's1', capability: 'listZones', summary: 'List', mutating: false }],
+          advisory: { summary: 'Read-only.', alignment: 'bogus', findings: [], recommendation: '' },
+        },
+      }),
+    ])
+    expect(latestPlan?.advisory?.alignment).toBeUndefined()
+    expect(latestPlan?.advisory?.recommendation).toBeUndefined()
+  })
+
+  it('carries per-step dependencies and a recognized risk, dropping an unknown risk', () => {
+    const { latestPlan } = buildTimeline([
+      turn({
+        seq: 1,
+        kind: 'plan',
+        role: 'operator',
+        content: {
+          summary: 'Connect then grant',
+          steps: [
+            { id: 's1', capability: 'connectProvider', summary: 'Connect', mutating: true, risk: 'high' },
+            {
+              id: 's2',
+              capability: 'grantAccess',
+              summary: 'Grant',
+              mutating: true,
+              depends_on: ['s1'],
+              risk: 'bogus',
+            },
+          ],
+        },
+      }),
+    ])
+    expect(latestPlan?.steps[0]?.risk).toBe('high')
+    expect(latestPlan?.steps[0]?.dependsOn).toEqual([])
+    expect(latestPlan?.steps[1]?.dependsOn).toEqual(['s1'])
+    expect(latestPlan?.steps[1]?.risk).toBeUndefined()
+  })
 })

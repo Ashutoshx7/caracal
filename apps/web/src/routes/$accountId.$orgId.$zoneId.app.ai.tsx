@@ -135,6 +135,7 @@ import {
   type PlanAdvisoryView,
   type PlanItem,
   type PlanStepView,
+  type StepRisk,
   type TimelineItem,
 } from "@/platform/operator/timeline";
 import { planCitations } from "@/platform/operator/citations";
@@ -1337,6 +1338,10 @@ function ActivityStream({
   const { data: autopilotAvailable } = useOperatorAutopilotAvailable();
   const [message, setMessage] = useState("");
   const [queued, setQueued] = useState<QueuedMessage[]>([]);
+  // The message currently in flight, echoed in the transcript the instant it is sent so the
+  // operator's own words never disappear into the round trip. It clears when the send settles and
+  // the authoritative turn arrives from the ledger.
+  const [inFlight, setInFlight] = useState<string | null>(null);
 
   const { items, latestPlan } = useMemo(() => buildTimeline(turns ?? []), [turns]);
 
@@ -1357,9 +1362,13 @@ function ActivityStream({
   }, [items, send.isPending]);
 
   function dispatch(text: string) {
+    setInFlight(text);
     send.mutate(
       { message: text, provider: model ?? undefined },
-      { onSuccess: (result) => onUsage?.(result) },
+      {
+        onSuccess: (result) => onUsage?.(result),
+        onSettled: () => setInFlight(null),
+      },
     );
   }
 
@@ -1497,6 +1506,14 @@ function ActivityStream({
             />
           ))
         )}
+
+        {send.isPending && inFlight ? (
+          <div className="flex justify-end">
+            <p className="wrap-anywhere min-w-0 max-w-[82%] rounded-2xl border border-border bg-muted px-3 py-2 text-sm whitespace-pre-wrap text-foreground opacity-60">
+              {inFlight}
+            </p>
+          </div>
+        ) : null}
 
         {send.isPending ? (
           <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
@@ -2145,17 +2162,9 @@ function StreamEntry({
   if (item.role === "user") {
     return (
       <div className="flex justify-end">
-        <div
-          className="animate-rainbow min-w-0 max-w-[82%] overflow-hidden rounded-2xl bg-size-[200%] p-[1.5px]"
-          style={{
-            backgroundImage:
-              "linear-gradient(90deg, var(--rainbow-1), var(--rainbow-4), var(--accent-purple), var(--rainbow-5), var(--rainbow-1))",
-          }}
-        >
-          <p className="wrap-anywhere rounded-[14.5px] bg-muted px-3 py-2 text-sm whitespace-pre-wrap text-foreground">
-            {item.text}
-          </p>
-        </div>
+        <p className="wrap-anywhere min-w-0 max-w-[82%] rounded-2xl border border-border bg-muted px-3 py-2 text-sm whitespace-pre-wrap text-foreground">
+          {item.text}
+        </p>
       </div>
     );
   }
@@ -2258,17 +2267,56 @@ function advisoryTone(severity: PlanAdvisoryView["findings"][number]["severity"]
   return "muted";
 }
 
-// The advisory security review surfaced above the approval controls, so the reviewer weighs
-// over-grant and blast-radius before approving. It never gates the decision - the approve and
-// reject controls are unchanged whether or not findings are present.
+// Maps the guardian's intent-alignment verdict to a label and badge tone. The verdict is the
+// headline of the review: it names whether the plan matches how Caracal is meant to be used,
+// without ever gating the human's decision.
+function alignmentVerdict(alignment: NonNullable<PlanAdvisoryView["alignment"]>): {
+  label: string;
+  tone: BadgeTone;
+} {
+  if (alignment === "aligned") return { label: "Aligned", tone: "success" };
+  if (alignment === "risky") return { label: "Needs care", tone: "warning" };
+  return { label: "Misaligned", tone: "danger" };
+}
+
+// A compact per-step risk signal shown in the step header. Low risk is the common case and is left
+// unmarked so the signal stays an exception the eye can find; only the planner's medium and high
+// tags surface, colored by consequence.
+function StepRiskBadge({ risk }: { risk?: StepRisk }) {
+  if (!risk || risk === "low") return null;
+  const tone =
+    risk === "high"
+      ? "border-destructive/30 bg-destructive/10 text-destructive"
+      : "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400";
+  return (
+    <span
+      className={cx(
+        "inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+        tone,
+      )}
+    >
+      {risk} risk
+    </span>
+  );
+}
+
+// The advisory security review surfaced above the approval controls, so the reviewer weighs intent
+// alignment, over-grant, and blast-radius before approving. It never gates the decision - the
+// approve and reject controls are unchanged whether or not findings are present. When the guardian
+// judged the plan risky or misaligned it also names the Caracal-correct approach, surfaced as the
+// recommendation so the review teaches the right path rather than only flagging the wrong one.
 function PlanAdvisory({ advisory }: { advisory: PlanAdvisoryView }) {
+  const verdict = advisory.alignment ? alignmentVerdict(advisory.alignment) : null;
   return (
     <div className="border-t border-border bg-surface px-3.5 py-2.5">
-      <div className="flex items-center gap-2">
-        <AlertGlyph className="h-3 w-3 text-muted-foreground" />
-        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Security review
-        </span>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <AlertGlyph className="h-3 w-3 text-muted-foreground" />
+          <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Security review
+          </span>
+        </div>
+        {verdict ? <Badge tone={verdict.tone}>{verdict.label}</Badge> : null}
       </div>
       <p className="mt-1.5 text-xs text-foreground">{advisory.summary}</p>
       {advisory.findings.length > 0 ? (
@@ -2280,6 +2328,14 @@ function PlanAdvisory({ advisory }: { advisory: PlanAdvisoryView }) {
             </li>
           ))}
         </ul>
+      ) : null}
+      {advisory.recommendation ? (
+        <div className="mt-2.5 border-l-2 border-border pl-2.5">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Recommended approach
+          </span>
+          <p className="mt-0.5 text-xs text-foreground">{advisory.recommendation}</p>
+        </div>
       ) : null}
     </div>
   );
@@ -2351,6 +2407,9 @@ function PlanArtifact({
   const mutatingCount = plan.steps.filter((step) => step.mutating).length;
   const catalog = useOperatorCapabilities().data ?? [];
   const sources = planCitations(plan, catalog);
+  // Resolves a step's dependency ids to their human summaries so an ordering hint reads as
+  // "runs after Connect provider" rather than the opaque step id the planner assigned.
+  const stepLabels = new Map(plan.steps.map((step) => [step.id, step.summary]));
 
   return (
     <div className="border border-border bg-card shadow-sm">
@@ -2371,24 +2430,33 @@ function PlanArtifact({
       </div>
 
       <div className="flex flex-col">
-        {plan.steps.map((step) => (
-          <Tool key={step.id} className="border-b border-border last:border-b-0">
-            <ToolHeader
-              type={`tool-${step.capability}`}
-              title={step.summary}
-              state={stepToolState(step, plan)}
-            />
-            <ToolContent>
-              <ToolInput input={step.args} />
-              {step.detail ? (
-                <ToolOutput
-                  output={step.status === "failed" ? undefined : step.detail}
-                  errorText={step.status === "failed" ? step.detail : undefined}
-                />
-              ) : null}
-            </ToolContent>
-          </Tool>
-        ))}
+        {plan.steps.map((step) => {
+          const dependencyLabels = step.dependsOn.map((id) => stepLabels.get(id) ?? id);
+          return (
+            <Tool key={step.id} className="border-b border-border last:border-b-0">
+              <ToolHeader
+                type={`tool-${step.capability}`}
+                title={step.summary}
+                state={stepToolState(step, plan)}
+                accessory={<StepRiskBadge risk={step.risk} />}
+              />
+              <ToolContent>
+                {dependencyLabels.length > 0 ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    Runs after {dependencyLabels.join(", ")}
+                  </p>
+                ) : null}
+                <ToolInput input={step.args} />
+                {step.detail ? (
+                  <ToolOutput
+                    output={step.status === "failed" ? undefined : step.detail}
+                    errorText={step.status === "failed" ? step.detail : undefined}
+                  />
+                ) : null}
+              </ToolContent>
+            </Tool>
+          );
+        })}
       </div>
 
       {plan.advisory ? <PlanAdvisory advisory={plan.advisory} /> : null}
