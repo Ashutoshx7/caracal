@@ -7,9 +7,6 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import {
   dispatch,
   DispatchError,
-  findCommand,
-  scopeFor,
-  MANAGEMENT_COMMANDS,
   type DispatchContext,
   type FlagMap,
   type Principal,
@@ -23,11 +20,12 @@ import { redisMinuteBucket, type RedisClient } from '../redis.js'
 
 const MAX_BODY_BYTES = 64 * 1024
 
-// The header the in-process Operator reader stamps to read a tenant zone's live state. The token
-// is minted in the reader's own (system) zone; this names the zone the read targets. It is honored
-// only for the reserved Operator reader subject and only for non-mutating commands, so it grants a
-// read-only cross-zone view to the platform identity and nothing else — a tenant's own control key
-// can never use it to read another zone.
+// The header the in-process Operator stamps to act in a tenant zone's live state. The token is
+// minted in the Operator's own (system) zone; this names the zone the command targets. It is
+// honored only for the reserved Operator subject, so it grants the platform identity governance of
+// the targeted zone and nothing else — a tenant's own control key can never use it to reach another
+// zone. The Operator governs every zone it operates in, so the header carries both reads and the
+// approval-gated mutations the Operator applies on the user's behalf.
 const ZONE_SCOPE_HEADER = 'x-caracal-zone-scope'
 
 interface InvokeBody {
@@ -48,38 +46,27 @@ export interface InvokeDeps {
   // Pre-authentication per-IP request ceiling that throttles unauthenticated
   // floods before they reach JWT verification and JWKS fetches. 0 disables it.
   ipRateLimitPerMin: number
-  // The application id of the reserved Operator reader, or null when self-governance is not
-  // configured. Only this subject may use the zone-scope header to read a tenant zone it is not
-  // bound to, and only for non-mutating commands. Resolved lazily because the identity is
-  // provisioned after the server is listening.
-  resolvePlatformReaderSubject?: () => string | null
-}
-
-// Whether a control command/subcommand is a non-mutating read, derived from the engine's command
-// metadata so the cross-zone read gate can never drift from the real scope verb of a command. An
-// unknown command is treated as not-read, so the gate fails closed.
-function isReadCommand(command: string, subcommand: string): boolean {
-  const desc = findCommand(MANAGEMENT_COMMANDS, command)
-  if (!desc) return false
-  return scopeFor(desc, subcommand) === 'read'
+  // The application id of the reserved Operator, or null when self-governance is not configured.
+  // Only this subject may use the zone-scope header to govern a tenant zone it is not bound to,
+  // for both reads and the approval-gated mutations it applies on the user's behalf. Resolved
+  // lazily because the identity is provisioned after the server is listening.
+  resolvePlatformOperatorSubject?: () => string | null
 }
 
 // Resolves the zone a request acts in. A request normally acts in the token's own zone. The
-// reserved Operator reader may target another zone for a non-mutating read by stamping the
-// zone-scope header; any other use of the header is ignored and the token's own zone applies, so
-// the header can never widen authority for a tenant key or for a mutating command.
+// reserved Operator may target another zone by stamping the zone-scope header, because it governs
+// every zone it operates in; any other use of the header is ignored and the token's own zone
+// applies, so the header can never widen authority for a tenant key.
 function resolveEffectiveZone(
   req: FastifyRequest,
   deps: InvokeDeps,
   claims: { sub: string; zoneId?: string },
-  command: string,
-  subcommand: string,
 ): string | undefined {
   const requested = req.headers[ZONE_SCOPE_HEADER]
   const target = typeof requested === 'string' ? requested.trim() : ''
   if (!target || target === claims.zoneId) return claims.zoneId
-  const readerSubject = deps.resolvePlatformReaderSubject?.() ?? null
-  if (readerSubject && claims.sub === readerSubject && isReadCommand(command, subcommand)) return target
+  const operatorSubject = deps.resolvePlatformOperatorSubject?.() ?? null
+  if (operatorSubject && claims.sub === operatorSubject) return target
   return claims.zoneId
 }
 
@@ -174,9 +161,9 @@ async function handle(req: FastifyRequest, reply: FastifyReply, deps: InvokeDeps
   const authorizedBy = typeof body?.authorized_by === 'string' && body.authorized_by.length <= 256 ? body.authorized_by : undefined
 
   // The zone the request acts in: the token's own zone, or a tenant zone the reserved Operator
-  // reader targets for a non-mutating read. The audit records the effective zone, so a cross-zone
-  // read is attributed to the zone actually read.
-  const effectiveZone = resolveEffectiveZone(req, deps, claims, command, subcommand)
+  // targets via the zone-scope header. The audit records the effective zone, so a cross-zone
+  // command is attributed to the zone it actually acts in.
+  const effectiveZone = resolveEffectiveZone(req, deps, claims)
 
   const principal: Principal = {
     kind: 'remote',

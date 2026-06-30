@@ -466,7 +466,7 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
       redis,
       auditHmacKey: cfg.auditHmacKey,
       controlLogLevel: cfg.logLevel,
-      resolvePlatformReaderSubject: () => operatorControlIdentity.current?.applicationId ?? null,
+      resolvePlatformOperatorSubject: () => operatorControlIdentity.current?.applicationId ?? null,
     })
   }
 
