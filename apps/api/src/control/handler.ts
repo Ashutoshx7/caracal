@@ -34,6 +34,7 @@ interface InvokeBody {
   command?: unknown
   subcommand?: unknown
   flags?: unknown
+  authorized_by?: unknown
 }
 
 export interface InvokeDeps {
@@ -167,6 +168,10 @@ async function handle(req: FastifyRequest, reply: FastifyReply, deps: InvokeDeps
   const subcommand = typeof body?.subcommand === 'string' ? body.subcommand : ''
   const flags = body?.flags && typeof body.flags === 'object' && !Array.isArray(body.flags) ? (body.flags as FlagMap) : undefined
   const idempotencyKey = typeof flags?.['idempotency-key'] === 'string' ? (flags['idempotency-key'] as string) : undefined
+  // A subject-asserted attribution for the authority the caller acted on behalf of, recorded in
+  // the audit metadata so an approval-gated change is reconstructable from the tamper-evident
+  // chain. Bounded and treated as opaque annotation, never as an authorization input.
+  const authorizedBy = typeof body?.authorized_by === 'string' && body.authorized_by.length <= 256 ? body.authorized_by : undefined
 
   // The zone the request acts in: the token's own zone, or a tenant zone the reserved Operator
   // reader targets for a non-mutating read. The audit records the effective zone, so a cross-zone
@@ -194,6 +199,7 @@ async function handle(req: FastifyRequest, reply: FastifyReply, deps: InvokeDeps
       decision: 'allow',
       requestId,
       idempotencyKey,
+      authorizedBy,
     })
     return reply.code(200).send({ ok: true, result })
   } catch (err) {
@@ -210,6 +216,7 @@ async function handle(req: FastifyRequest, reply: FastifyReply, deps: InvokeDeps
       reason,
       requestId,
       idempotencyKey,
+      authorizedBy,
     })
     if (err instanceof DispatchError) {
       const status = STATUS_FOR_CODE[err.code] ?? 400

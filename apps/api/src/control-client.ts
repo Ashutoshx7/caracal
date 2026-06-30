@@ -27,6 +27,11 @@ export interface ControlClientConfig {
   // Operator can read a tenant zone's live state without provisioning any identity in that zone.
   // Absent for an identity acting in its own zone, which is the common path.
   zoneScope?: string
+  // An optional attribution string the acting identity asserts for the human or upstream
+  // authority on whose behalf it invokes. It rides in the invoke body and is recorded verbatim
+  // in the control.invoke audit metadata as a subject-asserted annotation; it is never an
+  // authorization input, so the action stays bounded entirely by the token's own scopes and zone.
+  authorizedBy?: string
 }
 
 // A control invoke failed. stage distinguishes a token-exchange failure from a control
@@ -116,10 +121,12 @@ export function createControlClient(config: ControlClientConfig, fetchImpl: Fetc
       const token = await mintToken(scopes)
       const headers: Record<string, string> = { 'content-type': 'application/json', authorization: `Bearer ${token}` }
       if (config.zoneScope) headers['x-caracal-zone-scope'] = config.zoneScope
+      const invokeBody: Record<string, unknown> = { command, subcommand, flags }
+      if (config.authorizedBy) invokeBody.authorized_by = config.authorizedBy
       const res = await fetchImpl(`${controlUrl}${CONTROL_INVOKE_PATH}`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ command, subcommand, flags }),
+        body: JSON.stringify(invokeBody),
       })
       const body = await readJson(res)
       if (!res.ok) {
