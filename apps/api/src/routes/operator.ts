@@ -42,7 +42,7 @@ import {
 import { type GovernanceLimits } from '../operator-ai-governance.js'
 import { runVerifier, type AgentContext, type OperatorMode, type SecurityAdvisory } from '../operator-agents.js'
 import { recallZoneMemory, rememberAppliedChange } from '../operator-zone-memory.js'
-import { createOrchestrator } from '../operator-orchestrator.js'
+import { createOrchestrator, type OnProgress, type ProgressEvent } from '../operator-orchestrator.js'
 import { createStateResearcher } from '../operator-research.js'
 import { retrieveDocs } from '../operator-docs.js'
 import { summarizeHistory, type ConversationFacts } from '../operator-memory.js'
@@ -129,6 +129,23 @@ const MessageBody = z
   })
   .strict()
 const MESSAGE_CONTEXT_WINDOW = 10
+
+// The response headers that open a Server-Sent Events stream for a message turn. no-transform
+// keeps a proxy from buffering the stream, so stage events reach the client as they happen.
+const SSE_HEADERS = {
+  'content-type': 'text/event-stream',
+  'cache-control': 'no-cache, no-transform',
+  connection: 'keep-alive',
+  'x-accel-buffering': 'no',
+} as const
+
+// Writes one Server-Sent Event frame to the hijacked response. The route owns the only three
+// event names: stage (a progress signal), result (the authoritative success body), and error (a
+// governance or gateway stop). The terminal frame carries the exact body the non-streaming path
+// would return, so streaming changes only delivery timing, never the decided outcome.
+function writeSseEvent(reply: FastifyReply, event: 'stage' | 'result' | 'error', data: unknown): void {
+  reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+}
 
 interface PlanTurnContent {
   summary: string
@@ -1371,6 +1388,28 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       }
     }
 
+    // The console can ask for a live stream by negotiating Server-Sent Events. When it does, the
+    // route hijacks the response, opens the stream, and forwards each deliberation stage to it as
+    // it happens; the same governed turn then writes one terminal frame carrying the exact body the
+    // JSON path would have returned. Streaming changes only when the bytes arrive, never what is
+    // decided: validation, preview, approval, and apply are untouched, and a governance or gateway
+    // stop becomes a terminal error frame rather than being swallowed.
+    const wantsStream = (req.headers.accept ?? '').includes('text/event-stream')
+    if (wantsStream) {
+      reply.hijack()
+      reply.raw.writeHead(200, SSE_HEADERS)
+    }
+    const emit: OnProgress = wantsStream ? (event: ProgressEvent) => writeSseEvent(reply, 'stage', event) : () => {}
+    // Delivers a turn's result to the caller: a JSON response on the normal path, or the matching
+    // terminal SSE frame on the stream. A status at or above 400 is a stop the human must see, so
+    // it is sent as an error frame carrying its status; anything else is the authoritative result.
+    const finish = (resultStatus: number, body: Record<string, unknown>) => {
+      if (!wantsStream) return reply.code(resultStatus).send(body)
+      if (resultStatus < 400) writeSseEvent(reply, 'result', body)
+      else writeSseEvent(reply, 'error', { ...body, status: resultStatus })
+      reply.raw.end()
+    }
+
     try {
       // For a read tier the orchestrator first gathers live state through governed reads, so the
       // answer is grounded in current state rather than the model's guess. The researcher is bound
@@ -1395,13 +1434,14 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         researcher,
         mode,
         docs: (query) => retrieveDocs(query),
+        onProgress: emit,
       })
 
       // Defense in depth: ask mode is read-only, so a plan must never be persisted on this path
       // regardless of what the orchestrator returned. The orchestrator already refuses to plan in
       // ask mode; this guarantees it at the route even if that ever regressed.
       if (mode === 'ask' && outcome.kind === 'plan') {
-        return reply.code(403).send({ error: 'mode_forbidden' })
+        return finish(403, { error: 'mode_forbidden' })
       }
 
       if (outcome.kind === 'plan') {
@@ -1417,7 +1457,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
             JSON.stringify({ message }),
             req.actor.id,
           )
-          return reply.code(200).send({
+          return finish(200, {
             intent: 'plan',
             tier,
             ok: false,
@@ -1443,7 +1483,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
             JSON.stringify({ message: 'The proposed plan did not pass validation.' }),
             req.actor.id,
           )
-          return reply.code(200).send({
+          return finish(200, {
             intent: 'plan',
             tier,
             ok: false,
@@ -1469,9 +1509,9 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
           req.actor.id,
         )
         if (!turn.ok) {
-          return reply
-            .code(turn.reason === 'archived' ? 409 : 404)
-            .send({ error: turn.reason === 'archived' ? 'conversation_archived' : 'conversation_not_found' })
+          return finish(turn.reason === 'archived' ? 409 : 404, {
+            error: turn.reason === 'archived' ? 'conversation_archived' : 'conversation_not_found',
+          })
         }
 
         // Caracal-governed autopilot: in agent mode, when the conversation has engaged autopilot
@@ -1508,7 +1548,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
           }
         }
 
-        return reply.code(201).send({
+        return finish(201, {
           intent: 'plan',
           tier,
           ok: true,
@@ -1527,7 +1567,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       const noteContent: Record<string, unknown> = { text: answer.text }
       if (answer.reasoning) noteContent.reasoning = answer.reasoning
       const turn = await appendTurnTx(fastify.db, params.id, params.zoneId, 'operator', 'note', JSON.stringify(noteContent), req.actor.id)
-      return reply.code(201).send({
+      return finish(201, {
         intent: 'explain',
         tier,
         ok: explained.ok,
@@ -1537,9 +1577,17 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         ...meta(),
       })
     } catch (err) {
-      if (err instanceof GatewayUnavailableError) return reply.code(409).send({ error: 'ai_unavailable' })
-      if (err instanceof GatewayBudgetError) return reply.code(429).send({ error: 'ai_budget_exceeded', max_calls: err.maxCalls })
-      if (err instanceof GatewayError) return reply.code(502).send({ error: 'ai_unreachable', attempts: err.attempts })
+      if (err instanceof GatewayUnavailableError) return finish(409, { error: 'ai_unavailable' })
+      if (err instanceof GatewayBudgetError) return finish(429, { error: 'ai_budget_exceeded', max_calls: err.maxCalls })
+      if (err instanceof GatewayError) return finish(502, { error: 'ai_unreachable', attempts: err.attempts })
+      // An unexpected failure on the stream has already taken over the response, so it cannot fall
+      // through to the framework's error handler; it is closed as a terminal error frame. On the
+      // JSON path it rethrows unchanged so the framework still maps it to a 500.
+      if (wantsStream) {
+        writeSseEvent(reply, 'error', { error: 'ai_failed', status: 500 })
+        reply.raw.end()
+        return
+      }
       throw err
     }
   })

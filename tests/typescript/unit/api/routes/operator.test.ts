@@ -1820,6 +1820,20 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     return fn as unknown as typeof fetch
   }
 
+  // Parses a Server-Sent Events payload into its frames, so a streaming response can be asserted
+  // by event name and decoded data the same way a streaming client would read it.
+  function parseSse(payload: string): { event: string; data: unknown }[] {
+    return payload
+      .split('\n\n')
+      .filter((block) => block.trim().length > 0)
+      .map((block) => {
+        const lines = block.split('\n')
+        const event = lines.find((l) => l.startsWith('event: '))!.slice(7)
+        const data = lines.find((l) => l.startsWith('data: '))!.slice(6)
+        return { event, data: JSON.parse(data) }
+      })
+  }
+
   it('rejects an empty message', async () => {
     const { app } = buildApp(true, { aiProviders: [provider], fetchImpl: fetchReturning() })
     await app.ready()
@@ -1960,6 +1974,95 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     expect(body.turn).toMatchObject({ kind: 'plan' })
     expect(body.validation.ok).toBe(true)
     expect(body.preview.steps[0]).toMatchObject({ effect: 'create' })
+  })
+
+  it('streams a plan turn as Server-Sent Events with stage frames then a terminal result', async () => {
+    const plan = {
+      summary: 'Connect GitHub',
+      steps: [{ id: 's1', capability: 'connectProvider', args: { name: 'GitHub', kind: 'oauth2_authorization_code' } }],
+    }
+    const fetchImpl = fetchReturning('{"tier":"change"}', JSON.stringify(plan))
+    const { app, clientQuery, db } = buildApp(true, { aiProviders: [provider], fetchImpl })
+    // user message turn (BEGIN, FOR UPDATE, UPDATE seq, INSERT, COMMIT)
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', next_seq: 1 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-1', seq: 1, kind: 'message' }] })
+      .mockResolvedValueOnce(undefined)
+    db.query
+      .mockResolvedValueOnce({ rows: [] }) // latest plan seq
+      .mockResolvedValueOnce({ rows: [] }) // error rows
+      .mockResolvedValueOnce({ rows: [{ seq: 1, role: 'user', kind: 'message', content: { text: 'connect github' } }] }) // messages
+      .mockResolvedValueOnce({ rows: [] }) // facts: decision-turn history
+      .mockResolvedValueOnce({ rows: [] }) // previewPlan: provider name free
+    // plan turn persist (BEGIN, FOR UPDATE, UPDATE seq, INSERT, COMMIT)
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', next_seq: 2 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-2', seq: 2, kind: 'plan' }] })
+      .mockResolvedValueOnce(undefined)
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'connect github' },
+      headers: { accept: 'text/event-stream' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('text/event-stream')
+    const frames = parseSse(res.body)
+    // The deliberation stages stream first, then exactly one terminal result frame.
+    expect(frames.filter((f) => f.event === 'stage').map((f) => (f.data as { stage: string }).stage)).toEqual([
+      'triaging',
+      'gathering',
+      'planning',
+      'critiquing',
+      'guarding',
+    ])
+    const terminal = frames.at(-1)!
+    expect(terminal.event).toBe('result')
+    // The terminal frame carries the exact authoritative body the JSON path returns: a validated,
+    // previewed, approval-gated plan. Streaming changed only delivery, never the governed outcome.
+    expect(terminal.data).toMatchObject({ intent: 'plan', tier: 'change', ok: true })
+    expect((terminal.data as { validation: { ok: boolean } }).validation.ok).toBe(true)
+    expect((terminal.data as { preview: { steps: { effect: string }[] } }).preview.steps[0].effect).toBe('create')
+  })
+
+  it('streams a governance budget refusal as a terminal error frame', async () => {
+    // A one-call budget: triage consumes it and the planner call is refused, so the turn fails
+    // closed. On the stream the refusal is a terminal error frame, never silently swallowed.
+    const fetchImpl = fetchReturning('{"tier":"change"}', '{"summary":"x","steps":[]}')
+    const { app, clientQuery, db } = buildApp(true, {
+      aiProviders: [provider],
+      fetchImpl,
+      aiGovernance: { maxOutputTokens: 0, maxCallsPerTurn: 1 },
+    })
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: false, next_seq: 1 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-1', seq: 1, kind: 'message' }] })
+      .mockResolvedValueOnce(undefined)
+    db.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'connect github' },
+      headers: { accept: 'text/event-stream' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('text/event-stream')
+    const frames = parseSse(res.body)
+    const terminal = frames.at(-1)!
+    expect(terminal.event).toBe('error')
+    expect(terminal.data).toMatchObject({ error: 'ai_budget_exceeded', max_calls: 1, status: 429 })
   })
 
   it('auto-approves a low-risk plan in agent mode when autopilot is engaged and the policy allows it', async () => {

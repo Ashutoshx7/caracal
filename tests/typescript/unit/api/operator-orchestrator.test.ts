@@ -559,4 +559,38 @@ describe('createOrchestrator', () => {
     const result = await createOrchestrator().handle(planningGateway('change', plan), 'connect github', emptyContext, { mode: 'agent' })
     expect(result.outcome.kind).toBe('plan')
   })
+
+  it('emits the deliberation stages of a plan turn in order to a progress listener', async () => {
+    const plan = {
+      summary: 'Connect GitHub',
+      steps: [{ id: 's1', capability: 'connectProvider', args: { name: 'GitHub', kind: 'api_key' } }],
+    }
+    const advisory = { summary: 'Narrow and aligned.', findings: [] }
+    const stages: string[] = []
+    await createOrchestrator().handle(composingGateway(plan, advisory), 'connect github', emptyContext, {
+      researcher: { gather: vi.fn().mockResolvedValue({ evidence: [] }) },
+      onProgress: (event) => stages.push(event.stage),
+    })
+    // A clean plan walks triage → gather → plan → critique → guard; no repair or revise pass runs
+    // because the first proposal validates and the critic finds it sound.
+    expect(stages).toEqual(['triaging', 'gathering', 'planning', 'critiquing', 'guarding'])
+  })
+
+  it('emits the read stages and never a plan stage for an answer turn', async () => {
+    const stages: string[] = []
+    await createOrchestrator().handle(gatewayFor('read', 'two providers'), 'what do i have', emptyContext, {
+      researcher: { gather: vi.fn().mockResolvedValue({ evidence: [] }) },
+      onProgress: (event) => stages.push(event.stage),
+    })
+    // A read turn triages, gathers state, and answers — it never enters the planning stages.
+    expect(stages).toEqual(['triaging', 'gathering', 'answering'])
+  })
+
+  it('emits no gathering stage for a conversational turn that reads no state', async () => {
+    const stages: string[] = []
+    await createOrchestrator().handle(gatewayFor('conversational'), 'hi', emptyContext, {
+      onProgress: (event) => stages.push(event.stage),
+    })
+    expect(stages).toEqual(['triaging', 'answering'])
+  })
 })

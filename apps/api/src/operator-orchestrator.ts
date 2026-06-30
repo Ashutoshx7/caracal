@@ -69,6 +69,19 @@ export interface OrchestrationResult {
   outcome: OrchestrationOutcome
 }
 
+// The deliberation stages a turn can pass through, emitted purely so a streaming caller can show
+// live progress. A stage signal carries no authority and changes nothing: it never gates, never
+// alters the outcome, and is fire-and-forget — the same turn produces the same governed result
+// whether or not anyone is listening. Read stages gather state and answer; plan stages propose,
+// repair, critique, revise, and guard.
+export type ProgressStage = 'triaging' | 'gathering' | 'planning' | 'repairing' | 'critiquing' | 'revising' | 'guarding' | 'answering'
+
+export interface ProgressEvent {
+  stage: ProgressStage
+}
+
+export type OnProgress = (event: ProgressEvent) => void
+
 // The planning skill: the deterministic spine's proposer. It returns a proposed plan grounded
 // in the capability catalog; the route validates and previews it before it is ever actionable.
 const plannerSkill: PlanSkill = {
@@ -142,6 +155,11 @@ export interface HandleOptions {
   // package names, endpoints, and fields rather than inventing them. Omitted when documentation
   // grounding is not wired, in which case answers fall back to the model's own knowledge.
   docs?: (query: string) => DocSnippet[]
+  // Receives a stage signal each time the turn advances to a new deliberation step. It is purely
+  // informational — a streaming caller renders live progress from it — and holds no authority: it
+  // never alters the outcome and is never awaited, so a turn produces the same governed result with
+  // or without a listener. Omitted when the caller does not stream.
+  onProgress?: OnProgress
 }
 
 // The deterministic answer an ask-mode conversation returns for a request that would require a
@@ -196,7 +214,9 @@ async function deliberatePlan(
   message: string,
   context: AgentContext,
   skill: PlanSkill,
+  emit: OnProgress,
 ): Promise<AgentResult<PlannerProposal>> {
+  emit({ stage: 'planning' })
   const proposal = await skill.run(gateway, message, context)
   if (!proposal.ok || proposal.value.steps.length === 0) return proposal
 
@@ -207,6 +227,7 @@ async function deliberatePlan(
       priorSummary: candidate.value.summary,
       diagnostics: validation.diagnostics.map((d) => `${d.step_id}: ${d.message}`),
     }
+    emit({ stage: 'repairing' })
     const repaired = await runPlanner(gateway, message, context, feedback)
     if (repaired.ok && validateProposedPlan(repaired.value).ok) candidate = repaired
     else return candidate
@@ -217,12 +238,14 @@ async function deliberatePlan(
   // still proposes steps and still validates against the catalog. A 'sound' verdict, an empty
   // deficiency list, or a failed critique leaves the plan unchanged, so the critic only ever
   // sharpens a proposal and never blocks or empties one.
+  emit({ stage: 'critiquing' })
   const critique = await runCritic(gateway, candidate.value, message, context)
   if (critique.ok && critique.value.verdict === 'revise' && critique.value.deficiencies.length > 0) {
     const feedback: RepairFeedback = {
       priorSummary: candidate.value.summary,
       diagnostics: critique.value.deficiencies.map((d) => d.issue),
     }
+    emit({ stage: 'revising' })
     const revised = await runPlanner(gateway, message, context, feedback)
     if (revised.ok && revised.value.steps.length > 0 && validateProposedPlan(revised.value).ok) return revised
   }
@@ -247,6 +270,8 @@ export function createOrchestrator(registry: SkillRegistry = createSkillRegistry
   return {
     async handle(gateway, message, context, options = {}): Promise<OrchestrationResult> {
       const mode: OperatorMode = options.mode ?? 'agent'
+      const emit: OnProgress = options.onProgress ?? (() => {})
+      emit({ stage: 'triaging' })
       const triage = await runTriage(gateway, message)
       const classification: OperatorTriage = triage.ok ? triage.value : { tier: 'read', topic: 'general' }
       const tier = classification.tier
@@ -268,8 +293,9 @@ export function createOrchestrator(registry: SkillRegistry = createSkillRegistry
         // guardian review over any plan that proposes steps. The route still owns validate, preview,
         // approve, and apply; the guardian, the critic, and the repair pass only improve and inform
         // the proposal.
+        emit({ stage: 'gathering' })
         const planContext = await withEvidence(context, options.researcher, classification.domains)
-        const result = await deliberatePlan(gateway, message, planContext, skill)
+        const result = await deliberatePlan(gateway, message, planContext, skill, emit)
         // When the planner could not plan responsibly it proposes no steps and asks one clarifying
         // question instead of guessing. Caracal relays that question to the operator as an answer
         // — it is recorded as a note, never as an actionable plan — so an underspecified request is
@@ -278,6 +304,7 @@ export function createOrchestrator(registry: SkillRegistry = createSkillRegistry
           return { tier, outcome: { kind: 'answer', result: { ok: true, value: { text: result.value.clarification } } } }
         }
         if (result.ok && result.value.steps.length > 0) {
+          emit({ stage: 'guarding' })
           const review = await runSecurityAnalyst(gateway, result.value, planContext)
           return { tier, outcome: { kind: 'plan', result, advisory: review.ok ? review.value : undefined } }
         }
@@ -287,8 +314,11 @@ export function createOrchestrator(registry: SkillRegistry = createSkillRegistry
       // A read tier inspects current state, so it answers grounded in freshly read evidence; a
       // conversational tier needs no state read and pays nothing. Both ground their answer in the
       // real documentation so exact names, endpoints, and fields come from the docs, not the model.
-      const stateContext = tierReadsState(tier) ? await withEvidence(context, options.researcher, classification.domains) : context
+      const reads = tierReadsState(tier)
+      if (reads) emit({ stage: 'gathering' })
+      const stateContext = reads ? await withEvidence(context, options.researcher, classification.domains) : context
       const answerContext = withDocs(stateContext, message, options.docs)
+      emit({ stage: 'answering' })
       return { tier, outcome: { kind: 'answer', result: await skill.run(gateway, message, answerContext) } }
     },
   }
