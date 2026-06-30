@@ -4,7 +4,7 @@ Caracal, a product of Garudex Labs
 
 This file defines the Caracal Operator route, the Community Edition workspace for operating the control plane in natural language.
 */
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   useCallback,
   useEffect,
@@ -107,7 +107,7 @@ import type {
   OperatorUsageMeta,
 } from "@/platform/api/types";
 
-export const Route = createFileRoute("/$accountId/$orgId/$zoneId/app/ai")({
+export const Route = createFileRoute("/$accountId/$orgId/$zoneId/app/ai/{-$conversationNo}")({
   component: CaracalOperatorPage,
 });
 
@@ -273,6 +273,12 @@ function OperatorWorkspace() {
   const zoneId = activeZone?.id ?? null;
   const toast = useToast();
 
+  // The selected conversation is addressed by its per-zone number in the URL, so a reload restores
+  // the open chat instead of dropping back to a new one, and a bare /app/ai is the new-chat hero.
+  const routeParams = Route.useParams();
+  const navigate = useNavigate();
+  const routeNumber = routeParams.conversationNo ? Number(routeParams.conversationNo) : null;
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [heroDraft, setHeroDraft] = useState("");
@@ -298,6 +304,45 @@ function OperatorWorkspace() {
   const archive = useArchiveOperatorConversation(zoneId);
   const restore = useRestoreOperatorConversation(zoneId);
   const remove = useDeleteOperatorConversation(zoneId);
+
+  // Drive the URL from the open chat: a conversation's per-zone number addresses it, and a null
+  // number is the new-chat hero at the bare route. The router is the single place the open chat is
+  // recorded, so a reload reopens the same chat rather than starting over.
+  const goToConversation = useCallback(
+    (number: number | null) => {
+      navigate({
+        to: "/$accountId/$orgId/$zoneId/app/ai/{-$conversationNo}",
+        params: (prev) => ({ ...prev, conversationNo: number == null ? undefined : String(number) }),
+      });
+    },
+    [navigate],
+  );
+
+  // Select a conversation by its id: mark it open and reflect its number in the URL. Looking the
+  // number up in the loaded list keeps the id the rest of the workspace uses while the URL stays
+  // human-readable; a null id returns to the new-chat hero.
+  const selectConversation = useCallback(
+    (id: string | null) => {
+      if (id == null) {
+        setSelectedId(null);
+        goToConversation(null);
+        return;
+      }
+      setSelectedId(id);
+      const conversation = (conversations.data ?? []).find((c) => c.id === id);
+      goToConversation(conversation ? conversation.number : null);
+    },
+    [conversations.data, goToConversation],
+  );
+
+  // Restore the open chat from the URL: when the number resolves to a loaded conversation, open it.
+  // Only sets when it differs, so it reconciles a reload or a browser back/forward without fighting
+  // a selection the handlers just made or clobbering a freshly created chat not yet in the list.
+  useEffect(() => {
+    if (routeNumber == null) return;
+    const conversation = (conversations.data ?? []).find((c) => c.number === routeNumber);
+    if (conversation && conversation.id !== selectedId) setSelectedId(conversation.id);
+  }, [routeNumber, conversations.data, selectedId]);
 
   const { data: autopilotAvailable } = useOperatorAutopilotAvailable();
 
@@ -419,7 +464,12 @@ function OperatorWorkspace() {
     if (!name || create.isPending) return;
     create.mutate(
       { title: name, mode: draftMode, autopilot: draftMode === "agent" && draftAutopilot },
-      { onSuccess: (conversation) => setSelectedId(conversation.id) },
+      {
+        onSuccess: (conversation) => {
+          setSelectedId(conversation.id);
+          goToConversation(conversation.number);
+        },
+      },
     );
   }
 
@@ -443,7 +493,10 @@ function OperatorWorkspace() {
         autopilot: draftMode === "agent" && draftAutopilot,
       },
       {
-        onSuccess: (conversation) => setSelectedId(conversation.id),
+        onSuccess: (conversation) => {
+          setSelectedId(conversation.id);
+          goToConversation(conversation.number);
+        },
         onError: () => setPendingMessage(null),
       },
     );
@@ -466,7 +519,7 @@ function OperatorWorkspace() {
   function archiveSession(id: string) {
     archive.mutate(id, {
       onSuccess: (conversation) => {
-        if (selectedId === id) setSelectedId(null);
+        if (selectedId === id) selectConversation(null);
         toast({ tone: "info", title: "Session archived", description: conversation.title });
       },
       onError: () => toast({ tone: "error", title: "Archive failed" }),
@@ -489,7 +542,7 @@ function OperatorWorkspace() {
   function deleteSession(id: string) {
     remove.mutate(id, {
       onSuccess: () => {
-        if (selectedId === id) setSelectedId(null);
+        if (selectedId === id) selectConversation(null);
         toast({ tone: "info", title: "Session deleted" });
       },
       onError: () => toast({ tone: "error", title: "Delete failed" }),
@@ -544,7 +597,7 @@ function OperatorWorkspace() {
         <SessionStrip
           conversations={conversations.data ?? []}
           selectedId={selectedId}
-          onSelect={setSelectedId}
+          onSelect={selectConversation}
           onCreate={() => startSession("New session")}
           creating={create.isPending}
         />
@@ -595,7 +648,7 @@ function OperatorWorkspace() {
         search={search}
         onSearch={setSearch}
         selectedId={selectedId}
-        onSelect={setSelectedId}
+        onSelect={selectConversation}
         onCreate={startSession}
         onRename={renameSession}
         onArchive={archiveSession}

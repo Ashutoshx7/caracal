@@ -89,7 +89,7 @@ export function UtilityRail({ className }: { className?: string }) {
           <RailButton
             label="Caracal Operator"
             to={navTarget("/app/ai")}
-            active={pathname.endsWith("/app/ai")}
+            active={/\/app\/ai(?:\/|$)/.test(pathname)}
             icon={
               <>
                 <path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9z" />
