@@ -330,7 +330,7 @@ export function createOrchestrator(registry: SkillRegistry = createSkillRegistry
       const mode: OperatorMode = options.mode ?? 'agent'
       const emit: OnProgress = options.onProgress ?? (() => {})
       emit({ stage: 'triaging' })
-      const triage = await runTriage(gateway, message)
+      const triage = await runTriage(gateway, message, context)
       const classification: OperatorTriage = triage.ok ? triage.value : { tier: 'read', topic: 'general' }
       const tier = classification.tier
 

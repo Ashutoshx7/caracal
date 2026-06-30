@@ -99,6 +99,23 @@ describe('runTriage', () => {
     const result = await runTriage(gateway, 'hmm')
     expect(result.ok).toBe(false)
   })
+
+  it('judges a settled instruction as change using the gathered conversation', async () => {
+    const { gateway, completeObject } = gatewayProducing({ tier: 'change', topic: 'general', domains: ['application'] })
+    const recent = [
+      { seq: 1, role: 'user' as const, text: 'can you help me create an application' },
+      { seq: 2, role: 'operator' as const, text: 'Sure — what name, and managed or DCR?' },
+      { seq: 3, role: 'user' as const, text: 'Create heiro as managed' },
+    ]
+    const result = await runTriage(gateway, 'Create heiro as managed', { state: { recent_messages: recent } } as never)
+    expect(result).toEqual({ ok: true, value: { tier: 'change', topic: 'general', domains: ['application'] } })
+    const messages = completeObject.mock.calls[0][0] as { role: string; content: string }[]
+    const history = messages.find((m) => m.content.includes('Conversation so far'))
+    expect(history).toBeDefined()
+    expect(history!.content).toContain('can you help me create an application')
+    // The current message is not duplicated into the history block.
+    expect(history!.content).not.toContain('Operator: Create heiro as managed')
+  })
 })
 
 describe('tierPlans', () => {
@@ -124,6 +141,22 @@ describe('buildTriageMessages', () => {
     expect(system).toContain('diagnostic')
     expect(system).toContain('integration')
     expect(system).toContain('general')
+  })
+
+  it('instructs that a settled change after a gathering exchange is a change', () => {
+    const system = buildTriageMessages('hello')[0].content
+    expect(system).toContain('STOP gathering')
+  })
+
+  it('includes the recent exchange so a settled instruction is judged in context', () => {
+    const messages = buildTriageMessages('Create heiro as managed', [
+      { seq: 1, role: 'user', text: 'help me create an application' },
+      { seq: 2, role: 'operator', text: 'what name should it have?' },
+    ])
+    const history = messages.find((m) => m.content.includes('Conversation so far'))
+    expect(history).toBeDefined()
+    expect(history!.content).toContain('help me create an application')
+    expect(messages[messages.length - 1]).toEqual({ role: 'user', content: 'Create heiro as managed' })
   })
 })
 

@@ -5,7 +5,7 @@
 
 import { z } from 'zod'
 import { describeCapabilitiesForPrompt, ProposedPlan, type CapabilityDomain, type ProposedPlanInput } from './operator-capabilities.js'
-import type { ConversationState } from './operator-state.js'
+import type { ConversationState, RecentMessage } from './operator-state.js'
 import { describeFacts, type ConversationFacts } from './operator-memory.js'
 import { describeZoneMemory, type ZoneMemoryEntry } from './operator-zone-memory.js'
 import type { Evidence } from './operator-research.js'
@@ -235,8 +235,8 @@ export interface OperatorTriage {
   domains?: CapabilityDomain[]
 }
 
-export function buildTriageMessages(message: string): GatewayMessage[] {
-  return [
+export function buildTriageMessages(message: string, recent?: RecentMessage[]): GatewayMessage[] {
+  const messages: GatewayMessage[] = [
     {
       role: 'system',
       content: systemPrompt(
@@ -253,16 +253,18 @@ export function buildTriageMessages(message: string): GatewayMessage[] {
           '  state and no change.',
           '- "read": inspect or explain the current state of this deployment or a past decision, changing',
           '  nothing (counts, listings, "do I have…", "why was X denied"). ALSO use read when the user',
-          '  asks for help, guidance, or how to do something ("can you help me create an application",',
-          '  "how do I connect a provider", "I want to set up a resource") — guiding and gathering the',
-          '  specifics is a read, not a change.',
-          '- "change": carry out ONE concrete change the operator has already decided on and fully',
-          '  specified — create, connect, register, rotate, grant, or set up a single named thing. Only',
-          '  use change when the request is a direct instruction to act now AND names the specific thing',
-          '  to act on (e.g. "create an application called Son of Anton", "connect GitHub"). If the',
-          '  request asks for help deciding, asks how, or does not yet name the thing to create or change',
-          '  (e.g. "create an application for me", "help me create an app"), it is NOT a change — classify',
-          '  it read so the Operator gathers the specifics conversationally first.',
+          '  opens a request for help and the specifics are NOT yet settled ("can you help me create an',
+          '  application", "how do I connect a provider", "I want to set up a resource") — guiding and',
+          '  gathering the specifics is a read, not a change.',
+          '- "change": carry out ONE concrete change the operator has decided on — create, connect,',
+          '  register, rotate, grant, or set up a single named thing. Use change when the current message',
+          '  is a direct instruction to act now AND the thing to act on is named, whether the operator',
+          '  names it in this message (e.g. "create an application called Son of Anton", "connect GitHub")',
+          '  OR the conversation so far already established it and the operator is now telling you to',
+          '  proceed (e.g. after gathering, "create it", "do it", "yes go ahead", "Create heiro as',
+          '  managed"). A bare opening like "create an application for me" with nothing named yet is NOT a',
+          '  change — classify it read and gather first; but once the name and key options are settled and',
+          '  the operator instructs you to act, STOP gathering and classify it change.',
           '- "compound": combine several changes, or a request that must investigate live state before it',
           '  can be planned safely.',
         ].join('\n'),
@@ -280,11 +282,39 @@ export function buildTriageMessages(message: string): GatewayMessage[] {
           '["grant","policy","audit","application"]; "give finance read-only access to invoices" →',
           '["grant","application","resource"]; "how many apps do I have" → ["application"].',
         ].join('\n'),
-        'When two tiers are plausible, pick the smaller one that still fully serves the intent.',
+        'When two tiers are plausible, pick the smaller one that still fully serves the intent — except',
+        'a settled change the operator has instructed you to carry out, which is a change even after a',
+        'read-tier gathering exchange.',
       ),
     },
-    { role: 'user', content: message },
   ]
+  const history = renderTriageHistory(recent, message)
+  if (history) messages.push({ role: 'system', content: history })
+  messages.push({ role: 'user', content: message })
+  return messages
+}
+
+// Renders the recent exchange so triage can judge the current message in context: a short request
+// that only makes sense as the decision to act ("create it", "Create heiro as managed") reads as a
+// change once the prior turns gathered the specifics. Caracal's own answers are kept so the model
+// sees the gathering it already did. A trailing entry equal to the current message is dropped so it
+// is not shown twice, system notes are omitted, and each line is collapsed and bounded so triage
+// stays cheap.
+function renderTriageHistory(recent: RecentMessage[] | undefined, current: string): string | null {
+  if (!recent || recent.length === 0) return null
+  const prior = recent.filter((m) => m.role !== 'system')
+  while (prior.length > 0 && prior[prior.length - 1].role === 'user' && prior[prior.length - 1].text.trim() === current.trim()) {
+    prior.pop()
+  }
+  if (prior.length === 0) return null
+  const lines = prior
+    .slice(-8)
+    .map((m) => `${m.role === 'user' ? 'Operator' : 'Caracal'}: ${m.text.replace(/\s+/g, ' ').trim().slice(0, 400)}`)
+  return [
+    'Conversation so far (oldest to newest). Use it to judge whether the specifics of a change are',
+    'already gathered and the operator is now instructing you to act:',
+    ...lines,
+  ].join('\n')
 }
 
 // Classifies a request into the smallest sufficient tier and, for a read, its answer specialty, and
@@ -293,9 +323,9 @@ export function buildTriageMessages(message: string): GatewayMessage[] {
 // an error rather than a guessed tier; the orchestrator then defaults to a general read, which never
 // acts. topic defaults to general when the model omits it, and domains is carried only when present,
 // so an absent or empty domain set simply reads broadly rather than narrowing wrongly.
-export async function runTriage(gateway: Gateway, message: string): Promise<AgentResult<OperatorTriage>> {
+export async function runTriage(gateway: Gateway, message: string, context?: AgentContext): Promise<AgentResult<OperatorTriage>> {
   try {
-    const completion = await gateway.completeObject(buildTriageMessages(message), TriageOutput, {
+    const completion = await gateway.completeObject(buildTriageMessages(message, context?.state?.recent_messages), TriageOutput, {
       maxTokens: TRIAGE_MAX_TOKENS,
       temperature: 0,
     })
