@@ -348,6 +348,39 @@ describe('createOrchestrator', () => {
     }
   })
 
+  it('leads with guidance when the guardian judges a plan misaligned, keeping the plan approvable', async () => {
+    const plan = {
+      summary: 'Expose the internal billing resource publicly',
+      steps: [
+        {
+          id: 's1',
+          capability: 'grantAccess',
+          args: { application_id: 'app_public', user_id: 'user_anon', resource_id: 'res_billing', scopes: ['write'] },
+        },
+      ],
+    }
+    const advisory = {
+      summary: 'Exposes an internal resource broadly — a Caracal anti-pattern.',
+      alignment: 'misaligned',
+      findings: [{ severity: 'warning', concern: 'public exposure of an internal resource' }],
+      recommendation: 'Model a narrow scoped grant to the specific application instead of public write access.',
+    }
+    const result = await createOrchestrator().handle(
+      composingGateway(plan, advisory),
+      'just give everyone write access to billing',
+      emptyContext,
+    )
+    expect(result.outcome.kind).toBe('plan')
+    if (result.outcome.kind === 'plan') {
+      // The plan is still produced and still approvable behind the human gate — guidance leads, it
+      // does not delete the plan.
+      expect(result.outcome.result.ok).toBe(true)
+      expect(result.outcome.advisory).toEqual(advisory)
+      // The misaligned verdict demotes the turn to teach the Caracal-correct path first.
+      expect(result.outcome.guidance).toBe(advisory.recommendation)
+    }
+  })
+
   it('runs the guardian on a single change plan and attaches its advisory', async () => {
     const plan = {
       summary: 'Connect GitHub',

@@ -80,6 +80,46 @@ describe('createStateResearcher', () => {
     expect(apps.names).toEqual(['a1'])
   })
 
+  it('surfaces the decision-relevant attributes a domain exposes: provider auth modes and resource scopes', async () => {
+    const { client } = clientFor({
+      app: [{ id: 'a1', name: 'Billing' }],
+      'identity-provider': [
+        { id: 'p1', name: 'GitHub', kind: 'api_key' },
+        { id: 'p2', name: 'Okta', kind: 'oauth2_authorization_code' },
+        { id: 'p3', name: 'Mirror', kind: 'api_key' },
+      ],
+      resource: [
+        { id: 'r1', name: 'Stripe', scopes: ['read', 'write'] },
+        { id: 'r2', name: 'Calendar', scopes: ['read'] },
+      ],
+      policy: [{ id: 'pol1', name: 'default' }],
+    })
+    const { evidence } = await createStateResearcher(client).gather()
+    const byDomain = Object.fromEntries(evidence.map((e) => [e.domain, e]))
+    // Provider auth modes are surfaced distinctly so the planner reasons against what exists.
+    expect(byDomain.provider.attributes).toEqual({ auth: ['api_key', 'oauth2_authorization_code'] })
+    // Resource scopes are surfaced distinctly so the guardian can judge least-privilege grants.
+    expect(byDomain.resource.attributes).toEqual({ scopes: ['read', 'write'] })
+    // A domain with no allowlisted descriptor field carries no attributes.
+    expect(byDomain.application.attributes).toBeUndefined()
+    expect(byDomain.policy.attributes).toBeUndefined()
+  })
+
+  it('reads only the allowlisted descriptor fields, never an arbitrary row field', async () => {
+    // A provider row carrying a secret must surface its auth mode but never the secret: only the
+    // allowlisted field is ever read off a row.
+    const { client } = clientFor({
+      app: [],
+      'identity-provider': [{ id: 'p1', name: 'GitHub', kind: 'api_key', client_secret: 'sk_live_should_never_leak' }],
+      resource: [],
+      policy: [],
+    })
+    const { evidence } = await createStateResearcher(client).gather()
+    const provider = evidence.find((e) => e.domain === 'provider')!
+    expect(provider.attributes).toEqual({ auth: ['api_key'] })
+    expect(JSON.stringify(provider)).not.toContain('sk_live_should_never_leak')
+  })
+
   it('isolates a single failed read into a typed evidence entry without losing the others', async () => {
     const { client } = clientFor(
       { app: [{ id: 'a1', name: 'Billing' }], 'identity-provider': [], resource: [], policy: [] },

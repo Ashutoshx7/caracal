@@ -178,6 +178,13 @@ describe('mayAutoApprove', () => {
     expect(mayAutoApprove(ev, policyAllowing('registerApplication'))).toEqual({ autoApprove: false, reason: 'security_warning' })
   })
 
+  it('stops when the guardian judged the plan misaligned, even with no warning finding', () => {
+    const ev = evaluation({
+      advisory: { summary: 'anti-pattern', alignment: 'misaligned', findings: [{ severity: 'caution', concern: 'public exposure' }] },
+    })
+    expect(mayAutoApprove(ev, policyAllowing('registerApplication'))).toEqual({ autoApprove: false, reason: 'misaligned_plan' })
+  })
+
   it('still approves when the advisory has only lower-severity findings', () => {
     const ev = evaluation({
       advisory: {
