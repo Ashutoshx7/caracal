@@ -694,6 +694,9 @@ export type OperatorConversationMode = "ask" | "agent";
 export interface OperatorConversation {
   id: string;
   zone_id: string;
+  // A per-zone sequential number that addresses this conversation in the console URL, so a chat
+  // has a stable human-readable id and a reload restores it instead of opening a new chat.
+  number: number;
   title: string;
   status: OperatorConversationStatus;
   mode: OperatorConversationMode;

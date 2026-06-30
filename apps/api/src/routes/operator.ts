@@ -54,7 +54,7 @@ const CONTENT_MAX_BYTES = 64_000
 const DEFAULT_TURN_PAGE = 200
 const MAX_TURN_PAGE = 500
 
-const CONVERSATION_SELECT = 'id, zone_id, title, status, mode, autopilot, created_by, created_at, updated_at, last_activity_at, archived_at'
+const CONVERSATION_SELECT = 'id, zone_id, number, title, status, mode, autopilot, created_by, created_at, updated_at, last_activity_at, archived_at'
 // seq is a bigint column, which the driver would otherwise hand back as a string. The turn
 // contract types seq as a number and callers send it straight back as plan_seq, so it is cast
 // to int here: a per-conversation gapless counter never approaches the int ceiling, and the
@@ -729,8 +729,8 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     // the model never selects or changes them. Engaging autopilot here only sets the engage flag —
     // what may be auto-approved is still bounded by the deployment's autopilot policy.
     const { rows } = await fastify.db.query(
-      `INSERT INTO operator_conversations (id, zone_id, title, mode, autopilot, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO operator_conversations (id, zone_id, number, title, mode, autopilot, created_by)
+       VALUES ($1, $2, COALESCE((SELECT MAX(number) FROM operator_conversations WHERE zone_id = $2), 0) + 1, $3, $4, $5, $6)
        RETURNING ${CONVERSATION_SELECT}`,
       [id, params.zoneId, parsed.data.title, parsed.data.mode ?? 'agent', parsed.data.autopilot ?? false, req.actor.id],
     )
