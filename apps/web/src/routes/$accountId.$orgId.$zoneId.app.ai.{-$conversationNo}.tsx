@@ -1173,15 +1173,20 @@ function ActivityStream({
 
   // Send the opening intent once when the session was started from the hero. It dispatches
   // directly rather than through submit: the opening message is always the first turn, so it must
-  // never take the queue branch and leave a phantom copy to drain later.
+  // never take the queue branch and leave a phantom copy to drain later. The dispatch is deferred
+  // a tick so it lands after the mount/cleanup/mount commit settles; arming it synchronously would
+  // let the unmount-abort cleanup cancel the send's controller before the request is ever sent,
+  // stranding the first turn on the working indicator with nothing in flight.
   const openingSent = useRef(false);
   useEffect(() => {
-    if (initialMessage && !openingSent.current) {
+    if (!initialMessage || openingSent.current) return;
+    const timer = window.setTimeout(() => {
       openingSent.current = true;
       stickToBottom.current = true;
       dispatch(initialMessage);
       onInitialConsumed?.();
-    }
+    }, 0);
+    return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialMessage]);
 
