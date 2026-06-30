@@ -94,11 +94,7 @@ The API service runs the Control plane in-process and powers the Caracal Operato
 | `API_OPERATOR_CONTROL_CLIENT_SECRET` | no | none | Sealed control secret for the Operator's governed execution. |
 | `API_OPERATOR_ALLOWED_CAPABILITIES` | no | built-in set | Overrides the Operator's state-changing capability allowlist. |
 | `API_OPERATOR_SYSTEM_ZONES` | no | empty | Additional zones marked as system zones the Operator must not act in. |
-| `API_OPERATOR_AUTOPILOT_ENABLED` | no | `false` | Master switch for autopilot auto-approval. |
-| `API_OPERATOR_AUTOPILOT_CAPABILITIES` | no | empty | Allowlist of low-risk capabilities autopilot may auto-approve. |
-| `API_OPERATOR_AUTOPILOT_MAX_STEPS` | no | `1` | Per-plan step limit for autopilot. |
-| `API_OPERATOR_AUTOPILOT_WINDOW_SEC` | no | `3600` | Rolling auto-approval budget window in seconds. |
-| `API_OPERATOR_AUTOPILOT_WINDOW_MAX` | no | `10` | Maximum auto-approvals per window. |
+| `API_OPERATOR_AUTOPILOT_ENABLED` | no | `false` | Master switch; when on, an agent-mode conversation that engages autopilot has every plan auto-approved. The governed execute path still enforces the capability allowlist, least-privilege token, and zone isolation. |
 
 ## Runtime Workload Variables
 
