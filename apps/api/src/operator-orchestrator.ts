@@ -59,9 +59,14 @@ export interface SkillRegistry {
 // The typed artifact a turn produced, tagged so the route runs the matching deterministic path:
 // a plan is validated, previewed, and stored for approval; an answer is recorded as a note. A
 // plan from a composing tier may carry an advisory security review — informational only, never
-// gating — that the route surfaces to the human alongside the plan.
+// gating — that the route surfaces to the human alongside the plan. When the guardian judges the
+// plan misaligned with how Caracal is meant to be used, the outcome also carries guidance: the
+// Caracal-correct path the human should take instead, surfaced first so the turn teaches the right
+// approach rather than silently complying. The plan itself is still persisted and remains
+// approvable behind the unchanged human gate — guidance leads, the plan is the secondary option,
+// and a misaligned plan is never auto-approved.
 export type OrchestrationOutcome =
-  | { kind: 'plan'; result: AgentResult<ProposedPlanInput>; advisory?: SecurityAdvisory }
+  | { kind: 'plan'; result: AgentResult<ProposedPlanInput>; advisory?: SecurityAdvisory; guidance?: string }
   | { kind: 'answer'; result: AgentResult<{ text: string; reasoning?: string }> }
 
 export interface OrchestrationResult {
@@ -306,7 +311,16 @@ export function createOrchestrator(registry: SkillRegistry = createSkillRegistry
         if (result.ok && result.value.steps.length > 0) {
           emit({ stage: 'guarding' })
           const review = await runSecurityAnalyst(gateway, result.value, planContext)
-          return { tier, outcome: { kind: 'plan', result, advisory: review.ok ? review.value : undefined } }
+          const advisory = review.ok ? review.value : undefined
+          // When the guardian judges the plan misaligned with how Caracal is meant to be used, the
+          // outcome leads with the Caracal-correct path instead of silently surfacing the plan: the
+          // guidance is the guardian's concrete recommendation (its summary when it gave none). The
+          // plan stays attached and approvable behind the human gate, so the human can still proceed
+          // deliberately — but the turn teaches the right approach first and the route never
+          // auto-approves a misaligned plan.
+          const guidance =
+            advisory && advisory.alignment === 'misaligned' ? (advisory.recommendation ?? advisory.summary) : undefined
+          return { tier, outcome: { kind: 'plan', result, advisory, guidance } }
         }
         return { tier, outcome: { kind: 'plan', result } }
       }

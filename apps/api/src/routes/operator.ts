@@ -1497,8 +1497,13 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         const preview = await previewPlan(fastify.db, params.zoneId, planned.value)
         // A composed plan carries an advisory security review; the route persists it with the
         // plan and surfaces it to the human. It is informational only — the plan is still
-        // governed by validation, preview, and approval, never by this advisory.
+        // governed by validation, preview, and approval, never by this advisory. When the guardian
+        // judged the plan misaligned with how Caracal is meant to be used, the orchestrator also
+        // produced guidance: the Caracal-correct path the human should take instead. It is surfaced
+        // first so the turn teaches the right approach; the plan stays approvable behind the human
+        // gate as the deliberate secondary option.
         const advisory = outcome.advisory
+        const guidance = outcome.guidance
         const turn = await appendTurnTx(
           fastify.db,
           params.id,
@@ -1556,6 +1561,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
           validation,
           preview,
           advisory,
+          guidance,
           auto_approved: autoApproved,
           approval_turn: approvalTurn,
           ...meta(),

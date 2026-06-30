@@ -102,9 +102,10 @@ const CLEAN_EFFECTS: ReadonlySet<string> = new Set(['create', 'update', 'read_on
 // requires, in order: the master switch on; the conversation engaged; a non-empty plan within the
 // per-plan step bound; the rolling window budget not exhausted; a clean preview (every step
 // resolves to a create, update, or read-only effect — never blocked, drift, or an already-existing
-// target); every capability on the allowlist and off the denied floor; and no advisory warning.
-// Any single failure stops for a human, which is the safe direction; only an all-clear plan that a
-// deployment pre-authorized as low-risk is ever auto-approved.
+// target); every capability on the allowlist and off the denied floor; the guardian did not judge
+// the plan misaligned with how Caracal is meant to be used; and no advisory warning. Any single
+// failure stops for a human, which is the safe direction; only an all-clear plan that a deployment
+// pre-authorized as low-risk is ever auto-approved.
 export function mayAutoApprove(evaluation: AutopilotEvaluation, policy: AutopilotPolicy): AutopilotDecision {
   if (!policy.enabled) return { autoApprove: false, reason: 'autopilot_disabled' }
   if (!evaluation.engaged) return { autoApprove: false, reason: 'autopilot_not_engaged' }
@@ -131,6 +132,9 @@ export function mayAutoApprove(evaluation: AutopilotEvaluation, policy: Autopilo
     }
   }
 
+  if (evaluation.advisory && evaluation.advisory.alignment === 'misaligned') {
+    return { autoApprove: false, reason: 'misaligned_plan' }
+  }
   if (evaluation.advisory && evaluation.advisory.findings.some((finding) => finding.severity === 'warning')) {
     return { autoApprove: false, reason: 'security_warning' }
   }
