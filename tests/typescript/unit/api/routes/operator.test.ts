@@ -193,6 +193,8 @@ describe('POST /v1/zones/:zoneId/operator-conversations', () => {
     expect(JSON.parse(res.body)).toMatchObject({ id: 'conv-1', status: 'active', created_by: 'actor-1' })
     const insert = db.query.mock.calls[1]
     expect(insert[0]).toContain('INSERT INTO operator_conversations')
+    // The number is drawn from the durable per-zone counter so it is never reused after a delete.
+    expect(insert[0]).toContain('operator_conversation_counters')
     expect(insert[1]).toEqual([expect.any(String), 'z1', 'Connect GitHub', 'agent', false, 'actor-1'])
   })
 
