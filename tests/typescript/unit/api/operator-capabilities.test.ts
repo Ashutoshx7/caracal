@@ -22,6 +22,7 @@ describe('capability catalog', () => {
     expect(CAPABILITIES.explainAccess.mutating).toBe(false)
     expect(CAPABILITIES.grantAccess.mutating).toBe(true)
     expect(CAPABILITIES.rotateApplicationSecret.mutating).toBe(true)
+    expect(CAPABILITIES.deleteApplication.mutating).toBe(true)
   })
 })
 

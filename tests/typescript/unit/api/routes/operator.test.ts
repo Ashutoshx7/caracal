@@ -116,7 +116,12 @@ describe('operator enablement gating', () => {
     const body = JSON.parse(status.body)
     expect(body).toMatchObject({ enabled: true, principal: 'system:caracal-operator' })
     // The least-privilege grant exposes only governed-executable mutating capabilities by default.
-    expect(body.allowed_capabilities).toEqual(['grantAccess', 'registerApplication', 'rotateApplicationSecret'])
+    expect(body.allowed_capabilities).toEqual([
+      'deleteApplication',
+      'grantAccess',
+      'registerApplication',
+      'rotateApplicationSecret',
+    ])
     const caps = await app.inject({ method: 'GET', url: '/v1/operator/capabilities' })
     expect(caps.statusCode).toBe(200)
   })
