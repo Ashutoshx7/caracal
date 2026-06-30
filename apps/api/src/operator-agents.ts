@@ -205,14 +205,15 @@ function systemPrompt(...parts: string[]): string {
   return parts.filter((part) => part.length > 0).join('\n\n')
 }
 
+// The object domains a turn can concern, shared by triage classification and the planner's evidence
+// request so both name the same governed read surface.
+const OBJECT_DOMAINS = ['zone', 'application', 'provider', 'resource', 'policy', 'grant', 'audit'] as const
+
 const TriageOutput = z
   .object({
     tier: z.enum(['conversational', 'read', 'change', 'compound']),
     topic: z.enum(['general', 'diagnostic', 'integration']).optional(),
-    domains: z
-      .array(z.enum(['zone', 'application', 'provider', 'resource', 'policy', 'grant', 'audit']))
-      .max(7)
-      .optional(),
+    domains: z.array(z.enum(OBJECT_DOMAINS)).max(7).optional(),
   })
   .strict()
 
@@ -442,9 +443,24 @@ export function buildPlannerMessages(message: string, context: AgentContext, fee
           'question, the most decision-blocking one, and only when a reasonable plan is genuinely',
           'impossible without it; prefer inferring from the live state and recent activity in the context',
           'when you confidently can.',
+          'GATHER MORE STATE BEFORE GUESSING: the context already carries the live state Caracal read',
+          'for this turn. If you cannot plan correctly because you must first SEE more of the deployment',
+          '— for example you need the resource and application objects to find the ids a grant binds —',
+          'do NOT invent ids or assume objects exist. Return an empty steps array and a "needs" object',
+          'naming the object domains to read (zone, application, provider, resource, policy, grant,',
+          'audit). Caracal will read exactly those domains and ask you to plan again with the new',
+          'evidence in hand. Use "needs" only when reading more state would let you plan; use',
+          '"clarification" when only the operator can supply the missing decision.',
           'Reply with ONLY a JSON object {"summary": string, "steps": [{"id": string, "capability":',
-          'string, "args": object}], "clarification"?: string}. Use a short unique id per step (s1, s2, …).',
-          'Set "clarification" only when you propose no steps; leave it out whenever you propose a plan.',
+          'string, "args": object, "depends_on"?: string[], "risk"?: "low"|"medium"|"high"}],',
+          '"clarification"?: string, "needs"?: {"domains": string[]}}. Use a short unique id per step',
+          '(s1, s2, …). List in "depends_on" the ids of the steps that must complete first when a step',
+          'truly needs their result (for example a grant depends on the application and resource it',
+          'binds); omit it when a step has no prerequisite, and never form a cycle. Tag "risk" with your',
+          'honest read of how consequential the step is — "high" for anything that grants access or',
+          'rotates a secret — so the reviewer sees it; omit it when the step is routine.',
+          'Set "clarification" or "needs" only when you propose no steps; leave them out whenever you',
+          'propose a plan.',
           'The summary states, in one plain sentence, what the plan accomplishes for the user.',
           '',
           'Capabilities:',
@@ -467,6 +483,10 @@ const PlannerPlan = z
     summary: z.string().min(1).max(2000),
     steps: z.array(ProposedPlan.shape.steps.element).max(50),
     clarification: z.string().min(1).max(1000).optional(),
+    needs: z
+      .object({ domains: z.array(z.enum(OBJECT_DOMAINS)).min(1).max(7) })
+      .strict()
+      .optional(),
   })
   .strict()
 
@@ -682,9 +702,16 @@ const SecurityAdvisorySchema = z
   .strict()
 
 // Renders a proposed plan compactly for review: its summary and one line per step naming the
-// capability and its arguments, so the analyst reasons over exactly what the plan would do.
+// capability and its arguments, plus any declared dependencies and the planner's own risk tag, so
+// the analyst reasons over exactly what the plan would do and in what order.
 function describePlanForReview(plan: ProposedPlanInput): string {
-  const steps = plan.steps.map((step) => `- ${step.id}: ${step.capability} ${JSON.stringify(step.args)}`).join('\n')
+  const steps = plan.steps
+    .map((step) => {
+      const deps = step.depends_on && step.depends_on.length > 0 ? ` (after ${step.depends_on.join(', ')})` : ''
+      const risk = step.risk ? ` [risk: ${step.risk}]` : ''
+      return `- ${step.id}: ${step.capability} ${JSON.stringify(step.args)}${deps}${risk}`
+    })
+    .join('\n')
   return `Summary: ${plan.summary}\nSteps:\n${steps}`
 }
 

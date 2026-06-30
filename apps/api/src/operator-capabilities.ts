@@ -178,11 +178,20 @@ export function listCapabilities(): CapabilityDescriptor[] {
 }
 
 const PROPOSED_STEP_MAX = 50
+const STEP_ID_PATTERN = /^[A-Za-z0-9_.\-:]{1,128}$/
+
+// The per-step risk a planner may declare, ordered low→high. It is the planner's own honest
+// assessment of how consequential a step is; the guardian and the human approver still decide.
+export const RISK_LEVELS = ['low', 'medium', 'high'] as const
+export type StepRisk = (typeof RISK_LEVELS)[number]
+
 const ProposedStep = z
   .object({
-    id: z.string().regex(/^[A-Za-z0-9_.\-:]{1,128}$/),
+    id: z.string().regex(STEP_ID_PATTERN),
     capability: z.string().min(1).max(128),
     args: z.record(z.string(), z.unknown()).default({}),
+    depends_on: z.array(z.string().regex(STEP_ID_PATTERN)).max(PROPOSED_STEP_MAX).optional(),
+    risk: z.enum(RISK_LEVELS).optional(),
   })
   .strict()
 
@@ -195,7 +204,7 @@ export const ProposedPlan = z
 
 export type ProposedPlanInput = z.infer<typeof ProposedPlan>
 
-export type DiagnosticCode = 'unknown_capability' | 'invalid_args' | 'duplicate_step_id'
+export type DiagnosticCode = 'unknown_capability' | 'invalid_args' | 'duplicate_step_id' | 'unknown_dependency' | 'dependency_cycle'
 
 export interface PlanDiagnostic {
   step_id: string
@@ -210,6 +219,8 @@ export interface ValidatedStep {
   domain: CapabilityDomain
   mutating: boolean
   args: Record<string, unknown>
+  depends_on: string[]
+  risk?: StepRisk
 }
 
 export interface PlanValidation {
@@ -267,8 +278,12 @@ export function validateProposedPlan(plan: ProposedPlanInput): PlanValidation {
       domain: capability.domain,
       mutating: capability.mutating,
       args: args.data,
+      depends_on: [...new Set(step.depends_on ?? [])],
+      risk: step.risk,
     })
   }
+
+  validateDependencies(plan, steps, diagnostics)
 
   const mutatingCount = steps.filter((s) => s.mutating).length
   return {
@@ -277,5 +292,58 @@ export function validateProposedPlan(plan: ProposedPlanInput): PlanValidation {
     mutating_step_count: mutatingCount,
     steps,
     diagnostics,
+  }
+}
+
+// Checks the step dependency graph: every declared dependency must reference a step in the plan,
+// and the graph must be acyclic so a sequenced apply can satisfy each step's prerequisites. A
+// dependency on an absent step is reported as unknown_dependency; a cycle (including a step that
+// depends on itself) is reported as dependency_cycle naming a step on the cycle.
+function validateDependencies(plan: ProposedPlanInput, steps: ValidatedStep[], diagnostics: PlanDiagnostic[]): void {
+  const declaredIds = new Set(plan.steps.map((step) => step.id))
+  const resolvedIds = new Set(steps.map((step) => step.id))
+  const adjacency = new Map<string, string[]>()
+
+  for (const step of steps) {
+    const edges: string[] = []
+    for (const dep of step.depends_on) {
+      if (!declaredIds.has(dep)) {
+        diagnostics.push({
+          step_id: step.id,
+          code: 'unknown_dependency',
+          message: `step '${step.id}' depends on unknown step '${dep}'`,
+        })
+        continue
+      }
+      if (resolvedIds.has(dep)) edges.push(dep)
+    }
+    adjacency.set(step.id, edges)
+  }
+
+  const state = new Map<string, 'visiting' | 'done'>()
+  let cycleNode: string | null = null
+  const visit = (id: string): boolean => {
+    state.set(id, 'visiting')
+    for (const next of adjacency.get(id) ?? []) {
+      const seen = state.get(next)
+      if (seen === 'visiting') {
+        cycleNode = id
+        return true
+      }
+      if (!seen && visit(next)) return true
+    }
+    state.set(id, 'done')
+    return false
+  }
+
+  for (const step of steps) {
+    if (!state.has(step.id) && visit(step.id)) break
+  }
+  if (cycleNode) {
+    diagnostics.push({
+      step_id: cycleNode,
+      code: 'dependency_cycle',
+      message: `dependency cycle involving step '${cycleNode}'`,
+    })
   }
 }

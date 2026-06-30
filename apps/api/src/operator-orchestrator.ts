@@ -25,6 +25,7 @@ import {
 } from './operator-agents.js'
 import { validateProposedPlan, type ProposedPlanInput } from './operator-capabilities.js'
 import type { Researcher } from './operator-research.js'
+import type { Evidence } from './operator-research.js'
 import type { DocSnippet } from './operator-docs.js'
 import type { Gateway } from './operator-gateway.js'
 
@@ -207,6 +208,27 @@ function withDocs(context: AgentContext, message: string, docs: HandleOptions['d
   }
 }
 
+// Honors the planner's request to see more state before it commits to a plan: it runs one more
+// targeted governed read over exactly the domains the planner named, merges the fresh evidence into
+// the context (a re-read of a domain replaces its stale entry), and returns the expanded context so
+// a single replan can ground on it. The planner only requests evidence — Caracal decides what is
+// read and still owns validate, preview, and approval. Like the first gather it never fails the
+// turn: with no researcher, no named domains, an empty read, or any error, the context is returned
+// unchanged so the loop simply ends.
+async function expandEvidence(context: AgentContext, researcher: Researcher | null | undefined, domains: string[]): Promise<AgentContext> {
+  if (!researcher || domains.length === 0) return context
+  try {
+    const blackboard = await researcher.gather(domains)
+    if (blackboard.evidence.length === 0) return context
+    const merged = new Map<string, Evidence>()
+    for (const entry of context.evidence ?? []) merged.set(entry.capability, entry)
+    for (const entry of blackboard.evidence) merged.set(entry.capability, entry)
+    return { ...context, evidence: [...merged.values()] }
+  } catch {
+    return context
+  }
+}
+
 // Proposes a plan, repairs it once when it fails catalog validation, then critiques the catalog-
 // valid plan for correctness and completeness and revises it once when the critic finds a material
 // defect. It returns the strongest plan it reached: a critic-revised plan when the revision still
@@ -324,8 +346,18 @@ export function createOrchestrator(registry: SkillRegistry = createSkillRegistry
         // approve, and apply; the guardian, the critic, and the repair pass only improve and inform
         // the proposal.
         emit({ stage: 'gathering' })
-        const planContext = withDocs(await withEvidence(context, options.researcher, classification.domains), message, options.docs)
-        const result = await deliberatePlan(gateway, message, planContext, skill, emit)
+        let planContext = withDocs(await withEvidence(context, options.researcher, classification.domains), message, options.docs)
+        let result = await deliberatePlan(gateway, message, planContext, skill, emit)
+        // The planner may decline to plan and instead name the object domains it must read before it
+        // can propose responsibly. Caracal honors that exactly once: it reads those domains, merges
+        // the fresh evidence into the context, and replans. The loop is bounded to a single expansion
+        // so a turn can never fan out unboundedly, and the planner only directs what to read — Caracal
+        // decides and still owns validate, preview, and approval of whatever plan results.
+        if (result.ok && result.value.steps.length === 0 && result.value.needs && options.researcher) {
+          emit({ stage: 'gathering' })
+          planContext = await expandEvidence(planContext, options.researcher, result.value.needs.domains)
+          result = await deliberatePlan(gateway, message, planContext, skill, emit)
+        }
         // When the planner could not plan responsibly it proposes no steps and asks one clarifying
         // question instead of guessing. Caracal relays that question to the operator as an answer
         // — it is recorded as a note, never as an actionable plan — so an underspecified request is
