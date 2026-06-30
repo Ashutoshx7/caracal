@@ -282,7 +282,14 @@ export function GuidedSetup() {
   useEffect(() => {
     if (pref) return;
     const record = getGuidedSetup();
-    if (!record.dismissed && !record.finished) setOpen(true);
+    // Auto-launch only on the genuine first visit: a fresh operator who has neither seen the
+    // guide nor retired it. Marking it seen here means a reload or later visit never reopens
+    // it on its own, even if the operator closed the popup without acting on it.
+    if (!record.seen && !record.finished) {
+      setOpen(true);
+      updatePref({ seen: true, finished: record.finished });
+      return;
+    }
     setPref(record);
   }, [pref]);
 
@@ -293,7 +300,7 @@ export function GuidedSetup() {
   useEffect(() => {
     if (!pref || pref.finished) return;
     if (allComplete || (buildComplete && !open)) {
-      updatePref({ dismissed: pref.dismissed, finished: true });
+      updatePref({ seen: pref.seen, finished: true });
     }
   }, [pref, allComplete, buildComplete, open]);
 
@@ -311,7 +318,7 @@ export function GuidedSetup() {
         manualCompletion={false}
         onOpenChange={(next) => {
           setOpen(next);
-          if (!next) updatePref({ dismissed: true, finished: pref.finished });
+          if (!next) updatePref({ seen: true, finished: pref.finished });
         }}
         onActivateStep={(id) => {
           if (id === "orientation") {
@@ -326,8 +333,8 @@ export function GuidedSetup() {
           const step = steps.find((s) => s.id === id);
           if (step?.to) navigate({ to: step.to, search: step.search ?? {} });
         }}
-        onFinish={() => updatePref({ dismissed: true, finished: true })}
-        onSkip={() => updatePref({ dismissed: true, finished: true })}
+        onFinish={() => updatePref({ seen: true, finished: true })}
+        onSkip={() => updatePref({ seen: true, finished: true })}
       />
 
       {!open && settled ? (
@@ -345,7 +352,7 @@ export function GuidedSetup() {
             </span>
           ) : null}
           <button
-            onClick={() => updatePref({ dismissed: true, finished: true })}
+            onClick={() => updatePref({ seen: true, finished: true })}
             aria-label="Hide setup guide"
             title="Hide setup guide"
             className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full border border-border bg-card text-muted-foreground opacity-0 shadow-sm outline-none transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40 group-hover:opacity-100"

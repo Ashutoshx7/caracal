@@ -112,19 +112,19 @@ export function setActiveZoneId(id: string): void {
   write(ACTIVE_ZONE_KEY, id);
 }
 
-// Tracks whether the operator has finished or dismissed the in-app guided setup, so the
-// coachmark checklist does not reappear on every visit once they have opted out or
-// completed it. Completion of individual steps is derived from live backend state, not
-// stored here.
+// Tracks the operator's relationship with the in-app guided setup. `seen` records that the
+// guide has auto-launched once, so it never opens by itself again after the first visit;
+// `finished` retires it entirely once the operator skips, completes, or dismisses the
+// launcher. Completion of individual steps is derived from live backend state, not stored here.
 interface GuidedSetupRecord {
-  dismissed: boolean;
+  seen: boolean;
   finished: boolean;
 }
 
 export type { GuidedSetupRecord };
 
 export function getGuidedSetup(): GuidedSetupRecord {
-  return read<GuidedSetupRecord>(GUIDED_SETUP_KEY, { dismissed: false, finished: false });
+  return read<GuidedSetupRecord>(GUIDED_SETUP_KEY, { seen: false, finished: false });
 }
 
 export function setGuidedSetup(record: GuidedSetupRecord): void {
