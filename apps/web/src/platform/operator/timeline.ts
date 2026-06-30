@@ -19,6 +19,10 @@ export interface MessageItem {
   reasoning?: string;
 }
 
+// The planner's own honest assessment of how consequential a step is, ordered low to high. It is
+// advisory: the guardian and the human approver still decide.
+export type StepRisk = "low" | "medium" | "high";
+
 export interface PlanStepView {
   id: string;
   capability: string;
@@ -27,9 +31,16 @@ export interface PlanStepView {
   args: Record<string, unknown>;
   status: "pending" | "succeeded" | "failed";
   detail?: string;
+  // The ids of the steps that must complete before this one, in plan order.
+  dependsOn: string[];
+  // The planner's declared risk for this step, present when it tagged one.
+  risk?: StepRisk;
 }
 
 export type AdvisorySeverity = "info" | "caution" | "warning";
+
+// The guardian's verdict on whether the plan matches how Caracal is meant to be used.
+export type AdvisoryAlignment = "aligned" | "risky" | "misaligned";
 
 export interface AdvisoryFindingView {
   severity: AdvisorySeverity;
@@ -37,10 +48,14 @@ export interface AdvisoryFindingView {
 }
 
 // The advisory security review a composed plan may carry. Informational only - it is surfaced to
-// the reviewer and never changes whether the plan can be approved or applied.
+// the reviewer and never changes whether the plan can be approved or applied. When the plan is
+// risky or misaligned the guardian also names the Caracal-correct approach so the review teaches
+// rather than only warns.
 export interface PlanAdvisoryView {
   summary: string;
+  alignment?: AdvisoryAlignment;
   findings: AdvisoryFindingView[];
+  recommendation?: string;
 }
 
 export interface PlanItem {
@@ -85,18 +100,32 @@ interface RawPlanStep {
   summary: string;
   mutating: boolean;
   args: Record<string, unknown>;
+  dependsOn: string[];
+  risk?: StepRisk;
+}
+
+function readStepRisk(value: unknown): StepRisk | undefined {
+  return value === "low" || value === "medium" || value === "high" ? value : undefined;
+}
+
+function readDependsOn(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(asString).filter((id) => id.length > 0);
 }
 
 function readPlanSteps(content: Record<string, unknown>): RawPlanStep[] {
   const steps = Array.isArray(content.steps) ? content.steps : [];
   return steps.map((raw) => {
     const step = asRecord(raw);
+    const risk = readStepRisk(step.risk);
     return {
       id: asString(step.id),
       capability: asString(step.capability),
       summary: asString(step.summary),
       mutating: step.mutating === true,
       args: asRecord(step.args),
+      dependsOn: readDependsOn(step.depends_on),
+      ...(risk ? { risk } : {}),
     };
   });
 }
@@ -104,6 +133,10 @@ function readPlanSteps(content: Record<string, unknown>): RawPlanStep[] {
 // Reads the advisory security review from a plan turn's content, when present. Only the recognized
 // severities are kept and a finding must carry a concern, so a malformed advisory degrades to
 // nothing rather than rendering noise. Returns undefined when the plan carried no advisory.
+function readAdvisoryAlignment(value: unknown): AdvisoryAlignment | undefined {
+  return value === "aligned" || value === "risky" || value === "misaligned" ? value : undefined;
+}
+
 function readPlanAdvisory(content: Record<string, unknown>): PlanAdvisoryView | undefined {
   const advisory = asRecord(content.advisory);
   const summary = asString(advisory.summary);
@@ -121,7 +154,14 @@ function readPlanAdvisory(content: Record<string, unknown>): PlanAdvisoryView | 
       findings.push({ severity, concern });
     }
   }
-  return { summary, findings };
+  const alignment = readAdvisoryAlignment(advisory.alignment);
+  const recommendation = asString(advisory.recommendation);
+  return {
+    summary,
+    findings,
+    ...(alignment ? { alignment } : {}),
+    ...(recommendation.length > 0 ? { recommendation } : {}),
+  };
 }
 
 // Builds the display timeline from the ordered turn ledger and resolves the latest
@@ -221,6 +261,8 @@ function resolvePlan(
       mutating: step.mutating,
       args: step.args,
       status: exec?.status ?? "pending",
+      dependsOn: step.dependsOn,
+      ...(step.risk ? { risk: step.risk } : {}),
       ...(exec?.detail ? { detail: exec.detail } : {}),
     };
   });

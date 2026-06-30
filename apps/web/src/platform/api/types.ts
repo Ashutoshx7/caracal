@@ -875,17 +875,24 @@ export interface OperatorUsageMeta {
 // approves the plan and never gates it.
 export type OperatorAdvisorySeverity = "info" | "caution" | "warning";
 
+// The guardian's verdict on whether the plan matches how Caracal is meant to be used.
+export type OperatorAdvisoryAlignment = "aligned" | "risky" | "misaligned";
+
 export interface OperatorAdvisoryFinding {
   severity: OperatorAdvisorySeverity;
   concern: string;
 }
 
-// The advisory security review a composed plan may carry: a plain-language summary and any
-// findings about over-grant, least-privilege, or blast-radius. It is informational only - the
-// plan is governed by validation, preview, and approval, never by this review.
+// The advisory security review a composed plan may carry: a plain-language summary, an intent
+// alignment verdict, any findings about over-grant, least-privilege, or blast-radius, and - when
+// the plan is risky or misaligned - a concrete recommendation of the Caracal-correct approach. It
+// is informational only - the plan is governed by validation, preview, and approval, never by this
+// review.
 export interface OperatorSecurityAdvisory {
   summary: string;
+  alignment?: OperatorAdvisoryAlignment;
   findings: OperatorAdvisoryFinding[];
+  recommendation?: string;
 }
 
 export type OperatorMessageResult = (

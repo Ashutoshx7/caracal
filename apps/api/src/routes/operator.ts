@@ -228,6 +228,10 @@ function buildPlanContentJson(summary: string, validation: PlanValidation, advis
       summary: step.title,
       mutating: step.mutating,
       args: step.args,
+      // The plan's order and the planner's own consequence assessment are persisted so the human
+      // reviews exactly the dependency chain and per-step risk the guardian reasoned over.
+      ...(step.depends_on.length > 0 ? { depends_on: step.depends_on } : {}),
+      ...(step.risk ? { risk: step.risk } : {}),
     })),
   }
   // A composed plan may carry an advisory security review. It is persisted with the plan so the
