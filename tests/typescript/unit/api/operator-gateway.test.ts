@@ -221,7 +221,7 @@ describe('gateway completeObject', () => {
     const { gateway, usage } = withUsage(preferProvider(base, 'second'))
     const result = await gateway.completeObject([{ role: 'user', content: 'go' }], ProposedPlan)
     expect(result.provider).toBe('second')
-    expect(usage()).toEqual({ inputTokens: 10, outputTokens: 4 })
+    expect(usage()).toMatchObject({ inputTokens: 10, outputTokens: 4 })
   })
 })
 
@@ -234,17 +234,42 @@ describe('withUsage', () => {
     const base = createGateway([provider()], fetchMock as unknown as typeof fetch)
     const { gateway, usage } = withUsage(base)
 
-    expect(usage()).toEqual({ inputTokens: 0, outputTokens: 0 })
+    expect(usage()).toMatchObject({ inputTokens: 0, outputTokens: 0 })
     await gateway.complete([{ role: 'user', content: 'a' }])
     await gateway.complete([{ role: 'user', content: 'b' }])
-    expect(usage()).toEqual({ inputTokens: 130, outputTokens: 25 })
+    expect(usage()).toMatchObject({ inputTokens: 130, outputTokens: 25 })
+  })
+
+  it('records the provider and model that served, tracking a failover across calls', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(chatResponse('one'))
+      .mockRejectedValueOnce(new TypeError('connection refused'))
+      .mockResolvedValueOnce(chatResponse('two'))
+    const base = createGateway(
+      [provider({ id: 'primary', model: 'gpt-a' }), provider({ id: 'secondary', model: 'gpt-b' })],
+      fetchMock as unknown as typeof fetch,
+    )
+    const { gateway, usage } = withUsage(base)
+    await gateway.complete([{ role: 'user', content: 'a' }])
+    await gateway.complete([{ role: 'user', content: 'b' }])
+    // The first call was served by the primary; the second failed over to the secondary, so both
+    // providers are recorded in served order and the last served provider is the secondary.
+    expect(usage()).toMatchObject({ provider: 'secondary', model: 'gpt-b', providers: ['primary', 'secondary'] })
+  })
+
+  it('reports a null served provider when no completion succeeded', async () => {
+    const fetchMock = vi.fn(async () => chatResponse('OK'))
+    const base = createGateway([provider()], fetchMock as unknown as typeof fetch)
+    const { usage } = withUsage(base, { maxCalls: 1 })
+    expect(usage()).toMatchObject({ provider: null, model: null, providers: [] })
   })
 
   it('treats missing usage as zero without throwing', async () => {
     const fetchMock = vi.fn().mockResolvedValue(chatResponse('no usage'))
     const { gateway, usage } = withUsage(createGateway([provider()], fetchMock as unknown as typeof fetch))
     await gateway.complete([{ role: 'user', content: 'a' }])
-    expect(usage()).toEqual({ inputTokens: 0, outputTokens: 0 })
+    expect(usage()).toMatchObject({ inputTokens: 0, outputTokens: 0 })
   })
 
   it('enforces the per-turn model-call budget, refusing a call beyond it', async () => {

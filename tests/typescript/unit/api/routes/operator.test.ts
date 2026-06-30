@@ -2028,6 +2028,28 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     expect(terminal.data).toMatchObject({ intent: 'plan', tier: 'change', ok: true })
     expect((terminal.data as { validation: { ok: boolean } }).validation.ok).toBe(true)
     expect((terminal.data as { preview: { steps: { effect: string }[] } }).preview.steps[0].effect).toBe('create')
+    // The same trail that streamed live is recorded on the persisted plan turn so the console can
+    // replay it after the stream ends.
+    const planInsert = clientQuery.mock.calls.find((call) => {
+      const param = call[1]?.[6]
+      if (typeof param !== 'string') return false
+      try {
+        return Array.isArray(JSON.parse(param).steps)
+      } catch {
+        return false
+      }
+    })
+    expect(planInsert).toBeDefined()
+    expect(JSON.parse(planInsert![1][6]).deliberation).toEqual([
+      'triaging',
+      'gathering',
+      'planning',
+      'critiquing',
+      'guarding',
+    ])
+    // The effect each step was previewed to have against live state is recorded per step, so the
+    // console can show the consequence the human reviewed rather than only the step's claim.
+    expect(JSON.parse(planInsert![1][6]).steps[0].effect).toBe('create')
   })
 
   it('streams a governance budget refusal as a terminal error frame', async () => {
@@ -2125,6 +2147,13 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     expect(approvalInsert).toBeDefined()
     const content = JSON.parse(String(approvalInsert![1][6]))
     expect(content).toMatchObject({ plan_seq: 2, autopilot: true })
+    // The deliberation trail is recorded even on the non-streaming path, so the console can replay
+    // how the plan was reasoned regardless of how the result was delivered.
+    const planInsert = clientQuery.mock.calls.find(
+      (c) => String(c[0]).includes('INSERT INTO operator_turns') && String(c[1]?.[5]) === 'plan',
+    )
+    expect(planInsert).toBeDefined()
+    expect(JSON.parse(String(planInsert![1][6])).deliberation).toContain('triaging')
   })
 
   it('does not auto-approve a plan whose capability is not on the autopilot allowlist', async () => {

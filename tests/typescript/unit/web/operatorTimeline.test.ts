@@ -249,4 +249,66 @@ describe('buildTimeline', () => {
     expect(latestPlan?.steps[1]?.dependsOn).toEqual(['s1'])
     expect(latestPlan?.steps[1]?.risk).toBeUndefined()
   })
+
+  it('carries the previewed per-step effect, dropping an unknown effect', () => {
+    const { latestPlan } = buildTimeline([
+      turn({
+        seq: 1,
+        kind: 'plan',
+        role: 'operator',
+        content: {
+          summary: 'Connect then grant',
+          steps: [
+            { id: 's1', capability: 'connectProvider', summary: 'Connect', mutating: true, effect: 'create' },
+            { id: 's2', capability: 'grantAccess', summary: 'Grant', mutating: true, effect: 'exists' },
+            { id: 's3', capability: 'listZones', summary: 'List', mutating: false, effect: 'bogus' },
+          ],
+        },
+      }),
+    ])
+    expect(latestPlan?.steps[0]?.effect).toBe('create')
+    expect(latestPlan?.steps[1]?.effect).toBe('exists')
+    expect(latestPlan?.steps[2]?.effect).toBeUndefined()
+  })
+
+  it('records the deliberation trail on a plan and an answer, dropping unknown stages', () => {
+    const { items, latestPlan } = buildTimeline([
+      turn({
+        seq: 1,
+        kind: 'note',
+        role: 'operator',
+        content: { text: 'here is why', deliberation: ['triaging', 'gathering', 'answering'] },
+      }),
+      turn({
+        seq: 2,
+        kind: 'plan',
+        role: 'operator',
+        content: {
+          summary: 'Stand up',
+          steps: [{ id: 's1', capability: 'createZone', summary: 'Create a zone', mutating: true }],
+          deliberation: ['triaging', 'planning', 'bogus', 'guarding'],
+        },
+      }),
+    ])
+    expect(items[0]).toMatchObject({ kind: 'note', deliberation: ['triaging', 'gathering', 'answering'] })
+    expect(latestPlan?.deliberation).toEqual(['triaging', 'planning', 'guarding'])
+  })
+
+  it('omits an absent or non-array deliberation', () => {
+    const { items, latestPlan } = buildTimeline([
+      turn({ seq: 1, kind: 'note', role: 'operator', content: { text: 'no trail' } }),
+      turn({
+        seq: 2,
+        kind: 'plan',
+        role: 'operator',
+        content: {
+          summary: 'Stand up',
+          steps: [{ id: 's1', capability: 'createZone', summary: 'Create a zone', mutating: true }],
+          deliberation: 'not-an-array',
+        },
+      }),
+    ])
+    expect(items[0]).not.toHaveProperty('deliberation')
+    expect(latestPlan?.deliberation).toBeUndefined()
+  })
 })
