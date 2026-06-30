@@ -312,6 +312,11 @@ export async function runTriage(gateway: Gateway, message: string): Promise<Agen
 export interface AgentContext {
   facts: ConversationFacts | null
   state: ConversationState | null
+  // The single zone this conversation operates in. Every read and change is scoped to it, so the
+  // agents are grounded in this one zone and never ask the user which zone to use. canApply is
+  // whether governed execution is configured for this zone: when false the Operator can plan and
+  // explain here but cannot apply changes, and says so rather than implying an apply will work.
+  zone?: { name: string; canApply: boolean }
   // Durable, zone-scoped knowledge of governed changes already applied in this zone, carried
   // across conversations. Grounds an agent in the zone's established shape so it does not
   // re-propose what already exists or ignore conventions set in earlier conversations.
@@ -365,6 +370,23 @@ function describeDocs(docs: DocSnippet[] | undefined): string | null {
 // rather than replayed, so the prompt stays small no matter how long the conversation is.
 function describeContext(context: AgentContext): string {
   const sections: string[] = []
+
+  if (context.zone) {
+    const lines = [
+      `Operating zone: "${context.zone.name}". This conversation is bound to this one zone; every ` +
+        'object you read, propose, or reason about lives in it. It is already chosen — never ask the ' +
+        'user which zone to use, and never tell them to pick a zone, because it is always this one.',
+    ]
+    if (!context.zone.canApply) {
+      lines.push(
+        'Governed execution is not configured for this zone, so changes cannot be applied here. You ' +
+          'can still explain and propose a plan, but if the user wants to make a change, tell them ' +
+          'plainly that applying it requires governed execution to be configured for this zone first.',
+      )
+    }
+    sections.push(lines.join(' '))
+  }
+
   const zoneMemory = describeZoneMemory(context.zoneMemory)
   if (zoneMemory) sections.push(zoneMemory)
 
@@ -443,6 +465,13 @@ export function buildPlannerMessages(message: string, context: AgentContext, fee
           'question, the most decision-blocking one, and only when a reasonable plan is genuinely',
           'impossible without it; prefer inferring from the live state and recent activity in the context',
           'when you confidently can.',
+          'NEVER INVENT A NAME OR IDENTIFIER. Creating or registering a named object — an application, a',
+          'resource, a provider, a zone, or a policy — requires the name the operator actually gave. When',
+          'the request asks to create one but does not say what to call it (for example "create an',
+          'application for me" with no name), do NOT make up a name or a slug and do NOT proceed to a',
+          'plan: return an empty steps array and a single "clarification" question asking what it should',
+          'be called, plus any other detail you cannot safely default. The zone is never one of these',
+          'missing details — it is already the operating zone above.',
           'GATHER MORE STATE BEFORE GUESSING: the context already carries the live state Caracal read',
           'for this turn. If you cannot plan correctly because you must first SEE more of the deployment',
           '— for example you need the resource and application objects to find the ids a grant binds —',

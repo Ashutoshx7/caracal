@@ -93,7 +93,7 @@ import {
   type Glyph,
 } from "@/components/console/OperatorGlyphs";
 import { DeliberationReplay, DeliberationTrail } from "@/components/console/OperatorDeliberation";
-import { PlanArtifact, PlanDecisionDock, PlanHistoryRow } from "@/components/console/OperatorPlan";
+import { PlanArtifact, PlanHistoryRow } from "@/components/console/OperatorPlan";
 import {
   Composer,
   HeroComposer,
@@ -1076,6 +1076,9 @@ function ActivityStream({
   // and the snap is instant so streaming updates land without flicker or mid-message jumps.
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  // True from the instant a send is dispatched until it settles. Guards every send path against
+  // overlapping the same conversation, independent of the mutation's render-lagged isPending.
+  const sending = useRef(false);
   // Distance from the bottom captured just before earlier turns are revealed, so the viewport can
   // be restored to the same place after the taller list paints instead of jumping.
   const pendingReveal = useRef<number | null>(null);
@@ -1106,6 +1109,12 @@ function ActivityStream({
   }, [visibleItems]);
 
   function dispatch(text: string) {
+    // The mutation's own isPending flips a render late, so this synchronous flag is what actually
+    // prevents a second send - a re-fired opening intent or a doubled queue drain - from racing the
+    // first into the same conversation, which the server serializes and which leaves the stream
+    // stuck on the working indicator. It clears the moment the send settles.
+    if (sending.current) return;
+    sending.current = true;
     setInFlight(text);
     setStages([]);
     send.mutate(
@@ -1118,6 +1127,7 @@ function ActivityStream({
       {
         onSuccess: (result) => onUsage?.(result),
         onSettled: () => {
+          sending.current = false;
           setInFlight(null);
           setStages([]);
         },
@@ -1138,7 +1148,7 @@ function ActivityStream({
     }
     setMessage("");
     stickToBottom.current = true;
-    if (send.isPending || queued.length > 0) {
+    if (sending.current || send.isPending || queued.length > 0) {
       setQueued((prev) => [...prev, { id: crypto.randomUUID(), text: value }]);
       return;
     }
@@ -1152,7 +1162,7 @@ function ActivityStream({
   // Send a queued message ahead of the rest: dispatch it now when the Operator is free,
   // otherwise move it to the front so it drains next.
   function sendQueuedNow(id: string) {
-    if (!send.isPending) {
+    if (!sending.current && !send.isPending) {
       const target = queued.find((item) => item.id === id);
       if (!target) return;
       setQueued((prev) => prev.filter((item) => item.id !== id));
@@ -1168,19 +1178,22 @@ function ActivityStream({
 
   // Drain the queue in order: once the Operator is free, send the next queued message.
   useEffect(() => {
-    if (send.isPending || queued.length === 0) return;
+    if (sending.current || send.isPending || queued.length === 0) return;
     const next = queued[0];
     setQueued((prev) => prev.slice(1));
     dispatch(next.text);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [send.isPending, queued]);
 
-  // Send the opening intent once when the session was started from the hero.
+  // Send the opening intent once when the session was started from the hero. It dispatches
+  // directly rather than through submit: the opening message is always the first turn, so it must
+  // never take the queue branch and leave a phantom copy to drain later.
   const openingSent = useRef(false);
   useEffect(() => {
     if (initialMessage && !openingSent.current) {
       openingSent.current = true;
-      submit(initialMessage);
+      stickToBottom.current = true;
+      dispatch(initialMessage);
       onInitialConsumed?.();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1198,7 +1211,12 @@ function ActivityStream({
   // request ever fails to settle in the browser, never showing the indicator past a real send.
   useEffect(() => {
     if (!send.isPending) return;
-    const guard = window.setTimeout(() => send.reset(), SEND_SETTLE_GUARD_MS);
+    const guard = window.setTimeout(() => {
+      sending.current = false;
+      setInFlight(null);
+      setStages([]);
+      send.reset();
+    }, SEND_SETTLE_GUARD_MS);
     return () => window.clearTimeout(guard);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [send.isPending]);
@@ -1289,8 +1307,6 @@ function ActivityStream({
         onRemove={removeQueued}
         onSendNow={sendQueuedNow}
       />
-
-      <PlanDecisionDock plan={latestPlan} zoneId={zoneId} conversationId={conversationId} />
 
       <Composer
         value={message}
