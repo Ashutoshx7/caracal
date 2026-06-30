@@ -323,6 +323,7 @@ export function useSendOperatorMessage(zoneId: string | null, conversationId: st
     mutationFn: (input: {
       message: string;
       provider?: string;
+      signal?: AbortSignal;
       onStage?: (stage: OperatorProgressStage) => void;
     }) =>
       consoleApi.operator.sendMessage(
@@ -331,6 +332,7 @@ export function useSendOperatorMessage(zoneId: string | null, conversationId: st
         input.message,
         input.provider,
         input.onStage ?? (() => {}),
+        input.signal,
       ),
     onSuccess: () => invalidateConversation(qc, zoneId, conversationId),
   });

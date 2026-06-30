@@ -1051,6 +1051,9 @@ function ActivityStream({
   // True from the instant a send is dispatched until it settles. Guards every send path against
   // overlapping the same conversation, independent of the mutation's render-lagged isPending.
   const sending = useRef(false);
+  // The controller for the request currently in flight, so a stalled stream can be aborted at the
+  // source rather than only clearing the indicator while the fetch leaks on in the background.
+  const sendAbort = useRef<AbortController | null>(null);
   // Distance from the bottom captured just before earlier turns are revealed, so the viewport can
   // be restored to the same place after the taller list paints instead of jumping.
   const pendingReveal = useRef<number | null>(null);
@@ -1089,10 +1092,13 @@ function ActivityStream({
     sending.current = true;
     setInFlight(text);
     setStages([]);
+    const controller = new AbortController();
+    sendAbort.current = controller;
     send.mutate(
       {
         message: text,
         provider: model ?? undefined,
+        signal: controller.signal,
         onStage: (stage) =>
           setStages((prev) => (prev[prev.length - 1] === stage ? prev : [...prev, stage])),
       },
@@ -1100,6 +1106,7 @@ function ActivityStream({
         onSuccess: (result) => onUsage?.(result),
         onSettled: () => {
           sending.current = false;
+          sendAbort.current = null;
           setInFlight(null);
           setStages([]);
         },
@@ -1178,20 +1185,23 @@ function ActivityStream({
     return () => onError?.(false);
   }, [send.isError, onError]);
 
-  // Guarantee the workspace returns to idle after a send: the request itself is bounded by the
-  // client request timeout, so this is a final backstop that clears the working state if a
-  // request ever fails to settle in the browser, never showing the indicator past a real send.
+  // Guarantee the workspace returns to idle after a send: a stalled stream is aborted at the
+  // source, so the in-flight fetch is cancelled rather than left running while the indicator is
+  // hidden. The abort rejects the request, which settles the mutation through onSettled and clears
+  // the working state, and surfaces the failure in the error label instead of stranding the echo.
   useEffect(() => {
     if (!send.isPending) return;
     const guard = window.setTimeout(() => {
-      sending.current = false;
-      setInFlight(null);
-      setStages([]);
-      send.reset();
+      sendAbort.current?.abort();
     }, SEND_SETTLE_GUARD_MS);
     return () => window.clearTimeout(guard);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [send.isPending]);
+
+  // Abort any in-flight send when the stream unmounts - switching conversations or leaving the
+  // workspace - so a request never streams on against a pane that is gone.
+  useEffect(() => {
+    return () => sendAbort.current?.abort();
+  }, []);
 
   const empty = !isLoading && items.length === 0 && !send.isPending && !initialMessage;
 

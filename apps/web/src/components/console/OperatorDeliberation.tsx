@@ -65,8 +65,18 @@ export function DeliberationTrail({
 
 // A completed turn's deliberation trail, collapsed by default: the recorded path the request was
 // reasoned through, replayable after the live stream has ended. Consecutive repeats collapse so a
-// repair or revise loop reads as one step, and a trail of fewer than two stages is hidden since a
-// single stage is not a deliberation worth disclosing.
+// repair or revise loop reads as one step. The replay is shown only for a turn that actually
+// deliberated - one that read live state, planned, repaired, critiqued, revised, or guarded - so a
+// trivial answer that only triaged and replied carries no disclosure to expand.
+const SUBSTANTIVE_STAGES: ReadonlySet<OperatorProgressStage> = new Set([
+  "gathering",
+  "planning",
+  "repairing",
+  "critiquing",
+  "revising",
+  "guarding",
+]);
+
 export function DeliberationReplay({ stages }: { stages: OperatorProgressStage[] }) {
   const trail = useMemo(() => {
     const out: OperatorProgressStage[] = [];
@@ -75,7 +85,7 @@ export function DeliberationReplay({ stages }: { stages: OperatorProgressStage[]
     }
     return out;
   }, [stages]);
-  if (trail.length < 2) return null;
+  if (!trail.some((stage) => SUBSTANTIVE_STAGES.has(stage))) return null;
   return (
     <Task defaultOpen={false} className="border border-border bg-card/60">
       <div className="flex items-center px-3 py-2">
