@@ -1579,6 +1579,12 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/plan/execute', () =>
     )
     expect(insertNote).toBeDefined()
     expect(String(insertNote![1][6])).toContain('Verification (matched)')
+    // The verdict is recorded structurally as well as in human text, so a later turn's facts can
+    // learn from it: a drift would re-enter the planner's grounding rather than dead-ending as prose.
+    expect(JSON.parse(String(insertNote![1][6])).verification).toEqual({
+      status: 'matched',
+      summary: 'The Billing application is present in current state.',
+    })
     // The verifier judged against live state read after the apply: the post-apply application list
     // was read through the governed control plane, scoped to the application domain the plan touched.
     const listInvoke = fetchMock.mock.calls.find(

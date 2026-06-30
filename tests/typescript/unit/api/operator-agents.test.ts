@@ -154,6 +154,7 @@ describe('buildPlannerMessages', () => {
         decided_plans: [{ seq: 2, summary: 'old plan', decision: 'rejected', executed: false, steps_succeeded: 0, steps_failed: 0 }],
         rejected_capabilities: ['grantAccess'],
         applied_change_count: 3,
+        last_drift: null,
         last_error: null,
       },
       state: null,

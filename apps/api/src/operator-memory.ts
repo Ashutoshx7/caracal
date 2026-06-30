@@ -57,10 +57,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 // Folds the full ordered turn history into a compact facts object. Plans are matched
 // with their decisions and executions; only decided plans become facts, capped to
 // the most recent so the result stays small for arbitrarily long conversations.
-export function summarizeHistory(
-  turns: TurnRecord[],
-  options: { planCap?: number } = {},
-): ConversationFacts {
+export function summarizeHistory(turns: TurnRecord[], options: { planCap?: number } = {}): ConversationFacts {
   const ordered = [...turns].sort((a, b) => a.seq - b.seq)
   const planCap = Math.max(1, options.planCap ?? DEFAULT_PLAN_CAP)
 
@@ -127,7 +124,8 @@ export function summarizeHistory(
     decided_plans: cappedPlans,
     rejected_capabilities: [...rejected].sort(),
     applied_change_count: appliedChangeCount,
-    last_drift: lastVerification && lastVerification.status === 'drifted' ? { seq: lastVerification.seq, summary: lastVerification.summary } : null,
+    last_drift:
+      lastVerification && lastVerification.status === 'drifted' ? { seq: lastVerification.seq, summary: lastVerification.summary } : null,
     last_error: lastError,
   }
 }

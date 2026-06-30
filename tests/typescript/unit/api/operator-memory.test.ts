@@ -77,7 +77,10 @@ describe('summarizeHistory', () => {
       turn({
         seq: 4,
         kind: 'note',
-        content: { text: 'Verification (drifted): the app is missing.', verification: { status: 'drifted', summary: 'The Billing application is not present.' } },
+        content: {
+          text: 'Verification (drifted): the app is missing.',
+          verification: { status: 'drifted', summary: 'The Billing application is not present.' },
+        },
       }),
     ])
     expect(facts.last_drift).toEqual({ seq: 4, summary: 'The Billing application is not present.' })
@@ -128,7 +131,9 @@ describe('summarizeHistory', () => {
 describe('describeFacts', () => {
   it('returns an empty string when there is nothing to carry', () => {
     expect(describeFacts(null)).toBe('')
-    expect(describeFacts({ decided_plans: [], rejected_capabilities: [], applied_change_count: 0, last_error: null })).toBe('')
+    expect(
+      describeFacts({ decided_plans: [], rejected_capabilities: [], applied_change_count: 0, last_drift: null, last_error: null }),
+    ).toBe('')
   })
 
   it('renders a compact block with applied changes and rejection memory', () => {
@@ -139,6 +144,7 @@ describe('describeFacts', () => {
       ],
       rejected_capabilities: ['grantAccess'],
       applied_change_count: 2,
+      last_drift: null,
       last_error: { seq: 9, message: 'boom' },
     })
     expect(text).toContain('2 earlier plan(s) decided (1 approved, 1 rejected)')
@@ -146,5 +152,17 @@ describe('describeFacts', () => {
     expect(text).toContain('Previously rejected operations')
     expect(text).toContain('grantAccess')
     expect(text).toContain('boom')
+  })
+
+  it('surfaces an outstanding verification drift so the planner is told to reconcile it', () => {
+    const text = describeFacts({
+      decided_plans: [],
+      rejected_capabilities: [],
+      applied_change_count: 1,
+      last_drift: { seq: 4, summary: 'The Billing application is not present.' },
+      last_error: null,
+    })
+    expect(text).toContain('Most recent post-apply verification reported drift')
+    expect(text).toContain('The Billing application is not present.')
   })
 })
