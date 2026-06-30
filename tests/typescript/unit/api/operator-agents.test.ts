@@ -12,6 +12,7 @@ import {
   buildSecurityAnalystMessages,
   buildVerifierMessages,
   buildCriticMessages,
+  buildAnswerCheckMessages,
   buildTriageMessages,
   runTriage,
   tierPlans,
@@ -24,6 +25,7 @@ import {
   runSecurityAnalyst,
   runVerifier,
   runCritic,
+  runAnswerCheck,
 } from '../../../../apps/api/src/operator-agents.js'
 import type { Gateway, CompletionResult, CompletionObjectResult } from '../../../../apps/api/src/operator-gateway.js'
 
@@ -205,6 +207,34 @@ describe('buildExplainerMessages', () => {
     expect(content).toContain('resource: none')
     // The system prompt instructs the model to ground in the live state and not invent entities.
     expect(messages[0].content).toContain('do not invent')
+  })
+
+  it('renders the decision-relevant attributes a domain exposes alongside its names', () => {
+    const messages = buildExplainerMessages('what can finance reach', {
+      facts: null,
+      state: null,
+      evidence: [
+        {
+          capability: 'listProviders',
+          domain: 'provider',
+          ok: true,
+          count: 2,
+          names: ['GitHub', 'Okta'],
+          attributes: { auth: ['api_key', 'oauth2_authorization_code'] },
+        },
+        {
+          capability: 'listResources',
+          domain: 'resource',
+          ok: true,
+          count: 1,
+          names: ['Stripe'],
+          attributes: { scopes: ['read', 'write'] },
+        },
+      ],
+    })
+    const content = messages[1].content
+    expect(content).toContain('provider (2): GitHub, Okta [auth: api_key, oauth2_authorization_code]')
+    expect(content).toContain('resource (1): Stripe [scopes: read, write]')
   })
 
   it('truncates the names list while keeping the live count', () => {
@@ -468,6 +498,56 @@ describe('runCritic', () => {
   it('fails closed when the critique is off-schema, so the plan is left unchanged', async () => {
     const { gateway } = gatewayProducing(new Error('schema validation failed'))
     const result = await runCritic(gateway, plan, 'connect github', { facts: null, state: null })
+    expect(result.ok).toBe(false)
+  })
+})
+
+describe('buildAnswerCheckMessages', () => {
+  it('frames the turn as a grounding check and renders the request, evidence, and drafted answer', () => {
+    const context = {
+      facts: null,
+      state: null,
+      evidence: [{ capability: 'listProviders', domain: 'provider', ok: true, count: 0, names: [] }],
+    }
+    const messages = buildAnswerCheckMessages('do i have stripe', 'You have a Stripe provider.', context)
+    expect(messages[0].content).toContain('ANSWER GROUNDING CHECK')
+    expect(messages[1].content).toContain('do i have stripe')
+    expect(messages[1].content).toContain('You have a Stripe provider.')
+  })
+
+  it('instructs the model to ground only concrete state claims and reply with a strict JSON verdict', () => {
+    const system = buildAnswerCheckMessages('q', 'a', { facts: null, state: null })[0].content
+    expect(system).toContain('grounded')
+    expect(system).toContain('correction')
+  })
+})
+
+describe('runAnswerCheck', () => {
+  const context = {
+    facts: null,
+    state: null,
+    evidence: [{ capability: 'listProviders', domain: 'provider', ok: true, count: 0, names: [] }],
+  }
+
+  it('passes a grounded answer through with no correction', async () => {
+    const { gateway } = gatewayProducing({ grounded: true })
+    const result = await runAnswerCheck(gateway, 'do i have stripe', 'You have no providers connected.', context)
+    expect(result).toEqual({ ok: true, value: { grounded: true } })
+  })
+
+  it('returns the single-sentence correction when the answer contradicts the evidence', async () => {
+    const { gateway } = gatewayProducing({ grounded: false, correction: 'No Stripe provider exists in this zone.' })
+    const result = await runAnswerCheck(gateway, 'do i have stripe', 'You have a Stripe provider.', context)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.value.grounded).toBe(false)
+      expect(result.value.correction).toBe('No Stripe provider exists in this zone.')
+    }
+  })
+
+  it('fails closed when the verdict is off-schema, so the answer is left unchanged', async () => {
+    const { gateway } = gatewayProducing(new Error('schema validation failed'))
+    const result = await runAnswerCheck(gateway, 'do i have stripe', 'You have a Stripe provider.', context)
     expect(result.ok).toBe(false)
   })
 })

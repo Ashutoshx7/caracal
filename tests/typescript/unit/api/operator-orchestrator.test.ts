@@ -210,16 +210,85 @@ describe('createOrchestrator', () => {
     expect(seenDocs).toEqual(docs)
   })
 
-  it('does not retrieve documentation for a planning tier', async () => {
-    const retriever = vi.fn().mockReturnValue([])
-    const plan = {
-      summary: 'connect',
-      steps: [{ id: 's1', capability: 'connectProvider', args: { name: 'GitHub', kind: 'oauth2_authorization_code' } }],
+  it('grounds a plan in retrieved documentation passed to the planner', async () => {
+    const docs = [
+      {
+        id: '/guides/provider-recipes',
+        title: 'Provider recipes',
+        url: 'https://docs/x',
+        snippet: 'Use oauth2_client_credentials for service-to-service.',
+      },
+    ]
+    const retriever = vi.fn().mockReturnValue(docs)
+    let seenDocs: unknown
+    const registry: SkillRegistry = {
+      select: () => ({
+        id: 'probe',
+        kind: 'plan',
+        run: async (_g, _m, context) => {
+          seenDocs = context.docs
+          return { ok: true, value: { summary: 'noop', steps: [] } }
+        },
+      }),
     }
-    await createOrchestrator().handle(planningGateway('change', plan), 'connect github', emptyContext, { docs: retriever })
-    // Planning grounds in the capability catalog and live state, not prose docs, so the retriever is
-    // never invoked on the change path.
-    expect(retriever).not.toHaveBeenCalled()
+    await createOrchestrator(registry).handle(planningGateway('change', {}), 'connect github with client credentials', emptyContext, {
+      docs: retriever,
+    })
+    // Planning grounds in the real documentation too, so the planner quotes exact provider auth
+    // modes, scopes, and recipes rather than inventing them: the retriever is queried with the
+    // request and its passages reach the planning skill's context.
+    expect(retriever).toHaveBeenCalledWith('connect github with client credentials')
+    expect(seenDocs).toEqual(docs)
+  })
+
+  it('appends a Caracal correction when the grounding check finds a read answer ungrounded', async () => {
+    // completeObject returns the read triage, then the grounding verdict; the answer skill draws its
+    // text from complete. The answer claims a provider that the evidence shows does not exist.
+    const completeObject = vi
+      .fn()
+      .mockResolvedValueOnce({ value: { tier: 'read', topic: 'general' }, provider: 't', model: 'm' })
+      .mockResolvedValueOnce({
+        value: { grounded: false, correction: 'No Stripe provider exists in this zone.' },
+        provider: 't',
+        model: 'm',
+      })
+    const complete = vi.fn().mockResolvedValue({ text: 'You have a Stripe provider connected.', provider: 't', model: 'm' })
+    const gateway = { status: () => ({ enabled: true, providers: [] }), complete, completeObject } as unknown as Gateway
+    const evidence = [{ capability: 'listProviders', domain: 'provider', ok: true, count: 0, names: [] }]
+    const researcher = { gather: vi.fn().mockResolvedValue({ evidence }) }
+    const result = await createOrchestrator().handle(gateway, 'do i have stripe', emptyContext, { researcher })
+    expect(result.outcome.kind).toBe('answer')
+    if (result.outcome.kind === 'answer' && result.outcome.result.ok) {
+      // The original answer stands and Caracal appends the grounding correction so the user is not misled.
+      expect(result.outcome.result.value.text).toContain('You have a Stripe provider connected.')
+      expect(result.outcome.result.value.text).toContain('Correction: No Stripe provider exists in this zone.')
+    }
+  })
+
+  it('leaves a grounded read answer unchanged', async () => {
+    const completeObject = vi
+      .fn()
+      .mockResolvedValueOnce({ value: { tier: 'read', topic: 'general' }, provider: 't', model: 'm' })
+      .mockResolvedValueOnce({ value: { grounded: true }, provider: 't', model: 'm' })
+    const complete = vi.fn().mockResolvedValue({ text: 'You have one provider: GitHub.', provider: 't', model: 'm' })
+    const gateway = { status: () => ({ enabled: true, providers: [] }), complete, completeObject } as unknown as Gateway
+    const evidence = [{ capability: 'listProviders', domain: 'provider', ok: true, count: 1, names: ['GitHub'] }]
+    const researcher = { gather: vi.fn().mockResolvedValue({ evidence }) }
+    const result = await createOrchestrator().handle(gateway, 'what providers do i have', emptyContext, { researcher })
+    if (result.outcome.kind === 'answer' && result.outcome.result.ok) {
+      expect(result.outcome.result.value.text).toBe('You have one provider: GitHub.')
+    }
+  })
+
+  it('does not run the grounding check when no evidence was gathered', async () => {
+    // A conversational turn reads no state, so there is nothing to ground against and the check is
+    // skipped — only the single triage completeObject call is made, never a grounding call.
+    const gateway = gatewayFor('conversational', 'Caracal issues short-lived scoped mandates.')
+    const result = await createOrchestrator().handle(gateway, 'what is a mandate', emptyContext)
+    if (result.outcome.kind === 'answer' && result.outcome.result.ok) {
+      expect(result.outcome.result.value.text).toBe('Caracal issues short-lived scoped mandates.')
+    }
+    expect(gateway.completeObject as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1)
   })
 
   it('routes a diagnostic read to the troubleshooter and an integration read to the translator', async () => {
