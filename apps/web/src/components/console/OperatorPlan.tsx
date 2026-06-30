@@ -3,6 +3,7 @@
 //
 // Operator plan surfaces: the execution-plan artifact, its per-step badges, the security review, and the collapsed history row.
 
+import { useEffect, useRef } from "react";
 import {
   Confirmation,
   ConfirmationAccepted,
@@ -169,7 +170,8 @@ function PlanAdvisory({ advisory }: { advisory: PlanAdvisoryView }) {
 }
 
 // The active execution plan rendered as a first-class operational artifact: steps,
-// per-step effect, live progress, and the approve / reject / apply controls.
+// per-step effect, live progress, and the approve / reject controls. Approval is the only gate -
+// an approved plan applies automatically, so there is no separate apply step.
 export function PlanArtifact({
   plan,
   zoneId,
@@ -189,6 +191,18 @@ export function PlanArtifact({
   // Resolves a step's dependency ids to their human summaries so an ordering hint reads as
   // "runs after Connect provider" rather than the opaque step id the planner assigned.
   const stepLabels = new Map(plan.steps.map((step) => [step.id, step.summary]));
+
+  // Approve is the only gate: once a plan is approved - by the operator here or by autopilot - it
+  // is applied automatically, so there is no separate apply step. The request is armed once per
+  // plan seq; the server's execute lock makes a duplicate a no-op, and the ref keeps a re-render or
+  // the dev strict double-mount from firing it twice.
+  const requestedSeq = useRef<number | null>(null);
+  useEffect(() => {
+    if (plan.canExecute && requestedSeq.current !== plan.seq) {
+      requestedSeq.current = plan.seq;
+      execute.mutate(plan.seq);
+    }
+  }, [plan.canExecute, plan.seq, execute.mutate]);
 
   return (
     <div className="border border-border bg-card shadow-sm">
@@ -296,23 +310,28 @@ export function PlanArtifact({
         </Confirmation>
       ) : null}
 
-      {plan.canExecute ? (
+      {execute.isPending || execute.isError ? (
         <div className="flex flex-col gap-1.5 border-t border-border bg-surface px-3.5 py-2.5">
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => execute.mutate(plan.seq)} disabled={busy}>
-              Apply changes
-            </Button>
-            {busy ? (
-              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-purple" />{" "}
-                {applyingLine(plan.seq)}
-              </span>
-            ) : null}
-          </div>
-          {execute.isError ? (
-            <span className="text-[11px] text-destructive">
-              {executeErrorMessage(execute.error)}
+          {execute.isPending ? (
+            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-purple" />{" "}
+              {applyingLine(plan.seq)}
             </span>
+          ) : null}
+          {execute.isError ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-destructive">
+                {executeErrorMessage(execute.error)}
+              </span>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => execute.mutate(plan.seq)}
+                disabled={busy}
+              >
+                Try again
+              </Button>
+            </div>
           ) : null}
         </div>
       ) : null}
