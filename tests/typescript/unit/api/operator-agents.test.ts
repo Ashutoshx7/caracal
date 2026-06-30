@@ -177,6 +177,13 @@ describe('buildPlannerMessages', () => {
     expect(content).toContain('Connect the Hooli OIDC provider')
     expect(content).toContain('Register the Son of Anton application')
   })
+
+  it('instructs the planner to ask one clarifying question instead of guessing essential detail', () => {
+    const system = buildPlannerMessages('grant access', { facts: null, state: null })[0].content
+    expect(system).toContain('CONFIDENCE AND CLARIFICATION')
+    expect(system).toContain('"clarification"')
+    expect(system).toContain('at most ONE')
+  })
 })
 
 describe('buildExplainerMessages', () => {
@@ -421,6 +428,17 @@ describe('runPlanner', () => {
     const { gateway } = gatewayProducing({ summary: 'No matching action', steps: [] })
     const result = await runPlanner(gateway, 'order me a pizza', { facts: null, state: null })
     expect(result).toEqual({ ok: true, value: { summary: 'No matching action', steps: [] } })
+  })
+
+  it('passes through a clarifying question when the planner asks one instead of guessing', async () => {
+    const proposal = {
+      summary: 'Need the target resource before granting access',
+      steps: [],
+      clarification: 'Which resource should the application be granted access to?',
+    }
+    const { gateway } = gatewayProducing(proposal)
+    const result = await runPlanner(gateway, 'grant access', { facts: null, state: null })
+    expect(result).toEqual({ ok: true, value: proposal })
   })
 })
 

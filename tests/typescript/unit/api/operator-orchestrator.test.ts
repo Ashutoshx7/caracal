@@ -105,6 +105,23 @@ describe('createOrchestrator', () => {
     }
   })
 
+  it('relays a planner clarification as an answer instead of an actionable plan', async () => {
+    const clarification = {
+      summary: 'Need to know which resource to grant access to',
+      steps: [],
+      clarification: 'Which resource should the application be granted access to?',
+    }
+    const result = await createOrchestrator().handle(planningGateway('change', clarification), 'grant access', emptyContext)
+    expect(result.tier).toBe('change')
+    expect(result.outcome.kind).toBe('answer')
+    if (result.outcome.kind === 'answer') {
+      expect(result.outcome.result.ok).toBe(true)
+      if (result.outcome.result.ok) {
+        expect(result.outcome.result.value.text).toBe('Which resource should the application be granted access to?')
+      }
+    }
+  })
+
   it('defaults to the read tier and answers when triage fails the schema', async () => {
     const completeObject = vi.fn().mockRejectedValue(new Error('schema validation failed'))
     const complete = vi.fn().mockResolvedValue({ text: 'fallback answer', provider: 't', model: 'm' })
