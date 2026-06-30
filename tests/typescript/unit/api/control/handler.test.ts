@@ -156,6 +156,25 @@ describe('registerInvokeRoute', () => {
     expect(d.sink.emit).toHaveBeenCalledWith(expect.objectContaining({ decision: 'allow', command: 'agent' }))
   })
 
+  it('records the body authorizing actor as audit attribution on the allow event', async () => {
+    const app = Fastify()
+    apps.push(app)
+    const d = deps(vi.fn(async () => claims()))
+    d.replay.mark = vi.fn(async () => true)
+    d.ctx = { admin: { agents: { list: vi.fn(async () => [{ id: 'agent-1' }]) } } } as DispatchContext
+
+    registerInvokeRoute(app, d)
+    await app.ready()
+    await app.inject({
+      method: 'POST',
+      url: '/v1/control/invoke',
+      headers: { authorization: 'Bearer token' },
+      payload: { command: 'agent', subcommand: 'list', authorized_by: 'account-7' },
+    })
+
+    expect(d.sink.emit).toHaveBeenCalledWith(expect.objectContaining({ decision: 'allow', authorizedBy: 'account-7' }))
+  })
+
   it('maps dispatch denials, invalid requests, and upstream failures', async () => {
     const denied = Fastify()
     const invalid = Fastify()
