@@ -4,7 +4,7 @@ Caracal, a product of Garudex Labs
 
 Pure presenter that turns the Operator turn ledger into a display timeline and the latest plan's reviewable state.
 */
-import type { OperatorTurn } from "@/platform/api/types";
+import type { OperatorProgressStage, OperatorTurn } from "@/platform/api/types";
 
 export type TimelineRole = "user" | "operator" | "system";
 
@@ -17,6 +17,9 @@ export interface MessageItem {
   // The model's chain of thought, present when a reasoning model exposed it on an
   // operator note. Absent for user messages and answers with no reasoning.
   reasoning?: string;
+  // The ordered deliberation stages the answer passed through, recorded on the turn so the
+  // reasoning can be replayed after the live stream ends. Absent on user messages.
+  deliberation?: OperatorProgressStage[];
 }
 
 // The planner's own honest assessment of how consequential a step is, ordered low to high. It is
@@ -73,6 +76,9 @@ export interface PlanItem {
   canExecute: boolean;
   // The advisory security review, present only for a composed plan that carried one.
   advisory?: PlanAdvisoryView;
+  // The ordered deliberation stages the plan was reasoned through, recorded on the turn so the
+  // path from triage to guard can be replayed after the live stream ends.
+  deliberation?: OperatorProgressStage[];
   // Whether the approval was auto-satisfied by Caracal-governed autopilot rather than a human.
   approvedByAutopilot: boolean;
 }
@@ -111,6 +117,26 @@ function readStepRisk(value: unknown): StepRisk | undefined {
 function readDependsOn(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map(asString).filter((id) => id.length > 0);
+}
+
+const DELIBERATION_STAGES: readonly OperatorProgressStage[] = [
+  "triaging",
+  "gathering",
+  "planning",
+  "repairing",
+  "critiquing",
+  "revising",
+  "guarding",
+  "answering",
+];
+
+// Reads the recorded deliberation trail from a turn's content, keeping only recognized stages so a
+// malformed or future value degrades to nothing rather than rendering an unknown step.
+function readDeliberation(value: unknown): OperatorProgressStage[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((stage): stage is OperatorProgressStage =>
+    DELIBERATION_STAGES.includes(stage as OperatorProgressStage),
+  );
 }
 
 function readPlanSteps(content: Record<string, unknown>): RawPlanStep[] {
@@ -186,6 +212,7 @@ export function buildTimeline(turns: OperatorTurn[]): {
     if (turn.kind === "message" || turn.kind === "note") {
       const content = asRecord(turn.content);
       const reasoning = asString(content.reasoning);
+      const deliberation = readDeliberation(content.deliberation);
       items.push({
         kind: turn.kind,
         id: turn.id,
@@ -193,6 +220,7 @@ export function buildTimeline(turns: OperatorTurn[]): {
         role: turn.role,
         text: asString(content.text),
         reasoning: reasoning.length > 0 ? reasoning : undefined,
+        ...(deliberation.length > 0 ? { deliberation } : {}),
       });
     } else if (turn.kind === "error") {
       items.push({
@@ -208,6 +236,7 @@ export function buildTimeline(turns: OperatorTurn[]): {
         readPlanSteps(content),
         asString(content.summary),
         readPlanAdvisory(content),
+        readDeliberation(content.deliberation),
         ordered,
       );
       items.push(plan);
@@ -223,6 +252,7 @@ function resolvePlan(
   steps: RawPlanStep[],
   summary: string,
   advisory: PlanAdvisoryView | undefined,
+  deliberation: OperatorProgressStage[],
   ordered: OperatorTurn[],
 ): PlanItem {
   let decision: PlanItem["decision"] = "pending";
@@ -280,5 +310,6 @@ function resolvePlan(
     canExecute: decision === "approved" && !executed,
     approvedByAutopilot,
     ...(advisory ? { advisory } : {}),
+    ...(deliberation.length > 0 ? { deliberation } : {}),
   };
 }

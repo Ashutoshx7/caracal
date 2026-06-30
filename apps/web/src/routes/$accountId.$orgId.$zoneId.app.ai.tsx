@@ -6,8 +6,6 @@ This file defines the Caracal Operator route, the Community Edition workspace fo
 */
 import { createFileRoute } from "@tanstack/react-router";
 import {
-  lazy,
-  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -99,19 +97,11 @@ import {
   ConfirmationTitle,
   type ConfirmationApproval,
 } from "@/components/ai-elements/confirmation";
-import {
-  Agent,
-  AgentContent,
-  AgentHeader,
-  AgentInstructions,
-  AgentOutput,
-  AgentTool,
-  AgentTools,
-} from "@/components/ai-elements/agent";
 import { Badge, Button, ConfirmDialog, Tooltip, useToast } from "@/components/ui";
 import { cx } from "@/lib/cx";
 import {
   useActiveZone,
+  useApplications,
   useArchiveOperatorConversation,
   useCreateOperatorConversation,
   useDecideOperatorPlan,
@@ -129,6 +119,7 @@ import {
   useSetOperatorConversationAutopilot,
   useOperatorAutopilotAvailable,
   useSendOperatorMessage,
+  useZones,
 } from "@/platform/api/hooks";
 import {
   buildTimeline,
@@ -142,6 +133,7 @@ import { planCitations } from "@/platform/operator/citations";
 import type {
   OperatorConversation,
   OperatorConversationMode,
+  OperatorProgressStage,
   OperatorUsageMeta,
 } from "@/platform/api/types";
 
@@ -149,29 +141,53 @@ export const Route = createFileRoute("/$accountId/$orgId/$zoneId/app/ai")({
   component: CaracalOperatorPage,
 });
 
-// The same dithered shader backdrop used by empty states across the console.
-const DitherBackdrop = lazy(() =>
-  import("@/components/ui/neon-dither").then((m) => ({ default: m.DitherBackdrop })),
-);
-
 type Glyph = (props: { className?: string }) => ReactNode;
 
-const SUGGESTIONS: { title: string; hint: string; icon: Glyph }[] = [
-  { title: "Create a zone for the payments team", hint: "Spin up a new zone", icon: PlugGlyph },
+type SuggestionId = "createZone" | "registerApp" | "grant" | "rotate" | "listZones" | "explainDeny";
+
+const SUGGESTIONS: { id: SuggestionId; title: string; hint: string; icon: Glyph }[] = [
   {
-    title: "Register an application called Worker",
+    id: "createZone",
+    title: "Create a zone for Pied Piper Production",
+    hint: "Spin up a new zone",
+    icon: PlugGlyph,
+  },
+  {
+    id: "registerApp",
+    title: "Register an application called Son of Anton",
     hint: "Register a managed application",
     icon: LinkGlyph,
   },
   {
-    title: "Give the finance app read-only access to invoices",
+    id: "grant",
+    title: "Give Fiona read-only access to PiperNet",
     hint: "Grant scoped access",
     icon: KeyGlyph,
   },
-  { title: "Rotate an application's credentials", hint: "Issue a fresh secret", icon: RotateGlyph },
-  { title: "What zones do I have?", hint: "Read current state", icon: TrimGlyph },
-  { title: "Why was that request denied?", hint: "Explain a policy decision", icon: HelpGlyph },
+  {
+    id: "rotate",
+    title: "Rotate an application's credentials",
+    hint: "Issue a fresh secret",
+    icon: RotateGlyph,
+  },
+  { id: "listZones", title: "What zones do I have?", hint: "Read current state", icon: TrimGlyph },
+  {
+    id: "explainDeny",
+    title: "Why was that request denied?",
+    hint: "Explain a policy decision",
+    icon: HelpGlyph,
+  },
 ];
+
+// Picks the most useful first suggestion for where the operator's setup actually stands: with no
+// zones the next move is creating one; with zones but no applications it is registering one;
+// otherwise the day-to-day work is granting access. The chosen pill leads the strip so the empty
+// state reflects live state instead of a fixed script.
+function leadSuggestion(hasZones: boolean, hasApps: boolean): SuggestionId {
+  if (!hasZones) return "createZone";
+  if (!hasApps) return "registerApp";
+  return "grant";
+}
 
 function CaracalOperatorPage() {
   const { data: enabled, isLoading } = useOperatorStatus();
@@ -204,15 +220,8 @@ function SecureByCaracal() {
       align="end"
     >
       <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground">
-        <StarGlyph className="h-3.5 w-3.5 text-[#a855f7]" />
-        <span
-          className="animate-rainbow bg-size-[200%] bg-clip-text font-semibold text-transparent"
-          style={{
-            backgroundImage: "linear-gradient(90deg, #7c3aed, #a855f7, #d946ef, #a855f7, #7c3aed)",
-          }}
-        >
-          Secure by Caracal
-        </span>
+        <StarGlyph className="h-3.5 w-3.5" />
+        Secure by Caracal
       </span>
     </Tooltip>
   );
@@ -597,6 +606,7 @@ function OperatorWorkspace() {
             onSubmit={() => startFromIntent(heroDraft)}
             onPick={(text) => startFromIntent(text)}
             pending={create.isPending}
+            zoneId={zoneId}
             model={selectedModel}
             onModelChange={setSelectedModel}
             controls={{
@@ -1302,6 +1312,86 @@ function AutopilotMenu({
   );
 }
 
+// Human-readable labels for each deliberation stage the Operator streams while it works.
+const STAGE_LABELS: Record<OperatorProgressStage, string> = {
+  triaging: "Understanding the request",
+  gathering: "Reading live state",
+  planning: "Composing a plan",
+  repairing: "Repairing the plan",
+  critiquing: "Reviewing for risk",
+  revising: "Revising the plan",
+  guarding: "Checking against Caracal policy",
+  answering: "Writing the answer",
+};
+
+// A live, ordered account of the Operator's reasoning while a send is in flight. Each stage the
+// backend streams becomes a row: completed stages settle to muted text with a filled marker, the
+// current stage stays in the foreground with a pulsing marker. Before the first stage arrives a
+// neutral working line stands in so there is never dead air.
+function DeliberationTrail({ stages }: { stages: OperatorProgressStage[] }) {
+  if (stages.length === 0) {
+    return (
+      <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-purple" />
+        The Operator is working…
+      </div>
+    );
+  }
+  return (
+    <ol className="flex flex-col gap-1 px-1">
+      {stages.map((stage, index) => {
+        const active = index === stages.length - 1;
+        return (
+          <li key={`${stage}-${index}`} className="flex items-center gap-2 text-xs">
+            <span
+              className={cx(
+                "h-1.5 w-1.5 rounded-full",
+                active ? "animate-pulse bg-accent-purple" : "bg-muted-foreground/40",
+              )}
+            />
+            <span className={active ? "text-foreground" : "text-muted-foreground"}>
+              {STAGE_LABELS[stage]}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+// A completed turn's deliberation trail, collapsed by default: the recorded path the request was
+// reasoned through, replayable after the live stream has ended. Consecutive repeats collapse so a
+// repair or revise loop reads as one step, and a trail of fewer than two stages is hidden since a
+// single stage is not a deliberation worth disclosing.
+function DeliberationReplay({ stages }: { stages: OperatorProgressStage[] }) {
+  const trail = useMemo(() => {
+    const out: OperatorProgressStage[] = [];
+    for (const stage of stages) {
+      if (out[out.length - 1] !== stage) out.push(stage);
+    }
+    return out;
+  }, [stages]);
+  if (trail.length < 2) return null;
+  return (
+    <Task defaultOpen={false} className="border border-border bg-card/60">
+      <div className="flex items-center px-3 py-2">
+        <TaskTrigger
+          title={`Deliberation · ${trail.length} steps`}
+          className="min-w-0 flex-1 text-xs"
+        />
+      </div>
+      <TaskContent className="mt-0 px-3 pb-2.5">
+        {trail.map((stage, index) => (
+          <TaskItem key={`${stage}-${index}`} className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
+            <span className="text-foreground">{STAGE_LABELS[stage]}</span>
+          </TaskItem>
+        ))}
+      </TaskContent>
+    </Task>
+  );
+}
+
 function ActivityStream({
   zoneId,
   conversationId,
@@ -1342,6 +1432,10 @@ function ActivityStream({
   // operator's own words never disappear into the round trip. It clears when the send settles and
   // the authoritative turn arrives from the ledger.
   const [inFlight, setInFlight] = useState<string | null>(null);
+  // The ordered deliberation stages streamed back while a send is in flight, so the operator
+  // watches the Operator reason - triage, read state, plan, review - rather than a blank spinner.
+  // Consecutive repeats of a stage are collapsed; the list resets at the start of each send.
+  const [stages, setStages] = useState<OperatorProgressStage[]>([]);
 
   const { items, latestPlan } = useMemo(() => buildTimeline(turns ?? []), [turns]);
 
@@ -1359,15 +1453,24 @@ function ActivityStream({
     if (!stickToBottom.current) return;
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [items, send.isPending]);
+  }, [items, send.isPending, stages, inFlight]);
 
   function dispatch(text: string) {
     setInFlight(text);
+    setStages([]);
     send.mutate(
-      { message: text, provider: model ?? undefined },
+      {
+        message: text,
+        provider: model ?? undefined,
+        onStage: (stage) =>
+          setStages((prev) => (prev[prev.length - 1] === stage ? prev : [...prev, stage])),
+      },
       {
         onSuccess: (result) => onUsage?.(result),
-        onSettled: () => setInFlight(null),
+        onSettled: () => {
+          setInFlight(null);
+          setStages([]);
+        },
       },
     );
   }
@@ -1476,6 +1579,7 @@ function ActivityStream({
           onSubmit={() => submit(message)}
           onPick={(text) => submit(text)}
           pending={send.isPending}
+          zoneId={zoneId}
           model={model}
           onModelChange={onModelChange}
           controls={controls}
@@ -1515,12 +1619,7 @@ function ActivityStream({
           </div>
         ) : null}
 
-        {send.isPending ? (
-          <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-purple" />
-            The Operator is working…
-          </div>
-        ) : null}
+        {send.isPending ? <DeliberationTrail stages={stages} /> : null}
       </div>
 
       <OperatorQueue
@@ -1529,6 +1628,8 @@ function ActivityStream({
         onRemove={removeQueued}
         onSendNow={sendQueuedNow}
       />
+
+      <PlanDecisionDock plan={latestPlan} zoneId={zoneId} conversationId={conversationId} />
 
       <Composer
         value={message}
@@ -1631,6 +1732,86 @@ function OperatorQueue({
           </QueueSection>
         ) : null}
       </Queue>
+    </div>
+  );
+}
+
+// A plan awaiting the operator only carries its approve, reject, and apply controls inside the
+// transcript, where a long conversation scrolls them out of reach. This pins that call to action
+// just above the composer whenever the active plan needs a decision or is approved and ready to
+// apply, driving the same guarded plan hooks as the inline artifact so the decision is recorded
+// once no matter which surface the operator acts from.
+function PlanDecisionDock({
+  plan,
+  zoneId,
+  conversationId,
+}: {
+  plan: PlanItem | null;
+  zoneId: string | null;
+  conversationId: string;
+}) {
+  const decide = useDecideOperatorPlan(zoneId, conversationId);
+  const execute = useExecuteOperatorPlan(zoneId, conversationId);
+  const busy = decide.isPending || execute.isPending;
+
+  if (!plan) return null;
+  const awaitingDecision = plan.canDecide && plan.decision === "pending";
+  const awaitingExecute = plan.canExecute;
+  if (!awaitingDecision && !awaitingExecute) return null;
+
+  const mutatingCount = plan.steps.filter((step) => step.mutating).length;
+  const status = awaitingDecision
+    ? mutatingCount > 0
+      ? `Awaiting approval · ${mutatingCount} change${mutatingCount === 1 ? "" : "s"}`
+      : "Awaiting approval · read-only"
+    : "Approved · ready to apply";
+
+  return (
+    <div className="flex flex-shrink-0 flex-col gap-2 border-t border-border bg-card px-4 py-2.5">
+      <div className="flex items-center gap-2.5">
+        <span className="grid h-5 w-5 flex-shrink-0 place-items-center border border-border bg-muted">
+          <PlanGlyph className="h-3 w-3 text-foreground" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs font-medium text-foreground">{plan.summary}</div>
+          <div className="text-[11px] text-muted-foreground">{status}</div>
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-1.5">
+          {awaitingDecision ? (
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                onClick={() => decide.mutate({ plan_seq: plan.seq, decision: "rejected" })}
+              >
+                Reject
+              </Button>
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() => decide.mutate({ plan_seq: plan.seq, decision: "approved" })}
+              >
+                Approve
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" mutating disabled={busy} onClick={() => execute.mutate(plan.seq)}>
+              Apply changes
+            </Button>
+          )}
+        </div>
+      </div>
+      {decide.isError ? (
+        <p className="text-[11px] text-destructive" role="alert">
+          {decideErrorMessage(decide.error)}
+        </p>
+      ) : null}
+      {execute.isError ? (
+        <p className="text-[11px] text-destructive" role="alert">
+          {executeErrorMessage(execute.error)}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -1895,49 +2076,14 @@ function Composer({
 
 // A time-of-day greeting paired with a thoughtful opening line, so the empty state
 // feels like a considered welcome rather than a generic prompt.
-function greetingForNow(): { greeting: string; message: string } {
-  const hour = new Date().getHours();
-  if (hour < 5) {
-    return {
-      greeting: "Burning the midnight oil",
-      message: "The quiet hours are good for careful work. Tell me what to set in motion.",
-    };
-  }
-  if (hour < 12) {
-    return {
-      greeting: "Good morning",
-      message: "A fresh start. Describe what you'd like to put in place and I'll plan it out.",
-    };
-  }
-  if (hour < 17) {
-    return {
-      greeting: "Good afternoon",
-      message:
-        "Let's keep things moving. Tell me what you want to operate and I'll handle the how.",
-    };
-  }
-  if (hour < 21) {
-    return {
-      greeting: "Good evening",
-      message:
-        "Winding down the day. Describe what you need and I'll turn it into a reviewable plan.",
-    };
-  }
-  return {
-    greeting: "Working late",
-    message:
-      "Take your time. Tell me what you want to change and I'll lay out the steps before anything happens.",
-  };
-}
-
-// The new-conversation entry point: an atmospheric, centered greeting with a glassy
-// composer and quick-action pills - the way a modern operational assistant opens.
+// The new-conversation entry point: a centered prompt, the composer, and quick-action pills.
 function NewChatHero({
   value,
   onChange,
   onSubmit,
   onPick,
   pending,
+  zoneId,
   model,
   onModelChange,
   controls,
@@ -1947,12 +2093,27 @@ function NewChatHero({
   onSubmit: () => void;
   onPick: (text: string) => void;
   pending: boolean;
+  zoneId: string | null;
   model: string | null;
   onModelChange: (id: string | null) => void;
   controls: ComposerControls;
 }) {
-  const { greeting, message } = useMemo(() => greetingForNow(), []);
+  const greeting = "What would you like to operate?";
+  const message =
+    "Describe the change in plain language. The Operator turns it into a reviewable plan, checks it against live state and policy, and applies it through the same guarded APIs you use by hand - nothing runs until you approve.";
   const suggestionsRef = useRef<HTMLDivElement>(null);
+
+  // Lead the suggestion strip with the action that fits the current setup, leaving the rest in
+  // their catalog order. Both reads are React Query cached and the applications read is skipped
+  // until a zone is active, so the empty state never blocks on the network to render.
+  const zones = useZones();
+  const apps = useApplications(zoneId);
+  const suggestions = useMemo(() => {
+    const lead = leadSuggestion((zones.data?.length ?? 0) > 0, (apps.data?.length ?? 0) > 0);
+    const leadItem = SUGGESTIONS.find((item) => item.id === lead);
+    if (!leadItem) return SUGGESTIONS;
+    return [leadItem, ...SUGGESTIONS.filter((item) => item.id !== lead)];
+  }, [zones.data, apps.data]);
 
   // Make the suggestion strip scrollable by every natural gesture: a vertical wheel is
   // translated to a sideways scroll (taking over only once an edge is reached so the page
@@ -2027,14 +2188,11 @@ function NewChatHero({
   }, []);
 
   return (
-    <div className="scrollbar-thin relative flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <Suspense fallback={null}>
-        <DitherBackdrop />
-      </Suspense>
-      <div className="relative z-10 flex min-h-full flex-col items-center justify-center px-4 py-12">
+    <div className="scrollbar-thin flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="flex min-h-full flex-col items-center justify-center px-4 py-12">
         <div className="flex w-full max-w-2xl flex-col items-center gap-8">
           <div className="flex animate-fade-in flex-col items-center gap-2.5 text-center">
-            <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl dark:bg-gradient-to-b dark:from-foreground dark:to-foreground/55 dark:bg-clip-text dark:text-transparent">
+            <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
               {greeting}
             </h2>
             <p className="max-w-md text-sm leading-relaxed text-muted-foreground">{message}</p>
@@ -2075,7 +2233,7 @@ function NewChatHero({
               ref={suggestionsRef}
               className="scrollbar-none flex cursor-grab items-center gap-2 overflow-x-auto overflow-y-hidden px-5 py-2 [touch-action:pan-x] select-none"
             >
-              {SUGGESTIONS.map((suggestion) => {
+              {suggestions.map((suggestion) => {
                 const Icon = suggestion.icon;
                 return (
                   <button
@@ -2144,10 +2302,15 @@ function StreamEntry({
   actionable: boolean;
 }) {
   if (item.kind === "plan") {
-    return actionable ? (
-      <PlanArtifact plan={item} zoneId={zoneId} conversationId={conversationId} />
-    ) : (
-      <PlanHistoryRow plan={item} />
+    return (
+      <div className="flex flex-col gap-2">
+        {item.deliberation ? <DeliberationReplay stages={item.deliberation} /> : null}
+        {actionable ? (
+          <PlanArtifact plan={item} zoneId={zoneId} conversationId={conversationId} />
+        ) : (
+          <PlanHistoryRow plan={item} />
+        )}
+      </div>
     );
   }
 
@@ -2177,6 +2340,7 @@ function StreamEntry({
         className="h-8 w-8 shrink-0 select-none object-contain"
       />
       <div className="mt-1.5 flex min-w-0 max-w-[82%] flex-col gap-1.5">
+        {item.deliberation ? <DeliberationReplay stages={item.deliberation} /> : null}
         {item.reasoning ? (
           <Reasoning>
             <ReasoningTrigger />

@@ -219,7 +219,7 @@ async function writeTurnLocked(
 // so a stored plan can never claim a capability or effect the catalog does not
 // grant. Shared by the plan endpoint and the message orchestrator so a plan from
 // natural language and a plan from a direct call are stored identically.
-function buildPlanContentJson(summary: string, validation: PlanValidation, advisory?: SecurityAdvisory): string {
+function buildPlanContentJson(summary: string, validation: PlanValidation, advisory?: SecurityAdvisory, deliberation?: ProgressEvent['stage'][]): string {
   const content: Record<string, unknown> = {
     summary,
     steps: validation.steps.map((step) => ({
@@ -238,6 +238,9 @@ function buildPlanContentJson(summary: string, validation: PlanValidation, advis
   // human sees it when deciding and it stays in the audit record; it is informational only and
   // never read as authority — execution re-derives the plan from summary and steps alone.
   if (advisory) content.advisory = advisory
+  // The deliberation stages the request passed through, recorded so the human can replay how the
+  // plan was reasoned. Informational only — execution re-derives the plan from summary and steps.
+  if (deliberation && deliberation.length > 0) content.deliberation = deliberation
   return JSON.stringify(content)
 }
 
@@ -1403,7 +1406,14 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       reply.hijack()
       reply.raw.writeHead(200, SSE_HEADERS)
     }
-    const emit: OnProgress = wantsStream ? (event: ProgressEvent) => writeSseEvent(reply, 'stage', event) : () => {}
+    // Capture the deliberation stages as they are emitted, regardless of transport, so the
+    // completed turn records how the request was reasoned through and the console can replay the
+    // same trail it showed live. The stream still forwards each stage the instant it happens.
+    const deliberation: ProgressEvent['stage'][] = []
+    const emit: OnProgress = (event: ProgressEvent) => {
+      deliberation.push(event.stage)
+      if (wantsStream) writeSseEvent(reply, 'stage', event)
+    }
     // Delivers a turn's result to the caller: a JSON response on the normal path, or the matching
     // terminal SSE frame on the stream. A status at or above 400 is a stop the human must see, so
     // it is sent as an error frame carrying its status; anything else is the authoritative result.
@@ -1514,7 +1524,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
           params.zoneId,
           'operator',
           'plan',
-          buildPlanContentJson(planned.value.summary, validation, advisory),
+          buildPlanContentJson(planned.value.summary, validation, advisory, deliberation),
           req.actor.id,
         )
         if (!turn.ok) {
@@ -1576,6 +1586,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       const answer = explained.ok ? explained.value : { text: 'I could not produce an explanation.' }
       const noteContent: Record<string, unknown> = { text: answer.text }
       if (answer.reasoning) noteContent.reasoning = answer.reasoning
+      if (deliberation.length > 0) noteContent.deliberation = deliberation
       const turn = await appendTurnTx(fastify.db, params.id, params.zoneId, 'operator', 'note', JSON.stringify(noteContent), req.actor.id)
       return finish(201, {
         intent: 'explain',
