@@ -37,12 +37,14 @@ function planningGateway(tier: 'change' | 'compound', plan: object): Gateway {
 }
 
 // A gateway for the compound composition: structured completions return, in order, the compound
-// triage tier, the planner's plan, then the security analyst's advisory.
+// triage tier, the planner's plan, the correctness critic's verdict, then the security analyst's
+// advisory.
 function composingGateway(plan: object, advisory: object): Gateway {
   const completeObject = vi
     .fn()
     .mockResolvedValueOnce({ value: { tier: 'compound' }, provider: 't', model: 'm' })
     .mockResolvedValueOnce({ value: plan, provider: 't', model: 'm' })
+    .mockResolvedValueOnce({ value: { verdict: 'sound', summary: 'Plan achieves the goal.', deficiencies: [] }, provider: 't', model: 'm' })
     .mockResolvedValueOnce({ value: advisory, provider: 't', model: 'm' })
   return { status: () => ({ enabled: true, providers: [] }), completeObject } as unknown as Gateway
 }
@@ -356,6 +358,11 @@ describe('createOrchestrator', () => {
       .fn()
       .mockResolvedValueOnce({ value: { tier: 'change' }, provider: 't', model: 'm' })
       .mockResolvedValueOnce({ value: plan, provider: 't', model: 'm' })
+      .mockResolvedValueOnce({
+        value: { verdict: 'sound', summary: 'Plan achieves the goal.', deficiencies: [] },
+        provider: 't',
+        model: 'm',
+      })
       .mockResolvedValueOnce({ value: advisory, provider: 't', model: 'm' })
     const gateway = { status: () => ({ enabled: true, providers: [] }), completeObject } as unknown as Gateway
     const result = await createOrchestrator().handle(gateway, 'connect github', emptyContext)
@@ -377,6 +384,11 @@ describe('createOrchestrator', () => {
       .mockResolvedValueOnce({ value: { tier: 'change' }, provider: 't', model: 'm' })
       .mockResolvedValueOnce({ value: broken, provider: 't', model: 'm' })
       .mockResolvedValueOnce({ value: fixed, provider: 't', model: 'm' })
+      .mockResolvedValueOnce({
+        value: { verdict: 'sound', summary: 'Plan achieves the goal.', deficiencies: [] },
+        provider: 't',
+        model: 'm',
+      })
       .mockResolvedValueOnce({ value: advisory, provider: 't', model: 'm' })
     const gateway = { status: () => ({ enabled: true, providers: [] }), completeObject } as unknown as Gateway
     const result = await createOrchestrator().handle(gateway, 'connect github', emptyContext)
@@ -386,7 +398,65 @@ describe('createOrchestrator', () => {
     if (result.outcome.kind === 'plan' && result.outcome.result.ok) {
       expect(result.outcome.result.value.steps[0].capability).toBe('connectProvider')
     }
-    // triage + first plan + repair plan + guardian review.
+    // triage + first plan + repair plan + correctness critic + guardian review.
+    expect(completeObject).toHaveBeenCalledTimes(5)
+  })
+
+  it('revises a catalog-valid plan when the correctness critic finds a material defect', async () => {
+    const firstPlan = {
+      summary: 'Connect GitHub with a static key',
+      steps: [{ id: 's1', capability: 'connectProvider', args: { name: 'GitHub', kind: 'api_key' } }],
+    }
+    const revisedPlan = {
+      summary: 'Connect GitHub over OAuth',
+      steps: [{ id: 's1', capability: 'connectProvider', args: { name: 'GitHub', kind: 'oauth2_authorization_code' } }],
+    }
+    const critique = {
+      verdict: 'revise',
+      summary: 'A static key is the wrong auth mode for GitHub.',
+      deficiencies: [{ issue: 'GitHub should be connected over OAuth, not with a static api_key.' }],
+    }
+    const completeObject = vi
+      .fn()
+      .mockResolvedValueOnce({ value: { tier: 'change' }, provider: 't', model: 'm' })
+      .mockResolvedValueOnce({ value: firstPlan, provider: 't', model: 'm' })
+      .mockResolvedValueOnce({ value: critique, provider: 't', model: 'm' })
+      .mockResolvedValueOnce({ value: revisedPlan, provider: 't', model: 'm' })
+    const gateway = { status: () => ({ enabled: true, providers: [] }), completeObject } as unknown as Gateway
+    const result = await createOrchestrator().handle(gateway, 'connect github', emptyContext)
+    expect(result.outcome.kind).toBe('plan')
+    if (result.outcome.kind === 'plan' && result.outcome.result.ok) {
+      // The critic-driven revision replaces the catalog-valid first plan before the guardian and the
+      // route ever see it, because the revision still proposes steps and still validates.
+      expect(result.outcome.result.value.summary).toBe('Connect GitHub over OAuth')
+      expect(result.outcome.result.value.steps[0].args.kind).toBe('oauth2_authorization_code')
+    }
+    // triage + first plan + correctness critic + revised plan + guardian review.
+    expect(completeObject).toHaveBeenCalledTimes(5)
+  })
+
+  it('keeps a plan the correctness critic judges sound without a revision pass', async () => {
+    const plan = {
+      summary: 'Connect GitHub',
+      steps: [{ id: 's1', capability: 'connectProvider', args: { name: 'GitHub', kind: 'api_key' } }],
+    }
+    const completeObject = vi
+      .fn()
+      .mockResolvedValueOnce({ value: { tier: 'change' }, provider: 't', model: 'm' })
+      .mockResolvedValueOnce({ value: plan, provider: 't', model: 'm' })
+      .mockResolvedValueOnce({
+        value: { verdict: 'sound', summary: 'Plan achieves the goal.', deficiencies: [] },
+        provider: 't',
+        model: 'm',
+      })
+      .mockResolvedValueOnce({ value: { summary: 'Narrow and aligned.', findings: [] }, provider: 't', model: 'm' })
+    const gateway = { status: () => ({ enabled: true, providers: [] }), completeObject } as unknown as Gateway
+    const result = await createOrchestrator().handle(gateway, 'connect github', emptyContext)
+    expect(result.outcome.kind).toBe('plan')
+    if (result.outcome.kind === 'plan' && result.outcome.result.ok) {
+      expect(result.outcome.result.value.summary).toBe('Connect GitHub')
+    }
+    // triage + plan + sound critic + guardian — a sound verdict adds no revision planner pass.
     expect(completeObject).toHaveBeenCalledTimes(4)
   })
 
@@ -421,6 +491,11 @@ describe('createOrchestrator', () => {
       .fn()
       .mockResolvedValueOnce({ value: { tier: 'compound' }, provider: 't', model: 'm' })
       .mockResolvedValueOnce({ value: plan, provider: 't', model: 'm' })
+      .mockResolvedValueOnce({
+        value: { verdict: 'sound', summary: 'Plan achieves the goal.', deficiencies: [] },
+        provider: 't',
+        model: 'm',
+      })
       .mockRejectedValueOnce(new Error('advisory off-schema'))
     const gateway = { status: () => ({ enabled: true, providers: [] }), completeObject } as unknown as Gateway
     const result = await createOrchestrator().handle(gateway, 'grant finance and cleanup', emptyContext, {

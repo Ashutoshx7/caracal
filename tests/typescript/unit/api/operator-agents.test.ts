@@ -11,6 +11,7 @@ import {
   buildTranslatorMessages,
   buildSecurityAnalystMessages,
   buildVerifierMessages,
+  buildCriticMessages,
   buildTriageMessages,
   runTriage,
   tierPlans,
@@ -22,6 +23,7 @@ import {
   runTranslator,
   runSecurityAnalyst,
   runVerifier,
+  runCritic,
 } from '../../../../apps/api/src/operator-agents.js'
 import type { Gateway, CompletionResult, CompletionObjectResult } from '../../../../apps/api/src/operator-gateway.js'
 
@@ -403,6 +405,68 @@ describe('runVerifier', () => {
   it('fails closed when the verdict is off-schema, so the turn is left unverified', async () => {
     const { gateway } = gatewayProducing(new Error('schema validation failed'))
     const result = await runVerifier(gateway, plan, { facts: null, state: null })
+    expect(result.ok).toBe(false)
+  })
+})
+
+describe('buildCriticMessages', () => {
+  const plan = {
+    summary: 'Connect GitHub with a static key',
+    steps: [{ id: 's1', capability: 'connectProvider', args: { name: 'GitHub', kind: 'api_key' } }],
+  }
+
+  it('frames the turn as correctness review and renders the request and the plan', () => {
+    const messages = buildCriticMessages(plan, 'connect github', { facts: null, state: null })
+    expect(messages[0].content).toContain('PLAN CORRECTNESS REVIEW')
+    expect(messages[1].content).toContain('Request: connect github')
+    expect(messages[1].content).toContain('connectProvider')
+  })
+
+  it('separates correctness from the security guardian so the two reviews do not collapse', () => {
+    const system = buildCriticMessages(plan, 'connect github', { facts: null, state: null })[0].content
+    expect(system).toContain('distinct from the security guardian')
+    expect(system).toContain('Reply with ONLY a JSON object')
+  })
+})
+
+describe('runCritic', () => {
+  const plan = {
+    summary: 'Connect GitHub with a static key',
+    steps: [{ id: 's1', capability: 'connectProvider', args: { name: 'GitHub', kind: 'api_key' } }],
+  }
+
+  it('returns a sound verdict when the plan correctly achieves the goal', async () => {
+    const { gateway } = gatewayProducing({ verdict: 'sound', summary: 'The plan achieves the goal.', deficiencies: [] })
+    const result = await runCritic(gateway, plan, 'connect github', { facts: null, state: null })
+    expect(result).toEqual({
+      ok: true,
+      value: { verdict: 'sound', summary: 'The plan achieves the goal.', deficiencies: [] },
+    })
+  })
+
+  it('returns a revise verdict carrying the concrete deficiencies a replan should fix', async () => {
+    const { gateway } = gatewayProducing({
+      verdict: 'revise',
+      summary: 'A static key is the wrong auth mode for GitHub.',
+      deficiencies: [{ issue: 'GitHub should be connected over OAuth, not with a static api_key.' }],
+    })
+    const result = await runCritic(gateway, plan, 'connect github', { facts: null, state: null })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.value.verdict).toBe('revise')
+      expect(result.value.deficiencies).toEqual([{ issue: 'GitHub should be connected over OAuth, not with a static api_key.' }])
+    }
+  })
+
+  it('normalizes a missing deficiency list to empty so a terse sound verdict is usable', async () => {
+    const { gateway } = gatewayProducing({ verdict: 'sound', summary: 'Looks correct.' })
+    const result = await runCritic(gateway, plan, 'connect github', { facts: null, state: null })
+    expect(result).toEqual({ ok: true, value: { verdict: 'sound', summary: 'Looks correct.', deficiencies: [] } })
+  })
+
+  it('fails closed when the critique is off-schema, so the plan is left unchanged', async () => {
+    const { gateway } = gatewayProducing(new Error('schema validation failed'))
+    const result = await runCritic(gateway, plan, 'connect github', { facts: null, state: null })
     expect(result.ok).toBe(false)
   })
 })

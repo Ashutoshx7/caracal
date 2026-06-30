@@ -2209,9 +2209,14 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
       findings: [{ severity: 'caution', concern: 'Confirm the OAuth app is restricted to the finance org.' }],
     }
     // No control identity, so the researcher is absent and the compound path degrades to no
-    // evidence — but it still plans and still runs the advisory review. Three model calls in
-    // order: triage (compound), planner, security analyst.
-    const fetchImpl = fetchReturning('{"tier":"compound"}', JSON.stringify(plan), JSON.stringify(advisory))
+    // evidence — but it still plans and still runs the correctness critic and the advisory review.
+    // Four model calls in order: triage (compound), planner, correctness critic, security analyst.
+    const fetchImpl = fetchReturning(
+      '{"tier":"compound"}',
+      JSON.stringify(plan),
+      JSON.stringify({ verdict: 'sound', summary: 'Plan achieves the goal.', deficiencies: [] }),
+      JSON.stringify(advisory),
+    )
     const { app, clientQuery, db } = buildApp(true, { aiProviders: [provider], fetchImpl })
     clientQuery
       .mockResolvedValueOnce(undefined)
@@ -2254,8 +2259,8 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     // The advisory is persisted in the plan turn content for durable, audited human review.
     expect(persistedContent).toBeDefined()
     expect(JSON.parse(persistedContent!).advisory).toEqual(advisory)
-    // Three model calls: triage + planner + security analyst.
-    expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(3)
+    // Four model calls: triage + planner + correctness critic + security analyst.
+    expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(4)
   })
 
   it('records an error turn when the model cannot produce a usable plan', async () => {
