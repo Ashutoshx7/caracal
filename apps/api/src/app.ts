@@ -374,10 +374,6 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
     aiManager,
     autopilotPolicy: buildAutopilotPolicy({
       enabled: cfg.operatorAutopilotEnabled,
-      capabilities: cfg.operatorAutopilotCapabilities,
-      maxStepsPerPlan: cfg.operatorAutopilotMaxSteps,
-      windowSec: cfg.operatorAutopilotWindowSec,
-      windowMaxApprovals: cfg.operatorAutopilotWindowMax,
     }),
     aiGovernance: buildGovernanceLimits({
       maxOutputTokens: cfg.operatorAiMaxOutputTokens,
