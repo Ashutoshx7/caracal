@@ -72,7 +72,6 @@ import {
   ArchiveGlyph,
   ArrowUpGlyph,
   CheckGlyph,
-  CloseGlyph,
   CopyGlyph,
   ExpandGlyph,
   HelpGlyph,
@@ -312,10 +311,15 @@ function OperatorWorkspace() {
     (number: number | null) => {
       navigate({
         to: "/$accountId/$orgId/$zoneId/app/ai/{-$conversationNo}",
-        params: (prev) => ({ ...prev, conversationNo: number == null ? undefined : String(number) }),
+        params: {
+          accountId: routeParams.accountId,
+          orgId: routeParams.orgId,
+          zoneId: routeParams.zoneId,
+          conversationNo: number == null ? undefined : String(number),
+        },
       });
     },
-    [navigate],
+    [navigate, routeParams.accountId, routeParams.orgId, routeParams.zoneId],
   );
 
   // Select a conversation by its id: mark it open and reflect its number in the URL. Looking the
@@ -457,22 +461,6 @@ function OperatorWorkspace() {
     });
   }
 
-  // Creating an empty session from the rail; the stream then opens on the hero. The draft
-  // mode and autopilot chosen on the landing hero are applied to the new conversation.
-  function startSession(title: string) {
-    const name = title.trim();
-    if (!name || create.isPending) return;
-    create.mutate(
-      { title: name, mode: draftMode, autopilot: draftMode === "agent" && draftAutopilot },
-      {
-        onSuccess: (conversation) => {
-          setSelectedId(conversation.id);
-          goToConversation(conversation.number);
-        },
-      },
-    );
-  }
-
   // Starting from intent: derive a session title from the message, create the session, then hand
   // the message to the stream to send as the opening turn. With no AI provider the request could
   // only be refused upstream, so the send is held back — no session is created — and the reason is
@@ -598,8 +586,7 @@ function OperatorWorkspace() {
           conversations={conversations.data ?? []}
           selectedId={selectedId}
           onSelect={selectConversation}
-          onCreate={() => startSession("New session")}
-          creating={create.isPending}
+          onCreate={() => selectConversation(null)}
         />
         {selectedId ? (
           <ActivityStream
@@ -649,14 +636,13 @@ function OperatorWorkspace() {
         onSearch={setSearch}
         selectedId={selectedId}
         onSelect={selectConversation}
-        onCreate={startSession}
+        onCreate={() => selectConversation(null)}
         onRename={renameSession}
         onArchive={archiveSession}
         onRestore={restoreSession}
         onDelete={deleteSession}
         view={view}
         onChangeView={setView}
-        creating={create.isPending}
         collapsed={railCollapsed}
         onToggleCollapse={() => setRailCollapsed((value) => !value)}
         onResizeStart={startRailResize}
@@ -687,7 +673,6 @@ function SessionsRail({
   onDelete,
   view,
   onChangeView,
-  creating,
   collapsed,
   onToggleCollapse,
   onResizeStart,
@@ -698,32 +683,23 @@ function SessionsRail({
   onSearch: (value: string) => void;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  onCreate: (title: string) => void;
+  onCreate: () => void;
   onRename: (id: string, title: string) => void;
   onArchive: (id: string) => void;
   onRestore: (id: string) => void;
   onDelete: (id: string) => void;
   view: "active" | "archived";
   onChangeView: (view: "active" | "archived") => void;
-  creating: boolean;
   collapsed: boolean;
   onToggleCollapse: () => void;
   onResizeStart: (event: React.PointerEvent) => void;
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [pendingDelete, setPendingDelete] = useState<OperatorConversation | null>(null);
 
   const groups = useMemo(() => groupConversations(conversations), [conversations]);
   const archived = view === "archived";
-
-  function commit() {
-    if (draft === null) return;
-    const name = draft.trim();
-    if (name) onCreate(name);
-    setDraft(null);
-  }
 
   function startRename(conversation: OperatorConversation) {
     setEditingId(conversation.id);
@@ -752,66 +728,13 @@ function SessionsRail({
           <PanelGlyph className="h-4 w-4" />
         </button>
         <button
-          onClick={() => onCreate("New session")}
-          disabled={creating}
+          onClick={onCreate}
           aria-label="New session"
           title="New session"
-          className="grid h-8 w-8 place-items-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+          className="grid h-8 w-8 place-items-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <PlusGlyph className="h-4 w-4" />
         </button>
-      </div>
-    );
-  }
-
-  // New session window: the rail trades its list for a focused composer so naming and
-  // starting a session reads as its own surface rather than a field wedged above the
-  // sessions. Back returns to the list without creating anything.
-  if (draft !== null) {
-    const name = draft.trim();
-    return (
-      <div className="relative hidden min-h-0 flex-col border-l border-border bg-card lg:flex">
-        <div
-          onPointerDown={onResizeStart}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize sessions"
-          className="absolute inset-y-0 left-0 z-10 w-1.5 -translate-x-1/2 cursor-col-resize bg-transparent transition-colors hover:bg-accent-purple/40"
-        />
-        <div className="flex flex-shrink-0 items-center gap-2 px-3 py-2.5">
-          <button
-            onClick={() => setDraft(null)}
-            aria-label="Back to sessions"
-            title="Back to sessions"
-            className="grid h-6 w-6 place-items-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <CloseGlyph className="h-4 w-4" />
-          </button>
-          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            New session
-          </span>
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col gap-2 px-3 pb-3">
-          <input
-            autoFocus
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") commit();
-              if (event.key === "Escape") setDraft(null);
-            }}
-            placeholder="Name this session"
-            aria-label="New session name"
-            className="h-8 w-full border border-input bg-background px-2.5 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-          />
-          <button
-            onClick={commit}
-            disabled={creating || !name}
-            className="h-8 w-full rounded bg-primary text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Create session
-          </button>
-        </div>
       </div>
     );
   }
@@ -841,11 +764,10 @@ function SessionsRail({
         </div>
         {archived ? null : (
           <button
-            onClick={() => setDraft("")}
-            disabled={creating}
+            onClick={onCreate}
             aria-label="New session"
             title="New session"
-            className="grid h-6 w-6 place-items-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+            className="grid h-6 w-6 place-items-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <PlusGlyph className="h-4 w-4" />
           </button>
@@ -1026,20 +948,17 @@ function SessionStrip({
   selectedId,
   onSelect,
   onCreate,
-  creating,
 }: {
   conversations: OperatorConversation[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onCreate: () => void;
-  creating: boolean;
 }) {
   return (
     <div className="flex flex-shrink-0 items-center gap-1.5 border-b border-border bg-card px-2 py-1.5 lg:hidden">
       <button
         onClick={onCreate}
-        disabled={creating}
-        className="inline-flex flex-shrink-0 items-center gap-1 border border-border bg-background px-2 py-1 text-xs font-medium text-foreground disabled:opacity-50"
+        className="inline-flex flex-shrink-0 items-center gap-1 border border-border bg-background px-2 py-1 text-xs font-medium text-foreground"
       >
         <PlusGlyph className="h-3.5 w-3.5" /> New
       </button>
