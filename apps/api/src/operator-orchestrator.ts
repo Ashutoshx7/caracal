@@ -17,6 +17,7 @@ import {
   type OperatorMode,
   type OperatorTier,
   type OperatorTriage,
+  type PlannerProposal,
   type RepairFeedback,
   type SecurityAdvisory,
 } from './operator-agents.js'
@@ -41,7 +42,7 @@ export interface AnswerSkill {
 export interface PlanSkill {
   id: string
   kind: 'plan'
-  run(gateway: Gateway, message: string, context: AgentContext): Promise<AgentResult<ProposedPlanInput>>
+  run(gateway: Gateway, message: string, context: AgentContext): Promise<AgentResult<PlannerProposal>>
 }
 
 export type Skill = AnswerSkill | PlanSkill
@@ -193,7 +194,7 @@ async function deliberatePlan(
   message: string,
   context: AgentContext,
   skill: PlanSkill,
-): Promise<AgentResult<ProposedPlanInput>> {
+): Promise<AgentResult<PlannerProposal>> {
   const proposal = await skill.run(gateway, message, context)
   if (!proposal.ok || proposal.value.steps.length === 0) return proposal
 
@@ -247,6 +248,13 @@ export function createOrchestrator(registry: SkillRegistry = createSkillRegistry
         // and apply; the guardian and the repair pass only improve and inform the proposal.
         const planContext = await withEvidence(context, options.researcher, classification.domains)
         const result = await deliberatePlan(gateway, message, planContext, skill)
+        // When the planner could not plan responsibly it proposes no steps and asks one clarifying
+        // question instead of guessing. Caracal relays that question to the operator as an answer
+        // — it is recorded as a note, never as an actionable plan — so an underspecified request is
+        // answered with a precise question rather than a fabricated change.
+        if (result.ok && result.value.steps.length === 0 && result.value.clarification) {
+          return { tier, outcome: { kind: 'answer', result: { ok: true, value: { text: result.value.clarification } } } }
+        }
         if (result.ok && result.value.steps.length > 0) {
           const review = await runSecurityAnalyst(gateway, result.value, planContext)
           return { tier, outcome: { kind: 'plan', result, advisory: review.ok ? review.value : undefined } }

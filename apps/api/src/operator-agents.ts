@@ -424,9 +424,18 @@ export function buildPlannerMessages(message: string, context: AgentContext, fee
           'Use exactly the capability ids and argument names listed, with no invented capabilities or',
           'arguments. If the request maps to no listed capability, return an empty steps array rather than',
           'forcing an ill-fitting one.',
+          'CONFIDENCE AND CLARIFICATION: plan only when you can do so responsibly. If the request is',
+          'missing information essential to plan correctly — which application, which resource, which',
+          'scopes, which provider — do NOT guess a value the operator never gave, because a wrong guess',
+          'would create, connect, or grant the wrong thing. Instead return an empty steps array and a',
+          'single "clarification" question naming exactly what you need to proceed. Ask at most ONE',
+          'question, the most decision-blocking one, and only when a reasonable plan is genuinely',
+          'impossible without it; prefer inferring from the live state and recent activity in the context',
+          'when you confidently can.',
           'Reply with ONLY a JSON object {"summary": string, "steps": [{"id": string, "capability":',
-          'string, "args": object}]}. Use a short unique id per step (s1, s2, …). The summary states, in',
-          'one plain sentence, what the plan accomplishes for the user.',
+          'string, "args": object}], "clarification"?: string}. Use a short unique id per step (s1, s2, …).',
+          'Set "clarification" only when you propose no steps; leave it out whenever you propose a plan.',
+          'The summary states, in one plain sentence, what the plan accomplishes for the user.',
           '',
           'Capabilities:',
           describeCapabilitiesForPrompt(),
@@ -437,16 +446,25 @@ export function buildPlannerMessages(message: string, context: AgentContext, fee
   ]
 }
 
-// The planner may legitimately return zero steps when nothing maps to a capability, so
-// it is parsed against a schema that permits an empty plan. The strict ProposedPlan used
-// by the governed /plan endpoint still requires at least one step; an empty plan here is
-// simply surfaced as "no actionable plan" by the orchestrator.
+// The planner may legitimately return zero steps when nothing maps to a capability, and may
+// return a single clarifying question — with no steps — when the request lacks information
+// essential to plan responsibly. It is parsed against a schema that permits an empty plan and an
+// optional clarification. The strict ProposedPlan used by the governed /plan endpoint still
+// requires at least one step; an empty plan here is surfaced as "no actionable plan", and a
+// clarification is relayed to the operator as a question by the orchestrator.
 const PlannerPlan = z
   .object({
     summary: z.string().min(1).max(2000),
     steps: z.array(ProposedPlan.shape.steps.element).max(50),
+    clarification: z.string().min(1).max(1000).optional(),
   })
   .strict()
+
+// The planner's structured proposal: a plan (one or more steps) or, when the request cannot be
+// planned responsibly, an empty plan carrying a single clarifying question. Either way the model
+// only proposes — Caracal validates and previews a plan before approval, or relays a clarification
+// to the operator as a question; the planner holds no authority over what happens next.
+export type PlannerProposal = z.infer<typeof PlannerPlan>
 
 // Produces a proposed plan from intent. The model's answer is generated as a
 // schema-validated object, so anything malformed or off-schema fails closed and a
@@ -458,7 +476,7 @@ export async function runPlanner(
   message: string,
   context: AgentContext,
   feedback?: RepairFeedback,
-): Promise<AgentResult<ProposedPlanInput>> {
+): Promise<AgentResult<PlannerProposal>> {
   try {
     const completion = await gateway.completeObject(buildPlannerMessages(message, context, feedback), PlannerPlan, {
       maxTokens: PLANNER_MAX_TOKENS,
