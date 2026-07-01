@@ -790,6 +790,26 @@ describe('createOrchestrator', () => {
     expect(researcher.gather).not.toHaveBeenCalled()
   })
 
+  it('refuses to author a policy in ask mode and answers with a switch-to-agent message', async () => {
+    // The gateway would author a draft, but ask mode short-circuits before the specialist: a policy
+    // draft's only action is a governed create the ask-mode write path rejects, so no draft is
+    // surfaced. Only triage runs and the deterministic switch-to-agent answer is returned.
+    const draft = {
+      summary: 'Reporting read on nucleus',
+      documents: [{ concern: 'reporting read grant', filename: 'grants.rego', content: POLICY_DOC, explanation: 'Binds reporting to a reader role.' }],
+    }
+    const gateway = policyGateway(draft)
+    const result = await createOrchestrator().handle(gateway, 'write a policy giving reporting read on nucleus', emptyContext, { mode: 'ask' })
+    expect(result.tier).toBe('policy')
+    expect(result.outcome.kind).toBe('answer')
+    if (result.outcome.kind === 'answer') {
+      expect(result.outcome.result.ok).toBe(true)
+      if (result.outcome.result.ok) expect(result.outcome.result.value.text).toBe(ASK_MODE_CHANGE_MESSAGE)
+    }
+    // Only triage ran; the policy specialist was never called, so no draft was authored.
+    expect((gateway.completeObject as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(1)
+  })
+
   it('still answers a read request normally in ask mode', async () => {
     const researcher = { gather: vi.fn().mockResolvedValue({ evidence: [] }) }
     const result = await createOrchestrator().handle(gatewayFor('read', 'two providers'), 'what do i have', emptyContext, {

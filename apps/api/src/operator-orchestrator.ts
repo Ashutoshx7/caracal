@@ -365,10 +365,12 @@ export function createOrchestrator(registry: SkillRegistry = createSkillRegistry
       const classification: OperatorTriage = triage.ok ? triage.value : { tier: 'read', topic: 'general' }
       const tier = classification.tier
 
-      // Ask mode is read-only: a change or compound request is answered with a deterministic
-      // switch-to-agent message and no planning skill is ever selected or run, so the conversation
-      // cannot produce a plan. Conversational and read requests proceed normally below.
-      if (mode === 'ask' && tierPlans(tier)) {
+      // Ask mode is read-only: a change, compound, or policy-authoring request is answered with a
+      // deterministic switch-to-agent message and no planning or authoring skill is ever selected or
+      // run, so the conversation proposes nothing. Authoring is refused alongside planning because a
+      // policy draft's whole purpose is a governed create the ask-mode write path would reject, so an
+      // ask conversation must not surface that action at all. Conversational and read requests proceed.
+      if (mode === 'ask' && (tierPlans(tier) || tierAuthorsPolicy(tier))) {
         return { tier, outcome: { kind: 'answer', result: { ok: true, value: { text: ASK_MODE_CHANGE_MESSAGE } } } }
       }
 
