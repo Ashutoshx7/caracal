@@ -20,6 +20,85 @@ export interface MessageItem {
   // The ordered deliberation stages the answer passed through, recorded on the turn so the
   // reasoning can be replayed after the live stream ends. Absent on user messages.
   deliberation?: OperatorProgressStage[];
+  // The structured policy draft the authoring specialist produced, present only on the operator
+  // note that carried one. It renders as the dedicated policy artifact rather than plain prose.
+  policy?: PolicyDraftView;
+}
+
+// The advisory severity the authoring specialist assigns each risk it found in a draft, ordered by
+// how much it should slow an approver down.
+export type PolicyRiskSeverity = "info" | "caution" | "warning";
+
+export interface PolicyRiskView {
+  severity: PolicyRiskSeverity;
+  note: string;
+}
+
+// A ready-to-run authorization case the specialist proposes so the draft can be exercised before it
+// is created: the named scenario, the input it feeds the decision contract, and the decision the
+// draft is expected to yield.
+export interface PolicySimulationView {
+  name: string;
+  description: string;
+  input: Record<string, unknown>;
+  expectedDecision: "allow" | "deny";
+}
+
+// Caracal's own deterministic reading of a validated data document: the package it declares, the
+// data rules it defines, whether it sets a default result, the decisions it names, and the input and
+// data paths it reads. Computed from the content itself, never claimed by the model.
+export interface PolicyDocumentPreview {
+  package: string;
+  rules: string[];
+  defaultResult: boolean;
+  decisions: string[];
+  inputsReferenced: string[];
+  dataReferenced: string[];
+}
+
+// One validated data document in a draft: the concern it serves, its suggested file name, the
+// authored Rego, the plain-English explanation, and Caracal's deterministic preview of it. A document
+// only reaches a draft after the platform validated it, so its content is always valid Rego.
+export interface PolicyDocumentView {
+  concern: string;
+  filename: string;
+  content: string;
+  explanation: string;
+  preview: PolicyDocumentPreview | null;
+}
+
+// The provenance stamped on an AI-assisted draft so every downstream artifact stays auditable: that
+// a model assisted, which model served, when it was generated, and the operator request it answered.
+export interface PolicyProvenanceView {
+  aiAssisted: true;
+  model: string;
+  generatedAt: string;
+  sourceMessage: string;
+}
+
+export interface PolicyActivationView {
+  ready: boolean;
+  blockers: string[];
+  guidance: string;
+}
+
+// The policy specialist's structured artifact as the console reads it: the understood intent, one or
+// more validated documents, the risks and least-privilege recommendations found, ready-to-run
+// simulation cases, activation readiness, provenance, and the schema version the documents target.
+// When intent was too ambiguous to author safely the documents are empty and the clarifying
+// questions carry instead.
+export interface PolicyDraftView {
+  summary: string;
+  intent: string;
+  documents: PolicyDocumentView[];
+  clarifications: string[];
+  assumptions: string[];
+  risks: PolicyRiskView[];
+  recommendations: string[];
+  simulations: PolicySimulationView[];
+  activation: PolicyActivationView | null;
+  schemaVersion: string;
+  provenance: PolicyProvenanceView | null;
 }
 
 // The planner's own honest assessment of how consequential a step is, ordered low to high. It is
@@ -212,7 +291,123 @@ function readPlanAdvisory(content: Record<string, unknown>): PlanAdvisoryView | 
   };
 }
 
-// Builds the display timeline from the ordered turn ledger and resolves the latest
+function asStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(asString).filter((entry) => entry.length > 0);
+}
+
+function readPolicyRiskSeverity(value: unknown): PolicyRiskSeverity {
+  return value === "caution" || value === "warning" ? value : "info";
+}
+
+function readPolicyRisks(value: unknown): PolicyRiskView[] {
+  if (!Array.isArray(value)) return [];
+  const risks: PolicyRiskView[] = [];
+  for (const raw of value) {
+    const risk = asRecord(raw);
+    const note = asString(risk.note);
+    if (note.length === 0) continue;
+    risks.push({ severity: readPolicyRiskSeverity(risk.severity), note });
+  }
+  return risks;
+}
+
+function readPolicySimulations(value: unknown): PolicySimulationView[] {
+  if (!Array.isArray(value)) return [];
+  const cases: PolicySimulationView[] = [];
+  for (const raw of value) {
+    const sim = asRecord(raw);
+    const name = asString(sim.name);
+    if (name.length === 0) continue;
+    cases.push({
+      name,
+      description: asString(sim.description),
+      input: asRecord(sim.input),
+      expectedDecision: sim.expectedDecision === "deny" ? "deny" : "allow",
+    });
+  }
+  return cases;
+}
+
+function readPolicyDocumentPreview(value: unknown): PolicyDocumentPreview | null {
+  if (value == null || typeof value !== "object") return null;
+  const preview = asRecord(value);
+  const pkg = asString(preview.package);
+  if (pkg.length === 0) return null;
+  return {
+    package: pkg,
+    rules: asStringList(preview.rules),
+    defaultResult: preview.default_result === true,
+    decisions: asStringList(preview.decisions),
+    inputsReferenced: asStringList(preview.inputs_referenced),
+    dataReferenced: asStringList(preview.data_referenced),
+  };
+}
+
+function readPolicyDocuments(value: unknown): PolicyDocumentView[] {
+  if (!Array.isArray(value)) return [];
+  const documents: PolicyDocumentView[] = [];
+  for (const raw of value) {
+    const doc = asRecord(raw);
+    const content = asString(doc.content);
+    if (content.length === 0) continue;
+    documents.push({
+      concern: asString(doc.concern),
+      filename: asString(doc.filename),
+      content,
+      explanation: asString(doc.explanation),
+      preview: readPolicyDocumentPreview(doc.preview),
+    });
+  }
+  return documents;
+}
+
+function readPolicyActivation(value: unknown): PolicyActivationView | null {
+  if (value == null || typeof value !== "object") return null;
+  const activation = asRecord(value);
+  return {
+    ready: activation.ready === true,
+    blockers: asStringList(activation.blockers),
+    guidance: asString(activation.guidance),
+  };
+}
+
+function readPolicyProvenance(value: unknown): PolicyProvenanceView | null {
+  const provenance = asRecord(value);
+  const model = asString(provenance.model);
+  if (model.length === 0) return null;
+  return {
+    aiAssisted: true,
+    model,
+    generatedAt: asString(provenance.generatedAt),
+    sourceMessage: asString(provenance.sourceMessage),
+  };
+}
+
+// Reads the structured policy draft from an operator note's content, when present. A draft is only
+// recognized when it carries a summary, so a note without one degrades to plain prose rather than
+// rendering an empty artifact. Every field is read defensively so a malformed or partial draft still
+// renders the parts that are sound instead of failing the whole timeline.
+function readPolicyDraft(value: unknown): PolicyDraftView | undefined {
+  if (value == null || typeof value !== "object") return undefined;
+  const draft = asRecord(value);
+  const summary = asString(draft.summary);
+  if (summary.length === 0) return undefined;
+  return {
+    summary,
+    intent: asString(draft.intent),
+    documents: readPolicyDocuments(draft.documents),
+    clarifications: asStringList(draft.clarifications),
+    assumptions: asStringList(draft.assumptions),
+    risks: readPolicyRisks(draft.risks),
+    recommendations: asStringList(draft.recommendations),
+    simulations: readPolicySimulations(draft.simulations),
+    activation: readPolicyActivation(draft.activation),
+    schemaVersion: asString(draft.schemaVersion),
+    provenance: readPolicyProvenance(draft.provenance),
+  };
+}
+
 // plan's reviewable state by folding the approval, rejection, and execution turns
 // that reference it. The presenter is the single place the UI learns whether a plan
 // can be approved or applied, so those controls cannot drift from the ledger.
@@ -235,6 +430,7 @@ export function buildTimeline(turns: OperatorTurn[]): {
       const content = asRecord(turn.content);
       const reasoning = asString(content.reasoning);
       const deliberation = readDeliberation(content.deliberation);
+      const policy = readPolicyDraft(content.policy);
       items.push({
         kind: turn.kind,
         id: turn.id,
@@ -243,6 +439,7 @@ export function buildTimeline(turns: OperatorTurn[]): {
         text: asString(content.text),
         reasoning: reasoning.length > 0 ? reasoning : undefined,
         ...(deliberation.length > 0 ? { deliberation } : {}),
+        ...(policy ? { policy } : {}),
       });
     } else if (turn.kind === "error") {
       items.push({

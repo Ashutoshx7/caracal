@@ -30,6 +30,7 @@ import type {
   OperatorConversationMode,
   OperatorAiProviderInput,
   OperatorAiProviderPatch,
+  OperatorPlanInput,
   OperatorProgressStage,
   Policy,
   PolicyInput,
@@ -338,6 +339,19 @@ export function useSendOperatorMessage(zoneId: string | null, conversationId: st
         input.onReasoning,
         input.signal,
       ),
+    onSuccess: () => invalidateConversation(qc, zoneId, conversationId),
+  });
+}
+
+// A governed action button on a policy draft proposes its change as a plan turn through the same
+// path a natural-language plan takes: the plan is validated and recorded, then decided and applied
+// under the existing approval gate. The button never applies anything directly, so the draft's
+// create, version, and activate actions stay auditable and gated.
+export function useCreateOperatorPlan(zoneId: string | null, conversationId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (plan: OperatorPlanInput) =>
+      consoleApi.operator.createPlan(zoneId as string, conversationId as string, plan),
     onSuccess: () => invalidateConversation(qc, zoneId, conversationId),
   });
 }
