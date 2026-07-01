@@ -100,7 +100,7 @@ func newProxy(sts *stsClient, jwks tokenVerifier, guard *upstreamGuard, log zero
 		sts:         sts,
 		jwks:        jwks,
 		guard:       guard,
-		client:      &http.Client{Transport: transport},
+		client:      &http.Client{Transport: transport, CheckRedirect: noRedirect},
 		log:         log,
 		maxBytes:    maxBytes,
 		bindings:    bindings,
