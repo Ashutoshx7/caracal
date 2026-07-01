@@ -197,12 +197,19 @@ function requireZone(principal: Principal): string {
 
 type Handler = (input: { sub: string; flags: FlagMap; principal: Principal; ctx: DispatchContext }) => Promise<unknown>
 
-function bySubcommand(handlers: Record<string, Handler>): Handler {
-  return async (input) => {
+/** A subcommand router that also reports which subcommands it implements, so handler coverage can
+ * be asserted against the catalog instead of only discovered when a dispatch fails. */
+interface SubcommandHandler extends Handler {
+  readonly handledSubcommands: readonly string[]
+}
+
+function bySubcommand(handlers: Record<string, Handler>): SubcommandHandler {
+  const route: Handler = async (input) => {
     const h = handlers[input.sub]
     if (!h) unsupported(`subcommand "${input.sub}" not implemented`)
     return h(input)
   }
+  return Object.assign(route, { handledSubcommands: Object.freeze(Object.keys(handlers)) })
 }
 
 const zoneHandler = bySubcommand({
@@ -490,6 +497,34 @@ function commandHandler(command: string): Handler | undefined {
     default:
       return undefined
   }
+}
+
+/**
+ * Catalog commands the engine intentionally does not route to Control. They are served by the
+ * local runtime surface (operator diagnostics, the in-process control-plane lifecycle, manifest
+ * validation, shell completion) and carry no dispatcher arm by design.
+ */
+export const LOCAL_ONLY_COMMANDS: readonly string[] = Object.freeze(['doctor', 'manifest', 'control', 'completion'])
+
+/**
+ * Subcommands of engine-routed commands that run locally rather than through Control. `zone use`
+ * selects the active local zone for subsequent commands and never reaches the Control API.
+ */
+export const LOCAL_ONLY_SUBCOMMANDS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  zone: Object.freeze(['use']),
+})
+
+/**
+ * What the dispatcher implements for a catalog command, so handler coverage can be verified:
+ *  - `'local-only'` when no dispatcher arm exists (the command runs on the local runtime surface),
+ *  - `'all'` when a single handler accepts every declared subcommand,
+ *  - the explicit list of implemented subcommands for a subcommand router.
+ */
+export function engineHandlerCoverage(command: string): 'local-only' | 'all' | readonly string[] {
+  const handler = commandHandler(command)
+  if (!handler) return 'local-only'
+  const subs = (handler as Partial<SubcommandHandler>).handledSubcommands
+  return subs ?? 'all'
 }
 
 /**
