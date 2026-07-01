@@ -7,6 +7,7 @@ import {
   runTriage,
   tierPlans,
   tierReadsState,
+  tierAuthorsPolicy,
   runPlanner,
   runExplainer,
   runTroubleshooter,
@@ -14,12 +15,14 @@ import {
   runSecurityAnalyst,
   runCritic,
   runAnswerCheck,
+  runPolicyAuthor,
   type AgentContext,
   type AgentResult,
   type OperatorMode,
   type OperatorTier,
   type OperatorTriage,
   type PlannerProposal,
+  type PolicyDraft,
   type RepairFeedback,
   type SecurityAdvisory,
 } from './operator-agents.js'
@@ -34,7 +37,7 @@ import { streamingAnswers, type Gateway } from './operator-gateway.js'
 // skill holds no authority — it returns a typed artifact the route validates, previews, and
 // (for plans) gates behind human approval. Later phases register more skills (researcher,
 // validator, policy author, …) without changing the orchestrator.
-export type SkillKind = 'answer' | 'plan'
+export type SkillKind = 'answer' | 'plan' | 'policy'
 
 export interface AnswerSkill {
   id: string
@@ -48,7 +51,17 @@ export interface PlanSkill {
   run(gateway: Gateway, message: string, context: AgentContext): Promise<AgentResult<PlannerProposal>>
 }
 
-export type Skill = AnswerSkill | PlanSkill
+// The policy-authoring skill: turns intent into a validated authorization-policy draft. Like every
+// skill it holds no authority — the draft's data documents were validated by Caracal's own contract
+// before it returns, and creating, versioning, or activating any of them still flows through the
+// governed, human-approved path the route owns.
+export interface PolicySkill {
+  id: string
+  kind: 'policy'
+  run(gateway: Gateway, message: string, context: AgentContext): Promise<AgentResult<PolicyDraft>>
+}
+
+export type Skill = AnswerSkill | PlanSkill | PolicySkill
 
 // The registry the orchestrator selects from. It maps a triage classification to exactly one
 // handling skill, so the dispatch is deterministic: the LLM triages into a tier and topic, and
@@ -70,6 +83,7 @@ export interface SkillRegistry {
 export type OrchestrationOutcome =
   | { kind: 'plan'; result: AgentResult<ProposedPlanInput>; advisory?: SecurityAdvisory; guidance?: string }
   | { kind: 'answer'; result: AgentResult<{ text: string; reasoning?: string }> }
+  | { kind: 'policy'; result: AgentResult<PolicyDraft> }
 
 export interface OrchestrationResult {
   tier: OperatorTier
@@ -81,7 +95,7 @@ export interface OrchestrationResult {
 // alters the outcome, and is fire-and-forget — the same turn produces the same governed result
 // whether or not anyone is listening. Read stages gather state and answer; plan stages propose,
 // repair, critique, revise, and guard.
-export type ProgressStage = 'triaging' | 'gathering' | 'planning' | 'repairing' | 'critiquing' | 'revising' | 'guarding' | 'answering'
+export type ProgressStage = 'triaging' | 'gathering' | 'planning' | 'repairing' | 'critiquing' | 'revising' | 'guarding' | 'authoring' | 'answering'
 
 export interface ProgressEvent {
   stage: ProgressStage
@@ -121,6 +135,16 @@ const translatorSkill: AnswerSkill = {
   run: (gateway, message, context) => runTranslator(gateway, message, context),
 }
 
+// The policy-authoring skill: turns intent into a validated authorization-policy draft grounded in
+// live state. It authors only; every document is validated by Caracal before it returns, and
+// creating, versioning, or activating the policy still flows through the governed, approval-gated
+// path the route owns.
+const policyAuthorSkill: PolicySkill = {
+  id: 'policy-author',
+  kind: 'policy',
+  run: (gateway, message, context) => runPolicyAuthor(gateway, message, context),
+}
+
 // Picks the read-only answer specialist for a read request's topic: diagnostic questions go to the
 // troubleshooter, integration questions to the provider-resource translator, and everything else
 // to the general explainer. A misclassified topic only changes which read-only answer replies — it
@@ -138,6 +162,7 @@ export function createSkillRegistry(): SkillRegistry {
   return {
     select({ tier, topic }: OperatorTriage): Skill {
       if (tierPlans(tier)) return plannerSkill
+      if (tierAuthorsPolicy(tier)) return policyAuthorSkill
       if (tier === 'read') return answerSkillForTopic(topic)
       return explainerSkill
     },
@@ -348,6 +373,19 @@ export function createOrchestrator(registry: SkillRegistry = createSkillRegistry
       }
 
       const skill = registry.select(classification)
+
+      if (skill.kind === 'policy') {
+        // Policy authoring is grounded in freshly read live state so the specialist references the
+        // applications, resources, and policies that actually exist rather than inventing them. The
+        // specialist authors and validates a draft; it applies nothing, and creating, versioning, or
+        // activating any document still flows through the governed, approval-gated path the route
+        // owns. The draft is returned as its own outcome the route persists and surfaces.
+        emit({ stage: 'gathering' })
+        const policyContext = withDocs(await withEvidence(context, options.researcher, classification.domains), message, options.docs)
+        emit({ stage: 'authoring' })
+        const result = await skill.run(gateway, message, policyContext)
+        return { tier, outcome: { kind: 'policy', result } }
+      }
 
       if (skill.kind === 'plan') {
         // Every plan is grounded in freshly read live state, so the planner proposes against reality

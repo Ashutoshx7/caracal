@@ -40,7 +40,7 @@ import {
   type ProviderConfig,
 } from '../operator-gateway.js'
 import { type GovernanceLimits } from '../operator-ai-governance.js'
-import { runVerifier, type AgentContext, type OperatorMode, type SecurityAdvisory } from '../operator-agents.js'
+import { runVerifier, type AgentContext, type OperatorMode, type SecurityAdvisory, type PolicyDraft } from '../operator-agents.js'
 import { recallZoneMemory, rememberAppliedChange } from '../operator-zone-memory.js'
 import { createOrchestrator, type OnProgress, type ProgressEvent } from '../operator-orchestrator.js'
 import { createStateResearcher } from '../operator-research.js'
@@ -218,6 +218,34 @@ async function writeTurnLocked(
     ],
   )
   return rows[0] as Record<string, unknown>
+}
+
+// Renders an authored policy draft as readable Markdown for the conversation ledger, so a console
+// that does not yet render the structured policy view still shows the summary, each validated data
+// document, its explanation, the risks and recommendations found, and the activation readiness. The
+// structured draft is persisted alongside this text so the rich view reads the draft directly; this
+// rendering is the narrative record, never the source of truth.
+function renderPolicyDraftText(draft: PolicyDraft): string {
+  const parts: string[] = [draft.summary]
+  if (draft.clarifications.length > 0) {
+    parts.push(['Before I can author this safely I need:', ...draft.clarifications.map((question) => `- ${question}`)].join('\n'))
+  }
+  for (const doc of draft.documents) {
+    parts.push([`### ${doc.concern} (${doc.filename})`, '```rego', doc.content, '```', doc.explanation].join('\n'))
+  }
+  if (draft.risks.length > 0) {
+    parts.push(['Risks:', ...draft.risks.map((risk) => `- [${risk.severity}] ${risk.note}`)].join('\n'))
+  }
+  if (draft.recommendations.length > 0) {
+    parts.push(['Recommendations:', ...draft.recommendations.map((rec) => `- ${rec}`)].join('\n'))
+  }
+  if (draft.activation) {
+    const blockers =
+      draft.activation.blockers.length > 0 ? `\nBlockers:\n${draft.activation.blockers.map((blocker) => `- ${blocker}`).join('\n')}` : ''
+    parts.push(`Activation: ${draft.activation.ready ? 'ready' : 'not yet ready'}. ${draft.activation.guidance}${blockers}`)
+  }
+  parts.push(`_AI-assisted draft (model ${draft.provenance.model}). Create, version, and activate it through the governed policy path._`)
+  return parts.join('\n\n')
 }
 
 // Builds the catalog-normalized plan content persisted to a plan turn. Each step
@@ -1625,6 +1653,46 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
           approval_turn: approvalTurn,
           ...meta(),
         })
+      }
+
+      if (outcome.kind === 'policy') {
+        const authored = outcome.result
+        if (!authored.ok) {
+          const turn = await appendTurnTx(
+            fastify.db,
+            params.id,
+            params.zoneId,
+            'system',
+            'error',
+            JSON.stringify({ message: authored.error }),
+            req.actor.id,
+          )
+          return finish(200, {
+            intent: 'policy',
+            tier,
+            ok: false,
+            error: 'no_policy',
+            message: authored.error,
+            turn: turn.ok ? turn.turn : null,
+            ...meta(),
+          })
+        }
+        // The authored draft is recorded in the conversation ledger as a note carrying both a
+        // human-readable rendering and the structured, validated draft, so the console renders the
+        // rich policy view while the ledger stays one narrative. Every document in the draft was
+        // validated by Caracal's own contract before it reached here; creating, versioning, and
+        // activating it still flow through the governed, approval-gated policy routes, so nothing on
+        // this path applies a policy.
+        const draft = authored.value
+        const policyNote: Record<string, unknown> = { text: renderPolicyDraftText(draft), policy: draft }
+        if (deliberation.length > 0) policyNote.deliberation = deliberation
+        const turn = await appendTurnTx(fastify.db, params.id, params.zoneId, 'operator', 'note', JSON.stringify(policyNote), req.actor.id)
+        if (!turn.ok) {
+          return finish(turn.reason === 'archived' ? 409 : 404, {
+            error: turn.reason === 'archived' ? 'conversation_archived' : 'conversation_not_found',
+          })
+        }
+        return finish(201, { intent: 'policy', tier, ok: true, policy: draft, turn: turn.turn, ...meta() })
       }
 
       const explained = outcome.result

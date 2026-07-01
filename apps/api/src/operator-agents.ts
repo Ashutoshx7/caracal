@@ -11,6 +11,7 @@ import { describeZoneMemory, type ZoneMemoryEntry } from './operator-zone-memory
 import type { Evidence } from './operator-research.js'
 import type { DocSnippet } from './operator-docs.js'
 import { GatewayBudgetError, type Gateway, type GatewayMessage } from './operator-gateway.js'
+import { validateAuthzPolicy, previewAuthzPolicy, OPA_INPUT_SCHEMA_VERSION, type AuthzPolicyPreview } from './rego.js'
 
 // The agents never hold authority. Each one produces a typed artifact — an intent,
 // a proposed plan, or an explanation — that the deterministic pipeline then
@@ -28,10 +29,11 @@ const ANSWER_CHECK_MAX_TOKENS = 400
 
 // The handling tier a request is triaged into: the smallest sufficient path, so a simple turn
 // never pays the planning pipeline. conversational and read are answered directly as text;
-// change and compound produce a proposed plan. The four tiers are the stable taxonomy the
-// orchestration grows into — later phases add specialist skills and parallel composition for
-// the compound tier without changing this classification.
-export type OperatorTier = 'conversational' | 'read' | 'change' | 'compound'
+// change and compound produce a proposed plan; policy authors a validated authorization-policy
+// draft. The tiers are the stable taxonomy the orchestration grows into — later phases add
+// specialist skills and parallel composition for the compound tier without changing this
+// classification.
+export type OperatorTier = 'conversational' | 'read' | 'change' | 'compound' | 'policy'
 
 // The operation mode of a conversation, a Caracal-side setting enforced deterministically and
 // never chosen by the model. agent is the full path: read, propose, and — after human approval —
@@ -63,6 +65,14 @@ export function tierReadsState(tier: OperatorTier): boolean {
 // approval before anything is applied.
 export function tierComposes(tier: OperatorTier): boolean {
   return tier === 'compound'
+}
+
+// Whether a tier authors an authorization-policy draft rather than answering or planning a control
+// change. policy is grounded in live state and produces a validated data-document draft the human
+// then creates, versions, and activates through the governed, approval-gated path; it applies
+// nothing itself, so it stays a read-grounded authoring path distinct from the plan tiers.
+export function tierAuthorsPolicy(tier: OperatorTier): boolean {
+  return tier === 'policy'
 }
 
 // The shared identity every Operator agent speaks from. The Operator is not a generic chatbot:
@@ -232,7 +242,7 @@ const OBJECT_DOMAINS = ['zone', 'application', 'provider', 'resource', 'policy',
 
 const TriageOutput = z
   .object({
-    tier: z.enum(['conversational', 'read', 'change', 'compound']),
+    tier: z.enum(['conversational', 'read', 'change', 'compound', 'policy']),
     topic: z.enum(['general', 'diagnostic', 'integration']).optional(),
     domains: z.array(z.enum(OBJECT_DOMAINS)).max(7).optional(),
   })
@@ -288,6 +298,12 @@ export function buildTriageMessages(message: string, recent?: RecentMessage[]): 
           '  the operator instructs you to act, STOP gathering and classify it change.',
           '- "compound": combine several changes, or a request that must investigate live state before it',
           '  can be planned safely.',
+          '- "policy": author, write, generate, draft, review, explain, optimize, debug, or migrate a',
+          '  Caracal authorization POLICY or Rego data document — the grants, application bindings,',
+          '  confinement, deny overlays, risk tiers, or approval tiers the signed decision contract reads.',
+          '  Use policy when the request is about the policy document itself ("write a policy that…",',
+          '  "review my rego", "add a confinement", "why does this data document deny…"), NOT when it is a',
+          '  direct grant of access through a single capability, which is a change.',
         ].join('\n'),
         [
           'Topic refines a read (ignored for other tiers):',
@@ -905,6 +921,349 @@ export async function runSecurityAnalyst(
   } catch {
     return { ok: false, error: 'security review did not produce a usable advisory' }
   }
+}
+
+const POLICY_AUTHOR_MAX_TOKENS = 1800
+
+// How many correction passes the policy specialist gets when a document it authored is rejected by
+// Caracal's own contract. The first attempt plus these repair passes bound the loop deterministically
+// so a model that cannot produce a valid data document fails closed rather than looping unbounded.
+const POLICY_AUTHOR_REPAIR_ATTEMPTS = 2
+
+// The exact, supported shape of a Caracal authorization-policy data document, distilled for the
+// policy specialist. An adopter never writes decision logic: the signed, versioned platform contract
+// owns `result` in package caracal.authz and is deny-by-default. An adopter supplies only DATA the
+// contract reads, and this block is the whole vocabulary of that data — so an authored document is
+// always valid Rego, a valid data document, least-privilege, and confined to keys the contract
+// understands. Anything outside this vocabulary is unsupported and must never be authored.
+const POLICY_AUTHORING = [
+  'CARACAL POLICY MODEL — WHAT YOU AUTHOR. The zone runs one signed, versioned Rego decision',
+  'contract that owns every authorization decision and is deny by default. You never write, rename,',
+  'or override that contract, and you never define `result`. You author DATA DOCUMENTS: Rego files',
+  'in package caracal.authz that supply only the policy data the contract reads. Each document is',
+  'opted in with a first line `# caracal:data-document`, declares `package caracal.authz`, imports',
+  '`rego.v1`, defines one or more of the supported data rules below, and defines nothing else. One',
+  'concern per document; keep documents small and single-purpose.',
+  '',
+  'THE ONLY SUPPORTED DATA RULES. Author exclusively from this vocabulary — never invent a key:',
+  '- app_ids: object mapping a stable, readable key to a real application id, so other documents',
+  '  refer to an application by key rather than a raw id. Example: app_ids := {"reporting": "<id>"}.',
+  '- grants: object keyed by a resource://<slug> identifier; each entry names the owning application',
+  '  by its app_ids key and maps each role to the exact scopes that role may request on that',
+  '  resource. Example: grants := {"resource://nucleus": {"application": "reporting", "roles":',
+  '  {"reader": ["nucleus:read"]}}}. Grant only the narrowest scopes the intent needs.',
+  '- confinement: array of {label_prefix, scopes} caps that narrow the scopes any principal whose',
+  '  label starts with label_prefix may ever obtain, regardless of grants. Narrowing only — a',
+  '  confinement can shrink authority but never widen it.',
+  '- restrict: a deny overlay that removes authority the contract would otherwise allow. Narrowing',
+  '  only — use it to carve out an exception, never to grant.',
+  '- risk: array of {scope, tier} classifying individual scopes into risk tiers, so sensitive scopes',
+  '  can be gated. tier is a short label such as "low", "elevated", or "critical".',
+  '- approval_tiers: array of the risk tiers that require human approval before authority is issued.',
+  '',
+  'DENY BY DEFAULT AND LEAST PRIVILEGE ARE AUTOMATIC. Because the contract denies by default, a',
+  'document only ever adds the minimum needed: the fewest grants, the narrowest scopes, the tightest',
+  'confinement, and an explicit restrict for any exception. Never add a scope, role, application, or',
+  'resource the stated intent does not require. Classify anything sensitive (write, delete, admin,',
+  'secret, or money-moving scopes) into a risk tier and require approval for it through approval_tiers.',
+  '',
+  'THE INPUT THE CONTRACT EVALUATES — USE IT FOR SIMULATIONS. When you propose simulation cases,',
+  'shape each input from these real fields: input.principal (with .registration_method, .lifecycle,',
+  '.labels), input.resource, input.action, input.context (.requested_scopes, .actor_claims,',
+  '.subject_claims, .challenge_resolved), input.session, and input.delegation_edge. Give at least one',
+  'case that should be allowed and one that should be denied, so the draft can be simulated before it',
+  'is activated.',
+  '',
+  'CLARIFY ONLY WHEN YOU CANNOT AUTHOR SAFELY. Understand the operator’s natural-language intent and',
+  'author the documents that satisfy it. Ask a clarifying question only when a value you cannot',
+  'safely default would change what the policy grants — which application, which resource, which',
+  'scopes, or which principals. When you must ask, return no documents and put the blocking questions',
+  'in "clarifications"; never guess an application id, a resource identifier, or a scope the operator',
+  'did not give. Never place a secret, credential, or token in a document; refer to secrets by name',
+  'only and keep credential handling in the console.',
+  '',
+  'EXPLAIN, SURFACE RISK, GUIDE ACTIVATION. For every document, write a plain-English explanation of',
+  'what it grants or restricts and why. Surface the security implications you see as "risks", and the',
+  'least-privilege or hardening improvements as "recommendations". In "activation", state whether the',
+  'draft is ready to activate, what still blocks it (an application or resource that must exist first,',
+  'a secret to add in the console, a simulation to run), and the concrete next step — remembering that',
+  'a policy is authored, versioned, bundled into a policy set, and one set version is activated per',
+  'zone, and that nothing you author takes effect until it is created and activated through the',
+  'governed, human-approved path.',
+].join('\n')
+
+// One authored data document as the model proposes it: a single concern rendered as a data
+// document, its suggested file name, and a plain-English explanation. Caracal validates the content
+// deterministically before it is ever surfaced, so the model's claim that it is valid is never
+// trusted on its own.
+const PolicyDocumentOutput = z
+  .object({
+    concern: z.string().min(1).max(200),
+    filename: z.string().min(1).max(120),
+    content: z.string().min(1).max(8000),
+    explanation: z.string().min(1).max(2000),
+  })
+  .strict()
+
+const PolicyRiskOutput = z
+  .object({
+    severity: z.enum(['info', 'caution', 'warning']),
+    note: z.string().min(1).max(500),
+  })
+  .strict()
+
+const PolicySimulationOutput = z
+  .object({
+    name: z.string().min(1).max(200),
+    description: z.string().min(1).max(500),
+    input: z.record(z.string(), z.unknown()),
+    expected_decision: z.enum(['allow', 'deny']),
+  })
+  .strict()
+
+// The policy specialist's raw structured proposal: the understood intent, the data documents to
+// author, and the explanatory and safety metadata around them — or, when intent is too ambiguous to
+// author safely, clarifying questions with no documents. Generated as a schema-validated object so an
+// off-schema draft fails closed rather than reaching the operator as a success.
+const PolicyAuthorOutput = z
+  .object({
+    summary: z.string().min(1).max(2000),
+    intent: z.string().min(1).max(2000),
+    documents: z.array(PolicyDocumentOutput).max(12),
+    clarifications: z.array(z.string().min(1).max(500)).max(6).optional(),
+    assumptions: z.array(z.string().min(1).max(500)).max(12).optional(),
+    risks: z.array(PolicyRiskOutput).max(20).optional(),
+    recommendations: z.array(z.string().min(1).max(500)).max(20).optional(),
+    simulations: z.array(PolicySimulationOutput).max(12).optional(),
+    activation: z
+      .object({
+        ready: z.boolean(),
+        blockers: z.array(z.string().min(1).max(500)).max(12),
+        guidance: z.string().min(1).max(1000),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+
+export type PolicyRiskSeverity = 'info' | 'caution' | 'warning'
+
+export interface PolicyRisk {
+  severity: PolicyRiskSeverity
+  note: string
+}
+
+export interface PolicySimulationCase {
+  name: string
+  description: string
+  input: Record<string, unknown>
+  expectedDecision: 'allow' | 'deny'
+}
+
+// One validated data document in a draft: the authored content, its concern and suggested file
+// name, the plain-English explanation, and the deterministic preview Caracal computed from the
+// content itself — the package, the data rules it defines, and the input and data paths it reads. A
+// document only reaches a draft after validateAuthzPolicy accepted it, so it is always valid Rego
+// and a valid data document; the preview is Caracal's own reading of it, never the model's claim.
+export interface PolicyDocument {
+  concern: string
+  filename: string
+  content: string
+  explanation: string
+  preview: AuthzPolicyPreview | null
+}
+
+// The provenance stamped on an AI-assisted draft so every downstream artifact is auditable and
+// traceable to its origin: that a model assisted, which model served, when it was generated, and the
+// operator request it came from. Carried into any policy created from the draft, so an AI-assisted
+// policy is always distinguishable in audit from a hand-authored one.
+export interface PolicyDraftProvenance {
+  aiAssisted: true
+  model: string
+  generatedAt: string
+  sourceMessage: string
+}
+
+export interface PolicyActivationReadiness {
+  ready: boolean
+  blockers: string[]
+  guidance: string
+}
+
+// The policy specialist's structured artifact: the understood intent, one or more validated data
+// documents, the risks and least-privilege recommendations found, ready-to-run simulation cases,
+// activation readiness, provenance, and the schema version the documents target — or, when intent is
+// too ambiguous to author safely, the clarifying questions to ask with no documents. The model only
+// proposes; every document in a draft was validated by Caracal's own deterministic contract before it
+// was surfaced, and the governed create, version, and activate path still gates any change behind
+// human approval.
+export interface PolicyDraft {
+  summary: string
+  intent: string
+  documents: PolicyDocument[]
+  clarifications: string[]
+  assumptions: string[]
+  risks: PolicyRisk[]
+  recommendations: string[]
+  simulations: PolicySimulationCase[]
+  activation: PolicyActivationReadiness | null
+  schemaVersion: string
+  provenance: PolicyDraftProvenance
+}
+
+// Renders a data-document validation code from validateAuthzPolicy into a concrete instruction the
+// specialist can act on in a repair pass. A raw parser error is already specific, so it is passed
+// through unchanged.
+function describePolicyError(code: string): string {
+  switch (code) {
+    case 'must_use_package_caracal_authz':
+      return 'the document must declare "package caracal.authz"'
+    case 'must_be_data_document':
+      return 'the document must start with the directive line "# caracal:data-document"'
+    case 'data_document_must_not_define_result':
+      return 'a data document must never define "result" — the signed platform contract owns the decision'
+    case 'data_document_must_define_data':
+      return 'the document must define at least one data rule (app_ids, grants, confinement, restrict, risk, or approval_tiers)'
+    default:
+      return code
+  }
+}
+
+// Assembles the enriched draft the orchestrator carries from the model's raw output, the documents
+// Caracal validated, the serving model, and the operator request. The optional metadata arrays
+// collapse to empty rather than absent so every consumer reads a stable shape, and the provenance is
+// stamped here so it always reflects the model that actually served this draft.
+function assemblePolicyDraft(
+  output: z.infer<typeof PolicyAuthorOutput>,
+  documents: PolicyDocument[],
+  model: string,
+  sourceMessage: string,
+): PolicyDraft {
+  return {
+    summary: output.summary,
+    intent: output.intent,
+    documents,
+    clarifications: output.clarifications ?? [],
+    assumptions: output.assumptions ?? [],
+    risks: output.risks ?? [],
+    recommendations: output.recommendations ?? [],
+    simulations: (output.simulations ?? []).map((sim) => ({
+      name: sim.name,
+      description: sim.description,
+      input: sim.input,
+      expectedDecision: sim.expected_decision,
+    })),
+    activation: output.activation ?? null,
+    schemaVersion: OPA_INPUT_SCHEMA_VERSION,
+    provenance: { aiAssisted: true, model, generatedAt: new Date().toISOString(), sourceMessage },
+  }
+}
+
+export function buildPolicyAuthorMessages(message: string, context: AgentContext, feedback?: RepairFeedback): GatewayMessage[] {
+  const repair = feedback
+    ? `\n\nYour previous draft ("${feedback.priorSummary}") produced data documents Caracal rejected:\n${feedback.diagnostics
+        .map((d) => `- ${d}`)
+        .join(
+          '\n',
+        )}\nReturn a corrected draft whose every document resolves the reasons above, changing only what is needed to make each document valid.`
+    : ''
+  return [
+    {
+      role: 'system',
+      content: systemPrompt(
+        OPERATOR_PERSONA,
+        CARACAL_PLATFORM,
+        REASONING_PRINCIPLES,
+        DOCS_DISCIPLINE,
+        POLICY_AUTHORING,
+        [
+          'YOUR JOB: AUTHOR POLICY. You are the Operator policy specialist. Turn the request into the',
+          'Caracal data document or documents that satisfy it, using only the supported data-rule',
+          'vocabulary above. You propose; you never apply — a draft is validated by Caracal and any',
+          'creation, versioning, or activation still flows through the governed, human-approved path, so',
+          'your job is to be correct, least-privilege, and clear, not to act.',
+          'Ground every document in the live state and recent activity in the context: refer to an',
+          'application or resource that actually exists by the id shown for it, and do not assume an object',
+          'the context does not show. When the request needs an application or resource that does not yet',
+          'exist, author against the readable app_ids key and name the missing object as an activation',
+          'blocker rather than inventing an id.',
+          'Author the smallest correct set of documents: one concern each, the narrowest scopes, explicit',
+          'confinement and restrict for any boundary, and risk plus approval_tiers for anything sensitive.',
+          'For every document write a plain-English explanation. Give at least one allow and one deny',
+          'simulation case shaped from the real input fields. Surface security implications as risks and',
+          'hardening improvements as recommendations. State activation readiness, blockers, and the next',
+          'step.',
+          'CLARIFY INSTEAD OF GUESSING. If a value you cannot safely default would change what the policy',
+          'grants — which application, which resource, which scopes, which principals — return no documents',
+          'and put the blocking questions in "clarifications". Never invent an application id, a resource',
+          'identifier, or a scope the operator did not give, and never put a secret in a document.',
+          'Reply with ONLY a JSON object {"summary": string, "intent": string, "documents": [{"concern":',
+          'string, "filename": string, "content": string, "explanation": string}], "clarifications"?:',
+          'string[], "assumptions"?: string[], "risks"?: [{"severity": "info"|"caution"|"warning", "note":',
+          'string}], "recommendations"?: string[], "simulations"?: [{"name": string, "description": string,',
+          '"input": object, "expected_decision": "allow"|"deny"}], "activation"?: {"ready": boolean,',
+          '"blockers": string[], "guidance": string}}. Each document "content" is the full Rego data',
+          'document text, starting with the line "# caracal:data-document". Set "clarifications" with no',
+          'documents only when you genuinely cannot author safely; otherwise author the documents and',
+          'leave "clarifications" out. The summary is one plain sentence on what the policy accomplishes;',
+          'the intent restates, in one sentence, the goal you understood.',
+        ].join('\n'),
+      ),
+    },
+    { role: 'user', content: `Context:\n${describeContext(context)}\n\nRequest: ${message}${repair}` },
+  ]
+}
+
+// Produces a validated policy draft from intent. The model proposes data documents; Caracal then
+// validates each one with the exact same contract the policy routes enforce, and a rejected document
+// is never surfaced — its precise reason is fed back for a bounded number of repair passes until every
+// document passes or the attempts are exhausted, at which point the turn fails closed rather than
+// emitting invalid Rego. A draft with no documents but clarifying questions is a valid outcome the
+// orchestrator relays as questions. A per-turn budget refusal is a governance stop, so it propagates
+// to the route rather than being reported as an authoring failure.
+export async function runPolicyAuthor(gateway: Gateway, message: string, context: AgentContext): Promise<AgentResult<PolicyDraft>> {
+  const sourceMessage = message.replace(/\s+/g, ' ').trim().slice(0, 1000)
+  let feedback: RepairFeedback | undefined
+  for (let attempt = 0; attempt <= POLICY_AUTHOR_REPAIR_ATTEMPTS; attempt++) {
+    let completion
+    try {
+      completion = await gateway.completeObject(buildPolicyAuthorMessages(message, context, feedback), PolicyAuthorOutput, {
+        maxTokens: POLICY_AUTHOR_MAX_TOKENS,
+        temperature: 0,
+      })
+    } catch (err) {
+      if (err instanceof GatewayBudgetError) throw err
+      return { ok: false, error: 'policy author returned a draft that failed the schema' }
+    }
+    const output = completion.value
+    if (output.documents.length === 0) {
+      if ((output.clarifications ?? []).length === 0) {
+        return { ok: false, error: 'policy author produced neither a document nor a clarifying question' }
+      }
+      return { ok: true, value: assemblePolicyDraft(output, [], completion.model, sourceMessage) }
+    }
+    const diagnostics: string[] = []
+    const documents: PolicyDocument[] = []
+    for (const doc of output.documents) {
+      const error = validateAuthzPolicy(doc.content)
+      if (error) {
+        diagnostics.push(`${doc.filename} (${doc.concern}): ${describePolicyError(error)}`)
+      } else {
+        documents.push({
+          concern: doc.concern,
+          filename: doc.filename,
+          content: doc.content,
+          explanation: doc.explanation,
+          preview: previewAuthzPolicy(doc.content),
+        })
+      }
+    }
+    if (diagnostics.length === 0) {
+      return { ok: true, value: assemblePolicyDraft(output, documents, completion.model, sourceMessage) }
+    }
+    feedback = { priorSummary: output.summary, diagnostics }
+  }
+  return { ok: false, error: 'policy author could not produce data documents that pass validation' }
 }
 
 // Whether the live state read after a plan was applied reflects what the plan set out to do.
