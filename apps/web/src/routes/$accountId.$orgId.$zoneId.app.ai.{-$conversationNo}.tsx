@@ -1273,14 +1273,14 @@ function ActivityStream({
             onUsage?.(result);
           }
           if (result.message_run) {
-            if (messageRunIsActive(result.message_run.state)) {
-              onNotice?.(
-                "warning",
-                `Previous message is recorded as ${result.message_run.state.replace(/_/g, " ")}. The console did not send it again.`,
-              );
-              return;
-            }
-            if (result.message_run.state !== "completed") {
+            // The server durably recorded this message run, so the refreshed ledger already shows
+            // the turn and any plan awaiting approval. The pending marker has done its job and must
+            // be cleared for every recorded state, otherwise recovery replays it on each mount. Only
+            // a terminal failure needs to be surfaced, since that outcome is not visible in the plan.
+            if (
+              !messageRunIsActive(result.message_run.state) &&
+              result.message_run.state !== "completed"
+            ) {
               onNotice?.(
                 "error",
                 result.message_run.error_detail ??

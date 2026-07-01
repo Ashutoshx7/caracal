@@ -290,6 +290,12 @@ export function useOperatorTurns(zoneId: string | null, conversationId: string |
     queryFn: ({ signal }) =>
       consoleApi.operator.listTurns(zoneId as string, conversationId as string, signal),
     enabled: !!zoneId && !!conversationId,
+    // The transcript is the durable ledger, and a message sent just before leaving the page is
+    // recorded server-side even though its send was aborted on unmount. Under the global 15s
+    // staleTime the cache would be served without that turn when the operator returns quickly,
+    // hiding their own message and any plan left awaiting approval. Reload on every mount so
+    // reopening a conversation always reflects the authoritative ledger.
+    refetchOnMount: "always",
   });
 }
 
