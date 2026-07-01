@@ -26,10 +26,12 @@ export function autopilotAvailable(policy: AutopilotPolicy): boolean {
   return policy.enabled
 }
 
-// The evidence the evaluator judges: the conversation's engage flag and the plan's steps. The plan
-// was proposed by the model but the decision is Caracal's alone.
+// The evidence the evaluator judges: the conversation's engage flag, whether the plan's own
+// deterministic preview says it can apply, and the plan's steps. The plan was proposed by the model
+// but the decision is Caracal's alone.
 export interface AutopilotEvaluation {
   engaged: boolean
+  applicable: boolean
   steps: { id: string; capability: string }[]
 }
 
@@ -38,13 +40,17 @@ export interface AutopilotEvaluation {
 export type AutopilotDecision = { autoApprove: true } | { autoApprove: false; reason: string }
 
 // Decides whether a plan's human approval may be auto-satisfied. With the master switch on and the
-// conversation engaged, every non-empty plan is auto-approved: an engaged conversation has opted
-// into acting without a human in the loop. Authority is never widened — the governed execute path
-// still enforces the capability allowlist, least-privilege executor token, and zone isolation when
-// the plan is applied, so autopilot removes the approval step, never the deterministic controls.
+// conversation engaged, a non-empty plan whose preview says it can apply is auto-approved: an
+// engaged conversation has opted into acting without a human in the loop. A plan the deterministic
+// preview already marks unapplicable — a blocked step whose target cannot exist when the plan runs —
+// is never auto-approved: it would only fail on apply, so it stops for a human who can see why.
+// Authority is never widened — the governed execute path still enforces the capability allowlist,
+// least-privilege executor token, and zone isolation when the plan is applied, so autopilot removes
+// the approval step, never the deterministic controls.
 export function mayAutoApprove(evaluation: AutopilotEvaluation, policy: AutopilotPolicy): AutopilotDecision {
   if (!policy.enabled) return { autoApprove: false, reason: 'autopilot_disabled' }
   if (!evaluation.engaged) return { autoApprove: false, reason: 'autopilot_not_engaged' }
   if (evaluation.steps.length === 0) return { autoApprove: false, reason: 'empty_plan' }
+  if (!evaluation.applicable) return { autoApprove: false, reason: 'plan_not_applicable' }
   return { autoApprove: true }
 }

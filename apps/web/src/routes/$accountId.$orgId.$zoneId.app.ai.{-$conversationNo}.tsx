@@ -68,6 +68,14 @@ import {
   type TimelineItem,
 } from "@/platform/operator/timeline";
 import {
+  clearPendingOperatorMessage,
+  makePendingOperatorMessage,
+  messageRunIsActive,
+  readPendingOperatorMessage,
+  savePendingOperatorMessage,
+  type PendingOperatorMessage,
+} from "@/platform/operator/messageRuns";
+import {
   deriveTitle,
   formatRelative,
   groupConversations,
@@ -1095,7 +1103,7 @@ function ActivityStream({
   // The message currently in flight, echoed in the transcript the instant it is sent so the
   // operator's own words never disappear into the round trip. It clears when the send settles and
   // the authoritative turn arrives from the ledger.
-  const [inFlight, setInFlight] = useState<string | null>(null);
+  const [inFlight, setInFlight] = useState<PendingOperatorMessage | null>(null);
   // The ordered deliberation stages streamed back while a send is in flight, so the operator
   // watches the Operator reason - triage, read state, plan, review - rather than a blank spinner.
   // Consecutive repeats of a stage are collapsed; the list resets at the start of each send.
@@ -1210,14 +1218,16 @@ function ActivityStream({
     pendingReveal.current = null;
   }, [visibleItems]);
 
-  function dispatch(text: string) {
+  function dispatch(text: string, existing?: PendingOperatorMessage) {
     // The mutation's own isPending flips a render late, so this synchronous flag is what actually
     // prevents a second send - a re-fired opening intent or a doubled queue drain - from racing the
     // first into the same conversation, which the server serializes and which leaves the stream
     // stuck on the working indicator. It clears the moment the send settles.
-    if (sending.current) return;
+    if (sending.current || !zoneId) return;
+    const pending = existing ?? makePendingOperatorMessage(zoneId, conversationId, text);
     sending.current = true;
-    setInFlight(text);
+    savePendingOperatorMessage(pending);
+    setInFlight(pending);
     setStages([]);
     setStreamedAnswer("");
     setStreamedReasoning("");
@@ -1234,6 +1244,8 @@ function ActivityStream({
       {
         message: text,
         provider: model ?? undefined,
+        clientMessageId: pending.clientMessageId,
+        correlationId: pending.correlationId,
         signal: controller.signal,
         onStage: (stage) => {
           armGuard();
@@ -1249,7 +1261,40 @@ function ActivityStream({
         },
       },
       {
-        onSuccess: (result) => onUsage?.(result),
+        onSuccess: (result) => {
+          if (
+            result.usage ||
+            result.model ||
+            result.provider ||
+            result.max_tokens ||
+            result.failover ||
+            result.tier
+          ) {
+            onUsage?.(result);
+          }
+          if (result.message_run) {
+            if (messageRunIsActive(result.message_run.state)) {
+              onNotice?.(
+                "warning",
+                `Previous message is recorded as ${result.message_run.state.replace(/_/g, " ")}. The console did not send it again.`,
+              );
+              return;
+            }
+            if (result.message_run.state !== "completed") {
+              onNotice?.(
+                "error",
+                result.message_run.error_detail ??
+                  result.message_run.error_code ??
+                  "The previous message did not complete.",
+              );
+            }
+          }
+          clearPendingOperatorMessage(pending.zoneId, pending.conversationId);
+        },
+        onError: (err) => {
+          if (!(err instanceof Error) || err.name !== "AbortError")
+            clearPendingOperatorMessage(pending.zoneId, pending.conversationId);
+        },
         onSettled: () => {
           if (sendGuard.current) {
             clearTimeout(sendGuard.current);
@@ -1334,6 +1379,22 @@ function ActivityStream({
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialMessage]);
+
+  const recoveredPendingKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!zoneId || initialMessage || sending.current || send.isPending) return;
+    const pending = readPendingOperatorMessage(zoneId, conversationId);
+    if (!pending) return;
+    const key = pending.clientMessageId;
+    if (recoveredPendingKey.current === key) return;
+    recoveredPendingKey.current = key;
+    const timer = window.setTimeout(() => {
+      stickToBottom.current = true;
+      dispatch(pending.text, pending);
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoneId, conversationId, initialMessage, send.isPending]);
 
   // Surface a failed send through the workspace error banner and clear it when the
   // stream unmounts so a stale failure never lingers on another session.
@@ -1428,7 +1489,7 @@ function ActivityStream({
         {send.isPending && inFlight ? (
           <div className="flex justify-end">
             <p className="wrap-anywhere min-w-0 max-w-[82%] rounded-2xl border border-border bg-muted px-3 py-2 text-sm whitespace-pre-wrap text-foreground opacity-60">
-              {inFlight}
+              {inFlight.text}
             </p>
           </div>
         ) : null}

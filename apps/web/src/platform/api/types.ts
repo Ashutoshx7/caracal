@@ -878,6 +878,33 @@ export interface OperatorUsageMeta {
   tier?: "conversational" | "read" | "change" | "compound";
 }
 
+export type OperatorMessageRunState =
+  | "queued"
+  | "sending"
+  | "waiting_for_model"
+  | "reasoning"
+  | "waiting_for_tool"
+  | "waiting_for_user_approval"
+  | "executing"
+  | "streaming"
+  | "completed"
+  | "cancelled"
+  | "failed"
+  | "timeout";
+
+export interface OperatorMessageRun {
+  id: string;
+  client_message_id: string;
+  correlation_id: string;
+  state: OperatorMessageRunState;
+  reason: string | null;
+  error_code: string | null;
+  error_detail: string | null;
+  deadline_at: string | null;
+  completed_at: string | null;
+  last_event_seq: number;
+}
+
 // The advisory severity of a single security finding. Advisory only: it informs the human who
 // approves the plan and never gates it.
 export type OperatorAdvisorySeverity = "info" | "caution" | "warning";
@@ -931,5 +958,6 @@ export type OperatorMessageResult = (
     }
   | { intent: "plan"; ok: false; error: string; turn: OperatorTurn | null }
   | { intent: "explain"; ok: boolean; text: string; reasoning?: string; turn: OperatorTurn | null }
+  | { intent: "message_run"; ok: true; duplicate: true; message_run: OperatorMessageRun }
 ) &
-  OperatorUsageMeta;
+  OperatorUsageMeta & { message_run?: OperatorMessageRun };
