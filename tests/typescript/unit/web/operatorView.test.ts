@@ -134,8 +134,8 @@ describe('stepToolState', () => {
     expect(stepToolState(step({ id: 's1', capability: 'x', status: 'succeeded' }), plan())).toBe('output-available')
     expect(stepToolState(step({ id: 's1', capability: 'x', status: 'failed' }), plan())).toBe('output-error')
   })
-  it('treats an undecided step as ready to run', () => {
-    expect(stepToolState(s, plan())).toBe('input-available')
+  it('treats an undecided step as pending', () => {
+    expect(stepToolState(s, plan())).toBe('input-streaming')
   })
 })
 
