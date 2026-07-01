@@ -3,7 +3,7 @@
 //
 // Operator plan surfaces: the execution-plan artifact, its per-step badges, the security review, and the collapsed history row.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Confirmation,
   ConfirmationAccepted,
@@ -42,8 +42,8 @@ import {
   ToolInput,
   ToolOutput,
 } from "@/components/ai-elements/tool";
-import { Badge, Button } from "@/components/ui";
-import { AlertGlyph, PlanGlyph } from "@/components/console/OperatorGlyphs";
+import { Badge, Button, useCopyToClipboard, useToast } from "@/components/ui";
+import { AlertGlyph, KeyGlyph, PlanGlyph } from "@/components/console/OperatorGlyphs";
 import { cx } from "@/lib/cx";
 import {
   useDecideOperatorPlan,
@@ -128,6 +128,29 @@ function StepEffectBadge({ effect }: { effect?: StepEffect }) {
   );
 }
 
+// The identifying value a step acts on, pulled from its parameters so a change reads as
+// "Register an application · GitMesh Lab" rather than naming only the capability. Human name-like
+// fields win over ids, and a raw id is used only when nothing friendlier is present.
+function primaryArg(args: Record<string, unknown>): string | null {
+  const order = [
+    "name",
+    "title",
+    "label",
+    "resource_id",
+    "application_id",
+    "provider_id",
+    "policy_id",
+    "grant_id",
+    "zone_id",
+    "id",
+  ];
+  for (const key of order) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim().length > 0) return value;
+  }
+  return null;
+}
+
 // The advisory security review surfaced above the approval controls, so the reviewer weighs intent
 // alignment, over-grant, and blast-radius before approving. It never gates the decision - the
 // approve and reject controls are unchanged whether or not findings are present. When the guardian
@@ -169,6 +192,85 @@ function PlanAdvisory({ advisory }: { advisory: PlanAdvisoryView }) {
   );
 }
 
+// One-time client secret returned by an apply. Registering or rotating an application issues a
+// secret that the control plane delivers only in the execute HTTP response and never writes to the
+// ledger, so it is surfaced here for the operator to store. The value lives only in this component's
+// in-memory mutation result - it is not persisted and is gone on reload, exactly as a one-time
+// secret must be.
+function issuedSecrets(
+  outputs: Record<string, Record<string, unknown>> | undefined,
+): { key: string; app: string | null; secret: string }[] {
+  if (!outputs) return [];
+  const issued: { key: string; app: string | null; secret: string }[] = [];
+  for (const [stepId, output] of Object.entries(outputs)) {
+    const secret = output.client_secret;
+    if (typeof secret !== "string" || secret.length === 0) continue;
+    const app = typeof output.application_id === "string" ? output.application_id : null;
+    issued.push({ key: stepId, app, secret });
+  }
+  return issued;
+}
+
+// A single issued secret: masked by default with a reveal toggle and a copy control, so the operator
+// can store it without it lingering on screen. The secret is only ever the in-memory value passed in.
+function SecretRow({ app, secret }: { app: string | null; secret: string }) {
+  const copy = useCopyToClipboard();
+  const toast = useToast();
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <div className="flex flex-col gap-1">
+      {app ? <span className="font-mono text-[11px] text-muted-foreground">{app}</span> : null}
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 truncate rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs">
+          {revealed ? secret : "•".repeat(28)}
+        </code>
+        <Button size="sm" variant="secondary" onClick={() => setRevealed((value) => !value)}>
+          {revealed ? "Hide" : "Reveal"}
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() =>
+            void copy(secret, {
+              onSuccess: () => toast({ tone: "success", title: "Client secret copied" }),
+            })
+          }
+        >
+          Copy
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// The one-time credentials an apply issued, surfaced inside the plan card so a secret created through
+// the chat is not lost. It states plainly that the secret is shown once and never stored, matching how
+// the Console reveals a secret elsewhere, and holds the value only in memory for the operator to copy.
+function IssuedCredentials({
+  secrets,
+}: {
+  secrets: { key: string; app: string | null; secret: string }[];
+}) {
+  return (
+    <div className="border-t border-border bg-surface px-3.5 py-2.5">
+      <div className="flex items-center gap-2">
+        <KeyGlyph className="h-3 w-3 text-muted-foreground" />
+        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Client secret
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Shown once and never stored - copy and keep it somewhere safe before leaving this chat.
+      </p>
+      <div className="mt-2 flex flex-col gap-2.5">
+        {secrets.map((item) => (
+          <SecretRow key={item.key} app={item.app} secret={item.secret} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // The active execution plan rendered as a first-class operational artifact: steps,
 // per-step effect, live progress, and the approve / reject controls. Approval is the only gate -
 // an approved plan applies automatically, so there is no separate apply step.
@@ -186,6 +288,27 @@ export function PlanArtifact({
   const busy = decide.isPending || execute.isPending;
   const decision = planDecision(plan);
   const mutatingCount = plan.steps.filter((step) => step.mutating).length;
+  const changeCounts = plan.steps.reduce(
+    (acc, step) => {
+      if (step.effect === "create") acc.create += 1;
+      else if (step.effect === "update") acc.update += 1;
+      else if (step.effect === "delete") acc.delete += 1;
+      return acc;
+    },
+    { create: 0, update: 0, delete: 0 },
+  );
+  const changeBits = [
+    changeCounts.create > 0 ? `creates ${changeCounts.create}` : null,
+    changeCounts.update > 0 ? `updates ${changeCounts.update}` : null,
+    changeCounts.delete > 0 ? `deletes ${changeCounts.delete}` : null,
+  ].filter((bit): bit is string => bit !== null);
+  const stepLabel = `${plan.steps.length} step${plan.steps.length === 1 ? "" : "s"}`;
+  const changeLabel =
+    mutatingCount === 0
+      ? "read-only"
+      : changeBits.length > 0
+        ? changeBits.join(" · ")
+        : `${mutatingCount} change${mutatingCount === 1 ? "" : "s"}`;
   const catalog = useOperatorCapabilities().data ?? [];
   const sources = planCitations(plan, catalog);
   // Resolves a step's dependency ids to their human summaries so an ordering hint reads as
@@ -204,18 +327,19 @@ export function PlanArtifact({
     }
   }, [plan.canExecute, plan.seq, execute.mutate]);
 
+  const secrets = issuedSecrets(execute.data?.outputs);
+
   return (
-    <div className="border border-border bg-card shadow-sm">
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
       <div className="flex items-start justify-between gap-3 border-b border-border px-3.5 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="grid h-5 w-5 flex-shrink-0 place-items-center border border-border bg-muted">
+          <span className="grid h-5 w-5 flex-shrink-0 place-items-center rounded-md border border-border bg-muted">
             <PlanGlyph className="h-3 w-3 text-foreground" />
           </span>
           <div className="min-w-0">
             <div className="truncate text-sm font-medium text-foreground">{plan.summary}</div>
             <div className="text-[11px] text-muted-foreground">
-              {plan.steps.length} step{plan.steps.length === 1 ? "" : "s"}
-              {mutatingCount > 0 ? ` · ${mutatingCount} change state` : " · read-only"}
+              {stepLabel} · {changeLabel}
             </div>
           </div>
         </div>
@@ -225,11 +349,14 @@ export function PlanArtifact({
       <div className="flex flex-col">
         {plan.steps.map((step) => {
           const dependencyLabels = step.dependsOn.map((id) => stepLabels.get(id) ?? id);
+          const name = primaryArg(step.args);
+          const title =
+            name && !step.summary.includes(name) ? `${step.summary} · ${name}` : step.summary;
           return (
             <Tool key={step.id} className="border-b border-border last:border-b-0">
               <ToolHeader
                 type={`tool-${step.capability}`}
-                title={step.summary}
+                title={title}
                 state={stepToolState(step, plan)}
                 accessory={
                   <span className="flex shrink-0 items-center gap-1.5">
@@ -335,6 +462,8 @@ export function PlanArtifact({
           ) : null}
         </div>
       ) : null}
+
+      {secrets.length > 0 ? <IssuedCredentials secrets={secrets} /> : null}
 
       {sources.length > 0 ? (
         <div className="border-t border-border px-3.5 py-2.5 text-[11px] text-muted-foreground">

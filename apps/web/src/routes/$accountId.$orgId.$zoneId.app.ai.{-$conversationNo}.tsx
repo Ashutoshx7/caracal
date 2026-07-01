@@ -1047,6 +1047,17 @@ function ActivityStream({
 
   const { items, latestPlan } = useMemo(() => buildTimeline(turns ?? []), [turns]);
 
+  // This conversation's own prompts, oldest to newest, so the composer can recall them with the
+  // up and down arrows without reaching into any other chat's history.
+  const promptHistory = useMemo(
+    () =>
+      items.reduce<string[]>((acc, it) => {
+        if (it.kind === "message" && it.role === "user") acc.push(it.text);
+        return acc;
+      }, []),
+    [items],
+  );
+
   // Render only the most recent window of the transcript; long sessions keep every earlier turn
   // but mount this tail so scrolling stays smooth. The window always covers the newest turns -
   // including any actionable plan - because it is taken from the end.
@@ -1341,6 +1352,7 @@ function ActivityStream({
         model={model}
         onModelChange={onModelChange}
         controls={controls}
+        history={promptHistory}
       />
     </div>
   );

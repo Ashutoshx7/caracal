@@ -6,6 +6,7 @@ This file provides the Tool call disclosure component family ported to the Carac
 */
 import {
   createContext,
+  Fragment,
   useContext,
   useId,
   useState,
@@ -234,12 +235,28 @@ export type ToolInputProps = Omit<ComponentProps<"div">, "input"> & {
   input: unknown;
 };
 
-// Renders the validated parameters the tool will run with. An empty argument set is
-// stated plainly rather than shown as an empty object.
+// Turns a parameter value into a single readable line: strings and scalars as-is, arrays joined,
+// and any nested object as compact JSON so the definition list stays one row per parameter.
+function formatValue(value: unknown): string {
+  if (value == null) return "—";
+  if (typeof value === "string") return value.length > 0 ? value : "—";
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "object" ? JSON.stringify(item) : String(item)))
+      .join(", ");
+  }
+  return JSON.stringify(value);
+}
+
+// Renders the validated parameters the tool will run with. A plain object is shown as a labelled
+// key/value list so the change reads clearly - the parameter name humanized and its value beside
+// it - rather than as raw JSON. An empty argument set is stated plainly, and any non-object value
+// falls back to formatted JSON.
 export const ToolInput = ({ input, className, ...props }: ToolInputProps) => {
-  const empty =
-    input == null ||
-    (typeof input === "object" && !Array.isArray(input) && Object.keys(input).length === 0);
+  const isObject = input != null && typeof input === "object" && !Array.isArray(input);
+  const entries = isObject ? Object.entries(input as Record<string, unknown>) : [];
+  const empty = input == null || (isObject && entries.length === 0);
 
   return (
     <div className={cx("flex flex-col gap-1.5", className)} {...props}>
@@ -248,6 +265,17 @@ export const ToolInput = ({ input, className, ...props }: ToolInputProps) => {
       </span>
       {empty ? (
         <span className="text-xs text-muted-foreground">No parameters</span>
+      ) : isObject ? (
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 rounded-md border border-border bg-muted/40 p-2.5 text-[11px] leading-relaxed">
+          {entries.map(([key, value]) => (
+            <Fragment key={key}>
+              <dt className="font-medium text-muted-foreground">{key.replace(/_/g, " ")}</dt>
+              <dd className="min-w-0 break-words font-mono text-foreground">
+                {formatValue(value)}
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
       ) : (
         <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px] leading-relaxed text-foreground">
           {JSON.stringify(input, null, 2)}

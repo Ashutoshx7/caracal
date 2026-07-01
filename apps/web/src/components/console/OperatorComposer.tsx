@@ -405,6 +405,7 @@ export function OperatorInput({
   model,
   onModelChange,
   leftSlot,
+  history,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -416,11 +417,37 @@ export function OperatorInput({
   model?: string | null;
   onModelChange?: (id: string | null) => void;
   leftSlot?: ReactNode;
+  history?: string[];
 }) {
   const { ref, adjust } = useAutoResizeTextarea({ minHeight, maxHeight: 220 });
+  // Where the arrow keys are in this chat's prompt history: null means the live draft, a number
+  // indexes an earlier prompt. The draft is stashed on the first recall so arrowing back down past
+  // the newest prompt restores exactly what was being typed.
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const draft = useRef("");
+  const caretToEnd = useRef(false);
+  const prompts = history ?? [];
+
   useEffect(() => {
     adjust();
-  }, [value, adjust]);
+    if (caretToEnd.current && ref.current) {
+      const end = ref.current.value.length;
+      ref.current.setSelectionRange(end, end);
+      caretToEnd.current = false;
+    }
+  }, [value, adjust, ref]);
+
+  // A fresh set of prompts (a sent message, or switching chats) drops any in-progress recall so the
+  // next arrow press starts again from the newest prompt of the current chat.
+  useEffect(() => {
+    setHistoryIndex(null);
+  }, [history]);
+
+  const recall = (index: number | null) => {
+    onChange(index === null ? draft.current : prompts[index]);
+    setHistoryIndex(index);
+    caretToEnd.current = true;
+  };
 
   const canSend = !pending && value.trim().length > 0;
 
@@ -429,12 +456,36 @@ export function OperatorInput({
       ref={ref}
       autoFocus={autoFocus}
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(event) => {
+        onChange(event.target.value);
+        setHistoryIndex(null);
+      }}
       onKeyDown={(event) => {
         if (event.key === "Enter" && !event.shiftKey) {
           event.preventDefault();
           onSubmit();
+          return;
         }
+        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+        if (prompts.length === 0) return;
+        const el = event.currentTarget;
+        if (el.selectionStart !== el.selectionEnd) return;
+        const caret = el.selectionStart;
+        if (event.key === "ArrowUp") {
+          if (value.slice(0, caret).includes("\n")) return;
+          event.preventDefault();
+          if (historyIndex === null) {
+            draft.current = value;
+            recall(prompts.length - 1);
+          } else if (historyIndex > 0) {
+            recall(historyIndex - 1);
+          }
+          return;
+        }
+        if (historyIndex === null) return;
+        if (value.slice(caret).includes("\n")) return;
+        event.preventDefault();
+        recall(historyIndex < prompts.length - 1 ? historyIndex + 1 : null);
       }}
       rows={1}
       placeholder="Describe what you want, or ask a question…"
@@ -495,6 +546,7 @@ export function Composer({
   model,
   onModelChange,
   controls,
+  history,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -504,6 +556,7 @@ export function Composer({
   model: string | null;
   onModelChange: (id: string | null) => void;
   controls: ComposerControls;
+  history?: string[];
 }) {
   return (
     <div className="flex-shrink-0 border-t border-border bg-card px-3 py-3">
@@ -516,6 +569,7 @@ export function Composer({
         usage={usage ?? ZERO_USAGE}
         model={model}
         onModelChange={onModelChange}
+        history={history}
         leftSlot={
           <ModeMenu
             mode={controls.mode}
