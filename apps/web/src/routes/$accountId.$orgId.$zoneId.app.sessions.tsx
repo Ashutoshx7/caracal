@@ -249,7 +249,9 @@ function SessionsPage({ zoneId, initialSubject }: { zoneId: string; initialSubje
         return (
           <span className="text-xs text-muted-foreground" title="Time held from authentication">
             {sessionDuration(s, eff, now)}
-            {eff === "active" ? <span className="ml-1 text-muted-foreground/70">so far</span> : null}
+            {eff === "active" ? (
+              <span className="ml-1 text-muted-foreground/70">so far</span>
+            ) : null}
           </span>
         );
       },
@@ -277,7 +279,10 @@ function SessionsPage({ zoneId, initialSubject }: { zoneId: string; initialSubje
               {sessionOutcome(s, eff)}
             </div>
             {ended ? (
-              <div className="text-[10px] text-muted-foreground" title={new Date(ended).toLocaleString()}>
+              <div
+                className="text-[10px] text-muted-foreground"
+                title={new Date(ended).toLocaleString()}
+              >
                 {relativeTime(new Date(ended).toISOString(), now)}
               </div>
             ) : null}
