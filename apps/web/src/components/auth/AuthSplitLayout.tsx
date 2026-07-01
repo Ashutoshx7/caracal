@@ -32,9 +32,7 @@ export function AuthSplitLayout({
           <img
             src="/caracal_dark.png"
             alt="Caracal"
-            className="h-36 w-auto"
-            width={280}
-            height={64}
+            className="h-auto w-56 max-w-full"
           />
         </Link>
 

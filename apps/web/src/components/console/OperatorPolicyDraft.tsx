@@ -8,7 +8,7 @@ import { Link } from "@tanstack/react-router";
 
 import { AlertGlyph, KeyGlyph, LinkGlyph, PlanGlyph } from "@/components/console/OperatorGlyphs";
 import { Badge, Button, useCopyToClipboard, useToast } from "@/components/ui";
-import { ADAPTIVE_HIGHLIGHT, highlightCode } from "@/lib/codeHighlight";
+import { TERMINAL_HIGHLIGHT, highlightCode } from "@/lib/codeHighlight";
 import { cx } from "@/lib/cx";
 import { appLink } from "@/platform/nav/appLink";
 import { useCreateOperatorPlan } from "@/platform/api/hooks";
@@ -155,7 +155,7 @@ function DocumentCard({ doc, index }: { doc: PolicyDocumentView; index: number }
   const copy = useCopyToClipboard();
   const filename = doc.filename.trim() || `policy-${index + 1}.rego`;
   const highlighted = useMemo(
-    () => highlightCode(doc.content, "Rego", ADAPTIVE_HIGHLIGHT),
+    () => highlightCode(doc.content, "Rego", TERMINAL_HIGHLIGHT),
     [doc.content],
   );
 

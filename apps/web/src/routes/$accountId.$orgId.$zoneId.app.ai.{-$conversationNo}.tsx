@@ -605,24 +605,25 @@ function OperatorWorkspace() {
       }
     >
       <section className="relative flex min-h-0 min-w-0 flex-col bg-background">
-        {fullscreen ? (
-          <div className="pointer-events-none absolute left-3 top-2 z-30 hidden items-center lg:flex">
-            <img
-              src="/caracal_light.png"
-              alt="Caracal"
-              className="h-25 w-auto select-none dark:hidden"
-            />
-            <img
-              src="/caracal_dark.png"
-              alt="Caracal"
-              className="hidden h-25 w-auto select-none dark:block"
-            />
-          </div>
-        ) : null}
         {/* A thin header bar above the chat that holds the full-screen toggle, so the control sits
-            outside the message viewport and never overlaps the first message. Large screens only,
-            matching where the control is shown; the divider line bounds the messages below it. */}
-        <div className="hidden flex-shrink-0 items-center justify-end gap-2 border-b border-border bg-background px-2 py-1.5 lg:flex">
+            outside the message viewport and never overlaps the first message. In full screen the
+            Caracal logo shares this row on the left. Large screens only, matching where the control
+            is shown; the divider line bounds the messages below it. */}
+        <div className="hidden flex-shrink-0 items-center gap-2 border-b border-border bg-background px-2 py-1.5 lg:flex">
+          {fullscreen ? (
+            <div className="flex flex-shrink-0 items-center">
+              <img
+                src="/caracal_light.png"
+                alt="Caracal"
+                className="h-auto w-40 select-none dark:hidden"
+              />
+              <img
+                src="/caracal_dark.png"
+                alt="Caracal"
+                className="hidden h-auto w-40 select-none dark:block"
+              />
+            </div>
+          ) : null}
           <div className="mr-auto min-w-0">
             <OperatorErrorLog event={operatorNotice} />
           </div>

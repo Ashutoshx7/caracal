@@ -28,6 +28,7 @@ import {
   useToast,
   type Column,
 } from "@/components/ui";
+import { highlightCode, TERMINAL_HIGHLIGHT } from "@/lib/codeHighlight";
 import { cx } from "@/lib/cx";
 import { consoleApi, ConsoleApiError } from "@/platform/api/client";
 import {
@@ -1127,6 +1128,10 @@ function VersionRow({
   open: boolean;
   onToggle: () => void;
 }) {
+  const highlighted = useMemo(
+    () => (version.content ? highlightCode(version.content, "Rego", TERMINAL_HIGHLIGHT) : null),
+    [version.content],
+  );
   return (
     <div className="border border-border">
       <button
@@ -1158,7 +1163,7 @@ function VersionRow({
       {open ? (
         version.content ? (
           <pre className="scrollbar-thin max-h-72 overflow-auto border-t border-border bg-[#0d1117] p-3 font-mono text-xs leading-relaxed text-[#e6edf3]">
-            {version.content}
+            <code>{highlighted}</code>
           </pre>
         ) : (
           <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">

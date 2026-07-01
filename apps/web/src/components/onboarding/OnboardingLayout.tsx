@@ -117,9 +117,7 @@ export function OnboardingLayout({
           <img
             src="/caracal_dark.png"
             alt="Caracal"
-            className="h-24 w-auto max-w-full object-contain xl:h-28"
-            width={144}
-            height={144}
+            className="h-auto w-44 max-w-full object-contain xl:w-52"
           />
         </Link>
 
