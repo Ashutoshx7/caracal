@@ -227,7 +227,7 @@ export function OperatorPolicyDraft({
   const exportJson = useMemo(() => JSON.stringify(draft, null, 2), [draft]);
 
   function propose() {
-    if (!hasDocuments || createPlan.isPending) return;
+    if (!hasDocuments || createPlan.isPending || createPlan.isSuccess) return;
     createPlan.mutate(buildCreatePlan(draft), {
       onSuccess: () =>
         toast({
@@ -395,9 +395,6 @@ export function OperatorPolicyDraft({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold text-foreground">Policy draft</span>
-            {draft.provenance ? (
-              <Badge tone="muted">AI-assisted · {draft.provenance.model}</Badge>
-            ) : null}
             {draft.schemaVersion.length > 0 ? (
               <Badge tone="neutral">schema {draft.schemaVersion}</Badge>
             ) : null}
@@ -434,10 +431,14 @@ export function OperatorPolicyDraft({
           size="sm"
           mutating
           loading={createPlan.isPending}
-          disabled={!hasDocuments}
+          disabled={!hasDocuments || createPlan.isSuccess}
           onClick={propose}
         >
-          {draft.documents.length > 1 ? "Create policies" : "Create policy"}
+          {createPlan.isSuccess
+            ? "Plan proposed"
+            : draft.documents.length > 1
+              ? "Create policies"
+              : "Create policy"}
         </Button>
         {hasDocuments ? (
           <>
