@@ -18,6 +18,7 @@ import { createPortal } from "react-dom";
 
 import { ModulePage } from "@/components/console/ModulePage";
 import { OperatorErrorLog, type OperatorNoticeEvent } from "@/components/console/OperatorErrorLog";
+import { OperatorPolicyDraft } from "@/components/console/OperatorPolicyDraft";
 import type { OperatorNoticeSeverity } from "@/platform/state/operatorNotices";
 import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-elements/reasoning";
 import { Response } from "@/components/ai-elements/response";
@@ -1799,6 +1800,31 @@ function StreamEntry({
         <p className="wrap-anywhere min-w-0 max-w-[82%] rounded-2xl border border-border bg-muted px-3 py-2 text-sm whitespace-pre-wrap text-foreground">
           {item.text}
         </p>
+      </div>
+    );
+  }
+
+  // A policy draft is a rich artifact, not prose: it renders in the wide gutter like a plan so its
+  // documents, previews, and governed create action have room, with any framing text kept above it.
+  if (item.policy) {
+    return (
+      <div className="flex items-start gap-2">
+        {avatar}
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          {item.deliberation ? <DeliberationReplay stages={item.deliberation} /> : null}
+          {item.reasoning ? (
+            <Reasoning>
+              <ReasoningTrigger />
+              <ReasoningContent>{item.reasoning}</ReasoningContent>
+            </Reasoning>
+          ) : null}
+          {item.text.trim() ? <Response>{item.text}</Response> : null}
+          <OperatorPolicyDraft
+            draft={item.policy}
+            zoneId={zoneId}
+            conversationId={conversationId}
+          />
+        </div>
       </div>
     );
   }
