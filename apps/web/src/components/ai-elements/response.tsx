@@ -23,7 +23,8 @@ export const Response = memo(
     <Streamdown
       className={cx(
         "size-full min-w-0 wrap-break-word text-sm leading-relaxed text-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        "[&_a]:wrap-break-word [&_code]:wrap-break-word [&_pre]:max-w-full [&_pre]:overflow-x-auto",
+        "[&_a]:wrap-break-word [&_a]:font-medium [&_a]:text-accent-purple [&_a]:underline [&_a]:decoration-accent-purple/40 [&_a]:underline-offset-2 [&_a]:transition-colors hover:[&_a]:decoration-accent-purple",
+        "[&_code]:wrap-break-word [&_pre]:max-w-full [&_pre]:overflow-x-auto",
         "[&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg",
         "[&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto",
         className,

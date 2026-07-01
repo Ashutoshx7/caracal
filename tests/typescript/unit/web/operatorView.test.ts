@@ -55,14 +55,11 @@ function conversation(id: string, lastActivityAt: string): OperatorConversation 
 }
 
 describe('leadSuggestion', () => {
-  it('leads with creating a zone when none exist', () => {
-    expect(leadSuggestion(false, false)).toBe('createZone')
+  it('leads with registering an application when the zone has none', () => {
+    expect(leadSuggestion(false)).toBe('registerApp')
   })
-  it('leads with registering an app once a zone exists', () => {
-    expect(leadSuggestion(true, false)).toBe('registerApp')
-  })
-  it('leads with granting access once apps exist', () => {
-    expect(leadSuggestion(true, true)).toBe('grant')
+  it('leads with granting access once applications exist', () => {
+    expect(leadSuggestion(true)).toBe('grant')
   })
 })
 

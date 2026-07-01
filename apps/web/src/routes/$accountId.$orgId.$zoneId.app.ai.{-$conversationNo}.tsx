@@ -57,7 +57,6 @@ import {
   useSetOperatorConversationAutopilot,
   useOperatorAutopilotAvailable,
   useSendOperatorMessage,
-  useZones,
 } from "@/platform/api/hooks";
 import { buildTimeline, type PlanItem, type TimelineItem } from "@/platform/operator/timeline";
 import {
@@ -112,16 +111,22 @@ export const Route = createFileRoute("/$accountId/$orgId/$zoneId/app/ai/{-$conve
 
 const SUGGESTIONS: { id: SuggestionId; title: string; hint: string; icon: Glyph }[] = [
   {
-    id: "createZone",
-    title: "Create a new zone",
-    hint: "Spin up a new zone",
-    icon: PlugGlyph,
-  },
-  {
     id: "registerApp",
     title: "Register an application",
     hint: "Register a managed application",
     icon: LinkGlyph,
+  },
+  {
+    id: "connectProvider",
+    title: "Connect a provider",
+    hint: "Broker credentials for a resource",
+    icon: PlugGlyph,
+  },
+  {
+    id: "defineResource",
+    title: "Define a resource",
+    hint: "Protect an API or service",
+    icon: TrimGlyph,
   },
   {
     id: "grant",
@@ -135,7 +140,6 @@ const SUGGESTIONS: { id: SuggestionId; title: string; hint: string; icon: Glyph 
     hint: "Issue a fresh secret",
     icon: RotateGlyph,
   },
-  { id: "listZones", title: "What zones do I have?", hint: "Read current state", icon: TrimGlyph },
   {
     id: "explainDeny",
     title: "Why was a request denied?",
@@ -1461,17 +1465,16 @@ function NewChatHero({
   );
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
-  // Lead the suggestion strip with the action that fits the current setup, leaving the rest in
-  // their catalog order. Both reads are React Query cached and the applications read is skipped
-  // until a zone is active, so the empty state never blocks on the network to render.
-  const zones = useZones();
+  // Lead the suggestion strip with the action that fits this zone's setup, leaving the rest in
+  // their catalog order. The applications read is React Query cached and skipped until a zone is
+  // active, so the empty state never blocks on the network to render.
   const apps = useApplications(zoneId);
   const suggestions = useMemo(() => {
-    const lead = leadSuggestion((zones.data?.length ?? 0) > 0, (apps.data?.length ?? 0) > 0);
+    const lead = leadSuggestion((apps.data?.length ?? 0) > 0);
     const leadItem = SUGGESTIONS.find((item) => item.id === lead);
     if (!leadItem) return SUGGESTIONS;
     return [leadItem, ...SUGGESTIONS.filter((item) => item.id !== lead)];
-  }, [zones.data, apps.data]);
+  }, [apps.data]);
 
   // Make the suggestion strip scrollable by every natural gesture: a vertical wheel is
   // translated to a sideways scroll (taking over only once an edge is reached so the page

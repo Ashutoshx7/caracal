@@ -13,14 +13,13 @@ import type { OperatorConversation } from "@/platform/api/types";
 export type BadgeTone = "neutral" | "success" | "warning" | "danger" | "muted";
 
 export type SuggestionId =
-  "createZone" | "registerApp" | "grant" | "rotate" | "listZones" | "explainDeny";
+  "registerApp" | "connectProvider" | "defineResource" | "grant" | "rotate" | "explainDeny";
 
-// Picks the most useful first suggestion for where the operator's setup actually stands: with no
-// zones the next move is creating one; with zones but no applications it is registering one;
-// otherwise the day-to-day work is granting access. The chosen pill leads the strip so the empty
-// state reflects live state instead of a fixed script.
-export function leadSuggestion(hasZones: boolean, hasApps: boolean): SuggestionId {
-  if (!hasZones) return "createZone";
+// Picks the most useful first suggestion for where this zone's setup actually stands. The Operator
+// governs one already-provisioned zone, so the opening move is registering the first application
+// when the zone has none, and granting scoped access once applications exist. The chosen pill leads
+// the strip so the empty state reflects live state instead of a fixed script.
+export function leadSuggestion(hasApps: boolean): SuggestionId {
   if (!hasApps) return "registerApp";
   return "grant";
 }
