@@ -15,6 +15,7 @@ import { OPA_INPUT_SCHEMA_VERSION, validateAuthzPolicy, validatePolicySchemaVers
 import { appendKeysetCondition, parseListPagination, setNextLink } from './list-pagination.js'
 import type { Queryable } from '../db.js'
 import { withTransaction, TxAbort } from '../db.js'
+import { resolveCreatedBy, isOperatorOrigin, zoneCoauthorEnabled } from '../attribution.js'
 
 const MANIFEST_MAX_ENTRIES = 256
 
@@ -63,7 +64,7 @@ export const policySetsRoutes: FastifyPluginAsync = async (fastify) => {
       'ps.id',
     )
     const { rows } = await fastify.db.query(
-      `SELECT ps.id, ps.zone_id, ps.name, ps.description, ps.created_at,
+      `SELECT ps.id, ps.zone_id, ps.name, ps.description, ps.created_by, ps.co_authored_by_operator, ps.created_at,
               psb.active_version_id
        FROM policy_sets ps
        LEFT JOIN policy_set_bindings psb ON psb.policy_set_id = ps.id AND psb.zone_id = ps.zone_id
@@ -79,7 +80,7 @@ export const policySetsRoutes: FastifyPluginAsync = async (fastify) => {
     const params = parseParams(ZoneIdParams, req, reply)
     if (!params) return
     const { rows } = await fastify.db.query(
-      `SELECT ps.id, ps.zone_id, ps.name, ps.description, ps.created_at,
+      `SELECT ps.id, ps.zone_id, ps.name, ps.description, ps.created_by, ps.co_authored_by_operator, ps.created_at,
               psb.active_version_id
        FROM policy_sets ps
        LEFT JOIN policy_set_bindings psb ON psb.policy_set_id = ps.id AND psb.zone_id = ps.zone_id
@@ -98,13 +99,15 @@ export const policySetsRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const body = PolicySetBody.parse(req.body)
     const id = uuidv7()
+    const createdBy = resolveCreatedBy(req)
+    const coAuthored = isOperatorOrigin(req) && (await zoneCoauthorEnabled(fastify.db, params.zoneId))
 
     return withTransaction(fastify.db, async (client) => {
       const { rows } = await client.query(
-        `INSERT INTO policy_sets (id, zone_id, name, description, created_by)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, zone_id, name, description, created_at`,
-        [id, params.zoneId, body.name, body.description ?? null, req.actor.name],
+        `INSERT INTO policy_sets (id, zone_id, name, description, created_by, co_authored_by_operator)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, zone_id, name, description, created_by, co_authored_by_operator, created_at`,
+        [id, params.zoneId, body.name, body.description ?? null, createdBy, coAuthored],
       )
       await client.query(
         `INSERT INTO policy_set_bindings (zone_id, policy_set_id)

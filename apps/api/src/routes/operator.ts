@@ -684,11 +684,11 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
   // there. Resolved per request because the identity is populated after the system zone is
   // provisioned at startup; constructing the client is cheap. A null result means execution refuses
   // rather than falling back to any other authority.
-  const resolveControlClient = (zoneId: string, authorizedBy?: string): { client: ControlClient; identity: OperatorControlIdentity } | null => {
+  const resolveControlClient = (zoneId: string, authorizedBy?: string, coAuthorOperator?: boolean): { client: ControlClient; identity: OperatorControlIdentity } | null => {
     const identity = opts.resolveControlIdentity?.() ?? null
     if (!identity || !opts.controlEndpoints) return null
     const zoneScope = identity.zoneId === zoneId ? undefined : zoneId
-    const client = buildOperatorControlClient(identity, opts.controlEndpoints, opts.fetchImpl, zoneScope, authorizedBy)
+    const client = buildOperatorControlClient(identity, opts.controlEndpoints, opts.fetchImpl, zoneScope, authorizedBy, coAuthorOperator)
     return client ? { client, identity } : null
   }
 
@@ -1311,7 +1311,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     // than applying changes as any other authority. There is no admin-actor fallback. The
     // executing actor rides as the audit attribution so every governed mutation in the
     // tamper-evident control audit names the human who applied the plan.
-    const governed = resolveControlClient(params.zoneId, req.actor.id)
+    const governed = resolveControlClient(params.zoneId, req.account?.name ?? req.account?.email ?? req.actor.id, true)
     if (!governed) {
       return reply.code(409).send({ error: 'governed_execution_unconfigured' })
     }
