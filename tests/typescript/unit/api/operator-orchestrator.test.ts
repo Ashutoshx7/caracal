@@ -49,6 +49,27 @@ function composingGateway(plan: object, advisory: object): Gateway {
   return { status: () => ({ enabled: true, providers: [] }), completeObject } as unknown as Gateway
 }
 
+// A gateway whose triage classifies as the policy tier and whose next structured completion is the
+// policy specialist's authored draft.
+function policyGateway(draft: object): Gateway {
+  const completeObject = vi
+    .fn()
+    .mockResolvedValueOnce({ value: { tier: 'policy' }, provider: 't', model: 'm' })
+    .mockResolvedValueOnce({ value: draft, provider: 't', model: 'm' })
+  return { status: () => ({ enabled: true, providers: [] }), completeObject } as unknown as Gateway
+}
+
+// A valid Caracal data document the policy specialist can author: the directive, package
+// caracal.authz, and one data rule that is not `result`.
+const POLICY_DOC = [
+  '# caracal:data-document',
+  'package caracal.authz',
+  '',
+  'import rego.v1',
+  '',
+  'grants := {"resource://nucleus": {"application": "reporting", "roles": {"reader": ["nucleus:read"]}}}',
+].join('\n')
+
 describe('createSkillRegistry', () => {
   it('maps change and compound tiers to the planning skill', () => {
     const registry = createSkillRegistry()
@@ -74,6 +95,13 @@ describe('createSkillRegistry', () => {
     expect(registry.select({ tier: 'conversational', topic: 'diagnostic' }).id).toBe('explainer')
     expect(registry.select({ tier: 'conversational', topic: 'integration' }).id).toBe('explainer')
   })
+
+  it('maps the policy tier to the policy-authoring skill', () => {
+    const registry = createSkillRegistry()
+    const skill = registry.select({ tier: 'policy', topic: 'general' })
+    expect(skill.kind).toBe('policy')
+    expect(skill.id).toBe('policy-author')
+  })
 })
 
 describe('createOrchestrator', () => {
@@ -91,6 +119,28 @@ describe('createOrchestrator', () => {
     const result = await createOrchestrator().handle(gatewayFor('conversational'), 'hi', emptyContext)
     expect(result.tier).toBe('conversational')
     expect(result.outcome.kind).toBe('answer')
+  })
+
+  it('authors a validated draft for a policy tier and emits the authoring stage', async () => {
+    const draft = {
+      summary: 'Grant reporting read on Nucleus.',
+      intent: 'Give reporting read-only access to Nucleus.',
+      documents: [{ concern: 'reporting read grant', filename: 'grants.rego', content: POLICY_DOC, explanation: 'Binds reporting to a reader role.' }],
+    }
+    const stages: string[] = []
+    const result = await createOrchestrator().handle(policyGateway(draft), 'write a policy giving reporting read on nucleus', emptyContext, {
+      onProgress: (event) => stages.push(event.stage),
+    })
+    expect(result.tier).toBe('policy')
+    expect(result.outcome.kind).toBe('policy')
+    if (result.outcome.kind === 'policy') {
+      expect(result.outcome.result.ok).toBe(true)
+      if (result.outcome.result.ok) {
+        expect(result.outcome.result.value.documents).toHaveLength(1)
+        expect(result.outcome.result.value.provenance.aiAssisted).toBe(true)
+      }
+    }
+    expect(stages).toContain('authoring')
   })
 
   it('streams answer tokens to onAnswerDelta while still returning the assembled answer', async () => {

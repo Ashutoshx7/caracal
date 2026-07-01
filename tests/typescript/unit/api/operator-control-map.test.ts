@@ -51,6 +51,11 @@ describe('isControlExecutable', () => {
     expect(isControlExecutable('revokeGrant')).toBe(true)
     expect(isControlExecutable('listGrants')).toBe(true)
     expect(isControlExecutable('defineResource')).toBe(true)
+    expect(isControlExecutable('createPolicy')).toBe(true)
+    expect(isControlExecutable('versionPolicy')).toBe(true)
+    expect(isControlExecutable('createPolicySet')).toBe(true)
+    expect(isControlExecutable('versionPolicySet')).toBe(true)
+    expect(isControlExecutable('activatePolicySet')).toBe(true)
     // Zone lifecycle is a platform operation, not governed-executable by the Operator.
     expect(isControlExecutable('createZone')).toBe(false)
     expect(isControlExecutable('listZones')).toBe(false)
@@ -137,6 +142,65 @@ describe('buildInvocation', () => {
       command: 'grant',
       subcommand: 'create',
       flags: { 'application-id': 'app-1', 'user-id': 'user-1', 'resource-id': 'res-1', scopes: ['invoices:read'] },
+    })
+  })
+
+  it('builds createPolicy with the authored document and hyphenated schema flag', () => {
+    expect(
+      CONTROL_CAPABILITIES.createPolicy.buildInvocation(
+        { name: 'PiperNet baseline', description: 'read for operators', content: 'package caracal.authz', schema_version: '2026-05-01' },
+        gen,
+      ),
+    ).toEqual({
+      command: 'policy',
+      subcommand: 'create',
+      flags: { name: 'PiperNet baseline', description: 'read for operators', content: 'package caracal.authz', 'schema-version': '2026-05-01' },
+    })
+  })
+
+  it('omits optional createPolicy flags when absent', () => {
+    expect(CONTROL_CAPABILITIES.createPolicy.buildInvocation({ name: 'PiperNet baseline', content: 'package caracal.authz' }, gen)).toEqual({
+      command: 'policy',
+      subcommand: 'create',
+      flags: { name: 'PiperNet baseline', content: 'package caracal.authz' },
+    })
+  })
+
+  it('builds versionPolicy against the existing policy id', () => {
+    expect(
+      CONTROL_CAPABILITIES.versionPolicy.buildInvocation({ policy_id: 'pol-1', content: 'package caracal.authz', schema_version: '2026-05-01' }, gen),
+    ).toEqual({
+      command: 'policy',
+      subcommand: 'version',
+      flags: { id: 'pol-1', content: 'package caracal.authz', 'schema-version': '2026-05-01' },
+    })
+  })
+
+  it('builds createPolicySet from the name', () => {
+    expect(CONTROL_CAPABILITIES.createPolicySet.buildInvocation({ name: 'PiperNet baseline v3' }, gen)).toEqual({
+      command: 'policy-set',
+      subcommand: 'create',
+      flags: { name: 'PiperNet baseline v3' },
+    })
+  })
+
+  it('builds versionPolicySet with the composed policy versions', () => {
+    expect(
+      CONTROL_CAPABILITIES.versionPolicySet.buildInvocation({ policy_set_id: 'set-1', policy_version_ids: ['pv-1', 'pv-2'] }, gen),
+    ).toEqual({
+      command: 'policy-set',
+      subcommand: 'version',
+      flags: { id: 'set-1', 'policy-versions': ['pv-1', 'pv-2'] },
+    })
+  })
+
+  it('builds activatePolicySet from the set and version ids', () => {
+    expect(
+      CONTROL_CAPABILITIES.activatePolicySet.buildInvocation({ policy_set_id: 'set-1', policy_set_version_id: 'sv-1' }, gen),
+    ).toEqual({
+      command: 'policy-set',
+      subcommand: 'activate',
+      flags: { id: 'set-1', version: 'sv-1' },
     })
   })
 
@@ -239,5 +303,57 @@ describe('describeOutcome', () => {
     expect(CONTROL_CAPABILITIES.listResources.describeOutcome(resources, {}, gen).output).toEqual({ resources })
     const policies = [{ id: 'p1', name: 'binding', description: null }]
     expect(CONTROL_CAPABILITIES.listPolicies.describeOutcome(policies, {}, gen).output).toEqual({ policies })
+  })
+
+  it('surfaces the created policy id and its sealed first version id', () => {
+    const outcome = CONTROL_CAPABILITIES.createPolicy.describeOutcome(
+      { id: 'pol-1', name: 'PiperNet baseline', version_id: 'pv-1', version: 1 },
+      { name: 'PiperNet baseline', content: 'package caracal.authz' },
+      gen,
+    )
+    expect(outcome.detail).toContain('PiperNet baseline')
+    expect(outcome.detail).not.toContain('package caracal.authz')
+    expect(outcome.output).toEqual({ policy_id: 'pol-1', policy_version_id: 'pv-1' })
+  })
+
+  it('surfaces the newly sealed policy version id under the existing policy id', () => {
+    const outcome = CONTROL_CAPABILITIES.versionPolicy.describeOutcome(
+      { version_id: 'pv-2', version: 2 },
+      { policy_id: 'pol-1', content: 'package caracal.authz' },
+      gen,
+    )
+    expect(outcome.detail).toContain('pol-1')
+    expect(outcome.output).toEqual({ policy_id: 'pol-1', policy_version_id: 'pv-2' })
+  })
+
+  it('surfaces the created policy set id', () => {
+    const outcome = CONTROL_CAPABILITIES.createPolicySet.describeOutcome(
+      { id: 'set-1', name: 'PiperNet baseline v3' },
+      { name: 'PiperNet baseline v3' },
+      gen,
+    )
+    expect(outcome.detail).toContain('PiperNet baseline v3')
+    expect(outcome.output).toEqual({ policy_set_id: 'set-1' })
+  })
+
+  it('surfaces the sealed policy set version id under the set id', () => {
+    const outcome = CONTROL_CAPABILITIES.versionPolicySet.describeOutcome(
+      { version_id: 'sv-1', version: 1 },
+      { policy_set_id: 'set-1', policy_version_ids: ['pv-1'] },
+      gen,
+    )
+    expect(outcome.detail).toContain('set-1')
+    expect(outcome.output).toEqual({ policy_set_id: 'set-1', policy_set_version_id: 'sv-1' })
+  })
+
+  it('reports the activated policy set and version from the arguments', () => {
+    const outcome = CONTROL_CAPABILITIES.activatePolicySet.describeOutcome(
+      { activated: true, version_id: 'sv-1', shadow_version_id: null },
+      { policy_set_id: 'set-1', policy_set_version_id: 'sv-1' },
+      gen,
+    )
+    expect(outcome.detail).toContain('set-1')
+    expect(outcome.detail).toContain('sv-1')
+    expect(outcome.output).toEqual({ policy_set_id: 'set-1', policy_set_version_id: 'sv-1' })
   })
 })
