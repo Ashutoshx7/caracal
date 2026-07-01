@@ -25,17 +25,32 @@ export type ToolState =
   | "output-error"
   | "output-denied";
 
-const WrenchGlyph = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
-    <path
-      d="M14.7 6.3a4 4 0 0 0-5.4 5.2L4 16.8 7.2 20l5.3-5.3a4 4 0 0 0 5.2-5.4l-2.5 2.5-2.3-2.3 2.5-2.5Z"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
+const CheckboxGlyph = ({ state, className }: { state: ToolState; className?: string }) => {
+  const done = state === "output-available";
+  const failed = state === "output-error" || state === "output-denied";
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="5" stroke="currentColor" strokeWidth="2" />
+      {done ? (
+        <path
+          d="M7.5 12.4l2.8 2.8 6.2-6.6"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ) : null}
+      {failed ? (
+        <path
+          d="M8.5 8.5l7 7M15.5 8.5l-7 7"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+        />
+      ) : null}
+    </svg>
+  );
+};
 
 const ChevronGlyph = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
@@ -81,41 +96,51 @@ const SpinnerGlyph = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const STATUS_META: Record<ToolState, { label: string; badge: string; icon: ReactNode }> = {
+const STATUS_META: Record<
+  ToolState,
+  { label: string; badge: string; icon: ReactNode; mark: string }
+> = {
   "input-streaming": {
     label: "Pending",
     badge: "border-border bg-muted text-muted-foreground",
     icon: <SpinnerGlyph className="h-2.5 w-2.5" />,
+    mark: "text-muted-foreground/60",
   },
   "input-available": {
     label: "Running",
     badge: "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400",
     icon: <SpinnerGlyph className="h-2.5 w-2.5" />,
+    mark: "text-muted-foreground/60",
   },
   "approval-requested": {
     label: "Awaiting approval",
     badge: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
     icon: <ClockGlyph className="h-2.5 w-2.5" />,
+    mark: "text-amber-600 dark:text-amber-400",
   },
   "approval-responded": {
     label: "Responded",
     badge: "border-border bg-muted text-muted-foreground",
     icon: <CheckGlyph className="h-2.5 w-2.5" />,
+    mark: "text-muted-foreground/60",
   },
   "output-available": {
     label: "Completed",
     badge: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
     icon: <CheckGlyph className="h-2.5 w-2.5" />,
+    mark: "text-emerald-600 dark:text-emerald-400",
   },
   "output-error": {
     label: "Error",
     badge: "border-destructive/30 bg-destructive/10 text-destructive",
     icon: <CrossGlyph className="h-2.5 w-2.5" />,
+    mark: "text-destructive",
   },
   "output-denied": {
     label: "Denied",
     badge: "border-destructive/30 bg-destructive/10 text-destructive",
     icon: <CrossGlyph className="h-2.5 w-2.5" />,
+    mark: "text-destructive",
   },
 };
 
@@ -190,7 +215,7 @@ export const ToolHeader = ({
       )}
       {...props}
     >
-      <WrenchGlyph className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <CheckboxGlyph state={state} className={cx("h-4 w-4 shrink-0", meta.mark)} />
       <span className="min-w-0 flex-1 truncate text-sm text-foreground">{name}</span>
       {accessory}
       <span
