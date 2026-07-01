@@ -36,7 +36,7 @@ import {
   QueueSectionLabel,
   QueueSectionTrigger,
 } from "@/components/ai-elements/queue";
-import { Badge, Button, ConfirmDialog, Tooltip, useToast } from "@/components/ui";
+import { Badge, Breadcrumbs, Button, ConfirmDialog, useToast } from "@/components/ui";
 import { cx } from "@/lib/cx";
 import {
   useActiveZone,
@@ -159,6 +159,10 @@ const SUGGESTIONS: { id: SuggestionId; title: string; hint: string; icon: Glyph 
 function CaracalOperatorPage() {
   const { data: enabled, isLoading } = useOperatorStatus();
 
+  if (enabled === true) {
+    return <OperatorWorkspace />;
+  }
+
   return (
     <ModulePage
       title="Caracal Operator"
@@ -172,25 +176,19 @@ function CaracalOperatorPage() {
       actions={<SecureByCaracal />}
       fill
     >
-      {isLoading ? <LoadingState /> : enabled === true ? <OperatorWorkspace /> : <DisabledState />}
+      {isLoading ? <LoadingState /> : <DisabledState />}
     </ModulePage>
   );
 }
 
-// A trust marker pinned to the page header that reassures operators the chat runs
-// under Caracal's brokered authority. Hovering reveals what that guarantee means.
+// A trust marker that reassures operators the chat runs under Caracal's brokered
+// authority, sitting in the workspace header beside the full-screen control.
 function SecureByCaracal() {
   return (
-    <Tooltip
-      label="This chat uses Caracal for its multi-agent authority."
-      side="bottom"
-      align="end"
-    >
-      <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground">
-        <StarGlyph className="h-3.5 w-3.5" />
-        Secure by Caracal
-      </span>
-    </Tooltip>
+    <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground">
+      <StarGlyph className="h-3.5 w-3.5" />
+      Secure by Caracal
+    </span>
   );
 }
 
@@ -200,7 +198,7 @@ function SecureByCaracal() {
 // the workspace sits flush under the navbar and beside the utility rail rather than
 // guessing a viewport offset. The negative margins cancel the Console main padding so
 // the panes read as one full-bleed workspace.
-const SHELL = "min-h-0 flex-1 border-t border-border -mx-5 -mb-6 md:-mx-8";
+const SHELL = "min-h-0 flex-1 border-t border-border -mx-5 -mt-6 -mb-6 md:-mx-8";
 // The rail column tracks a CSS variable so a drag handle can resize it live, while the
 // min() caps it at a quarter of the workspace width no matter how far the handle moves.
 const SHELL_COLUMNS =
@@ -605,11 +603,11 @@ function OperatorWorkspace() {
       }
     >
       <section className="relative flex min-h-0 min-w-0 flex-col bg-background">
-        {/* A thin header bar above the chat that holds the full-screen toggle, so the control sits
-            outside the message viewport and never overlaps the first message. In full screen the
-            Caracal logo shares this row on the left. Large screens only, matching where the control
-            is shown; the divider line bounds the messages below it. */}
-        <div className="hidden flex-shrink-0 items-center gap-2 border-b border-border bg-background px-2 py-1.5 lg:flex">
+        {/* A thin header bar above the chat that carries the workspace breadcrumb, the trust
+            marker, and the full-screen toggle on one row, so the tall module header is reclaimed
+            for the chat. In full screen the Caracal logo replaces the breadcrumb on the left.
+            Large screens only, matching where the full-screen control is shown. */}
+        <div className="hidden flex-shrink-0 items-center gap-2 border-b border-border bg-background px-3 py-1.5 lg:flex">
           {fullscreen ? (
             <div className="flex flex-shrink-0 items-center">
               <img
@@ -623,10 +621,20 @@ function OperatorWorkspace() {
                 className="hidden h-auto w-40 select-none dark:block"
               />
             </div>
-          ) : null}
+          ) : (
+            <div className="flex min-w-0 flex-shrink-0 items-center gap-2">
+              <Breadcrumbs
+                items={[{ label: "Console", to: "/app" }, { label: "Caracal Operator" }]}
+              />
+              <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent-purple">
+                Beta
+              </span>
+            </div>
+          )}
           <div className="mr-auto min-w-0">
             <OperatorErrorLog event={operatorNotice} />
           </div>
+          <SecureByCaracal />
           <button
             type="button"
             onClick={() => setFullscreen((value) => !value)}

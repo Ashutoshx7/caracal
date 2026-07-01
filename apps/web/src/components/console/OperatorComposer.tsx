@@ -27,7 +27,6 @@ import {
   ModelSelectorTrigger,
 } from "@/components/ai-elements/model-selector";
 import {
-  AlertGlyph,
   ArrowUpGlyph,
   BoltGlyph,
   CheckGlyph,
@@ -212,7 +211,7 @@ function ModeMenu({
   );
 }
 
-// The approval-mode picker, shown flush below the chat box in agent mode. The Autopilot
+// The approval-mode picker, shown inside the composer next to the mode selector. The Autopilot
 // option is kept visible but disabled with a hint when the deployment has not enabled an
 // autopilot policy, so the boundary stays discoverable without being selectable.
 function AutopilotMenu({
@@ -245,28 +244,6 @@ function AutopilotMenu({
       ariaLabel="Approval mode"
       pending={pending}
     />
-  );
-}
-
-// The approval-mode dropdown placed flush below the chat box, always visible so the operator
-// can see and set how changes are approved before any are proposed. When autopilot is engaged a
-// short reminder sits beside it that the Operator acts on its own judgement for low-risk changes.
-function AutopilotRow({ controls }: { controls: ComposerControls }) {
-  return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 px-0.5">
-      <AutopilotMenu
-        autopilot={controls.autopilot}
-        available={controls.autopilotAvailable}
-        pending={controls.autopilotPending}
-        onChange={controls.onAutopilotChange}
-      />
-      {controls.autopilot ? (
-        <span className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-500">
-          <AlertGlyph className="h-3 w-3 flex-shrink-0" />
-          Autopilot gives AI autonomy to take actions. (Secured by Caracal)
-        </span>
-      ) : null}
-    </div>
   );
 }
 
@@ -571,19 +548,26 @@ export function Composer({
         onModelChange={onModelChange}
         history={history}
         leftSlot={
-          <ModeMenu
-            mode={controls.mode}
-            pending={controls.modePending}
-            onChange={controls.onModeChange}
-          />
+          <>
+            <ModeMenu
+              mode={controls.mode}
+              pending={controls.modePending}
+              onChange={controls.onModeChange}
+            />
+            <AutopilotMenu
+              autopilot={controls.autopilot}
+              available={controls.autopilotAvailable}
+              pending={controls.autopilotPending}
+              onChange={controls.onAutopilotChange}
+            />
+          </>
         }
       />
-      <AutopilotRow controls={controls} />
     </div>
   );
 }
 
-// The new-conversation hero composer: the same mode menu, autopilot row, and auto-resizing
+// The new-conversation hero composer: the same mode and approval menus and auto-resizing
 // input as the pinned composer, sized taller and auto-focused for an empty session, and
 // without the pinned border so it sits inside the centered welcome layout.
 export function HeroComposer({
@@ -616,14 +600,21 @@ export function HeroComposer({
         model={model}
         onModelChange={onModelChange}
         leftSlot={
-          <ModeMenu
-            mode={controls.mode}
-            pending={controls.modePending}
-            onChange={controls.onModeChange}
-          />
+          <>
+            <ModeMenu
+              mode={controls.mode}
+              pending={controls.modePending}
+              onChange={controls.onModeChange}
+            />
+            <AutopilotMenu
+              autopilot={controls.autopilot}
+              available={controls.autopilotAvailable}
+              pending={controls.autopilotPending}
+              onChange={controls.onAutopilotChange}
+            />
+          </>
         }
       />
-      <AutopilotRow controls={controls} />
     </>
   );
 }
