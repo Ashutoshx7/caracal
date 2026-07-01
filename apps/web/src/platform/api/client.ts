@@ -189,6 +189,7 @@ async function streamOperatorMessage(
   provider: string | undefined,
   onStage: (stage: OperatorProgressStage) => void,
   onToken?: (text: string) => void,
+  onReasoning?: (text: string) => void,
   signal?: AbortSignal,
 ): Promise<OperatorMessageResult> {
   const path = `/v1/zones/${encodeURIComponent(zoneId)}/operator-conversations/${encodeURIComponent(
@@ -260,6 +261,9 @@ async function streamOperatorMessage(
       if (event === "stage") {
         const stage = (payload as { stage?: OperatorProgressStage }).stage;
         if (stage) onStage(stage);
+      } else if (event === "reasoning") {
+        const text = (payload as { text?: unknown }).text;
+        if (typeof text === "string" && text.length > 0) onReasoning?.(text);
       } else if (event === "token") {
         const text = (payload as { text?: unknown }).text;
         if (typeof text === "string" && text.length > 0) onToken?.(text);
@@ -872,9 +876,10 @@ export const consoleApi = {
       provider: string | undefined,
       onStage: (stage: OperatorProgressStage) => void,
       onToken?: (text: string) => void,
+      onReasoning?: (text: string) => void,
       signal?: AbortSignal,
     ): Promise<OperatorMessageResult> =>
-      streamOperatorMessage(zoneId, conversationId, message, provider, onStage, onToken, signal),
+      streamOperatorMessage(zoneId, conversationId, message, provider, onStage, onToken, onReasoning, signal),
   },
 
   agents: {

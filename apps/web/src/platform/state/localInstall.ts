@@ -124,7 +124,11 @@ interface GuidedSetupRecord {
 export type { GuidedSetupRecord };
 
 export function getGuidedSetup(): GuidedSetupRecord {
-  return read<GuidedSetupRecord>(GUIDED_SETUP_KEY, { seen: false, finished: false });
+  const stored = read<Partial<GuidedSetupRecord> | null>(GUIDED_SETUP_KEY, null);
+  if (!stored) return { seen: false, finished: false };
+  // Any persisted record means the guide has already launched for this operator, so only an
+  // explicit `seen: false` re-arms the auto-launch; a missing flag counts as seen.
+  return { seen: stored.seen !== false, finished: stored.finished === true };
 }
 
 export function setGuidedSetup(record: GuidedSetupRecord): void {

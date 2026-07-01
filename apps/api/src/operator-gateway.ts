@@ -57,6 +57,15 @@ export interface CompletionResult {
   completionTokens?: number
 }
 
+// The live channels a streaming completion emits as it is produced. onText receives each answer
+// delta so the console types the answer out; onReasoning receives each reasoning delta so a
+// reasoning model's chain of thought is shown while it thinks rather than a blank wait before the
+// answer begins. onReasoning is optional because not every model exposes reasoning.
+export interface StreamHandlers {
+  onText: (chunk: string) => void
+  onReasoning?: (chunk: string) => void
+}
+
 // A schema-validated structured completion: the model's JSON answer parsed into the
 // caller's type, with the same provider attribution and token counts as a text
 // completion. Used by the agents that need a typed artifact rather than prose.
@@ -267,17 +276,17 @@ async function callProvider(
 }
 
 // Performs one streaming free-text chat completion against a single provider. It emits each text
-// delta to onDelta as it arrives, then returns the same CompletionResult the non-streaming path
-// would, so a caller gets a live preview and the authoritative final text from one call. Per-call
-// retry is disabled so this gateway's own failover order owns retry semantics; a provider that
-// fails before the first delta fails over cleanly, and an empty completion throws like the
-// non-streaming path.
+// and reasoning delta to the handlers as it arrives, then returns the same CompletionResult the
+// non-streaming path would, so a caller gets a live preview and the authoritative final text from
+// one call. Per-call retry is disabled so this gateway's own failover order owns retry semantics; a
+// provider that fails before the first delta fails over cleanly, and an empty completion throws
+// like the non-streaming path.
 async function callProviderStream(
   fetchImpl: FetchImpl,
   provider: ProviderConfig,
   messages: GatewayMessage[],
   options: CompletionOptions,
-  onDelta: (chunk: string) => void,
+  handlers: StreamHandlers,
   governance?: LanguageModelMiddleware,
 ): Promise<CompletionResult> {
   const controller = new AbortController()
@@ -293,8 +302,13 @@ async function callProviderStream(
       abortSignal: controller.signal,
       maxRetries: 0,
     })
-    for await (const delta of result.textStream) {
-      if (delta.length > 0) onDelta(delta)
+    // Read the full stream so both channels surface live: a text-delta is the answer typed out and
+    // a reasoning-delta is the model's chain of thought as it works. Both the reasoning_content
+    // channel and inline <think> blocks arrive here as reasoning-delta parts, so the caller can
+    // show the thinking while the model reasons instead of waiting for the answer to begin.
+    for await (const part of result.fullStream) {
+      if (part.type === 'text-delta' && part.text.length > 0) handlers.onText(part.text)
+      else if (part.type === 'reasoning-delta' && part.text.length > 0) handlers.onReasoning?.(part.text)
     }
     const text = (await result.text).trim()
     if (text.length === 0) throw new Error('provider returned an empty completion')
@@ -357,11 +371,11 @@ export interface Gateway {
   active(): ActiveModel | null
   complete(messages: GatewayMessage[], options?: CompletionOptions): Promise<CompletionResult>
   completeObject<T>(messages: GatewayMessage[], schema: ZodType<T>, options?: CompletionOptions): Promise<CompletionObjectResult<T>>
-  // A free-text completion that emits each text delta to onDelta as it arrives and returns the
-  // same final CompletionResult as complete(). The deltas are a live preview; the returned result
-  // is authoritative. Used by the streaming answer path so the console renders an answer as it is
-  // produced rather than all at once.
-  stream(messages: GatewayMessage[], onDelta: (chunk: string) => void, options?: CompletionOptions): Promise<CompletionResult>
+  // A free-text completion that emits each text and reasoning delta to the handlers as it arrives
+  // and returns the same final CompletionResult as complete(). The deltas are a live preview; the
+  // returned result is authoritative. Used by the streaming answer path so the console renders an
+  // answer, and the model's thinking, as they are produced rather than all at once.
+  stream(messages: GatewayMessage[], handlers: StreamHandlers, options?: CompletionOptions): Promise<CompletionResult>
 }
 
 // Runs a per-provider call through the failover order and returns the first success.
@@ -433,9 +447,9 @@ export function createGateway(providers: ProviderConfig[], fetchImpl: FetchImpl 
       )
     },
 
-    stream(messages, onDelta, options = {}) {
+    stream(messages, handlers, options = {}) {
       return runWithFailover(available, options.preferredProvider, (provider) =>
-        callProviderStream(fetchImpl, provider, messages, options, onDelta, governanceMiddleware),
+        callProviderStream(fetchImpl, provider, messages, options, handlers, governanceMiddleware),
       )
     },
   }
@@ -483,9 +497,9 @@ export function withUsage(gateway: Gateway, options: { maxCalls?: number } = {})
       record(result.provider, result.model, result.promptTokens, result.completionTokens)
       return result
     },
-    async stream(messages, onDelta, options) {
+    async stream(messages, handlers, options) {
       guard()
-      const result = await gateway.stream(messages, onDelta, options)
+      const result = await gateway.stream(messages, handlers, options)
       record(result.provider, result.model, result.promptTokens, result.completionTokens)
       return result
     },
@@ -506,21 +520,27 @@ export function preferProvider(gateway: Gateway, providerId: string | null): Gat
     complete: (messages, options = {}) => gateway.complete(messages, { ...options, preferredProvider: providerId }),
     completeObject: (messages, schema, options = {}) =>
       gateway.completeObject(messages, schema, { ...options, preferredProvider: providerId }),
-    stream: (messages, onDelta, options = {}) => gateway.stream(messages, onDelta, { ...options, preferredProvider: providerId }),
+    stream: (messages, handlers, options = {}) => gateway.stream(messages, handlers, { ...options, preferredProvider: providerId }),
   }
 }
 
-// Wraps a gateway so a free-text completion streams its tokens to onDelta as they arrive while
-// still returning the same final CompletionResult. Only complete() streams; completeObject() and
-// the rest pass through unchanged, so a turn's structured calls (triage, critique, grounding) are
-// untouched. The deltas are a fire-and-forget live preview: the caller's authoritative result is
-// the same whether or not anyone listens, mirroring how deliberation stages stream.
-export function streamingAnswers(gateway: Gateway, onDelta: (chunk: string) => void): Gateway {
+// Wraps a gateway so a free-text completion streams its answer tokens to onText and its reasoning
+// tokens to onReasoning as they arrive while still returning the same final CompletionResult. Only
+// complete() streams; completeObject() and the rest pass through unchanged, so a turn's structured
+// calls (triage, critique, grounding) are untouched. The deltas are a fire-and-forget live
+// preview: the caller's authoritative result is the same whether or not anyone listens, mirroring
+// how deliberation stages stream.
+export function streamingAnswers(
+  gateway: Gateway,
+  onText: (chunk: string) => void,
+  onReasoning?: (chunk: string) => void,
+): Gateway {
+  const handlers: StreamHandlers = { onText, onReasoning }
   return {
     status: () => gateway.status(),
     active: () => gateway.active(),
-    complete: (messages, options = {}) => gateway.stream(messages, onDelta, options),
+    complete: (messages, options = {}) => gateway.stream(messages, handlers, options),
     completeObject: (messages, schema, options = {}) => gateway.completeObject(messages, schema, options),
-    stream: (messages, delta, options = {}) => gateway.stream(messages, delta, options),
+    stream: (messages, streamHandlers, options = {}) => gateway.stream(messages, streamHandlers, options),
   }
 }
