@@ -877,8 +877,10 @@ func TestProxyDoesNotFollowUpstreamRedirect(t *testing.T) {
 	if sinkAuthHeader != "" || sinkIdentity != "" {
 		t.Fatalf("credential leaked to redirect target: api-key=%q identity=%q", sinkAuthHeader, sinkIdentity)
 	}
-	if got := resp.Header.Get("Location"); got != sink.URL+"/stolen" {
-		t.Fatalf("Location header not surfaced to caller: %q", got)
+	// The absolute upstream Location is stripped on fan-out: an untrusted upstream must not
+	// disclose an internal target or steer the agent client off the gateway's enforced path.
+	if got := resp.Header.Get("Location"); got != "" {
+		t.Fatalf("absolute upstream Location must be stripped, got %q", got)
 	}
 }
 
