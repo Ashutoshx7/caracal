@@ -1908,6 +1908,137 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     expect(JSON.parse(res.body)).toMatchObject({ error: 'ai_unavailable' })
   })
 
+  it('resumes an existing durable message run without appending or calling the model again', async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch
+    const { app, clientQuery } = buildApp(true, { aiProviders: [provider], fetchImpl })
+    clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM operator_conversations')) {
+        return { rows: [{ status: 'active', mode: 'agent', autopilot: false, next_seq: 8 }] }
+      }
+      if (sql.includes('FROM operator_message_runs')) {
+        return {
+          rows: [
+            {
+              id: 'run-1',
+              zone_id: 'z1',
+              conversation_id: 'conv-1',
+              client_message_id: 'msg-1',
+              server_message_turn_id: 'turn-1',
+              correlation_id: 'corr-1',
+              state: 'waiting_for_model',
+              actor_id: 'actor-1',
+              provider_id: null,
+              reason: 'model_requested',
+              error_code: null,
+              error_detail: null,
+              deadline_at: null,
+              started_at: '2026-07-01T00:00:00Z',
+              updated_at: '2026-07-01T00:00:01Z',
+              completed_at: null,
+              last_event_seq: 3,
+            },
+          ],
+        }
+      }
+      return { rows: [], rowCount: 1 }
+    })
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'connect github', client_message_id: 'msg-1', correlation_id: 'corr-1' },
+    })
+    expect(res.statusCode).toBe(202)
+    expect(JSON.parse(res.body)).toMatchObject({
+      intent: 'message_run',
+      ok: true,
+      duplicate: true,
+      message_run: { id: 'run-1', client_message_id: 'msg-1', correlation_id: 'corr-1', state: 'waiting_for_model' },
+    })
+    expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(0)
+    expect(clientQuery.mock.calls.some((call) => String(call[0]).includes('INSERT INTO operator_turns'))).toBe(false)
+  })
+
+  it('records a durable message run and marks it failed when the model budget stops the turn', async () => {
+    const fetchImpl = fetchReturning('{"tier":"read"}', 'answer never reached')
+    const { app, clientQuery, db } = buildApp(true, {
+      aiProviders: [provider],
+      fetchImpl,
+      aiGovernance: { maxOutputTokens: 0, maxCallsPerTurn: 1 },
+    })
+    let runState = 'queued'
+    let lastEventSeq = 0
+    const run = (overrides: Record<string, unknown> = {}) => ({
+      id: 'run-1',
+      zone_id: 'z1',
+      conversation_id: 'conv-1',
+      client_message_id: 'msg-2',
+      server_message_turn_id: null,
+      correlation_id: 'corr-2',
+      state: runState,
+      actor_id: 'actor-1',
+      provider_id: 'primary',
+      reason: null,
+      error_code: null,
+      error_detail: null,
+      deadline_at: '2026-07-01T00:02:00Z',
+      started_at: '2026-07-01T00:00:00Z',
+      updated_at: '2026-07-01T00:00:00Z',
+      completed_at: null,
+      last_event_seq: lastEventSeq,
+      ...overrides,
+    })
+    clientQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql.includes('FROM operator_conversations')) {
+        return { rows: [{ status: 'active', mode: 'agent', autopilot: false, next_seq: 1 }] }
+      }
+      if (sql.includes('WHERE conversation_id = $1 AND client_message_id = $2')) return { rows: [] }
+      if (sql.startsWith('INSERT INTO operator_message_runs')) return { rows: [run()] }
+      if (sql.startsWith('INSERT INTO operator_message_run_events')) return { rows: [] }
+      if (sql.startsWith('UPDATE operator_message_runs')) {
+        if (params?.[1] === 'turn-1') return { rows: [run({ server_message_turn_id: 'turn-1' })] }
+        runState = String(params?.[1] ?? runState)
+        lastEventSeq = Number(params?.[6] ?? lastEventSeq)
+        return {
+          rows: [
+            run({
+              server_message_turn_id: 'turn-1',
+              reason: typeof params?.[2] === 'string' ? params[2] : null,
+              error_code: typeof params?.[3] === 'string' ? params[3] : null,
+              error_detail: typeof params?.[4] === 'string' ? params[4] : null,
+              completed_at: runState === 'failed' ? '2026-07-01T00:00:04Z' : null,
+            }),
+          ],
+        }
+      }
+      if (sql.includes('SELECT') && sql.includes('FROM operator_message_runs')) return { rows: [run({ server_message_turn_id: 'turn-1' })] }
+      if (sql.startsWith('INSERT INTO operator_turns')) return { rows: [{ id: 'turn-1', seq: 1, kind: 'message' }] }
+      return { rows: [], rowCount: 1 }
+    })
+    db.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ seq: 1, role: 'user', kind: 'message', content: { text: 'why denied' } }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ name: 'Pied Piper Production', slug: 'z1' }] })
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'why denied', client_message_id: 'msg-2', correlation_id: 'corr-2', provider: 'primary' },
+    })
+    expect(res.statusCode).toBe(429)
+    const body = JSON.parse(res.body)
+    expect(body).toMatchObject({
+      error: 'ai_budget_exceeded',
+      message_run: { client_message_id: 'msg-2', correlation_id: 'corr-2', state: 'failed', error_code: 'ai_budget_exceeded' },
+    })
+    const messageInsert = clientQuery.mock.calls.find((call) => String(call[0]).includes('INSERT INTO operator_turns'))
+    expect(messageInsert).toBeDefined()
+    expect(messageInsert![1][8]).toBe('msg-2')
+  })
+
   it('refuses a message in a system zone', async () => {
     const { app } = buildApp(true, { aiProviders: [provider], systemZones: ['z1'] })
     await app.ready()
