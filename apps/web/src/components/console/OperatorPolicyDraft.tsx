@@ -6,7 +6,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 
-import { AlertGlyph, KeyGlyph, LinkGlyph, PlanGlyph } from "@/components/console/OperatorGlyphs";
+import { LinkGlyph, PlanGlyph } from "@/components/console/OperatorGlyphs";
 import { Badge, Button, useCopyToClipboard, useToast } from "@/components/ui";
 import { TERMINAL_HIGHLIGHT, highlightCode } from "@/lib/codeHighlight";
 import { cx } from "@/lib/cx";
@@ -69,52 +69,6 @@ const RISK_TONE: Record<PolicyRiskSeverity, "neutral" | "warning" | "danger"> = 
   caution: "warning",
   warning: "danger",
 };
-
-// A collapsible block used for every draft section, so each concern can be folded away while the
-// artifact stays scannable. The header carries a glyph, a title, an optional count, and folds its
-// body open by default so the draft reads fully on arrival.
-function Section({
-  icon,
-  title,
-  count,
-  defaultOpen = true,
-  children,
-}: {
-  icon?: ReactNode;
-  title: string;
-  count?: number;
-  defaultOpen?: boolean;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="rounded-lg border border-border bg-background/40">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left"
-      >
-        <span
-          className={cx(
-            "text-muted-foreground transition-transform",
-            open ? "rotate-90" : "rotate-0",
-          )}
-          aria-hidden
-        >
-          ▸
-        </span>
-        {icon ? <span className="text-muted-foreground">{icon}</span> : null}
-        <span className="text-sm font-medium text-foreground">{title}</span>
-        {typeof count === "number" ? (
-          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-            {count}
-          </span>
-        ) : null}
-      </button>
-      {open ? <div className="border-t border-border px-3 py-2.5">{children}</div> : null}
-    </div>
-  );
-}
 
 // The deterministic preview Caracal computed from a document's own content: the package, the data
 // rules it defines, the decisions it names, and the input and data paths it reads. It is Caracal's
@@ -294,6 +248,141 @@ export function OperatorPolicyDraft({
     URL.revokeObjectURL(url);
   }
 
+  // Each concern the specialist produced becomes one segment of a single-select row, so only the
+  // chosen panel occupies vertical space and the artifact stays compact regardless of how much the
+  // draft carries. Only segments with content are offered, and the policy itself leads.
+  const segments: { key: string; label: string; count?: number; panel: ReactNode }[] = [];
+
+  if (hasDocuments) {
+    segments.push({
+      key: "policy",
+      label: draft.documents.length === 1 ? "Policy" : "Policies",
+      count: draft.documents.length > 1 ? draft.documents.length : undefined,
+      panel: (
+        <div className="flex flex-col gap-4">
+          {draft.documents.map((doc, index) => (
+            <DocumentCard key={doc.filename || index} doc={doc} index={index} />
+          ))}
+        </div>
+      ),
+    });
+  }
+
+  if (draft.risks.length > 0) {
+    segments.push({
+      key: "risks",
+      label: "Risks",
+      count: draft.risks.length,
+      panel: (
+        <ul className="flex flex-col gap-2">
+          {draft.risks.map((risk) => (
+            <li key={risk.note} className="flex items-start gap-2">
+              <Badge tone={RISK_TONE[risk.severity]}>{risk.severity}</Badge>
+              <span className="text-xs leading-relaxed text-foreground/90">{risk.note}</span>
+            </li>
+          ))}
+        </ul>
+      ),
+    });
+  }
+
+  if (draft.recommendations.length > 0) {
+    segments.push({
+      key: "leastPrivilege",
+      label: "Least privilege",
+      count: draft.recommendations.length,
+      panel: (
+        <ul className="flex flex-col gap-1.5">
+          {draft.recommendations.map((rec) => (
+            <li key={rec} className="flex gap-2 text-xs text-foreground/90">
+              <span className="text-emerald-500">✓</span>
+              <span>{rec}</span>
+            </li>
+          ))}
+        </ul>
+      ),
+    });
+  }
+
+  if (draft.simulations.length > 0) {
+    segments.push({
+      key: "simulations",
+      label: "Simulations",
+      count: draft.simulations.length,
+      panel: (
+        <div className="flex flex-col gap-2">
+          {draft.simulations.map((sim) => (
+            <SimulationCard key={sim.name} sim={sim} />
+          ))}
+        </div>
+      ),
+    });
+  }
+
+  if (draft.assumptions.length > 0) {
+    segments.push({
+      key: "assumptions",
+      label: "Assumptions",
+      count: draft.assumptions.length,
+      panel: (
+        <ul className="flex flex-col gap-1.5">
+          {draft.assumptions.map((note) => (
+            <li key={note} className="flex gap-2 text-xs text-muted-foreground">
+              <span>•</span>
+              <span>{note}</span>
+            </li>
+          ))}
+        </ul>
+      ),
+    });
+  }
+
+  if (hasDocuments && draft.clarifications.length > 0) {
+    segments.push({
+      key: "questions",
+      label: "Open questions",
+      count: draft.clarifications.length,
+      panel: (
+        <ul className="flex flex-col gap-1.5">
+          {draft.clarifications.map((question) => (
+            <li key={question} className="flex gap-2 text-xs text-foreground/90">
+              <span className="text-muted-foreground">•</span>
+              <span>{question}</span>
+            </li>
+          ))}
+        </ul>
+      ),
+    });
+  }
+
+  const activation = draft.activation;
+  if (activation && (activation.guidance.trim().length > 0 || activation.blockers.length > 0)) {
+    segments.push({
+      key: "activation",
+      label: "Activation",
+      panel: (
+        <div className="flex flex-col gap-1.5 text-xs">
+          {activation.guidance.trim() ? (
+            <p className="leading-relaxed text-foreground/90">{activation.guidance}</p>
+          ) : null}
+          {activation.blockers.length > 0 ? (
+            <ul className="flex flex-col gap-1">
+              {activation.blockers.map((blocker) => (
+                <li key={blocker} className="flex gap-2 text-foreground/80">
+                  <span>•</span>
+                  <span>{blocker}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ),
+    });
+  }
+
+  const [activeSegment, setActiveSegment] = useState(segments[0]?.key ?? "");
+  const current = segments.find((segment) => segment.key === activeSegment) ?? segments[0];
+
   return (
     <div className="flex w-full min-w-0 flex-col gap-2.5 rounded-xl border border-border bg-card/60 p-3">
       <div className="flex items-start gap-2">
@@ -309,25 +398,52 @@ export function OperatorPolicyDraft({
             {draft.schemaVersion.length > 0 ? (
               <Badge tone="neutral">schema {draft.schemaVersion}</Badge>
             ) : null}
+            {draft.activation ? (
+              <Badge tone={draft.activation.ready ? "success" : "warning"}>
+                {draft.activation.ready ? "ready to activate" : "not yet ready"}
+              </Badge>
+            ) : null}
           </div>
           {draft.summary.trim() ? (
             <p className="mt-1 text-sm leading-relaxed text-foreground/90">{draft.summary}</p>
           ) : null}
-          {draft.intent.trim() ? (
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              <span className="font-medium text-foreground/70">Understood intent:</span>{" "}
-              {draft.intent}
-            </p>
-          ) : null}
         </div>
       </div>
 
-      {draft.clarifications.length > 0 ? (
-        <Section
-          icon={<AlertGlyph className="h-4 w-4" />}
-          title={hasDocuments ? "Open questions" : "Needs clarification"}
-          count={draft.clarifications.length}
-        >
+      {current ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-1 rounded-lg bg-muted/50 p-1">
+            {segments.map((segment) => {
+              const selected = current.key === segment.key;
+              return (
+                <button
+                  key={segment.key}
+                  type="button"
+                  onClick={() => setActiveSegment(segment.key)}
+                  className={cx(
+                    "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                    selected
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {segment.label}
+                  {typeof segment.count === "number" ? (
+                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {segment.count}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+          <div className="rounded-lg border border-border bg-background/40 p-3">
+            {current.panel}
+          </div>
+        </div>
+      ) : draft.clarifications.length > 0 ? (
+        <div className="rounded-lg border border-border bg-background/40 p-3">
+          <div className="mb-2 text-sm font-medium text-foreground">Needs clarification</div>
           <ul className="flex flex-col gap-1.5">
             {draft.clarifications.map((question) => (
               <li key={question} className="flex gap-2 text-xs text-foreground/90">
@@ -336,99 +452,6 @@ export function OperatorPolicyDraft({
               </li>
             ))}
           </ul>
-        </Section>
-      ) : null}
-
-      {hasDocuments ? (
-        <Section
-          icon={<KeyGlyph className="h-4 w-4" />}
-          title={draft.documents.length === 1 ? "Data document" : "Data documents"}
-          count={draft.documents.length}
-        >
-          <div className="flex flex-col gap-4">
-            {draft.documents.map((doc, index) => (
-              <DocumentCard key={doc.filename || index} doc={doc} index={index} />
-            ))}
-          </div>
-        </Section>
-      ) : null}
-
-      {draft.assumptions.length > 0 ? (
-        <Section title="Assumptions" count={draft.assumptions.length} defaultOpen={false}>
-          <ul className="flex flex-col gap-1.5">
-            {draft.assumptions.map((note) => (
-              <li key={note} className="flex gap-2 text-xs text-muted-foreground">
-                <span>•</span>
-                <span>{note}</span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      ) : null}
-
-      {draft.risks.length > 0 ? (
-        <Section icon={<AlertGlyph className="h-4 w-4" />} title="Risks" count={draft.risks.length}>
-          <ul className="flex flex-col gap-2">
-            {draft.risks.map((risk) => (
-              <li key={risk.note} className="flex items-start gap-2">
-                <Badge tone={RISK_TONE[risk.severity]}>{risk.severity}</Badge>
-                <span className="text-xs leading-relaxed text-foreground/90">{risk.note}</span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      ) : null}
-
-      {draft.recommendations.length > 0 ? (
-        <Section title="Least-privilege recommendations" count={draft.recommendations.length}>
-          <ul className="flex flex-col gap-1.5">
-            {draft.recommendations.map((rec) => (
-              <li key={rec} className="flex gap-2 text-xs text-foreground/90">
-                <span className="text-emerald-500">✓</span>
-                <span>{rec}</span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      ) : null}
-
-      {draft.simulations.length > 0 ? (
-        <Section title="Simulation cases" count={draft.simulations.length} defaultOpen={false}>
-          <div className="flex flex-col gap-2">
-            {draft.simulations.map((sim) => (
-              <SimulationCard key={sim.name} sim={sim} />
-            ))}
-          </div>
-        </Section>
-      ) : null}
-
-      {draft.activation ? (
-        <div
-          className={cx(
-            "flex flex-col gap-1.5 rounded-lg border px-3 py-2.5 text-xs",
-            draft.activation.ready
-              ? "border-emerald-500/30 bg-emerald-500/10"
-              : "border-amber-500/30 bg-amber-500/10",
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <Badge tone={draft.activation.ready ? "success" : "warning"}>
-              {draft.activation.ready ? "ready to activate" : "not yet ready"}
-            </Badge>
-          </div>
-          {draft.activation.guidance.trim() ? (
-            <p className="leading-relaxed text-foreground/90">{draft.activation.guidance}</p>
-          ) : null}
-          {draft.activation.blockers.length > 0 ? (
-            <ul className="flex flex-col gap-1">
-              {draft.activation.blockers.map((blocker) => (
-                <li key={blocker} className="flex gap-2 text-foreground/80">
-                  <span>•</span>
-                  <span>{blocker}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
         </div>
       ) : null}
 
