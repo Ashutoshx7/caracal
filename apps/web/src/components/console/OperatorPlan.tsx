@@ -3,13 +3,11 @@
 //
 // Operator plan surfaces: the execution-plan artifact, its per-step badges, the security review, and the collapsed history row.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Confirmation,
-  ConfirmationAccepted,
   ConfirmationAction,
   ConfirmationActions,
-  ConfirmationRejected,
   ConfirmationRequest,
   ConfirmationTitle,
 } from "@/components/ai-elements/confirmation";
@@ -51,7 +49,7 @@ import {
   useOperatorCapabilities,
 } from "@/platform/api/hooks";
 import { planCitations } from "@/platform/operator/citations";
-import { applyingLine, PLAN_STATUS } from "@/platform/operator/status";
+import { applyingLine } from "@/platform/operator/status";
 import type {
   PlanAdvisoryView,
   PlanItem,
@@ -386,7 +384,7 @@ export function PlanArtifact({
 
       {plan.advisory ? <PlanAdvisory advisory={plan.advisory} /> : null}
 
-      {plan.canDecide || plan.decision !== "pending" ? (
+      {plan.canDecide ? (
         <Confirmation approval={planApproval(plan)} state={planConfirmationState(plan)}>
           <ConfirmationTitle>
             <ConfirmationRequest>
@@ -394,24 +392,6 @@ export function PlanArtifact({
                 ? `Approve to apply ${mutatingCount} change${mutatingCount === 1 ? "" : "s"} in this zone - nothing runs until you do.`
                 : "Approve to run these read-only steps in this zone."}
             </ConfirmationRequest>
-            <ConfirmationAccepted>
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              <span>
-                {plan.executed
-                  ? PLAN_STATUS.applied
-                  : plan.approvedByAutopilot
-                    ? PLAN_STATUS.approvedByAutopilot
-                    : PLAN_STATUS.approved}
-              </span>
-            </ConfirmationAccepted>
-            <ConfirmationRejected>
-              <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
-              <span>
-                {plan.rejectionReason
-                  ? `${PLAN_STATUS.rejected}: ${plan.rejectionReason}`
-                  : PLAN_STATUS.rejected}
-              </span>
-            </ConfirmationRejected>
           </ConfirmationTitle>
           <ConfirmationActions>
             <ConfirmationAction
@@ -437,31 +417,13 @@ export function PlanArtifact({
         </Confirmation>
       ) : null}
 
-      {execute.isPending || execute.isError ? (
-        <div className="flex flex-col gap-1.5 border-t border-border bg-surface px-3.5 py-2.5">
-          {execute.isPending ? (
-            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-purple" />{" "}
-              {applyingLine(plan.seq)}
-            </span>
-          ) : null}
-          {execute.isError ? (
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-destructive">
-                {executeErrorMessage(execute.error)}
-              </span>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => execute.mutate(plan.seq)}
-                disabled={busy}
-              >
-                Try again
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      <PlanOutcome
+        plan={plan}
+        applying={execute.isPending && !plan.executed}
+        execError={execute.isError ? executeErrorMessage(execute.error) : null}
+        onRetry={() => execute.mutate(plan.seq)}
+        retryDisabled={busy}
+      />
 
       {secrets.length > 0 ? <IssuedCredentials secrets={secrets} /> : null}
 
@@ -497,9 +459,62 @@ export function PlanArtifact({
   );
 }
 
-// Earlier, already-decided plans collapse to a single outcome row so the stream
-// reads as an execution history. Expanding the row reveals the executed steps and
-// their per-step capability and outcome straight from the turn ledger.
+// The single, honest outcome line beneath a decided plan. Exactly one truth shows at a time and it
+// always reflects the settled ledger, never a hopeful placeholder: a refused apply request is an
+// error with a retry, a completed run with a failed step names that failure plainly (the plan is
+// spent, so there is no retry), a rejection names its reason, and an apply that is genuinely still
+// in flight - approved but not yet executed - shows the working line. Once the plan is executed the
+// working line is never shown, so a finished or failed run can never masquerade as still working.
+function PlanOutcome({
+  plan,
+  applying,
+  execError,
+  onRetry,
+  retryDisabled,
+}: {
+  plan: PlanItem;
+  applying: boolean;
+  execError: string | null;
+  onRetry: () => void;
+  retryDisabled: boolean;
+}) {
+  const failedStep = plan.steps.find((step) => step.status === "failed");
+
+  let content: ReactNode = null;
+  if (execError) {
+    content = (
+      <>
+        <span className="text-[11px] text-destructive">{execError}</span>
+        <Button size="sm" variant="secondary" onClick={onRetry} disabled={retryDisabled}>
+          Try again
+        </Button>
+      </>
+    );
+  } else if (plan.executed && failedStep) {
+    content = (
+      <span className="text-[11px] text-destructive">
+        {failedStep.detail?.trim() ? failedStep.detail : `${failedStep.summary} failed.`}
+      </span>
+    );
+  } else if (plan.decision === "rejected" && plan.rejectionReason?.trim()) {
+    content = <span className="text-[11px] text-muted-foreground">{plan.rejectionReason}</span>;
+  } else if (applying) {
+    content = (
+      <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent-purple" />
+        {applyingLine(plan.seq)}
+      </span>
+    );
+  }
+
+  if (!content) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-t border-border bg-surface px-3.5 py-2.5">
+      {content}
+    </div>
+  );
+}
+
 export function PlanHistoryRow({ plan }: { plan: PlanItem }) {
   const decision = planDecision(plan);
   return (
