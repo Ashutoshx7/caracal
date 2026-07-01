@@ -162,6 +162,8 @@ export function executeErrorMessage(err: unknown): string {
       return "Approve the plan before applying it.";
     case "plan_rejected":
       return "This plan was rejected, so it can't be applied.";
+    case "plan_blocked":
+      return "This plan can't be applied - a step depends on something an earlier step hasn't created yet.";
     case "conversation_archived":
       return "This conversation is archived, so it can't apply changes.";
     default:

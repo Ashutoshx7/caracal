@@ -48,6 +48,7 @@ import { retrieveDocs } from '../operator-docs.js'
 import { summarizeHistory, type ConversationFacts } from '../operator-memory.js'
 import { OperatorAiNotFoundError, OperatorAiUnavailableError, type OperatorAiManager } from '../operator-ai-manager.js'
 import { PROVIDER_SLUG_PATTERN } from '../operator-ai-store.js'
+import { assertMessageRunTransition, type MessageRunState } from '../operator-message-state.js'
 
 const TITLE_MAX_LENGTH = 200
 const CONTENT_MAX_BYTES = 64_000
@@ -64,6 +65,8 @@ const CONVERSATION_SELECT = 'id, zone_id, number::int AS number, title, status, 
 // to int here: a per-conversation gapless counter never approaches the int ceiling, and the
 // honest numeric type keeps the approval and execution bodies from rejecting a stringified seq.
 const TURN_SELECT = 'id, conversation_id, seq::int AS seq, role, kind, content, actor_id, created_at'
+const MESSAGE_RUN_SELECT =
+  'id, zone_id, conversation_id, client_message_id, server_message_turn_id, correlation_id, state, actor_id, provider_id, reason, error_code, error_detail, deadline_at, started_at, updated_at, completed_at, last_event_seq::int AS last_event_seq'
 
 const CreateConversationBody = z
   .object({
@@ -123,6 +126,8 @@ type PreflightResult =
   { ok: true; summary: string; steps: GovernedPlanStep[] } | { ok: false; status: number; body: Record<string, unknown> }
 
 const MESSAGE_MAX_LENGTH = 4000
+const MESSAGE_RUN_DEADLINE_MS = 120_000
+const MessageRunId = z.string().regex(/^[A-Za-z0-9_.\-:]{1,128}$/)
 const MessageBody = z
   .object({
     message: z.string().trim().min(1).max(MESSAGE_MAX_LENGTH),
@@ -130,6 +135,8 @@ const MessageBody = z
     // failover order chooses. Switching it mid-conversation only routes the next message;
     // the conversation history the agents reason over is unchanged.
     provider: z.string().min(1).max(64).optional(),
+    client_message_id: MessageRunId.optional(),
+    correlation_id: MessageRunId.optional(),
   })
   .strict()
 const MESSAGE_CONTEXT_WINDOW = 10
@@ -225,6 +232,203 @@ async function writeTurnLocked(
     ],
   )
   return rows[0] as Record<string, unknown>
+}
+
+interface MessageRunRow {
+  id: string
+  zone_id: string
+  conversation_id: string
+  client_message_id: string
+  server_message_turn_id: string | null
+  correlation_id: string
+  state: MessageRunState
+  actor_id: string | null
+  provider_id: string | null
+  reason: string | null
+  error_code: string | null
+  error_detail: string | null
+  deadline_at: string | null
+  started_at: string
+  updated_at: string
+  completed_at: string | null
+  last_event_seq: number
+}
+
+interface PublicMessageRun {
+  id: string
+  client_message_id: string
+  correlation_id: string
+  state: MessageRunState
+  reason: string | null
+  error_code: string | null
+  error_detail: string | null
+  deadline_at: string | null
+  completed_at: string | null
+  last_event_seq: number
+}
+
+function publicMessageRun(run: MessageRunRow): PublicMessageRun {
+  return {
+    id: run.id,
+    client_message_id: run.client_message_id,
+    correlation_id: run.correlation_id,
+    state: run.state,
+    reason: run.reason,
+    error_code: run.error_code,
+    error_detail: run.error_detail,
+    deadline_at: run.deadline_at,
+    completed_at: run.completed_at,
+    last_event_seq: run.last_event_seq,
+  }
+}
+
+async function writeMessageRunEventLocked(
+  client: TxClient,
+  input: {
+    run: MessageRunRow
+    state: MessageRunState
+    reason?: string | null
+    errorCode?: string | null
+    errorDetail?: string | null
+    payload?: Record<string, unknown>
+  },
+): Promise<MessageRunRow> {
+  assertMessageRunTransition(input.run.state, input.state)
+  const eventSeq = input.run.last_event_seq + 1
+  await client.query(
+    `INSERT INTO operator_message_run_events
+       (id, run_id, zone_id, conversation_id, event_seq, state, reason, error_code, error_detail, payload)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
+    [
+      uuidv7(),
+      input.run.id,
+      input.run.zone_id,
+      input.run.conversation_id,
+      eventSeq,
+      input.state,
+      input.reason ?? null,
+      input.errorCode ?? null,
+      input.errorDetail ?? null,
+      JSON.stringify(input.payload ?? {}),
+    ],
+  )
+  const terminal = ['completed', 'cancelled', 'failed', 'timeout'].includes(input.state)
+  const { rows } = await client.query<MessageRunRow>(
+    `UPDATE operator_message_runs
+     SET state = $2,
+         reason = COALESCE($3, reason),
+         error_code = COALESCE($4, error_code),
+         error_detail = COALESCE($5, error_detail),
+         completed_at = CASE WHEN $6 THEN COALESCE(completed_at, now()) ELSE completed_at END,
+         last_event_seq = $7,
+         updated_at = now()
+     WHERE id = $1
+     RETURNING ${MESSAGE_RUN_SELECT}`,
+    [input.run.id, input.state, input.reason ?? null, input.errorCode ?? null, input.errorDetail ?? null, terminal, eventSeq],
+  )
+  return rows[0]
+}
+
+type MessageRunStartOutcome =
+  | { ok: true; duplicate: false; run: MessageRunRow; turn: Record<string, unknown>; mode: OperatorMode; autopilot: boolean }
+  | { ok: true; duplicate: true; run: MessageRunRow; mode: OperatorMode; autopilot: boolean }
+  | { ok: false; status: number; body: Record<string, unknown> }
+
+async function startMessageRunTx(
+  db: DB,
+  input: {
+    conversationId: string
+    zoneId: string
+    message: string
+    actorId: string
+    clientMessageId: string
+    correlationId: string
+    providerId?: string | null
+  },
+): Promise<MessageRunStartOutcome> {
+  return withTransaction(db, async (client): Promise<MessageRunStartOutcome> => {
+    const { rows: conv } = await client.query<{ status: string; mode: string; autopilot: boolean; next_seq: number }>(
+      `SELECT status, mode, autopilot, next_seq FROM operator_conversations
+       WHERE id = $1 AND zone_id = $2 FOR UPDATE`,
+      [input.conversationId, input.zoneId],
+    )
+    if (!conv[0]) return { ok: false, status: 404, body: { error: 'conversation_not_found' } }
+    if (conv[0].status !== 'active') return { ok: false, status: 409, body: { error: 'conversation_archived' } }
+
+    const { rows: existing } = await client.query<MessageRunRow>(
+      `SELECT ${MESSAGE_RUN_SELECT} FROM operator_message_runs
+       WHERE conversation_id = $1 AND client_message_id = $2
+       FOR UPDATE`,
+      [input.conversationId, input.clientMessageId],
+    )
+    if (existing[0]) {
+      return {
+        ok: true,
+        duplicate: true,
+        run: existing[0],
+        mode: conv[0].mode === 'ask' ? 'ask' : 'agent',
+        autopilot: conv[0].autopilot === true,
+      }
+    }
+
+    const runId = uuidv7()
+    const deadlineAt = new Date(Date.now() + MESSAGE_RUN_DEADLINE_MS).toISOString()
+    const { rows: runs } = await client.query<MessageRunRow>(
+      `INSERT INTO operator_message_runs
+         (id, zone_id, conversation_id, client_message_id, correlation_id, state, actor_id, provider_id, deadline_at, last_event_seq)
+       VALUES ($1, $2, $3, $4, $5, 'queued', $6, $7, $8, 0)
+       RETURNING ${MESSAGE_RUN_SELECT}`,
+      [runId, input.zoneId, input.conversationId, input.clientMessageId, input.correlationId, input.actorId, input.providerId ?? null, deadlineAt],
+    )
+    let run = await writeMessageRunEventLocked(client, { run: runs[0], state: 'queued', reason: 'accepted' })
+    const turn = await writeTurnLocked(client, {
+      conversationId: input.conversationId,
+      zoneId: input.zoneId,
+      seq: conv[0].next_seq,
+      role: 'user',
+      kind: 'message',
+      contentJson: JSON.stringify({ text: input.message }),
+      actorId: input.actorId,
+      clientToken: input.clientMessageId,
+    })
+    const { rows: linked } = await client.query<MessageRunRow>(
+      `UPDATE operator_message_runs
+       SET server_message_turn_id = $2, updated_at = now()
+       WHERE id = $1
+       RETURNING ${MESSAGE_RUN_SELECT}`,
+      [run.id, turn.id],
+    )
+    run = await writeMessageRunEventLocked(client, { run: linked[0], state: 'sending', reason: 'message_recorded' })
+    return {
+      ok: true,
+      duplicate: false,
+      run,
+      turn,
+      mode: conv[0].mode === 'ask' ? 'ask' : 'agent',
+      autopilot: conv[0].autopilot === true,
+    }
+  })
+}
+
+async function transitionMessageRun(
+  db: DB,
+  run: MessageRunRow | null,
+  state: MessageRunState,
+  options: { reason?: string | null; errorCode?: string | null; errorDetail?: string | null; payload?: Record<string, unknown> } = {},
+): Promise<MessageRunRow | null> {
+  if (!run) return null
+  return withTransaction(db, async (client) => {
+    const { rows } = await client.query<MessageRunRow>(`SELECT ${MESSAGE_RUN_SELECT} FROM operator_message_runs WHERE id = $1 FOR UPDATE`, [run.id])
+    if (!rows[0]) return null
+    return writeMessageRunEventLocked(client, {
+      run: rows[0],
+      state,
+      reason: options.reason,
+      errorCode: options.errorCode,
+      errorDetail: options.errorDetail,
+      payload: options.payload,
+    })
+  })
 }
 
 // Renders an authored policy draft as readable Markdown for the conversation ledger, so a console
@@ -1405,22 +1609,43 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       return reply.code(400).send({ error: 'invalid_provider' })
     }
 
-    // Record the operator's message first, so it is in the ledger regardless of how
-    // the agents respond, and so the agents reason over a context that includes it.
-    const userTurn = await appendTurnTx(
-      fastify.db,
-      params.id,
-      params.zoneId,
-      'user',
-      'message',
-      JSON.stringify({ text: parsed.data.message }),
-      req.actor.id,
-    )
+    let messageRun: MessageRunRow | null = null
+    let userTurn: AppendOutcome
+    if (parsed.data.client_message_id) {
+      const started = await startMessageRunTx(fastify.db, {
+        conversationId: params.id,
+        zoneId: params.zoneId,
+        message: parsed.data.message,
+        actorId: req.actor.id,
+        clientMessageId: parsed.data.client_message_id,
+        correlationId: parsed.data.correlation_id ?? parsed.data.client_message_id,
+        providerId: preference,
+      })
+      if (!started.ok) return reply.code(started.status).send(started.body)
+      messageRun = started.run
+      if (started.duplicate) {
+        return reply.code(202).send({ intent: 'message_run', ok: true, duplicate: true, message_run: publicMessageRun(started.run) })
+      }
+      userTurn = { ok: true, turn: started.turn, mode: started.mode, autopilot: started.autopilot }
+    } else {
+      // Record the operator's message first, so it is in the ledger regardless of how
+      // the agents respond, and so the agents reason over a context that includes it.
+      userTurn = await appendTurnTx(
+        fastify.db,
+        params.id,
+        params.zoneId,
+        'user',
+        'message',
+        JSON.stringify({ text: parsed.data.message }),
+        req.actor.id,
+      )
+    }
     if (!userTurn.ok) {
       return reply
         .code(userTurn.reason === 'archived' ? 409 : 404)
         .send({ error: userTurn.reason === 'archived' ? 'conversation_archived' : 'conversation_not_found' })
     }
+    messageRun = await transitionMessageRun(fastify.db, messageRun, 'waiting_for_model', { reason: 'model_requested' })
 
     const [state, facts, zoneMemory, zoneRow] = await Promise.all([
       loadConversationState(fastify.db, params.id, params.zoneId, MESSAGE_CONTEXT_WINDOW),
@@ -1503,10 +1728,22 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     // Delivers a turn's result to the caller: a JSON response on the normal path, or the matching
     // terminal SSE frame on the stream. A status at or above 400 is a stop the human must see, so
     // it is sent as an error frame carrying its status; anything else is the authoritative result.
-    const finish = (resultStatus: number, body: Record<string, unknown>) => {
-      if (!wantsStream) return reply.code(resultStatus).send(body)
-      if (resultStatus < 400) writeSseEvent(reply, 'result', body)
-      else writeSseEvent(reply, 'error', { ...body, status: resultStatus })
+    const finish = async (
+      resultStatus: number,
+      body: Record<string, unknown>,
+      runState?: { state: MessageRunState; reason?: string; errorCode?: string; errorDetail?: string },
+    ) => {
+      if (runState) {
+        messageRun = await transitionMessageRun(fastify.db, messageRun, runState.state, {
+          reason: runState.reason,
+          errorCode: runState.errorCode,
+          errorDetail: runState.errorDetail,
+        })
+      }
+      const payload = messageRun ? { ...body, message_run: publicMessageRun(messageRun) } : body
+      if (!wantsStream) return reply.code(resultStatus).send(payload)
+      if (resultStatus < 400) writeSseEvent(reply, 'result', payload)
+      else writeSseEvent(reply, 'error', { ...payload, status: resultStatus })
       reply.raw.end()
     }
 
@@ -1548,7 +1785,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       // regardless of what the orchestrator returned. The orchestrator already refuses to plan in
       // ask mode; this guarantees it at the route even if that ever regressed.
       if (mode === 'ask' && outcome.kind === 'plan') {
-        return finish(403, { error: 'mode_forbidden' })
+        return finish(403, { error: 'mode_forbidden' }, { state: 'failed', reason: 'mode_forbidden', errorCode: 'mode_forbidden' })
       }
 
       if (outcome.kind === 'plan') {
@@ -1572,7 +1809,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
             message,
             turn: turn.ok ? turn.turn : null,
             ...meta(),
-          })
+          }, { state: 'failed', reason: 'no_plan', errorCode: 'no_plan', errorDetail: message })
         }
 
         // The model only proposes; the deterministic pipeline validates it against
@@ -1598,7 +1835,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
             validation,
             turn: turn.ok ? turn.turn : null,
             ...meta(),
-          })
+          }, { state: 'failed', reason: 'plan_invalid', errorCode: 'plan_invalid' })
         }
 
         const preview = await previewPlan(fastify.db, params.zoneId, planned.value)
@@ -1623,7 +1860,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         if (!turn.ok) {
           return finish(turn.reason === 'archived' ? 409 : 404, {
             error: turn.reason === 'archived' ? 'conversation_archived' : 'conversation_not_found',
-          })
+          }, { state: 'failed', reason: turn.reason, errorCode: turn.reason === 'archived' ? 'conversation_archived' : 'conversation_not_found' })
         }
 
         // Caracal-governed autopilot: in agent mode, when the deployment has enabled autopilot and
@@ -1638,7 +1875,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         let approvalTurn: Record<string, unknown> | null = null
         if (turn.mode === 'agent' && turn.autopilot && autopilotAvailable(autopilotPolicy)) {
           const planSeq = Number(turn.turn.seq)
-          const decision = mayAutoApprove({ engaged: true, steps: planned.value.steps }, autopilotPolicy)
+          const decision = mayAutoApprove({ engaged: true, applicable: preview.ok, steps: planned.value.steps }, autopilotPolicy)
           if (decision.autoApprove) {
             const approval = await appendTurnTx(
               fastify.db,
@@ -1668,7 +1905,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
           auto_approved: autoApproved,
           approval_turn: approvalTurn,
           ...meta(),
-        })
+        }, { state: autoApproved ? 'completed' : 'waiting_for_user_approval', reason: autoApproved ? 'auto_approved' : 'approval_required' })
       }
 
       if (outcome.kind === 'policy') {
@@ -1691,7 +1928,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
             message: authored.error,
             turn: turn.ok ? turn.turn : null,
             ...meta(),
-          })
+          }, { state: 'failed', reason: 'no_policy', errorCode: 'no_policy', errorDetail: authored.error })
         }
         // The authored draft is recorded in the conversation ledger as a note carrying both a
         // human-readable rendering and the structured, validated draft, so the console renders the
@@ -1706,9 +1943,9 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         if (!turn.ok) {
           return finish(turn.reason === 'archived' ? 409 : 404, {
             error: turn.reason === 'archived' ? 'conversation_archived' : 'conversation_not_found',
-          })
+          }, { state: 'failed', reason: turn.reason, errorCode: turn.reason === 'archived' ? 'conversation_archived' : 'conversation_not_found' })
         }
-        return finish(201, { intent: 'policy', tier, ok: true, policy: draft, turn: turn.turn, ...meta() })
+        return finish(201, { intent: 'policy', tier, ok: true, policy: draft, turn: turn.turn, ...meta() }, { state: 'completed', reason: 'policy_authored' })
       }
 
       const explained = outcome.result
@@ -1725,19 +1962,21 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         reasoning: answer.reasoning,
         turn: turn.ok ? turn.turn : null,
         ...meta(),
-      })
+      }, { state: 'completed', reason: 'answer_recorded' })
     } catch (err) {
-      if (err instanceof GatewayUnavailableError) return finish(409, { error: 'ai_unavailable' })
-      if (err instanceof GatewayBudgetError) return finish(429, { error: 'ai_budget_exceeded', max_calls: err.maxCalls })
-      if (err instanceof GatewayError) return finish(502, { error: 'ai_unreachable', attempts: err.attempts })
+      if (err instanceof GatewayUnavailableError) return finish(409, { error: 'ai_unavailable' }, { state: 'failed', reason: 'ai_unavailable', errorCode: 'ai_unavailable' })
+      if (err instanceof GatewayBudgetError) return finish(429, { error: 'ai_budget_exceeded', max_calls: err.maxCalls }, { state: 'failed', reason: 'ai_budget_exceeded', errorCode: 'ai_budget_exceeded' })
+      if (err instanceof GatewayError) return finish(502, { error: 'ai_unreachable', attempts: err.attempts }, { state: 'failed', reason: 'ai_unreachable', errorCode: 'ai_unreachable' })
       // An unexpected failure on the stream has already taken over the response, so it cannot fall
-      // through to the framework's error handler; it is closed as a terminal error frame. On the
-      // JSON path it rethrows unchanged so the framework still maps it to a 500.
+      // through to the framework's error handler; it is closed as a terminal error frame. Durable
+      // JSON requests also settle the run before returning the same terminal failure shape.
       if (wantsStream) {
-        writeSseEvent(reply, 'error', { error: 'ai_failed', status: 500 })
+        messageRun = await transitionMessageRun(fastify.db, messageRun, 'failed', { reason: 'ai_failed', errorCode: 'ai_failed' })
+        writeSseEvent(reply, 'error', { error: 'ai_failed', status: 500, ...(messageRun ? { message_run: publicMessageRun(messageRun) } : {}) })
         reply.raw.end()
         return
       }
+      if (messageRun) return finish(500, { error: 'ai_failed' }, { state: 'failed', reason: 'ai_failed', errorCode: 'ai_failed' })
       throw err
     }
   })
