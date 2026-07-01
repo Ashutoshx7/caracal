@@ -115,7 +115,7 @@ const AgentSessionQuery = z.object({
 
 const AGENT_SESSION_CSV_COLUMNS = [
   'id', 'application_id', 'parent_id', 'status', 'lifecycle', 'labels',
-  'depth', 'child_count', 'spawned_at', 'last_active_at', 'terminated_at', 'ttl_seconds',
+  'depth', 'child_count', 'spawned_at', 'last_active_at', 'terminated_at', 'termination_reason', 'ttl_seconds',
 ] as const
 
 function toCsvCell(value: unknown): string {
@@ -340,7 +340,7 @@ export const zoneEventsRoutes: FastifyPluginAsync = async (fastify) => {
 
     const { rows } = await fastify.db.query(
       `SELECT id, application_id, parent_id, status, lifecycle, labels, depth, child_count,
-              spawned_at, last_active_at, terminated_at, ttl_seconds
+              spawned_at, last_active_at, terminated_at, termination_reason, ttl_seconds
        FROM agent_sessions
        WHERE ${conds.join(' AND ')}
        ORDER BY spawned_at DESC, id DESC

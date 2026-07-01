@@ -364,6 +364,7 @@ export interface Agent {
   metadata: Record<string, unknown> | null;
   spawned_at: string;
   terminated_at: string | null;
+  termination_reason: string | null;
   last_heartbeat_at: string | null;
   heartbeat_deadline_at: string | null;
 }
