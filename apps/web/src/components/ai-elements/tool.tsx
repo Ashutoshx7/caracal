@@ -103,7 +103,7 @@ const STATUS_META: Record<
   "input-streaming": {
     label: "Pending",
     badge: "border-border bg-muted text-muted-foreground",
-    icon: <SpinnerGlyph className="h-2.5 w-2.5" />,
+    icon: <ClockGlyph className="h-2.5 w-2.5" />,
     mark: "text-muted-foreground/60",
   },
   "input-available": {
