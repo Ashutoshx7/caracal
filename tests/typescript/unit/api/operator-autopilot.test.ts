@@ -14,6 +14,7 @@ import {
 function evaluation(over: Partial<AutopilotEvaluation> = {}): AutopilotEvaluation {
   return {
     engaged: true,
+    applicable: true,
     steps: [{ id: 's1', capability: 'registerApplication' }],
     ...over,
   }
@@ -77,6 +78,13 @@ describe('mayAutoApprove', () => {
     expect(mayAutoApprove(evaluation({ steps: [] }), buildAutopilotPolicy({ enabled: true }))).toEqual({
       autoApprove: false,
       reason: 'empty_plan',
+    })
+  })
+
+  it('stops when the plan preview says it cannot apply', () => {
+    expect(mayAutoApprove(evaluation({ applicable: false }), buildAutopilotPolicy({ enabled: true }))).toEqual({
+      autoApprove: false,
+      reason: 'plan_not_applicable',
     })
   })
 })
