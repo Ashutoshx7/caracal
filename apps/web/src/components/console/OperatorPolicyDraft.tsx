@@ -3,13 +3,19 @@
 //
 // The dedicated policy-draft artifact: the authoring specialist's validated documents, their explanations and previews, risks, simulations, activation readiness, and the governed create action.
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
 
 import { LinkGlyph, PlanGlyph } from "@/components/console/OperatorGlyphs";
-import { Badge, Button, useCopyToClipboard, useToast } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  SegmentedTabs,
+  useCopyToClipboard,
+  useToast,
+  type Segment,
+} from "@/components/ui";
 import { TERMINAL_HIGHLIGHT, highlightCode } from "@/lib/codeHighlight";
-import { cx } from "@/lib/cx";
 import { appLink } from "@/platform/nav/appLink";
 import { useCreateOperatorPlan } from "@/platform/api/hooks";
 import type {
@@ -251,7 +257,7 @@ export function OperatorPolicyDraft({
   // Each concern the specialist produced becomes one segment of a single-select row, so only the
   // chosen panel occupies vertical space and the artifact stays compact regardless of how much the
   // draft carries. Only segments with content are offered, and the policy itself leads.
-  const segments: { key: string; label: string; count?: number; panel: ReactNode }[] = [];
+  const segments: Segment[] = [];
 
   if (hasDocuments) {
     segments.push({
@@ -380,9 +386,6 @@ export function OperatorPolicyDraft({
     });
   }
 
-  const [activeSegment, setActiveSegment] = useState(segments[0]?.key ?? "");
-  const current = segments.find((segment) => segment.key === activeSegment) ?? segments[0];
-
   return (
     <div className="flex w-full min-w-0 flex-col gap-2.5 rounded-xl border border-border bg-card/60 p-3">
       <div className="flex items-start gap-2">
@@ -410,37 +413,8 @@ export function OperatorPolicyDraft({
         </div>
       </div>
 
-      {current ? (
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap gap-1 rounded-lg bg-muted/50 p-1">
-            {segments.map((segment) => {
-              const selected = current.key === segment.key;
-              return (
-                <button
-                  key={segment.key}
-                  type="button"
-                  onClick={() => setActiveSegment(segment.key)}
-                  className={cx(
-                    "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                    selected
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {segment.label}
-                  {typeof segment.count === "number" ? (
-                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      {segment.count}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-          <div className="rounded-lg border border-border bg-background/40 p-3">
-            {current.panel}
-          </div>
-        </div>
+      {segments.length > 0 ? (
+        <SegmentedTabs segments={segments} />
       ) : draft.clarifications.length > 0 ? (
         <div className="rounded-lg border border-border bg-background/40 p-3">
           <div className="mb-2 text-sm font-medium text-foreground">Needs clarification</div>
