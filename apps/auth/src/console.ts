@@ -383,6 +383,12 @@ async function forwardProxy(
   const acceptEncoding = req.headers['accept-encoding']
   if (typeof acceptEncoding === 'string' && acceptEncoding) baseHeaders['Accept-Encoding'] = acceptEncoding
 
+  // Forward the client's content negotiation so a browser asking for an event stream reaches the
+  // engine as one: without it the engine answers a message turn as a single JSON body and the
+  // console can never render the answer token by token or show the deliberation stages live.
+  const accept = req.headers['accept']
+  if (typeof accept === 'string' && accept) baseHeaders['Accept'] = accept
+
   let body: Buffer | undefined
   if (method !== 'GET' && method !== 'HEAD') {
     body = await readBody(req)
