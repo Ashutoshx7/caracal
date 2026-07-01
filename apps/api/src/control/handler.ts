@@ -17,6 +17,7 @@ import type { Replay } from './replay.js'
 import type { RateLimiter } from './ratelimit.js'
 import type { ControlGate } from './gate.js'
 import { redisMinuteBucket, type RedisClient } from '../redis.js'
+import { AUTHORIZED_BY_HEADER, CREATED_VIA_HEADER } from '../attribution.js'
 
 const MAX_BODY_BYTES = 64 * 1024
 
@@ -33,6 +34,7 @@ interface InvokeBody {
   subcommand?: unknown
   flags?: unknown
   authorized_by?: unknown
+  co_author_operator?: unknown
 }
 
 export interface InvokeDeps {
@@ -159,6 +161,9 @@ async function handle(req: FastifyRequest, reply: FastifyReply, deps: InvokeDeps
   // the audit metadata so an approval-gated change is reconstructable from the tamper-evident
   // chain. Bounded and treated as opaque annotation, never as an authorization input.
   const authorizedBy = typeof body?.authorized_by === 'string' && body.authorized_by.length <= 256 ? body.authorized_by : undefined
+  // Whether the invoke originates from the Caracal Operator, so an object it creates is stamped
+  // with operator co-authorship. Set only by the Operator's own governed execution path.
+  const coAuthorOperator = body?.co_author_operator === true
 
   // The zone the request acts in: the token's own zone, or a tenant zone the reserved Operator
   // targets via the zone-scope header. The audit records the effective zone, so a cross-zone
@@ -174,7 +179,7 @@ async function handle(req: FastifyRequest, reply: FastifyReply, deps: InvokeDeps
   }
 
   try {
-    const result = await dispatch({ command, subcommand, flags }, principal, deps.ctx)
+    const result = await dispatch({ command, subcommand, flags }, principal, dispatchCtx(deps, authorizedBy, coAuthorOperator))
     await deps.sink.emit({
       at: new Date(),
       zoneId: effectiveZone,
@@ -214,8 +219,7 @@ async function handle(req: FastifyRequest, reply: FastifyReply, deps: InvokeDeps
   }
 }
 
-const STATUS_FOR_CODE: Record<string, number> = {
-  denied: 403,
+const STATUS_FOR_CODE: Record<string, number> = {  denied: 403,
   invalid: 400,
   unsupported: 501,
   zone_mismatch: 409,
@@ -226,6 +230,18 @@ const STATUS_FOR_CODE: Record<string, number> = {
 
 function errorBody(code: string, reason: string, remediation?: string): Record<string, string> {
   return remediation ? { code, reason, remediation } : { code, reason }
+}
+
+// Derives the dispatch context for an invoke, attaching request-scoped attribution headers so a
+// create route can stamp the human the Operator acted for and mark operator co-authorship. The
+// shared client is returned unchanged when the invoke carries no attribution, keeping the common
+// path allocation-free.
+function dispatchCtx(deps: InvokeDeps, authorizedBy: string | undefined, coAuthorOperator: boolean): DispatchContext {
+  const headers: Record<string, string> = {}
+  if (authorizedBy) headers[AUTHORIZED_BY_HEADER] = authorizedBy
+  if (coAuthorOperator) headers[CREATED_VIA_HEADER] = 'operator'
+  if (Object.keys(headers).length === 0) return deps.ctx
+  return { ...deps.ctx, admin: deps.ctx.admin.withDefaultHeaders(headers) }
 }
 
 function describe(err: unknown): string {
