@@ -1004,6 +1004,7 @@ export const consoleApi = {
           event_type: query.event_type,
           request_id: query.request_id,
           agent_session_id: query.agent_session_id,
+          session_id: query.session_id,
           label: query.label,
           since: query.since,
           until: query.until,

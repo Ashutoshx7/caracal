@@ -258,6 +258,8 @@ export interface Session {
   expires_at: string;
   authenticated_at: string;
   created_at: string;
+  revoked_at: string | null;
+  revoked_reason: string | null;
 }
 
 export interface AuditEvent {
@@ -539,6 +541,7 @@ export interface AuditQuery {
   event_type?: string;
   request_id?: string;
   agent_session_id?: string;
+  session_id?: string;
   label?: string;
   since?: string;
   until?: string;
@@ -578,6 +581,7 @@ export interface AdminAuditQuery {
 export interface SessionQuery {
   status?: string;
   subject_id?: string;
+  format?: string;
   limit?: number;
   cursor?: string;
 }

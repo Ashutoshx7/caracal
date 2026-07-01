@@ -184,7 +184,7 @@ async function revokeDcrIdentities(
        WHERE s.zone_id = $1 AND s.status = 'active'
      )
      UPDATE sessions
-     SET status = 'revoked'
+     SET status = 'revoked', revoked_at = now(), revoked_reason = 'dcr_shutdown'
      WHERE zone_id = $1 AND id IN (SELECT id FROM revoked_tree)
      RETURNING id`,
     [zoneId, applicationIds],
