@@ -32,6 +32,7 @@ export function buildOperatorControlClient(
   fetchImpl: typeof fetch = fetch,
   zoneScope?: string,
   authorizedBy?: string,
+  coAuthorOperator?: boolean,
 ): ControlClient | null {
   if (!identity || !endpoints.controlEnabled) return null
   return createControlClient(
@@ -44,6 +45,7 @@ export function buildOperatorControlClient(
       ttlSeconds: endpoints.ttlSeconds,
       zoneScope,
       authorizedBy,
+      coAuthorOperator,
     },
     fetchImpl,
   )
