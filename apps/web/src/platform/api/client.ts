@@ -190,7 +190,7 @@ async function streamOperatorMessage(
   onStage: (stage: OperatorProgressStage) => void,
   onToken?: (text: string) => void,
   onReasoning?: (text: string) => void,
-  signal?: AbortSignal,
+  options: { signal?: AbortSignal; clientMessageId?: string; correlationId?: string } = {},
 ): Promise<OperatorMessageResult> {
   const path = `/v1/zones/${encodeURIComponent(zoneId)}/operator-conversations/${encodeURIComponent(
     conversationId,
@@ -200,9 +200,14 @@ async function streamOperatorMessage(
     res = await fetch(`${config.consoleBaseUrl}${path}`, {
       method: "POST",
       credentials: "include",
-      signal,
+      signal: options.signal,
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify(provider ? { message, provider } : { message }),
+      body: JSON.stringify({
+        message,
+        ...(provider ? { provider } : {}),
+        ...(options.clientMessageId ? { client_message_id: options.clientMessageId } : {}),
+        ...(options.correlationId ? { correlation_id: options.correlationId } : {}),
+      }),
     });
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError")
@@ -877,7 +882,7 @@ export const consoleApi = {
       onStage: (stage: OperatorProgressStage) => void,
       onToken?: (text: string) => void,
       onReasoning?: (text: string) => void,
-      signal?: AbortSignal,
+      options?: { signal?: AbortSignal; clientMessageId?: string; correlationId?: string },
     ): Promise<OperatorMessageResult> =>
       streamOperatorMessage(
         zoneId,
@@ -887,7 +892,7 @@ export const consoleApi = {
         onStage,
         onToken,
         onReasoning,
-        signal,
+        options,
       ),
   },
 
