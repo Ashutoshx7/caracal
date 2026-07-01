@@ -95,13 +95,14 @@ export function planDecision(plan: PlanItem): { tone: BadgeTone; label: string }
 }
 
 // Maps a step's ledger status to the tool lifecycle state: a rejected plan denies
-// every step, an executed step reports its success or failure, and an undecided step
-// reads as ready to run.
+// every step, an executed step reports its success or failure, and a step that has not
+// run yet reads as pending. Execution is server-atomic, so a step is only ever awaiting,
+// done, or failed - it never sits in a live running state on the client.
 export function stepToolState(step: PlanStepView, plan: PlanItem): ToolState {
   if (plan.decision === "rejected") return "output-denied";
   if (step.status === "succeeded") return "output-available";
   if (step.status === "failed") return "output-error";
-  return "input-available";
+  return "input-streaming";
 }
 
 export function planApproval(plan: PlanItem): ConfirmationApproval {

@@ -3,7 +3,7 @@
 //
 // Shared command dispatcher: validates management requests and forwards them to AdminClient for Control automation.
 
-import type { AdminClient } from '@caracalai/admin'
+import { AdminApiError, type AdminClient } from '@caracalai/admin'
 import { MANAGEMENT_COMMANDS, findCommand, scopeName, scopeFor, type CommandDescriptor, type ScopeVerb } from './commands.js'
 import { reconcile, ensure, parseDesiredState, OBJECT_KINDS, type ReconcileDeps, type ReconcileReport } from './reconcile.js'
 
@@ -543,12 +543,52 @@ export async function dispatch(req: DispatchRequest, principal: Principal, ctx: 
   assertScope(principal, desc, req.subcommand)
   const handler = commandHandler(desc.name)
   if (!handler) unsupported(`command "${req.command}" has no handler`)
-  return handler({
-    sub: req.subcommand,
-    flags: req.flags ?? {},
-    principal,
-    ctx,
-  })
+  try {
+    return await handler({
+      sub: req.subcommand,
+      flags: req.flags ?? {},
+      principal,
+      ctx,
+    })
+  } catch (err) {
+    if (err instanceof AdminApiError) throw fromAdminError(err)
+    throw err
+  }
+}
+
+// The control-plane detail carried on an AdminApiError body, such as the Rego compile error a
+// policy create is rejected with. It is a validation message, never a secret, so it is safe to
+// surface to the caller who authored the rejected input.
+function adminErrorDetail(err: AdminApiError): string | undefined {
+  const body = err.body
+  if (body && typeof body === 'object' && !Array.isArray(body)) {
+    const detail = (body as { detail?: unknown }).detail
+    if (typeof detail === 'string' && detail.length > 0) return detail
+  }
+  return undefined
+}
+
+// Translates a control-plane rejection (an AdminApiError the AdminClient raised for a non-2xx
+// response) into a DispatchError whose code the control surface maps to the right HTTP status, so
+// a caller sees the real reason — an invalid document, a conflict, a missing target — instead of a
+// generic upstream error. A 5xx or unknown status stays 'upstream' because the mutation may have
+// applied, so the plan must not be retried.
+function fromAdminError(err: AdminApiError): DispatchError {
+  const detail = adminErrorDetail(err)
+  const message = detail ? `${err.code}: ${detail}` : err.code
+  switch (err.status) {
+    case 400:
+    case 422:
+      return new DispatchError('invalid', message)
+    case 403:
+      return new DispatchError('denied', message)
+    case 404:
+      return new DispatchError('not_found', message)
+    case 409:
+      return new DispatchError('conflict', message)
+    default:
+      return new DispatchError('upstream', message)
+  }
 }
 
 /** Lists the (command, subcommand, scope) triples the Control API exposes: used by tests and documentation. */
