@@ -9,6 +9,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { PolicyEditorModal } from "@/components/console/PolicyEditor";
+import { CreatedBy } from "@/components/console/CreatedBy";
 import { PolicySetComposer, type ComposerResult } from "@/components/console/PolicySetComposer";
 import {
   DetailField,
@@ -430,6 +431,12 @@ function PolicySetInspector({
       <DetailGroup title="Policy set">
         <DetailField label="Name">{policySet.name}</DetailField>
         <DetailField label="Description">{policySet.description ?? "-"}</DetailField>
+        <DetailField label="Created by">
+          <CreatedBy
+            name={policySet.created_by}
+            coAuthored={policySet.co_authored_by_operator}
+          />
+        </DetailField>
         <DetailField label="Created">{new Date(policySet.created_at).toLocaleString()}</DetailField>
       </DetailGroup>
 
@@ -1072,7 +1079,9 @@ function PolicyInspector({
       <DetailGroup title="Policy">
         <DetailField label="Name">{policy.name}</DetailField>
         <DetailField label="Description">{policy.description ?? "-"}</DetailField>
-        <DetailField label="Created by">{policy.created_by}</DetailField>
+        <DetailField label="Created by">
+          <CreatedBy name={policy.created_by} coAuthored={policy.co_authored_by_operator} />
+        </DetailField>
         <DetailField label="Created">{new Date(policy.created_at).toLocaleString()}</DetailField>
       </DetailGroup>
 

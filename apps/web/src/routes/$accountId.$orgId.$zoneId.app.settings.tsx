@@ -36,6 +36,8 @@ import {
   useSystemZoneId,
   systemZoneViewPath,
   useZones,
+  useActiveZone,
+  useUpdateZone,
 } from "@/platform/api/hooks";
 import type { OperatorAiProvider, OperatorAiAuth } from "@/platform/api/types";
 import {
@@ -603,6 +605,22 @@ function SessionsSection() {
 
 function PreferencesSection() {
   const theme = useTheme();
+  const { activeZone } = useActiveZone();
+  const updateZone = useUpdateZone();
+  const toast = useToast();
+  const badgeOn = activeZone?.operator_coauthor_badge ?? true;
+
+  async function toggleBadge(next: boolean) {
+    if (!activeZone) return;
+    try {
+      await updateZone.mutateAsync({
+        id: activeZone.id,
+        input: { operator_coauthor_badge: next },
+      });
+    } catch {
+      toast({ title: "Could not update the operator badge setting.", tone: "error" });
+    }
+  }
 
   return (
     <div>
@@ -627,6 +645,39 @@ function PreferencesSection() {
               {option}
             </button>
           ))}
+        </div>
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Operator attribution"
+        description="Show a co-author badge on items the Caracal Operator creates in this zone."
+      >
+        <div className="flex items-start justify-between gap-3">
+          <p className="max-w-prose text-xs text-muted-foreground">
+            When on, items created through the Operator carry a small star next to the creator,
+            marking them as co-authored by the Caracal Operator. Turning this off stops new items
+            from being marked; items already marked keep their badge.
+          </p>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={badgeOn}
+            aria-label="Operator co-author badge"
+            disabled={!activeZone || updateZone.isPending}
+            onClick={() => toggleBadge(!badgeOn)}
+            className={[
+              "relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors",
+              badgeOn ? "bg-foreground" : "bg-muted",
+              !activeZone || updateZone.isPending ? "opacity-60" : "",
+            ].join(" ")}
+          >
+            <span
+              className={[
+                "inline-block h-4 w-4 transform rounded-full bg-background shadow transition-transform",
+                badgeOn ? "translate-x-4" : "translate-x-0.5",
+              ].join(" ")}
+            />
+          </button>
         </div>
       </SettingsGroup>
     </div>
