@@ -121,9 +121,10 @@ export const CONTROL_CAPABILITIES: Record<string, ControlCapability> = {
     },
   },
   // A resource is created from just its name and the scopes it exposes; the control plane derives
-  // the resource://<slug> identifier from the name. This is the thin, credential-free create the
-  // Operator can apply directly — a caracal_mandate target verifies Caracal's own mandate, so no
-  // provider or upstream credential is involved.
+  // the resource://<slug> identifier from the name. This is the thin create the Operator applies
+  // directly: it registers the protected target and its scopes. Wiring a Gateway-routed upstream —
+  // upstream URL, Gateway application, and the bound provider (including a credential-free
+  // caracal_mandate provider) — is separate console setup and is not part of this step.
   defineResource: {
     scopes: ['control:resource:write'],
     buildInvocation: (args) => ({
