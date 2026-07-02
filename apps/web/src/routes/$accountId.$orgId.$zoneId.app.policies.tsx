@@ -432,10 +432,7 @@ function PolicySetInspector({
         <DetailField label="Name">{policySet.name}</DetailField>
         <DetailField label="Description">{policySet.description ?? "-"}</DetailField>
         <DetailField label="Created by">
-          <CreatedBy
-            name={policySet.created_by}
-            coAuthored={policySet.co_authored_by_operator}
-          />
+          <CreatedBy name={policySet.created_by} coAuthored={policySet.co_authored_by_operator} />
         </DetailField>
         <DetailField label="Created">{new Date(policySet.created_at).toLocaleString()}</DetailField>
       </DetailGroup>
