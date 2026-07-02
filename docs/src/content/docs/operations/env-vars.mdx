@@ -46,7 +46,7 @@ Published modes require valid HMAC keys, deny unsafe Gateway fail-open settings,
 | Gateway | `STS_URL`, `GATEWAY_STS_HMAC_KEY`, `UPSTREAM_HOST_ALLOWLIST`, `TLS_CERT_FILE`, `TLS_KEY_FILE`, `MAX_REQUEST_BYTES`, `JTI_FAIL_OPEN`, `AUDIT_REPLAY_DIR` |
 | Audit | `AUDIT_ADMIN_TOKEN`, `AUDIT_RETENTION_DAYS`, `AUDIT_MAX_DELIVERIES`, `AUDIT_CLAIM_IDLE_SECS`, `AUDIT_TAMPER_ROLLING_HOURS`, `AUDIT_EXPORT_S3_*`, readiness thresholds |
 | Coordinator | `ISSUER_URL`, `STS_URL`, `AGENT_COORDINATOR_SCOPE`, `CARACAL_COORDINATOR_TOKEN`, sweep intervals, retention windows, rate limits |
-| Web Console (BFF) | `CARACAL_AUTH_DATABASE_URL`, `CARACAL_AUTH_SECRET`, `CARACAL_AUTH_DATABASE_SSL`, `CARACAL_AUTH_SECURE_COOKIES`, `CARACAL_AUTH_URL`, `CARACAL_WEB_ORIGIN`, `CARACAL_WEB_ROOT`, `CARACAL_AUTH_AUTO_MIGRATE`, `CARACAL_API_URL`, `CARACAL_COORDINATOR_URL`, `CARACAL_ADMIN_TOKEN`, `CARACAL_COORDINATOR_TOKEN`, `PORT`, `HOST`, `LOG_LEVEL` |
+| Web Console (BFF) | `CARACAL_AUTH_DATABASE_URL`, `CARACAL_AUTH_SECRET`, `CARACAL_AUTH_DATABASE_SSL`, `CARACAL_AUTH_SECURE_COOKIES`, `CARACAL_AUTH_URL`, `CARACAL_WEB_ORIGIN`, `CARACAL_WEB_ROOT`, `CARACAL_AUTH_AUTO_MIGRATE`, `CARACAL_OPERATOR_EMAILS`, `CARACAL_OPEN_REGISTRATION`, `CARACAL_PASSWORD_SIGNUP`, `CARACAL_SMTP_URL`, `CARACAL_SMTP_FROM`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `CARACAL_API_URL`, `CARACAL_COORDINATOR_URL`, `CARACAL_ADMIN_TOKEN`, `CARACAL_COORDINATOR_TOKEN`, `PORT`, `HOST`, `LOG_LEVEL` |
 | Control | `STS_JWKS_URL`, `STS_ISSUER_URL`, `CONTROL_AUDIENCE`, `CONTROL_REDIS_URL`, `CONTROL_API_TOKEN`, `CARACAL_API_URL`, rate and replay controls |
 
 ### Web Console (BFF)
@@ -63,6 +63,13 @@ The `caracal-web` image runs the session-guarded backend-for-frontend and serves
 | `CARACAL_WEB_ORIGIN` | no | `http://localhost:3001` plus `CARACAL_AUTH_URL` origin | Comma-separated extra trusted browser origins for split deployments. |
 | `CARACAL_WEB_ROOT` | no | unset | Filesystem path of the built SPA the BFF serves. The production image sets `/app/auth/web`; leave unset for a pure BFF in a split deployment. |
 | `CARACAL_AUTH_AUTO_MIGRATE` | no | `false` in production, `true` in development | Runs Better Auth schema provisioning on boot. Keep it `false` for multi-replica deployments and run `node dist/migrate.js` once from the BFF image. |
+| `CARACAL_OPERATOR_EMAILS` / `CARACAL_OPERATOR_EMAILS_FILE` | production yes | none | Comma-separated allowlist of operator emails and `@domain` suffixes permitted to register and sign in. Without it, registration is open in development and closed in production. |
+| `CARACAL_OPEN_REGISTRATION` | no | `true` in development, `false` in production | Overrides the no-allowlist registration default. An explicit allowlist always wins. |
+| `CARACAL_PASSWORD_SIGNUP` | no | `true` in development, `false` in production | Enables email/password sign-up. In production it requires the SMTP transport below so verification emails can be delivered; the service fails closed without it. |
+| `CARACAL_SMTP_URL` / `CARACAL_SMTP_URL_FILE` | no | none | SMTP relay (`smtp://` or `smtps://`, credentials in the URL) for password reset and email verification messages. Without it, password reset is hidden in the console. |
+| `CARACAL_SMTP_FROM` | with `CARACAL_SMTP_URL` | none | Sender address for reset and verification emails, for example `Caracal <no-reply@example.com>`. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | no | none | Enables Google sign-in when both are set. `_FILE` variants are supported. |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | no | none | Enables GitHub sign-in when both are set. `_FILE` variants are supported. |
 | `CARACAL_API_URL` | yes | `http://localhost:3000` behavior is only suitable for local single-host use | Internal API endpoint proxied by the BFF. |
 | `CARACAL_COORDINATOR_URL` | yes | `http://localhost:4000` behavior is only suitable for local single-host use | Internal Coordinator endpoint proxied by the BFF. |
 | `CARACAL_ADMIN_TOKEN` / `CARACAL_ADMIN_TOKEN_FILE` | yes | none | Server-side API token held by the BFF. |
