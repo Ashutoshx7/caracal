@@ -60,7 +60,8 @@ export function DcrField({
           aria-label="Dynamic Client Registration"
           onClick={() => onChange(!enabled)}
           className={cx(
-            "relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors",
+            "relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full outline-none transition-colors",
+            "focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
             enabled ? "bg-foreground" : "bg-muted",
           )}
         >
