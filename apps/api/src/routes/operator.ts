@@ -45,6 +45,7 @@ import {
   GatewayUnavailableError,
   GatewayError,
   GatewayBudgetError,
+  GatewayStreamInterruptedError,
   type Gateway,
   type ProviderConfig,
 } from '../operator-gateway.js'
@@ -2582,6 +2583,15 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
           502,
           { error: 'ai_unreachable', attempts: err.attempts },
           { state: 'failed', reason: 'ai_unreachable', errorCode: 'ai_unreachable' },
+        )
+      // A provider dropped after it had already streamed part of the answer. Failing over would
+      // append a second provider's answer to the partial one on screen, so the turn ends instead:
+      // the stream closes with an interruption frame rather than silently restarting elsewhere.
+      if (err instanceof GatewayStreamInterruptedError)
+        return finish(
+          502,
+          { error: 'ai_stream_interrupted', provider: err.provider },
+          { state: 'failed', reason: 'ai_stream_interrupted', errorCode: 'ai_stream_interrupted' },
         )
       // An unexpected failure on the stream has already taken over the response, so it cannot fall
       // through to the framework's error handler; it is closed as a terminal error frame. Durable

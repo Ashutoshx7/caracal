@@ -12,6 +12,7 @@ import {
   GatewayUnavailableError,
   GatewayError,
   GatewayBudgetError,
+  GatewayStreamInterruptedError,
   type ProviderConfig,
 } from '../../../../apps/api/src/operator-gateway.js'
 import { ProposedPlan } from '../../../../apps/api/src/operator-capabilities.js'
@@ -37,6 +38,35 @@ function streamResponse(parts: string[], usage?: { prompt_tokens: number; comple
     status: 200,
     headers: { 'content-type': 'text/event-stream' },
   })
+}
+
+// Builds a streaming response that delivers one delta and then the connection drops: the frame
+// feeds the word-smoothing transform so at least one word reaches the handler before the body
+// errors, modeling a provider that fails mid-response after the client has already seen output. The
+// delta key selects the channel - content for the answer, reasoning_content for the chain of thought.
+function midStreamErrorResponse(delta: { content?: string; reasoning_content?: string }): Response {
+  const enc = new TextEncoder()
+  const frame = `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      controller.enqueue(enc.encode(frame))
+      // Give the smoothing transform time to flush the delivered words before the tear.
+      await new Promise((resolve) => setTimeout(resolve, 40))
+      controller.error(new Error('connection reset'))
+    },
+  })
+  return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+}
+
+// Builds a streaming response whose body drops before delivering any delta, modeling a provider
+// that fails at the very start of the response.
+function preEmitErrorResponse(): Response {
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.error(new Error('connection refused'))
+    },
+  })
+  return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })
 }
 
 describe('gateway status', () => {
@@ -397,6 +427,51 @@ describe('gateway stream', () => {
     const result = await gateway.stream([{ role: 'user', content: 'hi' }], { onText: (chunk) => deltas.push(chunk) })
     expect(result.provider).toBe('secondary')
     expect(deltas.join('')).toBe('done')
+  })
+
+  it('terminates the turn instead of failing over once a delta has streamed', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(midStreamErrorResponse({ content: 'Hello world ' }))
+      .mockResolvedValueOnce(streamResponse(['second provider answer']))
+    const gateway = createGateway([provider({ id: 'primary' }), provider({ id: 'secondary' })], fetchMock as unknown as typeof fetch)
+    const deltas: string[] = []
+    const error = await gateway.stream([{ role: 'user', content: 'hi' }], { onText: (chunk) => deltas.push(chunk) }).catch((e) => e)
+    expect(error).toBeInstanceOf(GatewayStreamInterruptedError)
+    expect(error.provider).toBe('primary')
+    // The client already saw the primary's partial answer, so the secondary is never called and its
+    // answer can never append to the corrupted stream.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(deltas.length).toBeGreaterThan(0)
+  })
+
+  it('terminates the turn when only a reasoning delta streamed before the failure', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(midStreamErrorResponse({ reasoning_content: 'weighing the options ' }))
+      .mockResolvedValueOnce(streamResponse(['second provider answer']))
+    const gateway = createGateway([provider({ id: 'primary' }), provider({ id: 'secondary' })], fetchMock as unknown as typeof fetch)
+    const reasoning: string[] = []
+    const error = await gateway
+      .stream([{ role: 'user', content: 'why' }], { onText: () => {}, onReasoning: (chunk) => reasoning.push(chunk) })
+      .catch((e) => e)
+    expect(error).toBeInstanceOf(GatewayStreamInterruptedError)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(reasoning.length).toBeGreaterThan(0)
+  })
+
+  it('fails over normally when a stream drops before the first delta', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(preEmitErrorResponse())
+      .mockResolvedValueOnce(streamResponse(['recovered']))
+    const gateway = createGateway([provider({ id: 'primary' }), provider({ id: 'secondary' })], fetchMock as unknown as typeof fetch)
+    const deltas: string[] = []
+    const result = await gateway.stream([{ role: 'user', content: 'hi' }], { onText: (chunk) => deltas.push(chunk) })
+    // Nothing reached the client before the drop, so failover is safe and the secondary serves.
+    expect(result.provider).toBe('secondary')
+    expect(deltas.join('')).toBe('recovered')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })
 

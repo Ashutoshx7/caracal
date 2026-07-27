@@ -11,7 +11,12 @@ import {
   type SkillRegistry,
   type Skill,
 } from '../../../../apps/api/src/operator-orchestrator.js'
-import type { Gateway, CompletionResult, CompletionObjectResult } from '../../../../apps/api/src/operator-gateway.js'
+import {
+  GatewayStreamInterruptedError,
+  type Gateway,
+  type CompletionResult,
+  type CompletionObjectResult,
+} from '../../../../apps/api/src/operator-gateway.js'
 
 const emptyContext = { facts: null, state: null }
 
@@ -187,6 +192,24 @@ describe('createOrchestrator', () => {
     })
     expect(result.outcome.kind).toBe('answer')
     expect(thinking.join('')).toBe('weighing options')
+  })
+
+  it('propagates a mid-stream interruption instead of swallowing it into an answer', async () => {
+    const completeObject = vi.fn().mockResolvedValue({ value: { tier: 'read', topic: 'general' }, provider: 't', model: 'm' })
+    // The answer stream emits a delta, then the provider drops after output has begun. The gateway
+    // surfaces this as a non-failover interruption; the orchestrator must let it reach the caller so
+    // the route can end the turn rather than returning a truncated answer.
+    const stream = vi.fn(async (_messages: unknown, handlers: { onText: (chunk: string) => void }) => {
+      handlers.onText('the partial ')
+      throw new GatewayStreamInterruptedError('primary', 'connection reset')
+    })
+    const gateway = { status: () => ({ enabled: true, providers: [] }), completeObject, stream } as unknown as Gateway
+    const deltas: string[] = []
+    const error = await createOrchestrator()
+      .handle(gateway, 'why denied', emptyContext, { onAnswerDelta: (chunk) => deltas.push(chunk) })
+      .catch((e) => e)
+    expect(error).toBeInstanceOf(GatewayStreamInterruptedError)
+    expect(deltas).toEqual(['the partial '])
   })
 
   it('plans a change tier with the plan skill', async () => {

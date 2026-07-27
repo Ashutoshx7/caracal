@@ -155,6 +155,21 @@ export class GatewayBudgetError extends Error {
   }
 }
 
+// A streaming provider failed after it had already emitted at least one delta to the client. Those
+// deltas are on the client's screen, so failing over to another provider would append a second
+// answer to a half-written one. This ends the failover instead: the gateway re-raises it rather
+// than trying the next provider, and the turn terminates rather than corrupting the visible stream.
+// It carries the interrupted provider and the redacted failure reason.
+export class GatewayStreamInterruptedError extends Error {
+  constructor(
+    public readonly provider: string,
+    public readonly reason: string,
+  ) {
+    super(`streaming provider ${provider} failed after output began: ${reason}`)
+    this.name = 'GatewayStreamInterruptedError'
+  }
+}
+
 type FetchImpl = typeof fetch
 
 // The OpenAI-compatible provider emits one benign warning on every structured
@@ -353,9 +368,11 @@ async function callProvider(
 // Performs one streaming free-text chat completion against a single provider. It emits each text
 // and reasoning delta to the handlers as it arrives, then returns the same CompletionResult the
 // non-streaming path would, so a caller gets a live preview and the authoritative final text from
-// one call. Per-call retry is disabled so this gateway's own failover order owns retry semantics; a
-// provider that fails before the first delta fails over cleanly, and an empty completion throws
-// like the non-streaming path.
+// one call. Per-call retry is disabled so this gateway's own failover order owns retry semantics. A
+// provider that fails before the first delta fails over cleanly like the non-streaming path; a
+// provider that fails after a delta has reached the client cannot fail over without appending a
+// second answer to the partial one already on screen, so it raises a GatewayStreamInterruptedError
+// the failover order re-raises rather than retries.
 async function callProviderStream(
   fetchImpl: FetchImpl,
   provider: ProviderConfig,
@@ -366,6 +383,10 @@ async function callProviderStream(
 ): Promise<CompletionResult> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), provider.timeoutMs)
+  // Whether any delta has reached the client. Once it has, the partial answer is visible, so a
+  // later failure ends the turn rather than failing over; before it has, the failure is invisible
+  // and fails over cleanly.
+  let emitted = false
   try {
     const { system, conversation } = splitSystem(messages)
     const result = streamText({
@@ -384,10 +405,19 @@ async function callProviderStream(
     // Read the full stream so both channels surface live: a text-delta is the answer typed out and
     // a reasoning-delta is the model's chain of thought as it works. Both the reasoning_content
     // channel and inline <think> blocks arrive here as reasoning-delta parts, so the caller can
-    // show the thinking while the model reasons instead of waiting for the answer to begin.
+    // show the thinking while the model reasons instead of waiting for the answer to begin. An
+    // error part is a mid-stream provider failure; it throws so the catch below decides whether the
+    // turn can still fail over.
     for await (const part of result.fullStream) {
-      if (part.type === 'text-delta' && part.text.length > 0) handlers.onText(part.text)
-      else if (part.type === 'reasoning-delta' && part.text.length > 0) handlers.onReasoning?.(part.text)
+      if (part.type === 'text-delta' && part.text.length > 0) {
+        emitted = true
+        handlers.onText(part.text)
+      } else if (part.type === 'reasoning-delta' && part.text.length > 0) {
+        emitted = true
+        handlers.onReasoning?.(part.text)
+      } else if (part.type === 'error') {
+        throw part.error
+      }
     }
     const text = (await result.text).trim()
     if (text.length === 0) throw new Error('provider returned an empty completion')
@@ -401,6 +431,12 @@ async function callProviderStream(
       promptTokens: usage.inputTokens,
       completionTokens: usage.outputTokens,
     }
+  } catch (err) {
+    // A failure after the first delta cannot fail over: another provider would append its answer to
+    // the partial one already on the client. It is raised as a non-failover error so the gateway
+    // ends the turn instead of retrying, and the route closes the stream with an interruption frame.
+    if (emitted) throw new GatewayStreamInterruptedError(provider.id, failureReason(err))
+    throw err
   } finally {
     clearTimeout(timeout)
   }
@@ -481,6 +517,9 @@ async function runWithFailover<T>(
     try {
       return await call(provider)
     } catch (err) {
+      // A stream that already reached the client cannot be retried on another provider without
+      // corrupting the visible output, so this failure ends the turn instead of failing over.
+      if (err instanceof GatewayStreamInterruptedError) throw err
       attempts.push({ provider: provider.id, reason: failureReason(err) })
     }
   }
