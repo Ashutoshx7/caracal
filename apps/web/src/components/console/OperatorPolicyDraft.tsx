@@ -52,7 +52,7 @@ function deriveDescription(doc: PolicyDocumentView, model: string): string {
 // document, each carrying the exact validated content and a provenance-stamped description. The plan
 // is only proposed here; approval and application stay on the existing gate.
 function buildCreatePlan(draft: PolicyDraftView) {
-  const model = draft.provenance?.model ?? "an AI provider";
+  const model = draft.provenance?.model ?? "a model endpoint";
   const steps = draft.documents.map((doc, index) => ({
     id: `create-${index + 1}`,
     capability: "createPolicy",
