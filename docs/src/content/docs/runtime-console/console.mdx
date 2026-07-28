@@ -66,7 +66,7 @@ Provider secrets are entered during supported create or rotation flows and remai
 
 Open **Caracal Operator** from the utility rail or command palette. Each conversation runs in **Ask** mode for read-only investigation or **Agent** mode for answers, live reads, and change plans. A mutating plan is validated and previewed against current state, then waits for Approval before it is revalidated and applied. Conversation memory records activity; live reads and execution previews remain the source of truth for current state.
 
-Configure natural-language models under **Settings → AI Operator → Models**. The page can add, edit, test, rotate, and delete OpenAI-compatible providers. A new or rotated key is sent once, sealed into the reserved `caracal.sys` Zone, and never returned. Caracal routes model calls through the governed Gateway. The Operator can still expose deterministic catalog and plan behavior when no model provider is configured, but natural-language assistance remains unavailable.
+Configure natural-language models under **Settings → AI Operator → Models**. The page can add, edit, test, rotate, and delete OpenAI-compatible model endpoints. A new or rotated key is sent once, sealed into the reserved `caracal.sys` Zone, and never returned. Caracal routes model calls through the governed Gateway. The Operator can still expose deterministic catalog and plan behavior when no model endpoint is configured, but natural-language assistance remains unavailable.
 
 ## Next Step
 
