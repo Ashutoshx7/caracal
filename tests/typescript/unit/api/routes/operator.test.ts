@@ -2583,6 +2583,63 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     expect(terminal.data).toMatchObject({ error: 'ai_budget_exceeded', max_calls: 1, status: 429 })
   })
 
+  it('ends the stream with an interruption frame when a provider drops after streaming, never failing over', async () => {
+    const secondary = { ...provider, id: 'secondary', baseUrl: 'https://api.secondary.example/v1' }
+    // Call 1 is triage, call 2 is the answer stream that delivers a word and then the connection
+    // drops. A call 3 would mean the gateway failed over after streaming - the corruption this
+    // guards against - so its absence is asserted below.
+    let call = 0
+    const fetchImpl = vi.fn(async () => {
+      call += 1
+      if (call === 1) {
+        return new Response(JSON.stringify({ choices: [{ message: { content: '{"tier":"conversational","topic":"general"}' } }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (call === 2) {
+        const enc = new TextEncoder()
+        const frame = `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: 'Hello world ' }, finish_reason: null }] })}\n\n`
+        const stream = new ReadableStream<Uint8Array>({
+          async start(controller) {
+            controller.enqueue(enc.encode(frame))
+            await new Promise((resolve) => setTimeout(resolve, 40))
+            controller.error(new Error('connection reset'))
+          },
+        })
+        return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'failover answer' } }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+    const { app, clientQuery } = buildApp(true, { aiProviders: [provider, secondary], fetchImpl })
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: false, next_seq: 1 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-1', seq: 1, kind: 'message' }] })
+      .mockResolvedValueOnce(undefined)
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'why was that denied' },
+      headers: { accept: 'text/event-stream' },
+    })
+    expect(res.statusCode).toBe(200)
+    const frames = parseSse(res.body)
+    // The partial answer reached the client before the drop.
+    expect(frames.some((f) => f.event === 'token')).toBe(true)
+    // The turn ends in an interruption frame, not a second provider's answer.
+    const terminal = frames.at(-1)!
+    expect(terminal.event).toBe('error')
+    expect(terminal.data).toMatchObject({ error: 'ai_stream_interrupted', status: 502 })
+    // Triage and the one answer attempt were the only model calls: the secondary was never tried.
+    expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(2)
+  })
+
   it('auto-approves a low-risk plan in agent mode when autopilot is engaged and the master switch is on', async () => {
     // With the master switch on, the conversation engaged, and the zone able to apply - governed
     // identity plus the zone grant - Caracal auto-satisfies the approval for any non-empty plan.
