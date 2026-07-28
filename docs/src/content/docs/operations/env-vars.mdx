@@ -73,7 +73,7 @@ The packaged Compose stack wires `CARACAL_TLS_EXTRA_CA_FILE` for you: drop a PEM
 | `API_OPERATOR_AI_MAX_CALLS_PER_TURN` | Per-turn model-call budget. |
 | `CARACAL_CONTROL_ENABLED`, `CONTROL_GATE_FILE` | Build-time Control mount and runtime invoke gate. |
 
-The API process also accepts `API_OPERATOR_AI_PROVIDERS` plus per-ID `API_OPERATOR_AI_<ID>_BASE_URL`, `_MODEL`, optional `_API_KEY`, `_TIMEOUT_MS`, and `_CONTEXT_WINDOW`. IDs are tried in listed order before console-managed providers. Those variables are a direct API-process configuration path; the installed-runtime Compose and Helm surfaces do not forward provider-specific entries. For the packaged workflow, configure providers under **Settings → AI Operator → Models**, where keys are sealed into `caracal.sys` and never returned.
+The API process also accepts `API_OPERATOR_AI_PROVIDERS` plus per-ID `API_OPERATOR_AI_<ID>_BASE_URL`, `_MODEL`, optional `_API_KEY`, `_TIMEOUT_MS`, and `_CONTEXT_WINDOW`. IDs are tried in listed order before console-managed model endpoints. Those variables are a direct API-process configuration path; the installed-runtime Compose and Helm surfaces do not forward model-endpoint-specific entries. For the packaged workflow, configure model endpoints under **Settings → AI Operator → Models**, where keys are sealed into `caracal.sys` and never returned.
 
 ## Safe Procedure
 

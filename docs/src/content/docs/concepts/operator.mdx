@@ -58,15 +58,15 @@ Policy is the densest control-plane object to write by hand: a decision rests on
 
 Every draft is validated and previewed against the same contract the platform enforces, so a document the Operator emits is already contract-valid; if it cannot produce a valid document it fails closed rather than returning broken Rego. A draft is not a change. Turning one into a policy runs the ordinary [governed lifecycle](#the-governed-lifecycle) - you review the proposed create, approve it, and the create is re-validated on apply and attributed to you. Policies authored this way carry provenance marking them AI-assisted, and their later version, simulation, and activation steps stay under the same review and audit as any other policy work.
 
-## Natural-Language Provider
+## Natural-Language Model Endpoint
 
-Turning words into a plan requires a model endpoint supplied by the operator. Open **Settings → AI Operator → Models** to add an OpenAI chat-completions-compatible endpoint, model IDs, optional context window, and key placement. The API key is accepted only when the provider is created or rotated, sealed into a credential Provider in the reserved `caracal.sys` Zone, and never returned to the browser. Operator model calls use the governed Gateway route for that Resource.
+Turning words into a plan requires a model endpoint supplied by the operator. Open **Settings → AI Operator → Models** to add an OpenAI chat-completions-compatible endpoint, model IDs, optional context window, and key placement. The API key is accepted only when the model endpoint is created or rotated, sealed into a credential Provider in the reserved `caracal.sys` Zone, and never returned to the browser. Operator model calls use the governed Gateway route for that Resource.
 
-The settings page can edit provider metadata, rotate the sealed key, delete a provider, and run a real connectivity check. Multiple providers and models participate in failover. Direct API-process `API_OPERATOR_AI_*` configuration also remains implemented, but the packaged-runtime workflow is console management; see [Configure Service Environment](/operations/env-vars/#api-operator-and-control) for that narrower path.
+The settings page can edit model endpoint metadata, rotate the sealed key, delete a model endpoint, and run a real connectivity check. Multiple model endpoints and models participate in failover. Direct API-process `API_OPERATOR_AI_*` configuration also remains implemented, but the packaged-runtime workflow is console management; see [Configure Service Environment](/operations/env-vars/#api-operator-and-control) for that narrower path.
 
 ## Where to Use It
 
-Open **Caracal Operator** from the console utility rail or command palette. For the workspace and provider-management paths, see [Caracal Operator](/runtime-console/console/#caracal-operator) in the web console reference.
+Open **Caracal Operator** from the console utility rail or command palette. For the workspace and model-endpoint management paths, see [Caracal Operator](/runtime-console/console/#caracal-operator) in the web console reference.
 
 ## Common Mistakes
 
