@@ -128,6 +128,27 @@ describe('crossFieldIssues', () => {
     const issues = crossFieldIssues('api_key', { auth_location: 'query', auth_scheme: 'ApiKey' })
     expect(issues.some((i) => i.key === 'auth_scheme')).toBe(true)
   })
+  it('requires a revocation endpoint host to be covered by the token endpoint hosts', () => {
+    expect(
+      crossFieldIssues('oauth2_authorization_code', {
+        token_endpoint: 'https://login.hooli.example/oauth/token',
+        revocation_endpoint: 'https://untrusted.example/oauth/revoke',
+      }).some((i) => i.key === 'revocation_endpoint'),
+    ).toBe(true)
+    expect(
+      crossFieldIssues('oauth2_authorization_code', {
+        token_endpoint: 'https://login.hooli.example/oauth/token',
+        revocation_endpoint: 'https://revoke.hooli.example/oauth/revoke',
+        allowed_token_hosts: 'login.hooli.example, revoke.hooli.example',
+      }),
+    ).toEqual([])
+    expect(
+      crossFieldIssues('oauth2_authorization_code', {
+        token_endpoint: 'https://login.hooli.example/oauth/token',
+        revocation_endpoint: 'https://login.hooli.example/oauth/revoke',
+      }),
+    ).toEqual([])
+  })
   it('flags control characters in single-line secrets and leaves PEM keys alone', () => {
     expect(crossFieldIssues('bearer_token', { bearer_token: 'line-one\nline-two' }).some((i) => i.key === 'bearer_token')).toBe(true)
     expect(

@@ -164,7 +164,7 @@ const FIELDS: Record<ProviderKind, ProviderField[]> = {
       label: "Token endpoint hosts",
       kind: "list",
       advanced: true,
-      hint: "Optional. Uses the token endpoint host when blank.",
+      hint: "Optional. Uses the token endpoint host when blank. A revocation endpoint on another host must be listed here.",
     },
     {
       key: "auth_header",

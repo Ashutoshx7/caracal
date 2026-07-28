@@ -231,6 +231,33 @@ export function crossFieldIssues(
       });
     }
   }
+  // An RFC 7009 revocation request carries the provider refresh token and the client
+  // secret, so the control plane holds the revocation endpoint to the same host allow-list
+  // as the token endpoint. The list defaults to the token endpoint host, which means a
+  // revocation endpoint on another host needs an explicit entry.
+  if (kind === "oauth2_authorization_code") {
+    const revocation = (values.revocation_endpoint ?? "").trim();
+    const tokenEndpoint = (values.token_endpoint ?? "").trim();
+    if (isHttpsUrl(revocation)) {
+      const hosts = (values.allowed_token_hosts ?? "")
+        .split(",")
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean);
+      const allowed =
+        hosts.length > 0
+          ? hosts
+          : isHttpsUrl(tokenEndpoint)
+            ? [new URL(tokenEndpoint).hostname.toLowerCase()]
+            : [];
+      const host = new URL(revocation).hostname.toLowerCase();
+      if (allowed.length > 0 && !allowed.includes(host)) {
+        issues.push({
+          key: "revocation_endpoint",
+          message: `Revocation sends the provider credential to ${host}. Add it to the token endpoint hosts, or change the endpoint.`,
+        });
+      }
+    }
+  }
   if (kind === "api_key") {
     const location = (values.auth_location || "header").trim();
     if (location === "query" && (values.auth_scheme ?? "").trim() !== "") {
