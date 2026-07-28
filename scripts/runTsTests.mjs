@@ -10,6 +10,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const isWindows = process.platform === 'win32'
 
 const ENV_DEFAULTS = {
   DATABASE_URL: 'postgresql://caracal:caracal@localhost:5432/caracal',
@@ -72,7 +73,7 @@ if (filters.length > 0 && suites.length !== filters.length) {
 const env = { ...ENV_DEFAULTS, ...process.env }
 for (const { dir, name } of suites) {
   process.stdout.write(process.env.GITHUB_ACTIONS ? `::group::test ${name}\n` : `\n== test ${name}\n`)
-  const runArgs = ['--dir', dir, 'run', 'test']
+  let runArgs = ['--dir', dir, 'run', 'test']
   if (coverage) {
     runArgs.push(
       '--coverage.enabled',
@@ -82,11 +83,15 @@ for (const { dir, name } of suites) {
       `--coverage.reportsDirectory=${join(root, 'coverage', 'typescript', name)}`,
     )
   }
+  // The Windows pnpm shim is a command file, so it needs a shell. Node concatenates
+  // arguments unescaped for that shell, so repository paths containing spaces are
+  // quoted here to stop cmd.exe from splitting them.
+  if (isWindows) runArgs = runArgs.map((arg) => (arg.includes(' ') ? `"${arg}"` : arg))
   const result = spawnSync('pnpm', runArgs, {
     cwd: root,
     stdio: 'inherit',
     env,
-    shell: process.platform === 'win32',
+    shell: isWindows,
   })
   if (process.env.GITHUB_ACTIONS) process.stdout.write('::endgroup::\n')
   if (result.error) {
