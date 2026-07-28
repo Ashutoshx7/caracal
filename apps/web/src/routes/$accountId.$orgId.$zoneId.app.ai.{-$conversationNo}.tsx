@@ -263,12 +263,12 @@ const DRAFT_AUTOPILOT_KEY = "caracal.operator.draftAutopilot";
 // clears it too, so an explicit fresh start is honoured rather than bounced back to the prior chat.
 const LAST_CONVERSATION_KEY = "caracal.operator.lastConversation";
 
-// Raised as a warning when a message is sent while no AI provider is connected. The Operator turns
-// natural language into governed plans through a model, so with no provider the send cannot be
+// Raised as a warning when a message is sent while no model endpoint is connected. The Operator turns
+// natural language into governed plans through a model, so with no model endpoint the send cannot be
 // acted on; rather than dispatch it into an upstream refusal, the send is held back and this is
 // surfaced as a non-blocking warning so the operator sees why nothing happened.
 const AI_DISCONNECTED_WARNING =
-  "No AI provider is connected, so the Operator can't act on that. Connect a provider to continue.";
+  "No model endpoint is connected, so the Operator can't act on that. Connect a model endpoint to continue.";
 
 function readRailCollapsed(): boolean {
   if (typeof localStorage === "undefined") return false;
@@ -367,7 +367,7 @@ function OperatorWorkspace() {
   const [streamError, setStreamError] = useState(false);
   // The notice currently surfaced to the operator label, as a discrete event so the same message
   // raised again re-surfaces. Query and stream failures feed it through an effect; a send held back
-  // because no provider is connected reports one directly.
+  // because no model endpoint is connected reports one directly.
   const [operatorNotice, setOperatorNotice] = useState<OperatorNoticeEvent | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
@@ -526,10 +526,10 @@ function OperatorWorkspace() {
       return "Your sessions could not be loaded. Check your connection and try again.";
     }
     if (create.isError) {
-      return "That session could not be started. Confirm an AI provider is reachable and try again.";
+      return "That session could not be started. Confirm a model endpoint is reachable and try again.";
     }
     if (streamError) {
-      return "That request could not be processed. Confirm an AI provider is reachable and try again.";
+      return "That request could not be processed. Confirm a model endpoint is reachable and try again.";
     }
     return null;
   }, [conversations.isError, create.isError, streamError]);

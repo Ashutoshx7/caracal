@@ -298,7 +298,7 @@ function OperatorModelSelector({
     return (
       <span
         className="inline-flex h-8 flex-shrink-0 cursor-default items-center gap-1.5 rounded-full border border-dashed border-border bg-transparent px-2.5 text-xs text-muted-foreground"
-        title="No AI provider is configured, so the Operator selects automatically. Configure API_OPERATOR_AI_PROVIDERS to choose a model."
+        title="No model endpoint is configured, so the Operator selects automatically. Configure API_OPERATOR_AI_PROVIDERS to choose a model."
       >
         <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
         Auto

@@ -26,6 +26,12 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: deps
+    ignore:
+      # typescript-eslint parses source with the JavaScript TypeScript API,
+      # which the native TypeScript 7 package no longer exposes.
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
     groups:
       npm-development:
         dependency-type: development

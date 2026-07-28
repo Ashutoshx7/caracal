@@ -60,7 +60,7 @@ export const SETTINGS_GROUPS: SettingsGroupModel[] = [
       {
         id: "operator",
         label: "AI Operator",
-        description: "Model providers and governed routing for the Caracal Operator.",
+        description: "Model endpoints and governed routing for the Caracal Operator.",
       },
       {
         id: "notifications",

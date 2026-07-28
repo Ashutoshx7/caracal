@@ -2,7 +2,7 @@
 Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 Caracal, a product of Garudex Labs
 
-This file defines the Settings AI Operator page for model providers, connectivity, and attribution.
+This file defines the Settings AI Operator page for model endpoints, connectivity, and attribution.
 */
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
@@ -59,7 +59,7 @@ function sanitizeSlug(raw: string): string {
 
 function checkErrorMessage(err: unknown): string {
   if (err instanceof ConsoleApiError) {
-    if (err.code === "ai_unavailable") return "No AI provider is configured for the Operator.";
+    if (err.code === "ai_unavailable") return "No model endpoint is configured for the Operator.";
     if (err.code === "ai_unreachable") {
       // Surface the upstream's own status so a rejected key (401/403) reads differently from a
       // wrong endpoint (404) or an unreachable host, rather than one ambiguous message.
@@ -69,10 +69,10 @@ function checkErrorMessage(err: unknown): string {
       const reason = attempts?.[0]?.reason ?? "";
       const status = reason.match(/status (\d{3})/)?.[1];
       if (status === "401" || status === "403")
-        return "The provider rejected the key. Check the API key.";
+        return "The model endpoint rejected the key. Check the API key.";
       if (status === "404") return "The endpoint was not found. Check the base URL.";
-      if (status) return `The provider returned ${status}. Check the endpoint and key.`;
-      return "The provider could not be reached. Check the endpoint.";
+      if (status) return `The model endpoint returned ${status}. Check the endpoint and key.`;
+      return "The model endpoint could not be reached. Check the endpoint.";
     }
   }
   return "The connectivity check failed. Try again.";
@@ -84,7 +84,7 @@ function writeErrorMessage(err: unknown): string {
       return "Self-governance is not configured, so a key cannot be sealed.";
     if (err.code === "invalid_provider")
       return "Some fields are invalid. Check the form and try again.";
-    if (err.code === "provider_not_found") return "That provider no longer exists.";
+    if (err.code === "provider_not_found") return "That model endpoint no longer exists.";
   }
   return "The change could not be saved. Try again.";
 }
@@ -131,7 +131,7 @@ function OperatorPage() {
     <div>
       <SettingsGroup
         title="Models"
-        description="Add a provider, and Caracal securely routes the Operator to model through the governed gateway."
+        description="Add a model endpoint, and Caracal securely routes the Operator to it through the governed gateway."
         action={
           <>
             <Button
@@ -153,7 +153,7 @@ function OperatorPage() {
                 setFormOpen(true);
               }}
             >
-              Add provider
+              Add model endpoint
             </Button>
           </>
         }
@@ -183,7 +183,7 @@ function OperatorPage() {
             <Skeleton className="h-24 w-full" />
           ) : providers.length === 0 ? (
             <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-              No models yet. Add a provider to bring the Operator online.
+              No models yet. Add a model endpoint to bring the Operator online.
             </p>
           ) : (
             <div className="scrollbar-thin max-h-[420px] divide-y divide-border overflow-y-auto rounded-lg border border-border">
@@ -260,7 +260,10 @@ function OperatorPage() {
         onClose={() => setFormOpen(false)}
         onSaved={() => {
           setFormOpen(false);
-          toast({ tone: "success", title: editing ? "Provider updated" : "Provider added" });
+          toast({
+            tone: "success",
+            title: editing ? "Model endpoint updated" : "Model endpoint added",
+          });
         }}
       />
 
@@ -277,7 +280,7 @@ function OperatorPage() {
 
       <ConfirmModal
         open={deleting !== null}
-        title="Delete provider"
+        title="Delete model endpoint"
         description={
           deleting
             ? `Remove ${deleting.label}? Its sealed key is destroyed and the Operator's grant to it is revoked.`
@@ -290,7 +293,7 @@ function OperatorPage() {
           if (!deleting) return;
           try {
             await remove.mutateAsync(deleting.slug);
-            toast({ tone: "info", title: "Provider deleted" });
+            toast({ tone: "info", title: "Model endpoint deleted" });
           } catch (err) {
             toast({ tone: "error", title: "Delete failed", description: writeErrorMessage(err) });
           }
@@ -604,10 +607,10 @@ function ProviderFormModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={editing ? "Edit provider" : "Add a model provider"}
+      title={editing ? "Edit model endpoint" : "Add a model endpoint"}
       description={
         editing
-          ? "Update the endpoint and models. Rotate the key from the provider's menu."
+          ? "Update the endpoint and models. Rotate the key from its menu."
           : "Supply an OpenAI-compatible endpoint and key; Caracal seals and governs it."
       }
       footer={
@@ -616,7 +619,7 @@ function ProviderFormModal({
             Cancel
           </Button>
           <Button onClick={save} loading={busy} disabled={!valid}>
-            {editing ? "Save changes" : "Add provider"}
+            {editing ? "Save changes" : "Add model endpoint"}
           </Button>
         </>
       }
@@ -630,8 +633,8 @@ function ProviderFormModal({
             placeholder="OpenAI production"
           />
           <Field
-            label="Provider id"
-            info="A short slug Caracal uses to name the sealed provider and resource."
+            label="Endpoint id"
+            info="A short slug Caracal uses to name the sealed credential provider and resource."
             value={slug}
             onChange={(event) => {
               setSlug(sanitizeSlug(event.target.value));
@@ -666,7 +669,7 @@ function ProviderFormModal({
         <div className="grid gap-2">
           <FieldLabel
             label="Models"
-            info="The exact model ids this endpoint serves. One provider can serve several behind the same key."
+            info="The exact model ids this endpoint serves. One model endpoint can serve several behind the same key."
           />
           <div className="flex gap-2">
             <input
