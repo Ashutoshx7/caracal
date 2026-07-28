@@ -11,25 +11,22 @@ import (
 	"testing"
 )
 
-// An unknown provider_kind must never resolve to an upstream directive. Every supported kind is
-// named explicitly in applyProviderDirective; anything else - a mis-migrated row, a kind the
-// provider-surface consolidation chose not to add, a wrong case, or a near-miss spelling - must
-// fall through to the fail-closed default so it can neither strip upstream auth nor mint a
-// credential. The provider surface reuses api_key rather than adding an llm_openai kind, so this is
-// the parity guard that keeps that decision enforced at the token boundary.
+// Unknown provider kinds must fail closed: applyProviderDirective must return an error and must not
+// weaken upstream authentication or mint a provider token. This guards the contract that only
+// explicitly supported kinds are authorized at the token boundary.
 func TestBuildUpstreamDirectiveFailsClosedOnUnknownProviderKind(t *testing.T) {
 	upstreamURL := "https://api.pipernet.example"
 	zek := []byte("12345678901234567890123456789012")
 	cases := []struct {
 		name string
-		kind string
+		kind *string
 	}{
-		{"kind the consolidation did not add", "llm_openai"},
-		{"unset kind", ""},
-		{"wrong case", "API_KEY"},
-		{"trailing space", "api_key "},
-		{"partial oauth", "oauth2"},
-		{"partial bearer", "bearer"},
+		{"unsupported model endpoint kind", strPtr("llm_openai")},
+		{"unset kind", nil},
+		{"wrong case", strPtr("API_KEY")},
+		{"trailing space", strPtr("api_key ")},
+		{"partial oauth", strPtr("oauth2")},
+		{"partial bearer", strPtr("bearer")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -41,14 +38,14 @@ func TestBuildUpstreamDirectiveFailsClosedOnUnknownProviderKind(t *testing.T) {
 				CredentialProviderID: &providerID,
 			}
 			srv := providerServer(&stubDB{
-				provider: &ProviderConfig{ID: providerID, ProviderKind: strPtr(tc.kind), ConfigJSON: []byte(`{}`)},
+				provider: &ProviderConfig{ID: providerID, ProviderKind: tc.kind, ConfigJSON: []byte(`{}`)},
 			}, zek)
 			directive, err := srv.buildUpstreamDirective(context.Background(), "zone1", map[string]any{"sub": "user1"}, resource, true, false)
 			if err == nil || !strings.Contains(err.Error(), "provider kind unsupported") {
 				t.Fatalf("an unknown provider kind must deny with an unsupported-kind error, got directive=%#v err=%v", directive, err)
 			}
-			if directive.AuthMode == UpstreamAuthNone {
-				t.Fatalf("a denied kind must never downgrade upstream auth to none: %#v", directive)
+			if directive.AuthMode != UpstreamAuthCaracalJWT {
+				t.Fatalf("a denied kind must preserve upstream auth: %#v", directive)
 			}
 			if directive.ProviderToken != "" {
 				t.Fatalf("a denied kind must never mint or attach a provider token: %#v", directive)
