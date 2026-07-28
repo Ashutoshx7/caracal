@@ -2586,12 +2586,18 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         )
       // A provider dropped after it had already streamed part of the answer. Failing over would
       // append a second provider's answer to the partial one on screen, so the turn ends instead:
-      // the stream closes with an interruption frame rather than silently restarting elsewhere.
+      // the stream closes with an interruption frame rather than silently restarting elsewhere. The
+      // redacted drop reason is recorded on the run so the ledger says why the stream tore.
       if (err instanceof GatewayStreamInterruptedError)
         return finish(
           502,
           { error: 'ai_stream_interrupted', provider: err.provider },
-          { state: 'failed', reason: 'ai_stream_interrupted', errorCode: 'ai_stream_interrupted' },
+          {
+            state: 'failed',
+            reason: 'ai_stream_interrupted',
+            errorCode: 'ai_stream_interrupted',
+            errorDetail: `${err.provider}: ${err.reason}`,
+          },
         )
       // An unexpected failure on the stream has already taken over the response, so it cannot fall
       // through to the framework's error handler; it is closed as a terminal error frame. Durable
