@@ -51,8 +51,8 @@ describe('runServiceLeaseSweep', () => {
       { id: 'agent-2', zone_id: 'z1' },
     ]
     const suspended = [
-      { id: 'agent-1', subject_authority_record_id: 'sid-1', parent_id: null },
-      { id: 'agent-2', subject_authority_record_id: 'sid-2', parent_id: 'agent-1' },
+      { id: 'agent-1', subject_authority_record_id: 'sid-1', parent_id: null, updated_at: '2026-01-01T00:00:00.000Z' },
+      { id: 'agent-2', subject_authority_record_id: 'sid-2', parent_id: 'agent-1', updated_at: '2026-01-01T00:00:00.000Z' },
     ]
     const client = clientFromSteps([])
     client.query = vi.fn(async (sql: string, params?: unknown[]) => {
@@ -73,7 +73,12 @@ describe('runServiceLeaseSweep', () => {
 
     const outboxInserts = client.calls.filter(([sql]) => sql.includes('INSERT INTO caracal_outbox'))
     const allDedupes = outboxInserts.flatMap(([, params]) => (params ?? []) as unknown[])
-    expect(allDedupes).toEqual(expect.arrayContaining(['suspend:agent-1', 'suspend:agent-2']))
+    // Keyed by the transition, so re-suspending a session after a resume still publishes its
+    // revocation event instead of colliding with the first suspension.
+    const occurrence = '2026-01-01T00:00:00.000Z'
+    expect(allDedupes).toEqual(
+      expect.arrayContaining([`suspend:agent-1:${occurrence}`, `suspend:agent-2:${occurrence}`, `agent_suspend:agent-1:${occurrence}`]),
+    )
     const suspension = allDedupes.find(
       (value): value is Record<string, unknown> => typeof value === 'object' && value !== null && value.agent_session_id === 'agent-1',
     )

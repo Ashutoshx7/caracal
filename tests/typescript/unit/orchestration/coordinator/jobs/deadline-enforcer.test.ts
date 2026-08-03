@@ -33,8 +33,8 @@ describe('runDeadlineSweep', () => {
 
   it('emits matching outbox events for retry and Console transitions', async () => {
     const rows = [
-      { id: 'inv-1', zone_id: 'z1', service_id: 'svc-1', status: 'failed' },
-      { id: 'inv-2', zone_id: 'z1', service_id: 'svc-2', status: 'timed_out' },
+      { id: 'inv-1', zone_id: 'z1', service_id: 'svc-1', status: 'failed', attempts: 1 },
+      { id: 'inv-2', zone_id: 'z1', service_id: 'svc-2', status: 'timed_out', attempts: 3 },
     ]
     const client = clientWith(rows)
     const db = { connect: vi.fn().mockResolvedValueOnce(client) }
@@ -50,7 +50,8 @@ describe('runDeadlineSweep', () => {
     const outboxInserts = client.query.mock.calls.filter((call) => String(call[0]).includes('INSERT INTO caracal_outbox'))
     expect(outboxInserts.length).toBe(1)
     const params = (outboxInserts[0]?.[1] ?? []) as unknown[]
-    expect(params).toEqual(expect.arrayContaining(['invocation.failed:inv-1', 'invocation.timed_out:inv-2']))
+    // Keyed by attempt so a later deadline on a retried invocation is not deduplicated away.
+    expect(params).toEqual(expect.arrayContaining(['invocation.failed:inv-1:1', 'invocation.timed_out:inv-2:3']))
     expect(client.query).toHaveBeenCalledWith('COMMIT')
   })
 
