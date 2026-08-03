@@ -260,7 +260,9 @@ export function defaultReplayDir(service: string): string {
 export function installShutdownHandler(client: AuditClient, timeoutMs = 2000): () => void {
   const handler = () => {
     const t = setTimeout(() => process.exit(1), timeoutMs).unref()
-    client.close().finally(() => {
+    // The exit is owned by the finally, so a rejected close still terminates rather than
+    // surfacing as an unhandled rejection during shutdown.
+    void client.close().finally(() => {
       clearTimeout(t)
       process.exit(0)
     })

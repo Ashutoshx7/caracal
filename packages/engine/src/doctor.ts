@@ -144,7 +144,7 @@ function normalizeHttpUrl(value: string, source: string): string {
   try {
     url = new URL(value)
   } catch (err) {
-    throw new Error(`${source} must be an absolute HTTP(S) URL: ${(err as Error).message}`)
+    throw new Error(`${source} must be an absolute HTTP(S) URL: ${(err as Error).message}`, { cause: err })
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new Error(`${source} must use http or https`)

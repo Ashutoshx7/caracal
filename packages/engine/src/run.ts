@@ -137,7 +137,7 @@ async function mintWithStepUp(
       'stderr',
     )
     const state = await pollApprovalState(identity.sts_url, err.approvalId, { timeoutMs: stepUpWaitMs(err.expiresAt) })
-    if (state !== 'approved') throw new Error(`approval_${state}`)
+    if (state !== 'approved') throw new Error(`approval_${state}`, { cause: err })
     return fetchRunCredential(identity.sts_url, identity.workload_id, identity.workload_secret, binding.env, {
       approvalId: err.approvalId,
       launchId,

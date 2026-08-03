@@ -69,7 +69,7 @@ function explicitValue(name: string): ResolvedValue | undefined {
       if (!value) throw new Error('empty secret file')
       return { value, source: 'file' }
     } catch (err) {
-      throw new Error(`${name}_FILE unreadable: ${(err as Error).message}`)
+      throw new Error(`${name}_FILE unreadable: ${(err as Error).message}`, { cause: err })
     }
   }
   return undefined
