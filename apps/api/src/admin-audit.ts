@@ -166,7 +166,10 @@ export interface AuditPluginOptions {
 }
 
 export function registerAdminAuditHook(app: FastifyInstance, opts: AuditPluginOptions): void {
-  if (opts.enabled === false) return
+  if (opts.enabled === false) {
+    app.decorate('auditStreamStart', async () => {})
+    return
+  }
 
   const record = (req: FastifyRequest, reply: FastifyReply, payload?: unknown): Promise<unknown> => {
     const actor: Actor | null = req.actor ?? null
@@ -206,6 +209,15 @@ export function registerAdminAuditHook(app: FastifyInstance, opts: AuditPluginOp
   }
 
   const gated = new WeakSet<FastifyRequest>()
+
+  // A hijacked reply bypasses every remaining hook, so a route that streams a mutation cannot be
+  // gated by onSend. It calls this instead, before the stream opens: the event is persisted first
+  // and the request is marked gated so the failure fallback does not write a second record. A
+  // rejection leaves the request ungated so the caller's own error response is still audited.
+  app.decorate('auditStreamStart', async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    await record(req, reply)
+    gated.add(req)
+  })
 
   // A successful mutation must not be reported as success unless its audit record is
   // durably persisted, so success responses are gated here before headers are written.

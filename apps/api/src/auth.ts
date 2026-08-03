@@ -138,6 +138,34 @@ function isApprovalDecisionPath(method: string, url: string): boolean {
   return /^\/v1\/zones\/[^/]+\/approvals\/[^/]+\/(approve|reject)$/.test(path)
 }
 
+// The global admin surfaces an account-bound Console login may reach. Per-account isolation is
+// enforced from the zone id in the path, so a route without one has no zone to check and would
+// otherwise skip the guard entirely. This allowlist names the deployment-wide surfaces the
+// Console is designed to operate, and every unlisted global route is refused - so adding a global
+// route denies Console logins by default instead of silently widening their reach.
+const ACCOUNT_GLOBAL_ROUTES: ReadonlyArray<readonly [RegExp, ReadonlySet<string>]> = [
+  // The zone collection carries no zone id, so ownership cannot be checked from the path. Both
+  // handlers scope themselves to the caller instead: the list filters on owner_account_id and the
+  // create stamps it, so a login sees and grows only its own set.
+  [/^\/v1\/zones$/, new Set(['GET', 'HEAD', 'POST'])],
+  [/^\/v1\/policy-templates(?:\/.*)?$/, new Set(['GET', 'HEAD'])],
+  [/^\/v1\/policies\/validate$/, new Set(['POST'])],
+  [/^\/v1\/operator\/status$/, new Set(['GET', 'HEAD'])],
+  [/^\/v1\/operator\/capabilities$/, new Set(['GET', 'HEAD'])],
+  [/^\/v1\/operator\/ai\/status$/, new Set(['GET', 'HEAD'])],
+  [/^\/v1\/operator\/ai\/check$/, new Set(['POST'])],
+  [/^\/v1\/operator\/ai\/providers$/, new Set(['GET', 'HEAD', 'POST'])],
+  [/^\/v1\/operator\/ai\/providers\/[^/]+$/, new Set(['PATCH', 'DELETE'])],
+  [/^\/v1\/operator\/ai\/providers\/[^/]+\/key$/, new Set(['POST'])],
+  [/^\/v1\/audit-retention$/, new Set(['GET', 'HEAD', 'PUT'])],
+  [/^\/v1\/mint-rate-limit$/, new Set(['GET', 'HEAD', 'PUT'])],
+]
+
+function isAccountGlobalPath(method: string, url: string): boolean {
+  const path = url.split('?')[0]
+  return ACCOUNT_GLOBAL_ROUTES.some(([pattern, methods]) => methods.has(method) && pattern.test(path))
+}
+
 export async function lookupAdminToken(db: DB, plaintext: string): Promise<Actor | null> {
   const digest = sha256(plaintext)
   const { rows } = await db.query<AdminTokenRow>(
@@ -345,6 +373,10 @@ export interface AuthPluginOptions {
   authFailLimitPerMin?: number
   lastUsedDebounceSec?: number
   verifyCacheTtlMs?: number
+  // Per-actor request budget, applied here rather than as a separate hook because only this
+  // plugin knows the actor. A caller that authenticates is accounted by token id, so rotating
+  // X-Forwarded-For cannot buy more budget than the credential is allowed.
+  actorRateLimitPerMin?: number
   // The deployment admin token, used only as the shared key that verifies the BFF's per-account
   // assertion. When omitted, account binding is unavailable; deployments that issue derived
   // Console credentials configure this key from the same deployment secret.
@@ -357,6 +389,16 @@ const adminAuthImpl: FastifyPluginAsync<AuthPluginOptions> = async (fastify, opt
   const failLimit = opts.authFailLimitPerMin ?? 0
   const debounceSec = opts.lastUsedDebounceSec ?? 0
   const accountKey = opts.accountAssertionKey ?? null
+  const actorRateLimit = opts.actorRateLimitPerMin ?? 0
+
+  async function overActorRateLimit(actorId: string): Promise<boolean> {
+    if (!redis || actorRateLimit <= 0) return false
+    const minute = await redisMinuteBucket(redis)
+    const key = `api:v1_rl:actor:${actorId}:${minute}`
+    const count = await redis.incr(key)
+    if (count === 1) await redis.expire(key, 90)
+    return count > actorRateLimit
+  }
 
   // Resolves the account behind a request from the BFF's signed assertion. Direct admin calls do
   // not carry this signal; every derived Console credential must carry a valid assertion so an
@@ -520,7 +562,8 @@ const adminAuthImpl: FastifyPluginAsync<AuthPluginOptions> = async (fastify, opt
     // mutations remain blocked by the reserved-zone guard above. The check covers reads and writes
     // and every zone-scoped child path, since they all carry the zone id in the URL, so one account
     // can never see or change another account's zone, applications, policies, audit, or operator
-    // history.
+    // history. A path with no zone id cannot be checked that way, so it is refused unless it names
+    // a deployment-wide surface the Console is meant to operate.
     const accountRequired = Boolean(accountKey) && isDerivedConsoleActor(actor)
     const account = accountRequired ? resolveAccount(req) : null
     if (accountRequired && !account) {
@@ -528,7 +571,11 @@ const adminAuthImpl: FastifyPluginAsync<AuthPluginOptions> = async (fastify, opt
     }
     if (account) {
       const reqZone = zoneFromUrl(req.url)
-      if (reqZone !== INVALID_ZONE_ID) {
+      if (reqZone === INVALID_ZONE_ID) {
+        if (!isAccountGlobalPath(req.method, req.url)) {
+          return reply.code(403).send({ error: 'account_scope_required' })
+        }
+      } else {
         const meta = await zoneMeta(reqZone)
         const ownedByCaller = meta.owner === account.id
         const sharedSystemRead = meta.reserved && isReadOnlyRequest(req.method, req.url)
@@ -536,6 +583,10 @@ const adminAuthImpl: FastifyPluginAsync<AuthPluginOptions> = async (fastify, opt
           return reply.code(403).send({ error: 'zone_forbidden' })
         }
       }
+    }
+
+    if (await overActorRateLimit(actor.id)) {
+      return reply.code(429).send({ error: 'rate_limited' })
     }
 
     req.actor = actor

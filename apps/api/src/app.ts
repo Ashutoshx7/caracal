@@ -247,11 +247,11 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
   })
 
   if (cfg.v1RateLimitPerMin > 0) {
-    // Pre-auth bucket keyed by IP. After-auth re-evaluation happens in preHandler
-    // so authenticated callers are accounted by actor.id (preventing X-Forwarded-For evasion).
-    // Deployment requirement when trustProxy=true: the upstream proxy must strip any
-    // client-supplied X-Forwarded-For; otherwise unauthenticated callers can rotate the
-    // header to bypass the per-IP bucket.
+    // Pre-auth bucket keyed by IP. The per-actor bucket lives in the auth plugin, which is the
+    // only place the actor is resolved: a hook registered here would run before authentication
+    // and never see one. Deployment requirement when trustProxy=true: the upstream proxy must
+    // strip any client-supplied X-Forwarded-For; otherwise unauthenticated callers can rotate
+    // the header to bypass the per-IP bucket.
     const tick = async (key: string): Promise<number> => {
       const n = await redis.incr(key)
       if (n === 1) await redis.expire(key, 90)
@@ -265,15 +265,6 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
         return reply.code(429).send({ error: 'rate_limited' })
       }
     })
-    app.addHook('preHandler', async (req, reply) => {
-      if (!req.url.startsWith('/v1/')) return
-      if (!req.actor?.id) return
-      const minute = await redisMinuteBucket(redis)
-      const count = await tick(`api:v1_rl:actor:${req.actor.id}:${minute}`)
-      if (count > cfg.v1RateLimitPerMin) {
-        return reply.code(429).send({ error: 'rate_limited' })
-      }
-    })
   }
 
   await app.register(adminAuthPlugin, {
@@ -282,6 +273,7 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
     authFailLimitPerMin: cfg.adminAuthFailLimitPerMin,
     lastUsedDebounceSec: cfg.lastUsedDebounceSec,
     accountAssertionKey: cfg.bootstrapAdminToken,
+    actorRateLimitPerMin: cfg.v1RateLimitPerMin,
   })
   registerAdminAuditHook(app, { db, hmacKey: cfg.auditHmacKey })
 

@@ -1039,6 +1039,7 @@ export const consoleApi = {
             ...(patch.contextWindow !== undefined ? { context_window: patch.contextWindow } : {}),
             ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
             ...(patch.auth ? { auth: serializeAuth(patch.auth) } : {}),
+            ...(patch.apiKey !== undefined ? { api_key: patch.apiKey } : {}),
           }),
         }),
       rotateKey: (slug: string, apiKey: string) =>
