@@ -15,6 +15,10 @@ declare module 'fastify' {
     redis: RedisClient
     cfg?: Config
     secrets: SecretBackend
+    // Records the admin audit event for a response that is about to be hijacked. Hijacking
+    // skips the onSend gate, so a streaming mutation must gate itself through this before it
+    // writes a byte. Rejects when the record cannot be persisted.
+    auditStreamStart: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
   }
 }
 

@@ -57,7 +57,12 @@ import { createStateResearcher } from '../operator-research.js'
 import type { Evidence } from '../operator-research.js'
 import { retrieveDocs } from '../operator-docs.js'
 import { summarizeHistory, type ConversationFacts } from '../operator-memory.js'
-import { OperatorAiNotFoundError, OperatorAiUnavailableError, type OperatorAiManager } from '../operator-ai-manager.js'
+import {
+  OperatorAiKeyRequiredError,
+  OperatorAiNotFoundError,
+  OperatorAiUnavailableError,
+  type OperatorAiManager,
+} from '../operator-ai-manager.js'
 import { PROVIDER_SLUG_PATTERN } from '../operator-ai-store.js'
 import { assertMessageRunTransition, isTerminalMessageRunState, type MessageRunState } from '../operator-message-state.js'
 
@@ -170,12 +175,16 @@ const CancelRunBody = z.object({ client_message_id: MessageRunId }).strict()
 const MESSAGE_CONTEXT_WINDOW = 10
 
 // The response headers that open a Server-Sent Events stream for a message turn. no-transform
-// keeps a proxy from buffering the stream, so stage events reach the client as they happen.
+// keeps a proxy from buffering the stream, so stage events reach the client as they happen. The
+// hijacked response never reaches the shared onSend hook, so it carries that hook's security
+// headers itself.
 const SSE_HEADERS = {
   'content-type': 'text/event-stream',
   'cache-control': 'no-cache, no-transform',
   connection: 'keep-alive',
   'x-accel-buffering': 'no',
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'no-referrer',
 } as const
 
 // How often a comment frame is written while a turn is deliberating. A model call runs without
@@ -979,6 +988,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       context_window: z.number().int().min(0).max(10_000_000).optional(),
       enabled: z.boolean().optional(),
       auth: AuthBody,
+      api_key: z.string().min(1).max(8000).optional(),
     })
     .strict()
   const RotateKeyBody = z.object({ api_key: z.string().min(1).max(8000) }).strict()
@@ -994,6 +1004,10 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     }
     if (err instanceof OperatorAiNotFoundError) {
       reply.code(404).send({ error: 'provider_not_found' })
+      return true
+    }
+    if (err instanceof OperatorAiKeyRequiredError) {
+      reply.code(400).send({ error: 'api_key_required_for_base_url_change' })
       return true
     }
     return false
@@ -1040,6 +1054,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         contextWindow: parsed.data.context_window,
         enabled: parsed.data.enabled,
         auth: parsed.data.auth ? toAuthPlacement(parsed.data.auth) : undefined,
+        apiKey: parsed.data.api_key,
       })
       return provider
     } catch (err) {
@@ -2171,8 +2186,20 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     // stop becomes a terminal error frame rather than being swallowed.
     const wantsStream = (req.headers.accept ?? '').includes('text/event-stream')
     if (wantsStream) {
+      // Hijacking stops every remaining hook, including the fail-closed admin audit gate, so this
+      // mutation records its own event first. A record that cannot be persisted refuses the
+      // stream rather than applying an unaudited turn, matching the gate's posture exactly.
+      try {
+        await fastify.auditStreamStart(req, reply)
+      } catch (err) {
+        req.log.error({ err, requestId: req.id }, 'admin audit record could not be persisted; refusing to stream')
+        return reply.code(500).send({
+          error: 'audit_unavailable',
+          error_description: 'operation applied but its audit record could not be persisted',
+        })
+      }
       reply.hijack()
-      reply.raw.writeHead(200, SSE_HEADERS)
+      reply.raw.writeHead(200, { ...SSE_HEADERS, 'x-request-id': String(req.id) })
       // Keep the stream's bytes flowing while a model call runs without emitting a frame, so no
       // proxy or browser inactivity deadline mistakes a slow deliberation for a stalled connection.
       // The comment frame names no event, so the console's stream reader ignores it. The socket

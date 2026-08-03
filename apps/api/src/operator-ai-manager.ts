@@ -61,6 +61,9 @@ export interface UpdateProviderInput {
   contextWindow?: number
   enabled?: boolean
   auth?: AuthPlacement
+  // Required when baseUrl changes, so the endpoint and the credential it receives always move
+  // together. Omitted on every other update, which reconciles without re-sealing.
+  apiKey?: string
 }
 
 // Raised when a write is attempted while governed execution is not configured. The routes map
@@ -77,6 +80,18 @@ export class OperatorAiNotFoundError extends Error {
   constructor(slug: string) {
     super(`operator provider '${slug}' not found`)
     this.name = 'OperatorAiNotFoundError'
+  }
+}
+
+// Raised when an update moves a provider's endpoint without supplying the key to seal for it.
+// The sealed key is bound to the provider slug rather than the URL, so reconciling a changed
+// baseUrl without a new key would re-point the existing credential at the new endpoint and hand
+// it to whoever operates that host on the next call. Requiring the key makes the two move as one
+// operation, and the old credential is replaced rather than forwarded.
+export class OperatorAiKeyRequiredError extends Error {
+  constructor(slug: string) {
+    super(`operator provider '${slug}' requires a new api key when its base url changes`)
+    this.name = 'OperatorAiKeyRequiredError'
   }
 }
 
@@ -214,16 +229,19 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
       if (!this.available()) throw new OperatorAiUnavailableError()
       const existing = await getAiProvider(deps.db, slug)
       if (!existing) throw new OperatorAiNotFoundError(slug)
+      const baseUrl = patch.baseUrl ?? existing.baseUrl
+      const endpointMoved = baseUrl !== existing.baseUrl
+      if (endpointMoved && !patch.apiKey) throw new OperatorAiKeyRequiredError(slug)
       const record = await upsertAiProvider(deps.db, {
         slug,
         label: patch.label ?? existing.label,
-        baseUrl: patch.baseUrl ?? existing.baseUrl,
+        baseUrl,
         models: patch.models ?? existing.models,
         contextWindow: patch.contextWindow ?? existing.contextWindow,
         enabled: patch.enabled ?? existing.enabled,
         auth: patch.auth ?? existing.auth,
       })
-      await reconcile()
+      await reconcile(patch.apiKey ? { slug, apiKey: patch.apiKey } : undefined)
       return toView(record)
     },
 

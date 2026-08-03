@@ -1166,6 +1166,9 @@ export interface OperatorAiProviderPatch {
   contextWindow?: number;
   enabled?: boolean;
   auth?: OperatorAiAuth;
+  // Required by the API whenever baseUrl changes: the endpoint and the credential sealed for it
+  // always move together.
+  apiKey?: string;
 }
 
 export interface OperatorUsage {
