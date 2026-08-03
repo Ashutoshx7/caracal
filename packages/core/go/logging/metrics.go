@@ -25,16 +25,15 @@ type Metrics struct {
 	Sampled    uint64 `json:"sampled"`
 }
 
-var (
-	globalWriter   *asyncWriter
-	globalWriterMu sync.Mutex
-)
+var globalWriter atomic.Pointer[asyncWriter]
+
+var globalWriterMu sync.Mutex
 
 func newAsyncWriter(sink io.Writer) *asyncWriter {
 	globalWriterMu.Lock()
 	defer globalWriterMu.Unlock()
-	if globalWriter != nil {
-		return globalWriter
+	if existing := globalWriter.Load(); existing != nil {
+		return existing
 	}
 	cap := uint64(16384)
 	if v := os.Getenv("CARACAL_LOG_QUEUE_SIZE"); v != "" {
@@ -47,9 +46,10 @@ func newAsyncWriter(sink io.Writer) *asyncWriter {
 		ch:       make(chan []byte, cap),
 		queueCap: cap,
 		done:     make(chan struct{}),
+		stop:     make(chan struct{}),
 	}
 	go w.run()
-	globalWriter = w
+	globalWriter.Store(w)
 	return w
 }
 
@@ -62,6 +62,7 @@ type asyncWriter struct {
 	pending  atomic.Int64
 	closed   atomic.Bool
 	done     chan struct{}
+	stop     chan struct{}
 }
 
 func (w *asyncWriter) Write(p []byte) (int, error) {
@@ -83,9 +84,22 @@ func (w *asyncWriter) Write(p []byte) (int, error) {
 
 func (w *asyncWriter) run() {
 	defer close(w.done)
-	for buf := range w.ch {
-		_, _ = w.sink.Write(buf)
-		w.pending.Add(-1)
+	for {
+		select {
+		case buf := <-w.ch:
+			_, _ = w.sink.Write(buf)
+			w.pending.Add(-1)
+		case <-w.stop:
+			for {
+				select {
+				case buf := <-w.ch:
+					_, _ = w.sink.Write(buf)
+					w.pending.Add(-1)
+				default:
+					return
+				}
+			}
+		}
 	}
 }
 
@@ -107,7 +121,10 @@ func (w *asyncWriter) Close(timeout time.Duration) {
 		return
 	}
 	w.Flush(timeout)
-	close(w.ch)
+	// The record channel is deliberately never closed: a writer that passed the closed check is
+	// already committed to sending, and closing underneath it would panic the process during
+	// shutdown - exactly when in-flight requests are still logging.
+	close(w.stop)
 	select {
 	case <-w.done:
 	case <-time.After(timeout):
@@ -116,32 +133,31 @@ func (w *asyncWriter) Close(timeout time.Duration) {
 
 // MetricsSnapshot returns a stable snapshot of the current dev-log counters.
 func MetricsSnapshot() Metrics {
-	if globalWriter == nil {
+	w := globalWriter.Load()
+	if w == nil {
 		return Metrics{}
 	}
 	return Metrics{
-		Emitted:    globalWriter.emitted.Load(),
-		Dropped:    globalWriter.dropped.Load(),
-		QueueDepth: uint64(len(globalWriter.ch)),
-		QueueCap:   globalWriter.queueCap,
+		Emitted:    w.emitted.Load(),
+		Dropped:    w.dropped.Load(),
+		QueueDepth: uint64(len(w.ch)),
+		QueueCap:   w.queueCap,
 		Sampled:    debugCounter.Load(),
 	}
 }
 
 // FlushDevLogs blocks until the background queue is drained or timeout elapses.
 func FlushDevLogs(timeout time.Duration) {
-	if globalWriter == nil {
-		return
+	if w := globalWriter.Load(); w != nil {
+		w.Flush(timeout)
 	}
-	globalWriter.Flush(timeout)
 }
 
 // CloseDevLogs flushes and stops the dev-log writer. Idempotent.
 func CloseDevLogs(timeout time.Duration) {
-	if globalWriter == nil {
-		return
+	if w := globalWriter.Load(); w != nil {
+		w.Close(timeout)
 	}
-	globalWriter.Close(timeout)
 }
 
 // InstallShutdownHandler wires SIGTERM/SIGINT to flush the dev-log writer and

@@ -6,6 +6,7 @@
 package internal
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -60,15 +61,22 @@ func (c *verifiedSecretCache) configure(concurrency int) {
 	c.mu.Unlock()
 }
 
-func (c *verifiedSecretCache) acquireSlot() chan struct{} {
+// acquireSlot waits for room in the Argon2id budget, giving up if the caller goes away. Without
+// that check a client that hung up still holds a slot for the full derivation, so a burst of
+// abandoned requests starves the callers that are still waiting for an answer.
+func (c *verifiedSecretCache) acquireSlot(ctx context.Context) (chan struct{}, bool) {
 	c.mu.Lock()
 	if c.slots == nil {
 		c.slots = make(chan struct{}, 1)
 	}
 	slots := c.slots
 	c.mu.Unlock()
-	slots <- struct{}{}
-	return slots
+	select {
+	case slots <- struct{}{}:
+		return slots, true
+	case <-ctx.Done():
+		return nil, false
+	}
 }
 
 // verify checks a presented secret against the stored Argon2id hash. The cached
@@ -76,7 +84,7 @@ func (c *verifiedSecretCache) acquireSlot() chan struct{} {
 // full Argon2id derivation: the cache only ever accelerates the known-good secret,
 // it can never change an outcome. The stored form at rest stays Argon2id; only a
 // SHA-256 digest of an already-verified secret is held in process memory.
-func (c *verifiedSecretCache) verify(stored, presented string) bool {
+func (c *verifiedSecretCache) verify(ctx context.Context, stored, presented string) bool {
 	if stored == "" || presented == "" {
 		return false
 	}
@@ -91,7 +99,10 @@ func (c *verifiedSecretCache) verify(stored, presented string) bool {
 	if ok && now.Before(entry.expiresAt) && subtle.ConstantTimeCompare(digest[:], entry.digest[:]) == 1 {
 		return true
 	}
-	slots := c.acquireSlot()
+	slots, ok := c.acquireSlot(ctx)
+	if !ok {
+		return false
+	}
 	verified := verifyArgon2id(stored, presented)
 	<-slots
 	if !verified {

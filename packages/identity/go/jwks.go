@@ -38,9 +38,14 @@ type jwksEntry struct {
 type JWKSCache struct {
 	mu     sync.RWMutex
 	cache  map[string]*jwksEntry
+	fetch  map[string]*sync.Mutex
 	client *http.Client
 	ttl    time.Duration
 }
+
+// maxFetchLocks bounds the per-key fetch-lock map. Unknown zones are never cached, so an
+// unauthenticated caller supplying arbitrary zone ids would otherwise grow it without limit.
+const maxFetchLocks = 4096
 
 // NewJWKSCache creates a cache using the supplied HTTP client. A nil client uses
 // a bounded default client; caller-owned clients are never closed by the cache.
@@ -51,7 +56,23 @@ func NewJWKSCache(client *http.Client, ttl time.Duration) *JWKSCache {
 	if ttl <= 0 {
 		ttl = jwksTTL
 	}
-	return &JWKSCache{cache: map[string]*jwksEntry{}, client: client, ttl: ttl}
+	return &JWKSCache{cache: map[string]*jwksEntry{}, fetch: map[string]*sync.Mutex{}, client: client, ttl: ttl}
+}
+
+// fetchLock returns the lock that serializes fetches for one cache key, so a slow issuer blocks
+// only the keyset being refreshed rather than every verification in the process.
+func (c *JWKSCache) fetchLock(key string) *sync.Mutex {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.fetch) > maxFetchLocks {
+		c.fetch = map[string]*sync.Mutex{}
+	}
+	lock, ok := c.fetch[key]
+	if !ok {
+		lock = &sync.Mutex{}
+		c.fetch[key] = lock
+	}
+	return lock
 }
 
 var defaultJWKSCache = NewJWKSCache(nil, jwksTTL)
@@ -87,11 +108,18 @@ func (c *JWKSCache) Get(ctx context.Context, issuer, zoneID string) (map[string]
 		return entry.keys, nil
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if entry, ok := c.cache[cacheKey]; ok && time.Since(entry.fetchedAt) < c.ttl {
+	lock := c.fetchLock(cacheKey)
+	lock.Lock()
+	defer lock.Unlock()
+
+	// Another caller may have refreshed this keyset while this one waited for the fetch lock.
+	c.mu.RLock()
+	entry, ok = c.cache[cacheKey]
+	c.mu.RUnlock()
+	if ok && time.Since(entry.fetchedAt) < c.ttl {
 		return entry.keys, nil
 	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
 	if err != nil {
 		return nil, err
@@ -130,8 +158,15 @@ func (c *JWKSCache) Get(ctx context.Context, issuer, zoneID string) (map[string]
 		}
 		keys[kid] = key
 	}
+	// Caching an empty set would deny every verification for this zone until the TTL expired,
+	// long after the issuer recovered from a rotation or a transient serving fault.
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("jwks: no usable keys")
+	}
 
+	c.mu.Lock()
 	c.cache[cacheKey] = &jwksEntry{keys: keys, fetchedAt: time.Now()}
+	c.mu.Unlock()
 	return keys, nil
 }
 
@@ -139,6 +174,7 @@ func (c *JWKSCache) Get(ctx context.Context, issuer, zoneID string) (map[string]
 func ResetJWKSCache() {
 	defaultJWKSCache.mu.Lock()
 	defaultJWKSCache.cache = map[string]*jwksEntry{}
+	defaultJWKSCache.fetch = map[string]*sync.Mutex{}
 	defaultJWKSCache.mu.Unlock()
 }
 
