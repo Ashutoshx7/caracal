@@ -99,6 +99,7 @@ async function buildPluginApp(
     lastUsedDebounceSec?: number
     verifyCacheTtlMs?: number
     accountAssertionKey?: string | null
+    actorRateLimitPerMin?: number
   } = {},
 ) {
   const app = Fastify({ logger: false })
@@ -109,6 +110,7 @@ async function buildPluginApp(
     lastUsedDebounceSec: options.lastUsedDebounceSec,
     verifyCacheTtlMs: options.verifyCacheTtlMs,
     accountAssertionKey: options.accountAssertionKey,
+    actorRateLimitPerMin: options.actorRateLimitPerMin,
   })
   app.get('/v1/zones', async (req) => ({ ok: true, actor: req.actor, account: req.account }))
   app.get('/v1/zones/:zoneId/things', async (req) => ({ ok: true, params: req.params }))
@@ -118,6 +120,12 @@ async function buildPluginApp(
   app.post('/v1/policies/validate', async () => ({ ok: true }))
   app.post('/v1/zones/:zoneId/approvals/:id/approve', async () => ({ ok: true }))
   app.post('/v1/zones/:zoneId/approvals/:id/reject', async () => ({ ok: true }))
+  app.put('/v1/audit-retention', async () => ({ ok: true }))
+  app.put('/v1/mint-rate-limit', async () => ({ ok: true }))
+  app.patch('/v1/operator/ai/providers/:slug', async () => ({ ok: true }))
+  app.get('/v1/operator/status', async () => ({ ok: true }))
+  app.post('/v1/admin-tokens', async () => ({ ok: true }))
+  app.get('/v1/admin-tokens', async () => ({ ok: true }))
   return app
 }
 
@@ -672,6 +680,91 @@ describe('account assertion binding', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json().account).toBeNull()
     await app.close()
+  })
+
+  describe('global paths', () => {
+    async function callAsAccount(method: 'GET' | 'POST' | 'PUT' | 'PATCH', url: string) {
+      const app = await buildPluginApp(makeDb({ token: 'secret', createdBy: 'env-derived-write' }), undefined, {
+        accountAssertionKey: 'secret',
+      })
+      const exp = Math.floor(Date.now() / 1000) + 60
+      const res = await app.inject({
+        method,
+        url,
+        headers: { authorization: 'Bearer secret', 'x-caracal-account': bind('secret', 'acct-7', exp) },
+      })
+      await app.close()
+      return res
+    }
+
+    it('allows the deployment-wide surfaces the Console operates', async () => {
+      for (const [method, url] of [
+        ['GET', '/v1/operator/status'],
+        ['PUT', '/v1/audit-retention'],
+        ['PUT', '/v1/mint-rate-limit'],
+        ['PATCH', '/v1/operator/ai/providers/openai'],
+        ['POST', '/v1/policies/validate'],
+      ] as const) {
+        const res = await callAsAccount(method, url)
+        expect({ method, url, status: res.statusCode }).toEqual({ method, url, status: 200 })
+      }
+    })
+
+    it('refuses an unlisted global path so a new route cannot silently escape account scope', async () => {
+      for (const [method, url] of [
+        ['POST', '/v1/admin-tokens'],
+        ['GET', '/v1/admin-tokens'],
+      ] as const) {
+        const res = await callAsAccount(method, url)
+        expect({ method, status: res.statusCode }).toEqual({ method, status: 403 })
+        expect(res.json()).toEqual({ error: 'account_scope_required' })
+      }
+    })
+  })
+
+  describe('per-actor rate limit', () => {
+    function countingRedis(count: number) {
+      const keys: string[] = []
+      return {
+        keys,
+        redis: {
+          incr: async (k: string) => {
+            keys.push(k)
+            return count
+          },
+          expire: async () => 1,
+          set: async () => 'OK' as const,
+          time: async () => ['1700000000', '0'],
+        },
+      }
+    }
+
+    it('accounts an authenticated caller by token id, not by address', async () => {
+      const { keys, redis } = countingRedis(1)
+      const app = await buildPluginApp(makeDb({ token: 'secret' }), redis as never, { actorRateLimitPerMin: 5 })
+      const res = await app.inject({ method: 'GET', url: '/v1/zones', headers: { authorization: 'Bearer secret' } })
+      expect(res.statusCode).toBe(200)
+      expect(keys.some((k) => k.startsWith('api:v1_rl:actor:t1:'))).toBe(true)
+      await app.close()
+    })
+
+    it('refuses once the actor budget is exhausted', async () => {
+      const { redis } = countingRedis(6)
+      const app = await buildPluginApp(makeDb({ token: 'secret' }), redis as never, { actorRateLimitPerMin: 5 })
+      const res = await app.inject({ method: 'GET', url: '/v1/zones', headers: { authorization: 'Bearer secret' } })
+      expect(res.statusCode).toBe(429)
+      expect(res.json()).toEqual({ error: 'rate_limited' })
+      await app.close()
+    })
+
+    it('stays off when no budget is configured', async () => {
+      const { keys, redis } = countingRedis(99)
+      const app = await buildPluginApp(makeDb({ token: 'secret' }), redis as never)
+      const res = await app.inject({ method: 'GET', url: '/v1/zones', headers: { authorization: 'Bearer secret' } })
+      expect(res.statusCode).toBe(200)
+      expect(keys.some((k) => k.startsWith('api:v1_rl:actor:'))).toBe(false)
+      await app.close()
+    })
   })
 
   it('rejects a derived Console credential when the assertion is missing', async () => {

@@ -520,6 +520,56 @@ resource = "calendar"
 })
 
 describe('caracal.transport', () => {
+  // Base64url-encodes a payload into a JWT-shaped token so the `use` claim can be read back.
+  function jwtWithUse(use: string): string {
+    const seg = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url')
+    return `${seg({ alg: 'ES256' })}.${seg({ use })}.sig`
+  }
+
+  it('does not follow redirects while a mandate is attached', async () => {
+    const calls: RequestInit[] = []
+    const fakeFetch = vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+      calls.push(init)
+      return new Response(null, { status: 204 })
+    }) as unknown as typeof fetch
+    const c = new Caracal({
+      ...baseConfig,
+      coordinator: { baseUrl: 'http://c', fetchImpl: fakeFetch },
+      gatewayUrl: 'https://gateway.example.com/proxy',
+    })
+    const request = c.gatewayRequest('resource://calendar', 'events')
+    await c.transport({ asApplication: true })(request.url, { headers: request.headers })
+    expect(calls[0].redirect).toBe('manual')
+  })
+
+  it('refuses a lifecycle mandate on a gateway call', async () => {
+    const fakeFetch = vi.fn(async () => new Response(null, { status: 204 })) as unknown as typeof fetch
+    const c = new Caracal({
+      ...baseConfig,
+      subjectToken: jwtWithUse('session'),
+      coordinator: { baseUrl: 'http://c', fetchImpl: fakeFetch },
+      gatewayUrl: 'https://gateway.example.com/proxy',
+    })
+    const request = c.gatewayRequest('resource://calendar', 'events')
+    await expect(c.transport({ asApplication: true })(request.url, { headers: request.headers })).rejects.toThrow(
+      /use=gateway mandate; received use=session/,
+    )
+    expect(fakeFetch).not.toHaveBeenCalled()
+  })
+
+  it('allows a gateway-class mandate', async () => {
+    const fakeFetch = vi.fn(async () => new Response(null, { status: 204 })) as unknown as typeof fetch
+    const c = new Caracal({
+      ...baseConfig,
+      subjectToken: jwtWithUse('gateway'),
+      coordinator: { baseUrl: 'http://c', fetchImpl: fakeFetch },
+      gatewayUrl: 'https://gateway.example.com/proxy',
+    })
+    const request = c.gatewayRequest('resource://calendar', 'events')
+    await c.transport({ asApplication: true })(request.url, { headers: request.headers })
+    expect(fakeFetch).toHaveBeenCalledOnce()
+  })
+
   it('refuses application-identity transport without explicit opt-in', async () => {
     const c = new Caracal(baseConfig)
     await expect(c.transport()('http://api/x')).rejects.toThrow(/asApplication/)

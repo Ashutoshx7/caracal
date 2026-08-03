@@ -13,6 +13,7 @@ import {
   providerConfigId,
   OperatorAiUnavailableError,
   OperatorAiNotFoundError,
+  OperatorAiKeyRequiredError,
 } from '../../../../apps/api/src/operator-ai-manager.js'
 import type { ProviderConfig } from '../../../../apps/api/src/operator-gateway.js'
 import type { OperatorControlIdentity } from '../../../../apps/api/src/config.js'
@@ -418,6 +419,40 @@ describe('operator ai manager lifecycle', () => {
       auth: AUTH,
     })
     await manager.rotateKey('openai', 'sk-2')
+    expect(state.providers[0].config_json.api_key).toBe('sk-2')
+  })
+
+  it('refuses to move the endpoint without a key, so the sealed key is never re-pointed', async () => {
+    const { manager, state } = buildManager(IDENTITY)
+    await manager.create({
+      slug: 'openai',
+      label: 'OpenAI',
+      baseUrl: 'https://api/v1',
+      models: ['gpt-5.5'],
+      contextWindow: 0,
+      apiKey: 'sk-1',
+      enabled: true,
+      auth: AUTH,
+    })
+    await expect(manager.update('openai', { baseUrl: 'https://attacker.example/v1' })).rejects.toBeInstanceOf(OperatorAiKeyRequiredError)
+    // The rejected edit changed nothing: the endpoint and its sealed key are both untouched.
+    expect(state.providers[0].config_json.api_key).toBe('sk-1')
+    expect(state.resources[0].upstream_url).toBe('https://api/v1')
+  })
+
+  it('re-seals the supplied key when the endpoint moves', async () => {
+    const { manager, state } = buildManager(IDENTITY)
+    await manager.create({
+      slug: 'openai',
+      label: 'OpenAI',
+      baseUrl: 'https://api/v1',
+      models: ['gpt-5.5'],
+      contextWindow: 0,
+      apiKey: 'sk-1',
+      enabled: true,
+      auth: AUTH,
+    })
+    await manager.update('openai', { baseUrl: 'https://api-2/v1', apiKey: 'sk-2' })
     expect(state.providers[0].config_json.api_key).toBe('sk-2')
   })
 

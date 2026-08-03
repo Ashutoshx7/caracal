@@ -30,6 +30,7 @@ function buildApp(
     fetchImpl?: typeof fetch
     autopilotPolicy?: ReturnType<typeof buildAutopilotPolicy>
     aiGovernance?: { maxOutputTokens: number; maxCallsPerTurn: number }
+    auditStreamStart?: () => Promise<void>
   } = {},
 ) {
   const app = Fastify({ logger: false })
@@ -48,6 +49,7 @@ function buildApp(
   }
   app.decorate('db', db as unknown as DB)
   app.decorate('redis', redis as unknown as RedisClient)
+  app.decorate('auditStreamStart', authorityOpts.auditStreamStart ?? (async () => {}))
   app.addHook('preHandler', async (req) => {
     ;(req as unknown as { actor: unknown }).actor = {
       id: 'actor-1',
@@ -2581,6 +2583,34 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     const terminal = frames.at(-1)!
     expect(terminal.event).toBe('error')
     expect(terminal.data).toMatchObject({ error: 'ai_budget_exceeded', max_calls: 1, status: 429 })
+  })
+
+  it('refuses to stream when the admin audit record cannot be persisted', async () => {
+    const fetchImpl = fetchReturning('{"tier":"conversational","topic":"general"}', 'hello')
+    const { app, clientQuery, db } = buildApp(true, {
+      aiProviders: [provider],
+      fetchImpl,
+      auditStreamStart: async () => {
+        throw new Error('audit sink down')
+      },
+    })
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: false, next_seq: 1 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-1', seq: 1, kind: 'message' }] })
+      .mockResolvedValueOnce(undefined)
+    db.query.mockResolvedValue({ rows: [] })
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'connect github' },
+      headers: { accept: 'text/event-stream' },
+    })
+    expect(res.statusCode).toBe(500)
+    expect(res.headers['content-type']).not.toContain('text/event-stream')
+    expect(res.json()).toMatchObject({ error: 'audit_unavailable' })
   })
 
   it('ends the stream with an interruption frame when a provider drops after streaming, never failing over', async () => {
