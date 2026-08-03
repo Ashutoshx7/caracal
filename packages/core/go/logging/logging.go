@@ -177,7 +177,23 @@ func (s samplingHook) Write(p []byte) (int, error) {
 			return len(p), nil
 		}
 	}
-	return s.w.Write(p)
+	if _, err := s.w.Write(redactRecord(p)); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+// redactRecord scrubs secret material from a serialized record. Every service logger writes
+// through this one point, so a credential that reaches a field value or an error string is
+// scrubbed regardless of which call site produced it - a call site cannot opt out by forgetting.
+// The replacement value contains no JSON metacharacters, so a scrubbed record stays parseable.
+func redactRecord(p []byte) []byte {
+	raw := string(p)
+	redacted := RedactString(raw)
+	if redacted == raw {
+		return p
+	}
+	return []byte(redacted)
 }
 
 func isDebugLine(p []byte) bool {

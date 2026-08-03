@@ -58,10 +58,14 @@ var (
 	githubPAT     = regexp.MustCompile(`gh[pousr]_[A-Za-z0-9]{36,255}`)
 	slackToken    = regexp.MustCompile(`xox[abprs]-[A-Za-z0-9\-]{10,}`)
 	pemBlock      = regexp.MustCompile(`(?s)-----BEGIN [A-Z ]+PRIVATE KEY-----.*?-----END [A-Z ]+PRIVATE KEY-----`)
+	// A credential placed in a query parameter travels inside the URL, and a transport error
+	// prints that URL verbatim. The value is bounded by the JSON string it may be embedded in,
+	// so a scrubbed record stays valid JSON.
+	querySecret = regexp.MustCompile(`(?i)([?&][^=&\s"]*(?:api[_-]?key|token|secret|password|signature|access[_-]?key|auth)[^=&\s"]*=)[^&\s"\\]+`)
 )
 
-// RedactString scrubs Bearer tokens, JWT-shaped substrings, and common cloud
-// secret patterns (AWS, GCP, GitHub, Slack, PEM private keys) from a string.
+// RedactString scrubs Bearer tokens, JWT-shaped substrings, secret-bearing query parameters,
+// and common cloud secret patterns (AWS, GCP, GitHub, Slack, PEM private keys) from a string.
 // Cheap on the common path (no allocation when no match).
 func RedactString(s string) string {
 	if len(s) < 16 {
@@ -75,6 +79,7 @@ func RedactString(s string) string {
 	s = gcpKey.ReplaceAllString(s, RedactValue)
 	s = githubPAT.ReplaceAllString(s, RedactValue)
 	s = slackToken.ReplaceAllString(s, RedactValue)
+	s = querySecret.ReplaceAllString(s, "${1}"+RedactValue)
 	return s
 }
 

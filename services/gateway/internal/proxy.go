@@ -367,7 +367,11 @@ func (p *proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		status, code, msg := classifyUpstreamError(err)
 		writeErr(w, requestID, status, code, msg)
 		p.metrics.UpstreamErrors.Add(1)
-		logger.Error().Err(err).Int("status", status).Msg("upstream request failed")
+		logger.Error().
+			Str("upstream_host", upstreamReq.URL.Host).
+			Str("cause", upstreamErrorCause(err)).
+			Int("status", status).
+			Msg("upstream request failed")
 		p.emitActionAudit(gatewayAuditInput{
 			RequestID:          requestID,
 			TraceID:            traceID,
@@ -602,6 +606,18 @@ func providerCredentialHostAllowed(upstreamURL *url.URL, hosts []string) bool {
 		}
 	}
 	return false
+}
+
+// upstreamErrorCause returns a transport failure's underlying cause without the request URL.
+// http.Client wraps every failure in a *url.Error whose message embeds the full URL, and a
+// provider credential placed in a query parameter is part of that URL - so the URL is never
+// handed to a log. The unwrapped cause keeps the diagnosable part (dial, TLS, timeout).
+func upstreamErrorCause(err error) string {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Err != nil {
+		return urlErr.Err.Error()
+	}
+	return err.Error()
 }
 
 // classifyUpstreamError maps Go HTTP transport errors to safe gateway responses.
