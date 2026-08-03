@@ -76,6 +76,13 @@ export function sessionLockKey(zoneId: string): string {
   return `coordinator:session_start:${zoneId}`
 }
 
+// Suspend and resume are repeatable, so an outbox key naming only the session would collapse
+// every later transition into the first one and silently drop its revocation event. The row's
+// transition timestamp identifies the occurrence instead.
+function occurrenceOf(updatedAt: Date | string): string {
+  return new Date(updatedAt).toISOString()
+}
+
 type InheritOutcome = { edgeId: string | null } | { conflict: 'inherit_parent_edge_not_active' | 'inherit_parent_edge_ambiguous' }
 
 // inheritParentEdge mirrors the parent's narrowing edge onto a freshly started
@@ -555,7 +562,7 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
         await client.query('ROLLBACK')
         return reply.code(403).send({ error: 'application_ownership_required' })
       }
-      const { rows: changed } = await client.query<{ id: string; parent_id: string | null }>(
+      const { rows: changed } = await client.query<{ id: string; parent_id: string | null; updated_at: Date | string }>(
         `WITH RECURSIVE tree AS (
            SELECT id, parent_id FROM sessions
            WHERE id = $1 AND zone_id = $2 AND status = 'suspended'
@@ -572,7 +579,7 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
               END,
               updated_at = now()
           WHERE id IN (SELECT id FROM tree) AND zone_id = $2
-          RETURNING id, parent_id`,
+          RETURNING id, parent_id, updated_at`,
         [id, zoneId, cfg.serviceSessionLeaseSeconds],
       )
       if (changed.length === 0) {
@@ -583,7 +590,7 @@ export const agentsRoutes: FastifyPluginAsync = async (fastify) => {
         client,
         changed.map((row): OutboxItem => ({
           topic: Topics.AgentsLifecycle,
-          dedupeKey: `resume:${row.id}`,
+          dedupeKey: `resume:${row.id}:${occurrenceOf(row.updated_at)}`,
           payload: { event: 'resume', zone_id: zoneId, agent_session_id: row.id, parent_id: row.parent_id },
         })),
       )
@@ -666,6 +673,7 @@ interface SuspendedRow {
   id: string
   subject_authority_record_id: string
   parent_id: string | null
+  updated_at: Date | string
 }
 
 export async function suspendSubtree(client: PoolClient, zoneId: string, rootIds: string[], reason: string): Promise<number> {
@@ -685,18 +693,19 @@ export async function suspendSubtree(client: PoolClient, zoneId: string, rootIds
        UPDATE sessions
        SET status = 'suspended', updated_at = now()
        WHERE id IN (SELECT id FROM tree) AND zone_id = $2
-       RETURNING id, subject_authority_record_id, parent_id
+       RETURNING id, subject_authority_record_id, parent_id, updated_at
      )
-     SELECT id, subject_authority_record_id, parent_id FROM suspended`,
+     SELECT id, subject_authority_record_id, parent_id, updated_at FROM suspended`,
     [rootIds, zoneId],
   )
   if (rows.length === 0) return 0
   const exemptSessions = await revocationExemptSessions(client, zoneId, rows)
   const items: OutboxItem[] = []
   for (const row of rows) {
+    const occurrence = occurrenceOf(row.updated_at)
     items.push({
       topic: Topics.AgentsLifecycle,
-      dedupeKey: `suspend:${row.id}`,
+      dedupeKey: `suspend:${row.id}:${occurrence}`,
       payload: {
         event: 'suspend',
         zone_id: zoneId,
@@ -708,7 +717,7 @@ export async function suspendSubtree(client: PoolClient, zoneId: string, rootIds
     if (exemptSessions.has(row.subject_authority_record_id)) continue
     items.push({
       topic: Topics.SessionsRevoke,
-      dedupeKey: `agent_suspend:${row.id}`,
+      dedupeKey: `agent_suspend:${row.id}:${occurrence}`,
       payload: {
         zone_id: zoneId,
         session_id: row.subject_authority_record_id,

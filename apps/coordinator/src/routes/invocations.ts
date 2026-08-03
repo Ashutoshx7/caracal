@@ -155,7 +155,7 @@ export const invocationsRoutes: FastifyPluginAsync = async (fastify) => {
           retryPolicy,
         ],
       )
-      await enqueueInvocationEvent(client, zoneId, body.service_id, rows[0].id, 'invocation.created')
+      await enqueueInvocationEvent(client, zoneId, body.service_id, rows[0].id, 'invocation.created', rows[0].attempts)
       await completeIdempotency(client, {
         operation: 'invocation.create.v2',
         zoneId,
@@ -265,7 +265,7 @@ export const invocationsRoutes: FastifyPluginAsync = async (fastify) => {
         await client.query('ROLLBACK')
         return reply.code(409).send({ error: 'invocation_not_startable' })
       }
-      await enqueueInvocationEvent(client, zoneId, rows[0].service_id, id, 'invocation.started')
+      await enqueueInvocationEvent(client, zoneId, rows[0].service_id, id, 'invocation.started', rows[0].attempts)
       await client.query('COMMIT')
       return rows[0]
     } catch (err) {
@@ -310,7 +310,7 @@ export const invocationsRoutes: FastifyPluginAsync = async (fastify) => {
         await client.query('ROLLBACK')
         return reply.code(409).send({ error: 'invocation_not_cancelable' })
       }
-      await enqueueInvocationEvent(client, zoneId, rows[0].service_id, id, 'invocation.cancel_requested')
+      await enqueueInvocationEvent(client, zoneId, rows[0].service_id, id, 'invocation.cancel_requested', rows[0].attempts)
       await client.query('COMMIT')
       return rows[0]
     } catch (err) {
@@ -353,7 +353,7 @@ export const invocationsRoutes: FastifyPluginAsync = async (fastify) => {
         await client.query('ROLLBACK')
         return reply.code(409).send({ error: 'invocation_not_completable' })
       }
-      await enqueueInvocationEvent(client, zoneId, rows[0].service_id, id, `invocation.${body.status}`)
+      await enqueueInvocationEvent(client, zoneId, rows[0].service_id, id, `invocation.${body.status}`, rows[0].attempts)
       await client.query('COMMIT')
       return rows[0]
     } catch (err) {
@@ -418,8 +418,11 @@ async function enqueueInvocationEvent(
   serviceId: string,
   invocationId: string,
   event: string,
+  attempt: number,
 ): Promise<void> {
-  await enqueue(db, Topics.InvocationsLifecycle, `${event}:${invocationId}`, {
+  // An invocation may be retried, so the key names the attempt. Keyed on the invocation alone,
+  // every event after the first attempt would be silently swallowed as a duplicate.
+  await enqueue(db, Topics.InvocationsLifecycle, `${event}:${invocationId}:${attempt}`, {
     event,
     zone_id: zoneId,
     service_id: serviceId,

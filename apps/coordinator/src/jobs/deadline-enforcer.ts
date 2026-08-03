@@ -16,6 +16,7 @@ interface OverdueRow {
   zone_id: string
   service_id: string
   status: 'failed' | 'timed_out'
+  attempts: number
 }
 
 export async function runDeadlineSweep(db: Pool): Promise<number> {
@@ -45,13 +46,15 @@ export async function runDeadlineSweep(db: Pool): Promise<number> {
          LIMIT $1
          FOR UPDATE SKIP LOCKED
        )
-       RETURNING i.id, i.zone_id, i.service_id, i.status`,
+       RETURNING i.id, i.zone_id, i.service_id, i.status, i.attempts`,
       [cfg.sweeperBatchSize],
     )
     if (rows.length > 0) {
       const items: OutboxItem[] = rows.map((row): OutboxItem => ({
         topic: Topics.InvocationsLifecycle,
-        dedupeKey: `invocation.${row.status}:${row.id}`,
+        // The attempt makes the key name this expiry rather than the invocation, so a second
+        // deadline on a retried invocation still publishes.
+        dedupeKey: `invocation.${row.status}:${row.id}:${row.attempts}`,
         payload: {
           event: `invocation.${row.status}`,
           zone_id: row.zone_id,
