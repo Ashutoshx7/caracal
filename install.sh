@@ -299,10 +299,11 @@ if [ "${VERSION}" = "latest" ]; then
 else
     tag="${VERSION}"
 fi
-case "${tag}" in
-    v[0-9]*.[0-9]*.[0-9]*) ;;
-    *) err "release tag ${tag} is not a supported Caracal release tag" ;;
-esac
+# The tag is interpolated into download URLs, so it is matched against the full release grammar.
+# A shell glob would accept anything that merely starts with a version, including path traversal.
+if ! printf '%s' "${tag}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.(sha[0-9A-Za-z]+|[0-9]+))?$'; then
+    err "release tag ${tag} is not a supported Caracal release tag"
+fi
 base="https://github.com/${REPO}/releases/download/${tag}"
 
 section "Caracal Runtime Installer"

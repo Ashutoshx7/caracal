@@ -33,18 +33,10 @@
   "ignoreBinaries": [
     "build",
     "sync-embedded",
-    "gh",
     "go",
-    "python",
-    "icacls",
-    "scripts/release.sh"
+    "icacls"
   ],
   "ignoreDependencies": [
-    "@caracalai/core",
-    "@caracalai/engine",
-    "@caracalai/oauth",
-    "@caracalai/verify",
-    "bun",
     "tsx",
     "react",
     "react-dom",
