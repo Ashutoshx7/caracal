@@ -6,6 +6,7 @@ This file defines the unified Policies workspace covering policy sets and the po
 */
 import { appLink } from "@/platform/nav/appLink";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { PolicyEditorModal } from "@/components/console/PolicyEditor";
@@ -793,49 +794,40 @@ function describeSts(state: string): string {
 // Reports readiness so unresolved entries only surface as removed once the library
 // has actually been checked.
 function usePolicyVersionNames(zoneId: string, policies: Policy[], enabled: boolean) {
-  const [state, setState] = useState<{
-    map: Map<string, { name: string; version: number }>;
-    ready: boolean;
-  }>({ map: new Map(), ready: false });
-  const key = enabled ? policies.map((p) => p.id).join(",") : "";
-  const [seed, setSeed] = useState("");
-
-  if (enabled && key && seed !== key) {
-    setSeed(key);
-    Promise.all(policies.map((policy) => consoleApi.policies.get(zoneId, policy.id)))
-      .then((details) => {
-        const next = new Map<string, { name: string; version: number }>();
-        for (const detail of details) {
-          for (const version of detail.versions ?? []) {
-            next.set(version.id, { name: detail.name, version: version.version });
-          }
+  const ids = enabled ? policies.map((p) => p.id).join(",") : "";
+  const query = useQuery({
+    queryKey: ["console", "policy-version-names", zoneId, ids],
+    queryFn: async () => {
+      const details = await Promise.all(
+        policies.map((policy) => consoleApi.policies.get(zoneId, policy.id)),
+      );
+      const next = new Map<string, { name: string; version: number }>();
+      for (const detail of details) {
+        for (const version of detail.versions ?? []) {
+          next.set(version.id, { name: detail.name, version: version.version });
         }
-        setState({ map: next, ready: true });
-      })
-      .catch(() => undefined);
-  }
-
-  return state;
+      }
+      return next;
+    },
+    enabled: enabled && ids !== "",
+  });
+  return {
+    map: query.data ?? new Map<string, { name: string; version: number }>(),
+    ready: query.isSuccess,
+  };
 }
 
 function usePolicySetVersion(zoneId: string, policySetId: string, versionId: string | null) {
-  const [state, setState] = useState<{
-    loading: boolean;
-    error: boolean;
-    data: PolicySetVersion | null;
-    key: string;
-  }>({ loading: false, error: false, data: null, key: "" });
-
-  const key = `${policySetId}:${versionId}`;
-  if (versionId && state.key !== key) {
-    setState({ loading: true, error: false, data: null, key });
-    consoleApi.policySets
-      .getVersion(zoneId, policySetId, versionId)
-      .then((data) => setState({ loading: false, error: false, data, key }))
-      .catch(() => setState({ loading: false, error: true, data: null, key }));
-  }
-
-  return state;
+  const query = useQuery({
+    queryKey: ["console", "policy-set-version", zoneId, policySetId, versionId],
+    queryFn: () => consoleApi.policySets.getVersion(zoneId, policySetId, versionId as string),
+    enabled: Boolean(versionId),
+  });
+  return {
+    loading: query.isPending && Boolean(versionId),
+    error: query.isError,
+    data: query.data ?? null,
+  };
 }
 
 // One-click follow-up after a policy is saved: roll it into the zone's enforcing set and

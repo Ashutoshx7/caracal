@@ -11,7 +11,12 @@ import { DetailField, DetailGroup, Mono } from "@/components/console/ResourceWor
 import { Badge, Button, ConfirmDialog, Skeleton, useToast } from "@/components/ui";
 import { consoleApi } from "@/platform/api/client";
 import { coordinatorErrorMessage } from "@/platform/api/errors";
-import { useApplications, useResources, useRevokeDelegation } from "@/platform/api/hooks";
+import {
+  useApplications,
+  useDelegationChain,
+  useResources,
+  useRevokeDelegation,
+} from "@/platform/api/hooks";
 import type { DelegationEdge, DelegationHop, DelegationImpact } from "@/platform/api/types";
 
 interface DecodedConstraint {
@@ -62,29 +67,13 @@ export function DelegationInspector({
   const apps = useApplications(zoneId);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   const [tab, setTab] = useState<"chain" | "impact">("chain");
-  const [chain, setChain] = useState<DelegationHop[] | null>(null);
-  const [impact, setImpact] = useState<DelegationImpact | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [seed, setSeed] = useState("");
-
-  if (seed !== edge.id) {
-    setSeed(edge.id);
-    setChain(null);
-    setImpact(null);
-    setError(null);
-    setLoading(true);
-    Promise.all([
-      consoleApi.delegations.traverse(zoneId, edge.id),
-      consoleApi.delegations.impact(zoneId, edge.id),
-    ])
-      .then(([traverseRows, impactRes]) => {
-        setChain(traverseRows);
-        setImpact(impactRes);
-      })
-      .catch((err) => setError(coordinatorErrorMessage(err)))
-      .finally(() => setLoading(false));
-  }
+  // Keyed on the edge, so selecting another delegation while a read is in flight cancels it
+  // rather than letting the older response repaint this inspector with the wrong blast radius.
+  const detail = useDelegationChain(zoneId, edge.id);
+  const chain = detail.data?.chain ?? null;
+  const impact = detail.data?.impact ?? null;
+  const loading = detail.isPending;
+  const error = detail.error ? coordinatorErrorMessage(detail.error) : null;
 
   const constraints = useMemo(
     () => decodeConstraints(edge.constraints_json),

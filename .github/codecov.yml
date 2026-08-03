@@ -25,4 +25,7 @@ coverage:
         threshold: 1%
     patch:
       default:
-        target: auto
+        # A changed line is the cheapest line to cover, so new code carries a fixed floor rather
+        # than drifting with the project average.
+        target: 70%
+        threshold: 5%
