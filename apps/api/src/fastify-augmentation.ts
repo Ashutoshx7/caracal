@@ -4,6 +4,7 @@
 // FastifyInstance augmentation for API services. Kept in a dedicated module so
 // route tests can import this file and share the same instance typing as buildApp.
 
+import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { DB } from './db.js'
 import type { RedisClient } from './redis.js'
 import type { Config } from './config.js'

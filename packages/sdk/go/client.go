@@ -2155,12 +2155,13 @@ func (t *applicationTransport) RoundTrip(req *http.Request) (*http.Response, err
 	if err := t.client.ensureOpen(); err != nil {
 		return nil, err
 	}
-	// Pin the request to the Gateway before any credential is minted or attached. Routing fails
-	// for a URL that cannot be parsed or that carries dot segments, and a request that is not
-	// pinned must never carry a mandate: sending one would hand a live, replay-protected
+	// Pin the request to the Gateway before any credential is minted or attached. A request is
+	// pinned when routing rewrites it, or when the caller already addressed the Gateway - which
+	// is verified (same origin, inside the Gateway's base path, no dot segments), not assumed.
+	// Anything else must never carry a mandate: sending one would hand a live, replay-protected
 	// credential to whatever host the caller's URL named.
 	rewritten := t.client.routeThroughGateway(req.URL, t.resourceID)
-	if rewritten == nil {
+	if rewritten == nil && !t.client.targetsGateway(req.URL) {
 		return nil, errors.New("caracal: ApplicationTransport: request could not be pinned to the configured Gateway")
 	}
 	authority, err := t.client.appMandate(req.Context(), t.resourceID, t.scopes, t.labels, t.mandateTTL)
@@ -2178,9 +2179,11 @@ func (t *applicationTransport) RoundTrip(req *http.Request) (*http.Response, err
 	clone.Header.Set("Authorization", "Bearer "+token.AccessToken)
 	clone.Header.Set("X-Caracal-Resource", t.resourceID)
 	InjectHTTP(Envelope{SessionID: authority.targetSessionID, DelegationID: authority.delegationID}, clone.Header)
-	clone.URL = rewritten.url
-	clone.Host = rewritten.url.Host
-	clone.RequestURI = ""
+	if rewritten != nil {
+		clone.URL = rewritten.url
+		clone.Host = rewritten.url.Host
+		clone.RequestURI = ""
+	}
 	return t.base.RoundTrip(clone)
 }
 
