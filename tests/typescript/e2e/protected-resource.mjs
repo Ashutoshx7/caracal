@@ -48,28 +48,23 @@ async function waitForAudit(requestId) {
   throw new Error(`audit events did not converge for request ${requestId}`)
 }
 
+// Teardown is best effort: one object failing to delete must not strand the rest.
+async function ignoringFailure(run) {
+  try {
+    await run()
+  } catch (err) {
+    console.warn(`cleanup step failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 async function cleanup() {
-  try {
-    await state.caracal?.close()
-  } catch {}
-  try {
-    if (state.policySet) await admin.policySets.delete(state.zone.id, state.policySet.id)
-  } catch {}
-  try {
-    if (state.policy) await admin.policies.delete(state.zone.id, state.policy.id)
-  } catch {}
-  try {
-    if (state.resource) await admin.resources.delete(state.zone.id, state.resource.id)
-  } catch {}
-  try {
-    if (state.provider) await admin.providers.delete(state.zone.id, state.provider.id)
-  } catch {}
-  try {
-    if (state.application) await admin.applications.delete(state.zone.id, state.application.id)
-  } catch {}
-  try {
-    if (state.zone) await admin.zones.delete(state.zone.id)
-  } catch {}
+  await ignoringFailure(() => state.caracal?.close())
+  await ignoringFailure(() => (state.policySet ? admin.policySets.delete(state.zone.id, state.policySet.id) : undefined))
+  await ignoringFailure(() => (state.policy ? admin.policies.delete(state.zone.id, state.policy.id) : undefined))
+  await ignoringFailure(() => (state.resource ? admin.resources.delete(state.zone.id, state.resource.id) : undefined))
+  await ignoringFailure(() => (state.provider ? admin.providers.delete(state.zone.id, state.provider.id) : undefined))
+  await ignoringFailure(() => (state.application ? admin.applications.delete(state.zone.id, state.application.id) : undefined))
+  await ignoringFailure(() => (state.zone ? admin.zones.delete(state.zone.id) : undefined))
 }
 
 try {

@@ -81,6 +81,12 @@ for (const { dir, name } of suites) {
       '--coverage.provider=v8',
       '--coverage.reporter=lcov',
       `--coverage.reportsDirectory=${join(root, 'coverage', 'typescript', name)}`,
+      // These runs produce per-package lcov for Codecov. The repo-wide ratchet is a property of
+      // the whole tree, so it is enforced by `pnpm run test:coverage`, not by each package.
+      '--coverage.thresholds.statements=0',
+      '--coverage.thresholds.branches=0',
+      '--coverage.thresholds.functions=0',
+      '--coverage.thresholds.lines=0',
     )
   }
   // The Windows pnpm shim is a command file, so it needs a shell. Node concatenates

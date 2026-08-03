@@ -43,6 +43,8 @@ function parseArgs(argv) {
   --format VALUE           json, github-matrix, manifest-packages.
 `)
         process.exit(0)
+      // process.exit ends the case above; the rule cannot see that it never returns.
+      // eslint-disable-next-line no-fallthrough
       default:
         die(`unknown arg: ${arg}`)
     }
