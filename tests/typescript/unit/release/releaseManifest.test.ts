@@ -176,8 +176,8 @@ describe('release registry preflight', () => {
 
     expect(requirements).toMatch(/^colorama==0\.4\.6$/m)
     expect(requirements).toMatch(/^pywin32-ctypes==0\.2\.3$/m)
-    expect(lock).toMatch(/^colorama==0\.4\.6 \\\n(?:    --hash=sha256:[0-9a-f]{64} \\\n)+    --hash=sha256:[0-9a-f]{64}$/m)
-    expect(lock).toMatch(/^pywin32-ctypes==0\.2\.3 \\\n(?:    --hash=sha256:[0-9a-f]{64} \\\n)+    --hash=sha256:[0-9a-f]{64}$/m)
+    expect(lock).toMatch(/^colorama==0\.4\.6 \\\n(?: {4}--hash=sha256:[0-9a-f]{64} \\\n)+ {4}--hash=sha256:[0-9a-f]{64}$/m)
+    expect(lock).toMatch(/^pywin32-ctypes==0\.2\.3 \\\n(?: {4}--hash=sha256:[0-9a-f]{64} \\\n)+ {4}--hash=sha256:[0-9a-f]{64}$/m)
   })
 
   it('reports immutable versions that already exist', async () => {

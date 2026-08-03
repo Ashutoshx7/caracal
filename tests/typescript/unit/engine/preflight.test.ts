@@ -12,10 +12,9 @@ import { runPreflightChecks } from '../../../../packages/engine/src/preflight.ts
 
 const KEY = 'a'.repeat(64)
 
-let cwd: string
 let repoRoot: string
 let home: string
-let servers: Server[] = []
+const servers: Server[] = []
 const savedEnv = { ...process.env }
 
 function listen(server: Server): Promise<number> {
@@ -43,10 +42,8 @@ function writeSecrets(dir: string, redisPort: number, redisPassword: string, pos
 
 describe('runPreflightChecks', () => {
   beforeEach(async () => {
-    cwd = process.cwd()
     repoRoot = mkdtempSync(join(tmpdir(), 'caracal-preflight-repo-'))
     home = mkdtempSync(join(tmpdir(), 'caracal-preflight-home-'))
-    process.chdir(repoRoot)
     writeFileSync(join(repoRoot, 'pnpm-workspace.yaml'), 'packages: []\n')
     writeFileSync(join(repoRoot, 'package.json'), '{"private":true}\n')
 
@@ -74,8 +71,10 @@ describe('runPreflightChecks', () => {
       ...savedEnv,
       CARACAL_HOME: home,
       CARACAL_MODE: 'dev',
+      // Points discovery at the synthetic repo without mutating the process working directory,
+      // which is shared by every suite in the worker.
+      CARACAL_REPO_ROOT: repoRoot,
     }
-    delete process.env.CARACAL_REPO_ROOT
     delete process.env.CARACAL_SECRETS_DIR
     process.env.REDIS_URL = 'redis://:stale-pass@127.0.0.1:6379'
     delete process.env.REDIS_URL_FILE
@@ -88,7 +87,6 @@ describe('runPreflightChecks', () => {
   afterEach(async () => {
     await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))))
     process.env = { ...savedEnv }
-    process.chdir(cwd)
     rmSync(repoRoot, { recursive: true, force: true })
     rmSync(home, { recursive: true, force: true })
   })
@@ -102,32 +100,28 @@ describe('runPreflightChecks', () => {
 })
 
 describe('runPreflightChecks failure reporting', () => {
-  let cwd: string
   let repoRoot: string
   let home: string
   const saved = { ...process.env }
 
   beforeEach(() => {
-    cwd = process.cwd()
     repoRoot = mkdtempSync(join(tmpdir(), 'caracal-preflight-fail-repo-'))
     home = mkdtempSync(join(tmpdir(), 'caracal-preflight-fail-home-'))
-    process.chdir(repoRoot)
     writeFileSync(join(repoRoot, 'pnpm-workspace.yaml'), 'packages: []\n')
     process.env = {
       ...saved,
       CARACAL_HOME: home,
       CARACAL_MODE: 'dev',
+      CARACAL_REPO_ROOT: repoRoot,
       DATABASE_URL: 'not a url',
       REDIS_URL: 'not a url',
     }
-    delete process.env.CARACAL_REPO_ROOT
     delete process.env.CARACAL_SECRETS_DIR
     delete process.env.STS_URL
   })
 
   afterEach(() => {
     process.env = { ...saved }
-    process.chdir(cwd)
     rmSync(repoRoot, { recursive: true, force: true })
     rmSync(home, { recursive: true, force: true })
   })

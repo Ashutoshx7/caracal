@@ -3,13 +3,23 @@
 //
 // Notification dispatcher unit tests for payload signing, backoff, fan-out, and delivery.
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createHmac } from 'node:crypto'
 import { createServer } from 'node:http'
 import { getDefaultAutoSelectFamily, setDefaultAutoSelectFamily, type AddressInfo } from 'node:net'
 
-// Test-only deterministic KEK fixture (32-byte hex). Never use in production.
-process.env.SECRET_STORE_KEK = '8f3d9a71c2b44e5f96a103d7be28cc41d5f09ab6731e4c8f2a7db56019ce34af'
+// Test-only deterministic KEK fixture (32-byte hex). Never use in production. The key is read
+// lazily on every seal, so it is bound per test rather than at import: a process-level
+// assignment would leak into every other suite sharing this worker.
+const TEST_KEK = '8f3d9a71c2b44e5f96a103d7be28cc41d5f09ab6731e4c8f2a7db56019ce34af'
+
+beforeEach(() => {
+  process.env.SECRET_STORE_KEK = TEST_KEK
+})
+
+afterEach(() => {
+  delete process.env.SECRET_STORE_KEK
+})
 
 const { isUnsafeSinkAddress, postNotificationSink, runNotificationDispatch, signSinkPayload, sinkBackoffSeconds, sinkPayload } =
   await import('../../../../../apps/api/src/jobs/notification-dispatcher.js')

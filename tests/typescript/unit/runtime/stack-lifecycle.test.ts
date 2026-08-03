@@ -14,6 +14,9 @@ const spawnSyncMock = vi.hoisted(() => vi.fn(() => ({ status: 0, stdout: '' })))
 const controlEnabledMock = vi.hoisted(() => vi.fn(() => false))
 const setControlEnabledMock = vi.hoisted(() => vi.fn())
 const ensureControlGateDirMock = vi.hoisted(() => vi.fn((home: string) => `${home}/control`))
+// Resolved per test to a path inside the suite's temp directory, so the gate never names a
+// fixed absolute path that a developer machine might really own.
+const controlGate = vi.hoisted(() => ({ path: '' }))
 
 vi.mock('../../../../packages/engine/src/run.js', () => ({
   runExec: runExecMock,
@@ -33,7 +36,7 @@ vi.mock('../../../../packages/engine/src/controlState.js', () => ({
     invokeUrl: 'http://localhost:3000/v1/control/invoke',
     bind: '127.0.0.1',
   }),
-  controlGateFile: () => '/tmp/caracal/control/enabled',
+  controlGateFile: () => controlGate.path,
   ensureControlGateDir: ensureControlGateDirMock,
   isControlEnabled: controlEnabledMock,
   setControlEnabled: setControlEnabledMock,
@@ -60,6 +63,7 @@ function paths(mode: StackPaths['mode'], envFiles: string[]): StackPaths {
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'caracal-stack-'))
+  controlGate.path = join(dir, 'control', 'enabled')
   calls = []
   runExecMock.mockImplementation((opts: { argv: string[]; env?: Record<string, string | undefined>; cwd?: string; onLine?: unknown }) => {
     const call: { argv: string[]; env?: Record<string, string | undefined>; cwd?: string; onLine?: unknown } = {
@@ -76,7 +80,6 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
-  rmSync('/tmp/caracal', { recursive: true, force: true })
   runExecMock.mockReset()
   spawnSyncMock.mockReset()
   spawnSyncMock.mockReturnValue({ status: 0, stdout: '' })
@@ -241,7 +244,11 @@ describe('stack lifecycle compose commands', () => {
 })
 
 describe('control lifecycle', () => {
-  const home = '/tmp/home'
+  let home: string
+
+  beforeEach(() => {
+    home = join(dir, 'home')
+  })
 
   it('enables the endpoint by writing the gate and confirming the API health probe', async () => {
     controlEnabledMock.mockReturnValue(true)
@@ -252,7 +259,7 @@ describe('control lifecycle', () => {
         state: 'enabled',
         service: 'ok',
         enabled: true,
-        marker: '/tmp/caracal/control/enabled',
+        marker: controlGate.path,
         endpoint: 'http://localhost:3000',
         invokeUrl: 'http://localhost:3000/v1/control/invoke',
         lifecycle: 'enabled',
@@ -283,7 +290,7 @@ describe('control lifecycle', () => {
       state: 'disabled',
       service: 'gated',
       enabled: false,
-      marker: '/tmp/caracal/control/enabled',
+      marker: controlGate.path,
       endpoint: 'http://localhost:3000',
       lifecycle: 'disabled',
     })
@@ -297,7 +304,7 @@ describe('control lifecycle', () => {
       state: 'disabled',
       service: 'gated',
       enabled: false,
-      marker: '/tmp/caracal/control/enabled',
+      marker: controlGate.path,
       endpoint: 'http://localhost:3000',
       invokeUrl: 'http://localhost:3000/v1/control/invoke',
       detail: 'endpoint disabled',
