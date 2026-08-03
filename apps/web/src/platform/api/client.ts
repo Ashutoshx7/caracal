@@ -1343,17 +1343,21 @@ export const consoleApi = {
       );
       return res.items;
     },
-    traverse: (zoneId: string, id: string) =>
+    traverse: (zoneId: string, id: string, signal?: AbortSignal) =>
       request<DelegationHop[]>(
         `/coord/zones/${encodeURIComponent(zoneId)}/delegations/${encodeURIComponent(id)}/traverse`,
+        { signal },
       ),
-    impact: async (zoneId: string, id: string): Promise<DelegationImpact> => {
+    impact: async (zoneId: string, id: string, signal?: AbortSignal): Promise<DelegationImpact> => {
       const raw = await request<{
         edge_id: string;
         affected_edges: DelegationHop[];
         affected_sessions: string[];
         affected_authority_records: string[];
-      }>(`/coord/zones/${encodeURIComponent(zoneId)}/delegations/${encodeURIComponent(id)}/impact`);
+      }>(
+        `/coord/zones/${encodeURIComponent(zoneId)}/delegations/${encodeURIComponent(id)}/impact`,
+        { signal },
+      );
       return {
         delegationId: raw.edge_id,
         affectedDelegations: raw.affected_edges ?? [],

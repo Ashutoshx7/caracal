@@ -389,6 +389,9 @@ export async function session<T>(input: SessionInput, fn: (ctx: CaracalContext) 
         try {
           await retire(input.coordinator, bearer, input.zoneId, sessionId, trace)
         } catch (cleanupErr) {
+          // Only rethrown when the body completed without an error of its own, so this never
+          // discards a primary failure.
+          // eslint-disable-next-line no-unsafe-finally
           if (primary === undefined) throw cleanupErr
           warn(`caracal: terminate failed for session ${sessionId}; preserving primary error`, cleanupErr)
         }
@@ -695,7 +698,7 @@ function leaseHandle(
   }
   const schedule = () => {
     if (stopped) return
-    timer = setTimeout(run, nextDelayMs())
+    timer = setTimeout(() => void run(), nextDelayMs())
     timer.unref?.()
   }
   if (mode !== 'manual') schedule()
@@ -716,8 +719,12 @@ function leaseHandle(
       (closing ??= (async () => {
         stopped = true
         if (timer) clearTimeout(timer)
+        let primary: unknown
         try {
           if (input.onSessionEnd) await input.onSessionEnd(ctx)
+        } catch (err) {
+          primary = err
+          throw err
         } finally {
           try {
             await terminateSession(input.coordinator, await bearer(), input.zoneId, sessionId, leaseGeneration, {
@@ -726,7 +733,14 @@ function leaseHandle(
               traceState: ctx.traceState,
             })
           } catch (e) {
-            if (!isGone(e)) throw e
+            if (isGone(e)) {
+              // Already terminated server-side; nothing left to release.
+            } else if (primary === undefined) {
+              // eslint-disable-next-line no-unsafe-finally
+              throw e
+            } else {
+              warn(`caracal: terminate failed for session ${sessionId}; preserving primary error`, e)
+            }
           }
         }
       })()),

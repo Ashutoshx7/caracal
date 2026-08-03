@@ -114,6 +114,9 @@ export async function checkActiveAuthority(claims: Principal, revocations: Revoc
   if (claims.expiresAt * 1000 <= nowMs) {
     return authError('invalid_token', 'Token expired during execution')
   }
+  // A store may answer synchronously or asynchronously by design, so the anchors are aggregated
+  // rather than awaited individually.
+  // eslint-disable-next-line @typescript-eslint/await-thenable
   const checks = await Promise.all(revocationAnchors(claims).map((anchor) => revocations.isRevoked(anchor)))
   if (checks.some(Boolean)) return authError('session_revoked')
   const epochError = await graphEpochError(claims, revocations)

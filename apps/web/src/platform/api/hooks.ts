@@ -1364,6 +1364,20 @@ export function useDelegationsFeed(zoneId: string | null, enabled = true) {
   });
 }
 
+export function useDelegationChain(zoneId: string | null, edgeId: string | null) {
+  return useQuery({
+    queryKey: [...keys.delegationsActive(zoneId), "chain", edgeId],
+    queryFn: async ({ signal }) => {
+      const [chain, impact] = await Promise.all([
+        consoleApi.delegations.traverse(zoneId as string, edgeId as string, signal),
+        consoleApi.delegations.impact(zoneId as string, edgeId as string, signal),
+      ]);
+      return { chain, impact };
+    },
+    enabled: Boolean(zoneId) && Boolean(edgeId),
+  });
+}
+
 export function useRevokeDelegation(zoneId: string | null) {
   const qc = useQueryClient();
   return useMutation({
