@@ -278,6 +278,46 @@ func TestGovernedTransportRunsOwnAuthorityCycle(t *testing.T) {
 	}
 }
 
+// A request that cannot be pinned to the Gateway must fail before a mandate is minted, let
+// alone attached: sending one would hand a live, replay-protected credential to whatever host
+// the caller's URL named. Dot segments are the realistic trigger, since base-URL joining in
+// provider SDKs produces them.
+func TestApplicationTransportRefusesUnpinnableRequest(t *testing.T) {
+	platform := &governedPlatform{}
+	server := httptest.NewServer(platform.handler())
+	defer server.Close()
+	gateway := governedEcho()
+	defer gateway.Close()
+
+	c := governedClient(t, server.URL, gateway.URL, nil)
+	client, err := c.ApplicationTransport(nil, governedResource, sdk.ApplicationTransportOptions{
+		Scopes: []string{"data:read"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, governedUpstream+"/v1/../v2/chat", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Do(req)
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("expected the unpinnable request to be refused")
+	}
+	if !strings.Contains(err.Error(), "could not be pinned") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	platform.mu.Lock()
+	defer platform.mu.Unlock()
+	for _, form := range platform.mintForms {
+		if form.Get("scope") == "data:read" {
+			t.Fatal("a resource mandate was minted for a request that could not be pinned")
+		}
+	}
+}
+
 func TestApplicationTransportConsumesApprovedChallenge(t *testing.T) {
 	platform := &governedPlatform{}
 	server := httptest.NewServer(platform.handler())

@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -243,6 +244,30 @@ func TestClassifyUpstreamErrorMapsTransportFailures(t *testing.T) {
 		if status != tc.status || code != tc.code || msg == "" {
 			t.Fatalf("classify(%v) = %d %s %q", tc.err, status, code, msg)
 		}
+	}
+}
+
+// A provider key placed in a query parameter is part of the request URL, and http.Client wraps
+// every transport failure in a *url.Error that prints that URL. The logged cause must therefore
+// never carry the URL.
+func TestUpstreamErrorCauseDropsTheRequestURL(t *testing.T) {
+	urlErr := &url.Error{
+		Op:  "Post",
+		URL: "https://api.pipernet.example/v1/run?api_key=sk-live-abc123def456",
+		Err: errors.New("dial tcp 203.0.113.10:443: connect: connection refused"),
+	}
+	got := upstreamErrorCause(urlErr)
+	if strings.Contains(got, "sk-live-abc123def456") {
+		t.Fatalf("cause leaked the provider key: %q", got)
+	}
+	if strings.Contains(got, "api.pipernet.example") {
+		t.Fatalf("cause leaked the request url: %q", got)
+	}
+	if !strings.Contains(got, "connection refused") {
+		t.Fatalf("cause lost the diagnosable reason: %q", got)
+	}
+	if plain := upstreamErrorCause(errors.New("boom")); plain != "boom" {
+		t.Fatalf("non-url error = %q", plain)
 	}
 }
 
