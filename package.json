@@ -14,7 +14,7 @@
     "style": "node scripts/checkStyle.mjs",
     "style:all": "node scripts/checkStyle.mjs --all",
     "style:fix": "node scripts/checkStyle.mjs --fix",
-    "lint": "pnpm -r --if-present lint",
+    "lint": "eslint . && pnpm -r --if-present lint",
     "typecheck": "pnpm -r --if-present typecheck",
     "ci": "pnpm run style && pnpm --filter @caracalai/engine sync-embedded && pnpm run build:typescript && pnpm run lint && pnpm run typecheck && pnpm run test",
     "test": "pnpm run test:typescript && pnpm run test:go && pnpm run test:python",
@@ -33,11 +33,18 @@
   },
   "devDependencies": {
     "@caracalai/admin": "workspace:*",
+    "@eslint/js": "^10.0.1",
+    "@testing-library/react": "^16.3.2",
     "@vitest/coverage-v8": "4.1.10",
+    "eslint": "^10.8.0",
     "express": "^5.2.1",
     "fastify": "^5.10.0",
+    "globals": "^17.8.0",
+    "jsdom": "^28.1.0",
     "knip": "^6.29.0",
     "prettier": "^3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.10",
     "yaml": "^2.8.2"
   }

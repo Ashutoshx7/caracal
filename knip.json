@@ -2,20 +2,43 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
-      "entry": ["tests/typescript/**/*.ts", "tests/shared/**/*.ts", "scripts/*.mjs", "scripts/lib/*.mjs"],
+      "entry": [
+        "tests/typescript/**/*.ts",
+        "tests/shared/**/*.ts",
+        "scripts/*.mjs",
+        "scripts/lib/*.mjs"
+      ],
       "paths": {
-        "@/*": ["apps/web/src/*"]
+        "@/*": [
+          "apps/web/src/*"
+        ]
       }
     },
     "apps/auth": {
-      "entry": ["src/migrate.ts"]
+      "entry": [
+        "src/migrate.ts"
+      ]
     },
     "docs": {
-      "entry": ["src/components/**/*.astro", "src/middleware/**/*.mjs", "versioning.mjs"]
+      "entry": [
+        "src/components/**/*.astro",
+        "src/middleware/**/*.mjs",
+        "versioning.mjs"
+      ]
     }
   },
-  "ignoreFiles": ["packages/engine/scripts/render-dev-env.mjs"],
-  "ignoreBinaries": ["build", "sync-embedded", "gh", "go", "python", "icacls", "scripts/release.sh"],
+  "ignoreFiles": [
+    "packages/engine/scripts/render-dev-env.mjs"
+  ],
+  "ignoreBinaries": [
+    "build",
+    "sync-embedded",
+    "gh",
+    "go",
+    "python",
+    "icacls",
+    "scripts/release.sh"
+  ],
   "ignoreDependencies": [
     "@caracalai/core",
     "@caracalai/engine",
@@ -24,6 +47,8 @@
     "bun",
     "tsx",
     "react",
-    "react-dom"
+    "react-dom",
+    "pg",
+    "@tanstack/react-query"
   ]
 }
