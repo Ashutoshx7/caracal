@@ -401,7 +401,13 @@ class ClientSecretExchanger:
         self._resolve()
         start = time.monotonic()
         deadline = time.monotonic() + timeout_seconds
+        # The exchanger's own client is synchronous, so its transport can only serve this
+        # request when it also implements the async protocol - a test double typically does, a
+        # real HTTPTransport does not. Reusing a sync transport here fails before a request is
+        # ever attempted, so anything else gets httpx's default async transport.
         transport = getattr(self._http, "_transport", None)
+        if not hasattr(transport, "handle_async_request"):
+            transport = None
         async with httpx.AsyncClient(transport=transport) as client:
             try:
                 while True:

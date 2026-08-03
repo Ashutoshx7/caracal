@@ -57,6 +57,7 @@ export function buildRouteApp(route: FastifyPluginAsync, options: RouteOptions =
   app.decorate('db', db as never)
   app.decorate('redis', redis as never)
   app.decorate('secrets', secrets as never)
+  app.decorate('auditStreamStart', async () => {})
   app.decorateRequest('account', null)
   const actor = extras.actor === undefined ? { id: 'test-admin', name: 'test-admin' } : extras.actor
   app.addHook('preHandler', async (req) => {

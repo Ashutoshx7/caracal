@@ -783,13 +783,18 @@ export class Caracal {
         signal = signal ? AbortSignal.any([signal, timeout]) : timeout
       }
       const bounded = { ...init, signal, headers: merged }
+      // A redirect is followed by fetch with every header intact, so a mandate would be replayed
+      // against a host the Gateway never vetted. Any request that carries one returns the 3xx to
+      // the caller instead.
+      const pinned = { ...bounded, redirect: 'manual' as const }
       if (rewritten) {
         merged.set('X-Caracal-Resource', rewritten.resourceId)
         merged.set('Authorization', `Bearer ${await outer.gatewayToken(ctx, rewritten.resourceId, scopes, approvalId)}`)
-        return fetchImpl(request ? new Request(rewritten.url, new Request(request, bounded)) : rewritten.url, bounded)
+        return fetchImpl(request ? new Request(rewritten.url, new Request(request, pinned)) : rewritten.url, pinned)
       }
       if (gatewayBound) {
         merged.set('Authorization', `Bearer ${await outer.gatewayToken(ctx, explicitResource, scopes, approvalId)}`)
+        return fetchImpl(request ? new Request(request, pinned) : (input as URL), request ? undefined : pinned)
       }
       return fetchImpl(request ? new Request(request, bounded) : (input as URL), request ? undefined : bounded)
     }) as typeof fetch
@@ -824,9 +829,9 @@ export class Caracal {
         throw lifecycleAuthorityHint(err, ctx)
       }
     }
-    if (!ctx) return this.rootToken()
-    if (ctx.ownToken && this.config.tokenSource) return await this.config.tokenSource()
-    return ctx.subjectToken
+    if (!ctx) return requireGatewayUse(await this.rootToken())
+    if (ctx.ownToken && this.config.tokenSource) return requireGatewayUse(await this.config.tokenSource())
+    return requireGatewayUse(ctx.subjectToken)
   }
 
   /**
@@ -2050,6 +2055,21 @@ function validateBootstrapToken(token: string): void {
 /** Decodes a JWT payload without verifying it - verification is the STS's job. Returns undefined for opaque or malformed tokens. */
 function decodeJwtPayload(token: string): Record<string, unknown> | undefined {
   return decodeJwtSegment(token, 1)
+}
+
+// Gateway calls require a mandate minted for that purpose. A lifecycle token carries a different
+// `use`, and sending one produces an opaque server-side rejection, so the mismatch is named here
+// where the caller can act on it. A token with no `use` claim is left alone: only a claim that
+// contradicts the gateway class is refused.
+function requireGatewayUse(token: string): string {
+  const use = decodeJwtPayload(token)?.use
+  if (typeof use === 'string' && use !== '' && use !== 'gateway') {
+    throw new Error(
+      `Caracal.transport(): Gateway calls require a scoped use=gateway mandate; received use=${use}; ` +
+        'pass scopes with a delegated session, or use applicationTransport() for application-owned work',
+    )
+  }
+  return token
 }
 
 function decodeJwtSegment(token: string, index: number): Record<string, unknown> | undefined {

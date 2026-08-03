@@ -2105,11 +2105,28 @@ class Caracal:
         class _AppAuth(httpx.Auth):
             requires_request_body = False
 
+            def _pin(self, request: httpx.Request) -> str:
+                """Resolve the Gateway URL this request must be sent to.
+
+                Routing fails for a URL that cannot be parsed or that carries dot segments. A
+                request that cannot be pinned must never carry a mandate, so this runs before
+                anything is minted or attached: otherwise a live, replay-protected credential
+                would reach whatever host the caller's URL named.
+                """
+                rewritten = outer._route_through_gateway(request.url, resource_id)
+                if rewritten is None:
+                    raise RuntimeError(
+                        f"Caracal.{label}: request could not be pinned to the "
+                        "configured Gateway"
+                    )
+                return rewritten[0]
+
             def _finish(
                 self,
                 request: httpx.Request,
                 mandate: str,
                 authority: _AppAuthority,
+                pinned: str,
             ) -> None:
                 request.headers["Authorization"] = f"Bearer {mandate}"
                 request.headers["X-Caracal-Resource"] = resource_id
@@ -2121,12 +2138,11 @@ class Caracal:
                     lambda name, value: request.headers.__setitem__(name, value),
                     lambda name: request.headers.get(name),
                 )
-                rewritten = outer._route_through_gateway(request.url, resource_id)
-                if rewritten is not None:
-                    request.url = httpx.URL(rewritten[0])
-                    request.headers["host"] = request.url.netloc.decode("ascii")
+                request.url = httpx.URL(pinned)
+                request.headers["host"] = request.url.netloc.decode("ascii")
 
             def sync_auth_flow(self, request: httpx.Request):
+                pinned = self._pin(request)
                 authority = outer._app_mandate(
                     resource_id, granted, labels, mandate_ttl
                 )
@@ -2140,10 +2156,11 @@ class Caracal:
                     approval_id=approval_id,
                     cache=False,
                 ).token
-                self._finish(request, mandate, authority)
+                self._finish(request, mandate, authority, pinned)
                 yield request
 
             async def async_auth_flow(self, request: httpx.Request):
+                pinned = self._pin(request)
                 authority = await asyncio.to_thread(
                     outer._app_mandate, resource_id, granted, labels, mandate_ttl
                 )
@@ -2160,7 +2177,7 @@ class Caracal:
                         cache=False,
                     )
                 ).token
-                self._finish(request, mandate, authority)
+                self._finish(request, mandate, authority, pinned)
                 yield request
 
         return _AppAuth()

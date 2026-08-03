@@ -3,10 +3,13 @@
 #
 # Tests for the caracalai_oauth client_secret exchanger and its caching.
 
+import asyncio
 import base64
 import json
+import threading
 import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
 
 import httpx
@@ -518,3 +521,35 @@ class EventTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AwaitApprovalRealTransportTests(unittest.TestCase):
+    """await_approval must work over a real transport, not only a test double.
+
+    The exchanger holds a synchronous client, and httpx.MockTransport uniquely satisfies both
+    the sync and async transport protocols - so a suite built only on it cannot show whether
+    the async long-poll can run at all. This exercises it against a real server.
+    """
+
+    def test_polls_a_real_server_to_a_terminal_state(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = json.dumps({"state": "approved"}).encode()
+                self.send_response(200)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+
+        exchanger = _exchanger(sts_url=f"http://127.0.0.1:{server.server_port}")
+        self.addCleanup(exchanger.close)
+        state = asyncio.run(exchanger.await_approval("ap-1", timeout_seconds=5))
+        self.assertEqual(state, "approved")

@@ -559,13 +559,17 @@ function ProviderFormModal({
   }
 
   const slugTaken = !editing && existingSlugs.includes(slug);
+  // Moving an endpoint re-seals the credential, so the key must be supplied with the change: the
+  // sealed key is never carried across to a new host.
+  const endpointMoved = editing !== null && baseUrl.trim() !== editing.baseUrl;
+  const keyRequired = editing === null || endpointMoved;
   const valid =
     slug.length > 0 &&
     !slugTaken &&
     label.trim().length > 0 &&
     baseUrl.trim().length > 0 &&
     models.length > 0 &&
-    (editing !== null || apiKey.length > 0);
+    (!keyRequired || apiKey.length > 0);
   const busy = create.isPending || update.isPending;
 
   async function save() {
@@ -583,7 +587,14 @@ function ProviderFormModal({
       if (editing) {
         await update.mutateAsync({
           slug: editing.slug,
-          patch: { label, baseUrl, models, contextWindow: ctx, auth },
+          patch: {
+            label,
+            baseUrl,
+            models,
+            contextWindow: ctx,
+            auth,
+            ...(endpointMoved ? { apiKey } : {}),
+          },
         });
       } else {
         await create.mutateAsync({
@@ -655,10 +666,14 @@ function ProviderFormModal({
             placeholder="128000"
             inputMode="numeric"
           />
-          {!editing ? (
+          {keyRequired ? (
             <PasswordField
               label="API key"
-              info="Sent once and sealed into Caracal; it is never stored in the console or read back."
+              info={
+                endpointMoved
+                  ? "Changing the endpoint re-seals the credential, so a key for the new endpoint is required. The previous key is replaced, never forwarded."
+                  : "Sent once and sealed into Caracal; it is never stored in the console or read back."
+              }
               value={apiKey}
               onChange={(event) => setApiKey(event.target.value)}
               placeholder="sk-…"
