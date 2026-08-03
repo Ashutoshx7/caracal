@@ -1030,7 +1030,7 @@ describe('PATCH /v1/zones/:zoneId/agents/:id/suspend', () => {
     const client = seqClient([
       { rows: [] },
       { rows: [{ application_id: 'app1' }] },
-      { rows: [{ id: 'a1', subject_session_id: 's1', parent_id: null }] },
+      { rows: [{ id: 'a1', subject_session_id: 's1', parent_id: null, updated_at: '2026-01-01T00:00:00.000Z' }] },
       { rows: [] },
       { rows: [] },
     ])
@@ -1080,7 +1080,7 @@ describe('PATCH /v1/zones/:zoneId/agents/:id/resume', () => {
     const client = seqClient([
       { rows: [] },
       { rows: [{ application_id: 'app1' }] },
-      { rows: [{ id: 'a1', parent_id: null }] },
+      { rows: [{ id: 'a1', parent_id: null, updated_at: '2026-01-01T00:00:00.000Z' }] },
       { rows: [] },
       { rows: [] },
     ])
