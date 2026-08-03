@@ -13,6 +13,14 @@ export default defineConfig({
     exclude: ['**/node_modules/**'],
     coverage: {
       provider: 'v8',
+      // A ratchet, not a target: set just under the measured level so coverage cannot silently
+      // erode. Raise these when a change lifts the real numbers.
+      thresholds: {
+        statements: 80,
+        branches: 73,
+        functions: 72,
+        lines: 82,
+      },
       exclude: [
         'packages/core/ts/src/index.ts',
         'packages/serverCore/ts/src/index.ts',
@@ -33,10 +41,8 @@ export default defineConfig({
         'packages/identity/ts/src/scope.ts',
         'packages/revocation/ts/src/iface.ts',
         'apps/*/src/main.ts',
-        // React-DOM runtime modules: query-hook wiring, element-anchored portals, and
-        // canvas animation require a browser renderer, which the node-environment
-        // web tests (SSR string renders) cannot provide.
-        'apps/web/src/platform/api/hooks.ts',
+        // Element-anchored portals and canvas animation need layout and a real paint, which
+        // jsdom does not provide.
         'apps/web/src/components/ui/OnboardingChecklist.tsx',
         'apps/web/src/components/ui/Overlay.tsx',
         'apps/web/src/components/ui/neon-dither.tsx',
@@ -48,8 +54,11 @@ export default defineConfig({
       { find: /^@\/(.*)$/, replacement: src('./apps/web/src/$1') },
       { find: /^react$/, replacement: src('./apps/web/node_modules/react/index.js') },
       { find: /^react\/jsx-runtime$/, replacement: src('./apps/web/node_modules/react/jsx-runtime.js') },
+      { find: /^react\/jsx-dev-runtime$/, replacement: src('./apps/web/node_modules/react/jsx-dev-runtime.js') },
       { find: /^react-dom$/, replacement: src('./apps/web/node_modules/react-dom/index.js') },
       { find: /^react-dom\/server$/, replacement: src('./apps/web/node_modules/react-dom/server.node.js') },
+      { find: /^react-dom\/client$/, replacement: src('./apps/web/node_modules/react-dom/client.js') },
+      { find: /^@tanstack\/react-query$/, replacement: src('./apps/web/node_modules/@tanstack/react-query/build/modern/index.js') },
       { find: /^nodemailer$/, replacement: src('./apps/auth/node_modules/nodemailer/lib/nodemailer.js') },
       { find: /^pg$/, replacement: src('./apps/runtime/node_modules/pg/lib/index.js') },
       { find: /^@caracalai\/engine\/runtime-config$/, replacement: src('./packages/engine/src/runtimeConfig.ts') },

@@ -22,6 +22,8 @@ export interface QueryResultLike<T> {
 // tenant isolation as a backstop to the application-layer zone checks. Global
 // actors and background workers operate with the '*' sentinel (RLS open).
 export interface DB {
+  // `any` is the row-shape default so callers keep pg's inference at each call site.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   query: <T = any>(text: string, params?: unknown[]) => Promise<QueryResultLike<T>>
   connect: () => Promise<TxClient>
 }
@@ -74,6 +76,7 @@ export function newDB(options: DBOptions): pg.Pool {
 // (whose session GUC is already '*').
 export function scopedDB(pool: pg.Pool): DB {
   return {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async query<T = any>(text: string, params?: unknown[]): Promise<QueryResultLike<T>> {
       const scope = currentZoneScope()
       if (scope === GLOBAL_ZONE_SCOPE) {

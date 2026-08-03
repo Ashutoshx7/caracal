@@ -40,7 +40,9 @@ export async function assertSchemaCompatible(db: { query: (text: string) => Prom
     )
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    throw new Error(`coordinator schema incompatible with this build: ${message}; apply the current baseline migration before starting`)
+    throw new Error(`coordinator schema incompatible with this build: ${message}; apply the current baseline migration before starting`, {
+      cause: err,
+    })
   }
   const grants = (await db.query("SELECT has_table_privilege(current_user, 'sessions', 'DELETE') AS can_delete")) as {
     rows?: Array<{ can_delete?: boolean }>
