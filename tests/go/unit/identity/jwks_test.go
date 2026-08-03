@@ -7,6 +7,10 @@ package identity_test
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -25,7 +29,7 @@ func TestGetJWKSFetchesFromWellKnownEndpoint(t *testing.T) {
 		gotPath = r.URL.Path
 		gotZone = r.URL.Query().Get("zone_id")
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{testJWK(t)}})
 	}))
 	defer server.Close()
 
@@ -63,7 +67,7 @@ func TestGetJWKSCachesPerZone(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{testJWK(t)}})
 	}))
 	defer server.Close()
 
@@ -85,7 +89,7 @@ func TestGetJWKSCachesResultAndSkipsRefetch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{testJWK(t)}})
 	}))
 	defer server.Close()
 
@@ -107,7 +111,7 @@ func TestResetJWKSCacheForcesRefetch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{testJWK(t)}})
 	}))
 	defer server.Close()
 
@@ -169,5 +173,24 @@ func TestGetJWKSRejectsInvalidJSON(t *testing.T) {
 	_, err := identity.GetJWKS(server.URL, "zone1")
 	if err == nil {
 		t.Fatal("expected error for malformed JSON response")
+	}
+}
+
+// testJWK returns a usable P-256 public JWK. The cache rejects a keyset with no usable keys, so
+// fixtures must serve a real one to exercise fetch and caching behaviour.
+func testJWK(t *testing.T) map[string]string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return map[string]string{
+		"kty": "EC",
+		"crv": "P-256",
+		"kid": "kid-1",
+		"alg": "ES256",
+		"use": "sig",
+		"x":   base64.RawURLEncoding.EncodeToString(key.X.FillBytes(make([]byte, 32))),
+		"y":   base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, 32))),
 	}
 }

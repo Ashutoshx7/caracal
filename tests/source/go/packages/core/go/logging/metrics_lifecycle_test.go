@@ -53,6 +53,7 @@ func TestAsyncWriterRoundTrip(t *testing.T) {
 		ch:       make(chan []byte, 8),
 		queueCap: 8,
 		done:     make(chan struct{}),
+		stop:     make(chan struct{}),
 	}
 	go w.run()
 
@@ -87,6 +88,7 @@ func TestAsyncWriterDropsWhenFull(t *testing.T) {
 		ch:       make(chan []byte, 1),
 		queueCap: 1,
 		done:     make(chan struct{}),
+		stop:     make(chan struct{}),
 	}
 	// No drain goroutine; the queue fills and subsequent writes are dropped.
 	w.Write([]byte("a"))
@@ -109,6 +111,7 @@ func TestSamplingHookDropsByRate(t *testing.T) {
 		ch:       make(chan []byte, 16),
 		queueCap: 16,
 		done:     make(chan struct{}),
+		stop:     make(chan struct{}),
 	}
 	go w.run()
 	defer w.Close(time.Second)
@@ -159,12 +162,12 @@ func TestInstallShutdownHandlerStop(t *testing.T) {
 
 func TestGlobalWriterLifecycle(t *testing.T) {
 	globalWriterMu.Lock()
-	saved := globalWriter
-	globalWriter = nil
+	saved := globalWriter.Load()
+	globalWriter.Store(nil)
 	globalWriterMu.Unlock()
 	defer func() {
 		globalWriterMu.Lock()
-		globalWriter = saved
+		globalWriter.Store(saved)
 		globalWriterMu.Unlock()
 	}()
 
@@ -187,4 +190,33 @@ func TestGlobalWriterLifecycle(t *testing.T) {
 		t.Fatalf("snapshot must report the configured queue cap, got %d", MetricsSnapshot().QueueCap)
 	}
 	CloseDevLogs(time.Second)
+}
+
+// Close must not close the record channel: a writer that already passed the closed check is
+// committed to sending, and closing underneath it would panic the process during shutdown.
+func TestAsyncWriterCloseIsSafeAgainstConcurrentWrites(t *testing.T) {
+	globalWriterMu.Lock()
+	saved := globalWriter.Load()
+	globalWriter.Store(nil)
+	globalWriterMu.Unlock()
+	defer func() {
+		globalWriterMu.Lock()
+		globalWriter.Store(saved)
+		globalWriterMu.Unlock()
+	}()
+
+	w := newAsyncWriter(&captureWriter{})
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				w.Write([]byte("line\n"))
+			}
+		}()
+	}
+	// Racing the close against live writers is the shutdown ordering that used to panic.
+	w.Close(time.Second)
+	wg.Wait()
 }

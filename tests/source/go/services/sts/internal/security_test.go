@@ -103,20 +103,20 @@ func TestArgon2idRoundTrip(t *testing.T) {
 		t.Fatalf("hash missing argon2id prefix: %q", hash)
 	}
 	cache := &verifiedSecretCache{}
-	if !cache.verify(hash, "hunter2") {
+	if !cache.verify(context.Background(), hash, "hunter2") {
 		t.Fatal("argon2id verify must succeed")
 	}
-	if cache.verify(hash, "wrong") {
+	if cache.verify(context.Background(), hash, "wrong") {
 		t.Fatal("wrong secret must not verify")
 	}
 }
 
 func TestVerifyClientSecretEmptyInputs(t *testing.T) {
 	cache := &verifiedSecretCache{}
-	if cache.verify("", "x") {
+	if cache.verify(context.Background(), "", "x") {
 		t.Error("empty stored must reject")
 	}
-	if cache.verify("x", "") {
+	if cache.verify(context.Background(), "x", "") {
 		t.Error("empty presented must reject")
 	}
 }
@@ -127,7 +127,7 @@ func TestVerifiedSecretCacheHitSkipsDerivation(t *testing.T) {
 		t.Fatal(err)
 	}
 	cache := &verifiedSecretCache{}
-	if !cache.verify(hash, "hunter2") {
+	if !cache.verify(context.Background(), hash, "hunter2") {
 		t.Fatal("cold verify must succeed")
 	}
 	entry, ok := cache.entries[hash]
@@ -135,7 +135,7 @@ func TestVerifiedSecretCacheHitSkipsDerivation(t *testing.T) {
 		t.Fatal("successful verify must populate the cache")
 	}
 	start := time.Now()
-	if !cache.verify(hash, "hunter2") {
+	if !cache.verify(context.Background(), hash, "hunter2") {
 		t.Fatal("warm verify must succeed")
 	}
 	if elapsed := time.Since(start); elapsed > 10*time.Millisecond {
@@ -144,7 +144,7 @@ func TestVerifiedSecretCacheHitSkipsDerivation(t *testing.T) {
 	if cache.entries[hash] != entry {
 		t.Fatal("warm verify must not rewrite the entry")
 	}
-	if cache.verify(hash, "wrong") {
+	if cache.verify(context.Background(), hash, "wrong") {
 		t.Fatal("cached entry must not admit a different secret")
 	}
 }
@@ -159,13 +159,13 @@ func TestVerifiedSecretCacheRotationInvalidates(t *testing.T) {
 		t.Fatal(err)
 	}
 	cache := &verifiedSecretCache{}
-	if !cache.verify(first, "generation-one") {
+	if !cache.verify(context.Background(), first, "generation-one") {
 		t.Fatal("first generation must verify")
 	}
-	if cache.verify(second, "generation-one") {
+	if cache.verify(context.Background(), second, "generation-one") {
 		t.Fatal("rotated hash must reject the retired secret")
 	}
-	if !cache.verify(second, "generation-two") {
+	if !cache.verify(context.Background(), second, "generation-two") {
 		t.Fatal("rotated hash must verify its own secret")
 	}
 }
@@ -176,13 +176,13 @@ func TestVerifiedSecretCacheExpiredEntryReverifies(t *testing.T) {
 		t.Fatal(err)
 	}
 	cache := &verifiedSecretCache{}
-	if !cache.verify(hash, "hunter2") {
+	if !cache.verify(context.Background(), hash, "hunter2") {
 		t.Fatal("cold verify must succeed")
 	}
 	stale := cache.entries[hash]
 	stale.expiresAt = time.Now().Add(-time.Minute)
 	cache.entries[hash] = stale
-	if !cache.verify(hash, "hunter2") {
+	if !cache.verify(context.Background(), hash, "hunter2") {
 		t.Fatal("expired entry must fall through to a successful derivation")
 	}
 	if !time.Now().Before(cache.entries[hash].expiresAt) {
@@ -383,5 +383,33 @@ func TestLoadZoneTransientPreservesCache(t *testing.T) {
 	e.mu.RUnlock()
 	if st == nil || st.manifestSHA != "previous" {
 		t.Fatalf("cached bundle must be preserved, got %+v", st)
+	}
+}
+
+// A caller that hangs up must stop occupying an Argon2id slot, so the callers still waiting for an
+// answer are not starved by abandoned work.
+func TestVerifyReleasesSlotOnCancelledContext(t *testing.T) {
+	cache := &verifiedSecretCache{}
+	cache.configure(1)
+
+	hash, err := hashClientSecret("hunter2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	held, ok := cache.acquireSlot(context.Background())
+	if !ok {
+		t.Fatal("expected the first slot to be granted")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if cache.verify(ctx, hash, "hunter2") {
+		t.Fatal("a cancelled request must not authenticate")
+	}
+	<-held
+
+	if !cache.verify(context.Background(), hash, "hunter2") {
+		t.Fatal("the budget must be usable once the slot is released")
 	}
 }
