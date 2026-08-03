@@ -119,15 +119,15 @@ describe('runtime-compose default substitutions', () => {
 
   it('runtime compose declares persistent volumes at the top level', () => {
     const yaml = readFileSync(resolve(repoRoot, 'infra', 'docker', 'runtime-compose.yml'), 'utf8')
-    expect(yaml).toMatch(/\nvolumes:\n  postgresData:\n  redisData:\n  stsReplay:\n  gatewayReplay:\n?$/)
+    expect(yaml).toMatch(/\nvolumes:\n {2}postgresData:\n {2}redisData:\n {2}stsReplay:\n {2}gatewayReplay:\n?$/)
   })
 
   it('runtime compose initializes replay volumes before non-root services start', () => {
     const yaml = readFileSync(resolve(repoRoot, 'infra', 'docker', 'runtime-compose.yml'), 'utf8')
     expect(yaml).toContain('  replayVolumeInit:')
     expect(yaml).toContain('chown -R 65532:65532 "$$dir"')
-    expect(yaml).toMatch(/  sts:\n[\s\S]*?    depends_on:\n      replayVolumeInit:\n        condition: service_completed_successfully/)
-    expect(yaml).toMatch(/  gateway:\n[\s\S]*?    depends_on:\n      replayVolumeInit:\n        condition: service_completed_successfully/)
+    expect(yaml).toMatch(/ {2}sts:\n[\s\S]*? {4}depends_on:\n {6}replayVolumeInit:\n {8}condition: service_completed_successfully/)
+    expect(yaml).toMatch(/ {2}gateway:\n[\s\S]*? {4}depends_on:\n {6}replayVolumeInit:\n {8}condition: service_completed_successfully/)
   })
 
   it('runtime compose never exposes container ports on non-loopback addresses', () => {
