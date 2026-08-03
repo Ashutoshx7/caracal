@@ -347,13 +347,18 @@ func TestGetJWKSNormalizesIssuerAndRejectsOversizedDocuments(t *testing.T) {
 }
 
 func TestJWKSCacheUsesInjectedHTTPClient(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, _ := json.Marshal(map[string]any{"keys": []any{jwkForKey(key, "kid-1")}})
 	var calls atomic.Int32
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		calls.Add(1)
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(`{"keys":[]}`)),
+			Body:       io.NopCloser(strings.NewReader(string(doc))),
 			Request:    req,
 		}, nil
 	})}
@@ -491,4 +496,73 @@ func mustJSON(t *testing.T, value any) json.RawMessage {
 		t.Fatal(err)
 	}
 	return out
+}
+
+// An empty keyset must not be cached: doing so denies every verification for the zone until the
+// TTL expires, long after the issuer recovered from a rotation or transient serving fault.
+func TestJWKSCacheDoesNotCacheEmptyKeyset(t *testing.T) {
+	var calls atomic.Int32
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"keys":[]}`)),
+			Request:    req,
+		}, nil
+	})}
+	cache := NewJWKSCache(client, time.Minute)
+	for i := 0; i < 2; i++ {
+		if _, err := cache.Get(context.Background(), "https://issuer.example", "zone-1"); err == nil {
+			t.Fatal("an empty keyset must be reported as an error")
+		}
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("empty keyset must be retried rather than cached, got %d fetches", calls.Load())
+	}
+}
+
+// A slow issuer must block only the keyset being refreshed, not every verification in the process.
+func TestJWKSCacheDoesNotSerializeUnrelatedZones(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, _ := json.Marshal(map[string]any{"keys": []any{jwkForKey(key, "kid-1")}})
+	release := make(chan struct{})
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if strings.Contains(req.URL.RawQuery, "slow-zone") {
+			<-release
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(string(doc))),
+			Request:    req,
+		}, nil
+	})}
+	cache := NewJWKSCache(client, time.Minute)
+
+	stalled := make(chan struct{})
+	go func() {
+		defer close(stalled)
+		_, _ = cache.Get(context.Background(), "https://issuer.example", "slow-zone")
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := cache.Get(context.Background(), "https://issuer.example", "fast-zone")
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("unrelated zone fetch failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("an unrelated zone was blocked behind a stalled fetch")
+	}
+	close(release)
+	<-stalled
 }

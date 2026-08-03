@@ -44,7 +44,7 @@ func (s *Server) authenticateRunWorkload(ctx context.Context, workloadID, secret
 		verifyArgon2id("", secret)
 		return nil, nil
 	}
-	if !s.secretVerifier.verify(workload.SecretHash, secret) {
+	if !s.secretVerifier.verify(ctx, workload.SecretHash, secret) {
 		return nil, workload
 	}
 	return workload, workload

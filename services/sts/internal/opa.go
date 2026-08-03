@@ -150,6 +150,12 @@ func (e *OPAEngine) Evaluate(ctx context.Context, input OPAInput) (*OPAResult, e
 		state = e.zones[input.Principal.ZoneID]
 		e.mu.RUnlock()
 	}
+	// A load that reports success but stores nothing would otherwise nil-dereference below, which
+	// on an authorization path means a decision that vanishes without an audit record.
+	if state == nil || state.query == nil {
+		e.metrics.EvalErrors.Add(1)
+		return nil, fmt.Errorf("no policy bundle loaded for zone %s", input.Principal.ZoneID)
+	}
 
 	result, err := e.evaluatePrepared(ctx, *state.query, input, true)
 	if result != nil {
@@ -351,8 +357,7 @@ func (e *OPAEngine) loadZone(ctx context.Context, zoneID string) error {
 		// Any other error is transient: keep the cached bundle so a flaky
 		// database does not cause STS to self-DoS legitimate traffic.
 		if errors.Is(err, pgx.ErrNoRows) {
-			e.storeFallback(zoneID)
-			return nil
+			return e.storeFallback(zoneID)
 		}
 		e.mu.RLock()
 		_, cached := e.zones[zoneID]
@@ -360,12 +365,11 @@ func (e *OPAEngine) loadZone(ctx context.Context, zoneID string) error {
 		if cached {
 			return nil
 		}
-		e.storeFallback(zoneID)
+		_ = e.storeFallback(zoneID)
 		return err
 	}
 	if binding == nil || binding.ActiveVersionID == nil {
-		e.storeFallback(zoneID)
-		return nil
+		return e.storeFallback(zoneID)
 	}
 
 	psv, err := e.db.GetPolicySetVersion(ctx, *binding.ActiveVersionID)
@@ -376,7 +380,7 @@ func (e *OPAEngine) loadZone(ctx context.Context, zoneID string) error {
 		if cached {
 			return nil
 		}
-		e.storeFallback(zoneID)
+		_ = e.storeFallback(zoneID)
 		return err
 	}
 
@@ -417,7 +421,7 @@ func (e *OPAEngine) loadZone(ctx context.Context, zoneID string) error {
 	modules := make([]func(*rego.Rego), 0, len(versions)+3)
 	for _, v := range versions {
 		if err := validateAdopterModule(v.ID, v.Content); err != nil {
-			e.storeFallback(zoneID)
+			_ = e.storeFallback(zoneID)
 			return fmt.Errorf("validate policy bundle for zone %s: %w", zoneID, err)
 		}
 		modules = append(modules, rego.Module(v.ID+".rego", v.Content))
@@ -447,16 +451,17 @@ package caracal.authz
 result := {"decision": "deny", "evaluation_status": "complete", "determining_policies": [], "diagnostics": [{"reason": "no_active_policy_set"}]}
 `
 
-func (e *OPAEngine) storeFallback(zoneID string) {
+func (e *OPAEngine) storeFallback(zoneID string) error {
 	pq, err := rego.New(
 		rego.Module("fallback.rego", denyAllPolicy),
 		rego.Query("result = data.caracal.authz.result"),
 		rego.Capabilities(safeCapabilities()),
 	).PrepareForEval(context.Background())
 	if err != nil {
-		return
+		return fmt.Errorf("prepare deny-all fallback for zone %s: %w", zoneID, err)
 	}
 	e.mu.Lock()
 	e.zones[zoneID] = &opaZoneState{query: &pq, manifestSHA: "no_active_policy_set", loadedAt: time.Now()}
 	e.mu.Unlock()
+	return nil
 }
