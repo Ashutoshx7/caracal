@@ -213,6 +213,29 @@ class GovernedCycleTests(unittest.TestCase):
         self.assertEqual(body["target"], "http://gateway/direct")
         self.assertEqual(body["presented"], "Bearer mandate-1")
 
+    def test_refuses_a_request_that_cannot_be_pinned(self) -> None:
+        # Dot segments defeat gateway routing. httpx normalizes literal ones, so the reachable
+        # case is percent-encoded: the routing guard decodes before checking. Such a request
+        # must fail before a mandate is minted, let alone attached.
+        platform = _Platform()
+        c = _client(platform)
+        with c.sync_application_transport(
+            RESOURCE,
+            scopes=["data:read"],
+            transport=httpx.MockTransport(_gateway_echo),
+        ) as client:
+            with self.assertRaises(RuntimeError) as caught:
+                client.get(f"{UPSTREAM}/v1/%2e%2e/v2/chat")
+        self.assertIn("could not be pinned", str(caught.exception))
+        self.assertEqual(
+            [
+                form
+                for form in platform.mint_forms()
+                if form.get("scope") == ["data:read"]
+            ],
+            [],
+        )
+
     def test_labels_default_to_the_application_id(self) -> None:
         platform = _Platform()
         c = _client(platform)
