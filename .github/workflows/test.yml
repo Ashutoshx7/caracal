@@ -562,6 +562,83 @@ jobs:
       - name: Validate Helm chart
         run: bash infra/helm/caracal/scripts/validate.sh
 
+  helmInstall:
+    name: Helm install
+    needs: changes
+    if: needs.changes.outputs.helm == 'true' || needs.changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Create cluster
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+
+      # Generated per run and confined to a disposable cluster, so no credential
+      # material is committed for the install test.
+      - name: Generate test credentials
+        run: |
+          set -euo pipefail
+          {
+            echo "CARACAL_TEST_POSTGRES_PASSWORD=$(openssl rand -hex 16)"
+            echo "CARACAL_TEST_REDIS_PASSWORD=$(openssl rand -hex 16)"
+          } >> "$GITHUB_ENV"
+
+      # Rendering proves a manifest is well formed. Only an install proves the
+      # migration hook, the readiness probes, and the replay volume claims work.
+      - name: Deploy chart dependencies
+        run: |
+          set -euo pipefail
+          tag="v$(grep '^appVersion:' infra/helm/caracal/Chart.yaml | cut -d: -f2 | tr -d ' "')"
+          kubectl create secret generic cluster-dependencies \
+            --from-literal=postgresPassword="$CARACAL_TEST_POSTGRES_PASSWORD" \
+            --from-literal=redisPassword="$CARACAL_TEST_REDIS_PASSWORD"
+          sed "s|CARACAL_IMAGE_TAG|${tag}|g" infra/helm/caracal/scripts/clusterDependencies.yaml | kubectl apply -f -
+          kubectl rollout status deployment/postgres --timeout=300s
+          kubectl rollout status deployment/redis --timeout=300s
+
+      - name: Install chart
+        run: |
+          set -euo pipefail
+          # --wait-for-jobs blocks on the migration hook, and --wait blocks until
+          # every workload reports Available, which requires /ready to succeed.
+          helm upgrade --install caracal infra/helm/caracal \
+            --namespace caracal --create-namespace \
+            --values infra/helm/caracal/values.dev.yaml \
+            --set secrets.create=true \
+            --set secrets.plaintext.postgresPassword="$CARACAL_TEST_POSTGRES_PASSWORD" \
+            --set secrets.plaintext.redisPassword="$CARACAL_TEST_REDIS_PASSWORD" \
+            --set secrets.plaintext.caracalAdminToken="$(openssl rand -hex 32)" \
+            --set secrets.plaintext.caracalCoordinatorToken="$(openssl rand -hex 32)" \
+            --set secrets.plaintext.caracalAuthSecret="$(openssl rand -hex 32)" \
+            --set secrets.plaintext.secretStoreKek="$(openssl rand -hex 32)" \
+            --set secrets.plaintext.auditHmacKey="$(openssl rand -hex 32)" \
+            --set secrets.plaintext.streamsHmacKey="$(openssl rand -hex 32)" \
+            --set secrets.plaintext.idempotencyHmacKey="$(openssl rand -hex 32)" \
+            --set secrets.plaintext.gatewayStsHmacKey="$(openssl rand -hex 32)" \
+            --atomic --wait --wait-for-jobs --timeout 20m
+
+      - name: Verify workloads
+        run: |
+          set -euo pipefail
+          kubectl -n caracal get pods -o wide
+          for name in sts gateway api audit coordinator web; do
+            kubectl -n caracal rollout status "$(kubectl -n caracal get deploy,statefulset \
+              -l app.kubernetes.io/component=${name} -o name | head -1)" --timeout=60s
+          done
+          # STS and Gateway carry replay volumes, so they must install as StatefulSets.
+          kubectl -n caracal get statefulset caracal-caracal-sts caracal-caracal-gateway
+
+      - name: Dump diagnostics on failure
+        if: failure()
+        run: |
+          kubectl -n caracal get events --sort-by=.lastTimestamp | tail -40 || true
+          kubectl -n caracal describe pods || true
+          kubectl -n caracal logs -l app.kubernetes.io/part-of=caracal --tail=100 --all-containers || true
+
   infra:
     name: Infrastructure validation
     needs: changes
