@@ -21,6 +21,14 @@ serviceAccount:
   create: true
   name: ''
   automountToken: false
+  # Binds the workloads to a cloud identity so the secret backend and audit
+  # export authenticate without static credentials. The annotation key is the
+  # only provider-specific part; pair it with the provider's required pod label
+  # in global.podLabels. For example:
+  #   AKS  azure.workload.identity/client-id: <clientId>
+  #   EKS  eks.amazonaws.com/role-arn: <roleArn>
+  #   GKE  iam.gke.io/gcp-service-account: <serviceAccountEmail>
+  annotations: {}
 
 secrets:
   create: false

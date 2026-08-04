@@ -12,6 +12,9 @@ See the walkthrough in the docs: **Operations → Cloud Reference Deployments**.
 | Path | Purpose |
 | --- | --- |
 | `values.cloud-managed.yaml` | Production overlay: stable mode, externalized managed Postgres/Redis, cert-manager TLS ingress, ServiceMonitor, tightened egress. |
+| `values.aks.yaml` | Worked AKS overlay layered after the cloud-managed one: storage class, ingress class, workload-identity binding, and managed endpoints. |
+| `values.eks.yaml` | Worked EKS overlay. Experimental: renders and validates, not yet exercised against a live cluster. |
+| `values.gke.yaml` | Worked GKE overlay. Experimental: renders and validates, not yet exercised against a live cluster. |
 | `external-secrets/secretstore-aws.yaml` | External Secrets Operator store for AWS Secrets Manager (IRSA). |
 | `external-secrets/secretstore-gcp.yaml` | External Secrets Operator store for Google Secret Manager (Workload Identity). |
 | `external-secrets/secretstore-azure.yaml` | External Secrets Operator store for Azure Key Vault (Workload Identity). |

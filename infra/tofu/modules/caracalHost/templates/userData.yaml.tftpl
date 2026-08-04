@@ -7,14 +7,24 @@ package_update: true
 packages:
   - ca-certificates
   - curl
-%{ if length(envLines) > 0 ~}
+%{ if length(envLines) > 0 || caddyfile != "" ~}
 write_files:
+%{ if length(envLines) > 0 ~}
   - path: ${caracalHome}/caracal.env
     permissions: "0600"
     content: |
 %{ for line in envLines ~}
       ${line}
 %{ endfor ~}
+%{ endif ~}
+%{ if caddyfile != "" ~}
+  - path: ${caracalHome}/proxy/Caddyfile
+    permissions: "0644"
+    content: |
+%{ for line in split("\n", caddyfile) ~}
+      ${line}
+%{ endfor ~}
+%{ endif ~}
 %{ endif ~}
 runcmd:
   - sh -c 'command -v docker >/dev/null 2>&1 || curl -fsSL https://get.docker.com | sh'
@@ -28,3 +38,8 @@ runcmd:
   - ${jsonencode(cmd)}
 %{ endfor ~}
   - runuser -u caracal -- env HOME=${caracalHome} CARACAL_HOME=${caracalHome} /usr/local/bin/caracal up
+%{ if caddyfile != "" ~}
+  # Host networking answers on 443 while reaching the stack on loopback.
+  # Certificate issuance needs inbound 80 and 443 open in the cloud firewall.
+  - docker run -d --name caracalProxy --restart unless-stopped --network host -v ${caracalHome}/proxy/Caddyfile:/etc/caddy/Caddyfile:ro -v caracalProxyData:/data -v caracalProxyConfig:/config ${proxyImage}
+%{ endif ~}
