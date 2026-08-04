@@ -8,6 +8,7 @@
 
 - `docker/` owns local and runtime Compose orchestration.
 - `helm/` owns the Kubernetes chart and its render validation harness.
+- `containerPlatform/` owns the platform-neutral topology and per-platform targets for managed container platforms without a cluster.
 - `tofu/` owns OpenTofu provisioning: the Kubernetes stack module, the VM host module, and per-environment roots.
 - `postgres/` owns the database image, migrations, and verification scripts.
 - `redis/` owns Redis configuration and stream provisioning.
