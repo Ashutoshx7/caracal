@@ -56,6 +56,9 @@ aws:
   # The identity the running services use for the secret backend and audit export.
   taskRoleArn: arn:aws:iam::000000000000:role/caracal-task
   subnetIds:
+    # Tasks run without public addresses, so these subnets need a NAT gateway or
+    # VPC endpoints for ECR, Secrets Manager, and CloudWatch Logs. Without one,
+    # tasks fail to pull their image and never start.
     - subnet-0aaaaaaaaaaaaaaaa
     - subnet-0bbbbbbbbbbbbbbbb
   securityGroupIds:

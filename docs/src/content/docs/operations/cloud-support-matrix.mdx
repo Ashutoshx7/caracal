@@ -49,7 +49,7 @@ These hold on every cloud and every model, and no adapter may alter them:
 | Neutral concept | Azure Container Apps | AWS ECS on Fargate | Google Cloud Run |
 | --- | --- | --- | --- |
 | Role selection | `command` override | `entryPoint` and `command` | `command` override |
-| Secret delivery | Projected file | Environment variable | Projected file |
+| Secret delivery | Projected file | Environment variable | Environment variable |
 | Secret reference | Key Vault URL with a managed identity | Secrets Manager ARN with a task role | Secret Manager version with a service account |
 | Registry auth | Managed identity with `AcrPull` | Task execution role | Runtime service account |
 | Internal address | `https://<app>.internal.<envDomain>` | Service Connect discovery name | Internal-ingress service URL |
@@ -60,7 +60,7 @@ These hold on every cloud and every model, and no adapter may alter them:
 
 Two consequences are worth knowing before choosing a provider:
 
-* **ECS binds credentials to environment variables.** It cannot project a secret onto a filesystem. The values are resolved at task start and never appear in the task definition, but any principal with `ecs:DescribeTasks` can read them. Scope that permission accordingly.
+* **Only Container Apps projects credentials as files.** ECS cannot mount a secret at all, and Cloud Run refuses two secret volumes at one mount path, so neither can give a service the several credentials it needs as files. On both, credentials are bound to environment variables and resolved before the instance starts. They never appear in a task definition or service manifest, but a principal who can describe the running workload can read them; scope that permission accordingly.
 * **Cloud Run has no durable per-instance volume.** STS and Gateway spill audit evidence to disk when Redis is unreachable; on Cloud Run that evidence survives only while the instance lives.
 
 ## Kubernetes
@@ -75,6 +75,18 @@ The chart is cloud-neutral. Four values carry the entire provider surface:
 | `global.podLabels` | `azure.workload.identity/use: "true"` | not required | not required |
 
 `infra/helm/caracal/examples` carries a worked overlay for each. A cloud that needs a chart change is a bug in the chart.
+
+## Database Prerequisites
+
+The baseline migration creates the `pgcrypto` extension and six service roles, and grants `CREATEDB` to the role that owns the console's auth database. Managed Postgres restricts all three, so confirm them before the first deployment on any provider. A migration job that fails here fails the whole rollout, by design.
+
+| Requirement | Azure Database for PostgreSQL | Amazon RDS and Aurora | Cloud SQL |
+| --- | --- | --- | --- |
+| `pgcrypto` | **Must be added to the `azure.extensions` server parameter first.** `CREATE EXTENSION` fails until it is, and the parameter change needs a server restart | Available to the master user | Available to the default user |
+| Create roles | Administrative user is a member of `azure_pg_admin` | Master user holds `rds_superuser` | Default user holds `cloudsqlsuperuser` |
+| Grant `CREATEDB` | Permitted for the administrative user | Permitted for the master user | Permitted for the default user |
+
+Run the migration job against the managed instance before provisioning anything else. It is the cheapest possible failure and it exercises connectivity, TLS, credentials, and privileges in one step.
 
 ## Choosing
 

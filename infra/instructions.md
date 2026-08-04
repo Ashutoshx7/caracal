@@ -19,6 +19,7 @@
 ## Required
 
 - Must keep each infrastructure concern in its own subdirectory.
+- Must place a subdirectory's Node entry point directly at `infra/<concern>/<name>.mjs` so the knip entry glob reaches it; supporting modules must live in nested folders.
 - Must keep runtime, local-development, secret, schema, and probe concerns separated.
 - Must keep host ports consistent with the Compose files and product-isolation rules.
 

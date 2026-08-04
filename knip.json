@@ -6,7 +6,8 @@
         "tests/typescript/**/*.ts",
         "tests/shared/**/*.ts",
         "scripts/*.mjs",
-        "scripts/lib/*.mjs"
+        "scripts/lib/*.mjs",
+        "infra/*/*.mjs"
       ],
       "paths": {
         "@/*": [

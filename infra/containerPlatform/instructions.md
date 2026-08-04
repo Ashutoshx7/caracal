@@ -10,8 +10,8 @@
 - `render.mjs` owns every platform-neutral concern: config validation, placeholder resolution, image references, secret-delivery selection, and plan assembly.
 - `targets/` holds one adapter per platform. An adapter maps the rendered plan onto that platform's manifests and nothing else.
 - `examples/` holds one deployment config per provider, carrying deployment identity and provider wiring only.
-- `azureContainerApps` is the tested reference adapter. `awsEcs` and `gcpCloudRun` are experimental: they render and validate, but have not been exercised against a live account.
-- `scripts/` owns render validation and the ordered apply flow for each platform.
+- `azureContainerApps` is the tested reference adapter and ships an ordered apply flow. `awsEcs` and `gcpCloudRun` are experimental: they render and validate, but have not been exercised against a live account and ship manifests only.
+- `scripts/` owns render validation and any ordered apply flow.
 
 ## Required
 

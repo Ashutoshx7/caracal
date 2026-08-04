@@ -88,6 +88,12 @@ for (const file of manifests('${DIR}/azure')) {
     if (secret.value !== undefined) throw new Error(\`azure/\${file}: \${secret.name} is a literal value\`)
     if (!secret.keyVaultUrl) throw new Error(\`azure/\${file}: \${secret.name} is not a vault reference\`)
   }
+  // Container Apps rejects two volume mounts at one path, and a repeated
+  // projection path would silently shadow a credential.
+  for (const volume of doc.properties.template.volumes ?? []) {
+    const paths = (volume.secrets ?? []).map((s) => s.path)
+    if (new Set(paths).size !== paths.length) throw new Error(\`azure/\${file}: duplicate secret projection path\`)
+  }
 }
 
 for (const file of manifests('${DIR}/aws')) {
@@ -104,10 +110,17 @@ for (const file of manifests('${DIR}/aws')) {
 for (const file of manifests('${DIR}/gcp')) {
   const doc = read('${DIR}/gcp', file)
   const spec = doc.kind === 'Job' ? doc.spec.template.spec.template.spec : doc.spec.template.spec
-  for (const volume of spec.volumes ?? []) {
-    for (const item of volume.secret?.items ?? []) {
-      if (!item.secret) throw new Error(\`gcp/\${file}: projected secret has no Secret Manager name\`)
+  for (const container of spec.containers ?? []) {
+    for (const entry of container.env ?? []) {
+      if (entry.valueFrom && !entry.valueFrom.secretKeyRef?.name) {
+        throw new Error(\`gcp/\${file}: \${entry.name} has no Secret Manager reference\`)
+      }
     }
+  }
+  // Cloud Run permits one secret per mount path, so a secret volume here would
+  // be rejected at deploy time for every service that needs more than one.
+  for (const volume of spec.volumes ?? []) {
+    if (volume.secret) throw new Error(\`gcp/\${file}: Cloud Run cannot share a secret mount path\`)
   }
 }
 console.log('  every adapter resolves credentials through its provider secret manager')
@@ -116,13 +129,62 @@ console.log('  every adapter resolves credentials through its provider secret ma
 echo ""
 echo "=== Secret delivery: the core picks the form each platform supports ==="
 grep -q "DATABASE_URL_FILE" "$(unit azure app sts)" || { echo "FAIL: azure must project secret files" >&2; exit 1; }
-grep -q "DATABASE_URL_FILE" "$(unit gcp app sts)" || { echo "FAIL: gcp must project secret files" >&2; exit 1; }
 grep -q '"name": "DATABASE_URL"' "$(unit aws app sts)" || { echo "FAIL: aws must bind secret variables" >&2; exit 1; }
-if grep -q "DATABASE_URL_FILE" "$(unit aws app sts)"; then
-    echo "FAIL: aws cannot mount secret files and must not claim to" >&2
-    exit 1
-fi
-echo "  azure and gcp project files; aws binds variables"
+grep -q "secretKeyRef" "$(unit gcp app sts)" || { echo "FAIL: gcp must bind secret variables" >&2; exit 1; }
+for provider in aws gcp; do
+    if grep -q "DATABASE_URL_FILE" "$(unit "${provider}" app sts)"; then
+        echo "FAIL: ${provider} cannot mount secret files and must not claim to" >&2
+        exit 1
+    fi
+done
+echo "  azure projects files; aws and gcp bind variables"
+
+echo ""
+echo "=== Service addressing: internal URLs name resources this render creates ==="
+# A service told to call a name that was never deployed fails only at runtime,
+# and only for traffic between services, so it is asserted here instead.
+node --input-type=module -e "
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { parse } from 'yaml'
+
+const read = (dir, file) => {
+  const body = readFileSync(join(dir, file), 'utf8')
+  return file.endsWith('.json') ? JSON.parse(body) : parse(body)
+}
+
+const envOf = {
+  azure: (doc) => doc.properties.template.containers[0].env ?? [],
+  aws: (doc) => (doc.containerDefinitions[0].environment ?? []),
+  gcp: (doc) => {
+    const spec = doc.kind === 'Job' ? doc.spec.template.spec.template.spec : doc.spec.template.spec
+    return spec.containers[0].env ?? []
+  },
+}
+const routing = ['STS_URL', 'CARACAL_GATEWAY_URL', 'CARACAL_COORDINATOR_URL', 'CARACAL_API_URL']
+
+for (const provider of ['azure', 'aws', 'gcp']) {
+  const dir = '${DIR}/' + provider
+  const files = readdirSync(dir).filter((f) => /-app-[^.]+\.(yaml|json)\$/.test(f))
+  const deployed = new Set(files.map((f) => 'caracal-' + f.match(/-app-([^.]+)\./)[1]))
+  let checked = 0
+  for (const file of files) {
+    for (const entry of envOf[provider](read(dir, file))) {
+      if (!routing.includes(entry.name) || !entry.value) continue
+      const label = new URL(entry.value).hostname.split('.')[0]
+      // Some platforms suffix the host with project or revision identity, so the
+      // label must begin with a deployed name rather than equal one.
+      const resolved = [...deployed].some((name) => label === name || label.startsWith(name + '-'))
+      if (!resolved) {
+        throw new Error(\`\${provider}/\${file}: \${entry.name} points at \"\${label}\", which this render never creates\`)
+      }
+      checked += 1
+    }
+  }
+  if (checked === 0) throw new Error(\`\${provider}: no service routing was checked\`)
+  console.log(\`  \${provider}: \${checked} internal addresses resolve to deployed resources\`)
+}
+"
 
 echo ""
 echo "=== Ingress: internal services stay internal ==="
