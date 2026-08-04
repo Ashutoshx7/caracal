@@ -4,13 +4,13 @@ description: Lockstep SemVer releases, package publishing, protected workflows, 
 pageType: reference
 ---
 
-Every Caracal release artifact shares one Semantic Version from `release.config.json` `product.version`. The current source state is `0.2.0-rc.3`; successive release candidates increment `-rc.N`. `scripts/release.sh stamp` propagates the configured version to owned artifact metadata.
+Every Caracal release artifact shares one Semantic Version from `release.config.json` `product.version`. The current source state is `1.0.0-rc.1`; successive release candidates increment `-rc.N`. `scripts/release.sh stamp` propagates the configured version to owned artifact metadata.
 
 ## Release Surfaces
 
 | Surface         | Source                                                                                    |
 | --------------- | ----------------------------------------------------------------------------------------- |
-| Product version | `release.config.json` `product.version`, currently `0.2.0-rc.3`.                          |
+| Product version | `release.config.json` `product.version`, currently `1.0.0-rc.1`.                          |
 | Runtime binary  | `apps/runtime/dist/caracal-*`.                                                            |
 | Containers      | Shared Go/Node role images, Web, Postgres, Redis, and Runtime from `release.config.json`. |
 | Helm            | `infra/helm/caracal`.                                                                     |
@@ -64,19 +64,19 @@ Open Source documentation is versioned by product minor release:
 - The latest stable minor is the default at `https://docs.caracal.run/`. The unversioned source is available at `/next/` after the first stable documentation release.
 - Superseded minors remain available at `/vX.Y/`, lose their edit link, and are protected by a committed SHA-256 digest.
 
-`v0.2.0` is the first versioned documentation release. `docs/versions.json` currently has `target: "v0.2"`, `current: null`, and no snapshots. Until stable `v0.2.0` is cut, edit `docs/src/content/docs/`; the site serves it from `/v0.2/`, but no `v0.2` source directory exists. Do not create one manually. The stable release snapshots that exact source and registers it as current.
+`v0.2.0` is the first versioned documentation release. `docs/versions.json` records `v0.2` as the current snapshot, and its source lives in `docs/src/content/docs/v0.2/`.
 
-After `v0.2.0`, patch documentation changes for the active release line go directly into `docs/src/content/docs/v0.2/`. Work intended for the next minor continues in the unversioned source. When `v0.3.0` is published, release automation performs one transaction:
+Patch documentation changes for the active release line go directly into `docs/src/content/docs/v0.2/`. Work intended for the next minor continues in the unversioned source. When `v1.0.0` is published, release automation performs one transaction:
 
-1. Archive the unversioned source as `v0.3` and preserve its sidebar and referenced assets.
-2. Make `v0.3` the default stable documentation.
+1. Archive the unversioned source as `v1.0` and preserve its sidebar and referenced assets.
+2. Make `v1.0` the default stable documentation.
 3. Lock `v0.2` and record its content digest.
 4. Leave the unversioned source in place as the starting point for `/next/`.
 
 The same process repeats for every later minor. `scripts/release.sh stable` and `scripts/release.sh promote` invoke it automatically. Maintainers can inspect the decision without changing files:
 
 ```bash
-node scripts/docsVersion.mjs plan 0.3.0
+node scripts/docsVersion.mjs plan 1.0.0
 node scripts/docsVersion.mjs verify
 ```
 
