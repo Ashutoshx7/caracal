@@ -13,6 +13,7 @@ Choose a profile from requirements you can verify. Caracal ships deployment mech
 | Local development from source | `caracal up` with development Compose | Production hardening |
 | One Docker host with bundled stores | Installed runtime and packaged Compose | Host redundancy or zero downtime |
 | Kubernetes 1.30+ with operator dependencies | Helm chart | A tested SLO or managed stores |
+| A managed runtime with no cluster to operate | `infra/containerPlatform` render targets | Network policy, disruption budgets, or container hardening |
 | Declarative chart installation | `caracalStack` OpenTofu module | Resources beyond namespace, optional Secret, and Helm release |
 | Provider-neutral VM bootstrap | `caracalHost` OpenTofu module | VM, firewall, TLS, backup, or monitoring creation |
 
@@ -38,4 +39,4 @@ Keep the prior release and values. Restore data only from a tested backup and re
 
 ## Next Step
 
-Use [Deploy with Docker Compose](/operations/docker-compose/) or [Deploy with Helm](/operations/kubernetes-helm/).
+Use [Deploy with Docker Compose](/operations/docker-compose/), [Deploy with Helm](/operations/kubernetes-helm/), or [Deploy on a Managed Container Platform](/operations/managed-container-platforms/).
