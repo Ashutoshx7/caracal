@@ -614,6 +614,7 @@ jobs:
             --set secrets.plaintext.caracalAdminToken="$(openssl rand -hex 32)" \
             --set secrets.plaintext.caracalCoordinatorToken="$(openssl rand -hex 32)" \
             --set secrets.plaintext.caracalAuthSecret="$(openssl rand -hex 32)" \
+            --set secrets.plaintext.metricsBearer="$(openssl rand -hex 32)" \
             --set secrets.plaintext.secretStoreKek="$(openssl rand -hex 32)" \
             --set secrets.plaintext.auditHmacKey="$(openssl rand -hex 32)" \
             --set secrets.plaintext.streamsHmacKey="$(openssl rand -hex 32)" \

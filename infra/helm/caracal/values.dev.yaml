@@ -12,6 +12,11 @@ networkPolicy:
   allowOpenDns: true
   allowOpenHttps: true
 
+secrets:
+  # Disposable dev stores terminate plaintext; production profiles keep require.
+  database:
+    sslMode: disable
+
 services:
   sts:
     replicas: 1
