@@ -44,3 +44,30 @@ variable "extraRuncmd" {
   type        = list(string)
   default     = []
 }
+
+variable "tlsProxy" {
+  description = "Optional TLS reverse proxy with automatic certificates. The packaged stack publishes every port on loopback only, so without a proxy the host serves no external traffic. Routes map a public hostname to the Caracal service behind it, and the console origin and token issuer are derived from them."
+  type = object({
+    email  = string
+    routes = map(string)
+  })
+  default = null
+
+  validation {
+    condition = var.tlsProxy == null || alltrue([
+      for service in values(var.tlsProxy.routes) : contains(["web", "api", "sts", "gateway"], service)
+    ])
+    error_message = "tlsProxy.routes values must each be one of: web, api, sts, gateway."
+  }
+
+  validation {
+    condition     = var.tlsProxy == null || length(var.tlsProxy.routes) > 0
+    error_message = "tlsProxy.routes must map at least one public hostname to a service."
+  }
+}
+
+variable "proxyImage" {
+  description = "Reverse proxy image used when tlsProxy is set. Pin it by digest for a reproducible host."
+  type        = string
+  default     = "caddy:2-alpine"
+}
