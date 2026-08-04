@@ -17,6 +17,7 @@ fi
 command -v az >/dev/null 2>&1 || { echo "the Azure CLI (az) is required" >&2; exit 1; }
 
 jobTimeout="${CARACAL_JOB_TIMEOUT_SECONDS:-900}"
+revisionTimeout="${CARACAL_REVISION_TIMEOUT_SECONDS:-600}"
 
 exists() {
     az "$@" --resource-group "${RESOURCE_GROUP}" >/dev/null 2>&1
@@ -66,7 +67,35 @@ rollApp() {
     else
         az containerapp create --name "${name}" --resource-group "${RESOURCE_GROUP}" --yaml "${manifest}" >/dev/null
     fi
-    echo "    ${name}: revision provisioned"
+
+    # A provisioned revision is not a serving one. Waiting for health here means
+    # a failed rollout stops the deployment instead of surfacing as a bad smoke
+    # test several services later.
+    local waited=0 revision health state
+    while :; do
+        revision="$(az containerapp show --name "${name}" --resource-group "${RESOURCE_GROUP}" \
+            --query properties.latestRevisionName -o tsv)"
+        state="$(az containerapp revision show --name "${name}" --revision "${revision}" \
+            --resource-group "${RESOURCE_GROUP}" --query properties.provisioningState -o tsv 2>/dev/null || echo Unknown)"
+        health="$(az containerapp revision show --name "${name}" --revision "${revision}" \
+            --resource-group "${RESOURCE_GROUP}" --query properties.healthState -o tsv 2>/dev/null || echo Unknown)"
+        if [ "${state}" = "Provisioned" ] && [ "${health}" = "Healthy" ]; then
+            echo "    ${name}: ${revision} healthy"
+            return 0
+        fi
+        if [ "${state}" = "Failed" ]; then
+            echo "    ${name}: ${revision} failed to provision" >&2
+            az containerapp logs show --name "${name}" --resource-group "${RESOURCE_GROUP}" \
+                --revision "${revision}" --tail 100 >&2 2>/dev/null || true
+            return 1
+        fi
+        if [ "${waited}" -ge "${revisionTimeout}" ]; then
+            echo "    ${name}: ${revision} still ${state}/${health} after ${revisionTimeout}s" >&2
+            return 1
+        fi
+        sleep 5
+        waited=$((waited + 5))
+    done
 }
 
 for manifest in "${MANIFEST_DIR}"/*.yaml; do

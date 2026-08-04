@@ -115,12 +115,15 @@ replayPersistence:
     - ReadWriteOnce
   size: 1Gi
 
+# ServiceMonitor and PrometheusRule are monitoring.coreos.com/v1 resources. Enable them
+# only on clusters where the Prometheus Operator CRDs are installed; otherwise the
+# release fails to render against the API server.
 serviceMonitor:
   enabled: false
   interval: 30s
 
 alertRules:
-  enabled: true
+  enabled: false
   labels: {}
   stsMaxPolicyAgeSeconds: 300
   auditDlqSize: 0

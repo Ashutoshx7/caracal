@@ -17,12 +17,12 @@ on:
         description: 'Published release tag to deploy, for example v1.0.0-rc.1'
         required: true
         type: string
-      target:
-        description: 'Deployment target'
+      environment:
+        description: 'Environment to act on'
         required: true
         type: choice
         options:
-          - containerApps
+          - production
       action:
         description: 'What to do with that version'
         required: true
@@ -36,7 +36,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-azure-${{ inputs.target }}
+  group: deploy-azure-${{ inputs.environment }}
   cancel-in-progress: false
 
 env:
@@ -50,7 +50,7 @@ jobs:
     timeout-minutes: 45
     # Requires a reviewer on the environment so a production change is never one
     # click, and holds the Azure federated-credential subject.
-    environment: azure-production
+    environment: ${{ inputs.environment }}
     permissions:
       contents: read
       id-token: write
@@ -84,6 +84,49 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
+
+      # Resolved and validated before authenticating, so a configuration mistake
+      # costs a few seconds and never touches the subscription.
+      - name: Resolve and validate configuration
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          VERSION: ${{ inputs.version }}
+          AZURE_REGISTRY_SERVER: ${{ vars.AZURE_REGISTRY_SERVER }}
+          AZURE_POSTGRES_HOST: ${{ vars.AZURE_POSTGRES_HOST }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+          AZURE_ENVIRONMENT_NAME: ${{ vars.AZURE_ENVIRONMENT_NAME }}
+          AZURE_ENVIRONMENT_DOMAIN: ${{ vars.AZURE_ENVIRONMENT_DOMAIN }}
+          AZURE_IDENTITY_ID: ${{ vars.AZURE_IDENTITY_ID }}
+          AZURE_KEY_VAULT_URL: ${{ vars.AZURE_KEY_VAULT_URL }}
+          CARACAL_CONSOLE_HOST: ${{ vars.CARACAL_CONSOLE_HOST }}
+          CARACAL_API_HOST: ${{ vars.CARACAL_API_HOST }}
+          CARACAL_STS_HOST: ${{ vars.CARACAL_STS_HOST }}
+          CARACAL_GATEWAY_HOST: ${{ vars.CARACAL_GATEWAY_HOST }}
+        run: |
+          set -euo pipefail
+          node -e '
+            const { readFileSync, writeFileSync } = require("node:fs")
+            const source = readFileSync(`deploy/azure/${process.env.ENVIRONMENT}.yaml`, "utf8")
+            const missing = []
+            const resolved = source
+              .replace(/^(\s*version:).*$/m, `$1 ${process.env.VERSION.replace(/^v/, "")}`)
+              .replace(/\$\{([A-Z0-9_]+)\}/g, (_, name) => {
+                const value = process.env[name]
+                if (!value) missing.push(name)
+                return value ?? ""
+              })
+            if (missing.length > 0) {
+              console.error(`missing environment variables: ${[...new Set(missing)].join(", ")}`)
+              process.exit(1)
+            }
+            writeFileSync("deployment.yaml", resolved)
+          '
+
+      # Rendered once here purely to fail early on a bad configuration. The
+      # manifests that are actually applied come from the release's own tooling.
+      - name: Validate rendered manifests
+        run: node infra/containerPlatform/render.mjs --config deployment.yaml --out preflight
 
       # Federated credentials only. A static client secret in CI is the exact
       # credential this deployment exists to avoid teaching.
@@ -130,21 +173,7 @@ jobs:
           done
 
       - name: Render manifests
-        env:
-          VERSION: ${{ inputs.version }}
-          DEPLOYMENT_CONFIG: ${{ secrets.AZURE_DEPLOYMENT_CONFIG }}
-        run: |
-          set -euo pipefail
-          printf '%s\n' "$DEPLOYMENT_CONFIG" > deployment.yaml
-          # The config names the release it deploys, so the manifests cannot
-          # reference a version other than the one selected above.
-          node -e "
-            const { readFileSync, writeFileSync } = require('node:fs')
-            const body = readFileSync('deployment.yaml', 'utf8')
-            const version = process.env.VERSION.replace(/^v/, '')
-            writeFileSync('deployment.yaml', body.replace(/^(\s*version:).*$/m, \`\$1 \${version}\`))
-          "
-          node caracal-deploy/containerPlatform/render.mjs --config deployment.yaml --out rendered
+        run: node caracal-deploy/containerPlatform/render.mjs --config deployment.yaml --out rendered
 
       - name: Deploy
         if: inputs.action == 'deploy'

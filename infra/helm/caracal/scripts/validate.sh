@@ -26,6 +26,7 @@ helm template caracal "${ROOT}" -f "${ROOT}/values.production.yaml" "${prod_set[
 helm template caracal "${ROOT}" -f "${ROOT}/examples/values.cloud-managed.yaml" >"${DIR}/cloud.yaml"
 grep -q "kind: Ingress" "${DIR}/cloud.yaml" || { echo "cloud overlay must render ingress" >&2; exit 1; }
 grep -q "kind: ServiceMonitor" "${DIR}/cloud.yaml" || { echo "cloud overlay must render ServiceMonitor" >&2; exit 1; }
+grep -q "kind: PrometheusRule" "${DIR}/cloud.yaml" || { echo "cloud overlay must render PrometheusRule" >&2; exit 1; }
 grep -q 'host: "sts.caracal.example.com"' "${DIR}/cloud.yaml" || { echo "cloud overlay must expose the external STS endpoint" >&2; exit 1; }
 
 helm template caracal "${ROOT}" -f "${ROOT}/examples/values.cloud-managed.yaml" -f "${ROOT}/examples/values.aks.yaml" >"${DIR}/aks.yaml"

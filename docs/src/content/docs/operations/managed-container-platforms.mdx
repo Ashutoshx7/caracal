@@ -92,7 +92,19 @@ Confirm secrets resolve into the container, migrations completed, and every serv
 
 Roll back by activating the previous revision; it is immediate and does not rebuild. Migrations are never reversed by a revision rollback, which is why they stay expand-only. Keep the previous rendered manifests alongside the release they describe.
 
-To remove the deployment, `caracal-deploy/containerPlatform/scripts/destroyAzure.sh` deletes every Caracal app and job it created and leaves the database, cache, vault, registry, and environment in place, so audit evidence and credentials survive the teardown.
+## Teardown
+
+Which teardown is correct depends on whether the environment holds anything you need to keep.
+
+For a **long-lived environment**, `caracal-deploy/containerPlatform/scripts/destroyAzure.sh` removes only the container apps and jobs it created. The database, cache, vault, registry, and the environment itself survive, so audit evidence and credentials are not destroyed along with the compute.
+
+For a **temporary environment**, put every resource in one resource group and delete the group:
+
+```bash
+az group delete --name <group> --yes
+```
+
+This is deliberately manual and deliberately not automated. It is atomic and complete, whereas removing only the applications leaves the database, cache, registry, and environment billing indefinitely. Confirm the result in Cost Analysis rather than trusting the command's exit code: a teardown is proven by the spend reaching zero.
 
 ## Next Step
 
