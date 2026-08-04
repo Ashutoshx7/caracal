@@ -567,7 +567,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.helm == 'true' || needs.changes.outputs.infra == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -576,6 +576,29 @@ jobs:
 
       - name: Create cluster
         uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      # The chart and its dependency stores resolve every image from the chart
+      # appVersion, and the tag for a version only reaches the registry when that
+      # version is released. Building from the checkout exercises this commit and
+      # keeps the install independent of what is already published. The runtime
+      # image ships as a binary launcher and is never deployed by the chart.
+      - name: Build and load images
+        run: |
+          set -euo pipefail
+          tag="v$(grep '^appVersion:' infra/helm/caracal/Chart.yaml | cut -d: -f2 | tr -d ' "')"
+          cluster="$(kind get clusters | head -1)"
+          while IFS=$'\t' read -r name context dockerfile; do
+            image="ghcr.io/garudex-labs/caracal-${name}:${tag}"
+            docker buildx build "$context" \
+              --file "$dockerfile" \
+              --tag "$image" \
+              --load \
+              --cache-from "type=gha,scope=helm-${name}" \
+              --cache-to "type=gha,mode=max,scope=helm-${name}"
+            kind load docker-image "$image" --name "$cluster"
+          done < <(jq -r '.product.containers[] | select(.name != "runtime") | [.name, .context, .dockerfile] | @tsv' release.config.json)
 
       # Generated per run and confined to a disposable cluster, so no credential
       # material is committed for the install test.
