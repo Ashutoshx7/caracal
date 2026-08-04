@@ -56,6 +56,11 @@ spec:
       automountServiceAccountToken: {{ $root.Values.serviceAccount.automountToken }}
       securityContext:
         runAsNonRoot: true
+        # The distroless images declare a named user, which kubelet cannot verify
+        # as non-root; 65532 is the uid behind that name.
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
       {{- $affinity := default $root.Values.scheduling.affinity $service.affinity }}
@@ -72,7 +77,8 @@ spec:
         - name: web
           image: {{ include "caracal.image" (dict "root" $root "image" $service.image) }}
           imagePullPolicy: {{ $root.Values.global.imagePullPolicy }}
-          command: ["/app/auth/dist/server.js"]
+          # The Node image entrypoint is the runtime itself, so the script is an argument.
+          args: ["/app/auth/dist/server.js"]
           ports:
             - name: http
               containerPort: {{ $service.port }}

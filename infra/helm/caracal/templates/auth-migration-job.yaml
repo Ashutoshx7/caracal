@@ -32,17 +32,22 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "caracal.serviceAccountName" . }}
-      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      serviceAccountName: {{ include "caracal.fullname" . }}-migrate
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
+        # The distroless images declare a named user, which kubelet cannot verify
+        # as non-root; 65532 is the uid behind that name.
+        runAsUser: 65532
+        runAsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: auth-migrate
           image: {{ include "caracal.image" (dict "root" . "image" $service.image) }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
-          command: ["/app/auth/dist/migrate.js"]
+          # The Node image entrypoint is the runtime itself, so the script is an argument.
+          args: ["/app/auth/dist/migrate.js"]
           env:
             - name: NODE_ENV
               value: production

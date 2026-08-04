@@ -31,10 +31,13 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "caracal.serviceAccountName" . }}
-      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      serviceAccountName: {{ include "caracal.fullname" . }}-migrate
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
+        # The postgres base image has no default USER; 70 is its postgres account.
+        runAsUser: 70
+        runAsGroup: 70
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -65,6 +68,8 @@ spec:
             - name: runtime-secrets
               mountPath: /run/secrets
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
           resources:
             {{- toYaml .Values.migrations.resources | nindent 12 }}
           securityContext:
@@ -74,6 +79,10 @@ spec:
               drop:
                 - ALL
       volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
         - name: runtime-secrets
           secret:
             secretName: {{ include "caracal.runtimeSecretName" . }}
