@@ -50,21 +50,33 @@ Operate managed Postgres reachable with migration privileges, managed Redis with
 
 2. Store the runtime credentials in the secret manager. `render.mjs` writes `secrets.txt` listing every required name in the platform's naming form; the key material itself is the same set the Helm chart consumes, described in [Rotate Keys and Secrets](/operations/key-management/).
 
-3. Copy `infra/containerPlatform/examples/azure.yaml`, set your endpoints, public origins, and provider wiring, and render:
+3. Download the deployment tooling for the release you are deploying. It is a published, checksummed, attested artifact, so no source checkout is involved:
 
    ```bash
-   node infra/containerPlatform/render.mjs --config deployment.yaml --out ./rendered
+   tag=v0.2.1
+   gh release download "$tag" --repo Garudex-Labs/caracal \
+     --pattern "caracal-deploy-${tag}.tar.gz" --pattern SHA256SUMS
+   grep " caracal-deploy-${tag}.tar.gz$" SHA256SUMS | sha256sum --check --strict -
+   gh attestation verify "caracal-deploy-${tag}.tar.gz" --repo Garudex-Labs/caracal
+   tar -xzf "caracal-deploy-${tag}.tar.gz"
+   npm --prefix caracal-deploy install --omit=dev
+   ```
+
+4. Copy `caracal-deploy/containerPlatform/examples/azure.yaml`, set your endpoints, public origins, and provider wiring, and render:
+
+   ```bash
+   node caracal-deploy/containerPlatform/render.mjs --config deployment.yaml --out ./rendered
    ```
 
    Rendering fails on a plaintext public origin, debug logging in `stable` mode, a missing identity, or an unresolvable value. Review the manifests before applying them.
 
-4. Apply in order. Schema migrations must finish before any service revision rolls, because a release's migrations are expand-only against the version still serving:
+5. Apply in order. Schema migrations must finish before any service revision rolls, because a release's migrations are expand-only against the version still serving:
 
    ```bash
-   CARACAL_RESOURCE_GROUP=<group> bash infra/containerPlatform/scripts/deployAzure.sh ./rendered
+   CARACAL_RESOURCE_GROUP=<group> bash caracal-deploy/containerPlatform/scripts/deployAzure.sh ./rendered
    ```
 
-5. Restore what the platform does not provide: subnet-level network restrictions, provider-native metrics and alert rules equivalent to the chart's, and backup and restore for Postgres and Redis.
+6. Restore what the platform does not provide: subnet-level network restrictions, provider-native metrics and alert rules equivalent to the chart's, and backup and restore for Postgres and Redis.
 
 ## Durable Audit Spill
 
@@ -74,11 +86,13 @@ To keep it, attach an NFS file share and set `azure.stateStorageName`. Use NFS r
 
 ## Verify
 
-Confirm secrets resolve into the container, migrations completed, and every service answers `/ready`. Run `infra/scripts/smokeTest.sh` against the ingress hosts, then a canary token exchange and Gateway request, and locate the resulting audit evidence. Confirm internal-only services are not externally reachable.
+Confirm secrets resolve into the container, migrations completed, and every service answers `/ready`. Run `caracal-deploy/smokeTest.sh` against the ingress hosts, then a canary token exchange and Gateway request, and locate the resulting audit evidence. Confirm internal-only services are not externally reachable.
 
 ## Rollback or Recovery
 
 Roll back by activating the previous revision; it is immediate and does not rebuild. Migrations are never reversed by a revision rollback, which is why they stay expand-only. Keep the previous rendered manifests alongside the release they describe.
+
+To remove the deployment, `caracal-deploy/containerPlatform/scripts/destroyAzure.sh` deletes every Caracal app and job it created and leaves the database, cache, vault, registry, and environment in place, so audit evidence and credentials survive the teardown.
 
 ## Next Step
 

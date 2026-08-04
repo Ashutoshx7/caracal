@@ -22,7 +22,7 @@ Caracal ships three deployment models. The stack itself is provider-neutral: the
 
 These hold on every cloud and every model, and no adapter may alter them:
 
-* Four published images, with the container start command selecting the service role.
+* The published images, with the container start command selecting the service role.
 * The environment and secret contract in [Configuration Reference](/reference/configuration/).
 * Expand-only schema migrations applied to completion before a rollout.
 * Postgres with migration privileges, and Redis with Streams and `noeviction`.
