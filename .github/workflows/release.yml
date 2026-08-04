@@ -367,6 +367,32 @@ jobs:
           cp install.sh install.ps1 release-dist/
           ls -la release-dist/
 
+      - name: Package deployment tooling
+        env:
+          RELEASE_TAG: ${{ needs.context.outputs.releaseTag }}
+        run: |
+          set -euo pipefail
+          source_date_epoch="$(git log -1 --format=%ct)"
+          stage="$(mktemp -d)/caracal-deploy"
+          mkdir -p "$stage"
+          cp -r infra/containerPlatform "${stage}/containerPlatform"
+          cp infra/scripts/smokeTest.sh "${stage}/smokeTest.sh"
+          # The renderer needs a YAML parser, which the archive must be able to
+          # install on its own: an operator has a release, not a git checkout.
+          yaml_version="$(node -p "require('./package.json').devDependencies.yaml")"
+          jq -n --arg v "${{ needs.context.outputs.version }}" --arg y "$yaml_version" '{
+            name: "caracal-deploy",
+            version: $v,
+            private: true,
+            type: "module",
+            dependencies: { yaml: $y }
+          }' > "${stage}/package.json"
+          find "$stage" -exec touch -d "@${source_date_epoch}" {} +
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@${source_date_epoch}" \
+            -C "$(dirname "$stage")" -cf - caracal-deploy \
+            | gzip -n -9 > "release-dist/caracal-deploy-${RELEASE_TAG}.tar.gz"
+          rm -rf "$(dirname "$stage")"
+
       - name: Verify reproducibility
         env:
           RELEASE_TAG: ${{ needs.context.outputs.releaseTag }}
@@ -399,7 +425,7 @@ jobs:
 
       - name: Generate checksums
         working-directory: release-dist
-        run: sha256sum caracal-runtime-*.tar.gz caracal-runtime-*.zip manifest.json install.sh install.ps1 > SHA256SUMS
+        run: sha256sum caracal-runtime-*.tar.gz caracal-runtime-*.zip caracal-deploy-*.tar.gz manifest.json install.sh install.ps1 > SHA256SUMS
 
       - name: Verify assets
         env:
@@ -418,6 +444,7 @@ jobs:
         with:
           subject-path: |
             release-dist/caracal-runtime-*
+            release-dist/caracal-deploy-*
 
   images:
     name: Build images

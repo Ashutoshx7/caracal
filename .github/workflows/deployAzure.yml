@@ -1,0 +1,185 @@
+# Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+# Caracal, a product of Garudex Labs
+#
+# Manually triggered deployment of a published Caracal release to Azure.
+
+# Deployment is deliberately manual. This workflow never runs on push, merge, or
+# release: an operator selects a published version and an action. Nothing is
+# built here. Every artifact is resolved from an existing release, so the
+# deployment consumes exactly what users consume.
+
+name: deployAzure
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Published release tag to deploy, for example v1.0.0-rc.1'
+        required: true
+        type: string
+      target:
+        description: 'Deployment target'
+        required: true
+        type: choice
+        options:
+          - containerApps
+      action:
+        description: 'What to do with that version'
+        required: true
+        type: choice
+        options:
+          - deploy
+          - verify
+          - destroy
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-azure-${{ inputs.target }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '24'
+  PNPM_VERSION: '11.1.1'
+
+jobs:
+  deploy:
+    name: ${{ inputs.action }} ${{ inputs.version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Requires a reviewer on the environment so a production change is never one
+    # click, and holds the Azure federated-credential subject.
+    environment: azure-production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate release tag
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          case "$VERSION" in
+            v[0-9]*.[0-9]*.[0-9]*|v[0-9]*.[0-9]*.[0-9]*-rc.[0-9]*) ;;
+            *) echo "::error::not a publishable release tag: $VERSION"; exit 1 ;;
+          esac
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      # Federated credentials only. A static client secret in CI is the exact
+      # credential this deployment exists to avoid teaching.
+      - name: Sign in to Azure
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # The deployment tooling is taken from the release being deployed, not
+      # from this checkout, so a redeploy of an older version uses that
+      # version's tooling.
+      - name: Fetch published deployment tooling
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "$VERSION" --repo "${{ github.repository }}" \
+            --pattern "caracal-deploy-${VERSION}.tar.gz" --pattern 'SHA256SUMS' --dir .
+          grep " caracal-deploy-${VERSION}.tar.gz\$" SHA256SUMS | sha256sum --check --strict -
+          tar -xzf "caracal-deploy-${VERSION}.tar.gz"
+          npm --prefix caracal-deploy install --omit=dev --no-audit --no-fund
+
+      - name: Verify release provenance
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: gh attestation verify "caracal-deploy-${VERSION}.tar.gz" --repo "${{ github.repository }}"
+
+      - name: Import published images
+        if: inputs.action == 'deploy'
+        env:
+          VERSION: ${{ inputs.version }}
+          REGISTRY: ${{ vars.AZURE_REGISTRY_NAME }}
+        run: |
+          set -euo pipefail
+          # Import, never rebuild: the digest deployed is the digest released.
+          for image in caracal-go caracal-node caracal-web caracal-postgres; do
+            az acr import --name "$REGISTRY" --force \
+              --source "ghcr.io/garudex-labs/${image}:${VERSION}" \
+              --image "${image}:${VERSION}"
+          done
+
+      - name: Render manifests
+        env:
+          VERSION: ${{ inputs.version }}
+          DEPLOYMENT_CONFIG: ${{ secrets.AZURE_DEPLOYMENT_CONFIG }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$DEPLOYMENT_CONFIG" > deployment.yaml
+          # The config names the release it deploys, so the manifests cannot
+          # reference a version other than the one selected above.
+          node -e "
+            const { readFileSync, writeFileSync } = require('node:fs')
+            const body = readFileSync('deployment.yaml', 'utf8')
+            const version = process.env.VERSION.replace(/^v/, '')
+            writeFileSync('deployment.yaml', body.replace(/^(\s*version:).*$/m, \`\$1 \${version}\`))
+          "
+          node caracal-deploy/containerPlatform/render.mjs --config deployment.yaml --out rendered
+
+      - name: Deploy
+        if: inputs.action == 'deploy'
+        env:
+          CARACAL_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: bash caracal-deploy/containerPlatform/scripts/deployAzure.sh rendered
+
+      - name: Smoke test
+        if: inputs.action == 'deploy' || inputs.action == 'verify'
+        env:
+          CARACAL_SMOKE_HOST: ${{ vars.CARACAL_SMOKE_HOST }}
+        run: bash caracal-deploy/smokeTest.sh
+
+      - name: Destroy
+        if: inputs.action == 'destroy'
+        env:
+          CARACAL_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          CARACAL_ASSUME_YES: '1'
+        run: bash caracal-deploy/containerPlatform/scripts/destroyAzure.sh rendered
+
+      - name: Report status
+        if: always()
+        env:
+          CARACAL_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: |
+          {
+            echo "### Azure ${{ inputs.action }}"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Version | \`${{ inputs.version }}\` |"
+            echo "| Target | ${{ inputs.target }} |"
+            echo "| Result | ${{ job.status }} |"
+            echo ""
+            az containerapp list --resource-group "$CARACAL_RESOURCE_GROUP" \
+              --query "[].{app:name, revision:properties.latestReadyRevisionName, fqdn:properties.configuration.ingress.fqdn}" \
+              -o table 2>/dev/null || echo "no container apps present"
+          } >> "$GITHUB_STEP_SUMMARY"

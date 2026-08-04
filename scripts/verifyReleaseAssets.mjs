@@ -27,6 +27,7 @@ const assets = [
   `caracal-runtime-darwin-amd64-${releaseTag}.tar.gz`,
   `caracal-runtime-darwin-arm64-${releaseTag}.tar.gz`,
   `caracal-runtime-windows-amd64-${releaseTag}.zip`,
+  `caracal-deploy-${releaseTag}.tar.gz`,
   'manifest.json',
   'install.sh',
   'install.ps1',

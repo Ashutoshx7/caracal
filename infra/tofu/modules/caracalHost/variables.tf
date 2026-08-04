@@ -67,7 +67,7 @@ variable "tlsProxy" {
 }
 
 variable "proxyImage" {
-  description = "Reverse proxy image used when tlsProxy is set. Pin it by digest for a reproducible host."
+  description = "Reverse proxy image used when tlsProxy is set. Pinned by digest so a host rebuilt later runs the same proxy."
   type        = string
-  default     = "caddy:2-alpine"
+  default     = "caddy:2-alpine@sha256:98eb57d882ccd5213d1688764db10c1ca2c58a1ca3a6717a3411ad798f7a423a"
 }
