@@ -45,6 +45,13 @@ function readPath(source, path) {
   return path.split('.').reduce((node, key) => (node == null ? node : node[key]), source)
 }
 
+// The name a unit is created under on every platform. Adapters and apply flows
+// both derive from this, so an address a service is told to call is always the
+// name that service was deployed as.
+function resourceName(name) {
+  return `caracal-${name.toLowerCase()}`
+}
+
 function parseArgs(argv) {
   const args = { config: '', out: '' }
   for (let i = 0; i < argv.length; i += 1) {
@@ -67,7 +74,7 @@ function makeResolver(config, target, topology) {
   const serviceRef = (name) => {
     const service = topology.services[name]
     if (!service) fail(`topology.services.${name} is not defined`)
-    return { name, port: service.port }
+    return { name, port: service.port, resourceName: resourceName(name) }
   }
 
   const scalars = {
@@ -105,7 +112,10 @@ function applySecretDelivery(unit, delivery, secretMountPath) {
     const fileEnv = Object.fromEntries(
       Object.entries(unit.secretEnv).map(([name, key]) => [`${name}_FILE`, `${secretMountPath}/${key}`]),
     )
-    return { env: { ...unit.env, ...fileEnv }, secretFiles: Object.values(unit.secretEnv), envSecrets: {} }
+    // Two variables may be fed by one credential, which would otherwise project
+    // the same file twice and produce an invalid volume.
+    const secretFiles = [...new Set(Object.values(unit.secretEnv))]
+    return { env: { ...unit.env, ...fileEnv }, secretFiles, envSecrets: {} }
   }
   return { env: unit.env, secretFiles: [], envSecrets: unit.secretEnv }
 }
@@ -131,6 +141,7 @@ function buildPlan(topology, config, target) {
     }
     return {
       name,
+      resourceName: resourceName(name),
       image: imageRef(service.image),
       command: service.command,
       args: service.args ?? [],
@@ -146,6 +157,7 @@ function buildPlan(topology, config, target) {
 
   const jobs = topology.jobs.map((job) => ({
     name: job.name,
+    resourceName: resourceName(job.name),
     image: imageRef(job.image),
     command: job.command,
     args: job.args ?? [],
@@ -213,8 +225,15 @@ if (target.experimental) {
   console.warn(`render: target "${config.target}" is experimental and has not been production-tested`)
 }
 
-const plan = buildPlan(topology, config, target)
-const files = target.render(plan, config)
+// An adapter reports a missing or unusable provider value by throwing. Surfacing
+// it as a message keeps a configuration mistake readable instead of a stack trace.
+let files
+try {
+  const plan = buildPlan(topology, config, target)
+  files = target.render(plan, config)
+} catch (error) {
+  fail(error.message)
+}
 
 const outDir = resolve(args.out)
 mkdirSync(outDir, { recursive: true })

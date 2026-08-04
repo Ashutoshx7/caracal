@@ -65,7 +65,7 @@ function container(plan, aws, unit, extra = {}) {
 function taskDefinition(plan, config, aws, unit, extra = {}) {
   return JSON.stringify(
     {
-      family: `caracal-${unit.name.toLowerCase()}`,
+      family: unit.resourceName,
       requiresCompatibilities: ['FARGATE'],
       networkMode: 'awsvpc',
       runtimePlatform: { cpuArchitecture: 'X86_64', operatingSystemFamily: 'LINUX' },
@@ -88,7 +88,9 @@ function renderService(plan, config, aws, service) {
     startPeriod: 30,
   }
   const definition = taskDefinition(plan, config, aws, service, {
-    portMappings: [{ containerPort: service.port, protocol: 'tcp', name: service.name, appProtocol: 'http' }],
+    portMappings: [
+      { containerPort: service.port, protocol: 'tcp', name: service.resourceName, appProtocol: 'http' },
+    ],
     healthCheck,
     environment: [
       ...Object.entries(service.env).map(([name, value]) => ({ name, value: String(value) })),
@@ -102,8 +104,8 @@ function renderService(plan, config, aws, service) {
   // the neutral internal URLs resolve to.
   const serviceSpec = {
     cluster: aws.cluster,
-    serviceName: `caracal-${service.name}`,
-    taskDefinition: `caracal-${service.name}`,
+    serviceName: service.resourceName,
+    taskDefinition: service.resourceName,
     launchType: 'FARGATE',
     desiredCount: service.scale.min,
     propagateTags: 'SERVICE',
@@ -119,9 +121,9 @@ function renderService(plan, config, aws, service) {
       namespace: aws.namespaceArn,
       services: [
         {
-          portName: service.name,
-          discoveryName: service.name,
-          clientAliases: [{ port: service.port, dnsName: service.name }],
+          portName: service.resourceName,
+          discoveryName: service.resourceName,
+          clientAliases: [{ port: service.port, dnsName: service.resourceName }],
         },
       ],
     },
@@ -164,9 +166,10 @@ function render(plan, config) {
   return files
 }
 
-// Service Connect resolves a service by its discovery name inside the cluster.
+// Service Connect resolves a service by its client alias inside the cluster,
+// which is set to the same name the service is deployed under.
 function internalUrl(service) {
-  return `http://${service.name}:${service.port}`
+  return `http://${service.resourceName}:${service.port}`
 }
 
 export const awsEcs = { secretDelivery: 'env', experimental: true, internalUrl, render }

@@ -234,7 +234,7 @@ function render(plan, config) {
 function internalUrl(service, config) {
   const domain = config.azure?.environmentDomain
   if (!domain) fail('azure.environmentDomain is required to derive internal service URLs')
-  return `https://${service.name}.internal.${domain}`
+  return `https://${service.resourceName}.internal.${domain}`
 }
 
 export const azureContainerApps = { secretDelivery: 'file', internalUrl, render }

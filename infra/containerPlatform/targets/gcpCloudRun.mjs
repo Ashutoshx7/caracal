@@ -5,16 +5,17 @@
 
 // Experimental. Rendered and schema-checked, not yet exercised against a live project.
 //
-// Cloud Run mounts Secret Manager versions as files, so this target uses file
-// delivery and no credential enters the process environment. It has no durable
-// per-instance volume: services that spill audit evidence to disk keep it only
-// for the life of the instance.
+// Cloud Run mounts one secret per mount path and refuses two volume mounts at
+// the same location, so the several credentials each service needs cannot share
+// a secret directory. This target therefore declares environment delivery and
+// binds each credential through secretKeyRef, which Cloud Run resolves before
+// the instance starts. It also has no durable per-instance volume: services that
+// spill audit evidence to disk keep it only for the life of the instance.
 
 import { stringify } from 'yaml'
 
 const appOrder = ['sts', 'audit', 'coordinator', 'api', 'gateway', 'web']
 
-const secretVolume = 'runtime-secrets'
 const stateVolume = 'state'
 
 function fail(message) {
@@ -45,29 +46,22 @@ function secretRef(gcp, key) {
 }
 
 function volumes(plan, gcp, unit) {
-  const list = []
-  if (unit.secretFiles.length > 0) {
-    list.push({
-      name: secretVolume,
-      secret: {
-        items: unit.secretFiles.map((key) => ({
-          path: key,
-          secret: secretRef(gcp, key),
-          version: 'latest',
-        })),
-      },
-    })
-  }
   // Cloud Run offers no durable per-instance disk, so state is always in-memory.
-  if (unit.state) list.push({ name: stateVolume, emptyDir: { medium: 'MEMORY', sizeLimit: '512Mi' } })
-  return list
+  return unit.state ? [{ name: stateVolume, emptyDir: { medium: 'MEMORY', sizeLimit: '512Mi' } }] : []
 }
 
 function volumeMounts(plan, unit) {
-  const mounts = []
-  if (unit.secretFiles.length > 0) mounts.push({ name: secretVolume, mountPath: plan.secretMountPath })
-  if (unit.state) mounts.push({ name: stateVolume, mountPath: plan.statePath })
-  return mounts
+  return unit.state ? [{ name: stateVolume, mountPath: plan.statePath }] : []
+}
+
+function envList(gcp, unit) {
+  return [
+    ...Object.entries(unit.env).map(([name, value]) => ({ name, value: String(value) })),
+    ...Object.entries(unit.envSecrets).map(([name, key]) => ({
+      name,
+      valueFrom: { secretKeyRef: { name: secretRef(gcp, key), key: 'latest' } },
+    })),
+  ]
 }
 
 function containerSpec(plan, gcp, unit, extra = {}) {
@@ -75,7 +69,7 @@ function containerSpec(plan, gcp, unit, extra = {}) {
     image: unit.image,
     command: [unit.command],
     args: unit.args,
-    env: Object.entries(unit.env).map(([name, value]) => ({ name, value: String(value) })),
+    env: envList(gcp, unit),
     resources: { limits: resources(unit.resources) },
     volumeMounts: volumeMounts(plan, unit),
     ...extra,
@@ -88,7 +82,7 @@ function renderService(plan, config, gcp, service) {
     apiVersion: 'serving.knative.dev/v1',
     kind: 'Service',
     metadata: {
-      name: `caracal-${service.name}`,
+      name: service.resourceName,
       annotations: {
         // Only the browser tier and the externally verified endpoints leave the project.
         'run.googleapis.com/ingress': service.exposure === 'public' ? 'all' : 'internal',
@@ -131,7 +125,7 @@ function renderJob(plan, config, gcp, job) {
   return stringify({
     apiVersion: 'run.googleapis.com/v1',
     kind: 'Job',
-    metadata: { name: `caracal-${job.name.toLowerCase()}` },
+    metadata: { name: job.resourceName },
     spec: {
       template: {
         spec: {
@@ -169,12 +163,13 @@ function render(plan, config) {
   return files
 }
 
-// Cloud Run gives every service a stable per-region URL; internal ingress keeps
-// it reachable only from within the project's network.
+// Cloud Run assigns each service a deterministic per-region URL. Confirm it
+// against the deployed service's status after the first apply; internal ingress
+// keeps it reachable only from within the project's network.
 function internalUrl(service, config) {
   const gcp = config.gcp ?? {}
   if (!gcp.project || !gcp.region) fail('gcp.project and gcp.region are required to derive internal service URLs')
-  return `https://caracal-${service.name}-${gcp.projectNumber ?? gcp.project}.${gcp.region}.run.app`
+  return `https://${service.resourceName}-${gcp.projectNumber ?? gcp.project}.${gcp.region}.run.app`
 }
 
-export const gcpCloudRun = { secretDelivery: 'file', experimental: true, internalUrl, render }
+export const gcpCloudRun = { secretDelivery: 'env', experimental: true, internalUrl, render }
