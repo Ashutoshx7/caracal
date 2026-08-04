@@ -575,7 +575,7 @@ jobs:
           persist-credentials: false
 
       - name: Shellcheck infra scripts
-        run: shellcheck infra/scripts/*.sh infra/tofu/scripts/*.sh infra/redis/*.sh infra/postgres/scripts/*.sh infra/helm/caracal/scripts/*.sh
+        run: shellcheck infra/scripts/*.sh infra/tofu/scripts/*.sh infra/redis/*.sh infra/postgres/scripts/*.sh infra/helm/caracal/scripts/*.sh infra/containerPlatform/scripts/*.sh
 
       - name: Validate compose files
         env:
@@ -583,6 +583,24 @@ jobs:
         run: |
           docker compose -f infra/docker/docker-compose.yml config --quiet
           docker compose -f infra/docker/runtime-compose.yml config --quiet
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
+
+      - name: Validate container platform manifests
+        run: bash infra/containerPlatform/scripts/validate.sh
 
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
