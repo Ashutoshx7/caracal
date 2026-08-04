@@ -18,13 +18,31 @@ secrets:
     sslMode: disable
 
 services:
+  # An HPA owns the replica count once it exists, and its minReplicas of 2 would
+  # override the single replica below. Disabling it keeps a dev cluster at one
+  # replica per service, which also matches what a node without metrics-server
+  # can actually schedule.
   sts:
     replicas: 1
+    hpa:
+      enabled: false
   gateway:
     replicas: 1
+    hpa:
+      enabled: false
   api:
     replicas: 1
+    hpa:
+      enabled: false
   coordinator:
     replicas: 1
+    hpa:
+      enabled: false
   audit:
     replicas: 1
+    hpa:
+      enabled: false
+  web:
+    replicas: 1
+    hpa:
+      enabled: false
