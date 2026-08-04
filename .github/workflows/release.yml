@@ -605,7 +605,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/finalizeOciDigests.mjs dist/manifest.json
-          (cd dist && sha256sum caracal-runtime-*.tar.gz caracal-runtime-*.zip manifest.json install.sh install.ps1 > SHA256SUMS)
+          (cd dist && sha256sum caracal-runtime-*.tar.gz caracal-runtime-*.zip caracal-deploy-*.tar.gz manifest.json install.sh install.ps1 > SHA256SUMS)
 
       - name: Verify release assets
         env:
@@ -817,6 +817,7 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             dist/caracal-runtime-*
+            dist/caracal-deploy-*
             dist/manifest.json
             dist/SHA256SUMS
             dist/install.sh
@@ -834,6 +835,7 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             dist/caracal-runtime-*
+            dist/caracal-deploy-*
             dist/manifest.json
             dist/SHA256SUMS
             dist/install.sh

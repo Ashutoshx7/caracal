@@ -184,6 +184,7 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             dist/caracal-runtime-*
+            dist/caracal-deploy-*
             dist/manifest.json
             dist/SHA256SUMS
             dist/install.sh
@@ -201,6 +202,7 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             dist/caracal-runtime-*
+            dist/caracal-deploy-*
             dist/manifest.json
             dist/SHA256SUMS
             dist/install.sh
