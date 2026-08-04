@@ -567,7 +567,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.helm == 'true' || needs.changes.outputs.infra == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -605,10 +605,18 @@ jobs:
           set -euo pipefail
           # --wait-for-jobs blocks on the migration hook, and --wait blocks until
           # every workload reports Available, which requires /ready to succeed.
+          #
+          # Deliberately not --atomic here. Production installs should roll back,
+          # but a rollback deletes the failed pods before anything can be read
+          # from them, which is the whole point of running this in CI.
+          #
+          # Backgrounded so pod state prints while helm waits: otherwise a stuck
+          # rollout is indistinguishable from a slow one until the timeout.
           helm upgrade --install caracal infra/helm/caracal \
             --namespace caracal --create-namespace \
             --values infra/helm/caracal/values.dev.yaml \
             --set secrets.create=true \
+            --set migrations.activeDeadlineSeconds=300 \
             --set secrets.plaintext.postgresPassword="$CARACAL_TEST_POSTGRES_PASSWORD" \
             --set secrets.plaintext.redisPassword="$CARACAL_TEST_REDIS_PASSWORD" \
             --set secrets.plaintext.caracalAdminToken="$(openssl rand -hex 32)" \
@@ -620,7 +628,20 @@ jobs:
             --set secrets.plaintext.streamsHmacKey="$(openssl rand -hex 32)" \
             --set secrets.plaintext.idempotencyHmacKey="$(openssl rand -hex 32)" \
             --set secrets.plaintext.gatewayStsHmacKey="$(openssl rand -hex 32)" \
-            --atomic --wait --wait-for-jobs --timeout 20m
+            --wait --wait-for-jobs --timeout 12m &
+          helmPid=$!
+
+          while kill -0 "$helmPid" 2>/dev/null; do
+            sleep 20
+            echo "--- $(date -u +%H:%M:%S) ---"
+            kubectl -n caracal get pods --no-headers 2>/dev/null \
+              | awk '{printf "  %-44s %-8s %-24s restarts=%s\n", $1, $2, $3, $4}' || true
+            kubectl -n caracal get events --field-selector type=Warning \
+              -o custom-columns=OBJ:.involvedObject.name,MSG:.message --no-headers 2>/dev/null \
+              | tail -3 | sed 's/^/  warn: /' || true
+          done
+
+          wait "$helmPid"
 
       - name: Verify workloads
         run: |
@@ -636,9 +657,40 @@ jobs:
       - name: Dump diagnostics on failure
         if: failure()
         run: |
-          kubectl -n caracal get events --sort-by=.lastTimestamp | tail -40 || true
-          kubectl -n caracal describe pods || true
-          kubectl -n caracal logs -l app.kubernetes.io/part-of=caracal --tail=100 --all-containers || true
+          echo "::group::pods"
+          kubectl -n caracal get pods -o wide || true
+          echo "::endgroup::"
+          echo "::group::not-ready containers"
+          # A container that never started has no logs, so its waiting reason is
+          # the only signal available.
+          kubectl -n caracal get pods -o json 2>/dev/null | node -e '
+            let raw = ""
+            process.stdin.on("data", (c) => (raw += c)).on("end", () => {
+              for (const pod of (JSON.parse(raw || "{}").items ?? [])) {
+                for (const s of pod.status.containerStatuses ?? []) {
+                  if (s.ready) continue
+                  const state = Object.entries(s.state ?? {})[0] ?? ["unknown", {}]
+                  console.log(`${pod.metadata.name}/${s.name}: ${state[0]} ${state[1].reason ?? ""} ${state[1].message ?? ""}`)
+                }
+              }
+            })
+          ' || true
+          echo "::endgroup::"
+          echo "::group::warning events"
+          kubectl -n caracal get events --field-selector type=Warning --sort-by=.lastTimestamp | tail -40 || true
+          echo "::endgroup::"
+          echo "::group::migration job"
+          kubectl -n caracal logs job/caracal-caracal-migrate --tail=100 || true
+          kubectl -n caracal describe job caracal-caracal-migrate || true
+          echo "::endgroup::"
+          echo "::group::service logs"
+          kubectl -n caracal logs -l app.kubernetes.io/part-of=caracal --tail=60 --all-containers --prefix || true
+          echo "::endgroup::"
+          echo "::group::dependencies"
+          kubectl get pods -o wide || true
+          kubectl logs deployment/postgres --tail=40 || true
+          kubectl logs deployment/redis --tail=40 || true
+          echo "::endgroup::"
 
   infra:
     name: Infrastructure validation
