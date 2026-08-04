@@ -240,25 +240,31 @@ function successfulReleaseRun(tag, sha, mode) {
   )
 }
 
-function latestReleaseRun(tag, sha, mode) {
+function releaseRuns(tag, sha, mode) {
   const title = releaseRunName(tag, mode, sha)
   const runs = JSON.parse(
     run('gh', ['api', `repos/${repoSlug}/actions/workflows/release.yml/runs?event=workflow_dispatch&head_sha=${sha}&per_page=100`]),
   ).workflow_runs
+  return runs.filter((workflow) => workflow.display_title === title && workflow.head_branch === tag && workflow.head_sha === sha)
+}
+
+function latestReleaseRun(tag, sha, mode, seen) {
   return (
-    runs
-      .filter((workflow) => workflow.display_title === title && workflow.head_sha === sha)
+    releaseRuns(tag, sha, mode)
+      .filter((workflow) => !seen.has(workflow.id))
       .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0] ?? null
   )
 }
 
-function watchRun(tag, sha, mode) {
+// A dispatch takes time to surface, and earlier runs carry the same title and
+// commit, so only a run absent before the dispatch identifies the queued one.
+function watchRun(tag, sha, mode, seen) {
   const discoverDeadline = Date.now() + 5 * 60 * 1000
-  let workflow = latestReleaseRun(tag, sha, mode)
+  let workflow = latestReleaseRun(tag, sha, mode, seen)
   while (!workflow) {
     if (Date.now() >= discoverDeadline) die(`no ${mode} run appeared for ${tag} at ${sha}`)
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10_000)
-    workflow = latestReleaseRun(tag, sha, mode)
+    workflow = latestReleaseRun(tag, sha, mode, seen)
   }
   say(`watching ${mode} run ${workflow.id}: ${workflow.html_url}`)
   execFileSync('gh', ['run', 'watch', String(workflow.id), '--exit-status', '--interval', '30'], { cwd: repoRoot, stdio: 'inherit' })
@@ -271,6 +277,7 @@ function publishRelease(version, watch = false) {
   const result = ensureRemoteReleaseTags(repoRoot, tags, sha)
   say(`${result.created ? 'published' : 'verified'} ${tags.length} release tags at ${sha}`)
   if (!successfulReleaseRun(tag, sha, 'dry-run')) {
+    const priorDryRuns = new Set(releaseRuns(tag, sha, 'dry-run').map((workflow) => workflow.id))
     dispatchRelease(tag, true)
     say(`queued immutable release dry-run for ${tag}`)
     if (!watch) {
@@ -278,12 +285,13 @@ function publishRelease(version, watch = false) {
       say('monitor: gh run list --workflow release.yml --limit 5')
       return
     }
-    watchRun(tag, sha, 'dry-run')
+    watchRun(tag, sha, 'dry-run', priorDryRuns)
   }
+  const priorPublishRuns = new Set(releaseRuns(tag, sha, 'publish').map((workflow) => workflow.id))
   dispatchRelease(tag, false)
   say(`queued release workflow for ${tag}`)
   if (watch) {
-    watchRun(tag, sha, 'publish')
+    watchRun(tag, sha, 'publish', priorPublishRuns)
     say(`release ${tag} published`)
     return
   }
