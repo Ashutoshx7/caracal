@@ -28,6 +28,32 @@ grep -q "kind: Ingress" "${DIR}/cloud.yaml" || { echo "cloud overlay must render
 grep -q "kind: ServiceMonitor" "${DIR}/cloud.yaml" || { echo "cloud overlay must render ServiceMonitor" >&2; exit 1; }
 grep -q 'host: "sts.caracal.example.com"' "${DIR}/cloud.yaml" || { echo "cloud overlay must expose the external STS endpoint" >&2; exit 1; }
 
+helm template caracal "${ROOT}" -f "${ROOT}/examples/values.cloud-managed.yaml" -f "${ROOT}/examples/values.aks.yaml" >"${DIR}/aks.yaml"
+# Keyless cloud identity needs both halves: the annotation on the ServiceAccount
+# and the label on the pods. Either one alone silently falls back to no identity.
+grep -q "azure.workload.identity/client-id" "${DIR}/aks.yaml" || { echo "AKS overlay must bind a workload identity" >&2; exit 1; }
+grep -q "azure.workload.identity/use" "${DIR}/aks.yaml" || { echo "AKS overlay must label pods for the identity webhook" >&2; exit 1; }
+grep -q 'storageClassName: "managed-csi"' "${DIR}/aks.yaml" || { echo "AKS overlay must set a durable storage class" >&2; exit 1; }
+grep -q 'value: "https://sts.caracal.example.com"' "${DIR}/aks.yaml" || { echo "AKS overlay must publish an externally resolvable STS issuer" >&2; exit 1; }
+
+# Every cloud overlay resolves the same four values through the same chart keys;
+# only the values differ. A cloud that needed a chart change would fail here.
+declare -A cloudIdentity=(
+    [aks]="azure.workload.identity/client-id"
+    [eks]="eks.amazonaws.com/role-arn"
+    [gke]="iam.gke.io/gcp-service-account"
+)
+declare -A cloudStorage=([aks]="managed-csi" [eks]="gp3" [gke]="premium-rwo")
+declare -A cloudIngress=([aks]="webapprouting.kubernetes.azure.com" [eks]="alb" [gke]="gce")
+for cloud in aks eks gke; do
+    helm template caracal "${ROOT}" -f "${ROOT}/examples/values.cloud-managed.yaml" -f "${ROOT}/examples/values.${cloud}.yaml" >"${DIR}/${cloud}.yaml"
+    grep -q "${cloudIdentity[${cloud}]}" "${DIR}/${cloud}.yaml" || { echo "${cloud} overlay must bind a cloud identity" >&2; exit 1; }
+    grep -q "storageClassName: \"${cloudStorage[${cloud}]}\"" "${DIR}/${cloud}.yaml" || { echo "${cloud} overlay must set a durable storage class" >&2; exit 1; }
+    grep -q "ingressClassName: \"${cloudIngress[${cloud}]}\"" "${DIR}/${cloud}.yaml" || { echo "${cloud} overlay must set its ingress class" >&2; exit 1; }
+    grep -q 'value: "https://sts.caracal.example.com"' "${DIR}/${cloud}.yaml" || { echo "${cloud} overlay must publish an externally resolvable STS issuer" >&2; exit 1; }
+    echo "  ${cloud} overlay resolves identity, storage, and ingress through the shared chart keys"
+done
+
 for key in apiDatabaseUrl stsDatabaseUrl gatewayDatabaseUrl auditDatabaseUrl coordinatorDatabaseUrl idempotencyHmacKey; do
     grep -q "key: ${key}" "${DIR}/production.yaml" || { echo "production workloads must project ${key}" >&2; exit 1; }
 done
