@@ -1,0 +1,40 @@
+# Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
+# Caracal, a product of Garudex Labs
+#
+# Example variable values for the Azure VM environment. Copy to terraform.tfvars and edit.
+
+subscriptionId    = "00000000-0000-0000-0000-000000000000"
+resourceGroupName = "caracal-vm"
+region            = "centralindia"
+name              = "caracal"
+
+caracalVersion = "v1.0.0-rc.2"
+machineSize    = "Standard_D4as_v5"
+diskGb         = 128
+
+adminPublicKey = "ssh-ed25519 AAAA... you@example.com"
+
+# Restrict SSH to your own address. Leave empty to admit none and use the serial
+# console instead.
+adminCidrs = ["203.0.113.4/32"]
+
+# Each hostname must resolve to the publicIp output before the certificate can be
+# issued. The console origin and the STS issuer are derived from these routes, so
+# they cannot disagree with what the proxy terminates.
+tlsProxy = {
+  email = "ops@example.com"
+  routes = {
+    "console.caracal.example.com" = "web"
+    "sts.caracal.example.com"     = "sts"
+    "gateway.caracal.example.com" = "gateway"
+  }
+}
+
+# DNS lives with another provider in this example, so no zone is given and the
+# records are created there against the publicIp output.
+dnsZone = ""
+
+tags = {
+  environment = "test"
+  managedBy   = "opentofu"
+}

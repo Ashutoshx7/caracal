@@ -10,6 +10,7 @@
 - `modules/caracalHost/` is the VM unit: provider-less cloud-init user data that installs Docker and the runtime CLI, then starts the pinned compose stack; callers attach the output to any VM resource on any cloud.
 - `providers/<provider>/<model>/` holds the cloud adapters. They are the only place in this tree that names a provider's resources, and they translate a shared contract rather than restating the deployment.
 - `envs/dev/` installs the working-tree chart with the chart's `values.dev.yaml`; `envs/production/` installs a pinned OCI-published chart version with the chart's `values.production.yaml`.
+- `envs/azureHost/` composes the VM bootstrap with the Azure host adapter into one deployable host; it is the worked example of pairing a provider-agnostic module with a provider adapter.
 - Chart profile values files remain the single source of deployment defaults; environment roots reference them with `file()` instead of duplicating their content.
 - Cluster access is provider-injected and kubeconfig-based by default so roots stay portable across EKS, GKE, AKS, and self-hosted clusters.
 
