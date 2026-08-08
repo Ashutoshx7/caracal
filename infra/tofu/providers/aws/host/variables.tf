@@ -58,9 +58,27 @@ variable "adminCidrs" {
 }
 
 variable "networkCidr" {
-  description = "Address range for the network the adapter creates for this host."
+  description = "Address range for the network the adapter creates. Ignored when subnetId is set."
   type        = string
   default     = "10.60.0.0/16"
+}
+
+variable "subnetId" {
+  description = "Existing subnet to attach the host to. Empty creates a dedicated VPC, which suits a first deployment but not an environment with peering or egress control."
+  type        = string
+  default     = ""
+}
+
+variable "zone" {
+  description = "Availability zone for the created subnet. Empty lets the platform choose."
+  type        = string
+  default     = ""
+}
+
+variable "diskType" {
+  description = "Root volume type. gp3 suits the bundled database; gp2 is the older default."
+  type        = string
+  default     = "gp3"
 }
 
 variable "dnsZone" {

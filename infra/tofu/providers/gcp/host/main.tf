@@ -19,17 +19,28 @@ terraform {
 locals {
   # Cloud DNS record names are absolute and end with a dot.
   records = { for host in var.hostnames : host => "${trimsuffix(host, ".")}." }
+
+  # A team with an existing network supplies both a subnetwork and its network;
+  # otherwise the adapter creates a minimal pair.
+  createNetwork = var.subnetId == ""
+  subnetId      = local.createNetwork ? google_compute_subnetwork.caracal[0].id : var.subnetId
+  networkName   = local.createNetwork ? google_compute_network.caracal[0].name : var.networkId
+  zone          = var.zone == "" ? "${var.region}-a" : var.zone
 }
 
 resource "google_compute_network" "caracal" {
+  count = local.createNetwork ? 1 : 0
+
   name                    = "${var.name}-network"
   auto_create_subnetworks = false
 }
 
 resource "google_compute_subnetwork" "caracal" {
+  count = local.createNetwork ? 1 : 0
+
   name          = "${var.name}-subnet"
   region        = var.region
-  network       = google_compute_network.caracal.id
+  network       = google_compute_network.caracal[0].id
   ip_cidr_range = cidrsubnet(var.networkCidr, 8, 0)
 }
 
@@ -37,7 +48,7 @@ resource "google_compute_subnetwork" "caracal" {
 # the ACME challenge over plain HTTP before any certificate exists.
 resource "google_compute_firewall" "ingress" {
   name          = "${var.name}-ingress"
-  network       = google_compute_network.caracal.name
+  network       = local.networkName
   direction     = "INGRESS"
   source_ranges = var.ingressCidrs
   target_tags   = [var.name]
@@ -52,7 +63,7 @@ resource "google_compute_firewall" "admin" {
   count = length(var.adminCidrs) > 0 ? 1 : 0
 
   name          = "${var.name}-admin"
-  network       = google_compute_network.caracal.name
+  network       = local.networkName
   direction     = "INGRESS"
   source_ranges = var.adminCidrs
   target_tags   = [var.name]
@@ -76,7 +87,7 @@ resource "google_compute_address" "caracal" {
 resource "google_compute_instance" "caracal" {
   name         = var.name
   machine_type = var.machineSize
-  zone         = var.zone
+  zone         = local.zone
   tags         = [var.name]
   labels       = var.tags
 
@@ -84,12 +95,12 @@ resource "google_compute_instance" "caracal" {
     initialize_params {
       image = "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
       size  = var.diskGb
-      type  = "pd-balanced"
+      type  = var.diskType
     }
   }
 
   network_interface {
-    subnetwork = google_compute_subnetwork.caracal.id
+    subnetwork = local.subnetId
 
     access_config {
       nat_ip = google_compute_address.caracal.address

@@ -16,6 +16,19 @@ terraform {
   }
 }
 
+locals {
+  # A team with an existing network supplies a subnet; otherwise the adapter
+  # creates a minimal VPC so a first deployment needs no prior setup.
+  createNetwork = var.subnetId == ""
+  subnetId      = local.createNetwork ? aws_subnet.caracal[0].id : var.subnetId
+  vpcId         = local.createNetwork ? aws_vpc.caracal[0].id : data.aws_subnet.existing[0].vpc_id
+}
+
+data "aws_subnet" "existing" {
+  count = local.createNetwork ? 0 : 1
+  id    = var.subnetId
+}
+
 data "aws_ami" "ubuntu" {
   most_recent = true
   owners      = ["099720109477"]
@@ -27,6 +40,8 @@ data "aws_ami" "ubuntu" {
 }
 
 resource "aws_vpc" "caracal" {
+  count = local.createNetwork ? 1 : 0
+
   cidr_block           = var.networkCidr
   enable_dns_support   = true
   enable_dns_hostnames = true
@@ -34,37 +49,46 @@ resource "aws_vpc" "caracal" {
 }
 
 resource "aws_internet_gateway" "caracal" {
-  vpc_id = aws_vpc.caracal.id
+  count = local.createNetwork ? 1 : 0
+
+  vpc_id = aws_vpc.caracal[0].id
   tags   = merge(var.tags, { Name = "${var.name}-gateway" })
 }
 
 resource "aws_subnet" "caracal" {
-  vpc_id                  = aws_vpc.caracal.id
+  count = local.createNetwork ? 1 : 0
+
+  vpc_id                  = aws_vpc.caracal[0].id
   cidr_block              = cidrsubnet(var.networkCidr, 8, 0)
+  availability_zone       = var.zone == "" ? null : var.zone
   map_public_ip_on_launch = false
   tags                    = merge(var.tags, { Name = "${var.name}-subnet" })
 }
 
 resource "aws_route_table" "caracal" {
-  vpc_id = aws_vpc.caracal.id
+  count = local.createNetwork ? 1 : 0
+
+  vpc_id = aws_vpc.caracal[0].id
 
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.caracal.id
+    gateway_id = aws_internet_gateway.caracal[0].id
   }
 
   tags = merge(var.tags, { Name = "${var.name}-routes" })
 }
 
 resource "aws_route_table_association" "caracal" {
-  subnet_id      = aws_subnet.caracal.id
-  route_table_id = aws_route_table.caracal.id
+  count = local.createNetwork ? 1 : 0
+
+  subnet_id      = aws_subnet.caracal[0].id
+  route_table_id = aws_route_table.caracal[0].id
 }
 
 resource "aws_security_group" "caracal" {
   name        = "${var.name}-security"
   description = "Caracal host ingress and egress"
-  vpc_id      = aws_vpc.caracal.id
+  vpc_id      = local.vpcId
   tags        = merge(var.tags, { Name = "${var.name}-security" })
 
   # 80 stays open alongside 443 because the host's certificate issuance answers
@@ -134,7 +158,7 @@ resource "aws_key_pair" "caracal" {
 resource "aws_instance" "caracal" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.machineSize
-  subnet_id              = aws_subnet.caracal.id
+  subnet_id              = local.subnetId
   vpc_security_group_ids = [aws_security_group.caracal.id]
   iam_instance_profile   = aws_iam_instance_profile.caracal.name
   key_name               = aws_key_pair.caracal.key_name
@@ -147,7 +171,7 @@ resource "aws_instance" "caracal" {
   }
 
   root_block_device {
-    volume_type = "gp3"
+    volume_type = var.diskType
     volume_size = var.diskGb
     encrypted   = true
   }
