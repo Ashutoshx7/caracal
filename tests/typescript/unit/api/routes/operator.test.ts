@@ -2260,6 +2260,10 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
               updated_at: '2026-07-01T00:00:01Z',
               completed_at: null,
               last_event_seq: 3,
+              input_tokens: 42,
+              output_tokens: 7,
+              served_provider_id: 'primary',
+              served_model: 'gpt-x',
             },
           ],
         }
@@ -2277,14 +2281,26 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
       intent: 'message_run',
       ok: true,
       duplicate: true,
-      message_run: { id: 'run-1', client_message_id: 'msg-1', correlation_id: 'corr-1', state: 'waiting_for_model' },
+      message_run: {
+        id: 'run-1',
+        client_message_id: 'msg-1',
+        correlation_id: 'corr-1',
+        state: 'waiting_for_model',
+        usage: { input_tokens: 42, output_tokens: 7, total_tokens: 49 },
+        provider: 'primary',
+        model: 'gpt-x',
+      },
     })
     expect((fetchImpl as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(0)
     expect(clientQuery.mock.calls.some((call) => String(call[0]).includes('INSERT INTO operator_turns'))).toBe(false)
   })
 
   it('records a durable message run and marks it failed when the model budget stops the turn', async () => {
-    const fetchImpl = fetchReturning('{"tier":"read"}', 'answer never reached')
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ choices: [{ message: { content: '{"tier":"read"}' } }], usage: { prompt_tokens: 10, completion_tokens: 2 } }),
+      ) as unknown as typeof fetch
     const { app, clientQuery, db } = buildApp(true, {
       aiProviders: [provider],
       fetchImpl,
@@ -2292,6 +2308,10 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     })
     let runState = 'queued'
     let lastEventSeq = 0
+    let inputTokens = 0
+    let outputTokens = 0
+    let servedProvider: string | null = null
+    let servedModel: string | null = null
     const run = (overrides: Record<string, unknown> = {}) => ({
       id: 'run-1',
       zone_id: 'z1',
@@ -2310,6 +2330,10 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
       updated_at: '2026-07-01T00:00:00Z',
       completed_at: null,
       last_event_seq: lastEventSeq,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      served_provider_id: servedProvider,
+      served_model: servedModel,
       ...overrides,
     })
     clientQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
@@ -2323,6 +2347,12 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
         if (params?.[1] === 'turn-1') return { rows: [run({ server_message_turn_id: 'turn-1' })] }
         runState = String(params?.[1] ?? runState)
         lastEventSeq = Number(params?.[6] ?? lastEventSeq)
+        if (params?.[7] === true) {
+          inputTokens = Number(params[8])
+          outputTokens = Number(params[9])
+          servedProvider = typeof params[10] === 'string' ? params[10] : null
+          servedModel = typeof params[11] === 'string' ? params[11] : null
+        }
         return {
           rows: [
             run({
@@ -2356,7 +2386,15 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     const body = JSON.parse(res.body)
     expect(body).toMatchObject({
       error: 'ai_budget_exceeded',
-      message_run: { client_message_id: 'msg-2', correlation_id: 'corr-2', state: 'failed', error_code: 'ai_budget_exceeded' },
+      message_run: {
+        client_message_id: 'msg-2',
+        correlation_id: 'corr-2',
+        state: 'failed',
+        error_code: 'ai_budget_exceeded',
+        usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
+        provider: 'primary',
+        model: 'gpt-x',
+      },
     })
     const messageInsert = clientQuery.mock.calls.find((call) => String(call[0]).includes('INSERT INTO operator_turns'))
     expect(messageInsert).toBeDefined()
@@ -3571,6 +3609,108 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     expect(body.usage).toEqual({ input_tokens: 520, output_tokens: 64, total_tokens: 584 })
   })
 
+  it('persists token usage and actual provider/model on the durable message run', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ choices: [{ message: { content: '{"tier":"read"}' } }], usage: { prompt_tokens: 120, completion_tokens: 4 } }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ choices: [{ message: { content: 'Grounded answer.' } }], usage: { prompt_tokens: 400, completion_tokens: 60 } }),
+      ) as unknown as typeof fetch
+    const { app, clientQuery, db } = buildApp(true, { aiProviders: [provider], fetchImpl })
+    let state = 'queued'
+    let eventSeq = 0
+    let inputTokens = 0
+    let outputTokens = 0
+    let servedProvider: string | null = null
+    let servedModel: string | null = null
+    const run = (overrides: Record<string, unknown> = {}) => ({
+      id: 'run-usage',
+      zone_id: 'z1',
+      conversation_id: 'conv-1',
+      client_message_id: 'msg-usage',
+      server_message_turn_id: null,
+      correlation_id: 'corr-usage',
+      state,
+      actor_id: 'actor-1',
+      provider_id: null,
+      reason: null,
+      error_code: null,
+      error_detail: null,
+      deadline_at: '2026-07-01T00:02:00Z',
+      started_at: '2026-07-01T00:00:00Z',
+      updated_at: '2026-07-01T00:00:00Z',
+      completed_at: null,
+      last_event_seq: eventSeq,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      served_provider_id: servedProvider,
+      served_model: servedModel,
+      ...overrides,
+    })
+    let turn = 0
+    clientQuery.mockImplementation(async (sql: string, params?: unknown[]) => {
+      if (sql.includes('FROM operator_conversations')) {
+        return { rows: [{ status: 'active', mode: 'agent', autopilot: false, next_seq: turn + 1 }] }
+      }
+      if (sql.includes('WHERE conversation_id = $1 AND client_message_id = $2')) return { rows: [] }
+      if (sql.startsWith('INSERT INTO operator_message_runs')) return { rows: [run()] }
+      if (sql.startsWith('INSERT INTO operator_message_run_events')) return { rows: [] }
+      if (sql.startsWith('UPDATE operator_message_runs')) {
+        if (sql.includes('server_message_turn_id = $2')) return { rows: [run({ server_message_turn_id: 'turn-1' })] }
+        state = String(params?.[1] ?? state)
+        eventSeq = Number(params?.[6] ?? eventSeq)
+        if (params?.[7] === true) {
+          inputTokens = Number(params[8])
+          outputTokens = Number(params[9])
+          servedProvider = typeof params[10] === 'string' ? params[10] : null
+          servedModel = typeof params[11] === 'string' ? params[11] : null
+        }
+        return {
+          rows: [
+            run({
+              server_message_turn_id: 'turn-1',
+              reason: typeof params?.[2] === 'string' ? params[2] : null,
+              completed_at: state === 'completed' ? '2026-07-01T00:00:04Z' : null,
+            }),
+          ],
+        }
+      }
+      if (sql.includes('SELECT') && sql.includes('FROM operator_message_runs')) {
+        return { rows: [run({ server_message_turn_id: 'turn-1' })] }
+      }
+      if (sql.startsWith('INSERT INTO operator_turns')) {
+        turn += 1
+        return { rows: [{ id: `turn-${turn}`, seq: turn, kind: turn === 1 ? 'message' : 'note' }] }
+      }
+      return { rows: [], rowCount: 1 }
+    })
+    db.query.mockImplementation(async (sql: string) =>
+      sql.includes('operator_governed') ? { rows: [{ name: 'Zone One', slug: 'z1', operator_governed: false }] } : { rows: [] },
+    )
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'why was my agent denied', client_message_id: 'msg-usage', correlation_id: 'corr-usage' },
+    })
+
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body).message_run).toMatchObject({
+      id: 'run-usage',
+      state: 'completed',
+      usage: { input_tokens: 520, output_tokens: 64, total_tokens: 584 },
+      provider: 'primary',
+      model: 'gpt-x',
+    })
+    const terminalUpdate = clientQuery.mock.calls.find(
+      (call) => String(call[0]).includes('served_provider_id = CASE') && call[1]?.[1] === 'completed',
+    )
+    expect(terminalUpdate?.[1]?.slice(7, 12)).toEqual([true, 520, 64, 'primary', 'gpt-x'])
+  })
+
   it('reports the served model and a failover flag when the primary provider is unavailable', async () => {
     const first = { ...provider, id: 'first', model: 'model-a', apiKey: 'sk-first' }
     const second = { ...provider, id: 'second', model: 'model-b', apiKey: 'sk-second', contextWindow: 64000 }
@@ -3713,6 +3853,10 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message-runs/cancel'
     updated_at: '2026-07-01T00:00:01Z',
     completed_at: null,
     last_event_seq: 3,
+    input_tokens: 0,
+    output_tokens: 0,
+    served_provider_id: null,
+    served_model: null,
     ...overrides,
   })
 

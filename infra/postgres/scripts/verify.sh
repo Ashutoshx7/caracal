@@ -73,6 +73,21 @@ fi
 echo "  lease generation column OK"
 
 echo ""
+echo "=== Operator observability: durable message-run token usage ==="
+for column in input_tokens output_tokens served_provider_id served_model; do
+  if [ "$(scalar "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'operator_message_runs' AND column_name = '$column';")" != "1" ]; then
+    echo "  FAIL: operator_message_runs.$column missing"
+    exit 1
+  fi
+  echo "  $column OK"
+done
+if [ "$(scalar "SELECT count(*) FROM pg_constraint WHERE conrelid = 'public.operator_message_runs'::regclass AND conname IN ('operator_message_runs_input_tokens_check', 'operator_message_runs_output_tokens_check');")" != "2" ]; then
+  echo "  FAIL: operator message-run token checks missing"
+  exit 1
+fi
+echo "  non-negative token checks OK"
+
+echo ""
 echo "=== Migration: retired tables absent ==="
 RETIRED_TABLES=(
   gateway_binding_revision

@@ -1217,6 +1217,11 @@ export interface OperatorMessageRun {
   deadline_at: string | null;
   completed_at: string | null;
   last_event_seq: number;
+  // Durable usage for this run, retained with the actual provider and model that served its most
+  // recent successful completion so historical cost analysis does not depend on the live response.
+  usage: OperatorUsage;
+  provider: string | null;
+  model: string | null;
 }
 
 // The advisory severity of a single security finding. Advisory only: it informs the human who
