@@ -270,6 +270,24 @@ describe('/metrics endpoint', () => {
     expect(res.body).not.toContain('sk-secret')
     await app.close()
   })
+
+  it('keeps unrelated metric families available when provider health cannot be read', async () => {
+    process.env.CARACAL_MODE = 'dev'
+    const cfg = makeCfg({
+      operatorAiProviders: [{ id: 'primary', baseUrl: 'https://api.example.com/v1', model: 'gpt-x', timeoutMs: 1000, contextWindow: 0 }],
+    })
+    const redis = makeRedis()
+    vi.mocked(redis.hmget).mockRejectedValueOnce(new Error('redis unavailable'))
+    const app = await buildApp({ cfg, db: makeDb(), redis })
+
+    const res = await app.inject({ method: 'GET', url: '/metrics' })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toContain('caracal_api_outbox_dead_total')
+    expect(res.body).toContain('caracal_secret_backend_operations_total')
+    expect(res.body).toContain('caracal_operator_ai_provider_last_success_timestamp_seconds{provider="primary"} 0')
+    await app.close()
+  })
 })
 
 describe('/ready endpoint', () => {

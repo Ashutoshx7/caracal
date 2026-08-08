@@ -68,7 +68,7 @@ import { mintRateLimitRoutes } from './routes/mint-rate-limit.js'
 import { operatorRoutes } from './routes/operator.js'
 import { buildAutopilotPolicy } from './operator-autopilot.js'
 import { buildGovernanceLimits } from './operator-ai-governance.js'
-import { createOperatorAiHealthStore, renderOperatorAiHealthMetrics } from './operator-ai-health.js'
+import { createOperatorAiHealthStore, renderOperatorAiHealthMetrics, type ProviderHealthObservation } from './operator-ai-health.js'
 
 import './fastify-augmentation.js'
 
@@ -569,11 +569,16 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
     }
     const health = await withTimeout(queryOutboxHealth(db), READY_CHECK_TIMEOUT_MS, 'metrics outbox check timed out')
     const aiProviders = loadAiProviders()
-    const aiHealth = await withTimeout(
-      operatorAiHealth.read(aiProviders.map((provider) => provider.id)),
-      READY_CHECK_TIMEOUT_MS,
-      'metrics operator AI health check timed out',
-    )
+    let aiHealth: ReadonlyMap<string, ProviderHealthObservation> = new Map()
+    try {
+      aiHealth = await withTimeout(
+        operatorAiHealth.read(aiProviders.map((provider) => provider.id)),
+        READY_CHECK_TIMEOUT_MS,
+        'metrics operator AI health check timed out',
+      )
+    } catch (err) {
+      req.log.warn({ err }, 'operator AI provider health metrics could not be read')
+    }
     reply.type('text/plain; version=0.0.4')
     const secretMetrics = [
       '# HELP caracal_secret_backend_operations_total Secret backend operations attempted',

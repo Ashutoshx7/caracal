@@ -96,6 +96,24 @@ describe('Operator AI health Redis store', () => {
     )
     expect(JSON.stringify(redis.eval.mock.calls)).not.toContain('api.example.com')
   })
+
+  it('contains synchronous Redis write failures at the store boundary', () => {
+    const redisError = new Error('redis unavailable')
+    const redis = {
+      eval: vi.fn(() => {
+        throw redisError
+      }),
+      hmget: vi.fn(),
+    } as unknown as RedisClient
+    const logger = { warn: vi.fn() }
+    const store = createOperatorAiHealthStore(redis, logger)
+
+    expect(() => store.recordSuccess('primary')).not.toThrow()
+    expect(logger.warn).toHaveBeenCalledWith(
+      { err: redisError, provider_id: 'primary' },
+      'operator AI provider health observation could not be recorded',
+    )
+  })
 })
 
 describe('Operator AI health metrics', () => {

@@ -58,17 +58,23 @@ function reportWriteFailure(logger: HealthLogger | undefined, providerId: string
 }
 
 export function createOperatorAiHealthStore(redis: RedisClient, logger?: HealthLogger): OperatorAiHealthStore {
+  const record = (providerId: string, outcome: 'success' | 'failure', errorClass: string): void => {
+    try {
+      void redis
+        .eval(RECORD_HEALTH_LUA, 1, healthKey(providerId), outcome, errorClass)
+        .catch((err: unknown) => reportWriteFailure(logger, providerId, err))
+    } catch (err) {
+      reportWriteFailure(logger, providerId, err)
+    }
+  }
+
   return {
     recordSuccess(providerId) {
-      void redis
-        .eval(RECORD_HEALTH_LUA, 1, healthKey(providerId), 'success', '')
-        .catch((err: unknown) => reportWriteFailure(logger, providerId, err))
+      record(providerId, 'success', '')
     },
 
     recordFailure(providerId, errorClass) {
-      void redis
-        .eval(RECORD_HEALTH_LUA, 1, healthKey(providerId), 'failure', errorClass)
-        .catch((err: unknown) => reportWriteFailure(logger, providerId, err))
+      record(providerId, 'failure', errorClass)
     },
 
     async read(providerIds) {

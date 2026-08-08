@@ -2167,7 +2167,7 @@ describe('operator AI gateway routes', () => {
     expect(res.body).not.toContain('sk-secret')
   })
 
-  it('reports unavailable health storage explicitly instead of asserting unknown timestamps', async () => {
+  it('preserves configured-provider status with unknown observations when health storage is unavailable', async () => {
     const aiHealth: OperatorAiHealthStore = {
       recordSuccess: vi.fn(),
       recordFailure: vi.fn(),
@@ -2178,8 +2178,15 @@ describe('operator AI gateway routes', () => {
 
     const res = await app.inject({ method: 'GET', url: '/v1/operator/ai/status' })
 
-    expect(res.statusCode).toBe(503)
-    expect(res.json()).toMatchObject({ error: 'ai_health_unavailable' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().providers[0]).toMatchObject({
+      id: 'primary',
+      model: 'gpt-x',
+      available: true,
+      last_ok_at: null,
+      last_error_at: null,
+      last_error_class: null,
+    })
   })
 
   it('returns 409 ai_unavailable when checking with no provider', async () => {

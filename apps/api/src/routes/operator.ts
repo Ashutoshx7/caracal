@@ -49,7 +49,7 @@ import {
   type Gateway,
   type ProviderConfig,
 } from '../operator-gateway.js'
-import type { OperatorAiHealthStore } from '../operator-ai-health.js'
+import type { OperatorAiHealthStore, ProviderHealthObservation } from '../operator-ai-health.js'
 import { type GovernanceLimits } from '../operator-ai-governance.js'
 import { runVerifier, type AgentContext, type OperatorMode, type PolicyDraft } from '../operator-agents.js'
 import { recallConversationMemory, rememberAppliedChange } from '../operator-conversation-memory.js'
@@ -892,25 +892,25 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
 
   // Reports which AI providers are configured, in failover order, never exposing
   // keys. The console uses this to show whether the AI tier is available.
-  fastify.get('/operator/ai/status', async (req, reply) => {
+  fastify.get('/operator/ai/status', async (req) => {
     const status = buildGateway().status()
+    let observations: ReadonlyMap<string, ProviderHealthObservation> = new Map()
     try {
-      const observations = opts.aiHealth ? await opts.aiHealth.read(status.providers.map((provider) => provider.id)) : new Map()
-      return {
-        ...status,
-        providers: status.providers.map((provider) => {
-          const observation = observations.get(provider.id)
-          return {
-            ...provider,
-            last_ok_at: observation?.lastOkAt ?? null,
-            last_error_at: observation?.lastErrorAt ?? null,
-            last_error_class: observation?.lastErrorClass ?? null,
-          }
-        }),
-      }
+      if (opts.aiHealth) observations = await opts.aiHealth.read(status.providers.map((provider) => provider.id))
     } catch (err) {
       req.log.warn({ err }, 'operator AI provider health observations could not be read')
-      return reply.code(503).send({ error: 'ai_health_unavailable' })
+    }
+    return {
+      ...status,
+      providers: status.providers.map((provider) => {
+        const observation = observations.get(provider.id)
+        return {
+          ...provider,
+          last_ok_at: observation?.lastOkAt ?? null,
+          last_error_at: observation?.lastErrorAt ?? null,
+          last_error_class: observation?.lastErrorClass ?? null,
+        }
+      }),
     }
   })
 

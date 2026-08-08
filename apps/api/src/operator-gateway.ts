@@ -116,18 +116,7 @@ export interface GatewayStatus {
 // A deliberately bounded taxonomy for passive provider health observations. It is safe to
 // expose as a metric label and API field: unlike an SDK error message, none of these values can
 // contain a credential, prompt, response body, endpoint, or other provider-controlled text.
-export type OperatorAiErrorClass =
-  | 'auth_failed'
-  | 'rate_limited'
-  | 'timeout'
-  | 'unreachable'
-  | 'endpoint_error'
-  | 'config_error'
-  | 'invalid_response'
-  | 'stream_interrupted'
-  | 'unknown_error'
-
-export const OPERATOR_AI_ERROR_CLASSES: readonly OperatorAiErrorClass[] = [
+export const OPERATOR_AI_ERROR_CLASSES = [
   'auth_failed',
   'rate_limited',
   'timeout',
@@ -137,7 +126,9 @@ export const OPERATOR_AI_ERROR_CLASSES: readonly OperatorAiErrorClass[] = [
   'invalid_response',
   'stream_interrupted',
   'unknown_error',
-]
+] as const
+
+export type OperatorAiErrorClass = (typeof OPERATOR_AI_ERROR_CLASSES)[number]
 
 // Receives the outcome of each real provider attempt. Implementations must be best-effort and
 // non-throwing: observability storage can never turn a successful completion into a failed one or
