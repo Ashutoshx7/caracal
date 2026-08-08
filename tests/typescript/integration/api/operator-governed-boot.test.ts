@@ -4,7 +4,7 @@
 // Boot-level coverage for the governed Operator wiring: real buildApp(), real provisioning
 // routes and Postgres custody, and the real SDK application transport over HTTP protocol fakes.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   startGovernedOperatorHarness,
   type GovernedOperatorHarness,
@@ -12,20 +12,21 @@ import {
 
 const databaseUrl = process.env.CARACAL_TEST_DATABASE_URL
 const suite = databaseUrl ? describe : describe.skip
-const envBefore = { ...process.env }
 let harness: GovernedOperatorHarness | undefined
 
 beforeEach(() => {
-  process.env.SECRET_STORE_KEK = '8f3d9a712c45e6b0d18f2a4c6e9b3d57a1c4f8020e6a9c3d5b7f1a2c4e6d8b90'
-  delete process.env.SECRET_STORE_KEK_PREVIOUS
-  process.env.CARACAL_SECRET_BACKEND = 'builtin'
-  process.env.CARACAL_MODE = 'dev'
+  vi.stubEnv('SECRET_STORE_KEK', '8f3d9a712c45e6b0d18f2a4c6e9b3d57a1c4f8020e6a9c3d5b7f1a2c4e6d8b90')
+  vi.stubEnv('CARACAL_SECRET_BACKEND', 'builtin')
+  vi.stubEnv('CARACAL_MODE', 'dev')
 })
 
 afterEach(async () => {
-  await harness?.close()
-  harness = undefined
-  process.env = { ...envBefore }
+  try {
+    await harness?.close()
+  } finally {
+    harness = undefined
+    vi.unstubAllEnvs()
+  }
 })
 
 suite('governed Operator boot wiring', () => {
@@ -71,7 +72,7 @@ suite('governed Operator boot wiring', () => {
     expect(rows[0].config_json).not.toHaveProperty('api_key')
     expect(rows[0].upstream_url).toMatch(/^http:\/\/127\.0\.0\.1:/)
     expect(Buffer.isBuffer(rows[0].envelope)).toBe(true)
-    expect(rows[0].envelope.includes(Buffer.from('upstream-key-must-stay-sealed'))).toBe(false)
+    expect(rows[0].envelope.includes(Buffer.from(harness.upstreamKey))).toBe(false)
 
     const check = await fetch(`${harness.apiUrl}/v1/operator/ai/check`, { method: 'POST', headers: auth })
     expect(check.status).toBe(200)
@@ -88,13 +89,13 @@ suite('governed Operator boot wiring', () => {
       resource: harness.resourceIdentifier,
       path: '/chat/completions',
     })
-    expect(harness.gatewayCalls[0].authorization).not.toContain('upstream-key-must-stay-sealed')
-    expect(harness.gatewayCalls[0].baggage).toContain('caracal.agent_session=operator-session-2')
+    expect(harness.gatewayCalls[0].authorization).not.toContain(harness.upstreamKey)
+    expect(harness.gatewayCalls[0].baggage).toContain(`caracal.agent_session=${harness.sessionIds.at(-1)}`)
     expect(harness.gatewayCalls[0].baggage).toContain('caracal.delegation_edge=operator-delegation-1')
 
     expect(harness.upstreamCalls).toHaveLength(1)
     expect(harness.upstreamCalls[0]).toMatchObject({
-      authorization: 'Bearer upstream-key-must-stay-sealed',
+      authorization: `Bearer ${harness.upstreamKey}`,
       path: '/v1/chat/completions',
     })
     expect(JSON.parse(harness.upstreamCalls[0].body)).toMatchObject({ model: harness.model })

@@ -55,7 +55,9 @@ export interface GovernedOperatorHarness {
   pool: pg.Pool
   providerId: string
   model: string
+  upstreamKey: string
   resourceIdentifier: string
+  sessionIds: string[]
   stsScopes: string[]
   stsExchanges: StsExchange[]
   gatewayCalls: GovernedGatewayCall[]
@@ -87,20 +89,32 @@ async function startHttpFixture(handler: (request: IncomingMessage, reply: Serve
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')
   const address = server.address() as AddressInfo
+  let closing: Promise<void> | undefined
   return {
     url: `http://127.0.0.1:${address.port}`,
-    close: async () => {
-      server.close()
-      await once(server, 'close')
+    close: () => {
+      if (!closing) {
+        closing = new Promise<void>((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()))
+          server.closeAllConnections()
+        })
+      }
+      return closing
     },
   }
 }
 
-async function reservePort(): Promise<number> {
-  const fixture = await startHttpFixture((_request, reply) => reply.end())
-  const port = Number(new URL(fixture.url).port)
-  await fixture.close()
-  return port
+function copyRequestHeaders(request: IncomingMessage): Headers {
+  const headers = new Headers()
+  for (const [name, value] of Object.entries(request.headers)) {
+    if (name === 'host' || name === 'connection' || name === 'content-length' || name === 'transfer-encoding') continue
+    if (Array.isArray(value)) {
+      for (const item of value) headers.append(name, item)
+    } else if (value !== undefined) {
+      headers.set(name, value)
+    }
+  }
+  return headers
 }
 
 async function waitForGovernedExecution(apiUrl: string): Promise<void> {
@@ -143,11 +157,10 @@ function makeRedis(): RedisClient {
 
 function makeConfig(
   databaseUrl: string,
-  apiUrl: string,
-  services: { sts: string; coordinator: string; gateway: string; upstream: string },
+  services: { sts: string; coordinator: string; gateway: string; upstream: string; api: string },
 ): Config {
   return {
-    port: Number(new URL(apiUrl).port),
+    port: 0,
     host: '127.0.0.1',
     databaseUrl,
     redisUrl: 'redis://unused.test',
@@ -203,7 +216,7 @@ function makeConfig(
       jwksUrl: `${services.sts}/.well-known/jwks.json`,
       issuer: services.sts,
       audience: 'caracal-control',
-      apiUrl,
+      apiUrl: services.api,
       apiToken: ADMIN_TOKEN,
       rateCapacity: 60,
       rateWindowSec: 60,
@@ -222,8 +235,31 @@ export async function startGovernedOperatorHarness(databaseUrl: string): Promise
   const stsExchanges: StsExchange[] = []
   const gatewayCalls: GovernedGatewayCall[] = []
   const upstreamCalls: GovernedUpstreamCall[] = []
+  const sessionIds: string[] = []
   let session = 0
   let mandate = 0
+  let closing: Promise<void> | undefined
+  const close = (): Promise<void> => {
+    if (!closing) {
+      closing = (async () => {
+        const errors: unknown[] = []
+        const attempt = async (operation: () => Promise<unknown>): Promise<void> => {
+          try {
+            await operation()
+          } catch (error) {
+            errors.push(error)
+          }
+        }
+        const activeApp = app
+        const activePool = pool
+        if (activeApp) await attempt(() => activeApp.close())
+        if (activePool) await attempt(() => activePool.end())
+        for (const fixture of [...fixtures].reverse()) await attempt(fixture.close)
+        if (errors.length) throw new AggregateError(errors, 'governed Operator harness teardown failed')
+      })()
+    }
+    return closing
+  }
 
   try {
     const upstream = await startHttpFixture(async (request, reply) => {
@@ -260,7 +296,9 @@ export async function startGovernedOperatorHarness(databaseUrl: string): Promise
       }
       if (method === 'POST' && path.endsWith('/agents')) {
         session += 1
-        return json(reply, 200, { agent_session_id: `operator-session-${session}` })
+        const sessionId = `operator-session-${session}`
+        sessionIds.push(sessionId)
+        return json(reply, 200, { agent_session_id: sessionId })
       }
       if (method === 'POST' && path.endsWith('/delegations')) {
         return json(reply, 200, { delegation_edge_id: 'operator-delegation-1' })
@@ -296,13 +334,35 @@ export async function startGovernedOperatorHarness(databaseUrl: string): Promise
     })
     fixtures.push(gateway)
 
-    const apiPort = await reservePort()
-    const apiUrl = `http://127.0.0.1:${apiPort}`
-    const cfg = makeConfig(databaseUrl, apiUrl, {
+    // buildApp constructs its provisioning AdminClient before listen(), but Fastify's actual
+    // ephemeral port is known only after listen begins. A pre-bound proxy gives the client a
+    // stable URL and resolves the live Fastify port when provisioning makes its first request,
+    // eliminating the release-and-rebind race of reserving a port ahead of time.
+    const controlApi = await startHttpFixture(async (request, reply) => {
+      const address = app?.server.address()
+      if (!address || typeof address === 'string') return json(reply, 503, { error: 'api_not_listening' })
+      const body = await requestBody(request)
+      const response = await fetch(`http://127.0.0.1:${address.port}${request.url ?? '/'}`, {
+        method: request.method,
+        headers: copyRequestHeaders(request),
+        body: request.method === 'GET' || request.method === 'HEAD' ? undefined : body,
+        redirect: 'manual',
+      })
+      const responseHeaders: Record<string, string> = {}
+      response.headers.forEach((value, name) => {
+        responseHeaders[name] = value
+      })
+      reply.writeHead(response.status, responseHeaders)
+      reply.end(Buffer.from(await response.arrayBuffer()))
+    })
+    fixtures.push(controlApi)
+
+    const cfg = makeConfig(databaseUrl, {
       sts: authority.url,
       coordinator: authority.url,
       gateway: gateway.url,
       upstream: upstream.url,
+      api: controlApi.url,
     })
     pool = newDB({
       connectionString: databaseUrl,
@@ -316,7 +376,7 @@ export async function startGovernedOperatorHarness(databaseUrl: string): Promise
     const db = scopedDB(pool)
     await seedBootstrapAdminToken(db, { envToken: ADMIN_TOKEN, log: () => {} })
     app = await buildApp({ cfg, db, redis: makeRedis() })
-    await app.listen({ host: cfg.host, port: cfg.port })
+    const apiUrl = await app.listen({ host: cfg.host, port: cfg.port })
     await waitForGovernedExecution(apiUrl)
 
     return {
@@ -326,21 +386,17 @@ export async function startGovernedOperatorHarness(databaseUrl: string): Promise
       pool,
       providerId: PROVIDER_ID,
       model: MODEL,
+      upstreamKey: UPSTREAM_KEY,
       resourceIdentifier: llmResourceIdentifier(PROVIDER_ID),
+      sessionIds,
       stsScopes,
       stsExchanges,
       gatewayCalls,
       upstreamCalls,
-      close: async () => {
-        await app?.close()
-        await pool?.end()
-        for (const fixture of fixtures.reverse()) await fixture.close()
-      },
+      close,
     }
   } catch (error) {
-    await app?.close().catch(() => {})
-    await pool?.end().catch(() => {})
-    for (const fixture of fixtures.reverse()) await fixture.close().catch(() => {})
+    await close().catch(() => {})
     throw error
   }
 }
