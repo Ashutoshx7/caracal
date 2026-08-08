@@ -39,6 +39,11 @@ adminCidrs = ["203.0.113.4/32"]
 # Each hostname must resolve to the publicIp output before the certificate can be
 # issued. The console origin and the STS issuer are derived from these routes, so
 # they cannot disagree with what the proxy terminates.
+#
+# These nest under a product subdomain because example.com stands for a company's
+# own domain. Where the domain is the product itself, use flat names such as
+# console.caracal.run. The STS origin becomes the issuer claim in every mandate
+# and is configured in every external verifier: choose it once and keep it.
 tlsProxy = {
   email = "ops@example.com"
   routes = {
