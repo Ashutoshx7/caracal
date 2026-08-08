@@ -1176,7 +1176,8 @@ export interface OperatorUsage {
   output_tokens: number;
   total_tokens: number;
   // A run may move between providers across model calls. This breakdown is the authoritative cost
-  // attribution; the top-level provider/model describe only the most recent successful call.
+  // attribution. The top-level provider/model retain the latest serving attribution and can be
+  // present when the run ultimately fails, is cancelled, or times out.
   by_provider_model: Array<{
     provider: string;
     model: string;

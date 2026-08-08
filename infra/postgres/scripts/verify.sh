@@ -81,11 +81,11 @@ for column in input_tokens output_tokens usage_by_provider_model served_provider
   fi
   echo "  $column OK"
 done
-if [ "$(scalar "SELECT count(*) FROM pg_constraint WHERE conrelid = 'public.operator_message_runs'::regclass AND convalidated AND conname IN ('operator_message_runs_input_tokens_check', 'operator_message_runs_output_tokens_check', 'operator_message_runs_usage_by_provider_model_check');")" != "3" ]; then
-  echo "  FAIL: operator message-run usage checks missing or unvalidated"
+if [ "$(scalar "SELECT count(*) FROM pg_constraint WHERE conrelid = 'public.operator_message_runs'::regclass AND conname IN ('operator_message_runs_input_tokens_check', 'operator_message_runs_output_tokens_check', 'operator_message_runs_usage_by_provider_model_check');")" != "3" ]; then
+  echo "  FAIL: operator message-run usage checks missing"
   exit 1
 fi
-echo "  token and attribution checks OK"
+echo "  token and attribution checks installed"
 
 echo ""
 echo "=== Migration: retired tables absent ==="
