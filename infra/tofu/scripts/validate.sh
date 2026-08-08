@@ -24,7 +24,7 @@ done
 # one adapter for another must not have to rename an input or an output, so the
 # contract is asserted rather than left to review.
 echo "==> Checking host contract conformance"
-contractInputs="name region machineSize diskGb userData adminUsername adminPublicKey ingressCidrs adminCidrs networkCidr dnsZone hostnames dnsTtl tags"
+contractInputs="name region zone machineSize diskGb diskType userData adminUsername adminPublicKey ingressCidrs adminCidrs networkCidr subnetId dnsZone hostnames dnsTtl tags"
 contractOutputs="publicIp hostId identityId hostnames"
 for dir in "${ROOT}"/providers/*/host/; do
     provider="$(basename "$(dirname "${dir}")")"

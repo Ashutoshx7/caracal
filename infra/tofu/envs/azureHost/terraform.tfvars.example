@@ -12,6 +12,24 @@ caracalVersion = "v1.0.0-rc.2"
 machineSize    = "Standard_D4as_v5"
 diskGb         = 128
 
+# Placement and storage. Leave zone empty to let the platform choose; setting it
+# pins the host and its disk to one zone, so recovery means recreating there.
+# zone     = "1"
+# diskType = "StandardSSD_LRS"
+
+# Networking. Empty subnetId creates a dedicated network, which suits a first
+# deployment. Supply an existing subnet to place the host inside a network that
+# already has peering, private endpoints, or egress control.
+subnetId = ""
+# networkCidr = "10.60.0.0/16"
+
+# Base image. Empty uses the published Ubuntu LTS image the bootstrap targets;
+# set it to pin a hardened or golden image from a shared image gallery.
+# sourceImageId = ""
+
+# Requires the subscription-level feature to be registered before use.
+# encryptionAtHost = true
+
 adminPublicKey = "ssh-ed25519 AAAA... you@example.com"
 
 # Restrict SSH to your own address. Leave empty to admit none and use the serial

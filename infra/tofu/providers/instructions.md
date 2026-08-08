@@ -12,8 +12,9 @@
 
 ## Required
 
-- Must expose the shared contract inputs: `name`, `region`, `machineSize`, `diskGb`, `userData`, `adminUsername`, `adminPublicKey`, `ingressCidrs`, `adminCidrs`, `networkCidr`, `dnsZone`, `hostnames`, `dnsTtl`, `tags`.
+- Must expose the shared contract inputs: `name`, `region`, `zone`, `machineSize`, `diskGb`, `diskType`, `userData`, `adminUsername`, `adminPublicKey`, `ingressCidrs`, `adminCidrs`, `networkCidr`, `subnetId`, `dnsZone`, `hostnames`, `dnsTtl`, `tags`.
 - Must expose the shared contract outputs: `publicIp`, `hostId`, `identityId`, `hostnames`.
+- Must create a network only when `subnetId` is empty, and must not modify a caller-supplied network.
 - Must group provider-only inputs after the shared contract, under a comment naming the provider.
 - Must pin `required_version` and a version constraint for the single provider it adapts.
 - Must accept cloud-init from the core rather than generating host configuration.
