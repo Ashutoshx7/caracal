@@ -1175,6 +1175,15 @@ export interface OperatorUsage {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  // A run may move between providers across model calls. This breakdown is the authoritative cost
+  // attribution; the top-level provider/model describe only the most recent successful call.
+  by_provider_model: Array<{
+    provider: string;
+    model: string;
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+  }>;
 }
 
 export interface OperatorUsageMeta {
@@ -1217,8 +1226,8 @@ export interface OperatorMessageRun {
   deadline_at: string | null;
   completed_at: string | null;
   last_event_seq: number;
-  // Durable usage for this run, retained with the actual provider and model that served its most
-  // recent successful completion so historical cost analysis does not depend on the live response.
+  // Durable usage for this run, including a provider/model breakdown so historical cost analysis
+  // does not depend on the live response or misattribute a mixed-provider run.
   usage: OperatorUsage;
   provider: string | null;
   model: string | null;

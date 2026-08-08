@@ -84,7 +84,7 @@ const CONVERSATION_SELECT =
 // honest numeric type keeps the approval and execution bodies from rejecting a stringified seq.
 const TURN_SELECT = 'id, conversation_id, seq::int AS seq, role, kind, content, actor_id, created_at'
 const MESSAGE_RUN_SELECT =
-  'id, zone_id, conversation_id, client_message_id, server_message_turn_id, correlation_id, state, actor_id, provider_id, reason, error_code, error_detail, deadline_at, started_at, updated_at, completed_at, last_event_seq::int AS last_event_seq, input_tokens::int AS input_tokens, output_tokens::int AS output_tokens, served_provider_id, served_model'
+  'id, zone_id, conversation_id, client_message_id, server_message_turn_id, correlation_id, state, actor_id, provider_id, reason, error_code, error_detail, deadline_at, started_at, updated_at, completed_at, last_event_seq::int AS last_event_seq, input_tokens::int AS input_tokens, output_tokens::int AS output_tokens, usage_by_provider_model, served_provider_id, served_model'
 
 const CreateConversationBody = z
   .object({
@@ -292,8 +292,16 @@ interface MessageRunRow {
   last_event_seq: number
   input_tokens: number
   output_tokens: number
+  usage_by_provider_model: ProviderModelUsage[]
   served_provider_id: string | null
   served_model: string | null
+}
+
+interface ProviderModelUsage {
+  provider: string
+  model: string
+  input_tokens: number
+  output_tokens: number
 }
 
 interface PublicMessageRun {
@@ -307,7 +315,12 @@ interface PublicMessageRun {
   deadline_at: string | null
   completed_at: string | null
   last_event_seq: number
-  usage: { input_tokens: number; output_tokens: number; total_tokens: number }
+  usage: {
+    input_tokens: number
+    output_tokens: number
+    total_tokens: number
+    by_provider_model: (ProviderModelUsage & { total_tokens: number })[]
+  }
   provider: string | null
   model: string | null
 }
@@ -328,10 +341,23 @@ function publicMessageRun(run: MessageRunRow): PublicMessageRun {
       input_tokens: run.input_tokens,
       output_tokens: run.output_tokens,
       total_tokens: run.input_tokens + run.output_tokens,
+      by_provider_model: run.usage_by_provider_model.map((entry) => ({
+        ...entry,
+        total_tokens: entry.input_tokens + entry.output_tokens,
+      })),
     },
     provider: run.served_provider_id,
     model: run.served_model,
   }
+}
+
+function providerModelUsage(usage: GatewayUsage): ProviderModelUsage[] {
+  return usage.byProviderModel.map((entry) => ({
+    provider: entry.provider,
+    model: entry.model,
+    input_tokens: entry.inputTokens,
+    output_tokens: entry.outputTokens,
+  }))
 }
 
 async function writeMessageRunEventLocked(
@@ -376,8 +402,9 @@ async function writeMessageRunEventLocked(
          last_event_seq = $7,
          input_tokens = CASE WHEN $8::boolean THEN $9 ELSE input_tokens END,
          output_tokens = CASE WHEN $8::boolean THEN $10 ELSE output_tokens END,
-         served_provider_id = CASE WHEN $8::boolean THEN $11 ELSE served_provider_id END,
-         served_model = CASE WHEN $8::boolean THEN $12 ELSE served_model END,
+         usage_by_provider_model = CASE WHEN $8::boolean THEN $11::jsonb ELSE usage_by_provider_model END,
+         served_provider_id = CASE WHEN $8::boolean THEN $12 ELSE served_provider_id END,
+         served_model = CASE WHEN $8::boolean THEN $13 ELSE served_model END,
          updated_at = now()
      WHERE id = $1
      RETURNING ${MESSAGE_RUN_SELECT}`,
@@ -392,6 +419,7 @@ async function writeMessageRunEventLocked(
       input.usage !== undefined,
       input.usage?.inputTokens ?? 0,
       input.usage?.outputTokens ?? 0,
+      JSON.stringify(input.usage ? providerModelUsage(input.usage) : []),
       input.usage?.provider ?? null,
       input.usage?.model ?? null,
     ],
@@ -407,12 +435,13 @@ async function writeMessageRunUsageLocked(client: TxClient, run: MessageRunRow, 
     `UPDATE operator_message_runs
      SET input_tokens = $2,
          output_tokens = $3,
-         served_provider_id = $4,
-         served_model = $5,
+         usage_by_provider_model = $4::jsonb,
+         served_provider_id = $5,
+         served_model = $6,
          updated_at = now()
      WHERE id = $1
      RETURNING ${MESSAGE_RUN_SELECT}`,
-    [run.id, usage.inputTokens, usage.outputTokens, usage.provider, usage.model],
+    [run.id, usage.inputTokens, usage.outputTokens, JSON.stringify(providerModelUsage(usage)), usage.provider, usage.model],
   )
   return rows[0] ?? null
 }
@@ -2235,6 +2264,10 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
           input_tokens: usage.inputTokens,
           output_tokens: usage.outputTokens,
           total_tokens: usage.inputTokens + usage.outputTokens,
+          by_provider_model: providerModelUsage(usage).map((entry) => ({
+            ...entry,
+            total_tokens: entry.input_tokens + entry.output_tokens,
+          })),
         },
         model: reporting?.model ?? null,
         provider: reporting?.id ?? null,

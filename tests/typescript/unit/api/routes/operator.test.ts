@@ -2262,6 +2262,7 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
               last_event_seq: 3,
               input_tokens: 42,
               output_tokens: 7,
+              usage_by_provider_model: [{ provider: 'primary', model: 'gpt-x', input_tokens: 42, output_tokens: 7 }],
               served_provider_id: 'primary',
               served_model: 'gpt-x',
             },
@@ -2286,7 +2287,12 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
         client_message_id: 'msg-1',
         correlation_id: 'corr-1',
         state: 'waiting_for_model',
-        usage: { input_tokens: 42, output_tokens: 7, total_tokens: 49 },
+        usage: {
+          input_tokens: 42,
+          output_tokens: 7,
+          total_tokens: 49,
+          by_provider_model: [{ provider: 'primary', model: 'gpt-x', input_tokens: 42, output_tokens: 7, total_tokens: 49 }],
+        },
         provider: 'primary',
         model: 'gpt-x',
       },
@@ -2310,6 +2316,7 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     let lastEventSeq = 0
     let inputTokens = 0
     let outputTokens = 0
+    let usageByProviderModel: Record<string, unknown>[] = []
     let servedProvider: string | null = null
     let servedModel: string | null = null
     const run = (overrides: Record<string, unknown> = {}) => ({
@@ -2332,6 +2339,7 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
       last_event_seq: lastEventSeq,
       input_tokens: inputTokens,
       output_tokens: outputTokens,
+      usage_by_provider_model: usageByProviderModel,
       served_provider_id: servedProvider,
       served_model: servedModel,
       ...overrides,
@@ -2350,8 +2358,9 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
         if (params?.[7] === true) {
           inputTokens = Number(params[8])
           outputTokens = Number(params[9])
-          servedProvider = typeof params[10] === 'string' ? params[10] : null
-          servedModel = typeof params[11] === 'string' ? params[11] : null
+          usageByProviderModel = JSON.parse(String(params[10]))
+          servedProvider = typeof params[11] === 'string' ? params[11] : null
+          servedModel = typeof params[12] === 'string' ? params[12] : null
         }
         return {
           rows: [
@@ -2391,7 +2400,12 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
         correlation_id: 'corr-2',
         state: 'failed',
         error_code: 'ai_budget_exceeded',
-        usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
+        usage: {
+          input_tokens: 10,
+          output_tokens: 2,
+          total_tokens: 12,
+          by_provider_model: [{ provider: 'primary', model: 'gpt-x', input_tokens: 10, output_tokens: 2, total_tokens: 12 }],
+        },
         provider: 'primary',
         model: 'gpt-x',
       },
@@ -3606,23 +3620,32 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     const body = JSON.parse(res.body)
     expect(body.model).toBe('gpt-x')
     expect(body.max_tokens).toBe(128000)
-    expect(body.usage).toEqual({ input_tokens: 520, output_tokens: 64, total_tokens: 584 })
+    expect(body.usage).toEqual({
+      input_tokens: 520,
+      output_tokens: 64,
+      total_tokens: 584,
+      by_provider_model: [{ provider: 'primary', model: 'gpt-x', input_tokens: 520, output_tokens: 64, total_tokens: 584 }],
+    })
   })
 
-  it('persists token usage and actual provider/model on the durable message run', async () => {
+  it('persists token usage by provider/model when a later completion fails over', async () => {
+    const secondary = { ...provider, id: 'secondary', model: 'gpt-y', apiKey: 'sk-secondary' }
     const fetchImpl = vi
       .fn()
       .mockResolvedValueOnce(
         jsonResponse({ choices: [{ message: { content: '{"tier":"read"}' } }], usage: { prompt_tokens: 120, completion_tokens: 4 } }),
       )
+      // A terminal response skips retries and moves this second model call to the next provider.
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'bad request' } }, 400))
       .mockResolvedValueOnce(
         jsonResponse({ choices: [{ message: { content: 'Grounded answer.' } }], usage: { prompt_tokens: 400, completion_tokens: 60 } }),
       ) as unknown as typeof fetch
-    const { app, clientQuery, db } = buildApp(true, { aiProviders: [provider], fetchImpl })
+    const { app, clientQuery, db } = buildApp(true, { aiProviders: [provider, secondary], fetchImpl })
     let state = 'queued'
     let eventSeq = 0
     let inputTokens = 0
     let outputTokens = 0
+    let usageByProviderModel: Record<string, unknown>[] = []
     let servedProvider: string | null = null
     let servedModel: string | null = null
     const run = (overrides: Record<string, unknown> = {}) => ({
@@ -3645,6 +3668,7 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
       last_event_seq: eventSeq,
       input_tokens: inputTokens,
       output_tokens: outputTokens,
+      usage_by_provider_model: usageByProviderModel,
       served_provider_id: servedProvider,
       served_model: servedModel,
       ...overrides,
@@ -3664,8 +3688,9 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
         if (params?.[7] === true) {
           inputTokens = Number(params[8])
           outputTokens = Number(params[9])
-          servedProvider = typeof params[10] === 'string' ? params[10] : null
-          servedModel = typeof params[11] === 'string' ? params[11] : null
+          usageByProviderModel = JSON.parse(String(params[10]))
+          servedProvider = typeof params[11] === 'string' ? params[11] : null
+          servedModel = typeof params[12] === 'string' ? params[12] : null
         }
         return {
           rows: [
@@ -3701,14 +3726,27 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     expect(JSON.parse(res.body).message_run).toMatchObject({
       id: 'run-usage',
       state: 'completed',
-      usage: { input_tokens: 520, output_tokens: 64, total_tokens: 584 },
-      provider: 'primary',
-      model: 'gpt-x',
+      usage: {
+        input_tokens: 520,
+        output_tokens: 64,
+        total_tokens: 584,
+        by_provider_model: [
+          { provider: 'primary', model: 'gpt-x', input_tokens: 120, output_tokens: 4, total_tokens: 124 },
+          { provider: 'secondary', model: 'gpt-y', input_tokens: 400, output_tokens: 60, total_tokens: 460 },
+        ],
+      },
+      provider: 'secondary',
+      model: 'gpt-y',
     })
     const terminalUpdate = clientQuery.mock.calls.find(
       (call) => String(call[0]).includes('served_provider_id = CASE') && call[1]?.[1] === 'completed',
     )
-    expect(terminalUpdate?.[1]?.slice(7, 12)).toEqual([true, 520, 64, 'primary', 'gpt-x'])
+    expect(terminalUpdate?.[1]?.slice(7, 10)).toEqual([true, 520, 64])
+    expect(JSON.parse(String(terminalUpdate?.[1]?.[10]))).toEqual([
+      { provider: 'primary', model: 'gpt-x', input_tokens: 120, output_tokens: 4 },
+      { provider: 'secondary', model: 'gpt-y', input_tokens: 400, output_tokens: 60 },
+    ])
+    expect(terminalUpdate?.[1]?.slice(11, 13)).toEqual(['secondary', 'gpt-y'])
   })
 
   it('reports the served model and a failover flag when the primary provider is unavailable', async () => {
@@ -3855,6 +3893,7 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message-runs/cancel'
     last_event_seq: 3,
     input_tokens: 0,
     output_tokens: 0,
+    usage_by_provider_model: [],
     served_provider_id: null,
     served_model: null,
     ...overrides,
