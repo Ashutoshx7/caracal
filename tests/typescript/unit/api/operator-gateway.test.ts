@@ -162,16 +162,25 @@ describe('gateway complete', () => {
   })
 
   it('honors Retry-After before retrying the same provider', async () => {
-    const callsAt: number[] = []
-    const fetchMock = vi.fn(async () => {
-      callsAt.push(Date.now())
-      return callsAt.length === 1 ? errorResponse(429, { 'retry-after': '0.03' }) : chatResponse('OK')
-    })
-    const gateway = createGateway([provider({ id: 'primary' })], fetchMock as unknown as typeof fetch)
-    const result = await gateway.complete([{ role: 'user', content: 'ping' }])
-    expect(result.provider).toBe('primary')
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(callsAt[1]! - callsAt[0]!).toBeGreaterThanOrEqual(20)
+    vi.useFakeTimers()
+    try {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(errorResponse(429, { 'retry-after': '0.03' }))
+        .mockResolvedValueOnce(chatResponse('OK'))
+      const gateway = createGateway([provider({ id: 'primary' })], fetchMock as unknown as typeof fetch)
+      const completion = gateway.complete([{ role: 'user', content: 'ping' }])
+
+      await vi.advanceTimersByTimeAsync(29)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(1)
+      const result = await completion
+      expect(result.provider).toBe('primary')
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('retries a recognized network error on the same provider', async () => {
