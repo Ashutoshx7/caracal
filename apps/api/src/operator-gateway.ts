@@ -182,9 +182,19 @@ const providerFailuresByTransport = new WeakMap<FetchImpl, Map<string, number>>(
 
 function providerFailureKey(provider: ProviderConfig): string {
   // Include mutable endpoint identity so editing or replacing a provider does not inherit the old
-  // endpoint's failure. Delimiters are encoded by JSON rather than stored ad hoc, and no key or
-  // other credential enters the process-local map.
-  return JSON.stringify([provider.id, provider.baseUrl, provider.model])
+  // endpoint's failure. Userinfo, query parameters, and fragments are deliberately excluded so a
+  // credential embedded in a URL never enters the process-local map.
+  let endpointOrigin = 'invalid'
+  let endpointPath = ''
+  try {
+    const endpoint = new URL(provider.baseUrl)
+    endpointOrigin = endpoint.origin
+    endpointPath = endpoint.pathname
+  } catch {
+    // Invalid configured URLs will fail when called; the provider id and model still give them a
+    // stable, non-sensitive failure identity without retaining the malformed input.
+  }
+  return JSON.stringify([provider.id, endpointOrigin, endpointPath, provider.model])
 }
 
 function providerFailures(fetchImpl: FetchImpl): Map<string, number> {

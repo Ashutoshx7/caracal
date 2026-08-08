@@ -269,7 +269,7 @@ describe('gateway recent-failure ordering', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('does not transfer failure memory to an edited endpoint', async () => {
+  it('does not transfer failure memory to an edited model', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response('boom', { status: 503 }))
@@ -281,6 +281,38 @@ describe('gateway recent-failure ordering', () => {
     const result = await createGateway(edited, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'second' }])
     expect(result.provider).toBe('primary')
     expect(fetchMock.mock.calls[0]![0]).toBe('https://primary.example.com/v1/chat/completions')
+  })
+
+  it('does not transfer failure memory to an edited base URL', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('boom', { status: 503 }))
+      .mockResolvedValueOnce(chatResponse('fallback'))
+    await createGateway(providers, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'first' }])
+
+    fetchMock.mockReset().mockResolvedValue(chatResponse('edited endpoint'))
+    const edited = [provider({ ...providers[0], baseUrl: 'https://replacement.example.com/v1' }), providers[1]!]
+    const result = await createGateway(edited, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'second' }])
+    expect(result.provider).toBe('primary')
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://replacement.example.com/v1/chat/completions')
+  })
+
+  it('excludes URL credentials and query parameters from failure identity', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('boom', { status: 503 }))
+      .mockResolvedValueOnce(chatResponse('fallback'))
+    const credentialed = [
+      provider({ ...providers[0], baseUrl: 'https://user:password@primary.example.com/v1?token=secret' }),
+      providers[1]!,
+    ]
+    await createGateway(credentialed, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'first' }])
+
+    fetchMock.mockReset().mockResolvedValue(chatResponse('next turn'))
+    const sanitized = createGateway(providers, fetchMock as unknown as typeof fetch)
+    expect((await sanitized.complete([{ role: 'user', content: 'second' }])).provider).toBe('secondary')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://secondary.example.com/v1/chat/completions')
   })
 })
 
