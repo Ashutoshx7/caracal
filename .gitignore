@@ -75,6 +75,8 @@ infra/healthcheck/healthcheck
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+# A saved plan embeds the fully rendered configuration, secrets included.
+*.tfplan
 crash.log
 override.tf
 override.tf.json

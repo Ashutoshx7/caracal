@@ -21,7 +21,14 @@ $repo = 'Garudex-Labs/caracal'
 if ([string]::IsNullOrEmpty($Version)) { $Version = 'latest' }
 if ([string]::IsNullOrEmpty($InstallDir)) {
     if ([string]::IsNullOrEmpty($Prefix)) {
-        $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\caracal'
+        # Service and container contexts run without a user profile, so the
+        # machine-wide location is the only sensible default there.
+        $profileBase = $env:LOCALAPPDATA
+        if ([string]::IsNullOrEmpty($profileBase)) { $profileBase = $env:ProgramData }
+        if ([string]::IsNullOrEmpty($profileBase)) {
+            throw 'Cannot resolve an install location. Pass -InstallDir or set CARACAL_INSTALL_DIR.'
+        }
+        $InstallDir = Join-Path $profileBase 'Programs\caracal'
     } else {
         $InstallDir = Join-Path $Prefix 'bin'
     }
@@ -132,7 +139,7 @@ if ($tag -notmatch '^v\d+\.\d+\.\d+(-rc\.(sha[0-9A-Za-z]+|\d+))?$') {
 }
 $base = "https://github.com/$repo/releases/download/$tag"
 
-$tmp = New-Item -ItemType Directory -Force -Path (Join-Path $env:TEMP "caracal-install-$([guid]::NewGuid())")
+$tmp = New-Item -ItemType Directory -Force -Path (Join-Path ([System.IO.Path]::GetTempPath()) "caracal-install-$([guid]::NewGuid())")
 try {
     Write-Section 'Caracal Runtime Installer'
     Write-Host "  Release:     $tag"
