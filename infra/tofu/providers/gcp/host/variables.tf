@@ -58,9 +58,27 @@ variable "adminCidrs" {
 }
 
 variable "networkCidr" {
-  description = "Address range for the network the adapter creates for this host."
+  description = "Address range for the network the adapter creates. Ignored when subnetId is set."
   type        = string
   default     = "10.60.0.0/16"
+}
+
+variable "subnetId" {
+  description = "Existing subnetwork to attach the host to. Requires networkId. Empty creates a dedicated network, which suits a first deployment but not a shared VPC."
+  type        = string
+  default     = ""
+}
+
+variable "zone" {
+  description = "Zone within the region that runs the instance. Empty uses the region's first zone."
+  type        = string
+  default     = ""
+}
+
+variable "diskType" {
+  description = "Boot disk type. pd-balanced suits the bundled database; pd-ssd raises IOPS."
+  type        = string
+  default     = "pd-balanced"
 }
 
 variable "dnsZone" {
@@ -89,7 +107,8 @@ variable "tags" {
 
 # Google Cloud specific inputs.
 
-variable "zone" {
-  description = "Zone within the region that runs the instance."
+variable "networkId" {
+  description = "Existing network holding subnetId. Firewall rules attach to a network rather than a subnetwork, so both are required together."
   type        = string
+  default     = ""
 }

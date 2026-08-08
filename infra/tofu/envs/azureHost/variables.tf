@@ -24,6 +24,48 @@ variable "region" {
   type        = string
 }
 
+variable "zone" {
+  description = "Availability zone for the host and its address. Empty lets the platform choose."
+  type        = string
+  default     = ""
+}
+
+variable "adminUsername" {
+  description = "Operating system account created for administrative access."
+  type        = string
+  default     = "caracaladmin"
+}
+
+variable "subnetId" {
+  description = "Existing subnet to attach the host to. Empty creates a dedicated network for the host."
+  type        = string
+  default     = ""
+}
+
+variable "networkCidr" {
+  description = "Address range for the network created when subnetId is empty."
+  type        = string
+  default     = "10.60.0.0/16"
+}
+
+variable "diskType" {
+  description = "Root disk storage class. Premium_LRS suits the bundled database; StandardSSD_LRS is cheaper for evaluation."
+  type        = string
+  default     = "Premium_LRS"
+}
+
+variable "sourceImageId" {
+  description = "Resource ID of a specific or hardened base image. Empty uses the published Ubuntu LTS image."
+  type        = string
+  default     = ""
+}
+
+variable "encryptionAtHost" {
+  description = "Encrypt disk and temp data at the host. Requires the subscription feature to be registered first."
+  type        = bool
+  default     = false
+}
+
 variable "caracalVersion" {
   description = "Caracal release to install, as a release tag."
   type        = string

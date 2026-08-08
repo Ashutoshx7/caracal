@@ -25,14 +25,25 @@ module "host" {
 
   name              = var.name
   region            = var.region
+  zone              = var.zone
   resourceGroupName = var.resourceGroupName
   machineSize       = var.machineSize
   diskGb            = var.diskGb
+  diskType          = var.diskType
+  adminUsername     = var.adminUsername
   adminPublicKey    = var.adminPublicKey
   ingressCidrs      = var.ingressCidrs
   adminCidrs        = var.adminCidrs
   userData          = module.bootstrap.userData
   tags              = var.tags
+
+  # Attach to an existing network when given, otherwise a dedicated one is
+  # created alongside the host.
+  subnetId    = var.subnetId
+  networkCidr = var.networkCidr
+
+  sourceImageId    = var.sourceImageId
+  encryptionAtHost = var.encryptionAtHost
 
   # The names the proxy terminates are the names DNS must answer for, so both
   # come from the same declaration and cannot drift apart.
