@@ -21,6 +21,29 @@ Choose a profile from requirements you can verify. Caracal ships deployment mech
 
 Define ingress, recovery objectives, storage ownership, secret delivery, monitoring, and maintenance policy. If availability matters, prove it in your environment; replicas, PDBs, HPAs, and atomic upgrades are mechanisms, not guarantees.
 
+## Choose Public Hostnames
+
+Decide these before provisioning anything. The STS origin becomes the `iss` claim in every mandate and is configured in every resource verifier and SDK that validates one, so changing it later invalidates that configuration everywhere, silently. Choose it once and keep it for the life of the deployment.
+
+Which shape is right depends on whether the domain belongs to Caracal or to you.
+
+| Domain | Shape | Example |
+| --- | --- | --- |
+| Dedicated to this deployment | Flat service names | `sts.caracal.example` |
+| Your organisation's existing domain | Nested under a product label | `sts.caracal.example.com` |
+
+Nest on an organisation domain because `api`, `console`, and `gateway` are almost certainly already in use there. A product label keeps every Caracal name inside one delegable subtree, so a platform team can hand out `caracal.example.com` once instead of reviewing four records. Nest deeper only for environment or region, such as `sts.caracal.staging.example.com`.
+
+| Service | Public | Notes |
+| --- | --- | --- |
+| Web console | Yes | The only origin that holds session cookies |
+| STS | Yes | Resource verifiers and SDKs outside the deployment resolve the issuer |
+| Gateway | Yes | Only when clients outside the network call protected resources |
+| API | Optional | Only when automation outside the network uses the Admin API |
+| Audit, Coordinator | Never | Internal by design |
+
+Two consequences worth planning for. A wildcard certificate covers one label, so `*.caracal.example.com` covers `sts.caracal.example.com` but not `sts.caracal.staging.example.com`; each extra level needs its own certificate. And the console must set host-only cookies: a cookie scoped to the parent domain would also be sent to the STS and Gateway origins.
+
 ## Safe Procedure
 
 1. Use `dev` only on a local development host.

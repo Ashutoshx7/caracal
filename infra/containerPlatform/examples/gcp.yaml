@@ -33,10 +33,10 @@ database:
 # encryption requires the rediss:// scheme in that secret.
 
 public:
-  web: https://console.example.com
-  api: https://api.example.com
-  sts: https://sts.example.com
-  gateway: https://gateway.example.com
+  web: https://console.caracal.example.com
+  api: https://api.caracal.example.com
+  sts: https://sts.caracal.example.com
+  gateway: https://gateway.caracal.example.com
 
 observability:
   otlpEndpoint: ''

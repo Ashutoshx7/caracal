@@ -35,11 +35,17 @@ database:
 
 # Externally reachable origins. Every listed service must resolve to the platform
 # ingress for that service and terminate TLS.
+#
+# These names nest under a product subdomain because example.com stands for a
+# company's own domain. Where the domain is the product itself, use flat names
+# such as console.caracal.run instead. The STS origin becomes the issuer claim
+# in every mandate and is configured in every external verifier, so choose it
+# once and keep it.
 public:
-  web: https://console.example.com
-  api: https://api.example.com
-  sts: https://sts.example.com
-  gateway: https://gateway.example.com
+  web: https://console.caracal.example.com
+  api: https://api.caracal.example.com
+  sts: https://sts.caracal.example.com
+  gateway: https://gateway.caracal.example.com
 
 observability:
   otlpEndpoint: ''

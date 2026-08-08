@@ -225,7 +225,9 @@ reject() {
 sed 's/^logLevel: info/logLevel: debug/' "${ROOT}/examples/azure.yaml" >"${DIR}/reject.yaml"
 reject "debug logging in stable mode" "logLevel=debug is not permitted"
 
-sed 's|web: https://console.example.com|web: http://console.example.com|' "${ROOT}/examples/azure.yaml" >"${DIR}/reject.yaml"
+# Matches on the scheme rather than a specific hostname, so renaming an example
+# host cannot silently turn this negative case into a no-op.
+sed 's|web: https://|web: http://|' "${ROOT}/examples/azure.yaml" >"${DIR}/reject.yaml"
 reject "plaintext public origin" "must be an https origin"
 
 sed 's/^  version: .*/  version: ""/' "${ROOT}/examples/azure.yaml" >"${DIR}/reject.yaml"
