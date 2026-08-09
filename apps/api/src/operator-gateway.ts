@@ -177,6 +177,62 @@ export class GatewayStreamInterruptedError extends Error {
 
 type FetchImpl = typeof fetch
 
+// A failed provider is moved behind providers without a recent failure for one minute. The state
+// is deliberately process-local and advisory: providers remain in the order, so wider outages
+// still reach every configured backend, and the original priority returns automatically. Scoping
+// the memory to the injected transport shares it across per-request gateway rebuilds while keeping
+// independent server/test instances isolated.
+const PROVIDER_FAILURE_DEPRIORITIZATION_MS = 60_000
+const providerFailuresByTransport = new WeakMap<FetchImpl, Map<string, number>>()
+
+function providerFailureKey(provider: ProviderConfig): string {
+  // Include mutable endpoint identity so editing or replacing a provider does not inherit the old
+  // endpoint's failure. Userinfo, query parameters, and fragments are deliberately excluded so a
+  // credential embedded in a URL never enters the process-local map.
+  let endpointOrigin = 'invalid'
+  let endpointPath = ''
+  try {
+    const endpoint = new URL(provider.baseUrl)
+    endpointOrigin = endpoint.origin
+    endpointPath = endpoint.pathname
+  } catch {
+    // Invalid configured URLs will fail when called; the provider id and model still give them a
+    // stable, non-sensitive failure identity without retaining the malformed input.
+  }
+  return JSON.stringify([provider.id, endpointOrigin, endpointPath, provider.model])
+}
+
+function providerFailures(fetchImpl: FetchImpl): Map<string, number> {
+  const existing = providerFailuresByTransport.get(fetchImpl)
+  if (existing) return existing
+  const created = new Map<string, number>()
+  providerFailuresByTransport.set(fetchImpl, created)
+  return created
+}
+
+function providerOrder(
+  available: ProviderConfig[],
+  preferredProvider: string | undefined,
+  failures: Map<string, number>,
+): ProviderConfig[] {
+  const now = Date.now()
+  for (const [key, failedAt] of failures) {
+    if (now - failedAt >= PROVIDER_FAILURE_DEPRIORITIZATION_MS) failures.delete(key)
+  }
+
+  // An explicit per-conversation preference remains a caller override. The remaining providers
+  // retain their configured relative order within the normal and recently-failing groups.
+  const preferred = preferredProvider ? available.find((provider) => provider.id === preferredProvider) : undefined
+  const normal: ProviderConfig[] = []
+  const recentlyFailing: ProviderConfig[] = []
+  for (const provider of available) {
+    if (provider === preferred) continue
+    const group = failures.has(providerFailureKey(provider)) ? recentlyFailing : normal
+    group.push(provider)
+  }
+  return preferred ? [preferred, ...normal, ...recentlyFailing] : [...normal, ...recentlyFailing]
+}
+
 // The OpenAI-compatible provider emits one benign warning on every structured
 // completion that runs against a backend which does not advertise strict schema
 // support: the gateway deliberately uses the portable JSON-object mode and validates
@@ -497,30 +553,28 @@ export interface Gateway {
   stream(messages: GatewayMessage[], handlers: StreamHandlers, options?: CompletionOptions): Promise<CompletionResult>
 }
 
-// Runs a per-provider call through the failover order and returns the first success.
-// The caller's preferred provider, when available, is tried ahead of the rest; a
-// preference for an unknown or unavailable provider is ignored so a stale preference
-// never disables the gateway. Every provider failing throws a GatewayError carrying the
-// redacted per-provider reasons.
+// Runs a per-provider call through the failover order and returns the first success. A provider
+// that failed recently moves behind providers without a recent failure, but is never skipped. The
+// caller's preferred provider, when available, is still tried first; a preference for an unknown
+// or unavailable provider is ignored so a stale preference never disables the gateway. Every
+// provider failing throws a GatewayError carrying the redacted per-provider reasons.
 async function runWithFailover<T>(
   available: ProviderConfig[],
   preferredProvider: string | undefined,
+  failures: Map<string, number>,
   call: (provider: ProviderConfig) => Promise<T>,
 ): Promise<T> {
   if (available.length === 0) throw new GatewayUnavailableError()
-  const order = [...available]
-  if (preferredProvider) {
-    const index = order.findIndex((provider) => provider.id === preferredProvider)
-    if (index > 0) {
-      const [preferred] = order.splice(index, 1)
-      order.unshift(preferred)
-    }
-  }
+  const order = providerOrder(available, preferredProvider, failures)
   const attempts: { provider: string; reason: string }[] = []
   for (const provider of order) {
+    const failureKey = providerFailureKey(provider)
     try {
-      return await call(provider)
+      const result = await call(provider)
+      failures.delete(failureKey)
+      return result
     } catch (err) {
+      failures.set(failureKey, Date.now())
       // A stream that already reached the client cannot be retried on another provider without
       // corrupting the visible output, so this failure ends the turn instead of failing over.
       if (err instanceof GatewayStreamInterruptedError) throw err
@@ -537,6 +591,7 @@ async function runWithFailover<T>(
 // Caracal governance middleware so the ceiling holds uniformly across providers.
 export function createGateway(providers: ProviderConfig[], fetchImpl: FetchImpl = fetch, governance?: GovernanceLimits): Gateway {
   const available = providers.filter(providerAvailable)
+  const failures = providerFailures(fetchImpl)
   const governanceMiddleware = governance && governance.maxOutputTokens > 0 ? buildGovernanceMiddleware(governance) : undefined
 
   return {
@@ -553,24 +608,24 @@ export function createGateway(providers: ProviderConfig[], fetchImpl: FetchImpl 
     },
 
     active() {
-      const provider = available[0]
+      const provider = providerOrder(available, undefined, failures)[0]
       return provider ? { model: provider.model, contextWindow: provider.contextWindow } : null
     },
 
     complete(messages, options = {}) {
-      return runWithFailover(available, options.preferredProvider, (provider) =>
+      return runWithFailover(available, options.preferredProvider, failures, (provider) =>
         callProvider(fetchImpl, provider, messages, options, governanceMiddleware),
       )
     },
 
     completeObject(messages, schema, options = {}) {
-      return runWithFailover(available, options.preferredProvider, (provider) =>
+      return runWithFailover(available, options.preferredProvider, failures, (provider) =>
         callProviderObject(fetchImpl, provider, messages, schema, options, governanceMiddleware),
       )
     },
 
     stream(messages, handlers, options = {}) {
-      return runWithFailover(available, options.preferredProvider, (provider) =>
+      return runWithFailover(available, options.preferredProvider, failures, (provider) =>
         callProviderStream(fetchImpl, provider, messages, options, handlers, governanceMiddleware),
       )
     },
