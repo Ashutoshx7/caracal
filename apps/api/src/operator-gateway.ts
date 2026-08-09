@@ -14,6 +14,7 @@ import {
   NoObjectGeneratedError,
   NoOutputGeneratedError,
   NoSuchModelError,
+  RetryError,
   TypeValidationError,
   UnsupportedFunctionalityError,
   extractReasoningMiddleware,
@@ -27,6 +28,11 @@ import {
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import type { ZodType } from 'zod'
 import { buildGovernanceMiddleware, type GovernanceLimits } from './operator-ai-governance.js'
+
+// Let the AI SDK absorb one transient failure on the current provider before the gateway moves
+// through its failover order. The SDK owns retry classification, exponential backoff, and
+// Retry-After handling; the provider timeout still bounds the entire attempt including this retry.
+const PROVIDER_MAX_RETRIES = 1
 
 // A single configured backend. The OpenAI-compatible chat surface is the common
 // denominator across hosted providers (OpenAI, Together, Groq), local servers
@@ -160,6 +166,15 @@ export interface GatewayUsage {
   // The distinct providers that served a completion this request, in first-served order. More than
   // one entry, or a single entry that is not the failover order's primary, means Caracal fell back.
   providers: string[]
+  // Token totals grouped by the provider/model pair that produced them. A turn can use more than
+  // one pair when an early completion succeeds on the primary and a later one fails over, so this
+  // breakdown is the authoritative attribution for historical cost analysis.
+  byProviderModel: {
+    provider: string
+    model: string
+    inputTokens: number
+    outputTokens: number
+  }[]
 }
 
 // No provider is configured, so the AI tier is off. Distinct from a call failure so
@@ -217,11 +232,14 @@ class ProviderEmptyCompletionError extends Error {
 function errorChain(err: unknown): unknown[] {
   const chain: unknown[] = []
   const seen = new Set<unknown>()
-  let current: unknown = err
-  while (current !== null && current !== undefined && chain.length < 8 && !seen.has(current)) {
+  const pending: unknown[] = [err]
+  while (pending.length > 0 && chain.length < 16) {
+    const current = pending.shift()
+    if (current === null || current === undefined || seen.has(current)) continue
     chain.push(current)
     seen.add(current)
-    current = typeof current === 'object' && 'cause' in current ? (current as { cause?: unknown }).cause : undefined
+    if (typeof current === 'object' && 'cause' in current) pending.push((current as { cause?: unknown }).cause)
+    if (RetryError.isInstance(current)) pending.push(...current.errors)
   }
   return chain
 }
@@ -231,8 +249,8 @@ function namedError(err: unknown, names: ReadonlySet<string>): boolean {
 }
 
 // Classifies SDK, HTTP, timeout, transport, and local validation failures without inspecting
-// error messages. Typed SDK guards are checked through the cause chain because providers commonly
-// wrap JSON/schema failures in an APICallError.
+// error messages. Typed SDK guards are checked through the cause/retry error graph because
+// providers commonly wrap JSON/schema failures in an APICallError and retries retain each error.
 export function classifyProviderError(err: unknown): OperatorAiErrorClass {
   if (err instanceof GatewayStreamInterruptedError) return 'stream_interrupted'
   const chain = errorChain(err)
@@ -288,6 +306,62 @@ function observe(action: () => void | Promise<void>): void {
 }
 
 type FetchImpl = typeof fetch
+
+// A failed provider is moved behind providers without a recent failure for one minute. The state
+// is deliberately process-local and advisory: providers remain in the order, so wider outages
+// still reach every configured backend, and the original priority returns automatically. Scoping
+// the memory to the injected transport shares it across per-request gateway rebuilds while keeping
+// independent server/test instances isolated.
+const PROVIDER_FAILURE_DEPRIORITIZATION_MS = 60_000
+const providerFailuresByTransport = new WeakMap<FetchImpl, Map<string, number>>()
+
+function providerFailureKey(provider: ProviderConfig): string {
+  // Include mutable endpoint identity so editing or replacing a provider does not inherit the old
+  // endpoint's failure. Userinfo, query parameters, and fragments are deliberately excluded so a
+  // credential embedded in a URL never enters the process-local map.
+  let endpointOrigin = 'invalid'
+  let endpointPath = ''
+  try {
+    const endpoint = new URL(provider.baseUrl)
+    endpointOrigin = endpoint.origin
+    endpointPath = endpoint.pathname
+  } catch {
+    // Invalid configured URLs will fail when called; the provider id and model still give them a
+    // stable, non-sensitive failure identity without retaining the malformed input.
+  }
+  return JSON.stringify([provider.id, endpointOrigin, endpointPath, provider.model])
+}
+
+function providerFailures(fetchImpl: FetchImpl): Map<string, number> {
+  const existing = providerFailuresByTransport.get(fetchImpl)
+  if (existing) return existing
+  const created = new Map<string, number>()
+  providerFailuresByTransport.set(fetchImpl, created)
+  return created
+}
+
+function providerOrder(
+  available: ProviderConfig[],
+  preferredProvider: string | undefined,
+  failures: Map<string, number>,
+): ProviderConfig[] {
+  const now = Date.now()
+  for (const [key, failedAt] of failures) {
+    if (now - failedAt >= PROVIDER_FAILURE_DEPRIORITIZATION_MS) failures.delete(key)
+  }
+
+  // An explicit per-conversation preference remains a caller override. The remaining providers
+  // retain their configured relative order within the normal and recently-failing groups.
+  const preferred = preferredProvider ? available.find((provider) => provider.id === preferredProvider) : undefined
+  const normal: ProviderConfig[] = []
+  const recentlyFailing: ProviderConfig[] = []
+  for (const provider of available) {
+    if (provider === preferred) continue
+    const group = failures.has(providerFailureKey(provider)) ? recentlyFailing : normal
+    group.push(provider)
+  }
+  return preferred ? [preferred, ...normal, ...recentlyFailing] : [...normal, ...recentlyFailing]
+}
 
 // The OpenAI-compatible provider emits one benign warning on every structured
 // completion that runs against a backend which does not advertise strict schema
@@ -442,10 +516,9 @@ function failureReason(err: unknown): string {
   return 'unknown error'
 }
 
-// Performs one free-text chat completion against a single provider through the AI SDK.
-// Per-call retry is disabled so this gateway's own failover order owns retry semantics;
-// network failures, non-2xx responses, timeouts, and empty completions all throw so the
-// caller can fail over.
+// Performs one free-text chat completion against a single provider through the AI SDK. One
+// SDK-managed retry absorbs a retryable transient failure before network failures, non-2xx
+// responses, timeouts, and empty completions throw so the caller can fail over.
 async function callProvider(
   fetchImpl: FetchImpl,
   provider: ProviderConfig,
@@ -464,7 +537,7 @@ async function callProvider(
       maxOutputTokens: options.maxTokens,
       temperature: options.temperature,
       abortSignal: controller.signal,
-      maxRetries: 0,
+      maxRetries: PROVIDER_MAX_RETRIES,
     })
     const text = result.text.trim()
     if (text.length === 0) throw new ProviderEmptyCompletionError()
@@ -485,7 +558,7 @@ async function callProvider(
 // Performs one streaming free-text chat completion against a single provider. It emits each text
 // and reasoning delta to the handlers as it arrives, then returns the same CompletionResult the
 // non-streaming path would, so a caller gets a live preview and the authoritative final text from
-// one call. Per-call retry is disabled so this gateway's own failover order owns retry semantics. A
+// one call. One SDK-managed retry absorbs a retryable failure while the stream is being opened. A
 // provider that fails before the first delta fails over cleanly like the non-streaming path; a
 // provider that fails after a delta has reached the client cannot fail over without appending a
 // second answer to the partial one already on screen, so it raises a GatewayStreamInterruptedError
@@ -513,7 +586,7 @@ async function callProviderStream(
       maxOutputTokens: options.maxTokens,
       temperature: options.temperature,
       abortSignal: controller.signal,
-      maxRetries: 0,
+      maxRetries: PROVIDER_MAX_RETRIES,
       // Azure delivers a completion in a few coarse chunks, so every token of a chunk lands in one
       // burst and a short answer arrives all at once. Re-pace the text channel word by word so the
       // answer types out smoothly for the reader while reasoning parts pass through untouched.
@@ -584,7 +657,7 @@ async function callProviderObject<T>(
       maxOutputTokens: options.maxTokens,
       temperature: options.temperature,
       abortSignal: controller.signal,
-      maxRetries: 0,
+      maxRetries: PROVIDER_MAX_RETRIES,
     })
     return {
       value: result.object,
@@ -610,33 +683,30 @@ export interface Gateway {
   stream(messages: GatewayMessage[], handlers: StreamHandlers, options?: CompletionOptions): Promise<CompletionResult>
 }
 
-// Runs a per-provider call through the failover order and returns the first success.
-// The caller's preferred provider, when available, is tried ahead of the rest; a
-// preference for an unknown or unavailable provider is ignored so a stale preference
-// never disables the gateway. Every provider failing throws a GatewayError carrying the
-// redacted per-provider reasons.
+// Runs a per-provider call through the failover order and returns the first success. A provider
+// that failed recently moves behind providers without a recent failure, but is never skipped. The
+// caller's preferred provider, when available, is still tried first; a preference for an unknown
+// or unavailable provider is ignored so a stale preference never disables the gateway. Every
+// provider failing throws a GatewayError carrying the redacted per-provider reasons.
 async function runWithFailover<T>(
   available: ProviderConfig[],
   preferredProvider: string | undefined,
+  failures: Map<string, number>,
   call: (provider: ProviderConfig) => Promise<T>,
   observer?: ProviderHealthObserver,
 ): Promise<T> {
   if (available.length === 0) throw new GatewayUnavailableError()
-  const order = [...available]
-  if (preferredProvider) {
-    const index = order.findIndex((provider) => provider.id === preferredProvider)
-    if (index > 0) {
-      const [preferred] = order.splice(index, 1)
-      order.unshift(preferred)
-    }
-  }
+  const order = providerOrder(available, preferredProvider, failures)
   const attempts: { provider: string; reason: string }[] = []
   for (const provider of order) {
+    const failureKey = providerFailureKey(provider)
     try {
       const result = await call(provider)
+      failures.delete(failureKey)
       if (observer) observe(() => observer.recordSuccess(provider.id))
       return result
     } catch (err) {
+      failures.set(failureKey, Date.now())
       if (observer) observe(() => observer.recordFailure(provider.id, classifyProviderError(err)))
       // A stream that already reached the client cannot be retried on another provider without
       // corrupting the visible output, so this failure ends the turn instead of failing over.
@@ -659,6 +729,7 @@ export function createGateway(
   healthObserver?: ProviderHealthObserver,
 ): Gateway {
   const available = providers.filter(providerAvailable)
+  const failures = providerFailures(fetchImpl)
   const governanceMiddleware = governance && governance.maxOutputTokens > 0 ? buildGovernanceMiddleware(governance) : undefined
 
   return {
@@ -675,7 +746,7 @@ export function createGateway(
     },
 
     active() {
-      const provider = available[0]
+      const provider = providerOrder(available, undefined, failures)[0]
       return provider ? { model: provider.model, contextWindow: provider.contextWindow } : null
     },
 
@@ -683,6 +754,7 @@ export function createGateway(
       return runWithFailover(
         available,
         options.preferredProvider,
+        failures,
         (provider) => callProvider(fetchImpl, provider, messages, options, governanceMiddleware),
         healthObserver,
       )
@@ -692,6 +764,7 @@ export function createGateway(
       return runWithFailover(
         available,
         options.preferredProvider,
+        failures,
         (provider) => callProviderObject(fetchImpl, provider, messages, schema, options, governanceMiddleware),
         healthObserver,
       )
@@ -701,6 +774,7 @@ export function createGateway(
       return runWithFailover(
         available,
         options.preferredProvider,
+        failures,
         (provider) => callProviderStream(fetchImpl, provider, messages, options, handlers, governanceMiddleware),
         healthObserver,
       )
@@ -723,17 +797,27 @@ export function withUsage(gateway: Gateway, options: { maxCalls?: number } = {})
   let lastProvider: string | null = null
   let lastModel: string | null = null
   const servedProviders: string[] = []
+  const byProviderModel: GatewayUsage['byProviderModel'] = []
   const maxCalls = options.maxCalls
   const guard = () => {
     if (maxCalls !== undefined && maxCalls > 0 && calls >= maxCalls) throw new GatewayBudgetError(maxCalls)
     calls += 1
   }
   const record = (provider: string, model: string, promptTokens?: number, completionTokens?: number) => {
-    inputTokens += promptTokens ?? 0
-    outputTokens += completionTokens ?? 0
+    const input = promptTokens ?? 0
+    const output = completionTokens ?? 0
+    inputTokens += input
+    outputTokens += output
     lastProvider = provider
     lastModel = model
     if (!servedProviders.includes(provider)) servedProviders.push(provider)
+    const attributed = byProviderModel.find((entry) => entry.provider === provider && entry.model === model)
+    if (attributed) {
+      attributed.inputTokens += input
+      attributed.outputTokens += output
+    } else {
+      byProviderModel.push({ provider, model, inputTokens: input, outputTokens: output })
+    }
   }
   const tracked: Gateway = {
     status: () => gateway.status(),
@@ -759,7 +843,14 @@ export function withUsage(gateway: Gateway, options: { maxCalls?: number } = {})
   }
   return {
     gateway: tracked,
-    usage: () => ({ inputTokens, outputTokens, provider: lastProvider, model: lastModel, providers: [...servedProviders] }),
+    usage: () => ({
+      inputTokens,
+      outputTokens,
+      provider: lastProvider,
+      model: lastModel,
+      providers: [...servedProviders],
+      byProviderModel: byProviderModel.map((entry) => ({ ...entry })),
+    }),
   }
 }
 

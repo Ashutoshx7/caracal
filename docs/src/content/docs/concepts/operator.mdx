@@ -48,6 +48,8 @@ Every conversation runs in one of two modes, enforced by Caracal and never chose
 
 Ask mode is enforced in two independent places - the planning skill is never selected, and the change endpoints refuse outright - so a read-only conversation is provably write-incapable.
 
+Each durable message run records its input and output token totals with a breakdown for every provider and model that served one of its completions. This usage survives the live response for accurate historical cost analysis even when a later call fails over; provider credentials and prompts are never stored in the usage record.
+
 ## Autopilot
 
 In agent mode you can engage **autopilot**, which lets Caracal auto-satisfy the approval step for every plan in the conversation. Engaging it is an explicit opt-in to acting without a human in the loop; it is off by default and per conversation, and a platform-level master switch must also be on. Auto-approval never widens authority - the governed execute path still enforces the capability allowlist, the least-privilege executor token, and zone isolation on every apply. Autopilot defers while a plan still needs credentials from the console's secure prompt and stops when a preview shows the plan cannot apply. A deployment can also bound an engaged conversation with a **write budget**: once the cumulative auto-approved write operations would exceed it, autopilot pauses, records the pause in the conversation ledger, and the plan waits for explicit human approval. The master switch is a single kill switch that stops all auto-approval on the next turn.
@@ -62,7 +64,9 @@ Every draft is validated and previewed against the same contract the platform en
 
 Turning words into a plan requires a model endpoint supplied by the operator. Open **Settings → AI Operator → Models** to add an OpenAI chat-completions-compatible endpoint, model IDs, optional context window, and key placement. The API key is accepted only when the model endpoint is created or rotated, sealed into a credential Provider in the reserved `caracal.sys` Zone, and never returned to the browser. Operator model calls use the governed Gateway route for that Resource.
 
-The settings page can edit model endpoint metadata, rotate the sealed key, delete a model endpoint, and run a real connectivity check. Multiple model endpoints and models participate in failover. Direct API-process `API_OPERATOR_AI_*` configuration also remains implemented, but the packaged-runtime workflow is console management; see [Configure Service Environment](/operations/env-vars/#api-operator-and-control) for that narrower path.
+The settings page can edit model endpoint metadata, rotate the sealed key, delete a model endpoint, and run a real connectivity check. Multiple model endpoints and models participate in failover. Each logical completion gives its current model endpoint one SDK-managed retry for transient failures, including rate limits and server errors; terminal failures move directly to the next endpoint, and the endpoint timeout bounds the retry as well as the initial request. Direct API-process `API_OPERATOR_AI_*` configuration also remains implemented, but the packaged-runtime workflow is console management; see [Configure Service Environment](/operations/env-vars/#api-operator-and-control) for that narrower path.
+
+When an endpoint fails, the API process temporarily moves it behind endpoints without a recent failure. It remains available as a fallback, a later success restores it immediately, and its configured priority returns automatically after the recovery window. This ordering memory is local to each API process and resets on restart.
 
 ### Provider Health Signals
 

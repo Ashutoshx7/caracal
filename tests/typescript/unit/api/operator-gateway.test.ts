@@ -37,6 +37,13 @@ function healthObserver() {
   } satisfies ProviderHealthObserver
 }
 
+function errorResponse(status: number, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify({ error: { message: `provider returned ${status}` } }), {
+    status,
+    headers: { 'content-type': 'application/json', ...headers },
+  })
+}
+
 // Builds an OpenAI-compatible streaming response: one chat.completion.chunk per content delta,
 // a terminal stop chunk carrying usage, then the [DONE] sentinel, so streamText parses the same
 // shape a real provider sends.
@@ -125,26 +132,80 @@ describe('gateway complete', () => {
     expect((init.headers as Record<string, string>).authorization).toBeUndefined()
   })
 
-  it('fails over to the next provider on a 5xx response', async () => {
+  it('retries a rate limit on the same provider and succeeds without failover', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response('boom', { status: 503 }))
+      .mockResolvedValueOnce(errorResponse(429, { 'retry-after-ms': '0' }))
+      .mockResolvedValueOnce(chatResponse('OK'))
+    const gateway = createGateway([provider({ id: 'primary' }), provider({ id: 'secondary' })], fetchMock as unknown as typeof fetch)
+    const result = await gateway.complete([{ role: 'user', content: 'ping' }])
+    expect(result.provider).toBe('primary')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('fails over after the current provider exhausts its single retry', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse(503, { 'retry-after-ms': '0' }))
+      .mockResolvedValueOnce(errorResponse(503, { 'retry-after-ms': '0' }))
       .mockResolvedValueOnce(chatResponse('OK'))
     const gateway = createGateway([provider({ id: 'primary' }), provider({ id: 'secondary' })], fetchMock as unknown as typeof fetch)
     const result = await gateway.complete([{ role: 'user', content: 'ping' }])
     expect(result.provider).toBe('secondary')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('skips directly to the next provider on a terminal 400 response', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(errorResponse(400)).mockResolvedValueOnce(chatResponse('OK'))
+    const gateway = createGateway(
+      [provider({ id: 'primary' }), provider({ id: 'secondary', baseUrl: 'https://secondary.example.com/v1' })],
+      fetchMock as unknown as typeof fetch,
+    )
+    const result = await gateway.complete([{ role: 'user', content: 'ping' }])
+    expect(result.provider).toBe('secondary')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      'https://api.example.com/v1/chat/completions',
+      'https://secondary.example.com/v1/chat/completions',
+    ])
+  })
+
+  it('honors Retry-After before retrying the same provider', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(errorResponse(429, { 'retry-after': '0.03' }))
+        .mockResolvedValueOnce(chatResponse('OK'))
+      const gateway = createGateway([provider({ id: 'primary' })], fetchMock as unknown as typeof fetch)
+      const completion = gateway.complete([{ role: 'user', content: 'ping' }])
+
+      await vi.advanceTimersByTimeAsync(29)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(1)
+      const result = await completion
+      expect(result.provider).toBe('primary')
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('retries a recognized network error on the same provider', async () => {
+    const networkError = Object.assign(new TypeError('fetch failed'), { cause: new Error('ECONNRESET') })
+    const fetchMock = vi.fn().mockRejectedValueOnce(networkError).mockResolvedValueOnce(chatResponse('OK'))
+    const gateway = createGateway(
+      [provider({ id: 'primary', timeoutMs: 5000 }), provider({ id: 'secondary' })],
+      fetchMock as unknown as typeof fetch,
+    )
+    const result = await gateway.complete([{ role: 'user', content: 'ping' }])
+    expect(result.provider).toBe('primary')
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  it('fails over on a network error', async () => {
-    const fetchMock = vi.fn().mockRejectedValueOnce(new TypeError('connection refused')).mockResolvedValueOnce(chatResponse('OK'))
-    const gateway = createGateway([provider({ id: 'primary' }), provider({ id: 'secondary' })], fetchMock as unknown as typeof fetch)
-    const result = await gateway.complete([{ role: 'user', content: 'ping' }])
-    expect(result.provider).toBe('secondary')
-  })
-
   it('throws GatewayError listing redacted attempts when every provider fails', async () => {
-    const fetchMock = vi.fn(async () => new Response('boom', { status: 500 }))
+    const fetchMock = vi.fn(async () => errorResponse(500, { 'retry-after-ms': '0' }))
     const gateway = createGateway(
       [provider({ id: 'primary', apiKey: 'sk-secret' }), provider({ id: 'secondary', apiKey: 'sk-other' })],
       fetchMock as unknown as typeof fetch,
@@ -154,6 +215,7 @@ describe('gateway complete', () => {
     expect(error.attempts).toHaveLength(2)
     expect(error.attempts.map((a: { provider: string }) => a.provider)).toEqual(['primary', 'secondary'])
     expect(JSON.stringify(error.attempts)).not.toContain('sk-')
+    expect(fetchMock).toHaveBeenCalledTimes(4)
   })
 
   it('treats an empty completion as a failure and fails over', async () => {
@@ -181,7 +243,8 @@ describe('gateway complete', () => {
   it('records each real failover attempt against the provider that served it', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response('boom', { status: 503 }))
+      .mockResolvedValueOnce(errorResponse(503, { 'retry-after-ms': '0' }))
+      .mockResolvedValueOnce(errorResponse(503, { 'retry-after-ms': '0' }))
       .mockResolvedValueOnce(chatResponse('OK'))
     const observer = healthObserver()
     const gateway = createGateway(
@@ -205,9 +268,10 @@ describe('gateway complete', () => {
     [400, 'config_error'],
   ] as const)('classifies HTTP %i without exposing the provider response as %s', async (status, errorClass) => {
     const observer = healthObserver()
+    const retryHeaders = status === 408 || status === 429 || status >= 500 ? { 'retry-after-ms': '0' } : undefined
     const gateway = createGateway(
       [provider()],
-      vi.fn(async () => new Response('provider-controlled secret text', { status })) as unknown as typeof fetch,
+      vi.fn(async () => new Response('provider-controlled secret text', { status, headers: retryHeaders })) as unknown as typeof fetch,
       undefined,
       observer,
     )
@@ -236,6 +300,165 @@ describe('gateway complete', () => {
     }
     const gateway = createGateway([provider()], vi.fn(async () => chatResponse('OK')) as unknown as typeof fetch, undefined, observer)
     await expect(gateway.complete([{ role: 'user', content: 'ping' }])).resolves.toMatchObject({ text: 'OK', provider: 'p1' })
+  })
+
+  it('bounds retry backoff with the provider timeout before failing over', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse(429, { 'retry-after-ms': '1000' }))
+      .mockResolvedValueOnce(chatResponse('OK'))
+    const gateway = createGateway([provider({ id: 'slow', timeoutMs: 10 }), provider({ id: 'fast' })], fetchMock as unknown as typeof fetch)
+    const startedAt = Date.now()
+    const result = await gateway.complete([{ role: 'user', content: 'ping' }])
+    expect(result.provider).toBe('fast')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(Date.now() - startedAt).toBeLessThan(500)
+  })
+})
+
+describe('gateway recent-failure ordering', () => {
+  const providers = [
+    provider({ id: 'primary', baseUrl: 'https://primary.example.com/v1', model: 'gpt-primary', contextWindow: 128000 }),
+    provider({ id: 'secondary', baseUrl: 'https://secondary.example.com/v1', model: 'gpt-secondary', contextWindow: 64000 }),
+  ]
+
+  it('shares a failure across gateway rebuilds and deprioritizes that provider', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('boom', { status: 503 }))
+      .mockResolvedValueOnce(chatResponse('fallback'))
+    const first = createGateway(providers, fetchMock as unknown as typeof fetch)
+    expect((await first.complete([{ role: 'user', content: 'ping' }])).provider).toBe('secondary')
+
+    fetchMock.mockReset().mockResolvedValue(chatResponse('next turn'))
+    const rebuilt = createGateway(providers, fetchMock as unknown as typeof fetch)
+    expect(rebuilt.active()).toEqual({ model: 'gpt-secondary', contextWindow: 64000 })
+    expect((await rebuilt.complete([{ role: 'user', content: 'ping again' }])).provider).toBe('secondary')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://secondary.example.com/v1/chat/completions')
+  })
+
+  it('keeps a recently failing provider as fallback and clears its failure on success', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('boom', { status: 503 }))
+      .mockResolvedValueOnce(chatResponse('fallback'))
+    await createGateway(providers, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'first' }])
+
+    // Secondary is tried first on the next turn. When it fails, primary is still attempted rather
+    // than skipped; its success clears the remembered failure immediately.
+    fetchMock
+      .mockReset()
+      .mockResolvedValueOnce(new Response('secondary down', { status: 503 }))
+      .mockResolvedValueOnce(chatResponse('recovered'))
+    const recovered = await createGateway(providers, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'second' }])
+    expect(recovered.provider).toBe('primary')
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      'https://secondary.example.com/v1/chat/completions',
+      'https://primary.example.com/v1/chat/completions',
+    ])
+
+    fetchMock.mockReset().mockResolvedValue(chatResponse('primary again'))
+    const restored = createGateway(providers, fetchMock as unknown as typeof fetch)
+    expect(restored.active()).toEqual({ model: 'gpt-primary', contextWindow: 128000 })
+    expect((await restored.complete([{ role: 'user', content: 'third' }])).provider).toBe('primary')
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://primary.example.com/v1/chat/completions')
+  })
+
+  it('restores configured priority when the recent-failure window expires', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const startedAt = new Date('2026-08-08T00:00:00Z')
+      vi.setSystemTime(startedAt)
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(new Response('boom', { status: 503 }))
+        .mockResolvedValueOnce(chatResponse('fallback'))
+      await createGateway(providers, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'first' }])
+
+      vi.setSystemTime(new Date(startedAt.getTime() + 60_001))
+      fetchMock.mockReset().mockResolvedValue(chatResponse('recovered'))
+      const recovered = createGateway(providers, fetchMock as unknown as typeof fetch)
+      expect(recovered.active()).toEqual({ model: 'gpt-primary', contextWindow: 128000 })
+      expect((await recovered.complete([{ role: 'user', content: 'second' }])).provider).toBe('primary')
+      expect(fetchMock.mock.calls[0]![0]).toBe('https://primary.example.com/v1/chat/completions')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps an explicit provider preference ahead of recent-failure ordering', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('boom', { status: 503 }))
+      .mockResolvedValueOnce(chatResponse('fallback'))
+    await createGateway(providers, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'first' }])
+
+    fetchMock.mockReset().mockResolvedValue(chatResponse('preferred recovered'))
+    const result = await createGateway(providers, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'second' }], {
+      preferredProvider: 'primary',
+    })
+    expect(result.provider).toBe('primary')
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://primary.example.com/v1/chat/completions')
+  })
+
+  it('always attempts a single configured provider even when it failed recently', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response('boom', { status: 503 }))
+    const only = [provider({ id: 'only', baseUrl: 'https://only.example.com/v1' })]
+    await expect(
+      createGateway(only, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'first' }]),
+    ).rejects.toBeInstanceOf(GatewayError)
+
+    fetchMock.mockReset().mockResolvedValue(chatResponse('back'))
+    const result = await createGateway(only, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'second' }])
+    expect(result.provider).toBe('only')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not transfer failure memory to an edited model', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('boom', { status: 503 }))
+      .mockResolvedValueOnce(chatResponse('fallback'))
+    await createGateway(providers, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'first' }])
+
+    fetchMock.mockReset().mockResolvedValue(chatResponse('edited endpoint'))
+    const edited = [provider({ ...providers[0], model: 'gpt-primary-v2' }), providers[1]!]
+    const result = await createGateway(edited, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'second' }])
+    expect(result.provider).toBe('primary')
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://primary.example.com/v1/chat/completions')
+  })
+
+  it('does not transfer failure memory to an edited base URL', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('boom', { status: 503 }))
+      .mockResolvedValueOnce(chatResponse('fallback'))
+    await createGateway(providers, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'first' }])
+
+    fetchMock.mockReset().mockResolvedValue(chatResponse('edited endpoint'))
+    const edited = [provider({ ...providers[0], baseUrl: 'https://replacement.example.com/v1' }), providers[1]!]
+    const result = await createGateway(edited, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'second' }])
+    expect(result.provider).toBe('primary')
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://replacement.example.com/v1/chat/completions')
+  })
+
+  it('excludes URL credentials and query parameters from failure identity', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('boom', { status: 503 }))
+      .mockResolvedValueOnce(chatResponse('fallback'))
+    const credentialed = [
+      provider({ ...providers[0], baseUrl: 'https://user:password@primary.example.com/v1?token=secret' }),
+      providers[1]!,
+    ]
+    await createGateway(credentialed, fetchMock as unknown as typeof fetch).complete([{ role: 'user', content: 'first' }])
+
+    fetchMock.mockReset().mockResolvedValue(chatResponse('next turn'))
+    const sanitized = createGateway(providers, fetchMock as unknown as typeof fetch)
+    expect((await sanitized.complete([{ role: 'user', content: 'second' }])).provider).toBe('secondary')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://secondary.example.com/v1/chat/completions')
   })
 })
 
@@ -423,6 +646,17 @@ describe('gateway completeObject', () => {
     expect(result).toMatchObject({ value: validPlan, provider: 'p1', model: 'gpt-x', promptTokens: 6, completionTokens: 2 })
   })
 
+  it('retries a transient structured-completion failure on the same provider', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse(503, { 'retry-after-ms': '0' }))
+      .mockResolvedValueOnce(objectResponse(validPlan))
+    const gateway = createGateway([provider({ id: 'primary' }), provider({ id: 'secondary' })], fetchMock as unknown as typeof fetch)
+    const result = await gateway.completeObject([{ role: 'user', content: 'connect github' }], ProposedPlan)
+    expect(result).toMatchObject({ value: validPlan, provider: 'primary' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('throws GatewayUnavailableError when nothing is configured', async () => {
     const gateway = createGateway([])
     await expect(gateway.completeObject([{ role: 'user', content: 'hi' }], ProposedPlan)).rejects.toBeInstanceOf(GatewayUnavailableError)
@@ -490,6 +724,19 @@ describe('gateway stream', () => {
     expect(result).toMatchObject({ text: 'Hello', provider: 'p1', model: 'gpt-x', promptTokens: 3, completionTokens: 2 })
   })
 
+  it('retries a transient failure while opening a stream on the same provider', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse(429, { 'retry-after-ms': '0' }))
+      .mockResolvedValueOnce(streamResponse(['recovered']))
+    const gateway = createGateway([provider({ id: 'primary' }), provider({ id: 'secondary' })], fetchMock as unknown as typeof fetch)
+    const deltas: string[] = []
+    const result = await gateway.stream([{ role: 'user', content: 'hi' }], { onText: (chunk) => deltas.push(chunk) })
+    expect(result.provider).toBe('primary')
+    expect(deltas.join('')).toBe('recovered')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('streams reasoning deltas to onReasoning and keeps the answer clean', async () => {
     const fetchMock = vi.fn(async () => streamResponse(['<think>', 'weighing ', 'options', '</think>', 'the answer']))
     const gateway = createGateway([provider()], fetchMock as unknown as typeof fetch)
@@ -551,6 +798,23 @@ describe('gateway stream', () => {
     expect(observer.recordFailure).toHaveBeenCalledExactlyOnceWith('primary', 'stream_interrupted')
     expect(observer.recordSuccess).not.toHaveBeenCalled()
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('deprioritizes a provider after its stream is interrupted', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(midStreamErrorResponse({ content: 'partial answer ' }))
+      .mockResolvedValueOnce(chatResponse('recovered on secondary'))
+    const providers = [provider({ id: 'stream-primary' }), provider({ id: 'stream-secondary' })]
+    const first = createGateway(providers, fetchMock as unknown as typeof fetch)
+    await expect(first.stream([{ role: 'user', content: 'hi' }], { onText: () => {} })).rejects.toBeInstanceOf(
+      GatewayStreamInterruptedError,
+    )
+
+    const rebuilt = createGateway(providers, fetchMock as unknown as typeof fetch)
+    const result = await rebuilt.complete([{ role: 'user', content: 'next turn' }])
+    expect(result.provider).toBe('stream-secondary')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('terminates the turn when only a reasoning delta streamed before the failure', async () => {
@@ -631,9 +895,9 @@ describe('withUsage', () => {
   it('records the provider and model that served, tracking a failover across calls', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(chatResponse('one'))
+      .mockResolvedValueOnce(chatResponse('one', { prompt_tokens: 100, completion_tokens: 20 }))
       .mockRejectedValueOnce(new TypeError('connection refused'))
-      .mockResolvedValueOnce(chatResponse('two'))
+      .mockResolvedValueOnce(chatResponse('two', { prompt_tokens: 30, completion_tokens: 5 }))
     const base = createGateway(
       [provider({ id: 'primary', model: 'gpt-a' }), provider({ id: 'secondary', model: 'gpt-b' })],
       fetchMock as unknown as typeof fetch,
@@ -643,7 +907,17 @@ describe('withUsage', () => {
     await gateway.complete([{ role: 'user', content: 'b' }])
     // The first call was served by the primary; the second failed over to the secondary, so both
     // providers are recorded in served order and the last served provider is the secondary.
-    expect(usage()).toMatchObject({ provider: 'secondary', model: 'gpt-b', providers: ['primary', 'secondary'] })
+    expect(usage()).toMatchObject({
+      inputTokens: 130,
+      outputTokens: 25,
+      provider: 'secondary',
+      model: 'gpt-b',
+      providers: ['primary', 'secondary'],
+      byProviderModel: [
+        { provider: 'primary', model: 'gpt-a', inputTokens: 100, outputTokens: 20 },
+        { provider: 'secondary', model: 'gpt-b', inputTokens: 30, outputTokens: 5 },
+      ],
+    })
   })
 
   it('reports a null served provider when no completion succeeded', async () => {
@@ -668,6 +942,19 @@ describe('withUsage', () => {
     await gateway.complete([{ role: 'user', content: 'b' }])
     // The third call is refused before reaching a provider, so only two requests were made.
     await expect(gateway.complete([{ role: 'user', content: 'c' }])).rejects.toBeInstanceOf(GatewayBudgetError)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps an SDK retry inside one logical model-call budget entry', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse(429, { 'retry-after-ms': '0' }))
+      .mockResolvedValueOnce(chatResponse('OK'))
+    const base = createGateway([provider()], fetchMock as unknown as typeof fetch)
+    const { gateway } = withUsage(base, { maxCalls: 1 })
+    const result = await gateway.complete([{ role: 'user', content: 'a' }])
+    expect(result.text).toBe('OK')
+    await expect(gateway.complete([{ role: 'user', content: 'b' }])).rejects.toBeInstanceOf(GatewayBudgetError)
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
