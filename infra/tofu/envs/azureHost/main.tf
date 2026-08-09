@@ -12,12 +12,38 @@ provider "azurerm" {
   subscription_id = var.subscriptionId
 }
 
+# Console credentials come from Key Vault at boot through the host's managed
+# identity, so no secret value ever enters OpenTofu state or cloud-init data.
+# Directories are pre-created for the caracal user because the engine later
+# tightens them as that user, and files land readable through the 0700 parent.
+locals {
+  consoleSecretsDir = "/var/lib/caracal/secrets/console"
+  # Constructed instead of referenced because the host consumes this bootstrap's
+  # output; it must match the "<name>-identity" naming in the Azure host adapter.
+  identityResourceId = "/subscriptions/${var.subscriptionId}/resourceGroups/${var.resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/${var.name}-identity"
+  imdsTokenCommand   = "curl -fsS -H Metadata:true 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net&msi_res_id=${local.identityResourceId}' | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"access_token\"])'"
+
+  keyVaultFetch = length(var.keyVaultSecrets) == 0 ? [] : concat(
+    [
+      "install -d -o caracal -g caracal -m 0700 /var/lib/caracal/secrets",
+      "install -d -o caracal -g caracal -m 0755 ${local.consoleSecretsDir}",
+    ],
+    [for key, uri in var.keyVaultSecrets :
+      "kvToken=$(${local.imdsTokenCommand}) && curl -fsS -H \"Authorization: Bearer $kvToken\" '${uri}?api-version=7.4' | python3 -c 'import json,sys; sys.stdout.write(json.load(sys.stdin)[\"value\"])' >${local.consoleSecretsDir}/${key} && chown caracal:caracal ${local.consoleSecretsDir}/${key} && chmod 0444 ${local.consoleSecretsDir}/${key}"
+    ],
+  )
+
+  keyVaultFileEnv = { for key, uri in var.keyVaultSecrets : "${key}_FILE" => "/run/caracalConsoleSecrets/${key}" }
+}
+
 module "bootstrap" {
   source = "../../modules/caracalHost"
 
   caracalVersion = var.caracalVersion
   tlsProxy       = var.tlsProxy
-  envOverrides   = var.envOverrides
+  envOverrides   = merge(var.envOverrides, local.keyVaultFileEnv)
+  operatorEmails = var.operatorEmails
+  extraRuncmd    = local.keyVaultFetch
 }
 
 module "host" {

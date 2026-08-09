@@ -114,6 +114,23 @@ variable "envOverrides" {
   default     = {}
 }
 
+variable "operatorEmails" {
+  description = "Console operators admitted at first boot, as exact addresses or @domain suffixes. Empty means admission is managed after boot with 'caracal allowlist' over SSH."
+  type        = list(string)
+  default     = []
+}
+
+variable "keyVaultSecrets" {
+  description = "Console credentials fetched from Key Vault at boot through the host's managed identity, keyed by environment variable base name (for example GOOGLE_CLIENT_SECRET = the vault secret URI without version). The identity needs the Key Vault Secrets User role on each secret. Values never enter OpenTofu state."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition     = alltrue([for uri in values(var.keyVaultSecrets) : can(regex("^https://[a-zA-Z0-9-]+\\.vault\\.azure\\.net/secrets/[a-zA-Z0-9-]+$", uri))])
+    error_message = "keyVaultSecrets values must be Key Vault secret URIs like https://<vault>.vault.azure.net/secrets/<name>."
+  }
+}
+
 variable "dnsZone" {
   description = "Azure DNS zone owning the hostnames. Leave empty when DNS is managed elsewhere and create the records there."
   type        = string

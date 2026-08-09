@@ -39,6 +39,17 @@ variable "envOverrides" {
   default     = {}
 }
 
+variable "operatorEmails" {
+  description = "Console operators admitted at first boot. Exact addresses or @domain suffixes, written to the sign-in allowlist before the stack starts. Empty means admission is managed after boot with 'caracal allowlist'."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for entry in var.operatorEmails : can(regex("^(@|[^@]+@)[A-Za-z0-9.-]+$", entry))])
+    error_message = "operatorEmails entries must be email addresses or @domain suffixes."
+  }
+}
+
 variable "extraRuncmd" {
   description = "Additional shell commands run after the CLI install and before stack start, such as reverse proxy or monitoring agent setup."
   type        = list(string)

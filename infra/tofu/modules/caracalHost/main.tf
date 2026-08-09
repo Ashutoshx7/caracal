@@ -53,6 +53,7 @@ locals {
     installScriptUrl  = var.installScriptUrl
     requireProvenance = var.requireProvenance
     envLines          = local.envLines
+    operatorEmails    = var.operatorEmails
     extraRuncmd       = var.extraRuncmd
     caddyfile         = local.caddyfile
     proxyImage        = var.proxyImage
