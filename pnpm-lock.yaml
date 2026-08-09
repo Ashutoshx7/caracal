@@ -413,13 +413,13 @@ importers:
   packages/adapters/express/ts:
     dependencies:
       '@caracalai/identity':
-        specifier: 1.0.0-rc.2
+        specifier: 1.0.0-rc.3
         version: link:../../../identity/ts
       '@caracalai/sdk':
-        specifier: 1.0.0-rc.2
+        specifier: 1.0.0-rc.3
         version: link:../../../sdk/ts
       '@caracalai/verify':
-        specifier: 1.0.0-rc.2
+        specifier: 1.0.0-rc.3
         version: link:../../../verify/ts
       express:
         specifier: ^5.0.0
@@ -441,10 +441,10 @@ importers:
   packages/adapters/fastmcp/ts:
     dependencies:
       '@caracalai/core':
-        specifier: 1.0.0-rc.2
+        specifier: 1.0.0-rc.3
         version: link:../../../core/ts
       '@caracalai/verify':
-        specifier: 1.0.0-rc.2
+        specifier: 1.0.0-rc.3
         version: link:../../../verify/ts
     devDependencies:
       '@types/node':
@@ -460,7 +460,7 @@ importers:
   packages/admin/ts:
     dependencies:
       '@caracalai/core':
-        specifier: 1.0.0-rc.2
+        specifier: 1.0.0-rc.3
         version: link:../../core/ts
     devDependencies:
       '@types/node':
@@ -489,10 +489,10 @@ importers:
   packages/backends/redis/ts:
     dependencies:
       '@caracalai/core':
-        specifier: 1.0.0-rc.2
+        specifier: 1.0.0-rc.3
         version: link:../../../core/ts
       '@caracalai/revocation':
-        specifier: 1.0.0-rc.2
+        specifier: 1.0.0-rc.3
         version: link:../../../revocation/ts
     devDependencies:
       '@types/node':
@@ -545,7 +545,7 @@ importers:
   packages/identity/ts:
     dependencies:
       '@caracalai/core':
-        specifier: 1.0.0-rc.2
+        specifier: 1.0.0-rc.3
         version: link:../../core/ts
       jose:
         specifier: ^6.2.8
@@ -564,7 +564,7 @@ importers:
   packages/oauth/ts:
     dependencies:
       '@caracalai/core':
-        specifier: 1.0.0-rc.2
+        specifier: 1.0.0-rc.3
         version: link:../../core/ts
     devDependencies:
       '@types/node':
@@ -592,7 +592,7 @@ importers:
   packages/sdk/ts:
     dependencies:
       '@caracalai/oauth':
-        specifier: 1.0.0-rc.2
+        specifier: 1.0.0-rc.3
         version: link:../../oauth/ts
       smol-toml:
         specifier: ^1.7.1
@@ -642,10 +642,10 @@ importers:
   packages/verify/ts:
     dependencies:
       '@caracalai/identity':
-        specifier: 1.0.0-rc.2
+        specifier: 1.0.0-rc.3
         version: link:../../identity/ts
       '@caracalai/revocation':
-        specifier: 1.0.0-rc.2
+        specifier: 1.0.0-rc.3
         version: link:../../revocation/ts
     devDependencies:
       '@types/node':

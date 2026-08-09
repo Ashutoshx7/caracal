@@ -84,6 +84,10 @@ function stampTextPins(config, diff) {
       apply: (text) => text.replace(/^chartVersion = "[^"]+"$/m, `chartVersion = "${version}"`),
     },
     {
+      path: 'infra/tofu/envs/azureHost/terraform.tfvars.example',
+      apply: (text) => text.replace(/^caracalVersion = "v[^"]+"$/m, `caracalVersion = "v${version}"`),
+    },
+    {
       path: 'docs/src/content/docs/operations/opentofu.mdx',
       apply: (text) => text.replace(/caracalVersion = "v[^"]+"/, `caracalVersion = "v${version}"`),
     },

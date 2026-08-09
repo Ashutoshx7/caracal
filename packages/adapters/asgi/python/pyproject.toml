@@ -9,15 +9,15 @@ build-backend = "hatchling.build"
 
 [project]
 name = "caracalai-asgi"
-version = "1.0.0rc2"
+version = "1.0.0rc3"
 description = "ASGI middleware for Caracal mandate verification (FastAPI, Starlette, Quart)"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-  "caracalai-verify==1.0.0rc2",
-  "caracalai-revocation==1.0.0rc2",
+  "caracalai-verify==1.0.0rc3",
+  "caracalai-revocation==1.0.0rc3",
 ]
 
 [tool.hatch.build.targets.wheel]

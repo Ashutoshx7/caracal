@@ -8,7 +8,7 @@ resourceGroupName = "caracal-vm"
 region            = "centralindia"
 name              = "caracal"
 
-caracalVersion = "v1.0.0-rc.2"
+caracalVersion = "v1.0.0-rc.3"
 machineSize    = "Standard_D4as_v5"
 diskGb         = 128
 
