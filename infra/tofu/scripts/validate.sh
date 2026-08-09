@@ -129,7 +129,12 @@ import { readFileSync } from 'node:fs'
 import { parse } from 'yaml'
 const doc = parse(readFileSync('${WORK}/plain.yaml', 'utf8'))
 const files = Object.fromEntries(doc.write_files.map((f) => [f.path, f.content]))
-if (files['/var/lib/caracal/caracal.env']) throw new Error('no overrides must write no env file')
+// A provisioned host is a deployment surface with no guided-setup window, so the
+// sign-in requirement is armed even with no operator overrides.
+const env = files['/var/lib/caracal/caracal.env']
+if (!env || env.trim() !== 'CARACAL_REQUIRE_SIGN_IN_METHOD=1') {
+  throw new Error('a bare host must write exactly the armed sign-in requirement')
+}
 if (files['/var/lib/caracal/proxy/Caddyfile']) throw new Error('no proxy must write no Caddyfile')
 const script = files['/usr/local/lib/caracalBootstrap.sh']
 if (!script) throw new Error('bootstrap script missing')

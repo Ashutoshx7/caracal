@@ -35,7 +35,7 @@ locals {
     },
   ) : {}
 
-  hostEnv  = merge(local.proxyEnv, var.envOverrides)
+  hostEnv  = merge({ CARACAL_REQUIRE_SIGN_IN_METHOD = "1" }, local.proxyEnv, var.envOverrides)
   envLines = [for key in sort(keys(local.hostEnv)) : "${key}=${local.hostEnv[key]}"]
 
   caddyfile = local.proxyEnabled ? join("\n", concat(

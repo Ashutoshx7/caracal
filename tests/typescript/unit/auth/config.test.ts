@@ -4,7 +4,7 @@
 // Unit tests for the authentication backend configuration: TLS posture, cookie security, origins, and migration gating.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { loadConfig } from '../../../../apps/auth/src/config.ts'
+import { assertSignInMethod, loadConfig } from '../../../../apps/auth/src/config.ts'
 
 const SAVED = { ...process.env }
 
@@ -26,9 +26,6 @@ function reset(env: Record<string, string | undefined>): void {
   // exercise the dimension they target rather than the required-field guards.
   process.env.CARACAL_AUTH_DATABASE_URL = 'postgres://u:p@db:5432/caracal_auth'
   process.env.CARACAL_AUTH_SECRET = '0123456789abcdef0123456789abcdef'
-  // Production requires at least one sign-in method; supply one for the same reason.
-  process.env.GOOGLE_CLIENT_ID = 'test-client-id'
-  process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret'
   Object.assign(process.env, env)
 }
 
@@ -50,44 +47,53 @@ describe('required fields', () => {
 })
 
 describe('sign-in method gate', () => {
-  function noMethods(env: Record<string, string | undefined> = {}): void {
-    reset(env)
-    delete process.env.GOOGLE_CLIENT_ID
-    delete process.env.GOOGLE_CLIENT_SECRET
-  }
+  // The gate runs at the serving boundary, not in loadConfig, so non-serving
+  // entrypoints such as the schema migration job load configuration freely.
+  const gate = () => assertSignInMethod(loadConfig())
+  const armed = { NODE_ENV: 'production', CARACAL_REQUIRE_SIGN_IN_METHOD: '1' }
 
-  it('fails production startup when no sign-in method is configured', () => {
-    noMethods({ NODE_ENV: 'production' })
-    expect(() => loadConfig()).toThrow(/No operator sign-in method is configured/)
+  it('does not gate configuration loading itself', () => {
+    reset(armed)
+    expect(() => loadConfig()).not.toThrow()
+  })
+
+  it('is off unless the deployment surface requires it, so guided setup can serve first', () => {
+    reset({ NODE_ENV: 'production' })
+    expect(gate).not.toThrow()
+  })
+
+  it('fails production serving startup when no sign-in method is configured', () => {
+    reset(armed)
+    expect(gate).toThrow(/No operator sign-in method is configured/)
   })
 
   it('accepts google credentials as a method', () => {
-    reset({ NODE_ENV: 'production' })
-    expect(() => loadConfig()).not.toThrow()
+    reset({ ...armed, GOOGLE_CLIENT_ID: 'id', GOOGLE_CLIENT_SECRET: 'secret' })
+    expect(gate).not.toThrow()
   })
 
   it('accepts github credentials as a method', () => {
-    noMethods({ NODE_ENV: 'production', GITHUB_CLIENT_ID: 'id', GITHUB_CLIENT_SECRET: 'secret' })
-    expect(() => loadConfig()).not.toThrow()
+    reset({ ...armed, GITHUB_CLIENT_ID: 'id', GITHUB_CLIENT_SECRET: 'secret' })
+    expect(gate).not.toThrow()
   })
 
   it('accepts a mail transport as a method', () => {
-    noMethods({
-      NODE_ENV: 'production',
+    reset({
+      ...armed,
       CARACAL_SMTP_URL: 'smtp://mail.hooli.example:587',
       CARACAL_SMTP_FROM: 'Caracal <no-reply@hooli.example>',
     })
-    expect(() => loadConfig()).not.toThrow()
+    expect(gate).not.toThrow()
   })
 
   it('does not gate development', () => {
-    noMethods()
-    expect(() => loadConfig()).not.toThrow()
+    reset({ CARACAL_REQUIRE_SIGN_IN_METHOD: '1' })
+    expect(gate).not.toThrow()
   })
 
   it('names the configuration options in the error', () => {
-    noMethods({ NODE_ENV: 'production' })
-    expect(() => loadConfig()).toThrow(/GOOGLE_CLIENT_ID.*GITHUB_CLIENT_ID.*CARACAL_SMTP_URL/s)
+    reset(armed)
+    expect(gate).toThrow(/GOOGLE_CLIENT_ID.*GITHUB_CLIENT_ID.*CARACAL_SMTP_URL/s)
   })
 })
 

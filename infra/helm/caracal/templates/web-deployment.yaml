@@ -133,6 +133,10 @@ spec:
             # key (written by `caracal allowlist`) to the runtime secret.
             - name: CARACAL_OPERATOR_ALLOWLIST_FILE
               value: /run/caracalBootstrap/operatorAllowlist.json
+            # A cluster deployment has no guided-setup window: serving must not
+            # start until a sign-in method is configured via extraEnv.
+            - name: CARACAL_REQUIRE_SIGN_IN_METHOD
+              value: "1"
             {{- with $service.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
