@@ -14,7 +14,9 @@ import {
   GatewayError,
   GatewayBudgetError,
   GatewayStreamInterruptedError,
+  classifyProviderError,
   type ProviderConfig,
+  type ProviderHealthObserver,
 } from '../../../../apps/api/src/operator-gateway.js'
 import { ProposedPlan } from '../../../../apps/api/src/operator-capabilities.js'
 
@@ -27,6 +29,13 @@ function chatResponse(content: string, usage?: { prompt_tokens: number; completi
     status: 200,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function healthObserver() {
+  return {
+    recordSuccess: vi.fn(),
+    recordFailure: vi.fn(),
+  } satisfies ProviderHealthObserver
 }
 
 function errorResponse(status: number, headers: Record<string, string> = {}): Response {
@@ -232,6 +241,68 @@ describe('gateway complete', () => {
     expect(result.provider).toBe('fast')
   })
 
+  it('records each real failover attempt against the provider that served it', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse(503, { 'retry-after-ms': '0' }))
+      .mockResolvedValueOnce(errorResponse(503, { 'retry-after-ms': '0' }))
+      .mockResolvedValueOnce(chatResponse('OK'))
+    const observer = healthObserver()
+    const gateway = createGateway(
+      [provider({ id: 'primary' }), provider({ id: 'secondary' })],
+      fetchMock as unknown as typeof fetch,
+      undefined,
+      observer,
+    )
+
+    await expect(gateway.complete([{ role: 'user', content: 'ping' }])).resolves.toMatchObject({ provider: 'secondary' })
+    expect(observer.recordFailure).toHaveBeenCalledExactlyOnceWith('primary', 'endpoint_error')
+    expect(observer.recordSuccess).toHaveBeenCalledExactlyOnceWith('secondary')
+  })
+
+  it.each([
+    [401, 'auth_failed'],
+    [403, 'auth_failed'],
+    [408, 'timeout'],
+    [429, 'rate_limited'],
+    [500, 'endpoint_error'],
+    [400, 'config_error'],
+  ] as const)('classifies HTTP %i without exposing the provider response as %s', async (status, errorClass) => {
+    const observer = healthObserver()
+    const retryHeaders = status === 408 || status === 429 || status >= 500 ? { 'retry-after-ms': '0' } : undefined
+    const gateway = createGateway(
+      [provider()],
+      vi.fn(async () => new Response('provider-controlled secret text', { status, headers: retryHeaders })) as unknown as typeof fetch,
+      undefined,
+      observer,
+    )
+
+    await expect(gateway.complete([{ role: 'user', content: 'ping' }])).rejects.toBeInstanceOf(GatewayError)
+    expect(observer.recordFailure).toHaveBeenCalledExactlyOnceWith('p1', errorClass)
+    expect(JSON.stringify(observer.recordFailure.mock.calls)).not.toContain('provider-controlled')
+  })
+
+  it('classifies transport, empty-response, and timeout failures without message matching', async () => {
+    expect(classifyProviderError(new TypeError('arbitrary provider text'))).toBe('unreachable')
+    expect(classifyProviderError(new DOMException('arbitrary provider text', 'AbortError'))).toBe('timeout')
+
+    const observer = healthObserver()
+    const gateway = createGateway([provider()], vi.fn(async () => chatResponse('')) as unknown as typeof fetch, undefined, observer)
+    await expect(gateway.complete([{ role: 'user', content: 'ping' }])).rejects.toBeInstanceOf(GatewayError)
+    expect(observer.recordFailure).toHaveBeenCalledExactlyOnceWith('p1', 'invalid_response')
+  })
+
+  it('never lets an observation failure change a successful provider result', async () => {
+    const observer: ProviderHealthObserver = {
+      recordSuccess: async () => Promise.reject(new Error('redis unavailable')),
+      recordFailure: () => {
+        throw new Error('redis unavailable')
+      },
+    }
+    const gateway = createGateway([provider()], vi.fn(async () => chatResponse('OK')) as unknown as typeof fetch, undefined, observer)
+    await expect(gateway.complete([{ role: 'user', content: 'ping' }])).resolves.toMatchObject({ text: 'OK', provider: 'p1' })
+  })
+
   it('aborts an explicit cancellation without failing over to another provider', async () => {
     const controller = new AbortController()
     const fetchMock = vi
@@ -244,9 +315,17 @@ describe('gateway complete', () => {
           }),
       )
       .mockResolvedValueOnce(chatResponse('must not run'))
-    const gateway = createGateway([provider({ id: 'primary' }), provider({ id: 'secondary' })], fetchMock as unknown as typeof fetch)
+    const observer = healthObserver()
+    const gateway = createGateway(
+      [provider({ id: 'primary' }), provider({ id: 'secondary' })],
+      fetchMock as unknown as typeof fetch,
+      undefined,
+      observer,
+    )
     await expect(gateway.complete([{ role: 'user', content: 'ping' }], { signal: controller.signal })).rejects.toThrow()
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(observer.recordFailure).not.toHaveBeenCalled()
+    expect(observer.recordSuccess).not.toHaveBeenCalled()
   })
 
   it('bounds retry backoff with the provider timeout before failing over', async () => {
@@ -621,6 +700,24 @@ describe('gateway completeObject', () => {
     expect(result).toMatchObject({ value: validPlan, provider: 'secondary' })
   })
 
+  it('records an invalid structured response before recording failover success', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(objectResponse({ summary: 'x', steps: [] }))
+      .mockResolvedValueOnce(objectResponse(validPlan))
+    const observer = healthObserver()
+    const gateway = createGateway(
+      [provider({ id: 'primary' }), provider({ id: 'secondary' })],
+      fetchMock as unknown as typeof fetch,
+      undefined,
+      observer,
+    )
+
+    await gateway.completeObject([{ role: 'user', content: 'connect' }], ProposedPlan)
+    expect(observer.recordFailure).toHaveBeenCalledExactlyOnceWith('primary', 'invalid_response')
+    expect(observer.recordSuccess).toHaveBeenCalledExactlyOnceWith('secondary')
+  })
+
   it('reports redacted attempts when every provider returns an off-schema object', async () => {
     const fetchMock = vi.fn(async () => objectResponse({ summary: 'x', steps: [] }))
     const gateway = createGateway(
@@ -725,6 +822,27 @@ describe('gateway stream', () => {
     // answer can never append to the corrupted stream.
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(deltas.length).toBeGreaterThan(0)
+  })
+
+  it('records an interrupted stream against its provider without attempting the fallback', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(midStreamErrorResponse({ content: 'partial answer ' }))
+      .mockResolvedValueOnce(streamResponse(['must not run']))
+    const observer = healthObserver()
+    const gateway = createGateway(
+      [provider({ id: 'primary' }), provider({ id: 'secondary' })],
+      fetchMock as unknown as typeof fetch,
+      undefined,
+      observer,
+    )
+
+    await expect(gateway.stream([{ role: 'user', content: 'hi' }], { onText: () => {} })).rejects.toBeInstanceOf(
+      GatewayStreamInterruptedError,
+    )
+    expect(observer.recordFailure).toHaveBeenCalledExactlyOnceWith('primary', 'stream_interrupted')
+    expect(observer.recordSuccess).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('deprioritizes a provider after its stream is interrupted', async () => {
