@@ -143,6 +143,7 @@ services:
       CARACAL_COORDINATOR_TOKEN: caracalCoordinatorToken
     env:
       NODE_ENV: production
+      CARACAL_REQUIRE_SIGN_IN_METHOD: '1'
       CARACAL_AUTH_URL: '{public:web}'
       CARACAL_WEB_ORIGIN: '{public:web}'
       CARACAL_AUTH_SECURE_COOKIES: 'true'

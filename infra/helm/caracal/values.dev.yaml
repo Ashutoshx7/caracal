@@ -46,3 +46,11 @@ services:
     replicas: 1
     hpa:
       enabled: false
+    # The serving gate requires a sign-in method; this evaluation cluster is
+    # disposable and unreachable from any OAuth provider, so placeholder GitHub
+    # credentials satisfy presence without granting anything.
+    extraEnv:
+      - name: GITHUB_CLIENT_ID
+        value: evaluation-placeholder
+      - name: GITHUB_CLIENT_SECRET
+        value: evaluation-placeholder
