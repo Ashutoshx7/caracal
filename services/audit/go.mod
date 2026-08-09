@@ -7,7 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.34
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.106.3
 	github.com/aws/smithy-go v1.27.6
-	github.com/garudex-labs/caracal/packages/core/go v1.0.0-rc.3
+	github.com/garudex-labs/caracal/packages/core/go v1.0.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/parquet-go/parquet-go v0.30.1
 	github.com/redis/go-redis/v9 v9.21.0

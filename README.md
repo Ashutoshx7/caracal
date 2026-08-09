@@ -125,7 +125,7 @@ Read the full documentation at [docs.caracal.run](https://docs.caracal.run).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.sh | \
-  sh -s -- --version v1.0.0-rc.3
+  sh -s -- --version v1.0.0
 ```
 
 </details>
@@ -135,7 +135,7 @@ curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.s
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.sh | \
-  sh -s -- --version v1.0.0-rc.3
+  sh -s -- --version v1.0.0
 ```
 
 </details>
@@ -146,7 +146,7 @@ curl -fsSL https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.s
 ```powershell
 $installer = "$env:TEMP\install.ps1"
 iwr -useb https://raw.githubusercontent.com/Garudex-Labs/caracal/main/install.ps1 -OutFile $installer
-powershell -ExecutionPolicy Bypass -File $installer -Version v1.0.0-rc.3
+powershell -ExecutionPolicy Bypass -File $installer -Version v1.0.0
 ```
 
 </details>
