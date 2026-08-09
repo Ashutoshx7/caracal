@@ -11,7 +11,7 @@ import { ShutdownRegistry, pathOnly } from '@caracalai/server-core'
 
 import { auth } from './auth.ts'
 import { handleAccount } from './account.ts'
-import { loadConfig } from './config.ts'
+import { assertSignInMethod, loadConfig } from './config.ts'
 import { closeAuthDatabase, pingAuthDatabase } from './database.ts'
 import { handleConsole } from './console.ts'
 import { enabledProviders } from './providers.ts'
@@ -20,6 +20,7 @@ import { serveStatic } from './static.ts'
 import { applySecurityHeaders, CLIENT_IP_HEADER, clientIp, isCrossSiteWrite, method, requestId, traceFromRequest } from './security.ts'
 
 const cfg = loadConfig()
+assertSignInMethod(cfg)
 
 async function ensureSchema(): Promise<void> {
   const { runMigrations, toBeCreated, toBeAdded } = await getMigrations(auth.options)

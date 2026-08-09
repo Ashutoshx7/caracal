@@ -39,6 +39,10 @@ export interface AuthConfig {
   trustProxy: boolean
   openRegistration: boolean
   passwordSignup: boolean
+  // Whether this deployment requires a configured sign-in method at serving startup. Set by
+  // deployment surfaces where nobody can shell in to finish setup; the local packaged stack
+  // leaves it off so guided setup works before a method exists.
+  requireSignInMethod: boolean
   // Path to the Console sign-in allowlist managed by `caracal allowlist`; the file's entries
   // are re-read per request. Empty means no file-based admission policy, so access follows the
   // open-registration default.
@@ -139,6 +143,22 @@ function resolveSmtp(): { url: string | null; from: string | null } {
   return { url, from }
 }
 
+// A production console with no sign-in method is healthy to every probe and unusable to every
+// operator. Deployment surfaces (OpenTofu hosts, Helm, managed platforms) declare the
+// requirement via CARACAL_REQUIRE_SIGN_IN_METHOD; the packaged local stack leaves it unset so
+// guided setup can bring the console up before a method is configured. The gate runs at the
+// serving boundary rather than in loadConfig so non-serving entrypoints such as the schema
+// migration job are not held to a contract they cannot satisfy.
+export function assertSignInMethod(cfg: AuthConfig): void {
+  if (!cfg.production || !cfg.requireSignInMethod) return
+  if (enabledSocialProviders().length > 0 || cfg.smtpUrl) return
+  throw new Error(
+    'No operator sign-in method is configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, ' +
+      'GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET, or CARACAL_SMTP_URL and CARACAL_SMTP_FROM ' +
+      '(with CARACAL_PASSWORD_SIGNUP=1 for email/password registration). Each secret also accepts its _FILE variant.',
+  )
+}
+
 export function loadConfig(): AuthConfig {
   const production = (process.env.NODE_ENV ?? '').toLowerCase() === 'production'
   const port = Number(process.env.PORT ?? process.env.CARACAL_AUTH_PORT ?? 3002)
@@ -192,15 +212,6 @@ export function loadConfig(): AuthConfig {
       'CARACAL_PASSWORD_SIGNUP requires a mail transport in production: verification and reset emails cannot be delivered. Set CARACAL_SMTP_URL (or CARACAL_SMTP_URL_FILE) and CARACAL_SMTP_FROM, or disable password sign-up.',
     )
   }
-  // A production console with no sign-in method is healthy to every probe and unusable to every
-  // operator, so the absence of any method is a deployment error surfaced at startup.
-  if (production && enabledSocialProviders().length === 0 && !smtp.url) {
-    throw new Error(
-      'No operator sign-in method is configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, ' +
-        'GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET, or CARACAL_SMTP_URL and CARACAL_SMTP_FROM ' +
-        '(with CARACAL_PASSWORD_SIGNUP=1 for email/password registration). Each secret also accepts its _FILE variant.',
-    )
-  }
   const webOrigins = resolveWebOrigins(baseURL, production)
   return {
     port,
@@ -219,6 +230,7 @@ export function loadConfig(): AuthConfig {
     trustProxy,
     openRegistration,
     passwordSignup,
+    requireSignInMethod: /^(1|true|yes|on)$/i.test(process.env.CARACAL_REQUIRE_SIGN_IN_METHOD ?? ''),
     operatorAllowlistFile: process.env.CARACAL_OPERATOR_ALLOWLIST_FILE?.trim() ?? '',
     operatorAllowlistEnv: process.env.CARACAL_OPERATOR_ALLOWLIST?.trim() ?? '',
     requireEmailVerification,

@@ -221,6 +221,13 @@ export const ENV_SCHEMA = {
     default: '',
     exposed: true,
   },
+  CARACAL_REQUIRE_SIGN_IN_METHOD: {
+    kind: 'bool',
+    description:
+      'Refuse console serving startup until a sign-in method (Google, GitHub, or SMTP) is configured. Deployment surfaces set this; the local stack leaves it off so guided setup works first.',
+    default: '',
+    exposed: true,
+  },
   CARACAL_AUTH_TRUST_PROXY: {
     kind: 'bool',
     description:
