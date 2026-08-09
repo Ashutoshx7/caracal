@@ -208,7 +208,7 @@ function SecurityPage() {
             </li>
             {SOCIAL_PROVIDERS.map((provider) => {
               const connected = accounts.some((account) => account.providerId === provider.id);
-              const available = providers?.[provider.id] ?? false;
+              const available = providers?.social.includes(provider.id) ?? false;
               if (!connected && !available) return null;
               return (
                 <li key={provider.id} className="flex items-center justify-between gap-3 px-4 py-3">

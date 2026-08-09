@@ -10,7 +10,15 @@ const SAVED = { ...process.env }
 
 function reset(env: Record<string, string | undefined>): void {
   for (const key of Object.keys(process.env)) {
-    if (key.startsWith('CARACAL_') || key === 'NODE_ENV' || key === 'DATABASE_URL' || key === 'PORT' || key === 'HOST') {
+    if (
+      key.startsWith('CARACAL_') ||
+      key.startsWith('GOOGLE_') ||
+      key.startsWith('GITHUB_') ||
+      key === 'NODE_ENV' ||
+      key === 'DATABASE_URL' ||
+      key === 'PORT' ||
+      key === 'HOST'
+    ) {
       delete process.env[key]
     }
   }
@@ -18,6 +26,9 @@ function reset(env: Record<string, string | undefined>): void {
   // exercise the dimension they target rather than the required-field guards.
   process.env.CARACAL_AUTH_DATABASE_URL = 'postgres://u:p@db:5432/caracal_auth'
   process.env.CARACAL_AUTH_SECRET = '0123456789abcdef0123456789abcdef'
+  // Production requires at least one sign-in method; supply one for the same reason.
+  process.env.GOOGLE_CLIENT_ID = 'test-client-id'
+  process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret'
   Object.assign(process.env, env)
 }
 
@@ -35,6 +46,48 @@ describe('required fields', () => {
   it('fails closed without a signing secret', () => {
     delete process.env.CARACAL_AUTH_SECRET
     expect(() => loadConfig()).toThrow(/CARACAL_AUTH_SECRET is required/)
+  })
+})
+
+describe('sign-in method gate', () => {
+  function noMethods(env: Record<string, string | undefined> = {}): void {
+    reset(env)
+    delete process.env.GOOGLE_CLIENT_ID
+    delete process.env.GOOGLE_CLIENT_SECRET
+  }
+
+  it('fails production startup when no sign-in method is configured', () => {
+    noMethods({ NODE_ENV: 'production' })
+    expect(() => loadConfig()).toThrow(/No operator sign-in method is configured/)
+  })
+
+  it('accepts google credentials as a method', () => {
+    reset({ NODE_ENV: 'production' })
+    expect(() => loadConfig()).not.toThrow()
+  })
+
+  it('accepts github credentials as a method', () => {
+    noMethods({ NODE_ENV: 'production', GITHUB_CLIENT_ID: 'id', GITHUB_CLIENT_SECRET: 'secret' })
+    expect(() => loadConfig()).not.toThrow()
+  })
+
+  it('accepts a mail transport as a method', () => {
+    noMethods({
+      NODE_ENV: 'production',
+      CARACAL_SMTP_URL: 'smtp://mail.hooli.example:587',
+      CARACAL_SMTP_FROM: 'Caracal <no-reply@hooli.example>',
+    })
+    expect(() => loadConfig()).not.toThrow()
+  })
+
+  it('does not gate development', () => {
+    noMethods()
+    expect(() => loadConfig()).not.toThrow()
+  })
+
+  it('names the configuration options in the error', () => {
+    noMethods({ NODE_ENV: 'production' })
+    expect(() => loadConfig()).toThrow(/GOOGLE_CLIENT_ID.*GITHUB_CLIENT_ID.*CARACAL_SMTP_URL/s)
   })
 })
 

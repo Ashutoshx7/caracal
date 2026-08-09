@@ -4,7 +4,7 @@ Caracal, a product of Garudex Labs
 
 This file renders unified social sign-in options for Community Edition.
 */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 
 import { fetchEnabledProviders, signIn, type SocialProvider } from "@/platform/auth";
 
@@ -39,25 +39,30 @@ function GitHubMark() {
   );
 }
 
+// Per-provider presentation. A provider enabled by the auth service renders only
+// when it has a row here, so a new provider is one entry with its label and mark.
+const PROVIDER_META: { id: SocialProvider; label: string; mark: () => ReactElement }[] = [
+  { id: "google", label: "Google", mark: GoogleMark },
+  { id: "github", label: "GitHub", mark: GitHubMark },
+];
+
 export function SocialButtons({ callbackURL }: { callbackURL: string }) {
-  const [providers, setProviders] = useState<{ google: boolean; github: boolean }>({
-    google: false,
-    github: false,
-  });
+  const [enabled, setEnabled] = useState<SocialProvider[]>([]);
   const [busy, setBusy] = useState<SocialProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    fetchEnabledProviders().then((enabled) => {
-      if (active) setProviders({ google: enabled.google, github: enabled.github });
+    fetchEnabledProviders().then((providers) => {
+      if (active) setEnabled(providers.social);
     });
     return () => {
       active = false;
     };
   }, []);
 
-  if (!providers.google && !providers.github) return null;
+  const visible = PROVIDER_META.filter(({ id }) => enabled.includes(id));
+  if (visible.length === 0) return null;
 
   async function withProvider(provider: SocialProvider) {
     setBusy(provider);
@@ -72,28 +77,18 @@ export function SocialButtons({ callbackURL }: { callbackURL: string }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-2">
-        {providers.google ? (
+        {visible.map(({ id, label, mark: Mark }) => (
           <button
+            key={id}
             type="button"
-            onClick={() => withProvider("google")}
+            onClick={() => withProvider(id)}
             disabled={busy !== null}
             className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50"
           >
-            <GoogleMark />
-            {busy === "google" ? "Redirecting…" : "Continue with Google"}
+            <Mark />
+            {busy === id ? "Redirecting…" : `Continue with ${label}`}
           </button>
-        ) : null}
-        {providers.github ? (
-          <button
-            type="button"
-            onClick={() => withProvider("github")}
-            disabled={busy !== null}
-            className="inline-flex items-center justify-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50"
-          >
-            <GitHubMark />
-            {busy === "github" ? "Redirecting…" : "Continue with GitHub"}
-          </button>
-        ) : null}
+        ))}
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <div className="flex items-center gap-3 text-xs text-muted-foreground">

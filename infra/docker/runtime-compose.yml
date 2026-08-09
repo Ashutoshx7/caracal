@@ -614,11 +614,14 @@ services:
       CARACAL_OPEN_REGISTRATION: ${CARACAL_OPEN_REGISTRATION:-}
       CARACAL_PASSWORD_SIGNUP: ${CARACAL_PASSWORD_SIGNUP:-}
       CARACAL_SMTP_URL: ${CARACAL_SMTP_URL:-}
+      CARACAL_SMTP_URL_FILE: ${CARACAL_SMTP_URL_FILE:-}
       CARACAL_SMTP_FROM: ${CARACAL_SMTP_FROM:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_SECRET_FILE: ${GOOGLE_CLIENT_SECRET_FILE:-}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_CLIENT_SECRET_FILE: ${GITHUB_CLIENT_SECRET_FILE:-}
       CARACAL_API_URL: http://api:3000
       CARACAL_COORDINATOR_URL: http://coordinator:4000
       # Read-only service URLs so the Console platform-health panel probes real service
@@ -635,8 +638,12 @@ services:
     # already up, so it arrives through a directory bind rather than a compose secret, whose
     # file source must exist at start. Only the allowlist subdirectory is mounted, read-only,
     # so the container never sees sibling host secrets and cannot change admission policy.
+    # Console credentials (social client secrets, SMTP URL) arrive the same way: place the
+    # file under the console subdirectory and point the matching _FILE variable at
+    # /run/caracalConsoleSecrets/<name>.
     volumes:
       - ${CARACAL_SECRETS_DIR:-./secrets}/allowlist:/run/caracalHostSecrets:ro
+      - ${CARACAL_SECRETS_DIR:-./secrets}/console:/run/caracalConsoleSecrets:ro
     ports:
       - '127.0.0.1:3001:3002'
     healthcheck:

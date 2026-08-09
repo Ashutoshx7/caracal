@@ -38,15 +38,15 @@ afterEach(() => {
 
 describe('fetchEnabledProviders', () => {
   it('parses the providers response', async () => {
-    globalThis.fetch = vi.fn(async () => Response.json({ email: true, google: false, github: false, passwordReset: false })) as typeof fetch
+    globalThis.fetch = vi.fn(async () => Response.json({ email: true, social: [], passwordReset: false })) as typeof fetch
     const enabled = await auth.fetchEnabledProviders()
-    expect(enabled).toEqual({ email: true, google: false, github: false, passwordReset: false })
+    expect(enabled).toEqual({ email: true, social: [], passwordReset: false })
   })
 
   it('reports configured social providers and reset capability', async () => {
-    globalThis.fetch = vi.fn(async () => Response.json({ email: true, google: true, github: false, passwordReset: true })) as typeof fetch
+    globalThis.fetch = vi.fn(async () => Response.json({ email: true, social: ['google'], passwordReset: true })) as typeof fetch
     const enabled = await auth.fetchEnabledProviders()
-    expect(enabled.google).toBe(true)
+    expect(enabled.social).toContain('google')
     expect(enabled.passwordReset).toBe(true)
   })
 
@@ -55,6 +55,6 @@ describe('fetchEnabledProviders', () => {
       throw new Error('offline')
     }) as typeof fetch
     const enabled = await auth.fetchEnabledProviders()
-    expect(enabled).toEqual({ email: true, google: false, github: false, passwordReset: false })
+    expect(enabled).toEqual({ email: true, social: [], passwordReset: false })
   })
 })
