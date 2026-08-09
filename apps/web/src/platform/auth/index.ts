@@ -35,8 +35,7 @@ export type SocialProvider = "google" | "github";
 
 export interface EnabledProviders {
   email: boolean;
-  google: boolean;
-  github: boolean;
+  social: SocialProvider[];
   passwordReset: boolean;
 }
 
@@ -58,7 +57,7 @@ export async function fetchEnabledProviders(): Promise<EnabledProviders> {
     if (!response.ok) throw new Error("providers request failed");
     return (await response.json()) as EnabledProviders;
   } catch {
-    return { email: true, google: false, github: false, passwordReset: false };
+    return { email: true, social: [], passwordReset: false };
   }
 }
 

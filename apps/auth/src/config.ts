@@ -5,6 +5,8 @@
 
 import { resolveFileSecrets } from '@caracalai/server-core'
 
+import { enabledSocialProviders } from './providers.ts'
+
 // Postgres TLS posture. "disable" relies on the connection string (default for the local
 // stack), "require" enforces a verified certificate, and "no-verify" enables TLS without
 // certificate verification for managed providers that present self-signed chains.
@@ -185,6 +187,15 @@ export function loadConfig(): AuthConfig {
   if (production && passwordSignup && !smtp.url) {
     throw new Error(
       'CARACAL_PASSWORD_SIGNUP requires a mail transport in production: verification and reset emails cannot be delivered. Set CARACAL_SMTP_URL (or CARACAL_SMTP_URL_FILE) and CARACAL_SMTP_FROM, or disable password sign-up.',
+    )
+  }
+  // A production console with no sign-in method is healthy to every probe and unusable to every
+  // operator, so the absence of any method is a deployment error surfaced at startup.
+  if (production && enabledSocialProviders().length === 0 && !smtp.url) {
+    throw new Error(
+      'No operator sign-in method is configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, ' +
+        'GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET, or CARACAL_SMTP_URL and CARACAL_SMTP_FROM ' +
+        '(with CARACAL_PASSWORD_SIGNUP=1 for email/password registration). Each secret also accepts its _FILE variant.',
     )
   }
   const webOrigins = resolveWebOrigins(baseURL, production)

@@ -12,7 +12,7 @@ import { loadConfig } from './config.ts'
 import { enforceDenial, resolveAccess } from './allowlist.ts'
 import { CLIENT_IP_HEADER } from './security.ts'
 import { createMailer } from './mailer.ts'
-import { githubCredentials, googleCredentials } from './providers.ts'
+import { SOCIAL_PROVIDERS, socialCredentials } from './providers.ts'
 import { logger } from './logger.ts'
 
 const cfg = loadConfig()
@@ -43,10 +43,10 @@ function isValidGuides(value: unknown): boolean {
 
 function socialProviders(): NonNullable<BetterAuthOptions['socialProviders']> {
   const providers: NonNullable<BetterAuthOptions['socialProviders']> = {}
-  const google = googleCredentials()
-  if (google) providers.google = google
-  const github = githubCredentials()
-  if (github) providers.github = github
+  for (const { id } of SOCIAL_PROVIDERS) {
+    const credentials = socialCredentials(id)
+    if (credentials) providers[id] = credentials
+  }
   return providers
 }
 
@@ -107,7 +107,7 @@ export const auth = betterAuth({
       // Only provider-verified identities are trusted for automatic linking. Trusting
       // email-password here would let an unverified password registration auto-link to an
       // existing Google/GitHub account that shares the address - an account-takeover path.
-      trustedProviders: ['google', 'github'],
+      trustedProviders: SOCIAL_PROVIDERS.map(({ id }) => id),
     },
   },
   // Registration is an authority boundary: a signed-in operator is proxied with the shared global

@@ -147,6 +147,22 @@ function readOrCreateSecretFile(path: string, bytes: number): { value: string; c
   return { value, created: true }
 }
 
+export const CONSOLE_SECRETS_DIR = 'console'
+
+// The subdirectory must exist before the stack starts so the container bind mount is created
+// with the invoking user's ownership rather than by the Docker daemon as root. Files inside
+// stay reachable only through the 0700 secrets directory, matching the generated secret files.
+export function ensureConsoleSecretsDir(secretsDir: string): string {
+  const dir = resolve(secretsDir, CONSOLE_SECRETS_DIR)
+  mkdirSync(dir, { recursive: true, mode: 0o755 })
+  try {
+    chmodSync(dir, 0o755)
+  } catch {
+    // A read-only filesystem still serves an existing directory.
+  }
+  return dir
+}
+
 export function bootstrapSecrets(paths: BootstrapPaths): BootstrapReport {
   mkdirSync(paths.secretsDir, { recursive: true })
   secureDir(paths.secretsDir)
@@ -154,6 +170,10 @@ export function bootstrapSecrets(paths: BootstrapPaths): BootstrapReport {
   // sign-in allowlist; creating it here keeps ownership with the invoking user instead of the
   // Docker daemon.
   ensureOperatorAllowlistDir(paths.secretsDir)
+  // The console subdirectory is the bind-mount source for operator-supplied console
+  // credentials (social sign-in client secrets, SMTP URL) consumed through their _FILE
+  // variables. Same ownership rationale as the allowlist directory.
+  ensureConsoleSecretsDir(paths.secretsDir)
 
   const filesCreated: string[] = []
   const values: Record<string, string> = {
