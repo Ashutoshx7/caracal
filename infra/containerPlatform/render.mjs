@@ -52,6 +52,34 @@ function resourceName(name) {
   return `caracal-${name.toLowerCase()}`
 }
 
+// Console sign-in wiring for the web service. Client identifiers travel as plain
+// environment values; each secret is referenced by its name in the provider's
+// secret manager and delivered like every other credential.
+const consoleAuthFields = [
+  { field: 'googleClientId', env: 'GOOGLE_CLIENT_ID' },
+  { field: 'googleClientSecret', secretEnv: 'GOOGLE_CLIENT_SECRET' },
+  { field: 'githubClientId', env: 'GITHUB_CLIENT_ID' },
+  { field: 'githubClientSecret', secretEnv: 'GITHUB_CLIENT_SECRET' },
+  { field: 'smtpUrl', secretEnv: 'CARACAL_SMTP_URL' },
+  { field: 'smtpFrom', env: 'CARACAL_SMTP_FROM' },
+]
+
+function consoleUnit(config) {
+  const console_ = config.console ?? {}
+  const env = {}
+  const secretEnv = {}
+  for (const { field, env: envName, secretEnv: secretName } of consoleAuthFields) {
+    const value = console_.auth?.[field]
+    if (value === undefined) continue
+    if (envName) env[envName] = String(value)
+    else secretEnv[secretName] = String(value)
+  }
+  if (Array.isArray(console_.operatorEmails) && console_.operatorEmails.length > 0) {
+    env.CARACAL_OPERATOR_ALLOWLIST = console_.operatorEmails.join(',')
+  }
+  return { env, secretEnv }
+}
+
 function parseArgs(argv) {
   const args = { config: '', out: '' }
   for (let i = 0; i < argv.length; i += 1) {
@@ -133,11 +161,13 @@ function buildPlan(topology, config, target) {
 
   const services = Object.entries(topology.services).map(([name, service]) => {
     const standalone = service.common === false
-    const secretEnv = { ...(standalone ? {} : topology.commonSecretEnv), ...service.secretEnv }
+    const consoleWiring = name === 'web' ? consoleUnit(config) : { env: {}, secretEnv: {} }
+    const secretEnv = { ...(standalone ? {} : topology.commonSecretEnv), ...service.secretEnv, ...consoleWiring.secretEnv }
     const env = {
       ...(standalone ? {} : resolveMap(topology.commonEnv)),
       PORT: String(service.port),
       ...resolveMap(service.env),
+      ...consoleWiring.env,
     }
     return {
       name,
@@ -201,6 +231,17 @@ function validateConfig(config) {
   }
   for (const [name, url] of Object.entries(config.public ?? {})) {
     if (!url.startsWith('https://')) fail(`public.${name} must be an https origin`)
+  }
+  // The web service refuses to start in production without a sign-in method, so
+  // the same absence fails here, before anything reaches the platform.
+  const auth = config.console?.auth ?? {}
+  const hasMethod =
+    (auth.googleClientId && auth.googleClientSecret) || (auth.githubClientId && auth.githubClientSecret) || (auth.smtpUrl && auth.smtpFrom)
+  if (!hasMethod) {
+    fail(
+      'console.auth must configure at least one operator sign-in method: googleClientId with googleClientSecret, ' +
+        'githubClientId with githubClientSecret, or smtpUrl with smtpFrom. Secrets are names in the provider secret manager.',
+    )
   }
 }
 

@@ -36,6 +36,23 @@ adminPublicKey = "ssh-ed25519 AAAA... you@example.com"
 # console instead.
 adminCidrs = ["203.0.113.4/32"]
 
+# Console operators admitted at first boot: exact addresses or @domain suffixes.
+# Managed after boot with 'caracal allowlist' over SSH; entries added there
+# override these per address.
+operatorEmails = ["richard.hendricks@piedpiper.example"]
+
+# Console sign-in method. In production the web service refuses to start without
+# one: Google, GitHub, or SMTP. Client ids are public identifiers and belong in
+# envOverrides; each client secret is fetched from Key Vault at boot through the
+# host's managed identity, so no secret value enters OpenTofu state. Grant the
+# identity the Key Vault Secrets User role on the vault first.
+envOverrides = {
+  GOOGLE_CLIENT_ID = "000000000000-anton.apps.googleusercontent.com"
+}
+keyVaultSecrets = {
+  GOOGLE_CLIENT_SECRET = "https://hooli-vault.vault.azure.net/secrets/consoleGoogleClientSecret"
+}
+
 # Each hostname must resolve to the publicIp output before the certificate can be
 # issued. The console origin and the STS issuer are derived from these routes, so
 # they cannot disagree with what the proxy terminates.

@@ -53,6 +53,7 @@ module "host" {
   source         = "${ROOT}/modules/caracalHost"
   caracalVersion = "v0.2.1"
   envOverrides   = { CARACAL_OPEN_REGISTRATION = "false" }
+  operatorEmails = ["richard.hendricks@piedpiper.example"]
   tlsProxy = {
     email  = "ops@example.com"
     routes = { "console.example.com" = "web", "sts.example.com" = "sts" }
@@ -89,10 +90,29 @@ for (const line of [
 ]) {
   if (!env.includes(line)) throw new Error(\`caracal.env missing \${line}\`)
 }
-if (!doc.runcmd.some((c) => typeof c === 'string' && c.includes('caracalProxy'))) {
-  throw new Error('proxy container is never started')
+
+// The bootstrap script owns the ordered boot: install, allowlist seeding, stack
+// start, proxy start, readiness gate. Order matters, so positions are asserted.
+const script = files['/usr/local/lib/caracalBootstrap.sh']
+if (!script) throw new Error('bootstrap script missing')
+if (!script.startsWith('#!/bin/sh\nset -eu')) throw new Error('bootstrap script must run under strict mode')
+const positions = [
+  ['install.sh', script.indexOf('CARACAL_INSTALL_DIR=/usr/local/bin')],
+  ['allowlist seeding', script.indexOf(\`allowlist add 'richard.hendricks@piedpiper.example'\`)],
+  ['stack start', script.indexOf('/usr/local/bin/caracal up')],
+  ['proxy start', script.indexOf('caracalProxy')],
+  ['readiness gate', script.indexOf('status --ready')],
+]
+for (const [step, at] of positions) {
+  if (at < 0) throw new Error(\`bootstrap script missing \${step}\`)
 }
-console.log('  cloud-config renders with proxy routes and matching public origins')
+for (let i = 1; i < positions.length; i += 1) {
+  if (positions[i][1] < positions[i - 1][1]) throw new Error(\`\${positions[i][0]} must come after \${positions[i - 1][0]}\`)
+}
+if (!doc.runcmd.some((c) => typeof c === 'string' && c.includes('bootstrapStatus'))) {
+  throw new Error('boot outcome marker is never written')
+}
+console.log('  cloud-config renders with proxy routes, matching public origins, and an ordered bootstrap')
 "
 
 cat >"${WORK}/main.tf" <<EOF
@@ -108,10 +128,13 @@ node --input-type=module -e "
 import { readFileSync } from 'node:fs'
 import { parse } from 'yaml'
 const doc = parse(readFileSync('${WORK}/plain.yaml', 'utf8'))
-if (doc.write_files) throw new Error('no proxy and no overrides must write no files')
-if (doc.runcmd.some((c) => typeof c === 'string' && c.includes('caracalProxy'))) {
-  throw new Error('proxy must not start when tlsProxy is unset')
-}
+const files = Object.fromEntries(doc.write_files.map((f) => [f.path, f.content]))
+if (files['/var/lib/caracal/caracal.env']) throw new Error('no overrides must write no env file')
+if (files['/var/lib/caracal/proxy/Caddyfile']) throw new Error('no proxy must write no Caddyfile')
+const script = files['/usr/local/lib/caracalBootstrap.sh']
+if (!script) throw new Error('bootstrap script missing')
+if (script.includes('caracalProxy')) throw new Error('proxy must not start when tlsProxy is unset')
+if (script.includes('allowlist add')) throw new Error('allowlist must not seed when no operators are given')
 console.log('  cloud-config renders without a proxy when none is configured')
 "
 

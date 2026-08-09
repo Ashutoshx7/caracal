@@ -236,6 +236,11 @@ reject "missing release version" "missing required config"
 sed '/^  identityId:/d' "${ROOT}/examples/azure.yaml" >"${DIR}/reject.yaml"
 reject "missing azure managed identity" "azure.identityId is required"
 
+# Matches on the block name rather than a field, so renaming an example
+# credential cannot silently turn this negative case into a no-op.
+sed '/^  auth:/,/^[^ ]/{/^  auth:/d;/^    /d;}' "${ROOT}/examples/azure.yaml" >"${DIR}/reject.yaml"
+reject "console without a sign-in method" "console.auth must configure at least one operator sign-in method"
+
 sed '/^  taskRoleArn:/d' "${ROOT}/examples/aws.yaml" >"${DIR}/reject.yaml"
 reject "missing aws task role" "aws.taskRoleArn is required"
 
