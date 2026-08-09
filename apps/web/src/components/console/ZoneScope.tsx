@@ -78,7 +78,7 @@ export function ZoneScopedPage({
     return frame(
       <EmptyState
         title="Control plane unreachable"
-        description={`The control plane at ${status.data.apiUrl} is not responding. Confirm it is running, then retry.`}
+        description="The control plane is not responding. Confirm it is running on the stack host, then retry."
         action={<Button onClick={() => status.refetch()}>Retry</Button>}
       />,
     );

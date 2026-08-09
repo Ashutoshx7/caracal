@@ -573,10 +573,8 @@ export interface ListEnvelope<T> {
 export interface ConsoleStatus {
   configured: boolean;
   reachable: boolean;
-  apiUrl: string;
   coordinatorConfigured?: boolean;
   coordinatorReachable?: boolean;
-  coordinatorUrl?: string;
 }
 
 export type DiagnosticStatus = "ok" | "warn" | "fail";
@@ -599,7 +597,6 @@ export interface DiagnosticSummary {
 }
 
 export interface DiagnosticContext {
-  apiUrl: string;
   zoneScope: DiagnosticZoneScope;
   zoneIds: string[];
 }

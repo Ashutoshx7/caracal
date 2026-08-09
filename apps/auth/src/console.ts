@@ -25,6 +25,7 @@ import {
 } from '@caracalai/engine'
 import { resolveStsUrl } from '@caracalai/engine/runtime-config'
 import { downstreamHeaders, safeTarget } from './security.ts'
+import { redactDiagnostics } from './diagnostics.ts'
 import { selectProxyCredential, shouldRetryWithFallback } from './proxyCredential.ts'
 import { coordZoneId, resolveZoneAccess, type ZoneProbeResult } from './zoneAccess.ts'
 import { enforceDenial, resolveAccess } from './allowlist.ts'
@@ -249,13 +250,13 @@ async function computeStatus(): Promise<Record<string, unknown>> {
     token ? probeReachable(base, token) : Promise.resolve(false),
     coordTok ? probeReachable(coordBase, coordTok) : Promise.resolve(false),
   ])
+  // Statuses only: the service URLs are deployment topology the browser has no
+  // use for and must not learn from this surface.
   return {
     configured: Boolean(token),
     reachable: Boolean(token) && reachable,
-    apiUrl: base,
     coordinatorConfigured,
     coordinatorReachable,
-    coordinatorUrl: coordBase,
   }
 }
 
@@ -270,7 +271,7 @@ async function handleStatus(res: ServerResponse): Promise<void> {
     try {
       statusCache = { at: Date.now(), payload: await statusInFlight }
     } catch {
-      sendJson(res, 200, { configured: false, reachable: false, apiUrl: apiUrl() })
+      sendJson(res, 200, { configured: false, reachable: false })
       return
     }
   }
@@ -329,6 +330,9 @@ async function computeDiagnostics(account: string | undefined): Promise<Diagnost
   return { at: Date.now(), generation, payload: { ...report, generatedAt } }
 }
 
+// The doctor engine reports for a host-side operator, where probed URLs are the
+// most useful diagnostic detail; redactDiagnostics strips that topology before
+// the report crosses the trust boundary to a browser.
 async function handleDiagnostics(res: ServerResponse, account: string | undefined, accountId: string): Promise<void> {
   if (!adminToken()) {
     sendJson(res, 503, { error: 'control_plane_not_configured' })
@@ -360,7 +364,7 @@ async function handleDiagnostics(res: ServerResponse, account: string | undefine
   // Cache only results that still reflect the current generation; a report computed across a
   // mutation is served once but never cached, so the next read recomputes against fresh state.
   if (entry.generation === diagnosticsGeneration) diagnosticsCache.set(key, entry)
-  sendJson(res, 200, entry.payload)
+  sendJson(res, 200, { ...redactDiagnostics(entry.payload), generatedAt: entry.payload.generatedAt })
 }
 
 // Forwards a console request to an upstream control-plane service under a service credential.
