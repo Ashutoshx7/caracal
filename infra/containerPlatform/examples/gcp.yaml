@@ -38,6 +38,17 @@ public:
   sts: https://sts.caracal.example.com
   gateway: https://gateway.caracal.example.com
 
+# Operator sign-in. At least one method is required: without one the console
+# deploys healthy but nobody can register, so rendering fails instead. Client
+# ids are public identifiers; each secret is the NAME of a secret in the
+# provider's secret manager, delivered like every other credential.
+console:
+  operatorEmails:
+    - richard.hendricks@piedpiper.example
+  auth:
+    googleClientId: 000000000000-anton.apps.googleusercontent.com
+    googleClientSecret: consoleGoogleClientSecret
+
 observability:
   otlpEndpoint: ''
 
