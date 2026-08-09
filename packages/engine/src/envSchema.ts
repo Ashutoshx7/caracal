@@ -214,6 +214,13 @@ export const ENV_SCHEMA = {
     default: '',
     exposed: true,
   },
+  CARACAL_OPERATOR_ALLOWLIST: {
+    kind: 'string',
+    description:
+      'Comma-separated operator emails or @domain suffixes admitted to the console, for declarative deployments. Entries managed with `caracal allowlist` override these per address.',
+    default: '',
+    exposed: true,
+  },
   CARACAL_AUTH_TRUST_PROXY: {
     kind: 'bool',
     description:

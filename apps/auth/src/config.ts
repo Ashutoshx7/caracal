@@ -43,6 +43,9 @@ export interface AuthConfig {
   // are re-read per request. Empty means no file-based admission policy, so access follows the
   // open-registration default.
   operatorAllowlistFile: string
+  // Comma-separated active entries supplied at deployment time for platforms without a
+  // writable host. File entries override these per address.
+  operatorAllowlistEnv: string
   requireEmailVerification: boolean
   smtpUrl: string | null
   smtpFrom: string | null
@@ -217,6 +220,7 @@ export function loadConfig(): AuthConfig {
     openRegistration,
     passwordSignup,
     operatorAllowlistFile: process.env.CARACAL_OPERATOR_ALLOWLIST_FILE?.trim() ?? '',
+    operatorAllowlistEnv: process.env.CARACAL_OPERATOR_ALLOWLIST?.trim() ?? '',
     requireEmailVerification,
     smtpUrl: smtp.url,
     smtpFrom: smtp.from,

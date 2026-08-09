@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import type { AuthConfig } from './config.ts'
 import { logger } from './logger.ts'
 
-type AllowlistConfig = Pick<AuthConfig, 'operatorAllowlistFile' | 'openRegistration'>
+type AllowlistConfig = Pick<AuthConfig, 'operatorAllowlistFile' | 'operatorAllowlistEnv' | 'openRegistration'>
 
 export type AccessDecision = 'allowed' | 'locked' | 'removed' | 'denied'
 
@@ -65,6 +65,20 @@ function readEntries(path: string): Entries {
   return entries
 }
 
+// Declarative admission for platforms without a writable host: a comma-separated
+// list of active entries supplied at deployment time. Entries hold admission
+// policy, not credentials, so environment delivery is appropriate. File entries
+// win per address, so lifecycle decisions made with `caracal allowlist` (locks,
+// removal tombstones) override the deployment default.
+function envEntries(raw: string): Entries {
+  const entries: Entries = {}
+  for (const piece of raw.split(',')) {
+    const entry = piece.trim().toLowerCase()
+    if (entry) entries[entry] = 'active'
+  }
+  return entries
+}
+
 // Decides whether an email may register, sign in, and use the Console. A matching entry is
 // always authoritative: exact entries win over `@domain` suffixes, `locked` suspends access
 // with the account kept intact, and `removed` is an explicit erasure tombstone written by
@@ -75,7 +89,7 @@ function readEntries(path: string): Entries {
 export function resolveAccess(email: string, cfg: AllowlistConfig): AccessDecision {
   const normalized = email.trim().toLowerCase()
   if (!normalized) return 'denied'
-  const entries = readEntries(cfg.operatorAllowlistFile)
+  const entries = { ...envEntries(cfg.operatorAllowlistEnv), ...readEntries(cfg.operatorAllowlistFile) }
   const match = entries[normalized] ?? entries[normalized.slice(normalized.indexOf('@'))]
   if (match === 'active') return 'allowed'
   if (match === 'locked') return 'locked'
