@@ -166,8 +166,11 @@ jobs:
                   docs=true
                   ;;
               esac
+              # The PostgreSQL job also runs the boot-level API integration tests, which
+              # exercise apps/api and its TypeScript workspace dependencies, so those
+              # paths must trigger it alongside the migrations themselves.
               case "$path" in
-                .github/workflows/test.yml|infra/postgres/**)
+                .github/workflows/test.yml|infra/postgres/**|apps/api/**|packages/engine/**|packages/*/ts/**|packages/adapters/*/ts/**|packages/backends/*/ts/**|tests/typescript/integration/**|tests/shared/test-utils/typescript/**|package.json|pnpm-lock.yaml|pnpm-workspace.yaml)
                   postgres=true
                   ;;
               esac
