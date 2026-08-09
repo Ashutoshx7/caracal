@@ -7,7 +7,14 @@
 set -eu
 
 REPO="Garudex-Labs/caracal"
-INSTALL_PREFIX="${CARACAL_PREFIX:-${PREFIX:-${HOME}/.local}}"
+# cloud-init, systemd, and containers run without a user, so there is no home
+# directory to install into and the system prefix is the only sensible default.
+if [ -n "${HOME:-}" ]; then
+    defaultPrefix="${HOME}/.local"
+else
+    defaultPrefix="/usr/local"
+fi
+INSTALL_PREFIX="${CARACAL_PREFIX:-${PREFIX:-${defaultPrefix}}}"
 INSTALL_DIR="${CARACAL_INSTALL_DIR:-${INSTALL_PREFIX}/bin}"
 INSTALL_DIR_EXPLICIT=0
 [ -n "${CARACAL_INSTALL_DIR:-}" ] && INSTALL_DIR_EXPLICIT=1
@@ -129,7 +136,7 @@ plain output.
 
 Environment overrides:
   CARACAL_VERSION       same as --version
-  CARACAL_PREFIX        install prefix; default: ${HOME}/.local
+  CARACAL_PREFIX        install prefix; default: ${defaultPrefix}
   CARACAL_INSTALL_DIR   same as --install-dir
   DESTDIR               staging root prepended to the install directory
   CARACAL_VERIFY_PROVENANCE   set 0 to disable provenance verification
@@ -373,7 +380,7 @@ installStaged "$([ "${os}" = windows ] && printf 'caracal.exe' || printf 'caraca
 committed=1
 
 if [ -z "${DESTDIR_VALUE}" ]; then
-    case ":${PATH}:" in
+    case ":${PATH:-}:" in
         *":${INSTALL_DIR}:"*) ;;
         *) info "Add ${INSTALL_DIR} to PATH, for example: export PATH=\"${INSTALL_DIR}:\$PATH\"" ;;
     esac
@@ -384,7 +391,7 @@ checkShadow() {
     shadow=""
     oldIFS="${IFS}"
     IFS=":"
-    for dir in ${PATH}; do
+    for dir in ${PATH:-}; do
         [ -z "${dir}" ] && continue
         [ "${dir}" = "${INSTALL_DIR}" ] && break
         if [ -e "${dir}/${binName}" ] || [ -L "${dir}/${binName}" ]; then
