@@ -166,8 +166,11 @@ jobs:
                   docs=true
                   ;;
               esac
+              # The PostgreSQL job also runs the boot-level API integration tests, which
+              # exercise apps/api and its TypeScript workspace dependencies, so those
+              # paths must trigger it alongside the migrations themselves.
               case "$path" in
-                .github/workflows/test.yml|infra/postgres/**)
+                .github/workflows/test.yml|infra/postgres/**|apps/api/**|packages/engine/**|packages/*/ts/**|packages/adapters/*/ts/**|packages/backends/*/ts/**|tests/typescript/integration/**|tests/shared/test-utils/typescript/**|package.json|pnpm-lock.yaml|pnpm-workspace.yaml)
                   postgres=true
                   ;;
               esac
@@ -531,6 +534,12 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
+
+      # The boot-level API integration imports the Engine through buildApp(). The embedded
+      # runtime asset is generated (and intentionally gitignored), so a clean PostgreSQL job
+      # must create it just like the TypeScript build job does.
+      - name: Generate Engine embedded runtime asset
+        run: pnpm --filter @caracalai/engine sync-embedded
 
       - name: Apply migrations for integration tests
         env:
