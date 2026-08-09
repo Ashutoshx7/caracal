@@ -9,6 +9,7 @@ import {
   withUsage,
   preferProvider,
   streamingAnswers,
+  withAbortSignal,
   GatewayUnavailableError,
   GatewayError,
   GatewayBudgetError,
@@ -300,6 +301,31 @@ describe('gateway complete', () => {
     }
     const gateway = createGateway([provider()], vi.fn(async () => chatResponse('OK')) as unknown as typeof fetch, undefined, observer)
     await expect(gateway.complete([{ role: 'user', content: 'ping' }])).resolves.toMatchObject({ text: 'OK', provider: 'p1' })
+  })
+
+  it('aborts an explicit cancellation without failing over to another provider', async () => {
+    const controller = new AbortController()
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(
+        (_url: string, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true })
+            controller.abort()
+          }),
+      )
+      .mockResolvedValueOnce(chatResponse('must not run'))
+    const observer = healthObserver()
+    const gateway = createGateway(
+      [provider({ id: 'primary' }), provider({ id: 'secondary' })],
+      fetchMock as unknown as typeof fetch,
+      undefined,
+      observer,
+    )
+    await expect(gateway.complete([{ role: 'user', content: 'ping' }], { signal: controller.signal })).rejects.toThrow()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(observer.recordFailure).not.toHaveBeenCalled()
+    expect(observer.recordSuccess).not.toHaveBeenCalled()
   })
 
   it('bounds retry backoff with the provider timeout before failing over', async () => {
@@ -712,6 +738,25 @@ describe('gateway completeObject', () => {
     expect(result.provider).toBe('second')
     expect(usage()).toMatchObject({ inputTokens: 10, outputTokens: 4 })
   })
+
+  it('aborts a structured completion without failing over to another provider', async () => {
+    const controller = new AbortController()
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(
+        (_url: string, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true })
+            controller.abort()
+          }),
+      )
+      .mockResolvedValueOnce(objectResponse(validPlan))
+    const gateway = createGateway([provider({ id: 'primary' }), provider({ id: 'secondary' })], fetchMock as unknown as typeof fetch)
+    await expect(
+      gateway.completeObject([{ role: 'user', content: 'connect' }], ProposedPlan, { signal: controller.signal }),
+    ).rejects.toThrow()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('gateway stream', () => {
@@ -844,6 +889,42 @@ describe('gateway stream', () => {
     expect(result.provider).toBe('secondary')
     expect(deltas.join('')).toBe('recovered')
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('aborts an explicit stream cancellation without failing over', async () => {
+    const controller = new AbortController()
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(
+        (_url: string, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), { once: true })
+            controller.abort()
+          }),
+      )
+      .mockResolvedValueOnce(streamResponse(['must not run']))
+    const gateway = createGateway([provider({ id: 'primary' }), provider({ id: 'secondary' })], fetchMock as unknown as typeof fetch)
+    await expect(gateway.stream([{ role: 'user', content: 'hi' }], { onText: () => {} }, { signal: controller.signal })).rejects.toThrow()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('withAbortSignal', () => {
+  it('binds the same run signal to text, object, and streaming calls', async () => {
+    const signal = new AbortController().signal
+    const complete = vi.fn().mockResolvedValue({ text: 'ok', provider: 'p', model: 'm' })
+    const completeObject = vi.fn().mockResolvedValue({ value: {}, provider: 'p', model: 'm' })
+    const stream = vi.fn().mockResolvedValue({ text: 'ok', provider: 'p', model: 'm' })
+    const gateway = { status: vi.fn(), active: vi.fn(), complete, completeObject, stream } as unknown as Gateway
+    const bound = withAbortSignal(gateway, signal)
+
+    await bound.complete([], { maxTokens: 1 })
+    await bound.completeObject([], ProposedPlan, { temperature: 0 })
+    await bound.stream([], { onText: () => {} })
+
+    expect(complete).toHaveBeenCalledWith([], { maxTokens: 1, signal })
+    expect(completeObject).toHaveBeenCalledWith([], ProposedPlan, { temperature: 0, signal })
+    expect(stream).toHaveBeenCalledWith([], { onText: expect.any(Function) }, { signal })
   })
 })
 
