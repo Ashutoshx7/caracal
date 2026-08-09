@@ -36,13 +36,14 @@ Published deployments require storage URLs, admin and Coordinator credentials, `
 | --- | --- |
 | `CARACAL_AUTH_URL` | Public auth/Web BFF URL; packaged local default is `http://localhost:3001`. |
 | `CARACAL_OPEN_REGISTRATION` | Opens registration beyond the host allowlist posture when explicitly enabled. |
+| `CARACAL_OPERATOR_ALLOWLIST` | Comma-separated operator emails or `@domain` suffixes admitted declaratively; entries managed with `caracal allowlist` override these per address. |
 | `CARACAL_PASSWORD_SIGNUP` | Enables email/password signup; published mode also requires working verification mail. |
 | `CARACAL_SMTP_URL`, `CARACAL_SMTP_FROM` | SMTP transport and sender for verification and reset messages. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Enables Google sign-in when both values are present. |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Enables GitHub sign-in when both values are present. |
 | `CARACAL_AUTH_TRUST_PROXY` | Trusts forwarded client/protocol headers only when the deployment has an approved proxy boundary. |
 
-Provider credentials and SMTP URLs support their implemented `_FILE` variants. Registration admission and authentication method are separate: an allowlisted email still needs one configured sign-in method.
+Provider credentials and SMTP URLs support their implemented `_FILE` variants; the packaged Compose stack mounts `$CARACAL_HOME/secrets/console` at `/run/caracalConsoleSecrets` so a client secret can be a file on the host instead of an environment value. Registration admission and authentication method are separate: an allowlisted email still needs one configured sign-in method. In published modes the web service refuses to start with no method at all - configure Google, GitHub, or SMTP before first start.
 
 ## STS Egress Trust
 

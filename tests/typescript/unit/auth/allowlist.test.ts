@@ -18,9 +18,10 @@ function writeAllowlist(emails: Record<string, string>): void {
   writeFileSync(allowlistPath, JSON.stringify({ emails }))
 }
 
-function cfg(overrides: { openRegistration?: boolean; path?: string } = {}) {
+function cfg(overrides: { openRegistration?: boolean; path?: string; env?: string } = {}) {
   return {
     operatorAllowlistFile: overrides.path ?? allowlistPath,
+    operatorAllowlistEnv: overrides.env ?? '',
     openRegistration: overrides.openRegistration ?? false,
   }
 }
@@ -118,6 +119,28 @@ describe('entry matching', () => {
       JSON.stringify({ emails: { 'monica.hall@piedpiper.example': 'actve', 'richard.hendricks@piedpiper.example': 'active' } }),
     )
     expect(resolveAccess('monica.hall@piedpiper.example', cfg())).toBe('denied')
+  })
+})
+
+describe('environment entries', () => {
+  it('admits addresses and domain suffixes supplied at deployment time', () => {
+    const env = 'richard.hendricks@piedpiper.example, @hooli.example'
+    expect(resolveAccess('richard.hendricks@piedpiper.example', cfg({ env }))).toBe('allowed')
+    expect(resolveAccess('gavin.belson@hooli.example', cfg({ env }))).toBe('allowed')
+    expect(resolveAccess('monica.hall@raviga.example', cfg({ env }))).toBe('denied')
+  })
+
+  it('puts the list in enforcing mode so posture no longer applies', () => {
+    const env = 'richard.hendricks@piedpiper.example'
+    expect(resolveAccess('monica.hall@raviga.example', cfg({ env, openRegistration: true }))).toBe('denied')
+  })
+
+  it('lets file lifecycle decisions override deployment entries per address', () => {
+    const env = 'richard.hendricks@piedpiper.example'
+    writeAllowlist({ 'richard.hendricks@piedpiper.example': 'removed' })
+    expect(resolveAccess('richard.hendricks@piedpiper.example', cfg({ env }))).toBe('removed')
+    writeAllowlist({ 'richard.hendricks@piedpiper.example': 'locked' })
+    expect(resolveAccess('richard.hendricks@piedpiper.example', cfg({ env }))).toBe('locked')
   })
 })
 

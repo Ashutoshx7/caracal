@@ -62,13 +62,13 @@ Operate managed Postgres reachable with migration privileges, managed Redis with
    npm --prefix caracal-deploy install --omit=dev
    ```
 
-4. Copy `caracal-deploy/containerPlatform/examples/azure.yaml`, set your endpoints, public origins, and provider wiring, and render:
+4. Copy `caracal-deploy/containerPlatform/examples/azure.yaml`, set your endpoints, public origins, operator admission, and provider wiring, and render:
 
    ```bash
    node caracal-deploy/containerPlatform/render.mjs --config deployment.yaml --out ./rendered
    ```
 
-   Rendering fails on a plaintext public origin, debug logging in `stable` mode, a missing identity, or an unresolvable value. Review the manifests before applying them.
+   The `console` block carries operator sign-in: `operatorEmails` lists the addresses or `@domain` suffixes admitted to the console, and `console.auth` names at least one sign-in method - a Google or GitHub client id with the name of its client secret in the secret manager, or an SMTP transport. Rendering fails without a method, on a plaintext public origin, debug logging in `stable` mode, a missing identity, or an unresolvable value. Review the manifests before applying them.
 
 5. Apply in order. Schema migrations must finish before any service revision rolls, because a release's migrations are expand-only against the version still serving:
 
