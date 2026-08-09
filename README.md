@@ -82,6 +82,23 @@ Caracal is standards-native: OAuth 2.0 token exchange (RFC 8693), OPA policy, an
 
 ---
 
+## Fast Enough To Govern Everything
+
+Per-request authorization usually means a latency tax. Caracal's is smaller than most gateways spend on plain proxying — measured end to end on a single 4-vCPU VM running the packaged stack with stock configuration:
+
+| Metric                                             | Result                                    |
+| -------------------------------------------------- | ----------------------------------------- |
+| Governed request latency — mint + policy + enforce | **p50 17 ms · p95 23 ms**                 |
+| Policy evaluation (128,000 evals under full load)  | **~1 ms, zero errors**                    |
+| Peak throughput                                    | **139 req/s**                             |
+| Sustained (8-minute soak)                          | **133 req/s · 11.5M governed calls/day**  |
+| Hard errors across the 87,000-request suite        | **0**                                     |
+| Tamper-evident audit trail at 100% CPU             | **Lossless — zero dropped events**        |
+
+Every request in these numbers was individually authorized, cryptographically minted with replay protection, and audit-logged. Measured on v1.0.0; the full methodology lives in [Performance and Scalability](https://docs.caracal.run/operations/performance-benchmarks/). Results depend on hardware and workload shape, so establish your own baseline before committing to a limit.
+
+---
+
 ## Works With Your Stack
 
 TypeScript, Python, and Go SDKs. Drop-in verification for **MCP servers**, Express, FastAPI/ASGI, and Go net/http. Runs anywhere Docker runs: your infrastructure, your data.
