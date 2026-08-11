@@ -45,8 +45,9 @@ export function validateSinkUrl(raw: string): string | null {
     return 'sink url is not a valid absolute URL'
   }
   if (url.username || url.password) return 'sink url must not embed credentials'
-  const loopback = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]' || url.hostname === '::1'
-  if (isIP(url.hostname) !== 0 && isUnsafeSinkAddress(url.hostname) && !(url.protocol === 'http:' && loopback)) {
+  const hostname = url.hostname.startsWith('[') && url.hostname.endsWith(']') ? url.hostname.slice(1, -1) : url.hostname
+  const loopback = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+  if (isIP(hostname) !== 0 && isUnsafeSinkAddress(hostname) && !(url.protocol === 'http:' && loopback)) {
     return 'sink url must not target a restricted address'
   }
   if (url.protocol === 'https:') return null

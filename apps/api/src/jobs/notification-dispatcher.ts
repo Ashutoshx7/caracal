@@ -13,6 +13,7 @@ import { v7 as uuidv7 } from 'uuid'
 import { newTraceContext, runWithTrace } from '@caracalai/core'
 import { AAD_NOTIFICATION_SINK_SECRET, openSecretEnvelope } from '@caracalai/server-core'
 import type { DB } from '../db.js'
+import { isUnsafeEgressAddress } from '../egress-address.js'
 import { withTransaction } from '../db.js'
 import { privateEgressHosts } from '../provider-token.js'
 
@@ -107,47 +108,7 @@ function openSecret(packed: Buffer): string {
   }
 }
 
-function nat64EmbeddedIpv4(value: string): string | null {
-  const lower = value.toLowerCase()
-  if (!lower.startsWith('64:ff9b::')) return null
-  const tail = lower.slice('64:ff9b::'.length)
-  if (tail.includes('.')) return isIP(tail) === 4 ? tail : null
-  const groups = tail.split(':')
-  if (groups.length < 2) return null
-  const hi = Number.parseInt(groups.at(-2)!, 16)
-  const lo = Number.parseInt(groups.at(-1)!, 16)
-  if (!Number.isInteger(hi) || !Number.isInteger(lo) || hi > 0xffff || lo > 0xffff) return null
-  return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`
-}
-
-export function isUnsafeSinkAddress(value: string, privateAllowed = false): boolean {
-  const nat64 = nat64EmbeddedIpv4(value)
-  if (nat64) return isUnsafeSinkAddress(nat64, privateAllowed)
-  const ip = value.toLowerCase().startsWith('::ffff:') ? value.slice(7) : value
-  if (isIP(ip) === 4) {
-    const parts = ip.split('.').map(Number)
-    return (
-      parts[0] === 0 ||
-      (parts[0] === 10 && !privateAllowed) ||
-      parts[0] === 127 ||
-      (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127 && !privateAllowed) ||
-      (parts[0] === 169 && parts[1] === 254) ||
-      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31 && !privateAllowed) ||
-      (parts[0] === 192 && parts[1] === 168 && !privateAllowed) ||
-      parts[0] >= 224
-    )
-  }
-  const lower = ip.toLowerCase()
-  return (
-    isIP(ip) !== 6 ||
-    lower === '::' ||
-    lower === '::1' ||
-    (lower.startsWith('fc') && !privateAllowed) ||
-    (lower.startsWith('fd') && !privateAllowed) ||
-    lower.startsWith('fe80:') ||
-    lower.startsWith('ff')
-  )
-}
+export const isUnsafeSinkAddress = isUnsafeEgressAddress
 
 async function defaultSinkResolver(host: string): Promise<SinkAddress[]> {
   if (isIP(host) !== 0) return [{ address: host, family: isIP(host) as 4 | 6 }]

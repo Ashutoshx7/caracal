@@ -85,13 +85,19 @@ describe('notification sink destination safety', () => {
       '::1',
       'fd00::1',
       'fe80::1',
+      'fe8f::1',
+      'fe90::1',
+      'fea0::1',
+      'febf::1',
       '::ffff:127.0.0.1',
+      '::FFFF:127.0.0.1',
       '64:ff9b::a00:1',
     ]) {
       expect(isUnsafeSinkAddress(address), address).toBe(true)
     }
     expect(isUnsafeSinkAddress('203.0.113.10')).toBe(false)
     expect(isUnsafeSinkAddress('2001:db8::10')).toBe(false)
+    expect(isUnsafeSinkAddress('fec0::1')).toBe(false)
   })
 
   it('fails before connecting when any resolved address is restricted', async () => {
@@ -121,7 +127,7 @@ describe('notification sink destination safety', () => {
       expect(isUnsafeSinkAddress(address, true), address).toBe(false)
     }
     // Allowlisting a private receiver must never open loopback, link-local, metadata, or multicast.
-    for (const address of ['127.0.0.1', '169.254.169.254', '::1', 'fe80::1', '224.0.0.1']) {
+    for (const address of ['127.0.0.1', '169.254.169.254', '::1', 'fe80::1', 'fe8f::1', 'febf::1', '224.0.0.1']) {
       expect(isUnsafeSinkAddress(address, true), address).toBe(true)
     }
   })

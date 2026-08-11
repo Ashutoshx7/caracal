@@ -21,9 +21,21 @@ describe('provider private egress policy', () => {
     for (const address of ['10.0.0.1', '172.16.0.1', '192.168.0.1', '100.64.0.1', 'fd00::1']) {
       expect(isUnsafeIpAddress(address, true), address).toBe(false)
     }
-    for (const address of ['127.0.0.1', '169.254.169.254', '::1', 'fe80::1', '64:ff9b::a9fe:a9fe']) {
+    for (const address of [
+      '127.0.0.1',
+      '169.254.169.254',
+      '::1',
+      'fe80::1',
+      'fe8f::1',
+      'fe90::1',
+      'fea0::1',
+      'febf::1',
+      '::FFFF:127.0.0.1',
+      '64:ff9b::a9fe:a9fe',
+    ]) {
       expect(isUnsafeIpAddress(address, true), address).toBe(true)
     }
+    expect(isUnsafeIpAddress('fec0::1'), 'fec0::1').toBe(false)
   })
 })
 
