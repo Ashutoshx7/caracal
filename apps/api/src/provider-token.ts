@@ -80,14 +80,14 @@ export function ensureAllowedTokenEndpoint(raw: string, hosts: string[]): URL {
   return ensureAllowedHttpsEndpoint(raw, hosts, 'provider token endpoint')
 }
 
-export const isUnsafeIpAddress = isUnsafeEgressAddress
-
 async function resolveSafeHost(host: string): Promise<{ address: string; family: 4 | 6 }[]> {
   const addresses = await lookup(host, { all: true, verbatim: false })
   if (addresses.length === 0) throw new Error('provider token endpoint resolves to no addresses')
   const privateAllowed = privateEgressHosts().has(host.toLowerCase())
   for (const address of addresses) {
-    if (isUnsafeIpAddress(address.address, privateAllowed)) throw new Error('provider token endpoint resolves to a non-routable address')
+    if (isUnsafeEgressAddress(address.address, privateAllowed)) {
+      throw new Error('provider token endpoint resolves to a non-routable address')
+    }
   }
   return addresses.filter((address): address is { address: string; family: 4 | 6 } => address.family === 4 || address.family === 6)
 }

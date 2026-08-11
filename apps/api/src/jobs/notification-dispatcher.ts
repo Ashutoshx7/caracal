@@ -13,7 +13,7 @@ import { v7 as uuidv7 } from 'uuid'
 import { newTraceContext, runWithTrace } from '@caracalai/core'
 import { AAD_NOTIFICATION_SINK_SECRET, openSecretEnvelope } from '@caracalai/server-core'
 import type { DB } from '../db.js'
-import { isUnsafeEgressAddress } from '../egress-address.js'
+import { isUnsafeEgressAddress, normalizedUrlHostname } from '../egress-address.js'
 import { withTransaction } from '../db.js'
 import { privateEgressHosts } from '../provider-token.js'
 
@@ -108,8 +108,6 @@ function openSecret(packed: Buffer): string {
   }
 }
 
-export const isUnsafeSinkAddress = isUnsafeEgressAddress
-
 async function defaultSinkResolver(host: string): Promise<SinkAddress[]> {
   if (isIP(host) !== 0) return [{ address: host, family: isIP(host) as 4 | 6 }]
   return (await lookup(host, { all: true, verbatim: true })).filter(
@@ -123,13 +121,12 @@ export async function postNotificationSink(
   resolve: SinkResolver = defaultSinkResolver,
 ): Promise<{ status: number }> {
   const target = new URL(rawUrl)
-  const addresses = await resolve(target.hostname)
+  const hostname = normalizedUrlHostname(target)
+  const addresses = await resolve(hostname)
   if (addresses.length === 0) throw new Error('sink host resolves to no addresses')
-  const loopbackDevelopment =
-    target.protocol === 'http:' &&
-    (target.hostname === 'localhost' || target.hostname === '127.0.0.1' || target.hostname === '[::1]' || target.hostname === '::1')
-  const privateAllowed = privateEgressHosts().has(target.hostname.toLowerCase())
-  if (!loopbackDevelopment && addresses.some((entry) => isUnsafeSinkAddress(entry.address, privateAllowed))) {
+  const loopbackDevelopment = target.protocol === 'http:' && (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1')
+  const privateAllowed = privateEgressHosts().has(hostname.toLowerCase())
+  if (!loopbackDevelopment && addresses.some((entry) => isUnsafeEgressAddress(entry.address, privateAllowed))) {
     throw new Error('sink host resolves to a restricted address')
   }
   const address = addresses[0]

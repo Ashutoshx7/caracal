@@ -10,7 +10,7 @@ import { lookup } from 'node:dns/promises'
 import { request as httpsRequest } from 'node:https'
 import { SecretBackendError, providerSecretConfigRef } from '@caracalai/server-core'
 import { providersRoutes } from '../../../../../apps/api/src/routes/providers.js'
-import { isUnsafeIpAddress } from '../../../../../apps/api/src/provider-token.js'
+import { isUnsafeEgressAddress } from '../../../../../apps/api/src/egress-address.js'
 import { buildRouteApp } from '../../../../shared/test-utils/typescript/fastify.js'
 
 vi.mock('node:dns/promises', () => ({ lookup: vi.fn() }))
@@ -19,7 +19,7 @@ vi.mock('node:https', () => ({ request: vi.fn() }))
 describe('provider private egress policy', () => {
   it('allows explicitly granted private ranges but never metadata or loopback ranges', () => {
     for (const address of ['10.0.0.1', '172.16.0.1', '192.168.0.1', '100.64.0.1', 'fd00::1']) {
-      expect(isUnsafeIpAddress(address, true), address).toBe(false)
+      expect(isUnsafeEgressAddress(address, true), address).toBe(false)
     }
     for (const address of [
       '127.0.0.1',
@@ -32,10 +32,13 @@ describe('provider private egress policy', () => {
       'febf::1',
       '::FFFF:127.0.0.1',
       '64:ff9b::a9fe:a9fe',
+      '240.0.0.1',
+      '250.1.2.3',
+      '255.255.255.255',
     ]) {
-      expect(isUnsafeIpAddress(address, true), address).toBe(true)
+      expect(isUnsafeEgressAddress(address, true), address).toBe(true)
     }
-    expect(isUnsafeIpAddress('fec0::1'), 'fec0::1').toBe(false)
+    expect(isUnsafeEgressAddress('fec0::1'), 'fec0::1').toBe(false)
   })
 })
 

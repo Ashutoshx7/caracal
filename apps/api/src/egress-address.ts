@@ -1,5 +1,7 @@
 // Copyright (C) 2026 Garudex Labs.  All Rights Reserved.
 // Caracal, a product of Garudex Labs
+//
+// Normalizes and classifies egress addresses that outbound requests must never reach.
 
 import { BlockList, isIP } from 'node:net'
 
@@ -8,6 +10,7 @@ alwaysBlocked.addSubnet('0.0.0.0', 8, 'ipv4')
 alwaysBlocked.addSubnet('127.0.0.0', 8, 'ipv4')
 alwaysBlocked.addSubnet('169.254.0.0', 16, 'ipv4')
 alwaysBlocked.addSubnet('224.0.0.0', 4, 'ipv4')
+alwaysBlocked.addSubnet('240.0.0.0', 4, 'ipv4')
 alwaysBlocked.addAddress('::', 'ipv6')
 alwaysBlocked.addAddress('::1', 'ipv6')
 alwaysBlocked.addSubnet('fe80::', 10, 'ipv6')
@@ -34,6 +37,10 @@ function nat64EmbeddedIpv4(value: string): string | null {
   const lo = Number.parseInt(groups.at(-1)!, 16)
   if (!Number.isInteger(hi) || !Number.isInteger(lo) || hi > 0xffff || lo > 0xffff) return null
   return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`
+}
+
+export function normalizedUrlHostname(url: URL): string {
+  return url.hostname.startsWith('[') && url.hostname.endsWith(']') ? url.hostname.slice(1, -1) : url.hostname
 }
 
 export function isUnsafeEgressAddress(value: string, privateAllowed = false): boolean {

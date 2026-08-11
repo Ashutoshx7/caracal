@@ -12,7 +12,7 @@ import { AAD_NOTIFICATION_SINK_SECRET, sealSecretEnvelope } from '@caracalai/ser
 import { ZoneIdParams, ZoneParams, parseParams } from './params.js'
 import { appendKeysetCondition, listPage, parseListPagination } from './list-pagination.js'
 import { zoneExists } from '../zone-guard.js'
-import { isUnsafeSinkAddress } from '../jobs/notification-dispatcher.js'
+import { isUnsafeEgressAddress, normalizedUrlHostname } from '../egress-address.js'
 
 // The event types a sink may subscribe to: the approval lifecycle as recorded in the zone
 // audit stream. The dispatcher fans out exactly these, so the subscription surface and the
@@ -45,9 +45,9 @@ export function validateSinkUrl(raw: string): string | null {
     return 'sink url is not a valid absolute URL'
   }
   if (url.username || url.password) return 'sink url must not embed credentials'
-  const hostname = url.hostname.startsWith('[') && url.hostname.endsWith(']') ? url.hostname.slice(1, -1) : url.hostname
+  const hostname = normalizedUrlHostname(url)
   const loopback = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
-  if (isIP(hostname) !== 0 && isUnsafeSinkAddress(hostname) && !(url.protocol === 'http:' && loopback)) {
+  if (isIP(hostname) !== 0 && isUnsafeEgressAddress(hostname) && !(url.protocol === 'http:' && loopback)) {
     return 'sink url must not target a restricted address'
   }
   if (url.protocol === 'https:') return null
