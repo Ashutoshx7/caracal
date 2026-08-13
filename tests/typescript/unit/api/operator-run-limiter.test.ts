@@ -104,10 +104,13 @@ describe('Operator run limiter', () => {
     expect(lease!.signal.aborted).toBe(true)
     expect(lease!.signal.reason).toBe(renewalError)
     expect(onRenewError).toHaveBeenCalledWith(renewalError)
+    expect(onRenewError).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(100)
     expect(evalFn).toHaveBeenCalledTimes(2)
 
     await lease!.release()
+    expect(evalFn).toHaveBeenCalledTimes(3)
+    expect(String(evalFn.mock.calls[2][0])).toContain("redis.call('ZREM'")
   })
 
   it('isolates different users and zones while sharing the same composite scope', async () => {
