@@ -1812,7 +1812,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
             autopilot: {
               reason: outcome.decision.reason,
               writes: mutatingSteps,
-              writes_total: outcome.priorApprovedWrites,
+              writes_prior: outcome.priorApprovedWrites,
               write_budget: budget,
             },
           }),
@@ -2703,7 +2703,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
                 autopilot: {
                   reason: outcome.decision.reason,
                   writes: mutatingSteps,
-                  writes_total: outcome.priorApprovedWrites,
+                  writes_prior: outcome.priorApprovedWrites,
                   write_budget: budget,
                 },
               }),

@@ -1168,6 +1168,34 @@ describe('plan credential vault endpoints', () => {
     ).toBe(false)
   })
 
+  it('does not complete deferred autopilot approval for a legacy plan without review metadata', async () => {
+    const content = { summary: credentialPlanContent.summary, steps: credentialPlanContent.steps }
+    const { app, db, clientQuery } = buildApp(true, { autopilotPolicy: buildAutopilotPolicy({ enabled: true }), ...governedControl })
+    db.query.mockImplementation(async (sql: string) => (String(sql).includes('WHERE id = $1') ? { rows: [{ one: 1 }] } : { rows: [] }))
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: true }] })
+      .mockResolvedValueOnce({ rows: [{ content }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ step_id: 's1' }] })
+      .mockResolvedValueOnce(undefined)
+    await app.ready()
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/v1/zones/z1/operator-conversations/conv-1/plans/2/secrets',
+      payload: { step_id: 's1', values: { client_id: 'anton', client_secret: 'cs_live_value' } },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body)).toMatchObject({ ok: true, all_satisfied: true, auto_approved: false, approval_turn: null })
+    expect(
+      clientQuery.mock.calls.some((call) => String(call[0]).includes('INSERT INTO operator_turns') && String(call[1]?.[5]) === 'approval'),
+    ).toBe(false)
+  })
+
   it('does not race a human decision while completing deferred autopilot approval', async () => {
     const { app, db, clientQuery } = buildApp(true, { autopilotPolicy: buildAutopilotPolicy({ enabled: true }), ...governedControl })
     db.query.mockImplementation(async (sql: string) => (String(sql).includes('WHERE id = $1') ? { rows: [{ one: 1 }] } : { rows: [] }))
@@ -3324,7 +3352,7 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     expect(noteInsert).toBeDefined()
     const note = JSON.parse(String(noteInsert![1][6]))
     expect(note.text).toContain('write budget of 2')
-    expect(note.autopilot).toEqual({ reason: 'write_budget_exceeded', writes: 1, writes_total: 2, write_budget: 2 })
+    expect(note.autopilot).toEqual({ reason: 'write_budget_exceeded', writes: 1, writes_prior: 2, write_budget: 2 })
   })
 
   it('defers autopilot for a credential-bearing provider plan until the secure prompt satisfies it', async () => {
