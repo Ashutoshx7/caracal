@@ -291,6 +291,15 @@ function apiCallError(err: unknown, seen = new Set<unknown>()): APICallError | u
 export function classifyProviderError(err: unknown): OperatorAiErrorClass {
   if (err instanceof GatewayStreamInterruptedError) return 'stream_interrupted'
   const chain = errorChain(err)
+  const apiError = apiCallError(err)
+  const apiStatus = apiError?.statusCode
+  // The final error in an SDK retry chain is authoritative. A terminal HTTP rejection must win
+  // over a timeout retained from an earlier attempt, or health would report the stale transient
+  // condition even though failover stopped on the final invalid request.
+  if (apiError && !apiError.isRetryable && apiStatus !== undefined && apiStatus >= 400) {
+    if (apiStatus === 401 || apiStatus === 403) return 'auth_failed'
+    return 'config_error'
+  }
   const timeoutNames = new Set(['AbortError', 'TimeoutError', 'ResponseAborted'])
   if (chain.some((entry) => namedError(entry, timeoutNames))) return 'timeout'
 
@@ -307,9 +316,8 @@ export function classifyProviderError(err: unknown): OperatorAiErrorClass {
   )
   if (invalidResponse) return 'invalid_response'
 
-  const apiError = apiCallError(err)
   if (apiError) {
-    const status = apiError.statusCode
+    const status = apiStatus
     if (status === 401 || status === 403) return 'auth_failed'
     if (status === 429) return 'rate_limited'
     if (status === 408 || status === 504) return 'timeout'

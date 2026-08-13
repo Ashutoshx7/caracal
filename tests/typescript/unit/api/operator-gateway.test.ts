@@ -169,10 +169,10 @@ describe('gateway complete', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('uses a terminal retry result instead of failing over after an earlier transient error', async () => {
+  it.each([408, 503])('uses a terminal retry result instead of failing over after an earlier HTTP %i', async (transientStatus) => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(errorResponse(503, { 'retry-after-ms': '0' }))
+      .mockResolvedValueOnce(errorResponse(transientStatus, { 'retry-after-ms': '0' }))
       .mockResolvedValueOnce(errorResponse(400))
       .mockResolvedValueOnce(chatResponse('must not run'))
     const observer = healthObserver()
