@@ -4,6 +4,7 @@
 // Unit tests for the Operator control mapping: governed command, least-privilege scopes, flags, and outcome shaping, cross-checked against the real engine surface.
 
 import { describe, it, expect } from 'vitest'
+import { CAPABILITIES } from '../../../../apps/api/src/operator-capabilities.js'
 import { CONTROL_CAPABILITIES, isControlExecutable } from '../../../../apps/api/src/operator-control-map.js'
 import { describeRemoteSurface } from '../../../../packages/engine/src/dispatch.js'
 
@@ -30,6 +31,16 @@ describe('CONTROL_CAPABILITIES surface conformance', () => {
     for (const mapping of Object.values(CONTROL_CAPABILITIES)) {
       expect(mapping.buildInvocation({}).command).not.toBe('zone')
     }
+  })
+
+  // A catalog write without a governed mapping could be proposed but never applied. Keep this
+  // parity invariant in CI so every mutating capability is deliberately executable at release.
+  it('maps every mutating catalog capability to governed control execution', () => {
+    const unmapped = Object.values(CAPABILITIES)
+      .filter((capability) => capability.mutating)
+      .map((capability) => capability.id)
+      .filter((capability) => !(capability in CONTROL_CAPABILITIES))
+    expect(unmapped).toEqual([])
   })
 })
 

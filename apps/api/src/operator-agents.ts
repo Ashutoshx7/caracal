@@ -1048,8 +1048,9 @@ export function buildSecurityAnalystMessages(plan: ProposedPlanInput, context: A
 // schema-validated object, so a malformed or off-schema review fails closed as an error rather
 // than a guessed verdict. The failure reason names its cause - a governance budget stop, a
 // provider outage, or an unusable model reply - so the orchestrator records exactly why the plan
-// went unreviewed instead of silently attaching nothing. The review never gates the plan - it
-// only informs the human - so a failed review never blocks a change.
+// went unreviewed instead of silently attaching nothing. The advisory never gates a human
+// decision. Autopilot separately requires this review to complete, so failure can only withhold
+// automatic approval and can never grant authority.
 export async function runSecurityAnalyst(
   gateway: Gateway,
   plan: ProposedPlanInput,

@@ -16,6 +16,7 @@ function evaluation(over: Partial<AutopilotEvaluation> = {}): AutopilotEvaluatio
     engaged: true,
     applicable: true,
     credentialsSatisfied: true,
+    reviewCompleted: true,
     steps: [{ id: 's1', capability: 'registerApplication' }],
     mutatingSteps: 1,
     priorApprovedWrites: 0,
@@ -104,6 +105,13 @@ describe('mayAutoApprove', () => {
     expect(mayAutoApprove(evaluation({ applicable: false }), buildAutopilotPolicy({ enabled: true }))).toEqual({
       autoApprove: false,
       reason: 'plan_not_applicable',
+    })
+  })
+
+  it('stops when the guardian review did not complete', () => {
+    expect(mayAutoApprove(evaluation({ reviewCompleted: false }), buildAutopilotPolicy({ enabled: true }))).toEqual({
+      autoApprove: false,
+      reason: 'review_required',
     })
   })
 
