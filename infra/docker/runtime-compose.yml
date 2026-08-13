@@ -407,6 +407,7 @@ services:
       # and no key ever lives in an env file. The Operator always self-governs: the control
       # plane provisions that zone and its rotating least-privilege identities autonomously.
       API_OPERATOR_ENABLED: ${API_OPERATOR_ENABLED:-true}
+      API_OPERATOR_MAX_CONCURRENT_RUNS_PER_USER: ${API_OPERATOR_MAX_CONCURRENT_RUNS_PER_USER:-2}
       STS_MINT_RATE_LIMIT_PER_MIN: ${STS_MINT_RATE_LIMIT_PER_MIN:-}
       PORT: 3000
       HOST: 0.0.0.0

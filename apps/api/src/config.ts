@@ -102,6 +102,10 @@ export interface Config {
   operatorAllowedCapabilities: string[] | null
   operatorSystemZones: string[]
   operatorAiProviders: ProviderConfig[]
+  // Cross-replica ceiling for model-backed message runs started by one actor in one zone.
+  // Kept above one so an operator can work in two conversations without permitting an
+  // unbounded fan-out of long-lived model calls.
+  operatorMaxConcurrentRunsPerUser: number
   // Caracal-governed autopilot: operatorAutopilotEnabled is the deployment master switch (off by
   // default). When on, an agent-mode conversation that engages autopilot has its plan approvals
   // auto-satisfied; the switch is set here in Caracal and never by the model or a conversation.
@@ -295,6 +299,7 @@ export function loadConfig(): Config {
     operatorAllowedCapabilities: csvEnv('API_OPERATOR_ALLOWED_CAPABILITIES'),
     operatorSystemZones: csvEnv('API_OPERATOR_SYSTEM_ZONES') ?? [],
     operatorAiProviders: loadOperatorAiProviders(),
+    operatorMaxConcurrentRunsPerUser: intEnv('API_OPERATOR_MAX_CONCURRENT_RUNS_PER_USER', 2, 1),
     operatorAutopilotEnabled: boolEnv('API_OPERATOR_AUTOPILOT_ENABLED', false),
     operatorAutopilotWriteBudget: intEnv('API_OPERATOR_AUTOPILOT_WRITE_BUDGET', 0, 0),
     operatorAiMaxOutputTokens: intEnv('API_OPERATOR_AI_MAX_OUTPUT_TOKENS', 4096, 0),

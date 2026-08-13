@@ -69,6 +69,7 @@ import { operatorRoutes } from './routes/operator.js'
 import { buildAutopilotPolicy } from './operator-autopilot.js'
 import { buildGovernanceLimits } from './operator-ai-governance.js'
 import { createOperatorAiHealthStore, renderOperatorAiHealthMetrics, type ProviderHealthObservation } from './operator-ai-health.js'
+import { createOperatorRunLimiter } from './operator-run-limiter.js'
 
 import './fastify-augmentation.js'
 
@@ -414,6 +415,9 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
       maxCallsPerTurn: cfg.operatorAiMaxCallsPerTurn,
     }),
     aiHealth: operatorAiHealth,
+    runLimiter: createOperatorRunLimiter(redis, cfg.operatorMaxConcurrentRunsPerUser, {
+      onRenewError: (err) => app.log.error({ err }, 'Operator run lease renewal failed'),
+    }),
     resolveControlIdentity: currentIdentity,
     controlEndpoints: cfg.control
       ? { stsUrl: cfg.stsUrl, audience: cfg.control.audience, controlUrl: cfg.control.apiUrl, controlEnabled: true }

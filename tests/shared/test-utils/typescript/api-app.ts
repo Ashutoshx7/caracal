@@ -79,6 +79,7 @@ export function apiAppDeps(opts: ApiDepsOptions = {}): ApiDeps {
     bodyLimitBytes: 1_048_576,
     operatorEnabled: false,
     operatorAiProviders: [],
+    operatorMaxConcurrentRunsPerUser: 2,
     outbox: {
       pollIntervalMs: 1000,
       batchSize: 8,

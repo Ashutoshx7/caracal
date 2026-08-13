@@ -67,6 +67,7 @@ The packaged Compose stack wires `CARACAL_TLS_EXTRA_CA_FILE` for you: drop a PEM
 | Variable | Purpose |
 | --- | --- |
 | `API_OPERATOR_ENABLED` | Registers the Operator capability and routes; default is enabled. |
+| `API_OPERATOR_MAX_CONCURRENT_RUNS_PER_USER` | Maximum concurrent model-backed runs for one user in one zone; default 2. Excess runs return HTTP 429 before a message is recorded. |
 | `API_OPERATOR_ALLOWED_CAPABILITIES` | Optional comma-separated ceiling over executable Operator capabilities. |
 | `API_OPERATOR_AUTOPILOT_ENABLED` | Master switch that permits conversation-level automatic plan Approval. |
 | `API_OPERATOR_AUTOPILOT_WRITE_BUDGET` | Optional cumulative write-operation budget for an autopilot conversation. |

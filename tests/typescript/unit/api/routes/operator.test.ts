@@ -15,6 +15,7 @@ import { buildAutopilotPolicy } from '../../../../../apps/api/src/operator-autop
 import type { OperatorAiManager } from '../../../../../apps/api/src/operator-ai-manager.js'
 import type { OperatorAiHealthStore } from '../../../../../apps/api/src/operator-ai-health.js'
 import type { OperatorControlIdentity } from '../../../../../apps/api/src/config.js'
+import type { OperatorRunLimiter } from '../../../../../apps/api/src/operator-run-limiter.js'
 
 // Test-only deterministic KEK fixture (32-byte hex) so the plan credential vault can seal. Never use in production.
 process.env.SECRET_STORE_KEK = '8f3d9a71c2b44e5f96a103d7be28cc41d5f09ab6731e4c8f2a7db56019ce34af'
@@ -33,6 +34,7 @@ function buildApp(
     aiGovernance?: { maxOutputTokens: number; maxCallsPerTurn: number }
     aiHealth?: OperatorAiHealthStore
     auditStreamStart?: () => Promise<void>
+    runLimiter?: OperatorRunLimiter
   } = {},
 ) {
   const app = Fastify({ logger: false })
@@ -73,6 +75,7 @@ function buildApp(
     autopilotPolicy: authorityOpts.autopilotPolicy,
     aiGovernance: authorityOpts.aiGovernance,
     aiHealth: authorityOpts.aiHealth,
+    runLimiter: authorityOpts.runLimiter,
   })
   return { app, db, clientQuery, redis }
 }
@@ -2318,6 +2321,127 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     })
     expect(res.statusCode).toBe(409)
     expect(JSON.parse(res.body)).toMatchObject({ error: 'ai_unavailable' })
+  })
+
+  it('returns 429 before recording a message when this zone/user has no run slot', async () => {
+    const acquire = vi.fn().mockResolvedValue(null)
+    const runLimiter: OperatorRunLimiter = { maxConcurrentRuns: 2, acquire }
+    const { app, db, clientQuery } = buildApp(true, {
+      aiProviders: [provider],
+      fetchImpl: fetchReturning(),
+      runLimiter,
+    })
+    await app.ready()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'connect github' },
+    })
+
+    expect(res.statusCode).toBe(429)
+    expect(JSON.parse(res.body)).toEqual({ error: 'operator_concurrency_limit_exceeded', max_concurrent_runs: 2 })
+    expect(acquire).toHaveBeenCalledWith('z1', 'actor-1')
+    expect(db.query).not.toHaveBeenCalled()
+    expect(clientQuery).not.toHaveBeenCalled()
+  })
+
+  it('preserves the durable duplicate response when existing runs occupy every slot', async () => {
+    const acquire = vi.fn().mockResolvedValue(null)
+    const runLimiter: OperatorRunLimiter = { maxConcurrentRuns: 1, acquire }
+    const { app, db, clientQuery } = buildApp(true, {
+      aiProviders: [provider],
+      fetchImpl: fetchReturning(),
+      runLimiter,
+    })
+    db.query.mockResolvedValue({
+      rows: [
+        {
+          id: 'run-existing',
+          zone_id: 'z1',
+          conversation_id: 'conv-1',
+          client_message_id: 'msg-existing',
+          server_message_turn_id: 'turn-existing',
+          correlation_id: 'corr-existing',
+          state: 'waiting_for_model',
+          actor_id: 'actor-1',
+          provider_id: 'primary',
+          reason: 'model_requested',
+          error_code: null,
+          error_detail: null,
+          deadline_at: '2026-07-01T00:02:00Z',
+          started_at: '2026-07-01T00:00:00Z',
+          updated_at: '2026-07-01T00:00:01Z',
+          completed_at: null,
+          last_event_seq: 2,
+          input_tokens: 0,
+          output_tokens: 0,
+          usage_by_provider_model: [],
+          served_provider_id: null,
+          served_model: null,
+        },
+      ],
+    })
+    await app.ready()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'connect github', client_message_id: 'msg-existing', correlation_id: 'corr-existing' },
+    })
+
+    expect(res.statusCode).toBe(202)
+    expect(JSON.parse(res.body)).toMatchObject({
+      intent: 'message_run',
+      ok: true,
+      duplicate: true,
+      message_run: { id: 'run-existing', state: 'waiting_for_model' },
+    })
+    expect(clientQuery).not.toHaveBeenCalled()
+  })
+
+  it('releases the run slot when message setup exits without calling a provider', async () => {
+    const release = vi.fn().mockResolvedValue(undefined)
+    const acquire = vi.fn().mockResolvedValue({ release })
+    const runLimiter: OperatorRunLimiter = { maxConcurrentRuns: 2, acquire }
+    const { app, clientQuery } = buildApp(true, {
+      aiProviders: [provider],
+      fetchImpl: fetchReturning(),
+      runLimiter,
+    })
+    clientQuery.mockResolvedValue({ rows: [], rowCount: 0 })
+    await app.ready()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/missing/message',
+      payload: { message: 'connect github' },
+    })
+
+    expect(res.statusCode).toBe(404)
+    expect(JSON.parse(res.body)).toEqual({ error: 'conversation_not_found' })
+    expect(release).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails closed before recording a message when the concurrency store is unavailable', async () => {
+    const acquire = vi.fn().mockRejectedValue(new Error('redis unavailable'))
+    const runLimiter: OperatorRunLimiter = { maxConcurrentRuns: 2, acquire }
+    const { app, db, clientQuery } = buildApp(true, {
+      aiProviders: [provider],
+      fetchImpl: fetchReturning(),
+      runLimiter,
+    })
+    await app.ready()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'connect github' },
+    })
+
+    expect(res.statusCode).toBe(500)
+    expect(db.query).not.toHaveBeenCalled()
+    expect(clientQuery).not.toHaveBeenCalled()
   })
 
   it('resumes an existing durable message run without appending or calling the model again', async () => {
