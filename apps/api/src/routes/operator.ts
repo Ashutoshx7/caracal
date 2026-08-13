@@ -27,7 +27,14 @@ import { buildOperatorControlClient, type OperatorControlEndpoints } from '../op
 import { executeViaControlPlane, type GovernedPlanStep } from '../operator-governed-execute.js'
 import { isControlExecutable } from '../operator-control-map.js'
 import { SYSTEM_ZONE_SLUG } from '../system-zone.js'
-import { mayAutoApprove, autopilotAvailable, buildAutopilotPolicy, type AutopilotPolicy } from '../operator-autopilot.js'
+import {
+  mayAutoApprove,
+  autopilotAvailable,
+  buildAutopilotPolicy,
+  type AutopilotDecision,
+  type AutopilotEvaluation,
+  type AutopilotPolicy,
+} from '../operator-autopilot.js'
 import {
   CREDENTIAL_VALUE_MAX,
   credentialFieldsFor,
@@ -712,6 +719,80 @@ async function autopilotApprovedWrites(db: ContextQueryable, conversationId: str
     [conversationId, zoneId],
   )
   return rows[0]?.writes ?? 0
+}
+
+type AutopilotApprovalOutcome = {
+  approval: Record<string, unknown> | null
+  decision: AutopilotDecision | null
+  priorApprovedWrites: number
+}
+
+// Serializes the final autopilot decision with human decisions and other automatic approvals.
+// The conversation lock makes the persisted engage flag, one-decision invariant, write ledger,
+// budget check, and approval insert one atomic operation.
+async function approveWithAutopilot(
+  db: DB,
+  input: {
+    conversationId: string
+    zoneId: string
+    planSeq: number
+    actorId: string
+    evaluation: Omit<AutopilotEvaluation, 'engaged' | 'priorApprovedWrites'>
+    policy: AutopilotPolicy
+  },
+): Promise<AutopilotApprovalOutcome> {
+  // Avoid taking the conversation lock for a plan that already fails a deterministic prerequisite.
+  // A potentially eligible or budget-limited plan is always re-evaluated from locked state below.
+  const preliminary = mayAutoApprove({ ...input.evaluation, engaged: true, priorApprovedWrites: 0 }, input.policy)
+  if (!preliminary.autoApprove && preliminary.reason !== 'write_budget_exceeded') {
+    return { approval: null, decision: preliminary, priorApprovedWrites: 0 }
+  }
+
+  return withTransaction(db, async (client) => {
+    const { rows: conv } = await client.query<{ status: string; mode: string; autopilot: boolean; next_seq: number }>(
+      `SELECT status, mode, autopilot, next_seq FROM operator_conversations
+       WHERE id = $1 AND zone_id = $2 FOR UPDATE`,
+      [input.conversationId, input.zoneId],
+    )
+    if (!conv[0] || conv[0].status !== 'active') return { approval: null, decision: null, priorApprovedWrites: 0 }
+
+    const { rows: decided } = await client.query(
+      `SELECT 1 FROM operator_turns
+       WHERE conversation_id = $1 AND zone_id = $2
+         AND kind IN ('approval', 'rejection')
+         AND (content->>'plan_seq')::bigint = $3`,
+      [input.conversationId, input.zoneId, input.planSeq],
+    )
+    if (decided[0]) return { approval: null, decision: null, priorApprovedWrites: 0 }
+
+    const priorApprovedWrites = await autopilotApprovedWrites(client, input.conversationId, input.zoneId)
+    const decision = mayAutoApprove(
+      {
+        ...input.evaluation,
+        engaged: conv[0].mode === 'agent' && conv[0].autopilot === true,
+        priorApprovedWrites,
+      },
+      input.policy,
+    )
+    if (!decision.autoApprove) return { approval: null, decision, priorApprovedWrites }
+
+    const approval = await writeTurnLocked(client, {
+      conversationId: input.conversationId,
+      zoneId: input.zoneId,
+      seq: conv[0].next_seq,
+      role: 'system',
+      kind: 'approval',
+      contentJson: JSON.stringify({
+        plan_seq: input.planSeq,
+        autopilot: true,
+        writes: input.evaluation.mutatingSteps,
+        writes_total: priorApprovedWrites + input.evaluation.mutatingSteps,
+        write_budget: input.policy.conversationWriteBudget,
+      }),
+      actorId: input.actorId,
+    })
+    return { approval, decision, priorApprovedWrites }
+  })
 }
 
 // Assembles the working-memory snapshot from bounded reads: the latest plan and the
@@ -1694,57 +1775,29 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       const applicable = preview.ok && canApply && preview.steps.every((step) => step.effect !== 'exists')
       const mutatingSteps = stored.content.steps.filter((step) => step.mutating === true).length
       const budget = autopilotPolicy.conversationWriteBudget
-      const priorApprovedWrites = await autopilotApprovedWrites(fastify.db, params.id, params.zoneId)
-      const decision = mayAutoApprove(
-        {
-          engaged: true,
+      const outcome = await approveWithAutopilot(fastify.db, {
+        conversationId: params.id,
+        zoneId: params.zoneId,
+        planSeq: params.planSeq,
+        actorId: req.actor.id,
+        evaluation: {
           applicable,
           credentialsSatisfied: true,
           reviewCompleted: stored.content.review?.status === 'reviewed',
           steps,
           mutatingSteps,
-          priorApprovedWrites,
         },
-        autopilotPolicy,
-      )
-      if (decision.autoApprove) {
-        // The completion re-checks the decided gate under the conversation lock so a racing
-        // human decision and this autopilot completion can never both enter the ledger.
-        const approval = await withTransaction(fastify.db, async (client) => {
-          const { rows: conv } = await client.query<{ status: string; next_seq: number }>(
-            `SELECT status, next_seq FROM operator_conversations WHERE id = $1 AND zone_id = $2 FOR UPDATE`,
-            [params.id, params.zoneId],
-          )
-          if (!conv[0] || conv[0].status !== 'active') return null
-          const { rows: decided } = await client.query(
-            `SELECT 1 FROM operator_turns
-             WHERE conversation_id = $1 AND zone_id = $2
-               AND kind IN ('approval', 'rejection')
-               AND (content->>'plan_seq')::bigint = $3`,
-            [params.id, params.zoneId, params.planSeq],
-          )
-          if (decided[0]) return null
-          return writeTurnLocked(client, {
-            conversationId: params.id,
-            zoneId: params.zoneId,
-            seq: conv[0].next_seq,
-            role: 'system',
-            kind: 'approval',
-            contentJson: JSON.stringify({
-              plan_seq: params.planSeq,
-              autopilot: true,
-              writes: mutatingSteps,
-              writes_total: priorApprovedWrites + mutatingSteps,
-              write_budget: budget,
-            }),
-            actorId: req.actor.id,
-          })
-        })
-        if (approval) {
-          autoApproved = true
-          approvalTurn = approval
-        }
-      } else if (decision.reason === 'write_budget_exceeded' && budget !== null) {
+        policy: autopilotPolicy,
+      })
+      if (outcome.approval) {
+        autoApproved = true
+        approvalTurn = outcome.approval
+      } else if (
+        outcome.decision &&
+        !outcome.decision.autoApprove &&
+        outcome.decision.reason === 'write_budget_exceeded' &&
+        budget !== null
+      ) {
         await appendTurnTx(
           fastify.db,
           params.id,
@@ -1754,9 +1807,14 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
           JSON.stringify({
             text:
               `Autopilot paused: this conversation's write budget of ${budget} is spent ` +
-              `(${priorApprovedWrites} auto-approved so far; this plan adds ${mutatingSteps}). ` +
+              `(${outcome.priorApprovedWrites} auto-approved so far; this plan adds ${mutatingSteps}). ` +
               'Review and approve this plan manually to continue.',
-            autopilot: { reason: decision.reason, writes: mutatingSteps, writes_total: priorApprovedWrites, write_budget: budget },
+            autopilot: {
+              reason: outcome.decision.reason,
+              writes: mutatingSteps,
+              writes_total: outcome.priorApprovedWrites,
+              write_budget: budget,
+            },
           }),
           req.actor.id,
         )
@@ -2602,46 +2660,35 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
           const credentialsSatisfied = validation.steps.every((step) => credentialFieldsFor(step.capability, step.args).length === 0)
           const mutatingSteps = validation.steps.filter((step) => step.mutating).length
           const budget = autopilotPolicy.conversationWriteBudget
-          const priorApprovedWrites = await autopilotApprovedWrites(fastify.db, params.id, params.zoneId)
           // Applicability is the same deterministic gate the execute route enforces: the preview
           // must say every step can apply, the zone must be able to apply at all - governed
           // identity configured and the zone's explicit administration grant in place - and no
           // step may already be satisfied, because execute refuses a plan whose create now
           // targets something that exists. A plan that would only dead-end at execute stops for
           // a human who can see why instead.
-          const decision = mayAutoApprove(
-            {
-              engaged: true,
+          const outcome = await approveWithAutopilot(fastify.db, {
+            conversationId: params.id,
+            zoneId: params.zoneId,
+            planSeq,
+            actorId: req.actor.id,
+            evaluation: {
               applicable: preview.ok && canApply && preview.steps.every((step) => step.effect !== 'exists'),
               credentialsSatisfied,
               reviewCompleted: review?.status === 'reviewed',
               steps: planned.value.steps,
               mutatingSteps,
-              priorApprovedWrites,
             },
-            autopilotPolicy,
-          )
-          if (decision.autoApprove) {
-            const approval = await appendTurnTx(
-              fastify.db,
-              params.id,
-              params.zoneId,
-              'system',
-              'approval',
-              JSON.stringify({
-                plan_seq: planSeq,
-                autopilot: true,
-                writes: mutatingSteps,
-                writes_total: priorApprovedWrites + mutatingSteps,
-                write_budget: budget,
-              }),
-              req.actor.id,
-            )
-            if (approval.ok) {
-              autoApproved = true
-              approvalTurn = approval.turn
-            }
-          } else if (decision.reason === 'write_budget_exceeded' && budget !== null) {
+            policy: autopilotPolicy,
+          })
+          if (outcome.approval) {
+            autoApproved = true
+            approvalTurn = outcome.approval
+          } else if (
+            outcome.decision &&
+            !outcome.decision.autoApprove &&
+            outcome.decision.reason === 'write_budget_exceeded' &&
+            budget !== null
+          ) {
             await appendTurnTx(
               fastify.db,
               params.id,
@@ -2651,9 +2698,14 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
               JSON.stringify({
                 text:
                   `Autopilot paused: this conversation's write budget of ${budget} is spent ` +
-                  `(${priorApprovedWrites} auto-approved so far; this plan adds ${mutatingSteps}). ` +
+                  `(${outcome.priorApprovedWrites} auto-approved so far; this plan adds ${mutatingSteps}). ` +
                   'Review and approve this plan manually to continue.',
-                autopilot: { reason: decision.reason, writes: mutatingSteps, writes_total: priorApprovedWrites, write_budget: budget },
+                autopilot: {
+                  reason: outcome.decision.reason,
+                  writes: mutatingSteps,
+                  writes_total: outcome.priorApprovedWrites,
+                  write_budget: budget,
+                },
               }),
               req.actor.id,
             )
