@@ -2240,6 +2240,31 @@ describe('operator AI gateway routes', () => {
     expect(aiHealth.recordSuccess).not.toHaveBeenCalled()
   })
 
+  it('surfaces a terminal provider rejection without trying the next provider', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: { message: 'provider-controlled secret text' } }), {
+          status: 413,
+          headers: { 'content-type': 'application/json' },
+        }),
+    ) as unknown as typeof fetch
+    const secondary = { ...provider, id: 'secondary', baseUrl: 'https://secondary.example.com/v1' }
+    const { app } = buildApp(true, { aiProviders: [provider, secondary], fetchImpl })
+    await app.ready()
+
+    const res = await app.inject({ method: 'POST', url: '/v1/operator/ai/check' })
+
+    expect(res.statusCode).toBe(502)
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'ai_provider_error',
+      provider: 'primary',
+      status_code: 413,
+      reason: 'provider returned status 413',
+    })
+    expect(res.body).not.toContain('provider-controlled')
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
   it('does not register AI routes when the operator is disabled', async () => {
     const { app } = buildApp(false, { aiProviders: [provider] })
     await app.ready()
@@ -3847,8 +3872,9 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
       .mockResolvedValueOnce(
         jsonResponse({ choices: [{ message: { content: '{"tier":"read"}' } }], usage: { prompt_tokens: 120, completion_tokens: 4 } }),
       )
-      // A terminal response skips retries and moves this second model call to the next provider.
-      .mockResolvedValueOnce(jsonResponse({ error: { message: 'bad request' } }, 400))
+      // An empty completion is unusable only for this model, so this second logical call moves to
+      // the next provider while preserving the first call's attributed usage.
+      .mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: '' } }] }))
       .mockResolvedValueOnce(
         jsonResponse({ choices: [{ message: { content: 'Grounded answer.' } }], usage: { prompt_tokens: 400, completion_tokens: 60 } }),
       ) as unknown as typeof fetch
@@ -4081,6 +4107,46 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     })
     expect(res.statusCode).toBe(502)
     expect(JSON.parse(res.body)).toMatchObject({ error: 'ai_unreachable' })
+  })
+
+  it('returns the terminal provider status without chain-wide failover', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: { message: 'invalid request' } }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        }),
+    ) as unknown as typeof fetch
+    const secondary = { ...provider, id: 'secondary', baseUrl: 'https://secondary.example.com/v1' }
+    const { app, clientQuery, db } = buildApp(true, { aiProviders: [provider, secondary], fetchImpl })
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', next_seq: 1 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-1', seq: 1 }] })
+      .mockResolvedValueOnce(undefined)
+    db.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+    await app.ready()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'connect github', provider: 'primary' },
+    })
+
+    expect(res.statusCode).toBe(502)
+    expect(JSON.parse(res.body)).toMatchObject({
+      error: 'ai_provider_error',
+      provider: 'primary',
+      status_code: 400,
+      reason: 'provider returned status 400',
+    })
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(fetchImpl.mock.calls.every((call) => String(call[0]).startsWith('https://api.example.com/'))).toBe(true)
   })
 })
 

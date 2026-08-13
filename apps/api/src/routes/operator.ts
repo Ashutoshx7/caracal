@@ -44,6 +44,7 @@ import {
   preferProvider,
   GatewayUnavailableError,
   GatewayError,
+  GatewayProviderError,
   GatewayBudgetError,
   GatewayStreamInterruptedError,
   type Gateway,
@@ -1045,6 +1046,14 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     } catch (err) {
       if (err instanceof GatewayUnavailableError) {
         return reply.code(409).send({ error: 'ai_unavailable' })
+      }
+      if (err instanceof GatewayProviderError) {
+        return reply.code(502).send({
+          error: 'ai_provider_error',
+          provider: err.provider,
+          status_code: err.statusCode ?? null,
+          reason: err.reason,
+        })
       }
       if (err instanceof GatewayError) {
         return reply.code(502).send({ error: 'ai_unreachable', attempts: err.attempts })
@@ -2777,6 +2786,22 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
           429,
           { error: 'ai_budget_exceeded', max_calls: err.maxCalls },
           { state: 'failed', reason: 'ai_budget_exceeded', errorCode: 'ai_budget_exceeded' },
+        )
+      if (err instanceof GatewayProviderError)
+        return finish(
+          502,
+          {
+            error: 'ai_provider_error',
+            provider: err.provider,
+            status_code: err.statusCode ?? null,
+            reason: err.reason,
+          },
+          {
+            state: 'failed',
+            reason: 'ai_provider_error',
+            errorCode: 'ai_provider_error',
+            errorDetail: `${err.provider}: ${err.reason}`,
+          },
         )
       if (err instanceof GatewayError)
         return finish(

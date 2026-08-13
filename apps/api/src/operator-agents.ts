@@ -17,7 +17,14 @@ import { describeFacts, type ConversationFacts } from './operator-memory.js'
 import { describeConversationMemory, type ConversationMemoryEntry } from './operator-conversation-memory.js'
 import type { Evidence } from './operator-research.js'
 import type { DocSnippet } from './operator-docs.js'
-import { GatewayBudgetError, GatewayError, GatewayUnavailableError, type Gateway, type GatewayMessage } from './operator-gateway.js'
+import {
+  GatewayBudgetError,
+  GatewayError,
+  GatewayProviderError,
+  GatewayUnavailableError,
+  type Gateway,
+  type GatewayMessage,
+} from './operator-gateway.js'
 import { validateAuthzPolicy, previewAuthzPolicy, OPA_INPUT_SCHEMA_VERSION, type AuthzPolicyPreview } from './rego.js'
 
 // The agents never hold authority. Each one produces a typed artifact - an intent,
@@ -1062,7 +1069,12 @@ export async function runSecurityAnalyst(
     })
     return { ok: true, value: completion.value }
   } catch (err) {
-    if (err instanceof GatewayBudgetError || err instanceof GatewayError || err instanceof GatewayUnavailableError) {
+    if (
+      err instanceof GatewayBudgetError ||
+      err instanceof GatewayError ||
+      err instanceof GatewayProviderError ||
+      err instanceof GatewayUnavailableError
+    ) {
       return { ok: false, error: err.message }
     }
     return { ok: false, error: 'the guardian returned an unusable review' }
@@ -1508,7 +1520,12 @@ export async function runVerifier(
     })
     return { ok: true, value: completion.value }
   } catch (err) {
-    if (err instanceof GatewayBudgetError || err instanceof GatewayError || err instanceof GatewayUnavailableError) {
+    if (
+      err instanceof GatewayBudgetError ||
+      err instanceof GatewayError ||
+      err instanceof GatewayProviderError ||
+      err instanceof GatewayUnavailableError
+    ) {
       return { ok: false, error: err.message }
     }
     return { ok: false, error: 'the verifier returned an unusable verdict' }

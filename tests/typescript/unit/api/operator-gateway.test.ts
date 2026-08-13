@@ -12,6 +12,7 @@ import {
   withAbortSignal,
   GatewayUnavailableError,
   GatewayError,
+  GatewayProviderError,
   GatewayBudgetError,
   GatewayStreamInterruptedError,
   classifyProviderError,
@@ -156,19 +157,39 @@ describe('gateway complete', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
-  it('skips directly to the next provider on a terminal 400 response', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(errorResponse(400)).mockResolvedValueOnce(chatResponse('OK'))
+  it.each([400, 401, 404, 413])('stops without failover on a terminal %i response', async (status) => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(errorResponse(status)).mockResolvedValueOnce(chatResponse('must not run'))
     const gateway = createGateway(
       [provider({ id: 'primary' }), provider({ id: 'secondary', baseUrl: 'https://secondary.example.com/v1' })],
       fetchMock as unknown as typeof fetch,
     )
-    const result = await gateway.complete([{ role: 'user', content: 'ping' }])
-    expect(result.provider).toBe('secondary')
+    const error = await gateway.complete([{ role: 'user', content: 'ping' }]).catch((err) => err)
+    expect(error).toBeInstanceOf(GatewayProviderError)
+    expect(error).toMatchObject({ provider: 'primary', statusCode: status, reason: `provider returned status ${status}` })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses a terminal retry result instead of failing over after an earlier transient error', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse(503, { 'retry-after-ms': '0' }))
+      .mockResolvedValueOnce(errorResponse(400))
+      .mockResolvedValueOnce(chatResponse('must not run'))
+    const observer = healthObserver()
+    const gateway = createGateway(
+      [provider({ id: 'primary' }), provider({ id: 'secondary' })],
+      fetchMock as unknown as typeof fetch,
+      undefined,
+      observer,
+    )
+
+    await expect(gateway.complete([{ role: 'user', content: 'ping' }])).rejects.toMatchObject({
+      provider: 'primary',
+      statusCode: 400,
+    })
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
-      'https://api.example.com/v1/chat/completions',
-      'https://secondary.example.com/v1/chat/completions',
-    ])
+    expect(observer.recordFailure).toHaveBeenCalledExactlyOnceWith('primary', 'config_error')
+    expect(observer.recordSuccess).not.toHaveBeenCalled()
   })
 
   it('honors Retry-After before retrying the same provider', async () => {
@@ -277,7 +298,8 @@ describe('gateway complete', () => {
       observer,
     )
 
-    await expect(gateway.complete([{ role: 'user', content: 'ping' }])).rejects.toBeInstanceOf(GatewayError)
+    const expectedError = status === 400 || status === 401 || status === 403 ? GatewayProviderError : GatewayError
+    await expect(gateway.complete([{ role: 'user', content: 'ping' }])).rejects.toBeInstanceOf(expectedError)
     expect(observer.recordFailure).toHaveBeenCalledExactlyOnceWith('p1', errorClass)
     expect(JSON.stringify(observer.recordFailure.mock.calls)).not.toContain('provider-controlled')
   })
@@ -576,7 +598,7 @@ describe('gateway wire-parameter adaptation', () => {
     expect(memoized).not.toHaveProperty('max_tokens')
   })
 
-  it('surfaces a 400 that names no parameter through failover unchanged', async () => {
+  it('surfaces a 400 that names no parameter as a terminal provider error', async () => {
     const fetchMock = vi.fn(
       async () =>
         new Response(JSON.stringify({ error: { message: 'model not found', type: 'invalid_request_error' } }), {
@@ -586,8 +608,8 @@ describe('gateway wire-parameter adaptation', () => {
     )
     const gateway = createGateway([provider({ model: 'o-reason-opaque' })], fetchMock as unknown as typeof fetch)
     const error = await gateway.complete([{ role: 'user', content: 'ping' }], { maxTokens: 5 }).catch((e) => e)
-    expect(error).toBeInstanceOf(GatewayError)
-    expect(error.attempts[0].reason).toContain('400')
+    expect(error).toBeInstanceOf(GatewayProviderError)
+    expect(error).toMatchObject({ provider: 'p1', statusCode: 400, reason: 'provider returned status 400' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
@@ -595,7 +617,7 @@ describe('gateway wire-parameter adaptation', () => {
     const fetchMock = vi.fn(async () => rejectsParam('logprobs', ''))
     const gateway = createGateway([provider({ model: 'o-reason-absent' })], fetchMock as unknown as typeof fetch)
     const error = await gateway.complete([{ role: 'user', content: 'ping' }], { maxTokens: 5 }).catch((e) => e)
-    expect(error).toBeInstanceOf(GatewayError)
+    expect(error).toBeInstanceOf(GatewayProviderError)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
@@ -700,6 +722,17 @@ describe('gateway completeObject', () => {
     expect(result).toMatchObject({ value: validPlan, provider: 'secondary' })
   })
 
+  it('does not fail over a structured completion after a terminal provider rejection', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(errorResponse(413)).mockResolvedValueOnce(objectResponse(validPlan))
+    const gateway = createGateway([provider({ id: 'primary' }), provider({ id: 'secondary' })], fetchMock as unknown as typeof fetch)
+
+    await expect(gateway.completeObject([{ role: 'user', content: 'connect' }], ProposedPlan)).rejects.toMatchObject({
+      provider: 'primary',
+      statusCode: 413,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('records an invalid structured response before recording failover success', async () => {
     const fetchMock = vi
       .fn()
@@ -780,6 +813,20 @@ describe('gateway stream', () => {
     expect(result.provider).toBe('primary')
     expect(deltas.join('')).toBe('recovered')
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not fail over a stream after a terminal provider rejection', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(errorResponse(404))
+      .mockResolvedValueOnce(streamResponse(['must not run']))
+    const gateway = createGateway([provider({ id: 'primary' }), provider({ id: 'secondary' })], fetchMock as unknown as typeof fetch)
+
+    await expect(gateway.stream([{ role: 'user', content: 'hi' }], { onText: () => {} })).rejects.toMatchObject({
+      provider: 'primary',
+      statusCode: 404,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('streams reasoning deltas to onReasoning and keeps the answer clean', async () => {
