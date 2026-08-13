@@ -2417,6 +2417,8 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
 
     const activeRunId = messageRun?.id ?? null
     const runController = activeRunId ? new AbortController() : null
+    const orchestrationSignal =
+      runController && runLease ? AbortSignal.any([runController.signal, runLease.signal]) : (runController?.signal ?? runLease?.signal)
     if (activeRunId && runController) activeMessageRuns.set(activeRunId, runController)
 
     // Poll the durable row only at bounded orchestration checkpoints. This is the cross-instance
@@ -2467,9 +2469,13 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         // Forward each reasoning delta as a reasoning frame so the console shows the model's
         // thinking live while it works, rather than a blank wait before the answer begins.
         onReasoningDelta: wantsStream ? (chunk: string) => writeSseEvent(reply, 'reasoning', { text: chunk }) : undefined,
-        signal: runController?.signal,
+        signal: orchestrationSignal,
         isCancelled: activeRunId ? isRunCancelled : undefined,
       })
+
+      // Do not persist a result produced concurrently with lease loss. Provider transports observe
+      // the same signal, while this checkpoint closes the small race after the final model call.
+      if (runLease?.signal.aborted) throw new OrchestrationCancelledError()
 
       // A cancel that landed while the turn deliberated wins: the run already settled as cancelled,
       // so nothing the turn produced is persisted and the caller sees the run as it settled. The
@@ -2794,6 +2800,19 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         { state: 'completed', reason: 'answer_recorded' },
       )
     } catch (err) {
+      // Losing the distributed slot is an infrastructure failure, not a user cancellation. Fail
+      // closed so this run cannot overlap work admitted after its last confirmed lease expires.
+      if (runLease?.signal.aborted) {
+        return finish(
+          503,
+          { error: 'operator_concurrency_lease_lost' },
+          {
+            state: 'failed',
+            reason: 'operator_concurrency_lease_lost',
+            errorCode: 'operator_concurrency_lease_lost',
+          },
+        )
+      }
       // Explicit cancellation is not an AI failure. The cancel transaction settles the durable
       // row first, then aborts the same-instance transport; a persisted checkpoint on another
       // instance raises the same orchestration stop. Reload that authoritative row and return it

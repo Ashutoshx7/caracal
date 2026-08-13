@@ -41,6 +41,7 @@ return removed
 `
 
 export interface OperatorRunLease {
+  readonly signal: AbortSignal
   release(): Promise<void>
 }
 
@@ -87,25 +88,48 @@ export function createOperatorRunLimiter(
 
       let released = false
       let renewing = false
+      const controller = new AbortController()
+      let timer: ReturnType<typeof setInterval> | null = null
+      const loseLease = (reason: unknown) => {
+        if (released || controller.signal.aborted) return
+        if (timer) {
+          clearInterval(timer)
+          timer = null
+        }
+        controller.abort(reason)
+      }
       const renew = async () => {
-        if (released || renewing) return
+        if (released || renewing || controller.signal.aborted) return
         renewing = true
         try {
-          await redis.eval(RENEW_SCRIPT, 1, key, owner, leaseTtlMs)
+          const renewed = await redis.eval(RENEW_SCRIPT, 1, key, owner, leaseTtlMs)
+          if (released) return
+          if (Number(renewed) !== 1) {
+            const error = new Error('Operator run lease ownership was lost')
+            loseLease(error)
+            options.onRenewError?.(error)
+          }
         } catch (error) {
+          // A renewal error leaves ownership unconfirmed. Stop model work immediately rather
+          // than allowing it to outlive the last lease expiry and overlap a newly admitted run.
+          loseLease(error)
           options.onRenewError?.(error)
         } finally {
           renewing = false
         }
       }
-      const timer = setInterval(() => void renew(), renewIntervalMs)
+      timer = setInterval(() => void renew(), renewIntervalMs)
       timer.unref()
 
       return {
+        signal: controller.signal,
         async release(): Promise<void> {
           if (released) return
           released = true
-          clearInterval(timer)
+          if (timer) {
+            clearInterval(timer)
+            timer = null
+          }
           await redis.eval(RELEASE_SCRIPT, 1, key, owner)
         },
       }

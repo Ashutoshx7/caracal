@@ -2402,7 +2402,8 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
 
   it('releases the run slot when message setup exits without calling a provider', async () => {
     const release = vi.fn().mockResolvedValue(undefined)
-    const acquire = vi.fn().mockResolvedValue({ release })
+    const signal = new AbortController().signal
+    const acquire = vi.fn().mockResolvedValue({ signal, release })
     const runLimiter: OperatorRunLimiter = { maxConcurrentRuns: 2, acquire }
     const { app, clientQuery } = buildApp(true, {
       aiProviders: [provider],
@@ -2421,6 +2422,62 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     expect(res.statusCode).toBe(404)
     expect(JSON.parse(res.body)).toEqual({ error: 'conversation_not_found' })
     expect(release).toHaveBeenCalledTimes(1)
+  })
+
+  it('aborts model work and fails closed when the run lease is lost', async () => {
+    const leaseController = new AbortController()
+    const release = vi.fn().mockResolvedValue(undefined)
+    const acquire = vi.fn().mockResolvedValue({ signal: leaseController.signal, release })
+    const runLimiter: OperatorRunLimiter = { maxConcurrentRuns: 2, acquire }
+    let providerStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      providerStarted = resolve
+    })
+    let providerAborted = false
+    const fetchImpl = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          providerStarted()
+          init?.signal?.addEventListener(
+            'abort',
+            () => {
+              providerAborted = true
+              reject(new DOMException('lease lost', 'AbortError'))
+            },
+            { once: true },
+          )
+        }),
+    ) as unknown as typeof fetch
+    const { app, clientQuery, db } = buildApp(true, { aiProviders: [provider], fetchImpl, runLimiter })
+    clientQuery.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM operator_conversations')) {
+        return { rows: [{ status: 'active', mode: 'agent', autopilot: false, next_seq: 1 }] }
+      }
+      if (sql.startsWith('UPDATE operator_conversations')) return { rowCount: 1 }
+      if (sql.startsWith('INSERT INTO operator_turns')) return { rows: [{ id: 'turn-user', seq: 1, kind: 'message' }] }
+      return { rows: [] }
+    })
+    db.query.mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM zones')) return { rows: [{ name: 'Pied Piper Production', slug: 'z1', operator_governed: false }] }
+      return { rows: [] }
+    })
+    await app.ready()
+
+    const response = app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'why was this denied' },
+    })
+    await started
+    leaseController.abort(new Error('lease renewal failed'))
+    const result = await response
+
+    expect(providerAborted).toBe(true)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(result.statusCode).toBe(503)
+    expect(result.json()).toEqual({ error: 'operator_concurrency_lease_lost' })
+    expect(release).toHaveBeenCalledTimes(1)
+    expect(clientQuery.mock.calls.filter((call) => String(call[0]).startsWith('INSERT INTO operator_turns'))).toHaveLength(1)
   })
 
   it('fails closed before recording a message when the concurrency store is unavailable', async () => {

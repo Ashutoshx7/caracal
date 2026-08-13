@@ -23,6 +23,7 @@ describe('Operator run limiter', () => {
     const lease = await limiter.acquire('zone:one', 'actor@example.com')
 
     expect(lease).not.toBeNull()
+    expect(lease!.signal.aborted).toBe(false)
     expect(evalFn).toHaveBeenCalledTimes(1)
     const acquire = evalFn.mock.calls[0]
     expect(String(acquire[0])).toContain("redis.call('ZREMRANGEBYSCORE'")
@@ -61,6 +62,52 @@ describe('Operator run limiter', () => {
     await lease!.release()
     await vi.advanceTimersByTimeAsync(100)
     expect(evalFn).toHaveBeenCalledTimes(3)
+  })
+
+  it('aborts the lease when Redis reports that renewal ownership was lost', async () => {
+    vi.useFakeTimers()
+    const onRenewError = vi.fn()
+    const evalFn = vi.fn().mockResolvedValueOnce(1).mockResolvedValueOnce(0).mockResolvedValue(1)
+    const limiter = createOperatorRunLimiter(redisWithEval(evalFn), 1, {
+      leaseTtlMs: 100,
+      renewIntervalMs: 25,
+      onRenewError,
+    })
+    const lease = await limiter.acquire('z1', 'actor-1')
+
+    await vi.advanceTimersByTimeAsync(25)
+
+    expect(lease!.signal.aborted).toBe(true)
+    expect(lease!.signal.reason).toEqual(expect.objectContaining({ message: 'Operator run lease ownership was lost' }))
+    expect(onRenewError).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(evalFn).toHaveBeenCalledTimes(2)
+
+    await lease!.release()
+    expect(evalFn).toHaveBeenCalledTimes(3)
+  })
+
+  it('aborts the lease when renewal cannot confirm ownership', async () => {
+    vi.useFakeTimers()
+    const renewalError = new Error('redis unavailable')
+    const onRenewError = vi.fn()
+    const evalFn = vi.fn().mockResolvedValueOnce(1).mockRejectedValueOnce(renewalError).mockResolvedValue(1)
+    const limiter = createOperatorRunLimiter(redisWithEval(evalFn), 1, {
+      leaseTtlMs: 100,
+      renewIntervalMs: 25,
+      onRenewError,
+    })
+    const lease = await limiter.acquire('z1', 'actor-1')
+
+    await vi.advanceTimersByTimeAsync(25)
+
+    expect(lease!.signal.aborted).toBe(true)
+    expect(lease!.signal.reason).toBe(renewalError)
+    expect(onRenewError).toHaveBeenCalledWith(renewalError)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(evalFn).toHaveBeenCalledTimes(2)
+
+    await lease!.release()
   })
 
   it('isolates different users and zones while sharing the same composite scope', async () => {
