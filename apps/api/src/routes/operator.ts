@@ -81,6 +81,7 @@ import {
 } from '../operator-ai-manager.js'
 import { PROVIDER_SLUG_PATTERN } from '../operator-ai-store.js'
 import { assertMessageRunTransition, isTerminalMessageRunState, type MessageRunState } from '../operator-message-state.js'
+import type { OperatorRunLimiter } from '../operator-run-limiter.js'
 
 const TITLE_MAX_LENGTH = 200
 const CONTENT_MAX_BYTES = 64_000
@@ -939,6 +940,10 @@ export interface OperatorRoutesOptions {
   // Passive health storage receives only bounded outcome classes from real provider attempts.
   // It is optional for isolated route tests and embedders; production supplies the Redis store.
   aiHealth?: OperatorAiHealthStore
+  // Cross-replica per-zone/per-user guard for long-lived model-backed message runs. Optional
+  // only so isolated route tests and embedders that do not execute AI turns remain lightweight;
+  // the production application always supplies the Redis-backed limiter.
+  runLimiter?: OperatorRunLimiter
 }
 
 export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (fastify, opts) => {
@@ -2297,6 +2302,39 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       return reply.code(400).send({ error: 'invalid_provider' })
     }
 
+    const runLease = opts.runLimiter ? await opts.runLimiter.acquire(params.zoneId, req.actor.id) : null
+    if (opts.runLimiter && !runLease) {
+      // A replay of an already accepted client message does not start model work and therefore
+      // does not need a slot. Preserve the durable idempotency response even while this actor's
+      // actual runs occupy every slot.
+      if (parsed.data.client_message_id) {
+        const { rows } = await fastify.db.query<MessageRunRow>(
+          `SELECT ${MESSAGE_RUN_SELECT} FROM operator_message_runs
+           WHERE zone_id = $1 AND conversation_id = $2 AND client_message_id = $3
+           LIMIT 1`,
+          [params.zoneId, params.id, parsed.data.client_message_id],
+        )
+        if (rows[0]) {
+          return reply.code(202).send({ intent: 'message_run', ok: true, duplicate: true, message_run: publicMessageRun(rows[0]) })
+        }
+      }
+      return reply.code(429).send({
+        error: 'operator_concurrency_limit_exceeded',
+        max_concurrent_runs: opts.runLimiter.maxConcurrentRuns,
+      })
+    }
+
+    let runLeaseReleased = false
+    const releaseRunLease = async () => {
+      if (!runLease || runLeaseReleased) return
+      runLeaseReleased = true
+      await runLease.release().catch((err) => req.log.error({ err }, 'Operator run lease release failed'))
+    }
+    // Normal JSON setup exits happen before the orchestration try/finally below. The response
+    // lifecycle releases those leases; the orchestration finally releases long-running and
+    // hijacked SSE responses without treating a client disconnect as cancellation.
+    reply.raw.once('finish', () => void releaseRunLease())
+
     let messageRun: MessageRunRow | null = null
     let userTurn: AppendOutcome
     if (parsed.data.client_message_id) {
@@ -2457,6 +2495,8 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
 
     const activeRunId = messageRun?.id ?? null
     const runController = activeRunId ? new AbortController() : null
+    const orchestrationSignal =
+      runController && runLease ? AbortSignal.any([runController.signal, runLease.signal]) : (runController?.signal ?? runLease?.signal)
     if (activeRunId && runController) activeMessageRuns.set(activeRunId, runController)
 
     // Poll the durable row only at bounded orchestration checkpoints. This is the cross-instance
@@ -2507,9 +2547,13 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         // Forward each reasoning delta as a reasoning frame so the console shows the model's
         // thinking live while it works, rather than a blank wait before the answer begins.
         onReasoningDelta: wantsStream ? (chunk: string) => writeSseEvent(reply, 'reasoning', { text: chunk }) : undefined,
-        signal: runController?.signal,
+        signal: orchestrationSignal,
         isCancelled: activeRunId ? isRunCancelled : undefined,
       })
+
+      // Do not persist a result produced concurrently with lease loss. Provider transports observe
+      // the same signal, while this checkpoint closes the small race after the final model call.
+      if (runLease?.signal.aborted) throw new OrchestrationCancelledError()
 
       // A cancel that landed while the turn deliberated wins: the run already settled as cancelled,
       // so nothing the turn produced is persisted and the caller sees the run as it settled. The
@@ -2827,6 +2871,19 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         { state: 'completed', reason: 'answer_recorded' },
       )
     } catch (err) {
+      // Losing the distributed slot is an infrastructure failure, not a user cancellation. Fail
+      // closed so this run cannot overlap work admitted after its last confirmed lease expires.
+      if (runLease?.signal.aborted) {
+        return finish(
+          503,
+          { error: 'operator_concurrency_lease_lost' },
+          {
+            state: 'failed',
+            reason: 'operator_concurrency_lease_lost',
+            errorCode: 'operator_concurrency_lease_lost',
+          },
+        )
+      }
       // Explicit cancellation is not an AI failure. The cancel transaction settles the durable
       // row first, then aborts the same-instance transport; a persisted checkpoint on another
       // instance raises the same orchestration stop. Reload that authoritative row and return it
@@ -2909,6 +2966,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
       if (activeRunId && runController && activeMessageRuns.get(activeRunId) === runController) {
         activeMessageRuns.delete(activeRunId)
       }
+      await releaseRunLease()
     }
   })
 

@@ -340,6 +340,12 @@ export const ENV_SCHEMA = {
     default: 'true',
     exposed: true,
   },
+  API_OPERATOR_MAX_CONCURRENT_RUNS_PER_USER: {
+    kind: 'int',
+    description: 'Maximum concurrent model-backed Operator runs for one user within one zone.',
+    default: '2',
+    exposed: true,
+  },
 } as const satisfies Record<string, EnvSpec>
 
 export type EnvKey = keyof typeof ENV_SCHEMA

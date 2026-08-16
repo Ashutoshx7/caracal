@@ -24,6 +24,7 @@ const SAVED_KEYS = [
   'TRUST_PROXY',
   'API_ENABLE_DOCS',
   'API_OPERATOR_ENABLED',
+  'API_OPERATOR_MAX_CONCURRENT_RUNS_PER_USER',
   'API_OPERATOR_ALLOWED_CAPABILITIES',
   'API_OPERATOR_SYSTEM_ZONES',
   'API_OPERATOR_AI_PROVIDERS',
@@ -216,6 +217,16 @@ describe('api config trustProxy', () => {
     process.env.API_OPERATOR_ENABLED = 'false'
     expect(loadConfig().operatorEnabled).toBe(false)
     delete process.env.API_OPERATOR_ENABLED
+  })
+
+  test('bounds concurrent Operator runs per user and zone with a configurable positive limit', async () => {
+    const { loadConfig } = (await import(CONFIG_PATH)) as typeof import('../../../../apps/api/src/config')
+    expect(loadConfig().operatorMaxConcurrentRunsPerUser).toBe(2)
+    process.env.API_OPERATOR_MAX_CONCURRENT_RUNS_PER_USER = '5'
+    expect(loadConfig().operatorMaxConcurrentRunsPerUser).toBe(5)
+    process.env.API_OPERATOR_MAX_CONCURRENT_RUNS_PER_USER = '0'
+    expect(() => loadConfig()).toThrow()
+    delete process.env.API_OPERATOR_MAX_CONCURRENT_RUNS_PER_USER
   })
 
   test('published deployments require every internal service endpoint explicitly', async () => {

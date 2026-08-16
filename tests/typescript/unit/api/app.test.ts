@@ -35,6 +35,7 @@ function makeCfg(overrides: Partial<Config> = {}): Config {
     operatorAllowedCapabilities: null,
     operatorSystemZones: [],
     operatorAiProviders: [],
+    operatorMaxConcurrentRunsPerUser: 2,
     stsUrl: 'http://localhost:8080',
     gatewayStsHmacKey: null,
     metricsBearer: null,

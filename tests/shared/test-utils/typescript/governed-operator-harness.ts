@@ -207,6 +207,7 @@ function makeConfig(
         contextWindow: 8_192,
       },
     ],
+    operatorMaxConcurrentRunsPerUser: 2,
     operatorAutopilotEnabled: false,
     operatorAutopilotWriteBudget: 0,
     operatorAiMaxOutputTokens: 4_096,
