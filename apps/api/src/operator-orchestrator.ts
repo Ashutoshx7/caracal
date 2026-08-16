@@ -76,10 +76,9 @@ export interface SkillRegistry {
 // plan from a composing tier carries the guardian's review state: reviewed with its advisory, or
 // review_failed with the precise reason the review did not complete, so an unreviewed plan is
 // always distinguishable from a clean one. The advisory and its guidance - the guardian's
-// concrete recommendation when it judged the plan risky or misaligned - are informational only:
-// they are surfaced to whoever decides, but they never gate the plan and never enter the
-// approval decision. Approval is decided solely by the human gate or, when the operator engaged
-// it, the deployment's configured autopilot policy.
+// concrete recommendation when it judged the plan risky or misaligned - are informational only.
+// A human may decide either review state; autopilot requires a completed review but never treats
+// the model's advisory verdict as authority.
 export type PlanReview = { status: 'reviewed'; advisory: SecurityAdvisory } | { status: 'review_failed'; reason: string }
 
 export type OrchestrationOutcome =

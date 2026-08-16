@@ -38,13 +38,15 @@ export function autopilotAvailable(policy: AutopilotPolicy): boolean {
 
 // The evidence the evaluator judges: the conversation's engage flag, whether the plan's own
 // deterministic preview says it can apply, whether every step that collects credentials through
-// the console's secure prompt has them stored, the plan's steps, and the write ledger - how many
-// mutating steps this plan carries and how many autopilot already auto-approved earlier in the
-// conversation. The plan was proposed by the model but the decision is Caracal's alone.
+// the console's secure prompt has them stored, whether the guardian completed its review, the
+// plan's steps, and the write ledger - how many mutating steps this plan carries and how many
+// autopilot already auto-approved earlier in the conversation. The plan was proposed by the model
+// but the decision is Caracal's alone.
 export interface AutopilotEvaluation {
   engaged: boolean
   applicable: boolean
   credentialsSatisfied: boolean
+  reviewCompleted: boolean
   steps: { id: string; capability: string }[]
   mutatingSteps: number
   priorApprovedWrites: number
@@ -55,10 +57,11 @@ export interface AutopilotEvaluation {
 export type AutopilotDecision = { autoApprove: true } | { autoApprove: false; reason: string }
 
 // Decides whether a plan's human approval may be auto-satisfied. With the master switch on and the
-// conversation engaged, a non-empty plan whose preview says it can apply is auto-approved: an
-// engaged conversation has opted into acting without a human in the loop. A plan the deterministic
-// preview already marks unapplicable - a blocked step whose target cannot exist when the plan runs -
-// is never auto-approved: it would only fail on apply, so it stops for a human who can see why.
+// conversation engaged, a non-empty plan whose preview says it can apply and whose independent
+// review completed is eligible for auto-approval. The advisory verdict is not an input. A plan the
+// deterministic preview already marks unapplicable - a blocked step whose target cannot exist when
+// the plan runs - is never auto-approved: it would only fail on apply, so it stops for a human who
+// can see why.
 // When the deployment bounds the conversation's write budget, a plan whose mutating steps would
 // push the cumulative auto-approved writes past the cap stops for explicit human approval instead.
 // Authority is never widened - the governed execute path still enforces the capability allowlist,
@@ -69,6 +72,10 @@ export function mayAutoApprove(evaluation: AutopilotEvaluation, policy: Autopilo
   if (!evaluation.engaged) return { autoApprove: false, reason: 'autopilot_not_engaged' }
   if (evaluation.steps.length === 0) return { autoApprove: false, reason: 'empty_plan' }
   if (!evaluation.applicable) return { autoApprove: false, reason: 'plan_not_applicable' }
+  // The advisory's alignment and findings never grant or deny authority. Autopilot only requires
+  // proof that the independent review completed, so a failed or unusable review can withhold
+  // automatic approval while a model verdict can never create permission.
+  if (!evaluation.reviewCompleted) return { autoApprove: false, reason: 'review_required' }
   // A step that collects credentials through the console's secure prompt cannot apply until the
   // operator pastes them, so autopilot waits; once the vault holds them the paste flow re-evaluates
   // and auto-approves without a human step.

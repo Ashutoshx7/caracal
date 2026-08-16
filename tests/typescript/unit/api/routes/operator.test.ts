@@ -1017,11 +1017,13 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/plan/decision', () =
 describe('plan credential vault endpoints', () => {
   const credentialPlanContent = {
     summary: 'Connect Hooli OIDC',
+    review: { status: 'reviewed' as const },
     steps: [
-      { id: 's1', capability: 'connectProvider', args: { name: 'Hooli OIDC', kind: 'oauth2_client_credentials' } },
+      { id: 's1', capability: 'connectProvider', mutating: true, args: { name: 'Hooli OIDC', kind: 'oauth2_client_credentials' } },
       {
         id: 's2',
         capability: 'defineResource',
+        mutating: true,
         args: {
           name: 'PiperNet',
           scopes: ['mesh.read'],
@@ -1109,8 +1111,9 @@ describe('plan credential vault endpoints', () => {
       .mockResolvedValueOnce(undefined) // COMMIT
       // approval completion transaction
       .mockResolvedValueOnce(undefined) // BEGIN
-      .mockResolvedValueOnce({ rows: [{ status: 'active', next_seq: 3 }] }) // conv FOR UPDATE
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: true, next_seq: 3 }] }) // conv FOR UPDATE
       .mockResolvedValueOnce({ rows: [] }) // still undecided
+      .mockResolvedValueOnce({ rows: [{ writes: 0 }] }) // prior autopilot-approved writes
       .mockResolvedValueOnce({ rowCount: 1 }) // UPDATE next_seq
       .mockResolvedValueOnce({ rows: [approvalRow] }) // INSERT approval turn
       .mockResolvedValueOnce(undefined) // COMMIT
@@ -1124,6 +1127,104 @@ describe('plan credential vault endpoints', () => {
     const body = JSON.parse(res.body)
     expect(body).toMatchObject({ ok: true, all_satisfied: true, auto_approved: true })
     expect(body.approval_turn).toMatchObject({ kind: 'approval', content: { plan_seq: 2, autopilot: true } })
+    const approvalInsert = clientQuery.mock.calls.find(
+      (call) => String(call[0]).includes('INSERT INTO operator_turns') && String(call[1]?.[5]) === 'approval',
+    )
+    expect(approvalInsert).toBeDefined()
+    expect(JSON.parse(String(approvalInsert![1][6]))).toEqual({
+      plan_seq: 2,
+      autopilot: true,
+      writes: 2,
+      writes_total: 2,
+      write_budget: null,
+    })
+  })
+
+  it('does not complete deferred autopilot approval for an unreviewed plan', async () => {
+    const content = { ...credentialPlanContent, review: { status: 'review_failed' as const, reason: 'provider unavailable' } }
+    const { app, db, clientQuery } = buildApp(true, { autopilotPolicy: buildAutopilotPolicy({ enabled: true }), ...governedControl })
+    db.query.mockImplementation(async (sql: string) => (String(sql).includes('WHERE id = $1') ? { rows: [{ one: 1 }] } : { rows: [] }))
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: true }] })
+      .mockResolvedValueOnce({ rows: [{ content }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ step_id: 's1' }] })
+      .mockResolvedValueOnce(undefined)
+    await app.ready()
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/v1/zones/z1/operator-conversations/conv-1/plans/2/secrets',
+      payload: { step_id: 's1', values: { client_id: 'anton', client_secret: 'cs_live_value' } },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body)).toMatchObject({ ok: true, all_satisfied: true, auto_approved: false, approval_turn: null })
+    expect(
+      clientQuery.mock.calls.some((call) => String(call[0]).includes('INSERT INTO operator_turns') && String(call[1]?.[5]) === 'approval'),
+    ).toBe(false)
+  })
+
+  it('does not complete deferred autopilot approval for a legacy plan without review metadata', async () => {
+    const content = { summary: credentialPlanContent.summary, steps: credentialPlanContent.steps }
+    const { app, db, clientQuery } = buildApp(true, { autopilotPolicy: buildAutopilotPolicy({ enabled: true }), ...governedControl })
+    db.query.mockImplementation(async (sql: string) => (String(sql).includes('WHERE id = $1') ? { rows: [{ one: 1 }] } : { rows: [] }))
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: true }] })
+      .mockResolvedValueOnce({ rows: [{ content }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ step_id: 's1' }] })
+      .mockResolvedValueOnce(undefined)
+    await app.ready()
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/v1/zones/z1/operator-conversations/conv-1/plans/2/secrets',
+      payload: { step_id: 's1', values: { client_id: 'anton', client_secret: 'cs_live_value' } },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body)).toMatchObject({ ok: true, all_satisfied: true, auto_approved: false, approval_turn: null })
+    expect(
+      clientQuery.mock.calls.some((call) => String(call[0]).includes('INSERT INTO operator_turns') && String(call[1]?.[5]) === 'approval'),
+    ).toBe(false)
+  })
+
+  it('does not race a human decision while completing deferred autopilot approval', async () => {
+    const { app, db, clientQuery } = buildApp(true, { autopilotPolicy: buildAutopilotPolicy({ enabled: true }), ...governedControl })
+    db.query.mockImplementation(async (sql: string) => (String(sql).includes('WHERE id = $1') ? { rows: [{ one: 1 }] } : { rows: [] }))
+    clientQuery
+      .mockResolvedValueOnce(undefined) // BEGIN credential write
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: true }] })
+      .mockResolvedValueOnce({ rows: [{ content: credentialPlanContent }] })
+      .mockResolvedValueOnce({ rows: [] }) // undecided before the credential write
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ step_id: 's1' }] })
+      .mockResolvedValueOnce(undefined) // COMMIT credential write
+      .mockResolvedValueOnce(undefined) // BEGIN automatic approval
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: true, next_seq: 3 }] })
+      .mockResolvedValueOnce({ rows: [{ one: 1 }] }) // a human decided before this lock was acquired
+      .mockResolvedValueOnce(undefined) // COMMIT without another decision
+    await app.ready()
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/v1/zones/z1/operator-conversations/conv-1/plans/2/secrets',
+      payload: { step_id: 's1', values: { client_id: 'anton', client_secret: 'cs_live_value' } },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(JSON.parse(res.body)).toMatchObject({ ok: true, all_satisfied: true, auto_approved: false, approval_turn: null })
+    expect(
+      clientQuery.mock.calls.some((call) => String(call[0]).includes('INSERT INTO operator_turns') && String(call[1]?.[5]) === 'approval'),
+    ).toBe(false)
   })
 
   it('refuses values whose fields do not match the step requirement exactly', async () => {
@@ -2250,6 +2351,7 @@ describe('operator AI gateway routes', () => {
 
 describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
   const provider = { id: 'primary', baseUrl: 'https://api.example.com/v1', model: 'gpt-x', apiKey: 'sk', timeoutMs: 1000, contextWindow: 0 }
+  const guardianReview = JSON.stringify({ summary: 'The plan is narrow and appropriate.', alignment: 'aligned', findings: [] })
 
   // A fetch that returns the given assistant message contents in sequence, so the
   // agents' model calls are scripted without a live backend.
@@ -2936,12 +3038,12 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
 
   it('auto-approves a low-risk plan in agent mode when autopilot is engaged and the master switch is on', async () => {
     // With the master switch on, the conversation engaged, and the zone able to apply - governed
-    // identity plus the zone grant - Caracal auto-satisfies the approval for any non-empty plan.
+    // identity plus the zone grant - Caracal auto-satisfies approval after the guardian review.
     const plan = {
       summary: 'Register the billing app',
       steps: [{ id: 's1', capability: 'registerApplication', args: { name: 'Billing' } }],
     }
-    const fetchImpl = governedFetchReturning('{"tier":"change"}', JSON.stringify(plan))
+    const fetchImpl = governedFetchReturning('{"tier":"change"}', JSON.stringify(plan), guardianReview)
     const { app, clientQuery, db } = buildApp(true, {
       aiProviders: [provider],
       fetchImpl,
@@ -2974,6 +3076,8 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     clientQuery
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: true, next_seq: 3 }] })
+      .mockResolvedValueOnce({ rows: [] }) // plan still undecided
+      .mockResolvedValueOnce({ rows: [{ writes: 0 }] }) // prior autopilot-approved writes
       .mockResolvedValueOnce({ rowCount: 1 })
       .mockResolvedValueOnce({ rows: [{ id: 'turn-3', seq: 3, kind: 'approval' }] })
       .mockResolvedValueOnce(undefined)
@@ -2993,7 +3097,7 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     )
     expect(approvalInsert).toBeDefined()
     const content = JSON.parse(String(approvalInsert![1][6]))
-    expect(content).toMatchObject({ plan_seq: 2, autopilot: true })
+    expect(content).toEqual({ plan_seq: 2, autopilot: true, writes: 1, writes_total: 1, write_budget: null })
     // The deliberation trail is recorded even on the non-streaming path, so the console can replay
     // how the plan was reasoned regardless of how the result was delivered.
     const planInsert = clientQuery.mock.calls.find(
@@ -3003,6 +3107,110 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     expect(JSON.parse(String(planInsert![1][6])).deliberation).toContain('triaging')
   })
 
+  it('does not race a human decision while auto-approving a newly composed plan', async () => {
+    const plan = {
+      summary: 'Register the billing app',
+      steps: [{ id: 's1', capability: 'registerApplication', args: { name: 'Billing' } }],
+    }
+    const fetchImpl = governedFetchReturning('{"tier":"change"}', JSON.stringify(plan), guardianReview)
+    const { app, clientQuery, db } = buildApp(true, {
+      aiProviders: [provider],
+      fetchImpl,
+      autopilotPolicy: buildAutopilotPolicy({ enabled: true }),
+      ...governedControl,
+    })
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: true, next_seq: 1 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-1', seq: 1, kind: 'message' }] })
+      .mockResolvedValueOnce(undefined)
+    db.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ name: 'Pied Piper Production', slug: 'z1' }] })
+      .mockResolvedValueOnce({ rows: [] })
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: true, next_seq: 2 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-2', seq: 2, kind: 'plan' }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined) // BEGIN automatic approval
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: true, next_seq: 3 }] })
+      .mockResolvedValueOnce({ rows: [{ one: 1 }] }) // a human decided before this lock was acquired
+      .mockResolvedValueOnce(undefined) // COMMIT without another decision
+    await app.ready()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'register the billing app' },
+    })
+
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body)).toMatchObject({ intent: 'plan', auto_approved: false, approval_turn: null })
+    expect(
+      clientQuery.mock.calls.some((call) => String(call[0]).includes('INSERT INTO operator_turns') && String(call[1]?.[5]) === 'approval'),
+    ).toBe(false)
+  })
+
+  it('leaves the plan for human approval when the guardian review does not complete', async () => {
+    const plan = {
+      summary: 'Register the billing app',
+      steps: [{ id: 's1', capability: 'registerApplication', args: { name: 'Billing' } }],
+    }
+    const fetchImpl = governedFetchReturning('{"tier":"change"}', JSON.stringify(plan), 'not a guardian review')
+    const { app, clientQuery, db } = buildApp(true, {
+      aiProviders: [provider],
+      fetchImpl,
+      autopilotPolicy: buildAutopilotPolicy({ enabled: true }),
+      ...governedControl,
+    })
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: true, next_seq: 1 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-1', seq: 1, kind: 'message' }] })
+      .mockResolvedValueOnce(undefined)
+    db.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ name: 'Pied Piper Production', slug: 'z1' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ writes: 4 }] })
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: true, next_seq: 2 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'turn-2', seq: 2, kind: 'plan' }] })
+      .mockResolvedValueOnce(undefined)
+    await app.ready()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/message',
+      payload: { message: 'register the billing app' },
+    })
+
+    expect(res.statusCode).toBe(201)
+    expect(JSON.parse(res.body)).toMatchObject({
+      intent: 'plan',
+      auto_approved: false,
+      approval_turn: null,
+      review: { status: 'review_failed' },
+    })
+    expect(
+      clientQuery.mock.calls.some((call) => String(call[0]).includes('INSERT INTO operator_turns') && String(call[1]?.[5]) === 'approval'),
+    ).toBe(false)
+  })
+
   it('records the write ledger on an autopilot approval when a write budget is configured', async () => {
     // With a conversation write budget in force, the approval turn carries the accounting the
     // decision was made on: this plan's writes, the running total, and the configured budget.
@@ -3010,7 +3218,7 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
       summary: 'Register the billing app',
       steps: [{ id: 's1', capability: 'registerApplication', args: { name: 'Billing' } }],
     }
-    const fetchImpl = governedFetchReturning('{"tier":"change"}', JSON.stringify(plan))
+    const fetchImpl = governedFetchReturning('{"tier":"change"}', JSON.stringify(plan), guardianReview)
     const { app, clientQuery, db } = buildApp(true, {
       aiProviders: [provider],
       fetchImpl,
@@ -3031,7 +3239,6 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
       .mockResolvedValueOnce({ rows: [] }) // conversation memory recall
       .mockResolvedValueOnce({ rows: [{ name: 'Pied Piper Production', slug: 'z1' }] }) // operating zone
       .mockResolvedValueOnce({ rows: [] }) // previewPlan: application name free
-      .mockResolvedValueOnce({ rows: [{ writes: 2 }] }) // prior autopilot-approved writes
     // plan turn persist
     clientQuery
       .mockResolvedValueOnce(undefined)
@@ -3043,6 +3250,8 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     clientQuery
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: true, next_seq: 3 }] })
+      .mockResolvedValueOnce({ rows: [] }) // plan still undecided
+      .mockResolvedValueOnce({ rows: [{ writes: 2 }] }) // prior autopilot-approved writes
       .mockResolvedValueOnce({ rowCount: 1 })
       .mockResolvedValueOnce({ rows: [{ id: 'turn-3', seq: 3, kind: 'approval' }] })
       .mockResolvedValueOnce(undefined)
@@ -3065,6 +3274,15 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
       writes_total: 3,
       write_budget: 5,
     })
+    const accountingIndex = clientQuery.mock.calls.findIndex((call) => String(call[0]).includes('COALESCE(SUM'))
+    const lockIndex = clientQuery.mock.calls
+      .map((call, index) => (String(call[0]).includes('FOR UPDATE') && index < accountingIndex ? index : -1))
+      .filter((index) => index >= 0)
+      .at(-1)!
+    const approvalIndex = clientQuery.mock.calls.indexOf(approvalInsert!)
+    expect(lockIndex).toBeGreaterThanOrEqual(0)
+    expect(accountingIndex).toBeGreaterThan(lockIndex)
+    expect(approvalIndex).toBeGreaterThan(accountingIndex)
   })
 
   it('pauses autopilot and records a note when the plan would spend past the write budget', async () => {
@@ -3074,7 +3292,7 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
       summary: 'Register the billing app',
       steps: [{ id: 's1', capability: 'registerApplication', args: { name: 'Billing' } }],
     }
-    const fetchImpl = governedFetchReturning('{"tier":"change"}', JSON.stringify(plan))
+    const fetchImpl = governedFetchReturning('{"tier":"change"}', JSON.stringify(plan), guardianReview)
     const { app, clientQuery, db } = buildApp(true, {
       aiProviders: [provider],
       fetchImpl,
@@ -3095,7 +3313,6 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
       .mockResolvedValueOnce({ rows: [] }) // conversation memory recall
       .mockResolvedValueOnce({ rows: [{ name: 'Pied Piper Production', slug: 'z1' }] }) // operating zone
       .mockResolvedValueOnce({ rows: [] }) // previewPlan: application name free
-      .mockResolvedValueOnce({ rows: [{ writes: 2 }] }) // prior autopilot-approved writes exhaust the budget
     // plan turn persist
     clientQuery
       .mockResolvedValueOnce(undefined)
@@ -3103,6 +3320,13 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
       .mockResolvedValueOnce({ rowCount: 1 })
       .mockResolvedValueOnce({ rows: [{ id: 'turn-2', seq: 2, kind: 'plan' }] })
       .mockResolvedValueOnce(undefined)
+    // atomic autopilot decision
+    clientQuery
+      .mockResolvedValueOnce(undefined) // BEGIN autopilot decision
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: true, next_seq: 3 }] })
+      .mockResolvedValueOnce({ rows: [] }) // plan still undecided
+      .mockResolvedValueOnce({ rows: [{ writes: 2 }] }) // prior writes exhaust the budget
+      .mockResolvedValueOnce(undefined) // COMMIT autopilot decision
     // budget pause note persist
     clientQuery
       .mockResolvedValueOnce(undefined)
@@ -3128,7 +3352,7 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
     expect(noteInsert).toBeDefined()
     const note = JSON.parse(String(noteInsert![1][6]))
     expect(note.text).toContain('write budget of 2')
-    expect(note.autopilot).toEqual({ reason: 'write_budget_exceeded', writes: 1, writes_total: 2, write_budget: 2 })
+    expect(note.autopilot).toEqual({ reason: 'write_budget_exceeded', writes: 1, writes_prior: 2, write_budget: 2 })
   })
 
   it('defers autopilot for a credential-bearing provider plan until the secure prompt satisfies it', async () => {
@@ -3139,7 +3363,7 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
       summary: 'Connect GitHub',
       steps: [{ id: 's1', capability: 'connectProvider', args: { name: 'GitHub', kind: 'api_key' } }],
     }
-    const fetchImpl = governedFetchReturning('{"tier":"change"}', JSON.stringify(plan))
+    const fetchImpl = governedFetchReturning('{"tier":"change"}', JSON.stringify(plan), guardianReview)
     const { app, clientQuery, db } = buildApp(true, {
       aiProviders: [provider],
       fetchImpl,
@@ -3193,7 +3417,7 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
       summary: 'Register the billing app',
       steps: [{ id: 's1', capability: 'registerApplication', args: { name: 'Billing' } }],
     }
-    const fetchImpl = governedFetchReturning('{"tier":"change"}', JSON.stringify(plan))
+    const fetchImpl = governedFetchReturning('{"tier":"change"}', JSON.stringify(plan), guardianReview)
     const { app, clientQuery, db } = buildApp(true, {
       aiProviders: [provider],
       fetchImpl,
@@ -3240,7 +3464,7 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/message', () => {
       summary: 'Register the billing app',
       steps: [{ id: 's1', capability: 'registerApplication', args: { name: 'Billing' } }],
     }
-    const fetchImpl = governedFetchReturning('{"tier":"change"}', JSON.stringify(plan))
+    const fetchImpl = governedFetchReturning('{"tier":"change"}', JSON.stringify(plan), guardianReview)
     const { app, clientQuery, db } = buildApp(true, {
       aiProviders: [provider],
       fetchImpl,
