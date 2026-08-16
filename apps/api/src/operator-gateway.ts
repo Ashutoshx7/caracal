@@ -199,6 +199,20 @@ export class GatewayError extends Error {
   }
 }
 
+// A provider rejected the request with a terminal HTTP error. Unlike a transient outage, the same
+// request is expected to fail on every endpoint, so the gateway stops immediately and surfaces the
+// rejecting provider and status without exposing its response body, URL, headers, or request.
+export class GatewayProviderError extends Error {
+  constructor(
+    public readonly provider: string,
+    public readonly statusCode: number | undefined,
+    public readonly reason: string,
+  ) {
+    super(`${provider}: ${reason}`)
+    this.name = 'GatewayProviderError'
+  }
+}
+
 // The per-turn model-call budget was reached, so a further completion is refused. This bounds the
 // multi-agent fan-out deterministically: a turn that would make more model calls than Caracal
 // permits stops rather than running an unbounded loop. It is a governance limit, not a model
@@ -252,12 +266,40 @@ function namedError(err: unknown, names: ReadonlySet<string>): boolean {
   return err instanceof Error && names.has(err.name)
 }
 
+function apiCallError(err: unknown, seen = new Set<unknown>()): APICallError | undefined {
+  if (err === null || err === undefined || seen.has(err) || seen.size >= 16) return undefined
+  seen.add(err)
+  if (APICallError.isInstance(err)) return err
+  // When a retryable attempt is followed by a terminal rejection, RetryError retains both. Its
+  // last error is authoritative; choosing the first nested API error would incorrectly fail over
+  // after the final 400/401/404/413.
+  if (RetryError.isInstance(err)) {
+    const finalError = apiCallError(err.lastError, seen)
+    if (finalError) return finalError
+    for (let index = err.errors.length - 1; index >= 0; index--) {
+      const nested = apiCallError(err.errors[index], seen)
+      if (nested) return nested
+    }
+  }
+  if (typeof err === 'object' && 'cause' in err) return apiCallError((err as { cause?: unknown }).cause, seen)
+  return undefined
+}
+
 // Classifies SDK, HTTP, timeout, transport, and local validation failures without inspecting
 // error messages. Typed SDK guards are checked through the cause/retry error graph because
 // providers commonly wrap JSON/schema failures in an APICallError and retries retain each error.
 export function classifyProviderError(err: unknown): OperatorAiErrorClass {
   if (err instanceof GatewayStreamInterruptedError) return 'stream_interrupted'
   const chain = errorChain(err)
+  const apiError = apiCallError(err)
+  const apiStatus = apiError?.statusCode
+  // The final error in an SDK retry chain is authoritative. A terminal HTTP rejection must win
+  // over a timeout retained from an earlier attempt, or health would report the stale transient
+  // condition even though failover stopped on the final invalid request.
+  if (apiError && !apiError.isRetryable && apiStatus !== undefined && apiStatus >= 400) {
+    if (apiStatus === 401 || apiStatus === 403) return 'auth_failed'
+    return 'config_error'
+  }
   const timeoutNames = new Set(['AbortError', 'TimeoutError', 'ResponseAborted'])
   if (chain.some((entry) => namedError(entry, timeoutNames))) return 'timeout'
 
@@ -274,9 +316,8 @@ export function classifyProviderError(err: unknown): OperatorAiErrorClass {
   )
   if (invalidResponse) return 'invalid_response'
 
-  const apiError = chain.find((entry) => APICallError.isInstance(entry))
-  if (apiError && APICallError.isInstance(apiError)) {
-    const status = apiError.statusCode
+  if (apiError) {
+    const status = apiStatus
     if (status === 401 || status === 403) return 'auth_failed'
     if (status === 429) return 'rate_limited'
     if (status === 408 || status === 504) return 'timeout'
@@ -515,7 +556,8 @@ function splitSystem(messages: GatewayMessage[]): { system?: string; conversatio
 // ever lives in the request's authorization header, never in the SDK's error text,
 // so the message and status are safe to surface.
 function failureReason(err: unknown): string {
-  if (APICallError.isInstance(err)) return `provider returned status ${err.statusCode ?? 'error'}`
+  const apiError = apiCallError(err)
+  if (apiError) return `provider returned status ${apiError.statusCode ?? 'error'}`
   if (err instanceof Error) return err.message.length > 0 ? err.message : err.name
   return 'unknown error'
 }
@@ -697,7 +739,9 @@ export interface Gateway {
 // that failed recently moves behind providers without a recent failure, but is never skipped. The
 // caller's preferred provider, when available, is still tried first; a preference for an unknown
 // or unavailable provider is ignored so a stale preference never disables the gateway. Every
-// provider failing throws a GatewayError carrying the redacted per-provider reasons.
+// transient provider failing throws a GatewayError carrying the redacted per-provider reasons. A
+// terminal API rejection stops immediately because replaying the same invalid request elsewhere is
+// both wasteful and misleading.
 async function runWithFailover<T>(
   available: ProviderConfig[],
   preferredProvider: string | undefined,
@@ -727,6 +771,10 @@ async function runWithFailover<T>(
       // A stream that already reached the client cannot be retried on another provider without
       // corrupting the visible output, so this failure ends the turn instead of failing over.
       if (err instanceof GatewayStreamInterruptedError) throw err
+      const apiError = apiCallError(err)
+      if (apiError && !apiError.isRetryable) {
+        throw new GatewayProviderError(provider.id, apiError.statusCode, failureReason(apiError))
+      }
       attempts.push({ provider: provider.id, reason: failureReason(err) })
     }
   }

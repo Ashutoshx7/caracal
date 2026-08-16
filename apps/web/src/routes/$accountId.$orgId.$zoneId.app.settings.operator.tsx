@@ -60,6 +60,15 @@ function sanitizeSlug(raw: string): string {
 function checkErrorMessage(err: unknown): string {
   if (err instanceof ConsoleApiError) {
     if (err.code === "ai_unavailable") return "No model endpoint is configured for the Operator.";
+    if (err.code === "ai_provider_error") {
+      const status = (err.detail as { details?: { status_code?: number | null } } | undefined)
+        ?.details?.status_code;
+      if (status === 401 || status === 403)
+        return "The model endpoint rejected the key. Check the API key.";
+      if (status === 404) return "The endpoint was not found. Check the base URL.";
+      if (status) return `The model endpoint returned ${status}. Check the endpoint and key.`;
+      return "The model endpoint rejected the request. Check its configuration.";
+    }
     if (err.code === "ai_unreachable") {
       // Surface the upstream's own status so a rejected key (401/403) reads differently from a
       // wrong endpoint (404) or an unreachable host, rather than one ambiguous message.
