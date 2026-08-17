@@ -93,6 +93,10 @@ describe('notification sink destination safety', () => {
       '::ffff:127.0.0.1',
       '::FFFF:127.0.0.1',
       '64:ff9b::a00:1',
+      '64:ff9b:0:0:0:0:a00:1',
+      '0064:ff9b::a00:1',
+      '64:ff9b::10.0.0.1',
+      '64:ff9b::1',
       '240.0.0.1',
       '250.1.2.3',
       '255.255.255.255',
@@ -102,6 +106,7 @@ describe('notification sink destination safety', () => {
     expect(isUnsafeEgressAddress('203.0.113.10')).toBe(false)
     expect(isUnsafeEgressAddress('2001:db8::10')).toBe(false)
     expect(isUnsafeEgressAddress('fec0::1')).toBe(false)
+    expect(isUnsafeEgressAddress('64:ff9b:0:0:1:2:a00:1')).toBe(false)
   })
 
   it('fails before connecting when any resolved address is restricted', async () => {

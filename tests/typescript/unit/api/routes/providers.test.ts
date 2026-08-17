@@ -32,6 +32,10 @@ describe('provider private egress policy', () => {
       'febf::1',
       '::FFFF:127.0.0.1',
       '64:ff9b::a9fe:a9fe',
+      '64:ff9b:0:0:0:0:a9fe:a9fe',
+      '0064:ff9b::a9fe:a9fe',
+      '64:ff9b::169.254.169.254',
+      '64:ff9b::1',
       '240.0.0.1',
       '250.1.2.3',
       '255.255.255.255',
@@ -39,6 +43,7 @@ describe('provider private egress policy', () => {
       expect(isUnsafeEgressAddress(address, true), address).toBe(true)
     }
     expect(isUnsafeEgressAddress('fec0::1'), 'fec0::1').toBe(false)
+    expect(isUnsafeEgressAddress('64:ff9b:0:0:1:2:a9fe:a9fe'), 'outside 64:ff9b::/96').toBe(false)
   })
 })
 

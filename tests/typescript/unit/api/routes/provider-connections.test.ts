@@ -640,7 +640,7 @@ describe('OAuth provider grant browser flow', () => {
         },
       ],
     })
-    vi.mocked(lookup).mockResolvedValue([{ address: '64:ff9b::a9fe:a9fe', family: 6 }])
+    vi.mocked(lookup).mockResolvedValue([{ address: '64:ff9b:0:0:0:0:a9fe:a9fe', family: 6 }])
 
     await app.ready()
     const res = await app.inject({
