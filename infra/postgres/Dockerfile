@@ -6,7 +6,7 @@
 # compose to remain environment-aware.
 
 # syntax=docker/dockerfile:1.7
-FROM postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+FROM postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
 
 # The pinned base digest lags Alpine security releases between upstream
 # rebuilds; upgrading at build time keeps apk packages at their current fixes.
