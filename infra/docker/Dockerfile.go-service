@@ -4,7 +4,7 @@
 # Unified Go service image carrying the sts, gateway, and audit binaries; the run command selects the role.
 
 # syntax=docker/dockerfile:1.7
-FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
+FROM golang:1.26-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS builder
 ARG CGO_ENABLED=0
 ARG CC
 ARG CFLAGS
@@ -39,12 +39,12 @@ RUN --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
     done && \
     cd /healthcheck && GOWORK=off go build -mod=readonly -trimpath ${GO_BUILDFLAGS} -ldflags="${GO_LDFLAGS}" -o /healthcheck-bin ./
 
-FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS rootfs
+FROM golang:1.26-alpine@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS rootfs
 ARG STATE_DIRS="audit-replay"
 RUN set -e; mkdir -p /rootfs/var/lib/caracal; \
     for d in ${STATE_DIRS}; do mkdir -p "/rootfs/var/lib/caracal/${d}"; done
 
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:f5b485ea962d9bd1186b2f6b3a061191539b905b82ec395de78cbfae51f20e35
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:1b7b9f0f0e0a1d2155f531db587cc48ec26aaf97ab64364225f5bf18a054e66a
 ARG HEALTH_PATH=/ready
 COPY --from=builder /bin-out/sts /usr/local/bin/sts
 COPY --from=builder /bin-out/gateway /usr/local/bin/gateway
