@@ -613,45 +613,48 @@ describe('OAuth provider grant browser flow', () => {
     expect(httpsRequest).not.toHaveBeenCalled()
   })
 
-  it('rejects callback token endpoints that resolve to NAT64-embedded metadata addresses', async () => {
-    const { app, db, redis, secrets } = buildRouteApp(providerConnectionsRoutes)
-    const state = 'abcdefghijklmnopqrstuvwxyz1234567890'
-    seedProviderSecret(secrets)
-    redis.call.mockResolvedValue(
-      JSON.stringify({
-        zone_id: 'z1',
-        subject_id: 'user-1',
-        provider_id: 'provider-1',
-        code_verifier: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890-._~',
-      }),
-    )
-    db.query.mockResolvedValueOnce({
-      rows: [
-        {
-          id: 'provider-1',
-          provider_kind: 'oauth2_authorization_code',
-          config_json: {
-            token_endpoint: 'https://oauth2.googleapis.com/token',
-            redirect_uri: 'http://localhost:3000/v1/zones/z1/provider-connections/oauth/callback',
-            client_id: 'google-client',
-            client_auth_method: 'client_secret_basic',
-            allowed_token_hosts: ['oauth2.googleapis.com'],
+  it.each(['64:ff9b::a9fe:a9fe', '64:ff9b:0:0:0:0:a9fe:a9fe'])(
+    'rejects callback token endpoints that resolve to NAT64-embedded metadata address %s',
+    async (address) => {
+      const { app, db, redis, secrets } = buildRouteApp(providerConnectionsRoutes)
+      const state = 'abcdefghijklmnopqrstuvwxyz1234567890'
+      seedProviderSecret(secrets)
+      redis.call.mockResolvedValue(
+        JSON.stringify({
+          zone_id: 'z1',
+          subject_id: 'user-1',
+          provider_id: 'provider-1',
+          code_verifier: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890-._~',
+        }),
+      )
+      db.query.mockResolvedValueOnce({
+        rows: [
+          {
+            id: 'provider-1',
+            provider_kind: 'oauth2_authorization_code',
+            config_json: {
+              token_endpoint: 'https://oauth2.googleapis.com/token',
+              redirect_uri: 'http://localhost:3000/v1/zones/z1/provider-connections/oauth/callback',
+              client_id: 'google-client',
+              client_auth_method: 'client_secret_basic',
+              allowed_token_hosts: ['oauth2.googleapis.com'],
+            },
           },
-        },
-      ],
-    })
-    vi.mocked(lookup).mockResolvedValue([{ address: '64:ff9b::a9fe:a9fe', family: 6 }])
+        ],
+      })
+      vi.mocked(lookup).mockResolvedValue([{ address, family: 6 }])
 
-    await app.ready()
-    const res = await app.inject({
-      method: 'GET',
-      url: `/v1/zones/z1/provider-connections/oauth/callback?state=${state}&code=provider-code`,
-    })
+      await app.ready()
+      const res = await app.inject({
+        method: 'GET',
+        url: `/v1/zones/z1/provider-connections/oauth/callback?state=${state}&code=provider-code`,
+      })
 
-    expect(res.statusCode).toBe(502)
-    expect(JSON.parse(res.body)).toMatchObject({ error: 'provider_token_exchange_failed' })
-    expect(httpsRequest).not.toHaveBeenCalled()
-  })
+      expect(res.statusCode).toBe(502)
+      expect(JSON.parse(res.body)).toMatchObject({ error: 'provider_token_exchange_failed' })
+      expect(httpsRequest).not.toHaveBeenCalled()
+    },
+  )
 
   it('rejects callback token endpoints that resolve to IPv4-mapped metadata addresses', async () => {
     const { app, db, redis, secrets } = buildRouteApp(providerConnectionsRoutes)

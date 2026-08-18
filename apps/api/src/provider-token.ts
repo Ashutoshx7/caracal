@@ -7,8 +7,9 @@ import { createHash, createPrivateKey, generateKeyPairSync, randomUUID, sign, X5
 import { lookup } from 'node:dns/promises'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
-import { isIP, type LookupFunction } from 'node:net'
+import { type LookupFunction } from 'node:net'
 import { providerSecretConfigRef, type SecretBackend } from '@caracalai/server-core'
+import { isUnsafeEgressAddress } from './egress-address.js'
 
 const PROVIDER_TOKEN_EXCHANGE_TIMEOUT_MS = 15_000
 const PROVIDER_TOKEN_EXCHANGE_MAX_BODY_BYTES = 64 * 1024
@@ -79,60 +80,14 @@ export function ensureAllowedTokenEndpoint(raw: string, hosts: string[]): URL {
   return ensureAllowedHttpsEndpoint(raw, hosts, 'provider token endpoint')
 }
 
-// Extract the IPv4 address embedded in a NAT64 well-known-prefix address
-// (64:ff9b::/96, RFC 6052), or null when value is not such an address.
-function nat64EmbeddedIpv4(value: string): string | null {
-  const lower = value.toLowerCase()
-  if (!lower.startsWith('64:ff9b::')) return null
-  const tail = lower.slice('64:ff9b::'.length)
-  if (tail === '') return null
-  if (tail.includes('.')) {
-    return isIP(tail) === 4 ? tail : null
-  }
-  const groups = tail.split(':')
-  if (groups.length < 2) return null
-  const hi = Number.parseInt(groups[groups.length - 2]!, 16)
-  const lo = Number.parseInt(groups[groups.length - 1]!, 16)
-  if (!Number.isInteger(hi) || !Number.isInteger(lo) || hi > 0xffff || lo > 0xffff) return null
-  return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`
-}
-
-export function isUnsafeIpAddress(value: string, privateAllowed = false): boolean {
-  const nat64 = nat64EmbeddedIpv4(value)
-  if (nat64) return isUnsafeIpAddress(nat64, privateAllowed)
-  const ip = value.startsWith('::ffff:') ? value.slice(7) : value
-  const family = isIP(ip)
-  if (family === 4) {
-    const parts = ip.split('.').map(Number)
-    return (
-      parts[0] === 0 ||
-      (parts[0] === 10 && !privateAllowed) ||
-      parts[0] === 127 ||
-      (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127 && !privateAllowed) ||
-      (parts[0] === 169 && parts[1] === 254) ||
-      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31 && !privateAllowed) ||
-      (parts[0] === 192 && parts[1] === 168 && !privateAllowed) ||
-      parts[0] >= 224
-    )
-  }
-  const lower = ip.toLowerCase()
-  return (
-    family === 6 &&
-    (lower === '::' ||
-      lower === '::1' ||
-      (lower.startsWith('fc') && !privateAllowed) ||
-      (lower.startsWith('fd') && !privateAllowed) ||
-      lower.startsWith('fe80:') ||
-      lower.startsWith('ff'))
-  )
-}
-
 async function resolveSafeHost(host: string): Promise<{ address: string; family: 4 | 6 }[]> {
   const addresses = await lookup(host, { all: true, verbatim: false })
   if (addresses.length === 0) throw new Error('provider token endpoint resolves to no addresses')
   const privateAllowed = privateEgressHosts().has(host.toLowerCase())
   for (const address of addresses) {
-    if (isUnsafeIpAddress(address.address, privateAllowed)) throw new Error('provider token endpoint resolves to a non-routable address')
+    if (isUnsafeEgressAddress(address.address, privateAllowed)) {
+      throw new Error('provider token endpoint resolves to a non-routable address')
+    }
   }
   return addresses.filter((address): address is { address: string; family: 4 | 6 } => address.family === 4 || address.family === 6)
 }

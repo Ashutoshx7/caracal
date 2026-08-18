@@ -21,8 +21,9 @@ afterEach(() => {
   delete process.env.SECRET_STORE_KEK
 })
 
-const { isUnsafeSinkAddress, postNotificationSink, runNotificationDispatch, signSinkPayload, sinkBackoffSeconds, sinkPayload } =
+const { postNotificationSink, runNotificationDispatch, signSinkPayload, sinkBackoffSeconds, sinkPayload } =
   await import('../../../../../apps/api/src/jobs/notification-dispatcher.js')
+const { isUnsafeEgressAddress } = await import('../../../../../apps/api/src/egress-address.js')
 const { AAD_NOTIFICATION_SINK_SECRET, loadSecretStoreKek, sealEnvelope } = await import('@caracalai/server-core')
 import type { DB } from '../../../../../apps/api/src/db.js'
 import type { SinkFetch } from '../../../../../apps/api/src/jobs/notification-dispatcher.js'
@@ -85,13 +86,27 @@ describe('notification sink destination safety', () => {
       '::1',
       'fd00::1',
       'fe80::1',
+      'fe8f::1',
+      'fe90::1',
+      'fea0::1',
+      'febf::1',
       '::ffff:127.0.0.1',
+      '::FFFF:127.0.0.1',
       '64:ff9b::a00:1',
+      '64:ff9b:0:0:0:0:a00:1',
+      '0064:ff9b::a00:1',
+      '64:ff9b::10.0.0.1',
+      '64:ff9b::1',
+      '240.0.0.1',
+      '250.1.2.3',
+      '255.255.255.255',
     ]) {
-      expect(isUnsafeSinkAddress(address), address).toBe(true)
+      expect(isUnsafeEgressAddress(address), address).toBe(true)
     }
-    expect(isUnsafeSinkAddress('203.0.113.10')).toBe(false)
-    expect(isUnsafeSinkAddress('2001:db8::10')).toBe(false)
+    expect(isUnsafeEgressAddress('203.0.113.10')).toBe(false)
+    expect(isUnsafeEgressAddress('2001:db8::10')).toBe(false)
+    expect(isUnsafeEgressAddress('fec0::1')).toBe(false)
+    expect(isUnsafeEgressAddress('64:ff9b:0:0:1:2:a00:1')).toBe(false)
   })
 
   it('fails before connecting when any resolved address is restricted', async () => {
@@ -113,16 +128,34 @@ describe('notification sink destination safety', () => {
     ).rejects.toThrow('restricted address')
   })
 
+  it('normalizes bracketed IPv6 literals before dispatch-time resolution', async () => {
+    const resolve = vi.fn(async () => [] as { address: string; family: 4 | 6 }[])
+    await expect(
+      postNotificationSink(
+        'http://[::1]/hook',
+        {
+          method: 'POST',
+          headers: {},
+          body: '{}',
+          redirect: 'error',
+          signal: AbortSignal.timeout(1_000),
+        },
+        resolve,
+      ),
+    ).rejects.toThrow('resolves to no addresses')
+    expect(resolve).toHaveBeenCalledWith('::1')
+  })
+
   it('relaxes private and ULA ranges only when the host is on the egress allowlist, never loopback or metadata', () => {
     // Default posture blocks every private range; the allowlist flag relaxes exactly the
     // operator-routable private ranges so an internal receiver can be reached deliberately.
     for (const address of ['10.0.0.1', '172.17.0.1', '192.168.1.1', '100.64.0.1', 'fd00::1']) {
-      expect(isUnsafeSinkAddress(address), address).toBe(true)
-      expect(isUnsafeSinkAddress(address, true), address).toBe(false)
+      expect(isUnsafeEgressAddress(address), address).toBe(true)
+      expect(isUnsafeEgressAddress(address, true), address).toBe(false)
     }
     // Allowlisting a private receiver must never open loopback, link-local, metadata, or multicast.
-    for (const address of ['127.0.0.1', '169.254.169.254', '::1', 'fe80::1', '224.0.0.1']) {
-      expect(isUnsafeSinkAddress(address, true), address).toBe(true)
+    for (const address of ['127.0.0.1', '169.254.169.254', '::1', 'fe80::1', 'fe8f::1', 'febf::1', '224.0.0.1']) {
+      expect(isUnsafeEgressAddress(address, true), address).toBe(true)
     }
   })
 
