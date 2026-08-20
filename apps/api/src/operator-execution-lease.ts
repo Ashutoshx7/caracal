@@ -32,8 +32,8 @@ export function createExecutionLeaseGuard(
   ttlSeconds: number,
   options: ExecutionLeaseGuardOptions = {},
 ): ExecutionLeaseGuard {
-  const renewIntervalMs = options.renewIntervalMs ?? (ttlSeconds * 1000) / 3
   if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1) throw new Error('Execution lease TTL must be a positive integer')
+  const renewIntervalMs = options.renewIntervalMs ?? (ttlSeconds * 1000) / 3
   if (!Number.isFinite(renewIntervalMs) || renewIntervalMs <= 0 || renewIntervalMs >= ttlSeconds * 1000) {
     throw new Error('Execution lease renewal interval must be positive and below its TTL')
   }

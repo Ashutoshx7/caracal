@@ -326,4 +326,57 @@ describe('executeViaControlPlane', () => {
     expect(result.failure).toBeNull()
     expect(result.leaseLoss).toMatchObject({ stepId: 's1', reason: 'ownership_lost', outcomeUncertain: true })
   })
+
+  it('keeps a definitive rejection resumable when it races with lease loss', async () => {
+    const controller = new AbortController()
+    const client: ControlClient = {
+      invoke: vi.fn(async () => {
+        controller.abort('ownership_lost')
+        throw new ControlClientError('invoke', 403, 'request denied', 'denied')
+      }),
+    }
+    const result = await executeViaControlPlane(
+      client,
+      [{ id: 's1', capability: 'registerApplication', args: { name: 'denied' } }],
+      {},
+      {
+        signal: controller.signal,
+        confirmOwned: async () => true,
+        lossReason: () => 'ownership_lost',
+      },
+    )
+
+    expect(result.failure).toBeNull()
+    expect(result.leaseLoss).toMatchObject({ stepId: 's1', reason: 'ownership_lost', outcomeUncertain: false })
+  })
+
+  it('does not dispatch a write after lease loss during a read wave', async () => {
+    const controller = new AbortController()
+    const invoked: string[] = []
+    const client: ControlClient = {
+      invoke: vi.fn(async (command, subcommand) => {
+        invoked.push(`${command}:${subcommand}`)
+        controller.abort('ownership_lost')
+        return []
+      }),
+    }
+    const result = await executeViaControlPlane(
+      client,
+      [
+        { id: 'read', capability: 'listApplications', args: {} },
+        { id: 'write', capability: 'registerApplication', args: { name: 'never-started' } },
+      ],
+      {},
+      {
+        signal: controller.signal,
+        confirmOwned: async () => true,
+        lossReason: () => 'ownership_lost',
+      },
+    )
+
+    expect(invoked).toEqual(['app:list'])
+    expect(result.applied.map((step) => step.id)).toEqual(['read'])
+    expect(result.failure).toBeNull()
+    expect(result.leaseLoss).toMatchObject({ stepId: 'write', outcomeUncertain: false })
+  })
 })

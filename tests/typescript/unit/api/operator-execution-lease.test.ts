@@ -81,6 +81,7 @@ describe('Operator execution lease guard', () => {
 
     lease.stop()
     lease.stop()
+    await expect(lease.confirmOwned()).resolves.toBe(false)
     await vi.advanceTimersByTimeAsync(500)
     expect(evalFn).toHaveBeenCalledTimes(1)
   })

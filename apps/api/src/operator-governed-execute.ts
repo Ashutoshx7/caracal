@@ -231,8 +231,9 @@ export async function executeViaControlPlane(
       if (!settled.ok) {
         // The shared signal aborts an in-flight fetch. Its remote outcome cannot be
         // proven, so surface lease loss (not a generic transport error) and make retry
-        // unsafe until an operator reconciles the result.
-        if (lease?.signal.aborted) return leaseLoss(step, true)
+        // unsafe until an operator reconciles the result. A definitive rejection still
+        // proves nothing applied, even when it races with the lease-loss signal.
+        if (lease?.signal.aborted) return leaseLoss(step, settled.failure.terminal)
         return { applied, failure: settled.failure }
       }
       applied.push(settled.result)

@@ -3,7 +3,7 @@
 //
 // Operator Control API route unit tests: conversation ledger lifecycle and append-only turns.
 
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import Fastify from 'fastify'
 import type { DB } from '../../../../../apps/api/src/db.js'
 import type { RedisClient } from '../../../../../apps/api/src/redis.js'
@@ -19,6 +19,11 @@ import type { OperatorRunLimiter } from '../../../../../apps/api/src/operator-ru
 
 // Test-only deterministic KEK fixture (32-byte hex) so the plan credential vault can seal. Never use in production.
 process.env.SECRET_STORE_KEK = '8f3d9a71c2b44e5f96a103d7be28cc41d5f09ab6731e4c8f2a7db56019ce34af'
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 function buildApp(
   enabled = true,
@@ -1731,6 +1736,67 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/plan/execute', () =>
     expect(res.statusCode).toBe(503)
     expect(JSON.parse(res.body)).toMatchObject({ error: 'execution_lease_lost', reason: 'renewal_failed', outcome_uncertain: false })
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('marks an in-flight mutation uncertain and non-retriable when periodic renewal loses ownership', async () => {
+    let triggerRenewal: (() => void) | undefined
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).endsWith('/oauth/2/token')) throw new Error(`unexpected fetch ${String(input)}`)
+      await new Promise<void>((resolve) => {
+        init?.signal?.addEventListener('abort', resolve, { once: true })
+        triggerRenewal?.()
+      })
+      throw init?.signal?.reason
+    })
+    const { app, clientQuery, redis } = buildApp(true, { ...governedControl, fetchImpl: fetchMock as unknown as typeof fetch })
+    // The immediate pre-write confirmation succeeds; the periodic renewal then observes
+    // that a competing holder owns the lock while the token request is in flight.
+    redis.eval.mockResolvedValueOnce(1).mockResolvedValueOnce(0).mockResolvedValue(0)
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active' }] })
+      .mockResolvedValueOnce({ rows: [{ content: grantPlan }] })
+      .mockResolvedValueOnce({ rows: [{ kind: 'approval' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ one: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ one: 1 }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined) // BEGIN (record uncertain stop)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', next_seq: 5 }] })
+      .mockResolvedValueOnce({ rowCount: 1 }) // advance for failed execution turn
+      .mockResolvedValueOnce({ rows: [{ id: 'failed-turn' }] })
+      .mockResolvedValueOnce({ rowCount: 1 }) // advance for system error turn
+      .mockResolvedValueOnce({ rows: [{ id: 'error-turn' }] })
+      .mockResolvedValueOnce({ rows: [] }) // delete plan secrets
+      .mockResolvedValueOnce(undefined) // COMMIT
+
+    await app.ready()
+    const realSetInterval = globalThis.setInterval
+    vi.spyOn(globalThis, 'setInterval').mockImplementation(((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+      if (timeout !== 40_000) return realSetInterval(handler, timeout, ...args)
+      triggerRenewal = () => {
+        if (typeof handler === 'function') handler(...args)
+      }
+      return realSetInterval(() => {}, timeout)
+    }) as typeof setInterval)
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/plan/execute',
+      payload: { plan_seq: 2 },
+    })
+
+    expect(res.statusCode).toBe(409)
+    expect(JSON.parse(res.body)).toMatchObject({
+      error: 'execution_lease_lost',
+      reason: 'ownership_lost',
+      step_id: 's1',
+      outcome_uncertain: true,
+    })
+    const executionInsert = clientQuery.mock.calls.find(
+      (call) => String(call[0]).includes('INSERT INTO operator_turns') && String(call[1]?.[5]) === 'execution',
+    )
+    expect(String(executionInsert?.[1]?.[6])).toContain('"status":"failed"')
+    expect(clientQuery.mock.calls.some((call) => String(call[0]).includes('DELETE FROM operator_plan_secrets'))).toBe(true)
   })
 
   it('records durable conversation memory of a plan it actually applied', async () => {

@@ -25,7 +25,7 @@ import { previewPlan, type StepPreview } from '../operator-preview.js'
 import { buildOperatorAuthority, isZoneIsolated, authorizePlanSteps, type OperatorAuthority } from '../operator-authority.js'
 import { buildOperatorControlClient, type OperatorControlEndpoints } from '../operator-control-client.js'
 import { executeViaControlPlane, type GovernedPlanStep } from '../operator-governed-execute.js'
-import { createExecutionLeaseGuard } from '../operator-execution-lease.js'
+import { createExecutionLeaseGuard, type ExecutionLeaseGuard } from '../operator-execution-lease.js'
 import { isControlExecutable } from '../operator-control-map.js'
 import { SYSTEM_ZONE_SLUG } from '../system-zone.js'
 import {
@@ -1893,17 +1893,17 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     const locked = await fastify.redis.set(lockKey, lockOwner, 'EX', EXECUTE_LOCK_TTL_SEC, 'NX')
     if (locked !== 'OK') return reply.code(409).send({ error: 'plan_already_executed' })
 
-    // The lock renews while this request still owns it. Lost or uncertain ownership aborts
-    // the active control transport and becomes a hard scheduler stop, rather than a warning.
-    const executionLease = createExecutionLeaseGuard(fastify.redis, lockKey, lockOwner, EXECUTE_LOCK_TTL_SEC, {
-      onLoss: (reason, err) => {
-        if (reason === 'renewal_failed') req.log.warn({ err, lockKey }, 'execute lock renewal failed; stopping execution')
-        else req.log.warn({ lockKey }, 'execute lock ownership lost; stopping execution')
-        executionLeaseController.abort(reason)
-      },
-    })
-
+    let executionLease: ExecutionLeaseGuard | null = null
     try {
+      // The lock renews while this request still owns it. Lost or uncertain ownership aborts
+      // the active control transport and becomes a hard scheduler stop, rather than a warning.
+      executionLease = createExecutionLeaseGuard(fastify.redis, lockKey, lockOwner, EXECUTE_LOCK_TTL_SEC, {
+        onLoss: (reason, err) => {
+          if (reason === 'renewal_failed') req.log.warn({ err, lockKey }, 'execute lock renewal failed; stopping execution')
+          else req.log.warn({ lockKey }, 'execute lock ownership lost; stopping execution')
+          executionLeaseController.abort(reason)
+        },
+      })
       // Pre-flight: read-only validation in one short transaction. Resolves the approved,
       // not-yet-executed, still-valid, still-unblocked plan to the steps to execute. It
       // writes nothing, so the governed control calls below run outside any transaction.
@@ -2255,6 +2255,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
           step_id: result.leaseLoss.stepId,
           outcome_uncertain: result.leaseLoss.outcomeUncertain,
           applied: recorded.turns,
+          outputs: recorded.outputs,
         })
       }
 
@@ -2327,7 +2328,7 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
 
       return reply
     } finally {
-      executionLease.stop()
+      executionLease?.stop()
       // Release the lock only if this request still owns it: a compare-and-delete so an
       // expired-then-reacquired lock held by another request is never deleted here. A failed
       // release is logged - the lock still expires on its TTL, but the delay is visible.
