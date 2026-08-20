@@ -235,4 +235,95 @@ describe('executeViaControlPlane', () => {
     expect(invokeFail.calls).toHaveLength(1)
     expect(stopped.failure).toMatchObject({ stepId: 's1', terminal: true })
   })
+
+  it('stops before the next mutation when lease ownership is lost', async () => {
+    const controller = new AbortController()
+    const { client, calls } = fakeClient([{ id: 'app-1' }, { id: 'app-2' }])
+    let confirmations = 0
+    const result = await executeViaControlPlane(
+      client,
+      [
+        { id: 's1', capability: 'registerApplication', args: { name: 'first' } },
+        { id: 's2', capability: 'registerApplication', args: { name: 'second' } },
+      ],
+      {},
+      {
+        signal: controller.signal,
+        confirmOwned: async () => {
+          confirmations += 1
+          if (confirmations === 1) return true
+          controller.abort('ownership_lost')
+          return false
+        },
+        lossReason: () => 'ownership_lost',
+      },
+    )
+
+    expect(calls).toHaveLength(1)
+    expect(result.applied.map((step) => step.id)).toEqual(['s1'])
+    expect(result.failure).toBeNull()
+    expect(result.leaseLoss).toEqual({
+      stepId: 's2',
+      capability: 'registerApplication',
+      reason: 'ownership_lost',
+      outcomeUncertain: false,
+    })
+  })
+
+  it('fails closed without dispatch when the ownership check errors', async () => {
+    const controller = new AbortController()
+    const { client, calls } = fakeClient([{ id: 'app-1' }])
+    const result = await executeViaControlPlane(
+      client,
+      [{ id: 's1', capability: 'registerApplication', args: { name: 'blocked' } }],
+      {},
+      {
+        signal: controller.signal,
+        confirmOwned: async () => {
+          controller.abort('renewal_failed')
+          throw new Error('redis unavailable')
+        },
+        lossReason: () => 'renewal_failed',
+      },
+    )
+
+    expect(calls).toHaveLength(0)
+    expect(result.failure).toBeNull()
+    expect(result.leaseLoss).toMatchObject({ stepId: 's1', reason: 'renewal_failed', outcomeUncertain: false })
+  })
+
+  it('marks the outcome uncertain when lease loss aborts an in-flight mutation', async () => {
+    const controller = new AbortController()
+    let rejectInvoke: ((error: Error) => void) | undefined
+    const client: ControlClient = {
+      invoke: vi.fn(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectInvoke = reject
+          }),
+      ),
+    }
+    const running = executeViaControlPlane(
+      client,
+      [
+        { id: 's1', capability: 'registerApplication', args: { name: 'in-flight' } },
+        { id: 's2', capability: 'registerApplication', args: { name: 'never-started' } },
+      ],
+      {},
+      {
+        signal: controller.signal,
+        confirmOwned: async () => true,
+        lossReason: () => 'ownership_lost',
+      },
+    )
+    await vi.waitFor(() => expect(client.invoke).toHaveBeenCalledTimes(1))
+    controller.abort('ownership_lost')
+    rejectInvoke?.(new ControlClientError('invoke', 0, 'aborted'))
+    const result = await running
+
+    expect(client.invoke).toHaveBeenCalledTimes(1)
+    expect(result.applied).toHaveLength(0)
+    expect(result.failure).toBeNull()
+    expect(result.leaseLoss).toMatchObject({ stepId: 's1', reason: 'ownership_lost', outcomeUncertain: true })
+  })
 })

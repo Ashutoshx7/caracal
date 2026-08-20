@@ -1661,6 +1661,78 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/plan/execute', () =>
     expect(redis.eval).toHaveBeenCalled()
   })
 
+  it('stops before dispatch and reports lost lease ownership clearly', async () => {
+    const fetchMock = controlFetch([{ id: 'grant-xyz' }])
+    const { app, clientQuery, redis } = buildApp(true, { ...governedControl, fetchImpl: fetchMock as unknown as typeof fetch })
+    redis.eval.mockResolvedValueOnce(0)
+    clientQuery
+      .mockResolvedValueOnce(undefined) // BEGIN (pre-flight)
+      .mockResolvedValueOnce({ rows: [{ status: 'active' }] })
+      .mockResolvedValueOnce({ rows: [{ content: grantPlan }] })
+      .mockResolvedValueOnce({ rows: [{ kind: 'approval' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ one: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ one: 1 }] })
+      .mockResolvedValueOnce(undefined) // COMMIT
+      .mockResolvedValueOnce(undefined) // BEGIN (record stop)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', next_seq: 5 }] })
+      .mockResolvedValueOnce({ rowCount: 1 }) // advance sequence
+      .mockResolvedValueOnce({ rows: [{ id: 'error-turn' }] }) // insert error turn
+      .mockResolvedValueOnce(undefined) // COMMIT
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/plan/execute',
+      payload: { plan_seq: 2 },
+    })
+
+    expect(res.statusCode).toBe(409)
+    expect(JSON.parse(res.body)).toMatchObject({
+      error: 'execution_lease_lost',
+      reason: 'ownership_lost',
+      step_id: 's1',
+      outcome_uncertain: false,
+      applied: [],
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+    const errorInsert = clientQuery.mock.calls.find(
+      (call) => String(call[0]).includes('INSERT INTO operator_turns') && String(call[1]?.[5]) === 'error',
+    )
+    expect(String(errorInsert?.[1]?.[6])).toContain('execution_lease_lost')
+  })
+
+  it('treats a Redis ownership-check error as uncertain ownership and fails closed', async () => {
+    const fetchMock = controlFetch([{ id: 'grant-xyz' }])
+    const { app, clientQuery, redis } = buildApp(true, { ...governedControl, fetchImpl: fetchMock as unknown as typeof fetch })
+    redis.eval.mockRejectedValueOnce(new Error('redis unavailable'))
+    clientQuery
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active' }] })
+      .mockResolvedValueOnce({ rows: [{ content: grantPlan }] })
+      .mockResolvedValueOnce({ rows: [{ kind: 'approval' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ one: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ one: 1 }] })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', next_seq: 5 }] })
+      .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rows: [{ id: 'error-turn' }] })
+      .mockResolvedValueOnce(undefined)
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/plan/execute',
+      payload: { plan_seq: 2 },
+    })
+
+    expect(res.statusCode).toBe(503)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'execution_lease_lost', reason: 'renewal_failed', outcome_uncertain: false })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('records durable conversation memory of a plan it actually applied', async () => {
     const fetchMock = controlFetch([{ id: 'grant-xyz' }])
     const { app, clientQuery } = buildApp(true, { ...governedControl, fetchImpl: fetchMock as unknown as typeof fetch })
