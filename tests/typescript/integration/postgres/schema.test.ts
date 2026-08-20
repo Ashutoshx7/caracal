@@ -192,3 +192,36 @@ suite('admin audit hash chain', () => {
     }
   })
 })
+
+suite('operator provider reconciliation schema', () => {
+  it('defaults existing lifecycle writes to ready and enforces durable state values', async () => {
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const slug = `test_${randomUUID().replaceAll('-', '').slice(0, 20)}`
+      const { rows } = await client.query<{
+        reconciliation_state: string
+        reconciliation_error_code: string | null
+        credential_required: boolean
+        reconciled_at: string | null
+      }>(
+        `INSERT INTO operator_ai_providers (slug, label, base_url)
+         VALUES ($1, 'Test', 'https://example.test/v1')
+         RETURNING reconciliation_state, reconciliation_error_code, credential_required, reconciled_at`,
+        [slug],
+      )
+      expect(rows[0]).toEqual({
+        reconciliation_state: 'ready',
+        reconciliation_error_code: null,
+        credential_required: false,
+        reconciled_at: null,
+      })
+      await expect(
+        client.query(`UPDATE operator_ai_providers SET reconciliation_state = 'unknown' WHERE slug = $1`, [slug]),
+      ).rejects.toThrow(/operator_ai_providers_reconciliation_state_check/i)
+    } finally {
+      await client.query('ROLLBACK').catch(() => {})
+      client.release()
+    }
+  })
+})

@@ -396,6 +396,9 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
           onRegistryChange: (configs) => {
             storeConfigs = configs
           },
+          onProviderUnavailable: (slug) => {
+            storeConfigs = storeConfigs.filter((config) => config.id !== slug && !config.id.startsWith(`${slug}__`))
+          },
         })
       : null
 
@@ -473,13 +476,31 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
         // store-managed providers (already sealed in a prior run, reconciled by identifier
         // without a key), so a restart never archives a console-added provider.
         const storeRecords = await listAiProviders(db)
-        const storeUpstreams: GovernedUpstream[] = storeRecords.map((record) => ({
-          id: record.slug,
-          baseUrl: record.baseUrl,
-          auth: record.auth,
-        }))
-        const desiredUpstreams = [...envGovernedUpstreams, ...storeUpstreams]
-        const identity = await provisionSystemZone(admin, audience, findZoneBySlug, roles, desiredUpstreams)
+        const storeUpstreams: GovernedUpstream[] = storeRecords
+          .filter(
+            (record) =>
+              (record.reconciliationState === 'ready' && record.reconciledAt !== null) ||
+              (record.reconciliationState !== 'ready' && record.reconciliationState !== 'deleting' && !record.credentialRequired),
+          )
+          .map((record) => ({
+            id: record.slug,
+            baseUrl: record.baseUrl,
+            auth: record.auth,
+          }))
+        const preservedStoreSlugs = storeRecords
+          .filter(
+            (record) =>
+              record.reconciliationState !== 'deleting' &&
+              ((record.reconciliationState === 'ready' && record.reconciledAt === null) ||
+                (record.reconciliationState !== 'ready' && record.credentialRequired)),
+          )
+          .map((record) => record.slug)
+        const preservedStoreSlugSet = new Set(preservedStoreSlugs)
+        // A store row waiting for verification or a replacement key must also shadow an env
+        // upstream with the same slug. Otherwise boot would reconcile the env entry first and
+        // mutate the very sealed object this path is required to preserve untouched.
+        const desiredUpstreams = [...envGovernedUpstreams.filter((upstream) => !preservedStoreSlugSet.has(upstream.id)), ...storeUpstreams]
+        const identity = await provisionSystemZone(admin, audience, findZoneBySlug, roles, desiredUpstreams, preservedStoreSlugs)
         operatorControlIdentity.current = {
           zoneId: identity.zoneId,
           llm: identity.llm,
@@ -491,6 +512,10 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
         // map, so a console-added provider is live immediately after a restart.
         const resourceBySlug = new Map(identity.governedResources.map((entry) => [entry.id, entry.resourceIdentifier]))
         if (governedFetch) storeConfigs = buildStoreProviderConfigs(storeRecords, resourceBySlug, cfg.gatewayUrl, governedFetch)
+        // Complete restart-safe metadata-only updates and delete tombstones now that the fresh
+        // Operator identity is available. Credential-dependent failures stay explicit and inert
+        // until an operator retries with the plaintext key, which is never persisted.
+        await aiManager?.recover()
         if (isolatedSystemZone.has(identity.zoneId)) {
           // The Operator must govern its own system zone; listing it as an isolated zone
           // would block self-governance before the identity check. Warn rather than fail so

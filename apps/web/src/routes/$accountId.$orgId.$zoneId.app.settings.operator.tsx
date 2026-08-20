@@ -207,6 +207,17 @@ function OperatorPage() {
                         {provider.label}
                       </span>
                       {!provider.enabled ? <Badge tone="muted">Disabled</Badge> : null}
+                      {provider.reconciliationState === "pending" ? (
+                        <Badge tone="warning">Pending</Badge>
+                      ) : null}
+                      {provider.reconciliationState === "error" ? (
+                        <Badge tone="danger">
+                          {provider.credentialRequired ? "Retry with key" : "Reconcile failed"}
+                        </Badge>
+                      ) : null}
+                      {provider.reconciliationState === "deleting" ? (
+                        <Badge tone="warning">Removing</Badge>
+                      ) : null}
                     </div>
                     <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
                       {provider.baseUrl}

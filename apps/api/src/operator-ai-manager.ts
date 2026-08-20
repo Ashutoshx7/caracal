@@ -7,11 +7,12 @@ import type { AdminClient } from '@caracalai/admin'
 import type { Queryable } from './db.js'
 import type { OperatorControlIdentity } from './config.js'
 import type { ProviderConfig } from './operator-gateway.js'
-import { GovernedUpstream, provisionGovernedUpstreams } from './system-zone.js'
+import { GovernedUpstream, llmProviderIdentifier, llmResourceIdentifier, provisionGovernedUpstreams } from './system-zone.js'
 import {
   deleteAiProvider,
   getAiProvider,
   listAiProviders,
+  setAiProviderReconciliation,
   upsertAiProvider,
   type AuthPlacement,
   type OperatorAiProviderRecord,
@@ -29,9 +30,16 @@ export interface OperatorAiProviderView {
   contextWindow: number
   enabled: boolean
   auth: AuthPlacement
+  reconciliationState: OperatorAiProviderRecord['reconciliationState']
+  reconciliationErrorCode: string | null
+  credentialRequired: boolean
+  reconciledAt: string | null
 }
 
 function toView(record: OperatorAiProviderRecord): OperatorAiProviderView {
+  // Rows migrated from the pre-reconciliation schema have no proof that their metadata matches
+  // the sealed resource. Present them as pending until restart recovery verifies that invariant.
+  const reconciliationState = record.reconciliationState === 'ready' && !record.reconciledAt ? 'pending' : record.reconciliationState
   return {
     slug: record.slug,
     label: record.label,
@@ -40,6 +48,10 @@ function toView(record: OperatorAiProviderRecord): OperatorAiProviderView {
     contextWindow: record.contextWindow,
     enabled: record.enabled,
     auth: record.auth,
+    reconciliationState,
+    reconciliationErrorCode: record.reconciliationErrorCode,
+    credentialRequired: record.credentialRequired,
+    reconciledAt: record.reconciledAt,
   }
 }
 
@@ -120,6 +132,7 @@ export function buildStoreProviderConfigs(
 ): ProviderConfig[] {
   const configs: ProviderConfig[] = []
   for (const record of records) {
+    if (record.reconciliationState !== 'ready' || !record.reconciledAt) continue
     if (!record.enabled) continue
     const resourceIdentifier = resourceBySlug.get(record.slug)
     if (!resourceIdentifier) continue
@@ -166,6 +179,7 @@ export interface OperatorAiManager {
   update(slug: string, patch: UpdateProviderInput): Promise<OperatorAiProviderView>
   rotateKey(slug: string, apiKey: string): Promise<void>
   remove(slug: string): Promise<boolean>
+  recover(): Promise<void>
 }
 
 export interface OperatorAiManagerDeps {
@@ -183,6 +197,9 @@ export interface OperatorAiManagerDeps {
   // Publishes the rebuilt store-provider gateway entries so the next request's gateway includes
   // the change without an env edit or restart.
   onRegistryChange: (configs: ProviderConfig[]) => void
+  // Removes a provider from the live gateway before its sealed resource is touched. A failed or
+  // partial reconcile therefore fails closed instead of leaving stale runtime routing enabled.
+  onProviderUnavailable: (slug: string) => void
 }
 
 // Creates the manager that owns the runtime lifecycle of governed model providers. Every write
@@ -190,14 +207,87 @@ export interface OperatorAiManagerDeps {
 // then republishes the gateway registry, so the live Operator and the sealed grants stay in
 // lockstep with the store.
 export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAiManager {
-  async function reconcile(keyOverride?: { slug: string; apiKey: string }): Promise<void> {
+  const RECONCILIATION_FAILED = 'reconciliation_failed'
+
+  async function reconcile(options: {
+    targetSlug?: string
+    keyOverride?: { slug: string; apiKey: string }
+    recover?: boolean
+  }): Promise<{ id: string; resourceIdentifier: string }[]> {
     const identity = deps.resolveIdentity()
     if (!identity) throw new OperatorAiUnavailableError()
     const records = await listAiProviders(deps.db)
-    const upstreams = mergeDesiredUpstreams(deps.envUpstreams, records, keyOverride)
-    const governed = await provisionGovernedUpstreams(deps.admin, identity.zoneId, identity.llm.applicationId, upstreams)
+    const selected = records.filter((record) => {
+      if (record.reconciliationState === 'deleting') return false
+      if (record.reconciliationState === 'ready') return record.reconciledAt !== null
+      if (record.slug === options.targetSlug) return true
+      return options.recover === true && !record.credentialRequired
+    })
+    const selectedSlugs = new Set(selected.map((record) => record.slug))
+    // A row waiting for a credential cannot be replayed after restart because plaintext keys are
+    // intentionally never stored. Retain any already-sealed provider while revoking its grant;
+    // the operator must retry the mutation with the key to make it ready again.
+    const preservedSlugs = records
+      .filter((record) => record.reconciliationState !== 'deleting' && !selectedSlugs.has(record.slug))
+      .map((record) => record.slug)
+    const upstreams = mergeDesiredUpstreams(deps.envUpstreams, selected, options.keyOverride)
+    return provisionGovernedUpstreams(deps.admin, identity.zoneId, identity.llm.applicationId, upstreams, preservedSlugs)
+  }
+
+  async function publish(governed: { id: string; resourceIdentifier: string }[]): Promise<void> {
+    const records = await listAiProviders(deps.db)
     const resourceBySlug = new Map(governed.map((entry) => [entry.id, entry.resourceIdentifier]))
     deps.onRegistryChange(buildStoreProviderConfigs(records, resourceBySlug, deps.gatewayUrl, deps.governedFetch))
+  }
+
+  async function markFailure(slug: string, state: 'error' | 'deleting', credentialRequired: boolean): Promise<void> {
+    await setAiProviderReconciliation(deps.db, slug, state, RECONCILIATION_FAILED, credentialRequired).catch(() => {})
+  }
+
+  async function failClosed(slug: string, state: 'error' | 'deleting', credentialRequired: boolean): Promise<void> {
+    await markFailure(slug, state, credentialRequired)
+    // Reconcile once more without selecting the failed target. This best-effort pass revokes any
+    // grant that may have been installed before a later step failed, while retaining a sealed
+    // credential only when the durable row needs it for an explicit retry.
+    try {
+      const governed = await reconcile({})
+      await publish(governed)
+    } catch {
+      // The durable non-ready state and the pre-reconcile registry removal remain the backstop;
+      // startup recovery will retry cleanup after a process or control-plane outage.
+    }
+  }
+
+  async function quarantineUnsafeUnverified(records: OperatorAiProviderRecord[]): Promise<void> {
+    const identity = deps.resolveIdentity()
+    if (!identity) throw new OperatorAiUnavailableError()
+    const unverified = records.filter((record) => record.reconciliationState === 'ready' && !record.reconciledAt)
+    if (unverified.length === 0) return
+
+    const [providers, resources] = await Promise.all([
+      deps.admin.providers.list(identity.zoneId),
+      deps.admin.resources.list(identity.zoneId),
+    ])
+    const providerIdentifiers = new Set(providers.map((provider) => provider.identifier))
+    const resourcesByIdentifier = new Map(resources.map((resource) => [resource.identifier, resource]))
+
+    for (const record of unverified) {
+      const providerExists = providerIdentifiers.has(llmProviderIdentifier(record.slug))
+      const resource = resourcesByIdentifier.get(llmResourceIdentifier(record.slug))
+      // A missing provider cannot be recreated without plaintext key material. A resource that
+      // still names another endpoint is evidence of a pre-migration partial update; repointing it
+      // would send the old sealed credential to the new host. Both cases require an explicit key.
+      if (!providerExists || (resource && resource.upstream_url !== record.baseUrl)) {
+        await setAiProviderReconciliation(deps.db, record.slug, 'error', RECONCILIATION_FAILED, true)
+        deps.onProviderUnavailable(record.slug)
+      } else {
+        // Make verification progress durable before the control-plane write. If recovery fails
+        // after this point, ordinary lifecycle operations still cannot select this row; only a
+        // later recovery pass may finish it and stamp reconciled_at.
+        await setAiProviderReconciliation(deps.db, record.slug, 'pending', null, false)
+        deps.onProviderUnavailable(record.slug)
+      }
+    }
   }
 
   return {
@@ -212,7 +302,7 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
 
     async create(input) {
       if (!this.available()) throw new OperatorAiUnavailableError()
-      const record = await upsertAiProvider(deps.db, {
+      await upsertAiProvider(deps.db, {
         slug: input.slug,
         label: input.label,
         baseUrl: input.baseUrl,
@@ -220,9 +310,21 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
         contextWindow: input.contextWindow,
         enabled: input.enabled,
         auth: input.auth,
+        reconciliationState: 'pending',
+        reconciliationErrorCode: null,
+        credentialRequired: true,
       })
-      await reconcile({ slug: input.slug, apiKey: input.apiKey })
-      return toView(record)
+      deps.onProviderUnavailable(input.slug)
+      try {
+        const governed = await reconcile({ targetSlug: input.slug, keyOverride: { slug: input.slug, apiKey: input.apiKey } })
+        const record = await setAiProviderReconciliation(deps.db, input.slug, 'ready', null, false)
+        if (!record) throw new OperatorAiNotFoundError(input.slug)
+        await publish(governed)
+        return toView(record)
+      } catch (err) {
+        await failClosed(input.slug, 'error', true)
+        throw err
+      }
     },
 
     async update(slug, patch) {
@@ -231,8 +333,9 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
       if (!existing) throw new OperatorAiNotFoundError(slug)
       const baseUrl = patch.baseUrl ?? existing.baseUrl
       const endpointMoved = baseUrl !== existing.baseUrl
-      if (endpointMoved && !patch.apiKey) throw new OperatorAiKeyRequiredError(slug)
-      const record = await upsertAiProvider(deps.db, {
+      if ((endpointMoved || existing.credentialRequired) && !patch.apiKey) throw new OperatorAiKeyRequiredError(slug)
+      const credentialRequired = endpointMoved || existing.credentialRequired || patch.apiKey !== undefined
+      await upsertAiProvider(deps.db, {
         slug,
         label: patch.label ?? existing.label,
         baseUrl,
@@ -240,23 +343,83 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
         contextWindow: patch.contextWindow ?? existing.contextWindow,
         enabled: patch.enabled ?? existing.enabled,
         auth: patch.auth ?? existing.auth,
+        reconciliationState: 'pending',
+        reconciliationErrorCode: null,
+        credentialRequired,
       })
-      await reconcile(patch.apiKey ? { slug, apiKey: patch.apiKey } : undefined)
-      return toView(record)
+      deps.onProviderUnavailable(slug)
+      try {
+        const governed = await reconcile({
+          targetSlug: slug,
+          keyOverride: patch.apiKey ? { slug, apiKey: patch.apiKey } : undefined,
+        })
+        const record = await setAiProviderReconciliation(deps.db, slug, 'ready', null, false)
+        if (!record) throw new OperatorAiNotFoundError(slug)
+        await publish(governed)
+        return toView(record)
+      } catch (err) {
+        await failClosed(slug, 'error', credentialRequired)
+        throw err
+      }
     },
 
     async rotateKey(slug, apiKey) {
       if (!this.available()) throw new OperatorAiUnavailableError()
       const existing = await getAiProvider(deps.db, slug)
       if (!existing) throw new OperatorAiNotFoundError(slug)
-      await reconcile({ slug, apiKey })
+      await setAiProviderReconciliation(deps.db, slug, 'pending', null, true)
+      deps.onProviderUnavailable(slug)
+      try {
+        const governed = await reconcile({ targetSlug: slug, keyOverride: { slug, apiKey } })
+        await setAiProviderReconciliation(deps.db, slug, 'ready', null, false)
+        await publish(governed)
+      } catch (err) {
+        await failClosed(slug, 'error', true)
+        throw err
+      }
     },
 
     async remove(slug) {
       if (!this.available()) throw new OperatorAiUnavailableError()
-      const removed = await deleteAiProvider(deps.db, slug)
-      if (removed) await reconcile()
-      return removed
+      const existing = await getAiProvider(deps.db, slug)
+      if (existing) await setAiProviderReconciliation(deps.db, slug, 'deleting', null, false)
+      deps.onProviderUnavailable(slug)
+      try {
+        const governed = await reconcile({ targetSlug: slug })
+        if (existing) await deleteAiProvider(deps.db, slug)
+        await publish(governed)
+        return existing !== null
+      } catch (err) {
+        if (existing) await failClosed(slug, 'deleting', false)
+        throw err
+      }
+    },
+
+    async recover() {
+      if (!this.available()) throw new OperatorAiUnavailableError()
+      await quarantineUnsafeUnverified(await listAiProviders(deps.db))
+      const before = await listAiProviders(deps.db)
+      for (const record of before) {
+        if (record.reconciliationState !== 'ready' || !record.reconciledAt) deps.onProviderUnavailable(record.slug)
+      }
+      const governed = await reconcile({ recover: true })
+      const governedSlugs = new Set(governed.map((entry) => entry.id))
+      for (const record of before) {
+        if (record.reconciliationState === 'deleting') {
+          await deleteAiProvider(deps.db, record.slug)
+        } else if (record.reconciliationState === 'ready' || !record.credentialRequired) {
+          if (governedSlugs.has(record.slug)) {
+            await setAiProviderReconciliation(deps.db, record.slug, 'ready', null, false)
+          } else {
+            // This covers rows created before durable lifecycle state existed: if the sealed
+            // provider is absent, startup cannot recreate it without a key. Mark it visibly inert
+            // instead of continuing to present migrated metadata as ready.
+            await setAiProviderReconciliation(deps.db, record.slug, 'error', RECONCILIATION_FAILED, true)
+            deps.onProviderUnavailable(record.slug)
+          }
+        }
+      }
+      await publish(governed)
     },
   }
 }
