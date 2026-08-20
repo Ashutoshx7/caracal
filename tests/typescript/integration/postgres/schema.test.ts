@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { insertAdminAuditRecord } from '../../../../packages/adminAudit/ts/src/index.js'
+import { insertAiProvider } from '../../../../apps/api/src/operator-ai-store.js'
 
 // These assertions are about SQL the unit suites can only match as text, so they need a real
 // database. Without one the tier is skipped rather than silently passing on a mock.
@@ -219,6 +220,33 @@ suite('operator provider reconciliation schema', () => {
       await expect(
         client.query(`UPDATE operator_ai_providers SET reconciliation_state = 'unknown' WHERE slug = $1`, [slug]),
       ).rejects.toThrow(/operator_ai_providers_reconciliation_state_check/i)
+    } finally {
+      await client.query('ROLLBACK').catch(() => {})
+      client.release()
+    }
+  })
+
+  it('rejects a duplicate lifecycle create without replacing the existing row', async () => {
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const slug = `test_${randomUUID().replaceAll('-', '').slice(0, 20)}`
+      const input = {
+        slug,
+        label: 'Original',
+        baseUrl: 'https://original.example/v1',
+        models: ['original-model'],
+        contextWindow: 0,
+        enabled: true,
+        auth: { location: 'header' as const, headerName: 'Authorization', authScheme: 'Bearer' },
+        reconciliationState: 'pending' as const,
+        reconciliationErrorCode: null,
+        credentialRequired: true,
+      }
+      expect(await insertAiProvider(client, input)).toMatchObject({ slug, label: 'Original' })
+      expect(await insertAiProvider(client, { ...input, label: 'Replacement' })).toBeNull()
+      const { rows } = await client.query<{ label: string }>('SELECT label FROM operator_ai_providers WHERE slug = $1', [slug])
+      expect(rows[0]?.label).toBe('Original')
     } finally {
       await client.query('ROLLBACK').catch(() => {})
       client.release()

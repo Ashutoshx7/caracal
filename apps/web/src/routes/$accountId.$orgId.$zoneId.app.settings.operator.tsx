@@ -93,6 +93,10 @@ function writeErrorMessage(err: unknown): string {
       return "Self-governance is not configured, so a key cannot be sealed.";
     if (err.code === "invalid_provider")
       return "Some fields are invalid. Check the form and try again.";
+    if (err.code === "provider_already_exists")
+      return "A model endpoint with that id already exists.";
+    if (err.code === "api_key_required_for_base_url_change")
+      return "This endpoint needs a new API key before it can be updated.";
     if (err.code === "provider_not_found") return "That model endpoint no longer exists.";
   }
   return "The change could not be saved. Try again.";
@@ -488,10 +492,10 @@ function EndpointField({ value, onChange }: { value: string; onChange: (value: s
 
 // The add and edit form. Adding starts empty so the operator supplies only what matters: an
 // OpenAI-compatible endpoint, a key, and the model ids the endpoint serves. The slug defaults
-// from the label. Editing locks the slug and omits the key, which is changed through rotate. The
-// provider and resource details Caracal sets automatically (api-key auth, an Authorization Bearer
-// header, and the llm:invoke and agent:lifecycle scopes) are explained
-// rather than asked for.
+// from the label. Editing locks the slug and normally omits the key, which is changed through
+// rotate; a credential-dependent recovery asks for it again because plaintext is never retained.
+// The provider and resource details Caracal sets automatically (api-key auth, an Authorization
+// Bearer header, and the llm:invoke and agent:lifecycle scopes) are explained rather than asked for.
 function ProviderFormModal({
   open,
   editing,
@@ -582,7 +586,8 @@ function ProviderFormModal({
   // Moving an endpoint re-seals the credential, so the key must be supplied with the change: the
   // sealed key is never carried across to a new host.
   const endpointMoved = editing !== null && baseUrl.trim() !== editing.baseUrl;
-  const keyRequired = editing === null || endpointMoved;
+  const replacementKeyRequired = editing !== null && (endpointMoved || editing.credentialRequired);
+  const keyRequired = editing === null || replacementKeyRequired;
   const valid =
     slug.length > 0 &&
     !slugTaken &&
@@ -613,7 +618,7 @@ function ProviderFormModal({
             models,
             contextWindow: ctx,
             auth,
-            ...(endpointMoved ? { apiKey } : {}),
+            ...(replacementKeyRequired ? { apiKey } : {}),
           },
         });
       } else {
@@ -692,7 +697,9 @@ function ProviderFormModal({
               info={
                 endpointMoved
                   ? "Changing the endpoint re-seals the credential, so a key for the new endpoint is required. The previous key is replaced, never forwarded."
-                  : "Sent once and sealed into Caracal; it is never stored in the console or read back."
+                  : editing?.credentialRequired
+                    ? "The previous reconciliation could not be recovered without the credential. Supply the key again to retry safely."
+                    : "Sent once and sealed into Caracal; it is never stored in the console or read back."
               }
               value={apiKey}
               onChange={(event) => setApiKey(event.target.value)}

@@ -104,6 +104,35 @@ export interface ProviderUpsert {
   credentialRequired: boolean
 }
 
+// Inserts a new provider without replacing an existing slug. POST and PATCH have distinct
+// lifecycle semantics: a duplicate create must not silently take a live provider offline or
+// replace its metadata, while PATCH deliberately uses the upsert helper below.
+export async function insertAiProvider(db: Queryable, input: ProviderUpsert): Promise<OperatorAiProviderRecord | null> {
+  const { rows } = await db.query<ProviderRow>(
+    `INSERT INTO operator_ai_providers
+       (slug, label, base_url, models, context_window, enabled, auth_config, reconciliation_state,
+        reconciliation_error_code, credential_required, reconciled_at, sort_order)
+     VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7::jsonb, $8, $9, $10, NULL,
+             (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM operator_ai_providers))
+     ON CONFLICT (slug) DO NOTHING
+     RETURNING slug, label, base_url, models, context_window, enabled, sort_order, auth_config,
+               reconciliation_state, reconciliation_error_code, credential_required, reconciled_at`,
+    [
+      input.slug,
+      input.label,
+      input.baseUrl,
+      JSON.stringify(input.models),
+      input.contextWindow,
+      input.enabled,
+      JSON.stringify(input.auth),
+      input.reconciliationState,
+      input.reconciliationErrorCode,
+      input.credentialRequired,
+    ],
+  )
+  return rows[0] ? toRecord(rows[0]) : null
+}
+
 // Lists every configured provider in display order, newest fields included. Read on boot to
 // build the gateway and on each registry change to rebuild it.
 export async function listAiProviders(db: Queryable): Promise<OperatorAiProviderRecord[]> {

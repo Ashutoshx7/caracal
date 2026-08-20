@@ -14,6 +14,7 @@ import {
   OperatorAiUnavailableError,
   OperatorAiNotFoundError,
   OperatorAiKeyRequiredError,
+  OperatorAiConflictError,
 } from '../../../../apps/api/src/operator-ai-manager.js'
 import type { ProviderConfig } from '../../../../apps/api/src/operator-gateway.js'
 import type { OperatorControlIdentity } from '../../../../apps/api/src/config.js'
@@ -44,6 +45,7 @@ function fakeDb(): { db: Queryable; rows: Map<string, StoreRow> } {
         const [slug, label, baseUrl, modelsJson, ctx, enabled, authJson, reconciliationState, reconciliationErrorCode, credentialRequired] =
           params as [string, string, string, string, number, boolean, string, StoreRow['reconciliation_state'], string | null, boolean]
         const existing = rows.get(slug)
+        if (existing && sql.includes('ON CONFLICT (slug) DO NOTHING')) return { rows: [] }
         const row: StoreRow = {
           slug,
           label,
@@ -467,16 +469,7 @@ describe('operator ai manager lifecycle', () => {
     expect(restarted.state.providers).toEqual([])
     expect(restarted.getPublished()).toEqual([])
 
-    const view = await restarted.manager.create({
-      slug: 'openai',
-      label: 'OpenAI',
-      baseUrl: 'https://api/v1',
-      models: ['gpt-5.5'],
-      contextWindow: 0,
-      apiKey: 'sk-create-retry',
-      enabled: true,
-      auth: AUTH,
-    })
+    const view = await restarted.manager.update('openai', { apiKey: 'sk-create-retry' })
     expect(view.reconciliationState).toBe('ready')
     expect(view.credentialRequired).toBe(false)
     expect(restarted.getPublished().map((provider) => provider.id)).toEqual(['openai'])
@@ -512,16 +505,7 @@ describe('operator ai manager lifecycle', () => {
     expect(restarted.rows.get('openai')).toMatchObject({ reconciliation_state: 'error', credential_required: true })
     expect(restarted.getPublished()).toEqual([])
 
-    await restarted.manager.create({
-      slug: 'openai',
-      label: 'OpenAI',
-      baseUrl: 'https://api/v1',
-      models: ['gpt-5.5'],
-      contextWindow: 0,
-      apiKey: 'sk-explicit-retry',
-      enabled: true,
-      auth: AUTH,
-    })
+    await restarted.manager.update('openai', { apiKey: 'sk-explicit-retry' })
     expect(restarted.state.providers[0].config_json.api_key).toBe('sk-explicit-retry')
     expect(restarted.state.resources).toHaveLength(1)
     expect(restarted.getPublished().map((provider) => provider.id)).toEqual(['openai'])
@@ -558,6 +542,38 @@ describe('operator ai manager lifecycle', () => {
     expect(failedProvider?.config_json.api_key).toBe('sk-store')
     expect(first.rows.get('openai')).toMatchObject({ reconciliation_state: 'error', credential_required: true })
     expect(first.getPublished().map((provider) => provider.id)).toEqual(['other'])
+  })
+
+  it('rejects a duplicate create without mutating the existing provider', async () => {
+    const { manager, rows, state, getPublished } = buildManager(IDENTITY)
+    await manager.create({
+      slug: 'openai',
+      label: 'Original',
+      baseUrl: 'https://original.example/v1',
+      models: ['original-model'],
+      contextWindow: 0,
+      apiKey: 'sk-original',
+      enabled: true,
+      auth: AUTH,
+    })
+
+    await expect(
+      manager.create({
+        slug: 'openai',
+        label: 'Replacement',
+        baseUrl: 'https://replacement.example/v1',
+        models: ['replacement-model'],
+        contextWindow: 0,
+        apiKey: 'sk-replacement',
+        enabled: true,
+        auth: AUTH,
+      }),
+    ).rejects.toBeInstanceOf(OperatorAiConflictError)
+
+    expect(rows.get('openai')).toMatchObject({ label: 'Original', base_url: 'https://original.example/v1' })
+    expect(state.providers[0].config_json.api_key).toBe('sk-original')
+    expect(state.resources[0].upstream_url).toBe('https://original.example/v1')
+    expect(getPublished().map((provider) => provider.id)).toEqual(['openai'])
   })
 
   it('marks migrated metadata with no sealed provider as credential-required on startup', async () => {
@@ -796,6 +812,30 @@ describe('operator ai manager lifecycle', () => {
     // The rejected edit changed nothing: the endpoint and its sealed key are both untouched.
     expect(state.providers[0].config_json.api_key).toBe('sk-1')
     expect(state.resources[0].upstream_url).toBe('https://api/v1')
+  })
+
+  it('marks a metadata-only update credential-required when the sealed provider disappeared', async () => {
+    const { manager, rows, state, getPublished } = buildManager(IDENTITY)
+    await manager.create({
+      slug: 'openai',
+      label: 'OpenAI',
+      baseUrl: 'https://api/v1',
+      models: ['gpt-5.5'],
+      contextWindow: 0,
+      apiKey: 'sk-sealed',
+      enabled: true,
+      auth: AUTH,
+    })
+    state.providers = []
+
+    await expect(manager.update('openai', { label: 'Updated' })).rejects.toBeInstanceOf(OperatorAiKeyRequiredError)
+    expect(rows.get('openai')).toMatchObject({
+      label: 'Updated',
+      reconciliation_state: 'error',
+      reconciliation_error_code: 'reconciliation_failed',
+      credential_required: true,
+    })
+    expect(getPublished()).toEqual([])
   })
 
   it('re-seals the supplied key when the endpoint moves', async () => {

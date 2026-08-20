@@ -74,6 +74,7 @@ import type { Evidence } from '../operator-research.js'
 import { retrieveDocs } from '../operator-docs.js'
 import { summarizeHistory, type ConversationFacts } from '../operator-memory.js'
 import {
+  OperatorAiConflictError,
   OperatorAiKeyRequiredError,
   OperatorAiNotFoundError,
   OperatorAiUnavailableError,
@@ -1230,6 +1231,10 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
     }
     if (err instanceof OperatorAiNotFoundError) {
       reply.code(404).send({ error: 'provider_not_found' })
+      return true
+    }
+    if (err instanceof OperatorAiConflictError) {
+      reply.code(409).send({ error: 'provider_already_exists' })
       return true
     }
     if (err instanceof OperatorAiKeyRequiredError) {

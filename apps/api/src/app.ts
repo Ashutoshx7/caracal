@@ -515,7 +515,16 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
         // Complete restart-safe metadata-only updates and delete tombstones now that the fresh
         // Operator identity is available. Credential-dependent failures stay explicit and inert
         // until an operator retries with the plaintext key, which is never persisted.
-        await aiManager?.recover()
+        try {
+          await aiManager?.recover()
+        } catch (err) {
+          // Provisioning already succeeded and the identity is live. Recovery is best effort and
+          // retries on the next rotation tick, so report it separately without suppressing the
+          // successful provisioning record below.
+          provisionLog.error('operator provider reconciliation recovery failed', {
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
         if (isolatedSystemZone.has(identity.zoneId)) {
           // The Operator must govern its own system zone; listing it as an isolated zone
           // would block self-governance before the identity check. Warn rather than fail so

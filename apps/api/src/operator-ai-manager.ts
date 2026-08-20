@@ -11,6 +11,7 @@ import { GovernedUpstream, llmProviderIdentifier, llmResourceIdentifier, provisi
 import {
   deleteAiProvider,
   getAiProvider,
+  insertAiProvider,
   listAiProviders,
   setAiProviderReconciliation,
   upsertAiProvider,
@@ -95,14 +96,20 @@ export class OperatorAiNotFoundError extends Error {
   }
 }
 
-// Raised when an update moves a provider's endpoint without supplying the key to seal for it.
-// The sealed key is bound to the provider slug rather than the URL, so reconciling a changed
-// baseUrl without a new key would re-point the existing credential at the new endpoint and hand
-// it to whoever operates that host on the next call. Requiring the key makes the two move as one
-// operation, and the old credential is replaced rather than forwarded.
+export class OperatorAiConflictError extends Error {
+  constructor(slug: string) {
+    super(`operator provider '${slug}' already exists`)
+    this.name = 'OperatorAiConflictError'
+  }
+}
+
+// Raised when reconciliation cannot safely continue without receiving the key again. This
+// includes an endpoint move (the old credential must never be forwarded to a new host) and a
+// missing sealed provider, which cannot be recreated from metadata because plaintext is never
+// retained.
 export class OperatorAiKeyRequiredError extends Error {
   constructor(slug: string) {
-    super(`operator provider '${slug}' requires a new api key when its base url changes`)
+    super(`operator provider '${slug}' requires an api key to reconcile`)
     this.name = 'OperatorAiKeyRequiredError'
   }
 }
@@ -246,6 +253,10 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
     deps.onRegistryChange(buildStoreProviderConfigs(records, resourceBySlug, deps.gatewayUrl, deps.governedFetch))
   }
 
+  function requireGovernedTarget(governed: { id: string }[], slug: string): void {
+    if (!governed.some((entry) => entry.id === slug)) throw new OperatorAiKeyRequiredError(slug)
+  }
+
   async function markFailure(slug: string, state: 'error' | 'deleting', credentialRequired: boolean): Promise<void> {
     await setAiProviderReconciliation(deps.db, slug, state, RECONCILIATION_FAILED, credentialRequired).catch(() => {})
   }
@@ -308,7 +319,7 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
 
     async create(input) {
       if (!this.available()) throw new OperatorAiUnavailableError()
-      await upsertAiProvider(deps.db, {
+      const inserted = await insertAiProvider(deps.db, {
         slug: input.slug,
         label: input.label,
         baseUrl: input.baseUrl,
@@ -320,9 +331,11 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
         reconciliationErrorCode: null,
         credentialRequired: true,
       })
+      if (!inserted) throw new OperatorAiConflictError(input.slug)
       deps.onProviderUnavailable(input.slug)
       try {
         const governed = await reconcile({ targetSlug: input.slug, keyOverride: { slug: input.slug, apiKey: input.apiKey } })
+        requireGovernedTarget(governed, input.slug)
         const record = await setAiProviderReconciliation(deps.db, input.slug, 'ready', null, false)
         if (!record) throw new OperatorAiNotFoundError(input.slug)
         await publish(governed)
@@ -359,12 +372,13 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
           targetSlug: slug,
           keyOverride: patch.apiKey ? { slug, apiKey: patch.apiKey } : undefined,
         })
+        requireGovernedTarget(governed, slug)
         const record = await setAiProviderReconciliation(deps.db, slug, 'ready', null, false)
         if (!record) throw new OperatorAiNotFoundError(slug)
         await publish(governed)
         return toView(record)
       } catch (err) {
-        await failClosed(slug, 'error', credentialRequired)
+        await failClosed(slug, 'error', credentialRequired || err instanceof OperatorAiKeyRequiredError)
         throw err
       }
     },
@@ -377,6 +391,7 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
       deps.onProviderUnavailable(slug)
       try {
         const governed = await reconcile({ targetSlug: slug, keyOverride: { slug, apiKey } })
+        requireGovernedTarget(governed, slug)
         await setAiProviderReconciliation(deps.db, slug, 'ready', null, false)
         await publish(governed)
       } catch (err) {
