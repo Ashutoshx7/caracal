@@ -979,7 +979,11 @@ export interface OperatorPlanValidation {
 export type OperatorStepEffect =
   "create" | "update" | "delete" | "exists" | "blocked" | "read_only";
 
-export interface OperatorPlanPreviewStep extends OperatorValidatedStep {
+export interface OperatorPlanPreviewStep {
+  id: string;
+  capability: string;
+  title: string;
+  mutating: boolean;
   effect: OperatorStepEffect;
   detail: string;
 }
