@@ -230,7 +230,13 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
     const preservedSlugs = records
       .filter((record) => record.reconciliationState !== 'deleting' && !selectedSlugs.has(record.slug))
       .map((record) => record.slug)
-    const upstreams = mergeDesiredUpstreams(deps.envUpstreams, selected, options.keyOverride)
+    // Every non-deleting store row shadows the env entry with the same slug, including a failed
+    // row that is currently preserved rather than selected. Otherwise an unrelated lifecycle
+    // operation could overwrite that row's sealed key/resource with the env configuration and
+    // accidentally re-grant it while its durable state still says error.
+    const shadowedEnvSlugs = new Set(records.filter((record) => record.reconciliationState !== 'deleting').map((record) => record.slug))
+    const envUpstreams = deps.envUpstreams.filter((upstream) => !shadowedEnvSlugs.has(upstream.id))
+    const upstreams = mergeDesiredUpstreams(envUpstreams, selected, options.keyOverride)
     return provisionGovernedUpstreams(deps.admin, identity.zoneId, identity.llm.applicationId, upstreams, preservedSlugs)
   }
 

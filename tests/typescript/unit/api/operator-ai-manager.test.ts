@@ -224,6 +224,7 @@ const IDENTITY: OperatorControlIdentity = {
 function buildManager(
   identity: typeof IDENTITY | null,
   persistent?: { store: ReturnType<typeof fakeDb>; upstream: ReturnType<typeof fakeAdmin> },
+  envUpstreams: { id: string; baseUrl: string; apiKey?: string }[] = [],
 ) {
   const store = persistent?.store ?? fakeDb()
   const upstream = persistent?.upstream ?? fakeAdmin()
@@ -234,7 +235,7 @@ function buildManager(
     db,
     admin,
     resolveIdentity: () => identity,
-    envUpstreams: [],
+    envUpstreams,
     gatewayUrl: 'http://gateway',
     governedFetch: fakeGovernedFetch,
     onRegistryChange: (configs) => {
@@ -250,7 +251,7 @@ function buildManager(
     rows: store.rows,
     failNext: upstream.failNext,
     getPublished: () => published,
-    restart: () => buildManager(identity, { store, upstream }),
+    restart: () => buildManager(identity, { store, upstream }, envUpstreams),
   }
 }
 
@@ -524,6 +525,39 @@ describe('operator ai manager lifecycle', () => {
     expect(restarted.state.providers[0].config_json.api_key).toBe('sk-explicit-retry')
     expect(restarted.state.resources).toHaveLength(1)
     expect(restarted.getPublished().map((provider) => provider.id)).toEqual(['openai'])
+  })
+
+  it('keeps a failed store row shadowing an env upstream with the same slug', async () => {
+    const first = buildManager(IDENTITY, undefined, [{ id: 'openai', baseUrl: 'https://env.example/v1', apiKey: 'sk-env' }])
+    first.failNext('resource.create:caracal-sys://operator-llm-openai')
+    await expect(
+      first.manager.create({
+        slug: 'openai',
+        label: 'Store OpenAI',
+        baseUrl: 'https://store.example/v1',
+        models: ['gpt-5.5'],
+        contextWindow: 0,
+        apiKey: 'sk-store',
+        enabled: true,
+        auth: AUTH,
+      }),
+    ).rejects.toThrow('injected failure')
+
+    await first.manager.create({
+      slug: 'other',
+      label: 'Other',
+      baseUrl: 'https://other.example/v1',
+      models: ['other-model'],
+      contextWindow: 0,
+      apiKey: 'sk-other',
+      enabled: true,
+      auth: AUTH,
+    })
+
+    const failedProvider = first.state.providers.find((provider) => provider.identifier.endsWith('-openai'))
+    expect(failedProvider?.config_json.api_key).toBe('sk-store')
+    expect(first.rows.get('openai')).toMatchObject({ reconciliation_state: 'error', credential_required: true })
+    expect(first.getPublished().map((provider) => provider.id)).toEqual(['other'])
   })
 
   it('marks migrated metadata with no sealed provider as credential-required on startup', async () => {
