@@ -382,7 +382,13 @@ export function PlanArtifact({
         onSuccess: (result) => {
           if (result.all_satisfied) {
             setPromptStepId(null);
-            if (plan.canExecute) execute.mutate(plan.seq);
+            if (plan.canExecute) {
+              // The status invalidation triggered by the credential write may resolve before
+              // this mutation does. Mark the sequence first so that refresh cannot make the
+              // automatic effect dispatch a second apply for the same recovery.
+              requestedSeq.current = plan.seq;
+              executePlan(plan.seq);
+            }
             return;
           }
           const next = credentialSteps.find(

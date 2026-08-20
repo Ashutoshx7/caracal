@@ -1337,6 +1337,26 @@ describe('plan credential vault endpoints', () => {
     expect(JSON.parse(res.body)).toEqual({ error: 'plan_already_executed' })
     expect(clientQuery.mock.calls.some((call) => String(call[0]).includes('INSERT INTO operator_plan_secrets'))).toBe(false)
   })
+
+  it('keeps the credential window closed after any execution step failed', async () => {
+    const { app, clientQuery } = buildApp()
+    clientQuery
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ status: 'active', mode: 'agent', autopilot: false }] }) // conv FOR UPDATE
+      .mockResolvedValueOnce({ rows: [{ content: credentialPlanContent }] }) // plan turn
+      .mockResolvedValueOnce({ rows: [{ kind: 'approval' }] }) // approved
+      .mockResolvedValueOnce({ rows: [{ step_id: 's2', status: 'failed' }] }) // plan is spent after an ambiguous failure
+      .mockResolvedValueOnce(undefined) // ROLLBACK
+    await app.ready()
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/v1/zones/z1/operator-conversations/conv-1/plans/2/secrets',
+      payload: { step_id: 's1', values: { client_id: 'anton', client_secret: 'cs_live_value' } },
+    })
+    expect(res.statusCode).toBe(409)
+    expect(JSON.parse(res.body)).toEqual({ error: 'plan_already_executed' })
+    expect(clientQuery.mock.calls.some((call) => String(call[0]).includes('INSERT INTO operator_plan_secrets'))).toBe(false)
+  })
 })
 
 describe('POST /v1/zones/:zoneId/operator-conversations/:id/plan/execute', () => {
