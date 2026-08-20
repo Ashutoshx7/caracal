@@ -28,10 +28,10 @@ interface StoreRow {
   enabled: boolean
   sort_order: number
   auth_config: unknown
-  reconciliation_state: 'ready' | 'pending' | 'error' | 'deleting'
+  reconciliation_state: string
   reconciliation_error_code: string | null
   credential_required: boolean
-  reconciled_at: string | null
+  reconciled_at: string | Date | null
 }
 
 // An in-memory Queryable matching the store's four statements by their stable SQL shape, so the
@@ -41,6 +41,7 @@ function fakeDb(): { db: Queryable; rows: Map<string, StoreRow> } {
   let order = 0
   const db: Queryable = {
     query: async <T = unknown>(sql: string, params: unknown[] = []): Promise<{ rows: T[] }> => {
+      // Writes also contain `WHERE slug = $1`; keep all write shapes ahead of the read branch.
       if (sql.includes('INSERT INTO operator_ai_providers')) {
         const [slug, label, baseUrl, modelsJson, ctx, enabled, authJson, reconciliationState, reconciliationErrorCode, credentialRequired] =
           params as [string, string, string, string, number, boolean, string, StoreRow['reconciliation_state'], string | null, boolean]
@@ -69,12 +70,7 @@ function fakeDb(): { db: Queryable; rows: Map<string, StoreRow> } {
         return { rows: (had ? [{ slug }] : []) as T[] }
       }
       if (sql.includes('UPDATE operator_ai_providers')) {
-        const [slug, reconciliationState, reconciliationErrorCode, credentialRequired] = params as [
-          string,
-          StoreRow['reconciliation_state'],
-          string | null,
-          boolean,
-        ]
+        const [slug, reconciliationState, reconciliationErrorCode, credentialRequired] = params as [string, string, string | null, boolean]
         const row = rows.get(slug)
         if (!row) return { rows: [] }
         row.reconciliation_state = reconciliationState
@@ -399,6 +395,31 @@ describe('operator ai manager helpers', () => {
 })
 
 describe('operator ai manager lifecycle', () => {
+  it('fails closed on an unknown stored state and normalizes database timestamps', async () => {
+    const { manager, rows } = buildManager(IDENTITY)
+    rows.set('corrupt', {
+      slug: 'corrupt',
+      label: 'Corrupt',
+      base_url: 'https://api.example/v1',
+      models: ['model'],
+      context_window: 0,
+      enabled: true,
+      sort_order: 1,
+      auth_config: AUTH,
+      reconciliation_state: 'unexpected',
+      reconciliation_error_code: null,
+      credential_required: false,
+      reconciled_at: new Date('2026-08-20T00:00:00.000Z'),
+    })
+
+    expect(await manager.list()).toEqual([
+      expect.objectContaining({
+        reconciliationState: 'error',
+        reconciledAt: '2026-08-20T00:00:00.000Z',
+      }),
+    ])
+  })
+
   it('reports unavailable and refuses writes when no identity is resolved', async () => {
     const { manager } = buildManager(null)
     expect(manager.available()).toBe(false)

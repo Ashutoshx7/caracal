@@ -12,3 +12,6 @@ ALTER TABLE public.operator_ai_providers
 ALTER TABLE public.operator_ai_providers
     ADD CONSTRAINT operator_ai_providers_reconciliation_state_check
         CHECK (reconciliation_state = ANY (ARRAY['ready'::text, 'pending'::text, 'error'::text, 'deleting'::text])) NOT VALID;
+
+ALTER TABLE public.operator_ai_providers
+    VALIDATE CONSTRAINT operator_ai_providers_reconciliation_state_check;

@@ -66,11 +66,16 @@ interface ProviderRow {
   reconciliation_state: string
   reconciliation_error_code: string | null
   credential_required: boolean
-  reconciled_at: string | null
+  reconciled_at: string | Date | null
 }
 
 function toReconciliationState(value: string): OperatorAiReconciliationState {
-  return value === 'pending' || value === 'error' || value === 'deleting' ? value : 'ready'
+  if (value === 'ready' || value === 'pending' || value === 'error' || value === 'deleting') return value
+  return 'error'
+}
+
+function toReconciledAt(value: string | Date | null): string | null {
+  return value instanceof Date ? value.toISOString() : value
 }
 
 function toRecord(row: ProviderRow): OperatorAiProviderRecord {
@@ -87,7 +92,7 @@ function toRecord(row: ProviderRow): OperatorAiProviderRecord {
     reconciliationState: toReconciliationState(row.reconciliation_state),
     reconciliationErrorCode: row.reconciliation_error_code,
     credentialRequired: row.credential_required,
-    reconciledAt: row.reconciled_at,
+    reconciledAt: toReconciledAt(row.reconciled_at),
   }
 }
 
