@@ -1555,6 +1555,105 @@ describe('POST /v1/zones/:zoneId/operator-conversations/:id/plan/execute', () =>
     expect(invokeCommands).not.toContain('app')
   })
 
+  it('discards vaulted credentials when a definitive failure follows an already-applied step', async () => {
+    // An applied step makes the route record a failed execution turn for the definitive rejection,
+    // which blocks every re-run. The plan is therefore spent and its sealed credentials must be
+    // wiped immediately rather than left for the reaper's TTL.
+    const twoGrantPlan = {
+      summary: 'Grant access',
+      steps: [
+        {
+          id: 's1',
+          capability: 'grantAccess',
+          mutating: true,
+          args: { application_id: 'app-1', user_id: 'user-1', resource_id: 'res-1', scopes: ['invoices.read'] },
+        },
+        {
+          id: 's2',
+          capability: 'grantAccess',
+          mutating: true,
+          args: { application_id: 'app-1', user_id: 'user-1', resource_id: 'res-2', scopes: ['invoices.write'] },
+        },
+      ],
+    }
+    let invokes = 0
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/oauth/2/token')) return jsonResponse({ access_token: 'control-token' })
+      if (url.endsWith('/v1/control/invoke')) {
+        invokes += 1
+        if (invokes === 1) return jsonResponse({ result: { id: 'grant-xyz' } })
+        return jsonResponse({ error: { reason: 'missing scope control:grant:write', code: 'forbidden' } }, 403)
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const { app, clientQuery } = buildApp(true, { ...governedControl, fetchImpl: fetchMock as unknown as typeof fetch })
+    clientQuery
+      // pre-flight
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ status: 'active' }] }) // conv status
+      .mockResolvedValueOnce({ rows: [{ content: twoGrantPlan }] }) // plan content
+      .mockResolvedValueOnce({ rows: [{ kind: 'approval' }] }) // approved
+      .mockResolvedValueOnce({ rows: [] }) // not executed
+      .mockResolvedValueOnce({ rows: [{ one: 1 }] }) // preview: application lives (s1)
+      .mockResolvedValueOnce({ rows: [{ one: 1 }] }) // preview: resource lives (s1)
+      .mockResolvedValueOnce({ rows: [{ one: 1 }] }) // preview: application lives (s2)
+      .mockResolvedValueOnce({ rows: [{ one: 1 }] }) // preview: resource lives (s2)
+      .mockResolvedValueOnce(undefined) // COMMIT
+      // recording
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ status: 'active', next_seq: 5 }] }) // conv FOR UPDATE
+      .mockResolvedValueOnce({ rowCount: 1 }) // advance for the applied step
+      .mockResolvedValueOnce({ rows: [{ id: 'applied-turn' }] }) // INSERT execution turn (s1)
+      .mockResolvedValueOnce({ rowCount: 1 }) // advance for the failed step
+      .mockResolvedValueOnce({ rows: [{ id: 'failed-turn' }] }) // INSERT execution turn (s2)
+      .mockResolvedValueOnce({ rowCount: 1 }) // advance for the system error turn
+      .mockResolvedValueOnce({ rows: [{ id: 'error-turn' }] }) // INSERT error turn
+      .mockResolvedValueOnce({ rows: [] }) // DELETE settled plan vault rows
+      .mockResolvedValueOnce(undefined) // COMMIT
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/plan/execute',
+      payload: { plan_seq: 2 },
+    })
+    expect(res.statusCode).toBe(422)
+    expect(JSON.parse(res.body)).toMatchObject({ error: 'execution_failed', step_id: 's2' })
+    expect(clientQuery.mock.calls.some((c) => String(c[0]).includes('DELETE FROM operator_plan_secrets'))).toBe(true)
+  })
+
+  it('keeps vaulted credentials when a lease stop before dispatch leaves the plan resumable', async () => {
+    // Nothing was dispatched, so no failed execution turn is written and the plan can be applied
+    // again. Its sealed credentials must survive so the retry the ledger permits still has them.
+    const fetchMock = controlFetch([{ id: 'grant-xyz' }])
+    const { app, clientQuery, redis } = buildApp(true, { ...governedControl, fetchImpl: fetchMock as unknown as typeof fetch })
+    redis.eval.mockResolvedValueOnce(0)
+    clientQuery
+      .mockResolvedValueOnce(undefined) // BEGIN (pre-flight)
+      .mockResolvedValueOnce({ rows: [{ status: 'active' }] })
+      .mockResolvedValueOnce({ rows: [{ content: grantPlan }] })
+      .mockResolvedValueOnce({ rows: [{ kind: 'approval' }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ one: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ one: 1 }] })
+      .mockResolvedValueOnce(undefined) // COMMIT
+      .mockResolvedValueOnce(undefined) // BEGIN (record stop)
+      .mockResolvedValueOnce({ rows: [{ status: 'active', next_seq: 5 }] })
+      .mockResolvedValueOnce({ rowCount: 1 }) // advance sequence
+      .mockResolvedValueOnce({ rows: [{ id: 'error-turn' }] }) // insert error turn
+      .mockResolvedValueOnce(undefined) // COMMIT
+
+    await app.ready()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/zones/z1/operator-conversations/conv-1/plan/execute',
+      payload: { plan_seq: 2 },
+    })
+
+    expect(res.statusCode).toBe(409)
+    expect(clientQuery.mock.calls.some((c) => String(c[0]).includes('DELETE FROM operator_plan_secrets'))).toBe(false)
+  })
+
   it('refuses an approved plan the Operator is not authorized to execute', async () => {
     const { app, clientQuery } = buildApp(true, { ...governedControl, allowedCapabilities: ['registerApplication'] })
     const forbiddenPlan = {
