@@ -382,7 +382,7 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
       const endpointMoved = baseUrl !== existing.baseUrl
       if ((endpointMoved || existing.credentialRequired) && !patch.apiKey) throw new OperatorAiKeyRequiredError(slug)
       const credentialRequired = endpointMoved || existing.credentialRequired || patch.apiKey !== undefined
-      await upsertAiProvider(deps.db, {
+      const claimed = await upsertAiProvider(deps.db, {
         slug,
         label: patch.label ?? existing.label,
         baseUrl,
@@ -394,6 +394,9 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
         reconciliationErrorCode: null,
         credentialRequired,
       })
+      // A remove that landed since the read above already tombstoned the row, and the store
+      // refuses to revive it.
+      if (!claimed) throw new OperatorAiNotFoundError(slug)
       deps.onProviderUnavailable(slug)
       try {
         const governed = await reconcile({
@@ -415,7 +418,7 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
       if (!this.available()) throw new OperatorAiUnavailableError()
       const existing = await getAiProvider(deps.db, slug)
       if (!existing || existing.reconciliationState === 'deleting') throw new OperatorAiNotFoundError(slug)
-      await setAiProviderReconciliation(deps.db, slug, 'pending', null, true)
+      if (!(await setAiProviderReconciliation(deps.db, slug, 'pending', null, true))) throw new OperatorAiNotFoundError(slug)
       deps.onProviderUnavailable(slug)
       try {
         const governed = await reconcile({ targetSlug: slug, keyOverride: { slug, apiKey } })

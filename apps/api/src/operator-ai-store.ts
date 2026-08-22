@@ -162,8 +162,9 @@ export async function getAiProvider(db: Queryable, slug: string): Promise<Operat
 
 // Inserts or replaces a provider's metadata. The sort order places a new provider at the end
 // while preserving an existing one's position, so the failover order an operator arranged is
-// stable across edits.
-export async function upsertAiProvider(db: Queryable, input: ProviderUpsert): Promise<OperatorAiProviderRecord> {
+// stable across edits. Returns null when the slug is a delete tombstone, which no metadata write
+// may revive; a concurrent remove therefore always wins over an edit that read the row first.
+export async function upsertAiProvider(db: Queryable, input: ProviderUpsert): Promise<OperatorAiProviderRecord | null> {
   const { rows } = await db.query<ProviderRow>(
     `INSERT INTO operator_ai_providers
        (slug, label, base_url, models, context_window, enabled, auth_config, reconciliation_state,
@@ -183,6 +184,7 @@ export async function upsertAiProvider(db: Queryable, input: ProviderUpsert): Pr
            credential_required = EXCLUDED.credential_required,
            reconciled_at = NULL,
            updated_at = now()
+     WHERE operator_ai_providers.reconciliation_state <> 'deleting'
      RETURNING slug, label, base_url, models, context_window, enabled, sort_order, auth_config,
                reconciliation_state, reconciliation_error_code, credential_required, reconciled_at`,
     [
@@ -198,11 +200,13 @@ export async function upsertAiProvider(db: Queryable, input: ProviderUpsert): Pr
       input.credentialRequired,
     ],
   )
-  return toRecord(rows[0])
+  return rows[0] ? toRecord(rows[0]) : null
 }
 
 // Advances only the durable reconciliation fields. Error codes are deliberately low-cardinality
-// internal values; provider responses and credentials never enter this table.
+// internal values; provider responses and credentials never enter this table. A delete tombstone
+// accepts only a write that keeps it one, so a lifecycle operation racing a remove cannot revive
+// the row it already agreed to destroy. Returns null when no row matched.
 export async function setAiProviderReconciliation(
   db: Queryable,
   slug: string,
@@ -217,7 +221,7 @@ export async function setAiProviderReconciliation(
             credential_required = $4,
             reconciled_at = CASE WHEN $2 = 'ready' THEN now() ELSE reconciled_at END,
             updated_at = now()
-      WHERE slug = $1
+      WHERE slug = $1 AND (reconciliation_state <> 'deleting' OR $2 = 'deleting')
       RETURNING slug, label, base_url, models, context_window, enabled, sort_order, auth_config,
                 reconciliation_state, reconciliation_error_code, credential_required, reconciled_at`,
     [slug, state, errorCode, credentialRequired],

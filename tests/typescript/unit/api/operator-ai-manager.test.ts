@@ -49,6 +49,8 @@ function fakeDb(): { db: Queryable; rows: Map<string, StoreRow> } {
           params as [string, string, string, string, number, boolean, string, StoreRow['reconciliation_state'], string | null, boolean]
         const existing = rows.get(slug)
         if (existing && sql.includes('ON CONFLICT (slug) DO NOTHING')) return { rows: [] }
+        // Mirror the tombstone guard: no metadata write revives a row a remove already claimed.
+        if (existing?.reconciliation_state === 'deleting') return { rows: [] }
         const row: StoreRow = {
           slug,
           label,
@@ -75,6 +77,7 @@ function fakeDb(): { db: Queryable; rows: Map<string, StoreRow> } {
         const [slug, reconciliationState, reconciliationErrorCode, credentialRequired] = params as [string, string, string | null, boolean]
         const row = rows.get(slug)
         if (!row) return { rows: [] }
+        if (row.reconciliation_state === 'deleting' && reconciliationState !== 'deleting') return { rows: [] }
         row.reconciliation_state = reconciliationState
         row.reconciliation_error_code = reconciliationErrorCode
         row.credential_required = credentialRequired
