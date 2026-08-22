@@ -214,9 +214,13 @@ function OperatorPage() {
                       {provider.reconciliationState === "pending" ? (
                         <Badge
                           tone="warning"
-                          title="Reconciliation is not complete. The Operator does not route to this endpoint yet."
+                          title={
+                            provider.credentialRequired
+                              ? "Reconciliation did not complete and the API key was not retained. Supply it again to retry."
+                              : "Reconciliation is not complete. The Operator does not route to this endpoint yet."
+                          }
                         >
-                          Pending
+                          {provider.credentialRequired ? "Retry with key" : "Pending"}
                         </Badge>
                       ) : null}
                       {provider.reconciliationState === "error" ? (
@@ -255,25 +259,30 @@ function OperatorPage() {
                     </div>
                   </div>
                   <div className="flex flex-shrink-0 items-center gap-1.5">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      mutating
-                      onClick={() => {
-                        setEditing(provider);
-                        setFormOpen(true);
-                      }}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      mutating
-                      onClick={() => setRotating(provider)}
-                    >
-                      Rotate key
-                    </Button>
+                    {/* A row awaiting removal accepts only a retried delete. */}
+                    {provider.reconciliationState !== "deleting" ? (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          mutating
+                          onClick={() => {
+                            setEditing(provider);
+                            setFormOpen(true);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          mutating
+                          onClick={() => setRotating(provider)}
+                        >
+                          Rotate key
+                        </Button>
+                      </>
+                    ) : null}
                     <Button
                       variant="ghost"
                       size="sm"

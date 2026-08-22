@@ -997,6 +997,36 @@ describe('operator ai manager lifecycle', () => {
     expect(restarted.getPublished()).toEqual([])
   })
 
+  it('refuses to edit or rotate a tombstone back into a live sealed endpoint', async () => {
+    const { manager, rows, state, getPublished, failNext } = buildManager(IDENTITY)
+    await manager.create({
+      slug: 'openai',
+      label: 'OpenAI',
+      baseUrl: 'https://api/v1',
+      models: ['gpt-5.5'],
+      contextWindow: 0,
+      apiKey: 'sk-doomed',
+      enabled: true,
+      auth: AUTH,
+    })
+    failNext(`provider.delete:${state.providers[0].id}`)
+    await expect(manager.remove('openai')).rejects.toThrow('injected failure')
+    expect(rows.get('openai')?.reconciliation_state).toBe('deleting')
+
+    // Only a retried delete may act on a tombstone; a key supplied here would re-seal a
+    // credential for an endpoint the operator already asked to destroy.
+    await expect(manager.rotateKey('openai', 'sk-resurrected')).rejects.toBeInstanceOf(OperatorAiNotFoundError)
+    await expect(manager.update('openai', { label: 'Resurrected', apiKey: 'sk-resurrected' })).rejects.toBeInstanceOf(
+      OperatorAiNotFoundError,
+    )
+
+    expect(rows.get('openai')).toMatchObject({ label: 'OpenAI', reconciliation_state: 'deleting' })
+    expect(state.providers).toEqual([])
+    expect(getPublished()).toEqual([])
+    expect(await manager.remove('openai')).toBe(true)
+    expect(rows.has('openai')).toBe(false)
+  })
+
   it('cleans a stale sealed provider when legacy partial deletion already removed metadata', async () => {
     const { manager, rows, state, getPublished } = buildManager(IDENTITY)
     await manager.create({

@@ -349,7 +349,9 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
     async update(slug, patch) {
       if (!this.available()) throw new OperatorAiUnavailableError()
       const existing = await getAiProvider(deps.db, slug)
-      if (!existing) throw new OperatorAiNotFoundError(slug)
+      // A tombstone's only valid transition is finishing its delete; editing or rotating it would
+      // seal a fresh credential for an endpoint the operator already asked to destroy.
+      if (!existing || existing.reconciliationState === 'deleting') throw new OperatorAiNotFoundError(slug)
       const baseUrl = patch.baseUrl ?? existing.baseUrl
       const endpointMoved = baseUrl !== existing.baseUrl
       if ((endpointMoved || existing.credentialRequired) && !patch.apiKey) throw new OperatorAiKeyRequiredError(slug)
@@ -386,7 +388,7 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
     async rotateKey(slug, apiKey) {
       if (!this.available()) throw new OperatorAiUnavailableError()
       const existing = await getAiProvider(deps.db, slug)
-      if (!existing) throw new OperatorAiNotFoundError(slug)
+      if (!existing || existing.reconciliationState === 'deleting') throw new OperatorAiNotFoundError(slug)
       await setAiProviderReconciliation(deps.db, slug, 'pending', null, true)
       deps.onProviderUnavailable(slug)
       try {
