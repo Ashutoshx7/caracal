@@ -2238,8 +2238,10 @@ export const operatorRoutes: FastifyPluginAsync<OperatorRoutesOptions> = async (
         // A settled plan no longer needs its vaulted credentials: a full apply sealed them at
         // their final place through the provider create, and a spent plan (a recorded step
         // failure) can never be retried. Only a definitive, nothing-applied failure keeps them,
-        // so the retry the ledger permits still has its values.
-        if ((!result.failure && !result.leaseLoss) || result.failure?.terminal || result.leaseLoss?.outcomeUncertain) {
+        // so the retry the ledger permits still has its values. The spent test mirrors exactly
+        // when a failed execution turn was written above, since that turn is what blocks a re-run.
+        const spent = result.failure ? result.applied.length > 0 || result.failure.terminal : result.leaseLoss?.outcomeUncertain === true
+        if ((!result.failure && !result.leaseLoss) || spent) {
           await deletePlanSecrets(client, { conversationId: params.id, zoneId: params.zoneId, planSeq })
         }
         return { turns, outputs }
