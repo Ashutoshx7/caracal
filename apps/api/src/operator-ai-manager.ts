@@ -179,6 +179,56 @@ export function mergeDesiredUpstreams(
   return [...bySlug.values()]
 }
 
+// Which store rows a provisioning pass may seal, route, and grant, and which slugs must keep
+// their sealed provider without one.
+export interface StoreUpstreamPlan {
+  upstreams: GovernedUpstream[]
+  preservedSlugs: string[]
+}
+
+export interface StoreUpstreamOptions {
+  // The slug whose lifecycle operation is driving this pass; it reconciles even though its
+  // durable state is still pending.
+  targetSlug?: string
+  // Admits every row a restart can replay on its own, which is any row that needs no key.
+  recover?: boolean
+  keyOverride?: { slug: string; apiKey: string }
+}
+
+// Turns the durable rows into the desired set the provisioner converges. A row is routed and
+// granted only with proof that its metadata matches its sealed resource; every other non-deleting
+// row is preserved instead, keeping its credential alive for an explicit retry while
+// ensureOperatorGrants revokes its authority. The boot path and every lifecycle write share this
+// so the two can never classify the same row differently.
+export function planStoreUpstreams(
+  envUpstreams: GovernedUpstream[],
+  records: OperatorAiProviderRecord[],
+  options: StoreUpstreamOptions = {},
+): StoreUpstreamPlan {
+  const selected = records.filter((record) => {
+    if (record.reconciliationState === 'deleting') return false
+    if (record.reconciliationState === 'ready') return record.reconciledAt !== null
+    if (record.slug === options.targetSlug) return true
+    return options.recover === true && !record.credentialRequired
+  })
+  const selectedSlugs = new Set(selected.map((record) => record.slug))
+  const preservedSlugs = records
+    .filter((record) => record.reconciliationState !== 'deleting' && !selectedSlugs.has(record.slug))
+    .map((record) => record.slug)
+  // Every non-deleting store row shadows the env entry with the same slug, including a preserved
+  // one. Otherwise this pass would seal the env key onto the very provider it is required to
+  // leave untouched, and re-grant it while its durable state still says error.
+  const shadowedEnvSlugs = new Set(records.filter((record) => record.reconciliationState !== 'deleting').map((record) => record.slug))
+  return {
+    upstreams: mergeDesiredUpstreams(
+      envUpstreams.filter((upstream) => !shadowedEnvSlugs.has(upstream.id)),
+      selected,
+      options.keyOverride,
+    ),
+    preservedSlugs,
+  }
+}
+
 export interface OperatorAiManager {
   available(): boolean
   list(): Promise<OperatorAiProviderView[]>
@@ -216,35 +266,11 @@ export interface OperatorAiManagerDeps {
 export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAiManager {
   const RECONCILIATION_FAILED = 'reconciliation_failed'
 
-  async function reconcile(options: {
-    targetSlug?: string
-    keyOverride?: { slug: string; apiKey: string }
-    recover?: boolean
-  }): Promise<{ id: string; resourceIdentifier: string }[]> {
+  async function reconcile(options: StoreUpstreamOptions = {}): Promise<{ id: string; resourceIdentifier: string }[]> {
     const identity = deps.resolveIdentity()
     if (!identity) throw new OperatorAiUnavailableError()
-    const records = await listAiProviders(deps.db)
-    const selected = records.filter((record) => {
-      if (record.reconciliationState === 'deleting') return false
-      if (record.reconciliationState === 'ready') return record.reconciledAt !== null
-      if (record.slug === options.targetSlug) return true
-      return options.recover === true && !record.credentialRequired
-    })
-    const selectedSlugs = new Set(selected.map((record) => record.slug))
-    // A row waiting for a credential cannot be replayed after restart because plaintext keys are
-    // intentionally never stored. Retain any already-sealed provider while revoking its grant;
-    // the operator must retry the mutation with the key to make it ready again.
-    const preservedSlugs = records
-      .filter((record) => record.reconciliationState !== 'deleting' && !selectedSlugs.has(record.slug))
-      .map((record) => record.slug)
-    // Every non-deleting store row shadows the env entry with the same slug, including a failed
-    // row that is currently preserved rather than selected. Otherwise an unrelated lifecycle
-    // operation could overwrite that row's sealed key/resource with the env configuration and
-    // accidentally re-grant it while its durable state still says error.
-    const shadowedEnvSlugs = new Set(records.filter((record) => record.reconciliationState !== 'deleting').map((record) => record.slug))
-    const envUpstreams = deps.envUpstreams.filter((upstream) => !shadowedEnvSlugs.has(upstream.id))
-    const upstreams = mergeDesiredUpstreams(envUpstreams, selected, options.keyOverride)
-    return provisionGovernedUpstreams(deps.admin, identity.zoneId, identity.llm.applicationId, upstreams, preservedSlugs)
+    const plan = planStoreUpstreams(deps.envUpstreams, await listAiProviders(deps.db), options)
+    return provisionGovernedUpstreams(deps.admin, identity.zoneId, identity.llm.applicationId, plan.upstreams, plan.preservedSlugs)
   }
 
   async function publish(governed: { id: string; resourceIdentifier: string }[]): Promise<void> {
@@ -420,7 +446,12 @@ export function createOperatorAiManager(deps: OperatorAiManagerDeps): OperatorAi
 
     async recover() {
       if (!this.available()) throw new OperatorAiUnavailableError()
-      await quarantineUnsafeUnverified(await listAiProviders(deps.db))
+      const records = await listAiProviders(deps.db)
+      // This runs on every rotation tick, not only at boot, so that a row left behind by a failed
+      // write still converges on its own. A fully reconciled store has nothing to replay, and
+      // repeating the pass would re-seal every upstream to reach the state it is already in.
+      if (records.every((record) => record.reconciliationState === 'ready' && record.reconciledAt !== null)) return
+      await quarantineUnsafeUnverified(records)
       const before = await listAiProviders(deps.db)
       for (const record of before) {
         if (record.reconciliationState !== 'ready' || !record.reconciledAt) deps.onProviderUnavailable(record.slug)

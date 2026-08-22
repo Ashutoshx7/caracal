@@ -95,7 +95,7 @@ function writeErrorMessage(err: unknown): string {
       return "Some fields are invalid. Check the form and try again.";
     if (err.code === "provider_already_exists")
       return "A model endpoint with that id already exists.";
-    if (err.code === "api_key_required_for_base_url_change")
+    if (err.code === "api_key_required")
       return "This endpoint needs a new API key before it can be updated.";
     if (err.code === "provider_not_found") return "That model endpoint no longer exists.";
   }

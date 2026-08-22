@@ -167,7 +167,7 @@ describe('operator AI provider lifecycle errors', () => {
       payload: { label: 'Retry' },
     })
     expect(res.statusCode).toBe(400)
-    expect(res.json()).toEqual({ error: 'api_key_required_for_base_url_change' })
+    expect(res.json()).toEqual({ error: 'api_key_required' })
     await app.close()
   })
 })

@@ -10,12 +10,14 @@ import {
   createOperatorAiManager,
   buildStoreProviderConfigs,
   mergeDesiredUpstreams,
+  planStoreUpstreams,
   providerConfigId,
   OperatorAiUnavailableError,
   OperatorAiNotFoundError,
   OperatorAiKeyRequiredError,
   OperatorAiConflictError,
 } from '../../../../apps/api/src/operator-ai-manager.js'
+import type { OperatorAiProviderRecord } from '../../../../apps/api/src/operator-ai-store.js'
 import type { ProviderConfig } from '../../../../apps/api/src/operator-gateway.js'
 import type { OperatorControlIdentity } from '../../../../apps/api/src/config.js'
 
@@ -391,6 +393,82 @@ describe('operator ai manager helpers', () => {
       ],
     )
     expect(merged[0].apiKey).toBeUndefined()
+  })
+})
+
+describe('store upstream plan', () => {
+  function record(slug: string, overrides: Partial<OperatorAiProviderRecord>): OperatorAiProviderRecord {
+    return {
+      slug,
+      label: slug,
+      baseUrl: `https://${slug}.example/v1`,
+      models: ['m'],
+      contextWindow: 0,
+      enabled: true,
+      sortOrder: 1,
+      auth: AUTH,
+      ...READY_STATE,
+      ...overrides,
+    }
+  }
+
+  it('routes only rows proven to match their sealed resource and preserves the rest', () => {
+    const plan = planStoreUpstreams(
+      [],
+      [
+        record('proven', {}),
+        record('migrated', { reconciledAt: null }),
+        record('waiting', { reconciliationState: 'error', reconciledAt: null, credentialRequired: true }),
+        record('replayable', { reconciliationState: 'error', reconciledAt: null, credentialRequired: false }),
+        record('tombstone', { reconciliationState: 'deleting', reconciledAt: null }),
+      ],
+    )
+
+    expect(plan.upstreams.map((upstream) => upstream.id)).toEqual(['proven'])
+    // A tombstone is deliberately absent from both sets so its sealed provider is pruned.
+    expect(plan.preservedSlugs).toEqual(['migrated', 'waiting', 'replayable'])
+  })
+
+  it('replays the rows a restart can finish without a key', () => {
+    const plan = planStoreUpstreams(
+      [],
+      [
+        record('replayable', { reconciliationState: 'pending', reconciledAt: null, credentialRequired: false }),
+        record('waiting', { reconciliationState: 'pending', reconciledAt: null, credentialRequired: true }),
+      ],
+      { recover: true },
+    )
+
+    expect(plan.upstreams.map((upstream) => upstream.id)).toEqual(['replayable'])
+    expect(plan.preservedSlugs).toEqual(['waiting'])
+  })
+
+  it('admits the slug whose lifecycle write is driving the pass', () => {
+    const plan = planStoreUpstreams(
+      [],
+      [record('openai', { reconciliationState: 'pending', reconciledAt: null, credentialRequired: true })],
+      {
+        targetSlug: 'openai',
+        keyOverride: { slug: 'openai', apiKey: 'sk-inflight' },
+      },
+    )
+
+    expect(plan.upstreams).toEqual([{ id: 'openai', baseUrl: 'https://openai.example/v1', apiKey: 'sk-inflight', auth: AUTH }])
+    expect(plan.preservedSlugs).toEqual([])
+  })
+
+  it('lets a preserved store row shadow the env upstream that shares its slug', () => {
+    const plan = planStoreUpstreams(
+      [
+        { id: 'openai', baseUrl: 'https://env.example/v1', apiKey: 'sk-env' },
+        { id: 'other', baseUrl: 'https://other.example/v1', apiKey: 'sk-other' },
+      ],
+      [record('openai', { reconciliationState: 'error', reconciledAt: null, credentialRequired: true })],
+    )
+
+    // Sealing the env key here would overwrite the very provider this pass must leave untouched.
+    expect(plan.upstreams.map((upstream) => upstream.id)).toEqual(['other'])
+    expect(plan.preservedSlugs).toEqual(['openai'])
   })
 })
 
@@ -995,6 +1073,26 @@ describe('operator ai manager lifecycle', () => {
     expect(restarted.rows.has('openai')).toBe(false)
     expect(restarted.state.providers).toEqual([])
     expect(restarted.getPublished()).toEqual([])
+  })
+
+  it('does nothing on a rotation tick once every row is reconciled', async () => {
+    const { manager, state, restart } = buildManager(IDENTITY)
+    await manager.create({
+      slug: 'openai',
+      label: 'OpenAI',
+      baseUrl: 'https://api/v1',
+      models: ['gpt-5.5'],
+      contextWindow: 0,
+      apiKey: 'sk-steady',
+      enabled: true,
+      auth: AUTH,
+    })
+
+    // recover() runs on every rotation tick, so a converged store must not re-seal anything.
+    const steady = restart()
+    state.calls.length = 0
+    await steady.manager.recover()
+    expect(state.calls).toEqual([])
   })
 
   it('refuses to edit or rotate a tombstone back into a live sealed endpoint', async () => {

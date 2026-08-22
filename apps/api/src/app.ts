@@ -34,7 +34,7 @@ import { buildOperatorAuthority } from './operator-authority.js'
 import { researcherRoleScopes, executorRoleScopes } from './operator-agent-roles.js'
 import { isReservedZone } from './reserved-namespace.js'
 import type { ProviderConfig } from './operator-gateway.js'
-import { createOperatorAiManager, buildStoreProviderConfigs, type OperatorAiManager } from './operator-ai-manager.js'
+import { createOperatorAiManager, buildStoreProviderConfigs, planStoreUpstreams, type OperatorAiManager } from './operator-ai-manager.js'
 import { listAiProviders } from './operator-ai-store.js'
 import type { OperatorControlIdentity } from './config.js'
 import { getTraceContext, parseTraceparent, bindTrace, buildPinoRedactPaths, CaracalError, createLogger } from '@caracalai/core'
@@ -474,33 +474,12 @@ export async function buildApp({ cfg, db, redis, isDraining }: AppDeps) {
         await lock.query('SELECT pg_advisory_lock($1)', [SYSTEM_ZONE_PROVISION_LOCK])
         // The desired set is the env upstreams (re-sealed from their keys) plus the
         // store-managed providers (already sealed in a prior run, reconciled by identifier
-        // without a key), so a restart never archives a console-added provider.
+        // without a key), so a restart never archives a console-added provider. Boot classifies
+        // the rows exactly as recovery does, so provisioning and the reconcile that follows it
+        // always agree on which rows may be routed and which must only be preserved.
         const storeRecords = await listAiProviders(db)
-        const storeUpstreams: GovernedUpstream[] = storeRecords
-          .filter(
-            (record) =>
-              (record.reconciliationState === 'ready' && record.reconciledAt !== null) ||
-              (record.reconciliationState !== 'ready' && record.reconciliationState !== 'deleting' && !record.credentialRequired),
-          )
-          .map((record) => ({
-            id: record.slug,
-            baseUrl: record.baseUrl,
-            auth: record.auth,
-          }))
-        const preservedStoreSlugs = storeRecords
-          .filter(
-            (record) =>
-              record.reconciliationState !== 'deleting' &&
-              ((record.reconciliationState === 'ready' && record.reconciledAt === null) ||
-                (record.reconciliationState !== 'ready' && record.credentialRequired)),
-          )
-          .map((record) => record.slug)
-        const preservedStoreSlugSet = new Set(preservedStoreSlugs)
-        // A store row waiting for verification or a replacement key must also shadow an env
-        // upstream with the same slug. Otherwise boot would reconcile the env entry first and
-        // mutate the very sealed object this path is required to preserve untouched.
-        const desiredUpstreams = [...envGovernedUpstreams.filter((upstream) => !preservedStoreSlugSet.has(upstream.id)), ...storeUpstreams]
-        const identity = await provisionSystemZone(admin, audience, findZoneBySlug, roles, desiredUpstreams, preservedStoreSlugs)
+        const plan = planStoreUpstreams(envGovernedUpstreams, storeRecords, { recover: true })
+        const identity = await provisionSystemZone(admin, audience, findZoneBySlug, roles, plan.upstreams, plan.preservedSlugs)
         operatorControlIdentity.current = {
           zoneId: identity.zoneId,
           llm: identity.llm,
